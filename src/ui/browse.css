@@ -1127,6 +1127,15 @@ svg.library-empty-icon { width: auto; }
 .card-overlay-tab-right::before { right: calc(-1 * var(--card-overlay-border)); clip-path: inset(0 var(--card-overlay-border) 0 0); }
 /* lineLimit(1) with tail truncation; the clip margin keeps the minimal preset's text shadow. */
 .card-overlay-label { min-width: 0; overflow: clip; overflow-clip-margin: 4px; text-overflow: ellipsis; }
+/* Edge band: the strip spans its edge; its row wraps and clips to its first line, painting shadows past it. */
+.card-overlay-band { position: absolute; left: 0; right: 0; box-sizing: border-box; }
+.card-overlay-band-top { top: 0; }
+.card-overlay-band-bottom { bottom: 0; }
+.card-overlay-band-row { display: flex; flex-wrap: wrap; align-items: center; row-gap: 64px; overflow: clip; overflow-clip-margin: 8px; }
+.card-overlay-band-item { display: flex; align-items: center; flex: none; min-width: 0; max-width: 100%; }
+.card-overlay-band-divider { flex: none; width: 1px; background: rgba(255,255,255,.4); }
+.card-overlay-chip { flex: none; white-space: nowrap; }
+.card-overlay-label.card-overlay-score { flex: none; text-overflow: clip; }
 .card-overlay-mark { display: block; flex: none; font-weight: 900; }
 .card-overlay-icon { display: block; flex: none; fill: currentColor; stroke: none; }
 /* Home rows: Apple MediaRow, MediaCard and EpisodeThumbCard (silo-apple 1a7ccee). The content reaches into a

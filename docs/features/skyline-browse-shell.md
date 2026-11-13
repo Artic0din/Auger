@@ -405,7 +405,9 @@ Badges follow Apple `CardOverlays` at silo-apple `5780c84`: the top-left corner,
 The top-right corner is left to the watch-status mark, so a badge stored at `top-right` draws on the right rail, and the top-left row stops short of that corner on posters.
 A corner draws three badges and a rail four; a filled badge on a rail is a tab flush against the card edge.
 Ratings default to the left rail and series status to the right.
-The Plate and Edge band presets, style overrides and uploaded badge images are not drawn yet.
+All seven presets are drawn: Plate is a heavy rounded plate whose ratings show their source as an accent chip ahead of the score, and Edge band draws each edge's badges as one strip of marks with thin dividers over a dark scrim, keeping only the marks that fit whole.
+The document's `style` (size, shape, fill, text and border colour, border width, weight, capitals and shadow) is layered on the preset as Apple `OverlayPreset.applying` does.
+Uploaded badge images are not drawn yet.
 Wordmarks (HDR, HDR10, ATMOS, AV1) are black-weight text at 10/12 of the icon size, ATMOS at 9/12 with half a unit of tracking, and replace a label that says the same thing; Dolby Vision is Apple's drawn ring beside the whole label.
 The ATMOS mark shows only for an audio value of exactly Atmos, so TrueHD Atmos keeps its label.
 The combined Resolution + HDR + Audio badge shows the parts the file has and hides the resolution, HDR, audio and Resolution + HDR badges while it is on.
