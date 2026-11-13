@@ -590,7 +590,7 @@ All are Bearer plus Profile.
 | explicit values | `GET /settings/values?scope=&keys=` | safe |
 | effective values | `GET /settings/values/effective?keys=` | safe |
 | hidden libraries | `GET /settings/values/effective?keys=ui.disabled_library_ids` (`hiddenLibraries`, `src/api/operations.ts`, called from `src/ui/browse.ts`) | safe |
-| overlay config | `GET /settings/overlay-config` | safe |
+| overlay config | `GET /settings/overlay-config`; its `images` list names the uploaded badge images, drawn with plain `<img>` from their public `/api/v2/overlay-images/{ref}` URLs | safe |
 | set | `PUT /settings/values/{key}?scope=` with `{ "value": ... }` | never |
 | reset | `DELETE /settings/values/{key}?scope=` | never |
 

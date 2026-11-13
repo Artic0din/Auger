@@ -1136,6 +1136,9 @@ svg.library-empty-icon { width: auto; }
 .card-overlay-band-divider { flex: none; width: 1px; background: rgba(255,255,255,.4); }
 .card-overlay-chip { flex: none; white-space: nowrap; }
 .card-overlay-label.card-overlay-score { flex: none; text-overflow: clip; }
+/* An uploaded badge image keeps its own aspect at the height the badge gives it. */
+.card-overlay-image { display: block; flex: none; max-width: none; object-fit: contain; }
+.card-overlay-value-image { padding: 0; background: none; }
 .card-overlay-mark { display: block; flex: none; font-weight: 900; }
 .card-overlay-icon { display: block; flex: none; fill: currentColor; stroke: none; }
 /* Home rows: Apple MediaRow, MediaCard and EpisodeThumbCard (silo-apple 1a7ccee). The content reaches into a

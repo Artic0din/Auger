@@ -1148,6 +1148,18 @@ for (const [name, configure, expected] of [
     }, catalog => enrichHome(catalog, badgeFields), configure);
 }
 
+const BADGE_IMAGE = `${"a".repeat(64)}.webp`;
+journey("Home poster badges draw the administrator's uploaded image for a matching value", async tv => {
+    const image = tv.page.locator(`${POSTER} .card-overlay-value-image img`);
+    await tv.eventually(async () => await image.count() === 1, "value image");
+    assert.match(await image.getAttribute("src") ?? "", /^https?:\/\/[^/]+\/art\/badge-4k\.svg$/, "the overlay-config image, resolved against the server");
+    await tv.eventually(async () => await image.evaluate(node => (node as HTMLImageElement).naturalWidth > 0), "the image loads and stays");
+    assert.deepEqual((await corners(tv, POSTER))["top-left"], ["", "HDR10", "TrueHD Atmos"], "the 2160p badge is the image; the others keep their text");
+}, catalog => enrichHome(catalog, badgeFields), settings => {
+    settings.overlayConfig = { enabled: true, images: [{ ref: BADGE_IMAGE, name: "4K", url: "/art/badge-4k.svg", width: 300, height: 120 }] };
+    settings.profile().set(CARD_OVERLAYS_KEY, { version: 2, preset: "classic", order: [], items: { resolution: { enabled: true, position: "top-left", valueImages: { "2160p": BADGE_IMAGE } } } });
+});
+
 journey("Home poster badges scale from Apple's 185pt poster and Continue Watching draws Apple's ProgressBar", async tv => {
     await tv.eventually(async () => await tv.page.locator(`${POSTER} .card-overlay`).count() > 0, "badges");
     const sizes = await tv.page.locator(`${POSTER} .card-overlay`).first().evaluate(node => { const style = getComputedStyle(node); return [style.fontSize, style.paddingTop, style.paddingLeft]; });

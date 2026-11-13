@@ -26,10 +26,11 @@ after(async () => { await browser.close(); });
 
 interface Badge { readonly text: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly style: Record<string, string>; readonly ring: Record<string, string>; readonly labelShadow: string; readonly labelSpacing: string; readonly labelWidth: number; readonly icon?: { readonly width: number; readonly height: number; readonly path: string; readonly fillRule: string }; readonly mark?: { readonly text: string; readonly width: number; readonly height: number; readonly fontSize: string; readonly fontWeight: string; readonly letterSpacing: string; readonly color: string } }
 interface Band { readonly edge: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly backgroundImage: string; readonly padding: string; readonly shown: string[]; readonly dividers: { readonly width: number; readonly height: number; readonly color: string; readonly gapBefore: number; readonly gapAfter: number }[]; readonly rowLeft: number; readonly rowRight: number; readonly shownLeft: number; readonly shownRight: number }
-interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }>; readonly bands: Band[]; readonly chips: { readonly text: string; readonly color: string; readonly background: string; readonly padding: string; readonly radius: string; readonly height: number }[] }
+interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }>; readonly bands: Band[]; readonly chips: { readonly text: string; readonly color: string; readonly background: string; readonly padding: string; readonly radius: string; readonly height: number }[]; readonly pictures: { readonly src: string; readonly width: number; readonly height: number; readonly whole: boolean }[] }
 
 /** Renders one card's badge layer on a `width` × `height` artwork at the page origin. */
-async function render(doc: unknown, card: Record<string, unknown>, width: number, height: number, variant: "poster" | "wide" = "poster"): Promise<Render> {
+type Images = readonly (readonly [string, { readonly url: string; readonly aspect: number }])[];
+async function render(doc: unknown, card: Record<string, unknown>, width: number, height: number, variant: "poster" | "wide" = "poster", images: Images = []): Promise<Render> {
     const page: Page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     try {
         await page.setContent(`<!doctype html><style>@font-face { font-family: Inter; src: url(data:font/woff2;base64,${font}) format("woff2"); font-weight: 100 900; }</style><main style="font-family:var(--silo-font)"><div class="browse-art" id="art" style="position:absolute;left:0;top:0;width:${width}px;height:${height}px"></div></main>`);
@@ -41,11 +42,11 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
             return [...document.fonts].some(face => face.family.replace(/"/g, "") === "Inter" && face.status === "loaded");
         });
         assert.equal(loaded, true, "Inter loaded");
-        return await page.evaluate(({ doc, card, width, variant }) => {
-            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => unknown };
-            const layer = api.overlayLayer({ id: "series:1", type: "series", title: "Show", ...card }, api.parseOverlayPrefs(doc), variant, width);
+        return await page.evaluate(({ doc, card, width, variant, images }) => {
+            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number, baseUrl: string) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => object };
+            const layer = api.overlayLayer({ id: "series:1", type: "series", title: "Show", ...card }, { ...api.parseOverlayPrefs(doc), images: new Map(images) }, variant, width, "https://silo.invalid");
             const art = document.getElementById("art");
-            if (layer === undefined || art === null) return { badges: [], stacks: {}, bands: [], chips: [] };
+            if (layer === undefined || art === null) return { badges: [], stacks: {}, bands: [], chips: [], pictures: [] };
             art.append(layer);
             const props = ["fontSize", "fontWeight", "letterSpacing", "lineHeight", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius", "backgroundColor", "backgroundImage", "color", "boxShadow", "textShadow", "textTransform"] as const;
             const badges = [...layer.querySelectorAll<HTMLElement>(".card-overlay")].map(node => {
@@ -81,8 +82,9 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
                 return { edge: strip.classList.contains("card-overlay-band-top") ? "top" : "bottom", left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, backgroundImage: getComputedStyle(strip).backgroundImage, padding: getComputedStyle(strip).padding, shown: visible.map(item => item.querySelector(".card-overlay")?.textContent ?? ""), dividers, rowLeft: row?.left ?? 0, rowRight: row?.right ?? 0, shownLeft: Math.min(...shownBadges.map(box => box?.left ?? 0)), shownRight: Math.max(...shownBadges.map(box => box?.right ?? 0)) };
             });
             const chips = [...layer.querySelectorAll<HTMLElement>(".card-overlay-chip")].map(chip => { const style = getComputedStyle(chip); return { text: chip.textContent ?? "", color: style.color, background: style.backgroundColor, padding: style.padding, radius: style.borderTopLeftRadius, height: chip.getBoundingClientRect().height }; });
-            return { badges, stacks, bands, chips };
-        }, { doc, card, width, variant });
+            const pictures = [...layer.querySelectorAll<HTMLImageElement>(".card-overlay-image")].map(image => { const box = image.getBoundingClientRect(); return { src: image.src, width: box.width, height: box.height, whole: image.parentElement?.classList.contains("card-overlay-value-image") === true }; });
+            return { badges, stacks, bands, chips, pictures };
+        }, { doc, card, width, variant, images });
     } finally { await page.close(); }
 }
 
@@ -341,4 +343,57 @@ test("the edge band keeps its rails inset, and a style turns capitals off", asyn
     const lower = await render({ ...only({ show_status: { enabled: true } }), preset: "classic", style: { uppercase: false, size: 1.5 } }, RETURNING, width, 277.5);
     assert.equal(lower.badges[0]?.style.textTransform, "none");
     near(px(lower.badges[0]?.style.fontSize), 15 * CAP_SCALE, "size 1.5", 0.02);
+});
+
+// OverlaySchema.swift:195-206, CardOverlays.swift:336-464 at silo-apple 5780c84.
+const REF = `${"a".repeat(64)}.webp`;
+const LISTED: Images = [[REF, { url: `/api/v2/overlay-images/${REF}`, aspect: 2.5 }]];
+
+test("a value image replaces the whole badge at 1.6 times its height while the badge shows that value", async () => {
+    const scale = 220 / 185;
+    const doc = only({ resolution: { enabled: true, position: "top-left", valueImages: { "2160p": REF } } });
+    const { pictures, badges } = await render(doc, { overlay: { resolution: "2160p" } }, 220, 330, "poster", LISTED);
+    assert.equal(pictures.length, 1);
+    assert.equal(pictures[0]?.whole, true);
+    assert.equal(pictures[0]?.src, `https://silo.invalid/api/v2/overlay-images/${REF}`, "resolved against the server");
+    near(pictures[0]?.height, (10 + 2 * 2) * 1.6 * scale, "classic's text badge height times 1.6", 0.05);
+    near(pictures[0]?.width, (10 + 2 * 2) * 1.6 * scale * 2.5, "the image's own aspect", 0.1);
+    assert.equal(badges[0]?.text, "", "no text beside it");
+    const other = await render(doc, { overlay: { resolution: "1080p" } }, 220, 330, "poster", LISTED);
+    assert.equal(other.pictures.length, 0, "another value keeps the text badge");
+    assert.equal(other.badges[0]?.text, "1080p");
+    const unlisted = await render(doc, { overlay: { resolution: "2160p" } }, 220, 330, "poster", []);
+    assert.equal(unlisted.pictures.length, 0, "a ref the library does not list draws nothing");
+    assert.equal(unlisted.badges[0]?.text, "4K");
+});
+
+test("an image in the icon's place stands for a rating's source, so the label keeps only the score", async () => {
+    const scale = 220 / 185;
+    const { pictures, badges, chips } = await render({ ...only({ rating_imdb: { enabled: true, image: REF } }), preset: "plate" }, { ratingImdb: 8.46 }, 220, 330, "poster", LISTED);
+    assert.equal(pictures[0]?.whole, false);
+    near(pictures[0]?.height, 13 * scale, "plate's icon size", 0.05);
+    near(pictures[0]?.width, 13 * scale * 2.5, "the image's own aspect", 0.1);
+    assert.equal(badges[0]?.text, "8.5");
+    assert.equal(chips.length, 0, "the image replaces plate's source chip");
+});
+
+test("an image that does not load puts back the badge it replaced", async () => {
+    const page = await browser.newPage();
+    try {
+        await page.setContent(`<!doctype html><div id="art" style="position:absolute;width:185px;height:277px"></div>`);
+        await page.addStyleTag({ content: `${theme}\n${browse}` });
+        await page.addScriptTag({ content: bundle });
+        const texts = await page.evaluate(async ref => {
+            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number, baseUrl: string) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => object };
+            const doc = { version: 2, preset: "classic", order: [], items: { hdr: { enabled: false, position: "top-left" }, audio: { enabled: false, position: "top-left" }, release_type: { enabled: false, position: "bottom-left" }, resolution: { enabled: true, position: "top-left", valueImages: { "2160p": ref } } } };
+            const images = new Map([[ref, { url: `/api/v2/overlay-images/${ref}`, aspect: 2 }]]);
+            const layer = api.overlayLayer({ id: "m", type: "movie", title: "M", overlay: { resolution: "2160p" } }, { ...api.parseOverlayPrefs(doc), images }, "poster", 185, "https://silo.invalid");
+            document.getElementById("art")?.append(layer as HTMLElement);
+            const drawn = layer?.querySelectorAll(".card-overlay-image").length ?? 0;
+            for (let wait = 0; wait < 250 && layer?.querySelector(".card-overlay-image") !== null; wait++) await new Promise(resolve => setTimeout(resolve, 20));
+            return { drawn, after: [...(layer?.querySelectorAll(".card-overlay") ?? [])].map(node => node.textContent) };
+        }, REF);
+        assert.equal(texts.drawn, 1, "the value image is drawn first");
+        assert.deepEqual(texts.after, ["4K"], "a broken value image falls back to the text badge (CardOverlays.swift:344-357)");
+    } finally { await page.close(); }
 });
