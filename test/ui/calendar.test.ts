@@ -86,6 +86,43 @@ function calendarTest(name: string, body: (tv: Tv, catalog: FakeCalendar) => Pro
     });
 }
 
+calendarTest("Calendar week chevrons use semibold symbol geometry inside 64 by 64 buttons", async (tv) => {
+    await activate(tv, "calendar");
+    await ready(tv, 3);
+    for (const [key, label] of [["previous-week", "Previous week"], ["next-week", "Next week"]]) {
+        const button = tv.page.locator(`[data-focus="${key}"]`);
+        assert.equal(await button.getAttribute("aria-label"), label);
+        const geometry = await button.evaluate(node => {
+            const box = node.getBoundingClientRect();
+            const icon = node.querySelector("svg");
+            const path = icon?.querySelector("path");
+            const frame = icon?.getBoundingClientRect();
+            const ink = path?.getBBox();
+            return {
+                button: [box.width, box.height], text: node.textContent,
+                frame: frame === undefined ? null : [frame.width, frame.height],
+                centered: frame !== undefined && frame.x + frame.width / 2 === box.x + box.width / 2 && frame.y + frame.height / 2 === box.y + box.height / 2,
+                ink: ink === undefined ? null : [ink.width, ink.height],
+                pointsBackward: path === null || path === undefined ? null : path.getPointAtLength(path.getTotalLength() / 2).x < path.getPointAtLength(0).x,
+                stroke: path === null || path === undefined ? null : getComputedStyle(path).strokeWidth,
+                hidden: icon?.getAttribute("aria-hidden"),
+                color: path === null || path === undefined ? null : getComputedStyle(path).stroke,
+            };
+        });
+        assert.deepEqual(geometry, {
+            button: [64, 64], text: "", frame: [19, 26], centered: true,
+            pointsBackward: key === "previous-week",
+            ink: [9, 18], stroke: "3.2px", hidden: "true", color: "rgba(237, 237, 237, 0.7)",
+        });
+        await button.focus();
+        assert.equal(await button.locator("path").evaluate(node => getComputedStyle(node).stroke), "rgb(0, 0, 0)", "symbol inherits the focused button's color");
+    }
+    await activate(tv, "previous-week");
+    await ready(tv, 0);
+    await activate(tv, "next-week");
+    await ready(tv, 3);
+});
+
 calendarTest("Calendar loading focus stays on Apple's blank owner", async (tv) => {
     const held = tv.fake.hold("/calendar", true);
     await activate(tv, "calendar");
