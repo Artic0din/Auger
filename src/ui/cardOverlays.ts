@@ -402,19 +402,20 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
         frame.style.cssText = "display:inline-flex;align-items:center;justify-content:center;flex:none";
         frame.style.minWidth = frame.style.height = px(preset.iconSize);
         if (label !== "") frame.style.marginRight = px(preset.iconGap);
-        const glyph = menuIcon(badge.mark === "users" ? "switch-profile" : badge.mark);
+        const measured = badge.mark === "monitor" || badge.mark === "volume" ? BADGE_SYMBOLS[badge.mark] : undefined;
+        const glyph = measured === undefined ? menuIcon(badge.mark === "users" ? "switch-profile" : badge.mark) : measuredBadgeSymbol(measured);
         glyph.setAttribute("class", "card-overlay-icon");
-        glyph.style.fill = "none";
-        glyph.style.stroke = badge.mark === "users" || badge.mark === "volume" ? "none" : "currentColor";
+        glyph.style.fill = measured === undefined ? "none" : "currentColor";
+        glyph.style.stroke = measured !== undefined || badge.mark === "users" ? "none" : "currentColor";
         // OverlayIcon.swift:29-36: semibold symbols at 85%, inside a minimum iconSize-wide frame.
         glyph.setAttribute("stroke-width", "2.5");
         glyph.setAttribute("stroke-linecap", "round");
         glyph.setAttribute("stroke-linejoin", "round");
-        const widthRatio = badge.mark === "users" ? 32 / 24 : badge.mark === "languages" ? 26 / 24 : 1;
+        const widthRatio = measured?.width ?? (badge.mark === "users" ? 32 / 24 : badge.mark === "languages" ? 26 / 24 : 1);
         if (badge.mark === "users") glyph.setAttribute("viewBox", "-4 0 32 24");
         if (badge.mark === "languages") glyph.setAttribute("viewBox", "0 0 26 24");
         glyph.style.width = px(preset.iconSize * TV_SYMBOL_SCALE * widthRatio);
-        glyph.style.height = px(preset.iconSize * TV_SYMBOL_SCALE);
+        glyph.style.height = px(preset.iconSize * TV_SYMBOL_SCALE * (measured?.height ?? 1));
         frame.appendChild(glyph);
         node.appendChild(frame);
     }
@@ -492,6 +493,38 @@ function dolbyVisionMark(): SVGSVGElement {
 
 /** OverlayIcon draws a generic symbol at this share of the icon size. */
 const TV_SYMBOL_SCALE = 0.85;
+
+// tvOS 27.3 ImageRenderer, 8x, 10.2pt semibold: layout width/height divided by point size.
+// Original drawings use the same symbols measured at 48pt; their semibold outlines are 5pt thick.
+const BADGE_SYMBOLS = {
+    monitor: { width: 14.75 / 10.2, height: 12.25 / 10.2, viewBox: "0 0 69.75 57.625",
+        fill: `${roundedRect(6, 4.125, 57.625, 40.5, 5.8)} ${roundedRect(11, 9.125, 47.625, 30.5, 0.8)} M27 44.625H42.625V49.375H27Z ${roundedRect(24.875, 49.375, 20, 4, 2)}` },
+    volume: { width: 15.125 / 10.2, height: 10.875 / 10.2, viewBox: "0 0 70.625 50.625",
+        fill: "M10 17.125H18.5L31.75 4.875Q36.625 1.875 36.625 7V43.625Q36.625 48.75 31.75 45.75L18.5 33.5H10Q7.375 33.5 7.375 30.875V19.75Q7.375 17.125 10 17.125Z" },
+} as const;
+
+function measuredBadgeSymbol(symbol: typeof BADGE_SYMBOLS[keyof typeof BADGE_SYMBOLS]): SVGSVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", symbol.viewBox);
+    svg.setAttribute("aria-hidden", "true");
+    const fill = document.createElementNS(svg.namespaceURI, "path");
+    fill.setAttribute("d", symbol.fill);
+    fill.setAttribute("fill-rule", "evenodd");
+    svg.appendChild(fill);
+    const detail = document.createElementNS(svg.namespaceURI, "path");
+    if (symbol === BADGE_SYMBOLS.monitor) {
+        detail.setAttribute("d", roundedRect(11, 9.125, 47.625, 30.5, 0.8));
+        detail.setAttribute("fill-opacity", String(TV_SCREEN_FILL));
+    } else {
+        detail.setAttribute("d", "M45.75 14.125C50 19.25 50 31.25 45.75 36.375M55.875 10C62.25 18 62.25 32.625 55.875 40.625");
+        detail.setAttribute("fill", "none");
+        detail.setAttribute("stroke", "currentColor");
+        detail.setAttribute("stroke-width", "5");
+        detail.setAttribute("stroke-linecap", "round");
+    }
+    svg.appendChild(detail);
+    return svg;
+}
 
 /**
  * SF Symbol "tv" layout box divided by the font point size (`OverlayIcon` at 48pt

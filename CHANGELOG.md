@@ -62,6 +62,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
 - Added the missing resolution, audio and metadata symbols to poster badges when badge icons were enabled, following Apple TV.
 
 - Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
