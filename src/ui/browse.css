@@ -1153,7 +1153,7 @@ svg.library-empty-icon { width: auto; }
 .card-overlay-band-row { display: flex; flex-wrap: wrap; align-items: center; row-gap: 64px; overflow: clip; overflow-clip-margin: 8px; }
 .card-overlay-band-item { display: flex; align-items: center; flex: none; min-width: 0; max-width: 100%; }
 .card-overlay-band-divider { flex: none; width: 1px; background: rgba(255,255,255,.4); }
-.card-overlay-chip { flex: none; white-space: nowrap; }
+.card-overlay-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-overlay-label.card-overlay-score { flex: none; text-overflow: clip; }
 .card-overlay-mark { display: block; flex: none; font-weight: 900; }
 .card-overlay-icon { display: block; flex: none; fill: currentColor; stroke: none; }
