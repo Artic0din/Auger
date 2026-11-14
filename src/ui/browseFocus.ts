@@ -142,12 +142,6 @@ export class FocusHost {
         this.focusFirst([this.view?.focus]);
     }
 
-    rememberedContentFocus(): FocusTarget | undefined {
-        const zone = this.contentZone;
-        const key = zone === undefined ? undefined : this.memory.get(zone);
-        return zone === undefined || key === undefined ? undefined : { zone, key };
-    }
-
     /** The next show of this view starts fresh: no remembered focus or scroll. */
     forgetVisit(name: string): void {
         this.visits.delete(name);

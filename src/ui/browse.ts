@@ -83,8 +83,8 @@ export interface BrowseOptions {
     readonly server: ConnectedServer;
     /** Browse hides itself and ignores keys until `resumeAfterPlayback`. */
     readonly onPlay: (request: PlayRequest) => void;
-    /** Browse stays hidden until cancellation returns to this visit. */
-    readonly onChooseProfile: (back: () => void) => void;
+    /** The person asked for the profile screens; browse has already removed itself. */
+    readonly onChooseProfile: () => void;
     /** Opens profile creation for the open account. */
     readonly onAddProfile?: (back: () => void) => void;
     readonly onSignOut?: () => void;
@@ -2129,8 +2129,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         options.onPlay(request);
     };
 
-    const coverBrowse = (open: (back: () => void) => void, restoreContentFocus: boolean): void => {
-        const focus = restoreContentFocus ? host.rememberedContentFocus() : undefined;
+    const coverBrowse = (open: (back: () => void) => void, focus?: FocusTarget): void => {
         host.holdVisit();
         shell.hide();
         host.stop();
@@ -2148,7 +2147,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         });
     };
     const chooseProfile = (): void => {
-        coverBrowse(options.onChooseProfile, true);
+        teardown();
+        options.onChooseProfile();
     };
 
     const render = (focus?: FocusTarget): void => {
@@ -2764,7 +2764,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 settingsScreen = undefined;
                 if (torn) return;
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
-                root.appendChild(container);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
                 presentation.reload();
@@ -2799,7 +2798,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 profileAvatarUrl,
                 profileAvatarText,
                 accountName: session.account?.username,
-                switchProfile: back => options.onChooseProfile(back),
+                switchProfile: chooseProfile,
                 serverName: cachedBranding(options.publicStorage, context.baseUrl)?.serverName,
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
@@ -2815,12 +2814,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (origin !== undefined) origin.focus = { zone: "nav", key: selected };
         },
         switchProfile: chooseProfile,
-        ...(options.onAddProfile === undefined ? {} : { addProfile: () => coverBrowse(back => options.onAddProfile?.(back), true) }),
+        ...(options.onAddProfile === undefined ? {} : { addProfile: () => coverBrowse(back => options.onAddProfile?.(back), { zone: "nav", key: "profiles" }) }),
         profileCount: () => {
             try { return server.accounts.directory.list().find(row => row.id === server.accounts.localAccountId)?.profileCount ?? 0; }
             catch { return 0; } // An unreadable account list is a list not read yet: Switch Profile.
         },
-        ...(options.onSwitchServer === undefined ? {} : { switchServer: () => coverBrowse(back => options.onSwitchServer?.(back), false) }),
+        ...(options.onSwitchServer === undefined ? {} : { switchServer: () => coverBrowse(back => options.onSwitchServer?.(back)) }),
         ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),

@@ -237,7 +237,10 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
                 accounts = mountAccounts(root, activeCore, server, openFromAccounts, () => { accounts = undefined; if (active.signal.aborted) showAccounts(); else back(); }, true,
                 () => { active.signal.removeEventListener("abort", stopContent); profiles?.destroy(); profiles = undefined; });
             },
-            onChooseProfile: back => profiles?.switchProfile(back),
+            onChooseProfile: () => {
+                stopContent();
+                profiles?.switchProfile();
+            },
             onAddProfile: back => profiles?.addProfile(back),
             onPlay: (request) => play(server, active, content, request),
             ...(options.core.clock === undefined ? {} : { clock: options.core.clock }),

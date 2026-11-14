@@ -661,8 +661,7 @@ test("Paired Silo Profile shows the profile this TV reopens and opens the profil
         assert.equal(await tv.page.getByText(/Ask Every Time is on/).count(), 0);
         await tv.page.locator('[data-focus="paired-profile"]').click();
         assert.equal(await tv.page.evaluate(() => window.browseHarness.chooseProfileCalls.length), 1);
-        assert.equal(await tv.page.locator(".settings").count(), 1, "Settings is retained for profile cancellation");
-        assert.equal(await tv.page.locator(".settings").isVisible(), false);
+        assert.equal(await tv.page.locator(".settings").count(), 0);
     } finally { await tv.page.context().close(); }
 });
 
@@ -748,8 +747,7 @@ test("Settings profile and confirmed sign out use the existing browse callbacks"
         await openSettings(first.tv);
         await first.tv.page.locator('[data-focus="settings-profile"]').click();
         assert.equal(await first.tv.page.evaluate(() => window.browseHarness.chooseProfileCalls.length), 1);
-        assert.equal(await first.tv.page.locator(".settings").count(), 1, "Settings is retained for profile cancellation");
-        assert.equal(await first.tv.page.locator(".settings").isVisible(), false);
+        assert.equal(await first.tv.page.locator(".settings").count(), 0);
     } finally { await first.tv.page.context().close(); }
     const second = await setup();
     try {

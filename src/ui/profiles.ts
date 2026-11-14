@@ -56,8 +56,8 @@ export interface ProfileOptions {
 }
 
 export interface ProfileScreens {
-    /** Shows the profiles over the caller's content; the current profile acts until another is chosen. */
-    switchProfile(back?: () => void): void;
+    /** Replaces the caller's content with the root profile picker. */
+    switchProfile(): void;
     /** Opens profile creation over the caller's content, from a fresh list; it ends on the profiles. */
     addProfile(back?: () => void): void;
     signOut(): void;
@@ -78,6 +78,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     let view = 0;
     let pending: AbortController | undefined;
     let current: ProfileSummary | undefined;
+    let pickerIsRoot = options.pickerRequested === true;
     let returnToBrowse: { readonly back: () => void; readonly generation: number } | undefined;
     let leaving = false;
     let destroyed = false;
@@ -138,10 +139,10 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         show({ name, content: [el("h1", "signin-title", title), ...body, actions(controls)], controls, focus: key, back }, key);
     };
 
-    /** Back from the profiles returns to the profile still acting, if any. */
+    /** An Add Profile cover can return to the profile still acting; the root picker cannot. */
     const resume = (): (() => void) | undefined => {
         const active = current;
-        return active !== undefined && session.activeProfile?.id === active.id ? () => {
+        return !pickerIsRoot && active !== undefined && session.activeProfile?.id === active.id ? () => {
             const returning = returnToBrowse;
             if (returning === undefined || returning.generation !== session.authorityGeneration) { handOff(active); return; }
             returnToBrowse = undefined;
@@ -153,6 +154,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
 
     const handOff = (profile: ProfileSummary): void => {
         returnToBrowse = undefined;
+        pickerIsRoot = false;
         begin();
         current = profile;
         release();
@@ -603,15 +605,17 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     else launch();
     return {
         signOut,
-        switchProfile(back) {
+        switchProfile() {
             if (!destroyed && (host === undefined || session.activeProfile === undefined)) {
-                returnToBrowse = back === undefined ? undefined : { back, generation: session.authorityGeneration };
+                returnToBrowse = undefined;
+                pickerIsRoot = true;
                 if (session.activeProfile === undefined) current = undefined;
                 showList(current?.id);
             }
         },
         addProfile(back) {
             if (!destroyed && host === undefined && session.activeProfile !== undefined) {
+                pickerIsRoot = false;
                 returnToBrowse = back === undefined ? undefined : { back, generation: session.authorityGeneration };
                 addProfile();
             }

@@ -433,7 +433,7 @@ appTest("an account with one profile offers Add Profile in Switch Profile's plac
     assert.equal(await tv.page.locator(".browse").count(), 0, "Browse has left the screen");
 });
 
-async function moviesProfileMenu(tv: Tv, mode: "Recommended" | "Browse" = "Recommended"): Promise<string> {
+async function moviesProfileMenu(tv: Tv, mode: "Recommended" | "Browse" = "Recommended"): Promise<void> {
     await tv.page.locator('[data-focus="movies"]').click();
     await tv.page.locator('[data-view="library:12"] [data-focus="movie:m0001"]').first().waitFor();
     if (mode === "Browse") {
@@ -447,42 +447,71 @@ async function moviesProfileMenu(tv: Tv, mode: "Recommended" | "Browse" = "Recom
     assert.ok(focused.startsWith("movie:"));
     assert.notEqual(focused, "movie:m0001");
     await tv.page.locator('[data-focus="profiles"]').click();
-    return focused;
 }
 
-async function returnedToMovies(tv: Tv, focused: string): Promise<void> {
+async function returnedToMovies(tv: Tv): Promise<void> {
     assert.equal(await tv.page.locator('.browse:visible').getAttribute("data-view"), "library:12");
     assert.equal(await tv.page.locator('.skyline-roots [aria-current="page"]').getAttribute("data-focus"), "movies");
-    assert.equal(await tv.focused(), focused, "the Movies visit keeps the focused card");
+    assert.equal(await tv.focused(), "profiles", "Add Profile dismissal restores avatar focus");
     assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0);
 }
 
-appTest("Movies to Switch Profile to Back retains the page, tab and focused item", async tv => {
+appTest("Back from Switch Profile takes the root exit path and keeps the picker", async tv => {
     await signIn(tv);
-    const focused = await moviesProfileMenu(tv);
+    await moviesProfileMenu(tv, "Browse");
     await tv.page.locator('[data-focus="switch-profile"]').click();
     await tv.page.locator('[data-screen="profiles"]').waitFor();
     await tv.remote(10009);
-    await returnedToMovies(tv, focused);
+    assert.equal(await tv.focused(), "cancel-exit");
+    assert.equal(await tv.page.getByRole("dialog").count(), 1);
+    assert.equal(await tv.page.locator(".browse").count(), 0);
+    await tv.remote(10009);
+    assert.equal(await tv.page.getByRole("dialog").count(), 0);
+    assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 1);
+    assert.equal(await tv.focused(), "profile:p-owner");
+    await tv.remote(10009);
+    await tv.page.locator('[data-focus="exit"]').click();
+    assert.equal(await tv.page.evaluate(() => window.appHarness.exits), 1);
 });
 
-appTest("Movies to Add Profile to cancel retains the page, tab and focused item", async tv => {
+appTest("late offline reconciliation cannot give Switch Profile a return path", async tv => {
+    await signIn(tv, true);
+    const connection = tv.fake.hold("/system/info");
+    await tv.page.evaluate(() => window.appHarness.mount());
+    await tv.page.locator('[data-view="home"] .browse-card').first().waitFor();
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-screen="profiles-loading"]').waitFor();
+    const hold = tv.fake.hold("/user/libraries");
+    connection.release();
+    await tv.page.locator('[data-screen="profiles"]').waitFor();
+    const reconciled = tv.page.waitForResponse(response => new URL(response.url()).pathname === "/api/v2/user/libraries");
+    hold.release();
+    await (await reconciled).finished();
+    await tv.page.locator('[data-focus="signout"]').click();
+    await tv.page.locator('[data-focus="cancel-signout"]').click();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "cancel-exit");
+    assert.equal(await tv.page.locator(".browse").count(), 0);
+});
+
+appTest("Movies to Add Profile to cancel retains the page and tab with avatar focus", async tv => {
     await signInWithOneProfile(tv);
-    const focused = await moviesProfileMenu(tv);
+    await moviesProfileMenu(tv);
     await tv.page.locator('[data-focus="add-profile"]').click();
     await tv.page.locator('[data-screen="profile-create"]').waitFor();
     await tv.page.locator('[data-focus="create-header-cancel"]').click();
-    await returnedToMovies(tv, focused);
+    await returnedToMovies(tv);
 });
 
-appTest("Back from Add Profile's PIN retains Movies and its focused item", async tv => {
+appTest("Back from Add Profile's PIN retains Movies with avatar focus", async tv => {
     await signInWithOneProfile(tv);
-    const focused = await moviesProfileMenu(tv);
+    await moviesProfileMenu(tv);
     tv.fake.profiles = { ...tv.fake.profiles, items: profileItems(tv).map(item => ({ ...item, has_pin: true })) };
     await tv.page.locator('[data-focus="add-profile"]').click();
     await tv.page.locator('[data-screen="pin"]').waitFor();
     await tv.remote(10009);
-    await returnedToMovies(tv, focused);
+    await returnedToMovies(tv);
 });
 
 appTest("cancelling Add Profile after PIN renewal opens usable content under the renewed authority", async tv => {
@@ -509,13 +538,13 @@ appTest("choosing a different profile from Movies starts fresh at Home", async t
     assert.equal(await tv.page.locator('.skyline-roots [aria-current="page"]').getAttribute("data-focus"), "home");
 });
 
-appTest("Switch Profile cancellation retains the Movies Browse scope and focused grid item", async tv => {
-    await signIn(tv);
-    const focused = await moviesProfileMenu(tv, "Browse");
-    await tv.page.locator('[data-focus="switch-profile"]').click();
-    await tv.page.locator('[data-screen="profiles"]').waitFor();
+appTest("Back from Add Profile retains the Movies Browse scope with avatar focus", async tv => {
+    await signInWithOneProfile(tv);
+    await moviesProfileMenu(tv, "Browse");
+    await tv.page.locator('[data-focus="add-profile"]').click();
+    await tv.page.locator('[data-screen="profile-create"]').waitFor();
     await tv.remote(10009);
-    await returnedToMovies(tv, focused);
+    await returnedToMovies(tv);
     assert.equal(await tv.page.locator('.browse.library-browse:visible').count(), 1);
 });
 
@@ -539,17 +568,17 @@ appTest("creating a profile from Movies discards the previous Browse visit", asy
     assert.equal(await tv.page.locator('[data-view="library:12"]').count(), 0);
 });
 
-appTest("Switch Profile cancellation returns to its Settings row", async tv => {
+appTest("Back from Settings Switch Profile takes the root exit path", async tv => {
     await signIn(tv);
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.locator('[data-focus="settings"]').click();
     await tv.page.locator('[data-focus="settings-profile"]').click();
     await tv.page.locator('[data-screen="profiles"]').waitFor();
     await tv.remote(10009);
-    assert.equal(await tv.focused(), "settings-profile");
-    assert.equal(await tv.page.locator('.settings:visible').count(), 1);
+    assert.equal(await tv.focused(), "cancel-exit");
+    assert.equal(await tv.page.locator('.settings').count(), 0);
     await tv.remote(10009);
-    await tv.page.locator('[data-view="home"]:visible').waitFor();
+    assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 1);
 });
 
 appTest("Back from Add Profile's form returns to Home with the open profile", async tv => {
@@ -560,6 +589,7 @@ appTest("Back from Add Profile's form returns to Home with the open profile", as
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().waitFor();
     assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0, "the picker does not open");
+    assert.equal(await tv.focused(), "profiles");
 });
 
 // AddProfileRequest.start (silo-apple 5780c84 `Navigation/AppRouter+Accounts.swift:87-91`): the fresh list decides. A

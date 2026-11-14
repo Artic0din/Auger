@@ -48,7 +48,7 @@ type Picker = "audio" | "quality" | "bitrate" | "seek-back" | "seek-forward" | "
 const PICKER_KEYS = { audio: AUDIO_KEY, quality: QUALITY_KEY, bitrate: BITRATE_KEY, "seek-back": SEEK_BACK_KEY, "seek-forward": SEEK_FORWARD_KEY, "subtitle-language": SUBTITLE_LANGUAGE_KEY, "subtitle-mode": SUBTITLE_MODE_KEY } as const;
 const PICKER_LABELS = { audio: "Audio Language", quality: "Resolution", bitrate: "Maximum Bitrate", "seek-back": "Skip Back", "seek-forward": "Skip Forward", "subtitle-language": "Language", "subtitle-mode": "Behavior" } as const;
 const BITRATE_CHOICES = [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500];
-export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: (back: () => void) => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
+export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
 export interface SettingsScreen { destroy(): void }
 
 export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences): SettingsScreen {
@@ -70,7 +70,6 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     let acknowledging = false;
     let confirmingSignOut = false;
     let choosingLaunch = false;
-    let choosingProfile = false;
     let torn = false;
     let launchPending = false;
     let launchError = false;
@@ -344,23 +343,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         ], focus: { zone: "acknowledgements-document", key: "document" }, back }, undefined);
     };
 
-    const switchProfile = (focus: FocusTarget): void => {
-        choosingProfile = true;
-        host.holdVisit();
-        host.stop();
-        container.hidden = true;
-        actions?.switchProfile(() => {
-            if (torn) return;
-            choosingProfile = false;
-            root.appendChild(container);
-            container.hidden = false;
-            host.listen();
-            render(focus);
-        });
-    };
-
     function render(focus?: FocusTarget): void {
-        if (torn || choosingProfile) return;
+        if (torn) return;
         if (confirmingPlaybackReset) {
             const playbackKeys = devicePlaybackKeys();
             const keys = playbackKeys.filter(key => state.scope(key) === "profile_device");
@@ -458,7 +442,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         });
         if (actions !== undefined) {
             const account = session.account?.role === "admin" ? "Administrator" : actions.accountName?.trim() || "Signed in";
-            const profile = actionButton("settings-profile", actions.profileName, () => switchProfile({ zone: "settings-categories", key: "settings-profile" }));
+            const profile = actionButton("settings-profile", actions.profileName, () => { destroy(); actions.switchProfile(); });
             profile.element.classList.add("settings-profile");
             const copy = el("span", "settings-profile-copy");
             copy.append(el("span", "settings-profile-name", actions.profileName), el("span", "settings-profile-account", account));
@@ -526,7 +510,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             rows.push(item);
         }
         if (category === "general" && launch !== undefined && actions?.switchProfile !== undefined) {
-            const item = actionButton("paired-profile", "Paired Silo Profile", () => switchProfile({ zone: "settings-rows", key: "paired-profile" }));
+            const item = actionButton("paired-profile", "Paired Silo Profile", () => { destroy(); actions.switchProfile(); });
             item.element.append(el("span", "settings-row-value", pairedProfileLabel(launch.rememberedProfileId, session.activeProfile?.id, actions.profileName)), el("span", "settings-chevron", "›"));
             rows.push(item);
             body.append(el("h3", "settings-section-header", "TV USER"), item.element, el("p", "settings-value", pairedProfileDescription(launch.behavior === "askEveryLaunch")));
