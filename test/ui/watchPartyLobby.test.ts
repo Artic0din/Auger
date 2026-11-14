@@ -5,6 +5,7 @@ import { FakeWatchParty, ROOM_FILE_ID, ROOM_ID } from "../native/support/fakeWat
 import { problem } from "../native/support/fakeSilo.ts";
 import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 import { button, menuTitles, openHub, start } from "./support/watchParty.ts";
+import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -260,6 +261,20 @@ test("Party options lists Apple's rows with their values, opens on Close and clo
         await view(tv, "watchParty:lobby").waitFor();
         assert.equal(await tv.focused(), "options", "closing returns focus to the Options button");
         assert.deepEqual(fake.closedRooms, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Party options uses Settings row focus and pressed motion and closes on release", async () => {
+    const { tv } = await inLobby();
+    try {
+        await button(tv, "options").click();
+        const row = button(tv, "close");
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await view(tv, "watchParty:options").count(), 1);
+        await tv.page.keyboard.up("Enter");
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.equal(await tv.focused(), "options");
     } finally { await tv.page.context().close(); }
 });
 
