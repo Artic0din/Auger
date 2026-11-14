@@ -98,6 +98,11 @@ Focus is always restored by zone id plus item key, never by list position.
 - Details hero actions use `Zone.restoreEntry` to return to the last enabled action when entering from below, including Up from season pills.
   When that action disappeared (such as Start Over) or a selector is disabled, entry falls back to the current Play/Resume action, then Watchlist if no Play exists.
   Each selector and More retain their own action key; closing a picker or More restores its trigger through the existing modal return path.
+- Opening series Details holds focus on the passive hero while its initial episode list loads or Play has no resolved episode label, including before loaders start and after an empty episode response.
+  Select there does nothing; a faster playback-detail response cannot move entry focus into the action row while the episode list is still pending.
+  When the wait ends, that passive target disappears and the existing loaded entry rule takes over.
+  Explicit navigation to a season or action during loading still preserves the viewer's choice.
+  See [Details entry loading](features/details-actions.md#entry-loading) for the Apple title source and the remaining title-timing difference.
 
 If you change what a card's `key` is, you change what restores.
 Keep it the content id.
@@ -183,7 +188,10 @@ Other layers:
 - Enter is delivered on every remote without registration, as `keydown` and `keyup`.
 - Select acts on release, as on tvOS: the focused control runs when Enter is released.
   `selectRelease.ts` marks the held control `data-pressed`.
-  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, and Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons.
+  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons, Settings rail and pane rows, server management rows, Acknowledgements Done, and Watch Party's Party options rows.
+  Settings-style rows grow to `1.012` on focus with `120ms ease-out`, then snap to `0.98` while Select is held and snap back when the press ends; only focus changes animate.
+  These values match [TVSettingsComponents.swift:208,214,272,279](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L208) and [Theme/SiloTheme.swift:164](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Theme/SiloTheme.swift#L164) at silo-apple `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`.
+  Reduced motion removes the focus animation.
   Every other control looks unchanged while held until its Apple pressed look is matched.
   `selectRelease.ts` takes Chromium's keydown click from a focused `<button>` or link and clicks it on `keyup` instead, only when focus has not moved.
   Until Enter's keyup, every Enter keydown belongs to the press already down, flagged as a repeat or not (`isFreshSelect`); after a window blur or hidden page the keyup may be lost, so the next Enter starts a new press.

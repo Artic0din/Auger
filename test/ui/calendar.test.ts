@@ -912,19 +912,23 @@ async function emulateChromium108EnglishHour(page: Tv["page"]): Promise<void> {
     });
 }
 
-test("Calendar noon and the first minute stay on a 12-hour clock under en-GB", async () => {
-    const tv = await openTv(browser, { app: "browse", locale: "en-GB", prepare: emulateChromium108EnglishHour });
+for (const locale of ["en-GB", "en-AU"]) {
+test(`Calendar air times use the app language under ${locale}`, async () => {
+    const tv = await openTv(browser, { app: "browse", locale, prepare: emulateChromium108EnglishHour });
     try {
         const catalog = await start(tv);
         catalog.events.push(
             { content_id: "episode:noon", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 3, episode_title: "Noon", air_date: "2026-01-02", local_air_date: "2026-01-02", air_at: "2026-01-02T01:00:00Z", watched: false, badges: [] },
             { content_id: "episode:after-midnight", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 4, episode_title: "After midnight", air_date: "2026-01-02", local_air_date: "2026-01-02", air_time: "00:05", watched: false, badges: [] },
+            { content_id: "episode:evening", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 5, episode_title: "Evening", air_date: "2026-01-02", local_air_date: "2026-01-02", air_time: "19:30", watched: false, badges: [] },
         );
         await activate(tv, "calendar");
         await ready(tv);
         const clock = (value: string): string => value.replace(/\s+/g, " ").trim();
-        assert.equal(clock(await tv.page.locator('[data-content-id="episode:noon"] .calendar-time').innerText()), "12:00 pm");
-        assert.equal(clock(await tv.page.locator('[data-content-id="episode:after-midnight"] .calendar-time').innerText()), "12:05 am");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:noon"] .calendar-time').innerText()), "12:00 PM");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:after-midnight"] .calendar-time').innerText()), "12:05 AM");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:evening"] .calendar-time').innerText()), "7:30 PM");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+}

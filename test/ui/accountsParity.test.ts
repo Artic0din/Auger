@@ -10,6 +10,7 @@ import type { Browser } from "playwright";
 import { ACTIVE, keys, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
 import { launchBrowser, type Tv } from "./support/tv.ts";
 import { assertSelectLook } from "./support/pressed.ts";
+import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -34,6 +35,18 @@ for (const reduced of [false, true]) {
         });
     }
 }
+
+test("server management rows use Settings focus and pressed motion and open on release", async () => {
+    await withSignedInTv(browser, async tv => {
+        await openSettingsAccounts(tv);
+        const row = tv.page.locator('[data-focus="add-server"]');
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await tv.page.locator('[data-view="accounts-settings"]').count(), 1);
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator('[data-screen="entry"]').waitFor();
+    });
+});
 
 test("Change Account lists the active server first, then servers and accounts by last use", async () => {
     await withSignedInTv(browser, async tv => {

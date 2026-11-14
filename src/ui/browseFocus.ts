@@ -550,7 +550,8 @@ export class FocusHost {
     /**
      * One Play claim per Details visit (`TVDetailActionRow.resetInitialPlayFocus`,
      * silo-apple eb82bb86). While `playTitle` is nil the claim stays unused
-     * (lines 504, 567-568, 571) and Watchlist is the live stand-in (lines 597-602).
+     * (lines 504, 567-568, 571). Apple uses Watchlist as its row stand-in
+     * (lines 597-602); itemView keeps initial episode loading passive instead.
      * The first attempt then assigns Play without reading that focus (lines 635–643).
      * A later attempt bails only when another action is focused and the page does
      * not track navigation (lines 622–641). Series tracks a directional move or a
