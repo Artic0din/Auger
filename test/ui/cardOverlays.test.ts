@@ -26,7 +26,7 @@ after(async () => { await browser.close(); });
 
 interface Badge { readonly text: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly style: Record<string, string>; readonly ring: Record<string, string>; readonly labelShadow: string; readonly labelSpacing: string; readonly labelWidth: number; readonly labelLeft: number; readonly icon?: { readonly width: number; readonly height: number; readonly path: string; readonly fillRule: string; readonly color: string; readonly frameWidth: number; readonly beforeLabel: boolean }; readonly mark?: { readonly text: string; readonly width: number; readonly height: number; readonly fontSize: string; readonly fontWeight: string; readonly letterSpacing: string; readonly color: string } }
 interface Band { readonly edge: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly backgroundImage: string; readonly padding: string; readonly shown: string[]; readonly dividers: { readonly width: number; readonly height: number; readonly color: string; readonly gapBefore: number; readonly gapAfter: number }[]; readonly rowLeft: number; readonly rowRight: number; readonly shownLeft: number; readonly shownRight: number }
-interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }>; readonly bands: Band[]; readonly chips: { readonly text: string; readonly color: string; readonly background: string; readonly padding: string; readonly radius: string; readonly height: number }[]; readonly pictures: { readonly src: string; readonly width: number; readonly height: number; readonly whole: boolean }[] }
+interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }>; readonly bands: Band[]; readonly chips: { readonly text: string; readonly color: string; readonly background: string; readonly padding: string; readonly radius: string; readonly height: number; readonly truncated: boolean; readonly overflow: string; readonly textOverflow: string; readonly whiteSpace: string }[]; readonly pictures: { readonly src: string; readonly width: number; readonly height: number; readonly whole: boolean }[] }
 
 /** Renders one card's badge layer on a `width` × `height` artwork at the page origin. */
 type Images = readonly (readonly [string, { readonly url: string; readonly aspect: number }])[];
@@ -89,7 +89,7 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
                 });
                 return { edge: strip.classList.contains("card-overlay-band-top") ? "top" : "bottom", left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, backgroundImage: getComputedStyle(strip).backgroundImage, padding: getComputedStyle(strip).padding, shown: visible.map(item => item.querySelector(".card-overlay")?.textContent ?? ""), dividers, rowLeft: row?.left ?? 0, rowRight: row?.right ?? 0, shownLeft: Math.min(...shownBadges.map(box => box?.left ?? 0)), shownRight: Math.max(...shownBadges.map(box => box?.right ?? 0)) };
             });
-            const chips = [...layer.querySelectorAll<HTMLElement>(".card-overlay-chip")].map(chip => { const style = getComputedStyle(chip); return { text: chip.textContent ?? "", color: style.color, background: style.backgroundColor, padding: style.padding, radius: style.borderTopLeftRadius, height: chip.getBoundingClientRect().height }; });
+            const chips = [...layer.querySelectorAll<HTMLElement>(".card-overlay-chip")].map(chip => { const style = getComputedStyle(chip); return { text: chip.textContent ?? "", color: style.color, background: style.backgroundColor, padding: style.padding, radius: style.borderTopLeftRadius, height: chip.getBoundingClientRect().height, truncated: chip.scrollWidth > chip.clientWidth, overflow: style.overflowX, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace }; });
             const pictures = [...layer.querySelectorAll<HTMLImageElement>(".card-overlay-image")].map(image => { const box = image.getBoundingClientRect(); return { src: image.src, width: box.width, height: box.height, whole: image.parentElement?.classList.contains("card-overlay-value-image") === true }; });
             return { badges, stacks, bands, chips, pictures };
         }, { doc, card, width, variant, images });
@@ -395,6 +395,32 @@ test("plate draws a heavy rounded plate, and a rating's source as an accent chip
     const plain = await render({ ...only({ rating_imdb: { enabled: true } }), preset: "classic" }, { ratingImdb: 8.46 }, 220, 330);
     assert.equal(plain.chips.length, 0, "other presets keep the one label");
 });
+
+for (const rating of [
+    { name: "IMDb at size 2", id: "rating_imdb", card: { ratingImdb: 8.46 }, source: "IMDb", score: "8.5", size: 2 },
+    { name: "RT Audience at default size", id: "rating_rt_audience", card: { ratingRtAudience: 80 }, source: "RT Audience", score: "80%", size: 1 },
+]) {
+    test(`Plate right-rail ${rating.name} truncates its source and keeps the whole score inside the poster`, async () => {
+        const width = 185;
+        const { badges, chips, stacks } = await render({ ...only({ [rating.id]: { enabled: true, position: "right-edge" } }), preset: "plate", style: { size: rating.size } }, rating.card, width, width * 1.5);
+        const badge = badges[0];
+        const chip = chips[0];
+        assert.ok(badge);
+        assert.ok(chip);
+        assert.equal(badge.text, rating.source + rating.score);
+        near(badge.right, width, "Plate tab is flush with the poster's right edge");
+        assert.ok(badge.labelLeft >= badge.left, "score starts inside the plate");
+        assert.ok(badge.labelLeft + badge.labelWidth <= badge.right - px(badge.style.paddingRight) + 0.02,
+            `whole score ends inside the plate: ${badge.labelLeft + badge.labelWidth} <= ${badge.right - px(badge.style.paddingRight)}`);
+        assert.ok(badge.labelLeft + badge.labelWidth <= width, "whole score stays inside the poster");
+        assert.ok(badge.right - badge.left <= width * 0.6 + 0.02, "plate respects the rail's 60% maximum width");
+        near(stacks["right-edge"]?.right, width, "right rail stays on the poster edge");
+        assert.equal(chip.truncated, true, "source text exceeds its rendered chip width");
+        assert.equal(chip.whiteSpace, "nowrap", "source stays on one line");
+        assert.equal(chip.overflow, "hidden", "source is clipped to the chip");
+        assert.equal(chip.textOverflow, "ellipsis", "source truncates at the tail");
+    });
+}
 
 // OverlayPresets.swift:203-226 and CardOverlays.swift:74-119, :146-157, :295-330.
 test("the edge band draws each edge as one strip of marks with dividers over a scrim", async () => {

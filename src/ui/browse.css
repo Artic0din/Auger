@@ -1153,7 +1153,7 @@ svg.library-empty-icon { width: auto; }
 .card-overlay-band-row { display: flex; flex-wrap: wrap; align-items: center; row-gap: 64px; overflow: clip; overflow-clip-margin: 8px; }
 .card-overlay-band-item { display: flex; align-items: center; flex: none; min-width: 0; max-width: 100%; }
 .card-overlay-band-divider { flex: none; width: 1px; background: rgba(255,255,255,.4); }
-.card-overlay-chip { flex: none; white-space: nowrap; }
+.card-overlay-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-overlay-label.card-overlay-score { flex: none; text-overflow: clip; }
 /* An uploaded badge image keeps its own aspect at the height the badge gives it. */
 .card-overlay-image { display: block; flex: none; max-width: none; object-fit: contain; }
@@ -1534,7 +1534,8 @@ svg.library-empty-icon { width: auto; }
 .calendar-day-number { font-size: 26px; font-weight: 700; }
 .calendar-day-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .calendar-event-dot { background: rgba(237,237,237,.8); }
-.calendar-week .calendar-chevron { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; min-height: 0; padding: 0; border: 0; border-radius: 50%; font-size: 24px; background: rgba(255,255,255,.08); color: rgba(237,237,237,.7); }
+.calendar-week .calendar-chevron { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.08); color: rgba(237,237,237,.7); }
+.calendar-chevron svg { width: 19px; height: 26px; }
 .calendar-month { margin-left: auto; white-space: nowrap; font-size: 24px; font-weight: 600; color: rgba(237,237,237,.6); }
 .calendar-week .calendar-day[aria-pressed="true"] { background: rgba(237,237,237,.88); color: #000; }
 .calendar-week .calendar-day[aria-current="date"]:not([aria-pressed="true"]):not(:focus) { border-color: rgba(255,255,255,.35); }
