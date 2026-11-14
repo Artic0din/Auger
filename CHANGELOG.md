@@ -34,6 +34,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
 - Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
 - An empty Home now shows Apple TV's Nothing to watch yet page, and a Home refresh no longer adds a status line or Try again under the rows.
 - Buttons, cards and menu rows now act when Select is released, as on Apple TV. Cards, For You and profile menu rows, library letters, Details actions and PIN keys stay drawn pressed while it is held. Holding Select no longer repeats a button, and moving off a held button cancels it.
@@ -63,6 +64,8 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
+- Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
+- Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
 - Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
 - Added the missing resolution, audio and metadata symbols to poster badges when badge icons were enabled, following Apple TV.
 - Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
