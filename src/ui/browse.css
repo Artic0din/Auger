@@ -22,6 +22,25 @@
 
 /* Settings shares the browse focus grammar and one scrollable control pane. */
 
+/* TVSettingsComponents.swift:208,214,272,279 at silo-apple 08ff656f; SiloTheme.swift:164.
+   Animate only the focus value, so entering and ending a press both snap. */
+@property --settings-row-focus-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option) {
+    transform: scale(var(--settings-row-focus-scale));
+    transition: --settings-row-focus-scale 120ms ease-out;
+}
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option):focus {
+    --settings-row-focus-scale: 1.012;
+    transform: scale(var(--settings-row-focus-scale));
+}
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option)[data-pressed] {
+    transform: scale(.98);
+    transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    :is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option) { transition: none; }
+}
+
 .settings-scope { margin: -12px 0 40px; color: var(--silo-secondary); font-size: 26px; }
 .browse.settings { overflow: hidden; height: 100vh; box-sizing: border-box; padding: 108px 164px 44px; }
 .settings-panes { display: flex; align-items: stretch; gap: 52px; height: 100%; min-height: 0; }
