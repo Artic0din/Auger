@@ -7,7 +7,7 @@ import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANG
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
-import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
 
@@ -68,6 +68,7 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
     settings.remainingRows = true;
     try {
         await openSettings(tv);
+        await pauseTvClock(tv);
         const rail = await tv.page.evaluate(() => {
             const first = document.querySelector<HTMLElement>('[data-focus="general"]')!;
             const second = document.querySelector<HTMLElement>('[data-focus="playback"]')!;
