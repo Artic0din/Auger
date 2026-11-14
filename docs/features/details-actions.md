@@ -3,6 +3,22 @@
 Apple reference: `Silo-Server/silo-apple` at `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`.
 All paths below are relative to `iosApp/iosApp/`.
 
+## Entry loading
+
+Series entry holds focus on the passive hero until its initial episode list and entry target resolve.
+Select during that wait does nothing, and the existing loaded entry rule takes over when the passive target disappears.
+This prevents disabled Play from making Watchlist the automatic entry target.
+Loading failures and empty lists leave the ordinary recovery and action targets available.
+
+The issue's installed Apple TV observation has no intermediate Watchlist focus.
+Current upstream source differs: at `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`, [`TVDetailActions.swift:490-510`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L490) disables Play without a title, and [`:602-610`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L602) explicitly substitutes Watchlist for action-row entry while episodes load.
+The Series page itself requests Play through [`TVSeriesDetailView.swift:304-306`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L304).
+Apple's initial [`TVItemDetailLoadingView.swift:1-8`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVItemDetailLoadingView.swift#L1) is tvOS-only and passive; [`TVItemDetailView.swift:80-94`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVItemDetailView.swift#L80) installs it before authoritative detail arrives.
+Samsung extends passive entry through the episode-loading window to meet the reported installed-app behavior and prevent an unintended account write.
+These source references do not identify the installed Apple build or establish same-state native parity.
+
+## Actions
+
 More reuses the Versions, Audio and Subtitles popover.
 Movies offer Add to Favorites / Remove from Favorites, then Mark as Watched / Mark as Unwatched (`tvOS/Screens/Detail/TVMovieDetailView.swift:210-265`).
 Series add Show Series Info only while an episode is active, then Favorites, Mark Series Watched / Unwatched and the selected season's Mark Season Watched / Unwatched (`TVSeriesDetailView.swift:942-1037` in the same directory).

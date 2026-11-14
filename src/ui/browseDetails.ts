@@ -544,7 +544,23 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         zones.push({ id: "facts", layout: "column", items });
     }
     const first = focusable[0] ?? seasonItems[0];
-    const view: View = { name: `item:${detail.id}`, content, zones, focus: first === undefined ? undefined : { zone: focusable[0] === undefined ? "seasons" : "actions", key: first.key }, back };
+    const waitingForEntryEpisode = detail.type === "series" && (
+        state?.series?.loading === true && state.series.episodes === undefined
+        || state?.nextEpisodeLoading === true && state.nextEpisode === undefined && state.series?.episodes === undefined
+    );
+    // Keep entry passive until the episode rail can choose its target. Otherwise disabled Play
+    // makes Watchlist the first enabled action, so an opening Select can write account state.
+    const loading = waitingForEntryEpisode ? content.find(node => node.classList.contains("details-hero")) : undefined;
+    if (loading !== undefined) {
+        loading.tabIndex = 0;
+        loading.dataset.focus = "loading";
+        loading.setAttribute("aria-busy", "true");
+        loading.setAttribute("aria-label", "Loading episodes");
+        zones.unshift({ id: "loading", layout: "row", items: [{ key: "loading", element: loading }] });
+    }
+    const focus = loading !== undefined ? { zone: "loading", key: "loading" }
+        : first === undefined ? undefined : { zone: focusable[0] === undefined ? "seasons" : "actions", key: first.key };
+    const view: View = { name: `item:${detail.id}`, content, zones, focus, back };
     if (state?.panel === "audio") {
         const options = [undefined, ...audio.map((_track, index) => index)].map(ordinal => {
             const item = actionButton(`audio:${ordinal ?? "auto"}`, ordinal === undefined ? "Auto" : audioRowTitle(ordinal), () => { if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectAudio(ordinal); if (tracks !== state) state.closePanel(); });
