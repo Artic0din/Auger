@@ -63,6 +63,9 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
+- Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
+- Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
+- Added the missing resolution, audio and metadata symbols to poster badges when badge icons were enabled, following Apple TV.
 
 - Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
 - Poster badge icons now match Apple TV: HDR, HDR10, ATMOS and AV1 marks use Apple's sizes and heavier weight, Dolby Vision is its ring mark beside the full label, Resolution + HDR shows HDR10+, and the Resolution + HDR + Audio badge is drawn instead of being dropped.
