@@ -4376,8 +4376,8 @@ browseTest("an authority change removes only browse, aborts its reads, and the n
     for (let step = 0; step < 6 && await tv.focused() !== "switch-profile"; step++) await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "switch-profile");
     await press(tv, "Enter");
-    assert.deepEqual(await tv.page.evaluate(() => window.browseHarness.chooseProfileCalls), [false], "browse was gone before onChooseProfile ran");
-    assert.equal(await tv.page.locator(".browse").count(), 0);
+    assert.deepEqual(await tv.page.evaluate(() => window.browseHarness.chooseProfileCalls), [true], "browse was retained before onChooseProfile ran");
+    assert.equal(await tv.page.locator(".browse").isVisible(), false);
 }, { profile: "p-owner" });
 
 browseTest("Down the third Search column keeps that column onto request 3", async tv => {
