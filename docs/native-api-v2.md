@@ -6,7 +6,8 @@ The code is the source of truth.
 Each section cites the file that defines the operation.
 
 The Apple counterpart is [silo-apple `docs/native-api-v2.md`](https://github.com/Silo-Server/silo-apple/blob/main/docs/native-api-v2.md).
-The wire contract is pinned by `src/contracts/v2/SOURCE` to silo-server commit `cc8514943289045e7b9f7ac8d36d4968bfe93926`.
+The wire contract is pinned by `src/contracts/v2/SOURCE` to silo-server commit `feae205be9fc7bf2f78f79a023cd3805b63a94ac`, including the optional account limit `ProfileCollection.max_profiles`.
+The response fixtures retain their previous snapshot to avoid unrelated changes; [contract provenance](../src/contracts/v2/README.md) records that split.
 The retry class of each operation is taken from that contract's `x-silo-retry-safety` annotations (`src/api/operations.ts` header comment).
 The contract file itself is not in this repository, so this page does not re-verify those annotations.
 

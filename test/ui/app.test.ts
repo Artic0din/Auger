@@ -424,6 +424,7 @@ async function signInWithOneProfile(tv: Tv): Promise<Record<string, unknown>[]> 
 }
 
 appTest("an account with one profile offers Add Profile in Switch Profile's place, and it opens profile creation", async tv => {
+    delete tv.fake.profiles.max_profiles;
     await signInWithOneProfile(tv);
     await tv.page.locator('[data-focus="profiles"]').click();
     assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["History", "Settings", "Add Profile", "Change Account", "Sign Out"]);
@@ -431,6 +432,25 @@ appTest("an account with one profile offers Add Profile in Switch Profile's plac
     await tv.page.locator('[data-screen="profile-create"]').waitFor();
     assert.equal(await tv.page.locator(".browse").count(), 0, "Browse has left the screen");
 });
+
+for (const limit of [0, 1, 2]) {
+    appTest(`a single-profile account with limit ${limit} ${limit <= 1 ? "hides" : "offers"} Add Profile`, async tv => {
+        tv.fake.profiles = { ...tv.fake.profiles, max_profiles: limit };
+        await signInWithOneProfile(tv);
+        await tv.page.locator('[data-focus="profiles"]').click();
+        assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(),
+            ["History", "Settings", ...(limit <= 1 ? [] : ["Add Profile"]), "Change Account", "Sign Out"]);
+        const account = await tv.page.evaluate(() => {
+            const saved = JSON.parse(window.appHarness.storage.getItem("silo.native.accounts.v1")!) as {
+                accounts: { id: string; profileCount: number; maxProfiles?: number }[]; selected: string;
+            };
+            return saved.accounts.find(row => row.id === saved.selected);
+        });
+        assert.ok(account);
+        assert.equal(account.profileCount, 1);
+        assert.equal(account.maxProfiles, limit, "the limit is saved on the open account");
+    });
+}
 
 // AddProfileFromMenuModifier (silo-apple 5780c84 `Screens/Profiles/AddProfileFromMenu.swift:3-7`): closing it without
 // creating a profile leaves the screen it was opened from as it was.

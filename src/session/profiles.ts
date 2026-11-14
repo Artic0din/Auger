@@ -4,7 +4,7 @@
 import { ApiError } from "../api/errors.ts";
 import type { Clock } from "../api/clock.ts";
 import { operations } from "../api/operations.ts";
-import type { ProfileSummary } from "../contracts/v2/wire.ts";
+import type { ProfileCollection, ProfileSummary } from "../contracts/v2/wire.ts";
 import { type NativeSession, SessionError } from "./session.ts";
 
 export type ProfileSelection = { readonly status: "selected" } | { readonly status: "pin_required" };
@@ -47,7 +47,11 @@ export class Profiles {
         this.clock = clock;
     }
 
-    list(signal?: AbortSignal): Promise<ProfileSummary[]> {
+    async list(signal?: AbortSignal): Promise<ProfileSummary[]> {
+        return (await this.listCollection(signal)).items;
+    }
+
+    listCollection(signal?: AbortSignal): Promise<ProfileCollection> {
         return this.session.call({ ...operations.listProfiles(), profileScoped: false, signal });
     }
 
