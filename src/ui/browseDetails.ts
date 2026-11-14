@@ -300,6 +300,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const playbackChoices = playChoices(playbackDetail, tracks?.selectedFileId, tracks?.preferredQuality);
     const preferences = state?.unsettledEpisode ?? tracks;
     const actions: FocusItem[] = [];
+    let waitingForPlaybackTarget = false;
     const notes: string[] = [];
     if (preferences?.audioPreference.pending) notes.push("Saving audio preference…");
     if (preferences?.subtitlePreference.pending) notes.push("Saving subtitle preference…");
@@ -351,12 +352,13 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         const labelTarget = summary ?? target;
         const canResume = targetChoices?.resume !== undefined || target === undefined && summary?.inProgress === true;
         const failed = state?.nextEpisodeFailed === true;
+        waitingForPlaybackTarget = labelTarget === undefined && !failed;
         // TVDetailActionRow: "Loading episodes…" while the list loads, else "Play" with no episode to name.
         const label = labelTarget === undefined ? failed ? "Play" : "Loading episodes…" : `${canResume ? "Resume" : "Play"} ${episodeLabel(labelTarget.seasonNumber, labelTarget.episodeNumber) ?? labelTarget.title}`;
         // A failed episode read still plays through the episode route, which loads its own detail.
         const primary = actionButton("next-episode", label, () => { if (primary.element.getAttribute("aria-disabled") !== "true") playNext(); });
         // After a failed read, Play still knows the episode id, so it plays through the episode route.
-        const unplayable = labelTarget === undefined && !failed || targetChoices === undefined && (state?.offline === true || target !== undefined);
+        const unplayable = waitingForPlaybackTarget || targetChoices === undefined && (state?.offline === true || target !== undefined);
         primary.element.setAttribute("aria-disabled", String(savePending || unplayable));
         actions.push(primary);
         if (canResume) actions.push(actionButton("start-over-episode", "Start Over", () => playNext(true)));
@@ -546,10 +548,10 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const first = focusable[0] ?? seasonItems[0];
     const waitingForEntryEpisode = detail.type === "series" && (
         state?.series?.loading === true && state.series.episodes === undefined
-        || state?.nextEpisodeLoading === true && state.nextEpisode === undefined && state.series?.episodes === undefined
+        || waitingForPlaybackTarget
     );
-    // Keep entry passive until the episode rail can choose its target. Otherwise disabled Play
-    // makes Watchlist the first enabled action, so an opening Select can write account state.
+    // A cached detail can paint before the loaders start, or an empty episode page can
+    // finish before playback detail. Unresolved Play must not default entry to Watchlist.
     const loading = waitingForEntryEpisode ? content.find(node => node.classList.contains("details-hero")) : undefined;
     if (loading !== undefined) {
         loading.tabIndex = 0;

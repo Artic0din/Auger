@@ -233,6 +233,104 @@ for (const reduced of [false, true]) test(`opening series Details from Home neve
     } finally { await tv.page.context().close(); }
 });
 
+for (const reduced of [false, true]) test(`Home series entry stays passive before loaders start and across delayed hierarchy responses${reduced ? " with reduced motion" : ""}`, async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const catalog = new FakeDetails();
+    for (const title of catalog.titles.values()) if (title.seriesId === "series:s1") catalog.titles.delete(title.id);
+    for (let episode = 1; episode <= 7; episode++) catalog.add({ id: `episode:s1e1${episode}`, type: "episode", title: `Chapter ${episode}`, libraryId: "13", seriesId: "series:s1", season: 1, episode });
+    catalog.watchedEpisodes.clear();
+    catalog.progress.clear();
+    tv.fake.catalog = catalog;
+    const paths = ["/catalog/items/series%3As1", "/catalog/series/series%3As1/seasons", "/catalog/series/series%3As1/seasons/1/episodes", "/catalog/items/episode%3As1e11"];
+    const holds = paths.map(path => tv.fake.hold(path));
+    try {
+        if (reduced) await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await signedIn(tv);
+        const card = tv.page.locator('[data-view="home"] [data-focus="series:s1"]').first();
+        await card.focus();
+        await tv.jump(200);
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.split("?")[0] === paths[0]), "Home marquee detail request");
+        const detail = tv.page.waitForResponse(response => new URL(response.url()).pathname.endsWith(paths[0] ?? ""));
+        holds[0]?.release();
+        await (await detail).finished();
+        // Real elapsed time separates the item response from season discovery.
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await tv.remote(ENTER);
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.split("?")[0] === paths[1]), "season discovery pending");
+        await new Promise(resolve => setTimeout(resolve, 200));
+        // Reopen the detail cached by the first entry before seasons have answered.
+        // Its first paint precedes DetailsState.start(), so no loading flag is set.
+        await tv.remote(10009);
+        await card.waitFor();
+        await card.focus();
+        const seasons = tv.fake.hold(paths[1] ?? "");
+        holds.push(seasons, tv.fake.hold(paths[3] ?? ""));
+        await tv.page.evaluate(() => {
+            window.detailsEntryFocus = [];
+            document.addEventListener("focusin", () => window.detailsEntryFocus.push(document.activeElement?.getAttribute("data-focus") ?? null));
+        });
+        await tv.remote(ENTER);
+        const primary = tv.page.locator('[data-view="item:series:s1"] [data-focus="next-episode"]');
+        await primary.waitFor();
+        for (const stage of [1, 2]) {
+            await tv.eventually(async () => tv.fake.requests.some(request => request.path.split("?")[0] === paths[stage]), `pending ${paths[stage]}`);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            assert.equal(await primary.textContent(), "Loading episodes…");
+            assert.equal(await primary.getAttribute("aria-disabled"), "true");
+            assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading"], `unsafe entry before ${paths[stage]}`);
+            assert.equal(await tv.focused(), "loading");
+            await tv.remote(ENTER);
+            assert.deepEqual(catalog.mutations, []);
+            assert.deepEqual(await tv.page.evaluate(() => window.browseHarness.plays), []);
+            holds[stage]?.release();
+            if (stage === 1) seasons.release();
+        }
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.split("?")[0] === paths[3]), "pending playback detail");
+        await tv.eventually(async () => await tv.focused() === "next-episode", "episode summary enables Play");
+        await new Promise(resolve => setTimeout(resolve, 200));
+        assert.equal(await primary.textContent(), "Play S1:E1");
+        assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
+        for (const hold of holds.filter(hold => hold.path === paths[3])) hold.release();
+        await tv.eventually(async () => await tv.page.locator('[data-focus="version"]').getAttribute("aria-disabled") !== "true", "playback detail arrived");
+        await new Promise(resolve => setTimeout(resolve, 200));
+        assert.equal(await tv.focused(), "next-episode");
+        assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
+        assert.deepEqual(catalog.mutations, []);
+        assert.deepEqual(tv.console, []);
+    } finally { for (const hold of holds) hold.release(); await tv.page.context().close(); }
+});
+
+test("an empty episode response keeps series entry passive until playback detail resolves", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const catalog = new FakeDetails();
+    tv.fake.catalog = catalog;
+    const playback = tv.fake.hold("/catalog/items/episode%3As1e11");
+    try {
+        await signedIn(tv);
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => route.fulfill({ json: { items: [] } }));
+        await tv.page.locator('[data-view="home"] [data-focus="series:s1"]').first().focus();
+        await tv.page.evaluate(() => {
+            window.detailsEntryFocus = [];
+            document.addEventListener("focusin", () => window.detailsEntryFocus.push(document.activeElement?.getAttribute("data-focus") ?? null));
+        });
+        await tv.remote(ENTER);
+        await tv.page.locator(".details-episodes-empty").waitFor();
+        const primary = tv.page.locator('[data-focus="next-episode"]');
+        assert.equal(await primary.textContent(), "Loading episodes…");
+        assert.equal(await primary.getAttribute("aria-disabled"), "true");
+        assert.equal(await tv.focused(), "loading");
+        assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading"]);
+        await tv.remote(ENTER);
+        assert.deepEqual(catalog.mutations, []);
+        assert.deepEqual(await tv.page.evaluate(() => window.browseHarness.plays), []);
+        playback.release();
+        await tv.eventually(async () => await tv.focused() === "next-episode", "resolved Play claims empty-rail entry");
+        assert.equal(await primary.textContent(), "Play S1:E1");
+        assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
+        assert.deepEqual(tv.console, []);
+    } finally { playback.release(); await tv.page.context().close(); }
+});
+
 test("a primary action that appears after the viewer moves leaves that control focused", async () => {
     const tv = await openTv(browser, { app: "browse" });
     tv.fake.catalog = new FakeDetails();
