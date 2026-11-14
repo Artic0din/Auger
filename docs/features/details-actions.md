@@ -3,6 +3,27 @@
 Apple reference: `Silo-Server/silo-apple` at `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`.
 All paths below are relative to `iosApp/iosApp/`.
 
+## Entry loading
+
+Series entry holds focus on the passive hero while its initial episode list loads or Play has no resolved episode label.
+The unresolved-target check uses the same state that disables Play, including the first cached-detail paint before loaders start and an empty episode response before playback detail arrives.
+Select during that wait does nothing, and Play takes entry focus when the passive target disappears.
+This prevents disabled Play from making Watchlist the automatic entry target.
+Loading failures and empty lists leave the ordinary recovery and action targets available.
+
+The reported same-title Apple tvOS simulator observation shows Play S1:E1 on the first Details frame, then focuses Play without intermediate Watchlist focus.
+At Apple source `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`, [`TVSeriesDetailView.swift:1076-1089`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L1076) derives the playback episode from loaded episode summaries, and [`:567-580`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L567) derives the Play/Resume season-and-episode title from that episode.
+The Series page itself requests Play through [`TVSeriesDetailView.swift:304-306`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L304).
+The tvOS-only route seed carries card artwork and metadata, not a series episode title ([`Route.swift:126-169,235-242`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Navigation/Route.swift#L126)).
+The tvOS page eagerly resolves its cached view model ([`TVItemDetailView.swift:69-94`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVItemDetailView.swift#L69)); the tvOS load path starts a known series hierarchy refresh alongside catalog detail ([`ItemDetailViewModel.swift:312-327`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Screens/Detail/ItemDetailViewModel.swift#L312)).
+The card-to-provisional-detail seeding at `ItemDetailViewModel.swift:708-731` is guarded by `#if !os(tvOS)` and is not an Apple TV playback-title source.
+Apple still has a Watchlist fallback when Play has no title ([`TVDetailActions.swift:490-510,602-610`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L490)); its existence does not mean the reported Apple journey reaches that state.
+Samsung retains its Loading episodes… label until a summary or playback detail supplies the title and keeps entry passive throughout that window.
+This is the bounded focus correction; immediate title availability remains a difference from the reported Apple capture.
+The new candidate still requires signed Samsung comparison; desktop tests do not establish native acceptance.
+
+## Actions
+
 More reuses the Versions, Audio and Subtitles popover.
 Movies offer Add to Favorites / Remove from Favorites, then Mark as Watched / Mark as Unwatched (`tvOS/Screens/Detail/TVMovieDetailView.swift:210-265`).
 Series add Show Series Info only while an episode is active, then Favorites, Mark Series Watched / Unwatched and the selected season's Mark Season Watched / Unwatched (`TVSeriesDetailView.swift:942-1037` in the same directory).

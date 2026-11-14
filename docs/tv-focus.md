@@ -98,6 +98,11 @@ Focus is always restored by zone id plus item key, never by list position.
 - Details hero actions use `Zone.restoreEntry` to return to the last enabled action when entering from below, including Up from season pills.
   When that action disappeared (such as Start Over) or a selector is disabled, entry falls back to the current Play/Resume action, then Watchlist if no Play exists.
   Each selector and More retain their own action key; closing a picker or More restores its trigger through the existing modal return path.
+- Opening series Details holds focus on the passive hero while its initial episode list loads or Play has no resolved episode label, including before loaders start and after an empty episode response.
+  Select there does nothing; a faster playback-detail response cannot move entry focus into the action row while the episode list is still pending.
+  When the wait ends, that passive target disappears and the existing loaded entry rule takes over.
+  Explicit navigation to a season or action during loading still preserves the viewer's choice.
+  See [Details entry loading](features/details-actions.md#entry-loading) for the Apple title source and the remaining title-timing difference.
 
 If you change what a card's `key` is, you change what restores.
 Keep it the content id.
