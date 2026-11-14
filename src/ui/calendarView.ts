@@ -62,7 +62,8 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
     const controls = [actionButton("previous-week", "Previous week", () => change(-1)), actionButton("next-week", "Next week", () => change(1))];
     for (const [i, control] of controls.entries()) {
         control.element.setAttribute("aria-label", i === 0 ? "Previous week" : "Next week");
-        control.element.textContent = i === 0 ? "‹" : "›";
+        // Original drawing sized to SF chevron.backward/forward at 24pt semibold (CalendarWeekStrip.swift:193).
+        control.element.innerHTML = `<svg viewBox="0 0 19 26" aria-hidden="true" focusable="false"><path d="${i === 0 ? "M12.1 4.5 3.1 13.5 12.1 22.5" : "M6.1 4.5 15.1 13.5 6.1 22.5"}" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
         control.element.classList.add("calendar-chevron");
     }
     if (state.start !== undefined && state.start !== calendarWeek(new Date(handlers.now))[0]) {

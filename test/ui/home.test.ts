@@ -169,7 +169,7 @@ function sectionReplyProduced(catalog: FakeHome): Promise<void> {
     });
 }
 
-function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void>, setup?: (catalog: FakeHome) => void, settings?: (settings: FakeSettings, tv: Tv) => void, options: { readonly whileReading?: boolean; readonly beforeMount?: (tv: Tv) => void; readonly beforeReady?: (tv: Tv) => Promise<void>; readonly readyTimeout?: number } = {}): void {
+function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void>, setup?: (catalog: FakeHome) => void, settings?: (settings: FakeSettings, tv: Tv) => void, options: { readonly whileReading?: boolean; readonly beforeMount?: (tv: Tv) => void | Promise<void>; readonly beforeReady?: (tv: Tv) => Promise<void>; readonly readyTimeout?: number } = {}): void {
     test(name, async () => {
         const tv = await openTv(browser, { app: "browse" });
         const catalog = new FakeHome();
@@ -184,7 +184,7 @@ function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void
             await tv.jump(5000);
             await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.loginPhase) === "signed_in", "sign in");
             await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
-            options.beforeMount?.(tv);
+            await options.beforeMount?.(tv);
             await tv.page.evaluate(() => window.browseHarness.mount());
             if (options.beforeReady !== undefined) await options.beforeReady(tv);
             await tv.page.locator('[data-view="home"] [data-section]').first().waitFor(options.readyTimeout === undefined ? undefined : { timeout: options.readyTimeout });
@@ -1433,7 +1433,7 @@ journey("Home reads the rested card once and sends nothing while focus is still 
         const id = decodeURIComponent(encoded);
         return { ...reply, body: { ...(reply.body as Record<string, unknown>), air_date: undefined, cast: [{ name: `Cast ${id}`, character: "Role", order: 0 }] } };
     };
-}, undefined, { whileReading: true });
+}, undefined, { whileReading: true, beforeMount: pauseTvClock });
 
 function imageCapabilities(catalog: FakeHome, slotWidths: boolean): void {
     const route = catalog.route.bind(catalog);

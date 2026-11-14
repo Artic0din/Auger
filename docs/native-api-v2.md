@@ -351,6 +351,9 @@ Presentation references are Apple `Screens/Calendar/CalendarView.swift`, `Calend
 These shared Swift screens contain the tvOS implementations; the shell and focus style live under `tvOS/`.
 The issue's `1a7cceea` reference differs only in the Calendar card's shared focus style, now `TVCardOutlineButtonStyle`.
 The 84×96 day cells, 26 bold day number, 8 dot, 64×64 chevrons, 18 strip gap and 10 day gap come directly from that source.
+The week arrows use original SVG drawings of `chevron.backward` and `chevron.forward`, requested at 24 pt semibold in Apple `Screens/Calendar/CalendarWeekStrip.swift:85,102,150-161,193-195` at `8655b06` (unchanged at upstream `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`).
+A local Apple symbol render at that size and weight measured a 19×26 layout box, about 12×21 of visible ink and a 3.2-point stroke; these measurements size the drawings without relying on the TV font.
+Same-state Samsung TV and Apple TV captures remain required to accept the visual match.
 The CSS compensates the 18 strip gap by -8 between adjacent days to retain the source's 10 day gap without another focus owner or wrapper.
 Calendar enters on the active filter and the strip enters on the selected day without changing that selection when cards gain focus.
 Shelf zones use the shared spatial focus owner and retained horizontal axis, so vertical return chooses the nearest card and retains the row's scroll.
