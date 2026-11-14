@@ -385,15 +385,17 @@ test("an image that does not load puts back the badge it replaced", async () => 
         await page.addScriptTag({ content: bundle });
         const texts = await page.evaluate(async ref => {
             const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number, baseUrl: string) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => object };
-            const doc = { version: 2, preset: "classic", order: [], items: { hdr: { enabled: false, position: "top-left" }, audio: { enabled: false, position: "top-left" }, release_type: { enabled: false, position: "bottom-left" }, resolution: { enabled: true, position: "top-left", valueImages: { "2160p": ref } } } };
+            const doc = { version: 2, preset: "classic", order: [], items: { hdr: { enabled: false, position: "top-left" }, audio: { enabled: false, position: "top-left" }, release_type: { enabled: false, position: "bottom-left" }, resolution: { enabled: true, position: "top-left", valueImages: { "2160p": ref } }, studio: { enabled: true, position: "bottom-right", image: ref } } };
             const images = new Map([[ref, { url: `/api/v2/overlay-images/${ref}`, aspect: 2 }]]);
-            const layer = api.overlayLayer({ id: "m", type: "movie", title: "M", overlay: { resolution: "2160p" } }, { ...api.parseOverlayPrefs(doc), images }, "poster", 185, "https://silo.invalid");
+            const layer = api.overlayLayer({ id: "m", type: "movie", title: "M", studios: ["A24"], overlay: { resolution: "2160p" } }, { ...api.parseOverlayPrefs(doc), images }, "poster", 185, "https://silo.invalid");
             document.getElementById("art")?.append(layer as HTMLElement);
             const drawn = layer?.querySelectorAll(".card-overlay-image").length ?? 0;
             for (let wait = 0; wait < 250 && layer?.querySelector(".card-overlay-image") !== null; wait++) await new Promise(resolve => setTimeout(resolve, 20));
-            return { drawn, after: [...(layer?.querySelectorAll(".card-overlay") ?? [])].map(node => node.textContent) };
+            const studio = [...(layer?.querySelectorAll(".card-overlay") ?? [])].find(node => node.textContent === "A24");
+            return { drawn, trailing: studio?.classList.contains("card-overlay-trailing") === true, after: [...(layer?.querySelectorAll(".card-overlay-top-left .card-overlay") ?? [])].map(node => node.textContent) };
         }, REF);
-        assert.equal(texts.drawn, 1, "the value image is drawn first");
+        assert.equal(texts.drawn, 2, "both images are drawn first");
+        assert.equal(texts.trailing, true, "a bottom-right badge keeps its corner");
         assert.deepEqual(texts.after, ["4K"], "a broken value image falls back to the text badge (CardOverlays.swift:344-357)");
     } finally { await page.close(); }
 });

@@ -422,7 +422,13 @@ function uploadedImage(asset: OverlayImageAsset, height: number, px: (value: num
     image.alt = "";
     image.style.height = px(height);
     image.style.width = px(height * asset.aspect);
-    image.addEventListener("error", () => { const shown = replace(); shown.replaceWith(fallback()); }, { once: true });
+    image.addEventListener("error", () => {
+        const shown = replace();
+        const next = fallback();
+        // overlayLayer marks a bottom-right badge after building it; the fallback keeps that corner.
+        if (shown.classList.contains("card-overlay-trailing")) next.classList.add("card-overlay-trailing");
+        shown.replaceWith(next);
+    }, { once: true });
     image.src = asset.url;
     return image;
 }
