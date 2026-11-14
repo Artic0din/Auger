@@ -40,6 +40,72 @@ async function openSettings(tv: Tv): Promise<void> {
     await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
 }
 
+test("Settings rail symbols use Apple's measured ink size and gearshape", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        const icons = await tv.page.locator('.settings-category-icon svg').evaluateAll(nodes => nodes.map(node => ({
+            width: getComputedStyle(node).width, height: getComputedStyle(node).height,
+        })));
+        assert.deepEqual(icons, Array.from({ length: 4 }, () => ({ width: "32px", height: "32px" })));
+        const inkWidths = await tv.page.locator('.settings-category-icon svg').evaluateAll(nodes => nodes.map(node => {
+            const icon = node as SVGSVGElement;
+            const path = icon.querySelector('path')!;
+            return ((path.getBBox().width + Number(icon.getAttribute('stroke-width'))) * icon.getBoundingClientRect().width / icon.viewBox.baseVal.width).toFixed(1);
+        }));
+        assert.deepEqual(inkWidths, ["26.4", "26.4", "26.4", "26.4"]);
+        const gear = tv.page.locator('[data-focus="general"] svg path');
+        assert.match(await gear.getAttribute("d") ?? "", /^M9 3H15/);
+        assert.equal(await tv.page.locator('.settings-category-icon').first().evaluate(node => node.getBoundingClientRect().width), 34);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings rail subtitles stay regular and muted through focus changes", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        const subtitle = tv.page.locator('[data-focus="general"] .settings-category-detail');
+        const appearance = () => subtitle.evaluate(node => {
+            const style = getComputedStyle(node);
+            return { weight: style.fontWeight, size: style.fontSize, opacity: style.opacity, color: style.color };
+        });
+        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+        await tv.page.keyboard.press("ArrowRight");
+        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(237, 237, 237)" });
+        await tv.page.keyboard.press("ArrowLeft");
+        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings uses drawn semibold chevrons for profile and picker rows", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        for (const [key, height, opacity] of [["settings-profile", "17px", "0.5"], ["paired-profile", "18px", "0.55"], ["remember-profile", "18px", "0.55"]]) {
+            const chevron = tv.page.locator(`[data-focus="${key}"] .settings-chevron`);
+            assert.deepEqual(await chevron.evaluate(node => ({ tag: node.tagName, height: getComputedStyle(node).height, opacity: getComputedStyle(node).opacity, hidden: node.getAttribute("aria-hidden"), text: node.textContent })),
+                { tag: "svg", height, opacity, hidden: "true", text: "" });
+        }
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings places Sign Out and version after the categories at any viewport height", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        for (const height of [1080, 1200]) {
+            await tv.page.setViewportSize({ width: 1920, height });
+            const placement = await tv.page.evaluate(() => {
+                const server = document.querySelector('[data-focus="server"]')!.getBoundingClientRect();
+                const signout = document.querySelector('[data-focus="settings-signout"]')!.getBoundingClientRect();
+                const version = document.querySelector('.settings-version')!.getBoundingClientRect();
+                return { afterCategories: signout.top - server.bottom, versionGap: version.top - signout.bottom };
+            });
+            assert.deepEqual(placement, { afterCategories: 36, versionGap: 16 });
+        }
+    } finally { await tv.page.context().close(); }
+});
+
 test("the subtitle preview draws sans-serif in the bundled semibold face", async () => {
     const { tv, settings } = await setup();
     settings.remainingRows = true;
@@ -79,7 +145,7 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
             profileGap: getComputedStyle(document.querySelector('.settings-profile')!).gap,
             versionTop: getComputedStyle(document.querySelector('.settings-version')!).marginTop,
         }));
-        assert.deepEqual(railDetails, { signOutIcon: true, iconSize: "22px", profileGap: "18px", versionTop: "10px" });
+        assert.deepEqual(railDetails, { signOutIcon: true, iconSize: "32px", profileGap: "18px", versionTop: "10px" });
         await tv.page.locator('[data-focus="subtitles"]').click();
         const appearance = await tv.page.evaluate(() => {
             const first = document.querySelector('[data-focus="appearance-fontSize"]')!.getBoundingClientRect();
@@ -677,9 +743,9 @@ test("Subtitles, the profile account line and sign-out confirmation follow Apple
         assert.equal(await tv.page.locator(".settings-version").textContent(), "Silo 0.0.1");
         assert.equal(await tv.page.getByRole("button", { name: /Diagnostics/ }).count(), 0);
         assert.equal(await tv.page.locator('[data-focus="subtitles"] .settings-category-detail').textContent(), "Language and appearance");
-        // Apple's siloSecondaryText is #EDEDED at 60%.
-        const secondary = await tv.page.locator('.settings-version, [data-focus="subtitles"] .settings-category-detail').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).color));
-        assert.deepEqual(secondary, ["rgba(237, 237, 237, 0.6)", "rgba(237, 237, 237, 0.6)"]);
+        // The version uses siloSecondaryText; category subtitles dim the row foreground instead.
+        const secondary = await tv.page.locator('[data-focus="subtitles"] .settings-category-detail, .settings-version').evaluateAll(nodes => nodes.map(node => ({ color: getComputedStyle(node).color, opacity: getComputedStyle(node).opacity })));
+        assert.deepEqual(secondary, [{ color: "rgb(237, 237, 237)", opacity: "0.62" }, { color: "rgba(237, 237, 237, 0.6)", opacity: "1" }]);
         await tv.page.locator('[data-focus="subtitles"]').click();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Language, behavior, and on-screen appearance.");
         assert.equal(await tv.page.locator('[data-focus="subtitle-language"] .settings-row-value').textContent(), "None");
@@ -943,9 +1009,9 @@ test("Settings uses the measured Apple pane margins and borderless sign out", as
             const signout = document.querySelector('[data-focus="settings-signout"]');
             if (!rail?.isConnected || !row?.isConnected || !header?.isConnected || !signout?.isConnected) return null;
             const signoutBox = signout.getBoundingClientRect();
-            return { rail: rail.getBoundingClientRect().x, row: row.getBoundingClientRect().x, width: row.getBoundingClientRect().width, header: header.getBoundingClientRect().y, signoutX: signoutBox.x, signoutY: signoutBox.y, signoutWidth: signoutBox.width, signoutHeight: signoutBox.height, border: getComputedStyle(signout).borderWidth };
+            return { rail: rail.getBoundingClientRect().x, row: row.getBoundingClientRect().x, width: row.getBoundingClientRect().width, header: header.getBoundingClientRect().y, signoutX: signoutBox.x, signoutWidth: signoutBox.width, signoutHeight: signoutBox.height, border: getComputedStyle(signout).borderWidth };
         }, null, () => true, "live Settings geometry");
-        assert.deepEqual(geometry, { rail: 164, row: 728, width: 1006, header: 108, signoutX: 192, signoutY: 842, signoutWidth: 150, signoutHeight: 33, border: "0px" });
+        assert.deepEqual(geometry, { rail: 164, row: 728, width: 1006, header: 108, signoutX: 192, signoutWidth: 150, signoutHeight: 33, border: "0px" });
     } finally { await tv.page.context().close(); }
 });
 

@@ -1,5 +1,25 @@
 # Settings rows
 
+## Rail and row styling
+
+The styling reference is tvOS-only silo-apple [`fc86b2019762ac10224140e1ad721a0c04532072`](https://github.com/Silo-Server/silo-apple/tree/fc86b2019762ac10224140e1ad721a0c04532072).
+The two Settings source files below are unchanged from `8655b06b077ab09a4604073ab3f9718fbfe66c6d`, the Apple simulator revision identified in issue #484.
+
+- [TVSettingsView.swift:242-258](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L242-L258) uses 22 pt medium category symbols in 34 pt slots, and regular 16 pt subtitles at 0.62 opacity.
+  The original SVG substitutes use 32 px boxes to draw roughly 26 px of ink, matching the issue's Apple capture; an SVG box is not a Swift symbol font size.
+  [The category symbols at lines 675-681](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L675-L681) include `gearshape` for General.
+- [TVSettingsView.swift:233-235](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L233-L235) uses `chevron.forward` at 17 pt semibold and 0.5 opacity for the profile.
+  [TVSettingsComponents.swift:313-325](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L313-L325) uses the same symbol at 18 pt semibold and 0.55 opacity for picker rows.
+  Settings draws these as rounded SVG strokes instead of font-dependent text chevrons.
+- [TVSettingsView.swift:182-208](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L182-L208) puts Sign Out after the categories and a spacer with a 24 pt minimum, with 6 pt stack gaps and 10 pt top padding on the following version line.
+  **Source/capture distinction:** Swift allows the spacer to expand, but the [supplied same-state capture](https://github.com/Artic0din/silo-tizen/blob/evidence/107-sweep-settings/cmp-settings.png) shows Sign Out under the rail items.
+  Tizen follows the requested placement with the minimum spacer and both adjacent gaps (36 px after the final category), followed by the version line.
+  There is no bottom pinning or fixed screen coordinate.
+
+The new rendered regressions cover these four details; fresh same-state Samsung and Apple TV captures remain a separate acceptance check supplied by the parent.
+
+## Row behavior
+
 Apple source is [silo-apple `2ef3a171`](https://github.com/Silo-Server/silo-apple/tree/2ef3a171dfa597a450886b2de3745acfd5132b3d), tvOS only. `SettingsView` on tvOS is `TVSettingsView`. The installed Apple build was not read.
 
 Playback already sends `playback.preferred_quality` and `playback.max_bitrate_kbps` on each start. The Quality section shows those two rows, then Apple's footer for the effective pair:
