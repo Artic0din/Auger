@@ -63,6 +63,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
 - Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
 - Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
