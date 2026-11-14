@@ -39,6 +39,8 @@ async function focusedPaint(tv: Tv, selector: string, what: string): Promise<Foc
     return readLive(tv, (key) => {
         const node = document.querySelector(key);
         if (!(node instanceof HTMLElement) || !node.isConnected || document.activeElement !== node) return null;
+        // The harness clock pauses CSS focus transitions; read their settled paint.
+        for (const animation of node.getAnimations()) animation.finish();
         const style = getComputedStyle(node);
         return {
             background: style.backgroundColor,

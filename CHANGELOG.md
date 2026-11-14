@@ -34,6 +34,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
 - An empty Home now shows Apple TV's Nothing to watch yet page, and a Home refresh no longer adds a status line or Try again under the rows.
 - Buttons, cards and menu rows now act when Select is released, as on Apple TV. Cards, For You and profile menu rows, library letters, Details actions and PIN keys stay drawn pressed while it is held. Holding Select no longer repeats a button, and moving off a held button cancels it.

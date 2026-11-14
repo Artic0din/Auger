@@ -182,7 +182,9 @@ Other layers:
   Every control must be reachable by arrows alone.
 - Enter is delivered on every remote without registration, as `keydown` and `keyup`.
 - Select acts on release, as on tvOS: the focused control runs when Enter is released.
-  `selectRelease.ts` marks the held control `data-pressed`. Only controls with a matched Apple pressed look style it: cards, For You and profile menu rows, rail letters, Details pill and circle actions, and PIN keys. Every other control looks unchanged while held until its Apple pressed look is matched.
+  `selectRelease.ts` marks the held control `data-pressed`.
+  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, and Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons.
+  Every other control looks unchanged while held until its Apple pressed look is matched.
   `selectRelease.ts` takes Chromium's keydown click from a focused `<button>` or link and clicks it on `keyup` instead, only when focus has not moved.
   Until Enter's keyup, every Enter keydown belongs to the press already down, flagged as a repeat or not (`isFreshSelect`); after a window blur or hidden page the keyup may be lost, so the next Enter starts a new press.
   Auto-repeat never clicks again, and any other key, focus leaving the button, a window blur or a hidden page cancels the press.
@@ -258,6 +260,30 @@ Fetching belongs to explicit activation (Enter), to a view loading, or to a one-
   Down enters it.
 - The library flyout appears 150 ms after a library row is focused and reads nothing.
 - Settings category focus only previews loaded controls; requests and writes need activation.
+
+## Change Account and Profiles pressed looks
+
+These values were checked against upstream `Silo-Server/silo-apple` main at `1d4b6248f86766b616312ececcee37912886ab51`.
+The Change Account view is entirely inside `#if os(tvOS)`; the profile picker uses `TVProfileTile` and the shared button styles through its tvOS branches.
+
+| Controls | Focus | Held Select | Apple source at that revision |
+| --- | --- | --- | --- |
+| Change Account server rows and Add server | Scale 1; colours ease out over 120 ms | Scale 0.98, snapped | [TVChangeAccountView.swift:309–331](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/tvOS/Screens/Auth/TVChangeAccountView.swift#L309-L331) |
+| Change Account account cards and Add account | Scale 1.03; ease out over 120 ms | Scale 0.98 replaces the focus scale, snapped | [TVChangeAccountView.swift:306,343–369](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/tvOS/Screens/Auth/TVChangeAccountView.swift#L306-L369) |
+| Profile tiles and Add | Avatar scale 1.12; focus spring response 0.32, damping 0.72 | Whole tile opacity 0.8, snapped; focus scale stays | [ProfileTile.swift:29–36,116–120,239–243,298–312](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L29-L36), [focus and style](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L116-L120), [pressed](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L239-L243), [Add](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L298-L312) |
+| Profile picker Change account and Sign out | Scale 1.06; focus spring | Opacity 0.7, snapped | [MarqueeControls.swift:137–143](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/DesignSystem/Marquee/MarqueeControls.swift#L137-L143), [tvOS footer callers](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileSelectionView.swift#L410-L469) |
+| Create Profile: Create | Scale 1.055; focus spring | Opacity 0.8; ease in/out over 120 ms | [ViewExtensions.swift:444–455](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Extensions/ViewExtensions.swift#L444-L455), [caller](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L311-L315) |
+| Create Profile: Cancel, Shuffle avatars and library Retry | Scale 1.04; ease out over 120 ms | Opacity 0.75, snapped | [SiloButtonStyles.swift:37–62](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Theme/SiloButtonStyles.swift#L37-L62), [tvOS Cancel](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L180-L200), [Retry](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L545-L558), [Shuffle](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L649-L664) |
+
+The shared [SiloTheme.swift:164–173](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Theme/SiloTheme.swift#L164-L173) supplies `fastDuration = 0.12` and `spring(response: 0.35, dampingFraction: 0.85)`.
+The footer and primary button reuse the top bar's existing CSS spring approximation: 320 ms with `cubic-bezier(.3,.25,.2,1.02)`.
+The profile tiles retain their existing 320 ms CSS focus treatment.
+CSS focus curves are approximations, so source values and desktop tests do not establish native motion parity.
+Change Account animates a registered focus-scale property separately from its transform, so pressing and releasing snap to the requested scale even during a focus transition.
+Create Profile's extra bottom Cancel uses the same ghost style as its header Cancel.
+Reduced motion removes transitions and the tile, footer and primary focus growth; the Change Account and ghost-chip scales remain, as in their Apple styles.
+`test/ui/accountsParity.test.ts` and `test/ui/profiles.test.ts` render each control focused and held, sample transition timing, and verify one activation on release in both motion modes.
+Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
 
 ## Reduced Motion
 
