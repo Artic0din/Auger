@@ -62,6 +62,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
 - Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
 - Poster badge icons now match Apple TV: HDR, HDR10, ATMOS and AV1 marks use Apple's sizes and heavier weight, Dolby Vision is its ring mark beside the full label, Resolution + HDR shows HDR10+, and the Resolution + HDR + Audio badge is drawn instead of being dropped.
 - Posters now show Apple TV's watch status in the top-right corner: a small green check on a watched title, or the number of episodes left on a series or season you have started, sized with the poster on Home, library, Search and every other poster grid.
