@@ -24,7 +24,7 @@ before(async () => {
 });
 after(async () => { await browser.close(); });
 
-interface Badge { readonly text: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly style: Record<string, string>; readonly ring: Record<string, string>; readonly labelShadow: string; readonly labelSpacing: string; readonly labelWidth: number; readonly icon?: { readonly width: number; readonly height: number; readonly path: string; readonly fillRule: string }; readonly mark?: { readonly text: string; readonly width: number; readonly height: number; readonly fontSize: string; readonly fontWeight: string; readonly letterSpacing: string; readonly color: string } }
+interface Badge { readonly text: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly style: Record<string, string>; readonly ring: Record<string, string>; readonly labelShadow: string; readonly labelSpacing: string; readonly labelWidth: number; readonly labelLeft: number; readonly icon?: { readonly width: number; readonly height: number; readonly path: string; readonly fillRule: string; readonly color: string; readonly frameWidth: number; readonly beforeLabel: boolean }; readonly mark?: { readonly text: string; readonly width: number; readonly height: number; readonly fontSize: string; readonly fontWeight: string; readonly letterSpacing: string; readonly color: string } }
 interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }> }
 
 /** Renders one card's badge layer on a `width` × `height` artwork at the page origin. */
@@ -51,13 +51,21 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
                 const rect = node.getBoundingClientRect();
                 const style = getComputedStyle(node);
                 const svg = node.querySelector("svg");
-                const icon = svg?.getBoundingClientRect();
+                const iconRect = svg?.getBoundingClientRect();
+                const iconStyle = svg === null ? undefined : getComputedStyle(svg);
+                const icon = iconRect === undefined || iconStyle === undefined ? undefined : {
+                    width: iconRect.width, height: iconRect.height,
+                    color: iconStyle.color,
+                    frameWidth: svg?.parentElement?.getBoundingClientRect().width ?? 0,
+                    beforeLabel: svg?.parentElement?.nextElementSibling?.classList.contains("card-overlay-label") === true,
+                };
                 const markNode = node.querySelector<HTMLElement>(".card-overlay-mark");
                 const markRect = markNode?.getBoundingClientRect();
                 const markStyle = markNode === null ? undefined : getComputedStyle(markNode);
                 const ring = getComputedStyle(node, "::before");
                 const label = node.querySelector(".card-overlay-label");
-                return { text: node.textContent ?? "", left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, style: Object.fromEntries(props.map(prop => [prop, style[prop]])), ring: { content: ring.content, boxShadow: ring.boxShadow, left: ring.left, right: ring.right, clipPath: ring.clipPath }, labelShadow: label === null ? "" : getComputedStyle(label).textShadow, labelSpacing: label === null ? "" : getComputedStyle(label).letterSpacing, labelWidth: label?.getBoundingClientRect().width ?? 0, ...(icon === undefined ? {} : { icon: { width: icon.width, height: icon.height, path: [...(svg?.querySelectorAll("path") ?? [])].map(path => path.getAttribute("d")).join(" "), fillRule: svg?.querySelector("path") === null || svg?.querySelector("path") === undefined ? "" : getComputedStyle(svg.querySelector("path") as Element).fillRule } }), ...(markNode === null || markRect === undefined || markStyle === undefined ? {} : { mark: { text: markNode.textContent ?? "", width: markRect.width, height: markRect.height, fontSize: markStyle.fontSize, fontWeight: markStyle.fontWeight, letterSpacing: markStyle.letterSpacing, color: markStyle.color } }) };
+                const labelLeft = label?.getBoundingClientRect().left ?? 0;
+                return { text: node.textContent ?? "", left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, style: Object.fromEntries(props.map(prop => [prop, style[prop]])), ring: { content: ring.content, boxShadow: ring.boxShadow, left: ring.left, right: ring.right, clipPath: ring.clipPath }, labelShadow: label === null ? "" : getComputedStyle(label).textShadow, labelSpacing: label === null ? "" : getComputedStyle(label).letterSpacing, labelWidth: label?.getBoundingClientRect().width ?? 0, labelLeft, ...(icon === undefined ? {} : { icon: { ...icon, path: [...(svg?.querySelectorAll("path") ?? [])].map(path => path.getAttribute("d")).join(" "), fillRule: svg?.querySelector("path") === null || svg?.querySelector("path") === undefined ? "" : getComputedStyle(svg.querySelector("path") as Element).fillRule } }), ...(markNode === null || markRect === undefined || markStyle === undefined ? {} : { mark: { text: markNode.textContent ?? "", width: markRect.width, height: markRect.height, fontSize: markStyle.fontSize, fontWeight: markStyle.fontWeight, letterSpacing: markStyle.letterSpacing, color: markStyle.color } }) };
             });
             const stacks = Object.fromEntries([...layer.querySelectorAll<HTMLElement>(".card-overlay-stack")].map(stack => {
                 const name = [...stack.classList].find(cls => cls !== "card-overlay-stack" && cls.startsWith("card-overlay-"))?.slice("card-overlay-".length) ?? "";
@@ -73,6 +81,58 @@ const near = (actual: number | undefined, expected: number, message: string, tol
 const px = (value: string | undefined): number => parseFloat(value ?? "");
 const only = (items: Record<string, unknown>) => ({ version: 2, preset: "classic", order: [], items: { resolution: { enabled: false, position: "top-left" }, hdr: { enabled: false, position: "top-left" }, audio: { enabled: false, position: "top-left" }, release_type: { enabled: false, position: "bottom-left" }, ...items } });
 const RETURNING = { showStatus: "returning series" };
+
+// tvOS 27.3 ImageRenderer at 8x: native boxes at 10.2pt semibold, not square font-size boxes.
+// OverlayIcon.swift:29-54, OverlayPresets.swift:95-104 at silo-apple 08ff656.
+for (const symbol of [
+    { name: "display", label: "1080p", width: 14.75, height: 12.25, labelOffset: 26.75 },
+    { name: "speaker.wave.2.fill", label: "EAC3", width: 15.125, height: 10.875, labelOffset: 27.125 },
+]) {
+    test(`Vibrant ${symbol.name} uses its native symbol box and label x offset`, async () => {
+        for (const width of [185, 220, 260]) {
+            const scale = width / 185;
+            const { badges } = await render({ ...only({ resolution: { enabled: true }, audio: { enabled: true } }), preset: "vibrant" }, { overlay: { resolution: "1080p", audio: "EAC3" } }, width, width * 1.5);
+            assert.deepEqual(badges.map(badge => badge.text), ["1080p", "EAC3"]);
+            const badge = badges.find(badge => badge.text === symbol.label);
+            assert.ok(badge?.icon, `${symbol.name} has a symbol`);
+            near(badge.icon.width, symbol.width * scale, `${symbol.name} symbol box width`, 0.05);
+            near(badge.icon.height, symbol.height * scale, `${symbol.name} symbol box height`, 0.05);
+            near(badge.icon.frameWidth, symbol.width * scale, `${symbol.name} keeps its advance width`, 0.05);
+            near(badge.labelLeft - badge.left, symbol.labelOffset * scale, `${symbol.name} label x offset`, 0.05);
+            assert.equal(badge.icon.color, badge.style.color);
+            assert.equal(badge.icon.color, "rgb(0, 0, 0)");
+            assert.equal(badge.icon.beforeLabel, true, "symbol precedes its label");
+        }
+    });
+}
+
+test("generic badges use Apple's registry symbols and honour per-item icon overrides", async () => {
+    // OverlayRegistry.swift:115-249, :300-318, :349-382, :436-455 at 08ff656.
+    const cases: readonly [string, Record<string, unknown>, string][] = [
+        ["audio_channels", { overlay: { audioChannels: "5.1" } }, "M10 17.125H18.5"],
+        ["video_codec", { overlay: { videoCodec: "HEVC" } }, "M4 3H20"],
+        ["aspect_ratio", { overlay: { aspectRatio: "1.78" } }, "M4 5H20"],
+        ["multi_audio", { overlay: { multiAudio: true } }, "M2 5H14"],
+        ["multi_sub", { overlay: { multiSub: true } }, "M3 4H21"],
+        ["content_rating", { contentRating: "PG" }, "M12 2C15 4"],
+        ["advisory_age", { advisoryAge: 12 }, "M4.2 2.1"],
+        ["runtime", { runtimeMinutes: 90 }, "M12 2A10"],
+        ["original_language", { originalLanguage: "en" }, "M12 2A10"],
+        ["studio", { studios: ["Studio"] }, "M3 21V7"],
+        ["network", { networks: ["Network"] }, "M"],
+    ];
+    for (const [id, card, path] of cases) {
+        const shown = await render(only({ [id]: { enabled: true, showIcon: true } }), card, 185, 277.5);
+        assert.equal(shown.badges.length, 1, id);
+        assert.ok(shown.badges[0]?.icon?.path.includes(path), `${id} has its registry symbol`);
+        assert.equal(shown.badges[0]?.icon?.color, shown.badges[0]?.style.color, id);
+        assert.equal(shown.badges[0]?.mark, undefined, `${id} keeps its text label instead of becoming a wordmark`);
+    }
+    const hidden = await render({ ...only({ resolution: { enabled: true, showIcon: false }, audio: { enabled: true, showIcon: false } }), preset: "vibrant" }, { overlay: { resolution: "1080p", audio: "EAC3" } }, 185, 277.5);
+    assert.deepEqual(hidden.badges.map(badge => badge.icon), [undefined, undefined], "showIcon false overrides an icon preset");
+    const missing = await render({ ...only({ resolution: { enabled: true }, audio: { enabled: true } }), preset: "vibrant" }, {}, 185, 277.5);
+    assert.deepEqual(missing.badges, [], "missing metadata does not leave orphan icons");
+});
 /**
  * Inter's per-letter shortfall against SF Pro Text at badge sizes, in em of Apple's point size: CoreText SF Pro
  * advances against InterVariable at the cap-scaled size, over twelve badge labels from 8 to 14pt.
