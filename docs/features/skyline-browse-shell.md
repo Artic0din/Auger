@@ -409,7 +409,11 @@ The Plate and Edge band presets, style overrides and uploaded badge images are n
 Wordmarks (HDR, HDR10, ATMOS, AV1) are black-weight text at 10/12 of the icon size, ATMOS at 9/12 with half a unit of tracking, and replace a label that says the same thing; Dolby Vision is Apple's drawn ring beside the whole label.
 The ATMOS mark shows only for an audio value of exactly Atmos, so TrueHD Atmos keeps its label.
 The combined Resolution + HDR + Audio badge shows the parts the file has and hides the resolution, HDR, audio and Resolution + HDR badges while it is on.
-Apple's other badge icons are SF Symbols and are not drawn.
+Generic badge icons follow Apple's registry at silo-apple `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e` (`Overlays/OverlayRegistry.swift:90-100,115-249,300-318,349-382,436-455`).
+Inline SVG substitutes use the existing icon set for display, speaker, film, clock, captions, languages, buildings, shield, people, aspect ratio and globe; network and series status share the measured TV glyph.
+They follow `Overlays/OverlayIcon.swift:29-54`: 85% of the preset icon size, a semibold stroke or filled shape, the badge text colour and a frame at least the icon size wide.
+Vibrant, Pill and Square enable icons by default; a badge's `showIcon` overrides the preset.
+The SVG substitutes still require same-state Apple TV and Samsung TV captures to establish hardware parity.
 The settings are read when Home loads and again after Settings closes, never on focus.
 Home shows non-empty rows in the server's profile order, matching the Apple TV client.
 Sections whose server `featured` flag is true render as ordinary rows.
