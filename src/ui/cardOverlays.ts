@@ -4,19 +4,21 @@
 // Positions, presets, style overrides, layout and the CardWatchStatus corner follow silo-apple
 // 5780c84f4a9c1e2bff006e653dd787e01ca24480 (#1117); the presets themselves are in overlayPresets.ts.
 // Its uploaded badge images are not drawn here.
-// Generic badge icons are SF Symbols there and are not drawn here, except the
-// series-status tv glyph: OverlayIcon's semibold "tv", outline and foot opaque,
-// screen fill at the monochrome secondary opacity.
+// Generic icon ids follow silo-apple 08ff656ff2c35bca13f40901cfe9ed83b8f84d7e
+// OverlayRegistry.swift:90-100, :115-249, :300-318, :349-382, :436-455.
+// Inline SVGs substitute for SF Symbols; the measured tv glyph keeps its secondary screen fill.
 // Wordmarks are text and Dolby Vision a drawn ring in both.
 
 import type { Card } from "../contracts/v2/catalog.ts";
 import { resolutionLabel, runtimeText } from "./cardPresentation.ts";
 import { applyStyle, css, hexColor, type OverlayStyle, parseStyle, type Preset, PRESET_STYLES, type PresetId, PRESETS, readableText, type Rgba, type Shadow } from "./overlayPresets.ts";
 import { el } from "./screen.ts";
+import { menuIcon } from "./navigationIcon.ts";
 
 /** OverlayTypes.swift:44-65: the top-right corner belongs to the watch status, so badges use the side rails. */
 type Position = "top-left" | "bottom-left" | "bottom-right" | "left-edge" | "right-edge";
-type Icon = "generic" | "tv" | "HDR" | "HDR10" | "DV" | "ATMOS" | "AV1";
+type SymbolIcon = "clock" | "tv" | "film" | "ribbon" | "subtitles" | "languages" | "building" | "shield" | "users" | "layout" | "monitor" | "volume" | "globe";
+type Icon = SymbolIcon | "HDR" | "HDR10" | "DV" | "ATMOS" | "AV1";
 
 interface ItemConfig { readonly enabled: boolean; readonly position: Position; readonly accentColor: string | undefined; readonly showIcon: boolean | undefined }
 export interface CardOverlayPrefs { readonly preset: PresetId; readonly style?: OverlayStyle | undefined; readonly order: readonly string[]; readonly items: ReadonlyMap<string, ItemConfig> }
@@ -86,7 +88,7 @@ const firstNonEmpty = (values: readonly string[] | undefined): string | undefine
 
 /** Registry order is the default render order within a corner. */
 const REGISTRY: readonly OverlayDef[] = [
-    { id: "resolution", position: "top-left", enabled: true, iconCapable: true, staticIcon: "generic", value: card => resolutionLabel(card.overlay?.resolution) },
+    { id: "resolution", position: "top-left", enabled: true, iconCapable: true, staticIcon: "monitor", value: card => resolutionLabel(card.overlay?.resolution) },
     { id: "hdr", position: "top-left", enabled: true, iconCapable: true, icon: card => hdrIcon(card.overlay?.hdr), value: card => nonEmpty(card.overlay?.hdr) },
     { id: "resolution_hdr", position: "top-left", enabled: false, iconCapable: true, icon: combinedHdrIcon, value: card => {
         const resolution = resolutionLabel(card.overlay?.resolution);
@@ -99,29 +101,29 @@ const REGISTRY: readonly OverlayDef[] = [
         return parts.length === 0 ? undefined : parts.join(" ");
     } },
     // OverlayRegistry.swift:90-96: the ATMOS wordmark only for a value it fully expresses, so "TrueHD Atmos" keeps its label.
-    { id: "audio", position: "top-left", enabled: true, iconCapable: true, icon: card => nonEmpty(card.overlay?.audio) === undefined ? undefined : card.overlay?.audio?.toLowerCase() === "atmos" ? "ATMOS" : "generic", value: card => nonEmpty(card.overlay?.audio) },
-    { id: "audio_channels", position: "top-left", enabled: false, iconCapable: true, staticIcon: "generic", value: card => nonEmpty(card.overlay?.audioChannels) },
-    { id: "video_codec", position: "top-left", enabled: false, iconCapable: true, staticIcon: "generic", icon: card => nonEmpty(card.overlay?.videoCodec) === undefined ? undefined : card.overlay?.videoCodec === "AV1" ? "AV1" : "generic", value: card => nonEmpty(card.overlay?.videoCodec) },
+    { id: "audio", position: "top-left", enabled: true, iconCapable: true, icon: card => nonEmpty(card.overlay?.audio) === undefined ? undefined : card.overlay?.audio?.toLowerCase() === "atmos" ? "ATMOS" : "volume", value: card => nonEmpty(card.overlay?.audio) },
+    { id: "audio_channels", position: "top-left", enabled: false, iconCapable: true, staticIcon: "volume", value: card => nonEmpty(card.overlay?.audioChannels) },
+    { id: "video_codec", position: "top-left", enabled: false, iconCapable: true, staticIcon: "film", icon: card => nonEmpty(card.overlay?.videoCodec) === undefined ? undefined : card.overlay?.videoCodec === "AV1" ? "AV1" : "film", value: card => nonEmpty(card.overlay?.videoCodec) },
     { id: "container", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.container) },
-    { id: "aspect_ratio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => nonEmpty(card.overlay?.aspectRatio) },
+    { id: "aspect_ratio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "layout", value: card => nonEmpty(card.overlay?.aspectRatio) },
     { id: "release_type", position: "bottom-left", enabled: true, iconCapable: false, value: card => nonEmpty(card.overlay?.releaseType) },
     { id: "edition", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.edition) },
-    { id: "multi_audio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => card.overlay?.multiAudio === true ? "Multi-Audio" : undefined },
-    { id: "multi_sub", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => card.overlay?.multiSub === true ? "CC" : undefined },
+    { id: "multi_audio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "languages", value: card => card.overlay?.multiAudio === true ? "Multi-Audio" : undefined },
+    { id: "multi_sub", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "subtitles", value: card => card.overlay?.multiSub === true ? "CC" : undefined },
     rating("rating_imdb", "IMDb", "#f5c518", card => decimalScore(card.ratingImdb)),
     rating("rating_tmdb", "TMDB", "#01b4e4", card => decimalScore(card.ratingTmdb)),
     rating("rating_rt", "RT", "#fa320a", card => percentScore(card.ratingRtCritic)),
     rating("rating_rt_audience", "RT Audience", "#fa6400", card => percentScore(card.ratingRtAudience)),
-    { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => card.contentRating },
-    { id: "advisory_age", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => card.advisoryAge !== undefined && card.advisoryAge > 0 ? `${card.advisoryAge}+` : undefined },
+    { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "shield", value: card => card.contentRating },
+    { id: "advisory_age", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "users", value: card => card.advisoryAge !== undefined && card.advisoryAge > 0 ? `${card.advisoryAge}+` : undefined },
     { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? String(card.year) : undefined },
-    { id: "runtime", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "generic", value: card => runtimeText(card.runtimeMinutes) },
-    { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "generic", value: card => languageName(card.originalLanguage) },
-    { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => firstNonEmpty(card.studios) },
-    { id: "network", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "generic", value: card => firstNonEmpty(card.networks) },
+    { id: "runtime", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "clock", value: card => runtimeText(card.runtimeMinutes) },
+    { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "globe", value: card => languageName(card.originalLanguage) },
+    { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "building", value: card => firstNonEmpty(card.studios) },
+    { id: "network", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "tv", value: card => firstNonEmpty(card.networks) },
     { id: "show_status", position: "right-edge", enabled: false, iconCapable: true, staticIcon: "tv", value: card => showStatus(card.showStatus) },
     // Ribbons whose data the server does not send yet; kept so stored documents keep their entries.
-    { id: "imdb_top_250", position: "right-edge", enabled: false, accent: "#f5c518", iconCapable: true, staticIcon: "generic", value: () => undefined },
+    { id: "imdb_top_250", position: "right-edge", enabled: false, accent: "#f5c518", iconCapable: true, staticIcon: "ribbon", value: () => undefined },
     { id: "rt_certified_fresh", position: "right-edge", enabled: false, accent: "#fa320a", iconCapable: false, value: () => undefined },
 ];
 
@@ -250,9 +252,9 @@ function watchedCheck(size: string): SVGSVGElement {
 }
 
 type Rail = "left" | "right";
-/** `mark` is a drawn icon: a wordmark, the Dolby Vision ring or the tv glyph. */
+/** `mark` is a drawn icon: a wordmark, the Dolby Vision ring or a symbol. */
 interface Resolved {
-    readonly label: string; readonly mark: Exclude<Icon, "generic"> | undefined; readonly accent: Rgba | undefined;
+    readonly label: string; readonly mark: Icon | undefined; readonly accent: Rgba | undefined;
     /** The rating's source mark and bare score, when it has both (CardOverlays.swift:171-173, :192-193). */
     readonly sourceMark: string | undefined; readonly score: string | undefined;
 }
@@ -266,7 +268,7 @@ function resolve(card: Card, prefs: CardOverlayPrefs, preset: Preset, position: 
         const showIcon = icon !== undefined && def.iconCapable && (config?.showIcon ?? preset.preferIcon);
         const accent = config?.accentColor ?? def.accent;
         const score = def.score?.(card);
-        return [{ label, mark: showIcon && icon !== "generic" ? icon : undefined, accent: accent === undefined ? undefined : hexColor(accent), sourceMark: score === undefined ? undefined : def.sourceMark, score }];
+        return [{ label, mark: showIcon ? icon : undefined, accent: accent === undefined ? undefined : hexColor(accent), sourceMark: score === undefined ? undefined : def.sourceMark, score }];
     }).slice(0, limit);
 }
 
@@ -393,7 +395,7 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
     if (!preset.uppercase) style.textTransform = "none";
     if (preset.boxShadow !== undefined) style.boxShadow = cssShadow(preset.boxShadow, px);
     // CardOverlays.swift:196-202: a label that says what its wordmark spells is dropped ("HDR10 HDR10"); DV has no wordmark.
-    const wordmark = badge.mark === undefined || badge.mark === "DV" || badge.mark === "tv" ? undefined : badge.mark;
+    const wordmark = badge.mark === "HDR" || badge.mark === "HDR10" || badge.mark === "ATMOS" || badge.mark === "AV1" ? badge.mark : undefined;
     // CardOverlays.swift:367-372: plate draws a rating's source as a chip and the label keeps only the score.
     const chip = preset.sourceChips ? badge.sourceMark : undefined;
     const scoreOnly = chip !== undefined && badge.score !== undefined;
@@ -409,6 +411,27 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
         chipNode.style.padding = `${px(preset.fontSize * 0.15)} ${px(preset.fontSize * 0.35)}`;
         chipNode.style.borderRadius = px(preset.fontSize * 0.2);
         if (label !== "") chipNode.style.marginRight = px(preset.iconGap);
+    } else if (badge.mark !== undefined && wordmark === undefined && badge.mark !== "DV" && badge.mark !== "tv") {
+        const frame = el("span", "card-overlay-symbol");
+        frame.style.cssText = "display:inline-flex;align-items:center;justify-content:center;flex:none";
+        frame.style.minWidth = frame.style.height = px(preset.iconSize);
+        if (label !== "") frame.style.marginRight = px(preset.iconGap);
+        const measured = badge.mark === "monitor" || badge.mark === "volume" ? BADGE_SYMBOLS[badge.mark] : undefined;
+        const glyph = measured === undefined ? menuIcon(badge.mark === "users" ? "switch-profile" : badge.mark) : measuredBadgeSymbol(measured);
+        glyph.setAttribute("class", "card-overlay-icon");
+        glyph.style.fill = measured === undefined ? "none" : "currentColor";
+        glyph.style.stroke = measured !== undefined || badge.mark === "users" ? "none" : "currentColor";
+        // OverlayIcon.swift:29-36: semibold symbols at 85%, inside a minimum iconSize-wide frame.
+        glyph.setAttribute("stroke-width", "2.5");
+        glyph.setAttribute("stroke-linecap", "round");
+        glyph.setAttribute("stroke-linejoin", "round");
+        const widthRatio = measured?.width ?? (badge.mark === "users" ? 32 / 24 : badge.mark === "languages" ? 26 / 24 : 1);
+        if (badge.mark === "users") glyph.setAttribute("viewBox", "-4 0 32 24");
+        if (badge.mark === "languages") glyph.setAttribute("viewBox", "0 0 26 24");
+        glyph.style.width = px(preset.iconSize * TV_SYMBOL_SCALE * widthRatio);
+        glyph.style.height = px(preset.iconSize * TV_SYMBOL_SCALE * (measured?.height ?? 1));
+        frame.appendChild(glyph);
+        node.appendChild(frame);
     }
     if (badge.mark === "tv") {
         const glyph = tvIcon();
@@ -488,6 +511,38 @@ function dolbyVisionMark(): SVGSVGElement {
 
 /** OverlayIcon draws a generic symbol at this share of the icon size. */
 const TV_SYMBOL_SCALE = 0.85;
+
+// tvOS 27.3 ImageRenderer, 8x, 10.2pt semibold: layout width/height divided by point size.
+// Original drawings use the same symbols measured at 48pt; their semibold outlines are 5pt thick.
+const BADGE_SYMBOLS = {
+    monitor: { width: 14.75 / 10.2, height: 12.25 / 10.2, viewBox: "0 0 69.75 57.625",
+        fill: `${roundedRect(6, 4.125, 57.625, 40.5, 5.8)} ${roundedRect(11, 9.125, 47.625, 30.5, 0.8)} M27 44.625H42.625V49.375H27Z ${roundedRect(24.875, 49.375, 20, 4, 2)}` },
+    volume: { width: 15.125 / 10.2, height: 10.875 / 10.2, viewBox: "0 0 70.625 50.625",
+        fill: "M10 17.125H18.5L31.75 4.875Q36.625 1.875 36.625 7V43.625Q36.625 48.75 31.75 45.75L18.5 33.5H10Q7.375 33.5 7.375 30.875V19.75Q7.375 17.125 10 17.125Z" },
+} as const;
+
+function measuredBadgeSymbol(symbol: typeof BADGE_SYMBOLS[keyof typeof BADGE_SYMBOLS]): SVGSVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", symbol.viewBox);
+    svg.setAttribute("aria-hidden", "true");
+    const fill = document.createElementNS(svg.namespaceURI, "path");
+    fill.setAttribute("d", symbol.fill);
+    fill.setAttribute("fill-rule", "evenodd");
+    svg.appendChild(fill);
+    const detail = document.createElementNS(svg.namespaceURI, "path");
+    if (symbol === BADGE_SYMBOLS.monitor) {
+        detail.setAttribute("d", roundedRect(11, 9.125, 47.625, 30.5, 0.8));
+        detail.setAttribute("fill-opacity", String(TV_SCREEN_FILL));
+    } else {
+        detail.setAttribute("d", "M45.75 14.125C50 19.25 50 31.25 45.75 36.375M55.875 10C62.25 18 62.25 32.625 55.875 40.625");
+        detail.setAttribute("fill", "none");
+        detail.setAttribute("stroke", "currentColor");
+        detail.setAttribute("stroke-width", "5");
+        detail.setAttribute("stroke-linecap", "round");
+    }
+    svg.appendChild(detail);
+    return svg;
+}
 
 /**
  * SF Symbol "tv" layout box divided by the font point size (`OverlayIcon` at 48pt

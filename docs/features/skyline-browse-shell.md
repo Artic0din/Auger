@@ -411,7 +411,17 @@ Uploaded badge images are not drawn yet.
 Wordmarks (HDR, HDR10, ATMOS, AV1) are black-weight text at 10/12 of the icon size, ATMOS at 9/12 with half a unit of tracking, and replace a label that says the same thing; Dolby Vision is Apple's drawn ring beside the whole label.
 The ATMOS mark shows only for an audio value of exactly Atmos, so TrueHD Atmos keeps its label.
 The combined Resolution + HDR + Audio badge shows the parts the file has and hides the resolution, HDR, audio and Resolution + HDR badges while it is on.
-Apple's other badge icons are SF Symbols and are not drawn.
+Generic badge icons follow Apple's registry at silo-apple `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e` (`Overlays/OverlayRegistry.swift:90-100,115-249,300-318,349-382,436-455`).
+Inline SVG substitutes draw display, speaker, film, clock, captions, languages, buildings, shield, people, aspect ratio and globe; network and series status share the measured TV glyph.
+They follow `Overlays/OverlayIcon.swift:29-54`: a font point size of 85% of the preset icon size, semibold weight, the badge text colour and a frame at least the icon size wide.
+The display and speaker keep their native advance widths rather than fitting into square glyph boxes.
+Measured with tvOS 27.3 SwiftUI `ImageRenderer` at 8× resolution, `.font(.system(size: 10.2, weight: .semibold))` produced `display` at 14.75 × 12.25 pt (width/pointSize 1.44608, height/pointSize 1.20098) and `speaker.wave.2.fill` at 15.125 × 10.875 pt (1.48284, 1.06618).
+The 10.2 pt font comes from Vibrant's 12 pt icon size × 0.85 (`OverlayPresets.swift:95-104` and `OverlayIcon.swift:31` at the revision above).
+Original SVG drawings follow the same probe's 48 pt semibold shapes: a 5 pt display outline with a stand and secondary screen fill, and a filled speaker body with 5 pt waves.
+At the 185 pt poster reference, Vibrant's 8 pt padding and 4 pt gap place the label at 26.75 pt after a display and 27.125 pt after a speaker (`OverlayPresets.swift:95,103`; `CardOverlays.swift:445-460`).
+At 260 px those offsets scale to 37.59 and 38.12 px; the display's ink is about 17.2 px wide.
+Vibrant, Pill and Plate enable icons by default; a badge's `showIcon` overrides the preset, including on Edge band.
+The SVG substitutes still require same-state Apple TV and Samsung TV captures to establish hardware parity.
 The settings are read when Home loads and again after Settings closes, never on focus.
 Home shows non-empty rows in the server's profile order, matching the Apple TV client.
 Sections whose server `featured` flag is true render as ordinary rows.
