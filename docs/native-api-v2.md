@@ -339,6 +339,7 @@ The decoder rejects any day outside the requested window.
 The Calendar view preserves these server day groups and event order without capping events.
 An `air_at` instant displays in the accepted query timezone with an explicit 12-hour clock.
 Without an instant, `air_time` is interpreted as a device-local wall clock and formatted with the same 12-hour clock, as Apple's `DateFormatters.localShortTime(fromWallClock:)` does.
+Both air-time paths use the app's English locale (`en`), so AM and PM stay uppercase regardless of the TV's region.
 Date-only releases have no time pill.
 
 Following, Trending and All sit above one week strip: previous, seven stacked weekday/day cells, next, conditional Today, and month/year anchored on Thursday.
