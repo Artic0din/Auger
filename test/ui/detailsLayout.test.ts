@@ -2886,6 +2886,16 @@ detailTest("subtitle choices retain their language when stream titles repeat the
     assert.equal(await tv.page.locator('[data-focus="subtitle:2"] .details-option-subtext').textContent(), "Commentary · SRT");
 });
 
+detailTest("a chosen subtitle titled Auto is not mistaken for the Auto choice", async tv => {
+    const catalog = tv.fake.catalog;
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.subtitleFiles.set("42", [{ title: "Auto", external: true, index: 5 }, { language: "eng", codec: "subrip", title: "English", external: false }]);
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await tv.page.locator('[data-focus="subtitle:0"]').click();
+    await tv.eventually(async () => await tv.page.locator('[data-track-summary="subtitles"] span').textContent() === 'Auto', 'the chosen track, not the Auto readout');
+});
+
 detailTest("More lists Favorites with no loading text while personal state loads, and owns failure announcements", async tv => {
     const held = tv.fake.hold("/capabilities/personal-lists", true);
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
