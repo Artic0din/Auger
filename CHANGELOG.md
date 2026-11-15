@@ -65,6 +65,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
 - Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
 - Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
 - Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
