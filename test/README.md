@@ -31,6 +31,8 @@ The fake server and browser clocks move together; polling and retry tests do not
 Call `pauseTvClock(tv)` before starting an exact deadline or intermediate animation under test, then use `tv.jump(ms)` or `page.clock.runFor(ms)` to advance it explicitly.
 The pause helper advances existing timers by a protocol margin, so call it before the timed action starts.
 Unexpected page logs and errors fail the screen tests.
+To hunt a timing flake, run a test with `SILO_REPLY_JITTER_MS=150`: every fake Silo answer is delayed by a random time up to that many milliseconds, so a test that acts before an in-flight read lands fails on every run.
+Wait for `tv.pendingReplies === 0` or for the screen's own condition, never for a fixed time.
 
 `test/ui/app.test.ts` composes real sign-in, profiles, browse and playback over FakeCatalog, FakePlayback and FakeAVPlay.
 It covers the approved device-code journey, returning from playback, PIN-proof revocation during playback, sign-out/relaunch, protected-account restore, exit modal focus/key isolation, unavailable AVPlay and startup failure recovery.

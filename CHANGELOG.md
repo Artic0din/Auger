@@ -64,6 +64,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Made the series Details test wait for the Details reads to be answered before it moves Down from the next-episode button. A late subtitle-preference answer repainted the page and handed focus back to Subtitles, so the test failed now and then.
+- Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails every time instead of now and then.
 - Limited the UI tests to two files at a time. Node ran one Chromium per test file with no limit, which starved slow runners and made timing-sensitive tests fail now and then.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
