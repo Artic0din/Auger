@@ -322,7 +322,7 @@
 @media (max-height: 1079px) {
     .search-scene .search-filters { width: auto; height: auto; margin: 16px 162px; padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; }
     .search-scene .search-filters .browse-button { flex: none; height: auto; min-height: 0; padding: 14px 42px; border: 2px solid rgba(255,255,255,.12); font-size: 28px; line-height: 36px; }
-    .search-scene .search-filters .browse-button[aria-pressed="true"], .search-scene .search-filters .browse-button:focus { border-color: transparent; }
+    .search-scene .search-filters .browse-button[aria-pressed="true"], .search-scene .search-filters .browse-button:focus { border-color: transparent; background-clip: border-box; }
 }
 .search-scene .search-count { margin: 0 162px 24px; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 27px; }
 /* The first poster sits at x 238: the tvOS safe area 80, SearchView's 110 and SiloTheme.padding 48 (SearchView.swift:52, :64, :337). */

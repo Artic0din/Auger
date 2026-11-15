@@ -845,6 +845,7 @@ browseTest("Search keeps the field, filters and first results row above the Sams
     // silo-android's keyboard-up header (TvSearchScreen.kt SearchStage): chips Spacing.sm (8dp) under the field, left on the results' gutter.
     assert.equal(open.filters, 146, "the filters sit 16 px under the field");
     assert.deepEqual(open.chips.map(chip => chip.height), [68, 68, 68], "18sp text, 8dp padding");
+    assert.equal(await tv.page.locator('[data-focus="search-filter:all"]').evaluate(node => getComputedStyle(node).backgroundClip), "border-box", "the selected chip fills to its edge, as TvFilterChip's has no border");
     assert.equal(open.chips[0]?.left, open.firstCard, "the first chip lines up with the first result");
     assert.deepEqual(open.chips.slice(1).map((chip, index) => chip.left - (open.chips[index]?.right ?? 0)), [24, 24], "chips 12dp apart");
     assert.ok(open.firstRow <= SAMSUNG_KEYBOARD_TOP, `the first results row ends above the keyboard, got ${open.firstRow}`);
