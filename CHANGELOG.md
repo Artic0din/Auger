@@ -64,12 +64,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-<<<<<<< HEAD
 - Stopped a Watch Party selection of the title that is already playing from counting as applied when its answer was lost and the server never received it; it now counts only when the room's selection revision rose.
-=======
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
->>>>>>> origin/main
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
