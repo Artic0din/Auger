@@ -56,10 +56,10 @@ export interface ProfileOptions {
 }
 
 export interface ProfileScreens {
-    /** Shows the profiles over the caller's content; the current profile acts until another is chosen. */
+    /** Replaces the caller's content with the root profile picker. */
     switchProfile(): void;
     /** Opens profile creation over the caller's content, from a fresh list; it ends on the profiles. */
-    addProfile(): void;
+    addProfile(back?: () => void): void;
     signOut(): void;
     destroy(): void;
 }
@@ -78,6 +78,8 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     let view = 0;
     let pending: AbortController | undefined;
     let current: ProfileSummary | undefined;
+    let pickerIsRoot = options.pickerRequested === true;
+    let returnToBrowse: { readonly back: () => void; readonly generation: number } | undefined;
     let leaving = false;
     let destroyed = false;
     let restoring = false;
@@ -137,13 +139,22 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         show({ name, content: [el("h1", "signin-title", title), ...body, actions(controls)], controls, focus: key, back }, key);
     };
 
-    /** Back from the profiles returns to the profile still acting, if any. */
+    /** An Add Profile cover can return to the profile still acting; the root picker cannot. */
     const resume = (): (() => void) | undefined => {
         const active = current;
-        return active !== undefined && session.activeProfile?.id === active.id ? () => handOff(active) : undefined;
+        return !pickerIsRoot && active !== undefined && session.activeProfile?.id === active.id ? () => {
+            const returning = returnToBrowse;
+            if (returning === undefined || returning.generation !== session.authorityGeneration) { handOff(active); return; }
+            returnToBrowse = undefined;
+            begin();
+            release();
+            returning.back();
+        } : undefined;
     };
 
     const handOff = (profile: ProfileSummary): void => {
+        returnToBrowse = undefined;
+        pickerIsRoot = false;
         begin();
         current = profile;
         release();
@@ -288,6 +299,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             show: (screen, focus) => { if (!destroyed && token === view) show(screen, focus); }, finished: (id, uncertain) => {
             if (destroyed || token !== view) return;
             creation = undefined;
+            if (uncertain || id !== undefined) returnToBrowse = undefined;
             if (uncertain) message("profile-create-uncertain", "Check profiles", ["A creation request was sent. Check the profile list before trying again."], [button("retry", "Check profiles", () => showList("add-profile"))], () => showList("add-profile"));
             else if (id === undefined) cancelled();
             else showList(id);
@@ -346,6 +358,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     };
 
     const choose = (profile: ProfileSummary): void => {
+        returnToBrowse = undefined;
         if (server.profiles.select(profile).status === "selected") {
             selected(profile);
         } else {
@@ -594,12 +607,18 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         signOut,
         switchProfile() {
             if (!destroyed && (host === undefined || session.activeProfile === undefined)) {
+                returnToBrowse = undefined;
+                pickerIsRoot = true;
                 if (session.activeProfile === undefined) current = undefined;
                 showList(current?.id);
             }
         },
-        addProfile() {
-            if (!destroyed && host === undefined && session.activeProfile !== undefined) addProfile();
+        addProfile(back) {
+            if (!destroyed && host === undefined && session.activeProfile !== undefined) {
+                pickerIsRoot = false;
+                returnToBrowse = back === undefined ? undefined : { back, generation: session.authorityGeneration };
+                addProfile();
+            }
         },
         destroy,
     };

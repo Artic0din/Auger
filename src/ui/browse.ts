@@ -86,7 +86,7 @@ export interface BrowseOptions {
     /** The person asked for the profile screens; browse has already removed itself. */
     readonly onChooseProfile: () => void;
     /** Opens profile creation for the open account. */
-    readonly onAddProfile?: () => void;
+    readonly onAddProfile?: (back: () => void) => void;
     readonly onSignOut?: () => void;
     readonly onSwitchServer?: (back: () => void) => void;
     readonly onAccounts?: (back: () => void) => void;
@@ -2129,6 +2129,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         options.onPlay(request);
     };
 
+    const coverBrowse = (open: (back: () => void) => void, focus?: FocusTarget): void => {
+        host.holdVisit();
+        shell.hide();
+        host.stop();
+        container.hidden = true;
+        playing = true;
+        syncThemeMusic();
+        open(() => {
+            if (torn) return;
+            playing = false;
+            root.appendChild(container);
+            container.hidden = false;
+            host.listen();
+            const current = top();
+            if (current !== undefined) showRoute(current, focus ?? tabFocus(current));
+        });
+    };
     const chooseProfile = (): void => {
         teardown();
         options.onChooseProfile();
@@ -2797,27 +2814,19 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (origin !== undefined) origin.focus = { zone: "nav", key: selected };
         },
         switchProfile: chooseProfile,
-        ...(options.onAddProfile === undefined ? {} : { addProfile: () => { teardown(); options.onAddProfile?.(); } }),
+        ...(options.onAddProfile === undefined ? {} : { addProfile: () => {
+            const current = top();
+            // Apple TV's live Browse return lands on its first control, despite the shell's avatar claim.
+            const focus = current?.kind === "library" && current.discovery?.mode === "Browse"
+                ? { zone: "controls", key: "sort" }
+                : { zone: "nav", key: "profiles" };
+            coverBrowse(back => options.onAddProfile?.(back), focus);
+        } }),
         profileCount: () => {
             try { return server.accounts.directory.list().find(row => row.id === server.accounts.localAccountId)?.profileCount ?? 0; }
             catch { return 0; } // An unreadable account list is a list not read yet: Switch Profile.
         },
-        ...(options.onSwitchServer === undefined ? {} : { switchServer: () => {
-            host.holdVisit();
-            shell.hide();
-            host.stop();
-            container.hidden = true;
-            playing = true;
-            syncThemeMusic();
-            options.onSwitchServer?.(() => {
-                if (torn) return;
-                playing = false;
-                container.hidden = false;
-                host.listen();
-                const current = top();
-                if (current !== undefined) showRoute(current, tabFocus(current));
-            });
-        } }),
+        ...(options.onSwitchServer === undefined ? {} : { switchServer: () => coverBrowse(back => options.onSwitchServer?.(back)) }),
         ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),

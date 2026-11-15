@@ -64,6 +64,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
+- Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
+- Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
 - The Discord commit feed workflow now skips cleanly, instead of failing on every push to main, when its webhook secret or thread ID is not set.
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
@@ -71,7 +74,6 @@ All notable changes to this project are documented in this file.
 - Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
 - Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
 - Added the missing resolution, audio and metadata symbols to poster badges when badge icons were enabled, following Apple TV.
-
 - Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
 - Poster badge icons now match Apple TV: HDR, HDR10, ATMOS and AV1 marks use Apple's sizes and heavier weight, Dolby Vision is its ring mark beside the full label, Resolution + HDR shows HDR10+, and the Resolution + HDR + Audio badge is drawn instead of being dropped.
 - Posters now show Apple TV's watch status in the top-right corner: a small green check on a watched title, or the number of episodes left on a series or season you have started, sized with the poster on Home, library, Search and every other poster grid.
