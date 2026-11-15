@@ -42,7 +42,7 @@ function nonEmpty(value: string | undefined): string | undefined {
     return trimmed === undefined || trimmed === "" ? undefined : trimmed;
 }
 
-function canonicalLanguageKey(code: string | undefined): string | undefined {
+export function canonicalLanguageKey(code: string | undefined): string | undefined {
     const trimmed = code?.trim();
     if (trimmed === undefined || trimmed === "") return undefined;
     const primary = trimmed.toLowerCase().replaceAll("_", "-").split("-")[0] ?? "";
@@ -159,7 +159,7 @@ export function audioTitle(title: string | undefined, language: string | undefin
     return displayTitle(remainder);
 }
 
-function titleIndicatesHearingImpaired(title: string | undefined): boolean {
+export function titleIndicatesHearingImpaired(title: string | undefined): boolean {
     const text = nonEmpty(title);
     if (text === undefined) return false;
     const lowered = text.toLowerCase();
@@ -221,4 +221,51 @@ export function formatBitrate(kbps: number): string {
         return Math.trunc(mbps) === mbps ? `${mbps} Mbps` : `${mbps.toFixed(1)} Mbps`;
     }
     return `${kbps} kbps`;
+}
+
+/** Lower comes first: SubRip, ASS, SSA, WebVTT, TX3G, then bitmaps, then unknown (SubtitleDisplayOrder.formatRank). */
+export function formatRank(codec: string | undefined): number {
+    const lowered = codec?.toLowerCase();
+    if (lowered === undefined || lowered === "") return 7;
+    if (lowered === "srt" || lowered.includes("subrip")) return 0;
+    if (lowered.includes("ass")) return 1;
+    if (lowered.includes("ssa")) return 2;
+    if (lowered === "vtt" || lowered.includes("webvtt")) return 3;
+    if (lowered.includes("mov_text") || lowered.includes("movtext") || lowered.includes("tx3g")) return 4;
+    if (lowered === "sup" || lowered.includes("pgs") || lowered.includes("hdmv")) return 5;
+    if (lowered.includes("dvd") || lowered.includes("vobsub") || lowered.includes("dvb")) return 6;
+    return 7;
+}
+
+export interface SubtitleOrderKey {
+    readonly language: string | undefined;
+    readonly codec: string | undefined;
+    readonly forced: boolean;
+    readonly hearingImpaired: boolean;
+    readonly isDefault: boolean;
+}
+
+/**
+ * The in-player subtitle order (SubtitleDisplayOrder.order): the preferred language first, the rest A to Z by display
+ * name, no usable language last; within a language by format, then full before forced before SDH, then default,
+ * then incoming order. Display only: rows are chosen by id.
+ */
+export function orderSubtitles<T>(items: readonly T[], preferredLanguage: string | undefined, key: (item: T) => SubtitleOrderKey): T[] {
+    if (items.length < 2) return [...items];
+    const annotated = items.map((item, index) => { const order = key(item); return { item, order, index, group: canonicalLanguageKey(order.language) }; });
+    const preferred = canonicalLanguageKey(preferredLanguage);
+    const names = new Map<string, string>();
+    for (const entry of annotated) if (entry.group !== undefined && !names.has(entry.group)) names.set(entry.group, languageName(entry.group) ?? entry.group.toUpperCase());
+    const ranked = [...names.keys()].sort((left, right) => {
+        if (preferred !== undefined && left !== right && (left === preferred || right === preferred)) return left === preferred ? -1 : 1;
+        const byName = names.get(left)!.localeCompare(names.get(right)!, "en", { sensitivity: "accent" });
+        return byName !== 0 ? byName : left < right ? -1 : left > right ? 1 : 0;
+    });
+    const rank = (entry: { readonly group: string | undefined }): number => entry.group === undefined ? ranked.length : ranked.indexOf(entry.group);
+    const keyOf = (entry: (typeof annotated)[number]): number[] => [rank(entry), formatRank(entry.order.codec), entry.order.hearingImpaired ? 2 : entry.order.forced ? 1 : 0, entry.order.isDefault ? 0 : 1, entry.index];
+    return annotated.sort((left, right) => {
+        const a = keyOf(left), b = keyOf(right);
+        for (let part = 0; part < a.length; part += 1) if (a[part] !== b[part]) return a[part]! - b[part]!;
+        return 0;
+    }).map(entry => entry.item);
 }

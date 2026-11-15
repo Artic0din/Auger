@@ -35,6 +35,10 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
+- Subtitles in the player are listed as on Apple TV: the profile's subtitle language first when the server names one, otherwise all languages A to Z, each language by format. A title with English, Chinese, Danish and German tracks and no subtitle language now lists Chinese before Danish.
+- Playback started without a subtitle choice, such as from Home, the next episode or Up Next, now follows the profile's subtitle settings as on Apple TV. With no subtitle language set, playback and the Details Auto summary start on the title's default subtitle, else a forced one, as on Apple TV: Aladdin starts with Portuguese Brazilian (Forced) instead of Off.
+- With a film's embedded subtitle selected, such as Aladdin's Portuguese Brazilian (Forced), the Subtitles tab again shows Delay, Appearance and Only on this TV, and the Video tab its Subtitle delay row, as on Apple TV. The TV draws that subtitle itself, so both settings apply to it.
 - Documented why Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay hidden on Samsung TVs, with the AVPlay limit for each.
 - Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
@@ -68,6 +72,10 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Made the watchParty, topBar, requests and preplay UI tests wait for the reads, sockets and menu rows they depend on instead of acting while an answer is still on its way, so they pass when the test server answers up to 150 ms late.
+- Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
+- Embedded subtitles on long films now load: the TV keeps waiting while the server is still extracting them and gives up only after a minute with no data, as on Apple TV. If they still cannot load, the player now says "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video instead of showing nothing.
+- Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
+- Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
 - Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.

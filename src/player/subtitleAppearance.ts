@@ -56,7 +56,7 @@ function label(table: readonly (readonly [string, string])[], id: string): strin
 
 export function appearanceSummary(appearance: SubtitleAppearance): string {
     const style = appearance.backgroundStyle === "outline" ? "Outline" : label(STYLES, appearance.backgroundStyle);
-    return `${style}, ${label(FONT_SIZES, appearance.fontSize)}, ${label(POSITIONS, appearance.position)}`;
+    return [label(FONT_SIZES, appearance.fontSize), style, label(POSITIONS, appearance.position)].join(" · ");
 }
 
 export function editAppearance(appearance: SubtitleAppearance, member: AppearanceMember, value: string | number | boolean): SubtitleAppearance {

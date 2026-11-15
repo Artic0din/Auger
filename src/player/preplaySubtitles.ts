@@ -1,4 +1,5 @@
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences, SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
+import { titleIndicatesHearingImpaired } from "./trackLabels.ts";
 import type { SubtitleTrack } from "../contracts/v2/playback.ts";
 
 const normalized = (value: string | undefined): string => value?.trim().toLowerCase() ?? "";
@@ -31,6 +32,21 @@ export function preferredCatalogSubtitle(tracks: readonly SubtitleSignature[], s
     return best;
 }
 
+/** bestLanguageMatch(nil, …): renderable tracks before burn-in ones, then the first class that has a track (forced first when asked), embedded before external before downloaded, then list order. */
+function bestAny(tracks: readonly SubtitleTrack[], preferForced: boolean): SubtitleTrack | undefined {
+    const accessible = (track: SubtitleTrack): boolean => track.hearingImpaired || titleIndicatesHearingImpaired(track.label);
+    const plain = (track: SubtitleTrack): boolean => !track.forced && !accessible(track);
+    const classes: ((track: SubtitleTrack) => boolean)[] = preferForced
+        ? [track => track.forced, track => !track.forced && accessible(track), plain, track => !track.forced, () => true]
+        : [plain, track => !track.forced, track => track.forced, () => true];
+    const sourceRank = (track: SubtitleTrack): number => track.source === "embedded" ? 0 : track.source === "external" ? 1 : 2;
+    for (const burnIn of [false, true]) for (const wanted of classes) {
+        const found = tracks.filter(track => (track.delivery === "burn_in_only") === burnIn && wanted(track)).reduce<SubtitleTrack | undefined>((best, track) => best === undefined || sourceRank(track) < sourceRank(best) ? track : best, undefined);
+        if (found !== undefined) return found;
+    }
+    return undefined;
+}
+
 function preferred(tracks: readonly SubtitleTrack[], wanted: string | undefined, signature?: SubtitleSignature): SubtitleTrack | undefined {
     const tag = language(wanted);
     if (!tag) return undefined;
@@ -60,8 +76,10 @@ export function startSubtitleTrackId(fileId: string, intent: SubtitleIntent | un
     // A saved downloaded choice has no catalog row; naming a catalog row would only force a track change.
     if (intent.kind !== "track" && preferences?.mode !== "off" && preferences?.signature?.source === "downloaded") return undefined;
     try {
-        const inventory = provisionalInventory(fileId, tracks);
-        const id = initialSubtitle(intent, inventory, preferences);
+        const ordered = combinedOrder(tracks);
+        const inventory = provisionalInventory(fileId, ordered);
+        const untouched = defaultSubtitle(tracks);
+        const id = initialSubtitle(intent, inventory, preferences, untouched === undefined ? undefined : inventory[ordered.indexOf(untouched)]?.trackId);
         // A downloaded row's server ordinal follows created_at, which the catalog does not publish.
         if (inventory.find(track => track.trackId === id)?.source === "downloaded") return undefined;
         return id;
@@ -70,13 +88,26 @@ export function startSubtitleTrackId(fileId: string, intent: SubtitleIntent | un
     }
 }
 
-/** Combined ordinals before a plan exists. Catalog array order is kept inside each source. */
-function provisionalInventory(fileId: string, tracks: readonly CatalogSubtitleTrack[]): readonly SubtitleTrack[] {
-    const ordered = [
+/** The combined ordinal order: externals, then embedded, then downloaded. Catalog array order is kept inside each source. */
+function combinedOrder(tracks: readonly CatalogSubtitleTrack[]): readonly CatalogSubtitleTrack[] {
+    return [
         ...tracks.filter(track => track.source === "external"),
         ...tracks.filter(track => track.source !== "external" && track.source !== "downloaded"),
         ...tracks.filter(track => track.source === "downloaded"),
     ];
+}
+
+/**
+ * What Apple's start request freezes when Auto has no preference to apply (`.noChange`):
+ * the file's default track, else a forced one, skipping a row the server cannot deliver.
+ */
+export function defaultSubtitle(tracks: readonly CatalogSubtitleTrack[]): CatalogSubtitleTrack | undefined {
+    const routable = combinedOrder(tracks).filter(track => track.source === "external" || Boolean(track.codec?.trim()));
+    return routable.find(track => track.isDefault === true) ?? routable.find(track => track.forced);
+}
+
+/** Combined ordinals before a plan exists, over `combinedOrder`. */
+function provisionalInventory(fileId: string, ordered: readonly CatalogSubtitleTrack[]): readonly SubtitleTrack[] {
     return ordered.map((track, index): SubtitleTrack => ({
         trackId: `file:${fileId}:subtitle:${index}`,
         combinedIndex: index,
@@ -108,8 +139,8 @@ export function playableIntent(intent: SubtitleIntent, tracks: readonly Subtitle
     return matches.length === 1 && matches[0] !== undefined && !deliverable(matches[0]) ? { kind: "auto" } : intent;
 }
 
-/** Only identities published by this plan may leave this resolver. */
-export function initialSubtitle(intent: SubtitleIntent, tracks: readonly SubtitleTrack[], preferences?: SubtitlePreferences): string | undefined {
+/** Only identities published by this plan may leave this resolver. `current` is what Auto keeps when no preference points anywhere (Apple's `.noChange`): the file's default before start, the plan's selection after. */
+export function initialSubtitle(intent: SubtitleIntent, tracks: readonly SubtitleTrack[], preferences?: SubtitlePreferences, current?: string): string | undefined {
     if (intent.kind === "off") return undefined;
     if (intent.kind === "track") {
         const matches = tracks.filter(track => matchesSubtitle(track, intent.signature));
@@ -124,9 +155,17 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
     if (preferences.mode === "always") {
         const signature = preferences.signature;
         const exact = signature === undefined ? [] : inventory.filter(track => matchesSubtitle(track, signature));
-        return (exact.length === 1 ? exact[0] : preferred(inventory, preferences.language, preferences.signature))?.trackId;
+        if (exact.length === 1) return exact[0]?.trackId;
+        // Apple's resolver with no language anywhere: `always` still shows the best track on offer.
+        if (preferences.language === undefined) return bestAny(inventory, preferences.showForced)?.trackId;
+        return preferred(inventory, preferences.language, preferences.signature)?.trackId;
     }
     if (preferences.language === "") return undefined;
+    if (preferences.language === undefined) {
+        const signature = preferences.signature;
+        const exact = signature === undefined ? [] : inventory.filter(track => matchesSubtitle(track, signature));
+        return exact.length === 1 ? exact[0]?.trackId : current;
+    }
     const wanted = language(preferences.language);
     const audio = language(preferences.audioLanguage);
     if (!wanted || (audio && audio.split("-")[0] === wanted.split("-")[0])) return forced();
