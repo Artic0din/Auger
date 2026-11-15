@@ -2170,6 +2170,21 @@ function withUnplayable(r: Rig, ordinal: number): void {
     r.server.files.set("42", { ...file, inventory: file.inventory.map((entry, index) => index === ordinal ? { ...entry, unplayable: true } : entry) });
 }
 
+test("Auto with no subtitle language skips a default track the plan flags unplayable and takes the forced one", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const catalog = catalogTracks(decision.plan.subtitle.inventory).map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track);
+    const r = await rig();
+    withUnplayable(r, 2);
+    scriptWatch(r, { effective_subtitle_mode: "auto", effective_show_forced_subtitles: true });
+    try {
+        await playMovie(r, { ...MOVIE, subtitleTracks: catalog });
+        assert.equal(replans(r.h).some(body => (body.selected_tracks as { subtitle?: { id?: string } } | undefined)?.subtitle?.id === "file:42:subtitle:2"), false, "no replan names the unplayable track");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
 test("the plan decoder reads the unplayable flag and treats an absent one as playable", () => {
     const base = fixture("playback_start_opaque_ids");
     const plan: Record<string, unknown> = { ...(base.playback_plan as Record<string, unknown>) };

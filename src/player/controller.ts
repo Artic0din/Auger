@@ -154,9 +154,10 @@ export function orderedInventory(inventory: readonly SubtitleTrack[], language: 
     return ordered;
 }
 
-/** The plan row of the file's default (else forced) subtitle that Apple's start freezes; the plan inventory carries no default flag. */
+/** The plan row of the file's default (else forced) subtitle that Apple's start freezes; the plan inventory carries no default flag. Rows the plan flags unplayable are skipped, as Apple skips rows the server cannot deliver. */
 function startingDefault(request: PlayRequest, plan: PlaybackPlan): string | undefined {
-    const catalog = request.subtitleTracks === undefined ? undefined : defaultSubtitle(request.subtitleTracks);
+    const unplayable = plan.subtitle.inventory.filter(entry => entry.unplayable === true);
+    const catalog = request.subtitleTracks === undefined ? undefined : defaultSubtitle(request.subtitleTracks.filter(track => !unplayable.some(entry => matchesSubtitle(entry, track))));
     if (catalog === undefined) return undefined;
     const rows = plan.subtitle.inventory.filter(entry => matchesSubtitle(entry, catalog));
     return rows.length === 1 ? rows[0]?.trackId : undefined;
