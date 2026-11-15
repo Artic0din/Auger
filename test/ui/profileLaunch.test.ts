@@ -129,6 +129,7 @@ test("Settings Accounts uses pane rows and Back returns to Settings", async () =
         const pane = await tv.page.evaluate(() => {
             const row = document.querySelector<HTMLElement>('.accounts-settings button')!;
             const remove = document.querySelector<HTMLElement>('.accounts-settings [data-focus^="remove:"]')!;
+            for (const animation of row.getAnimations()) animation.finish();
             // The focused row scales from its centre. Layout figures below divide that out.
             const painted = row.getBoundingClientRect();
             const scale = new DOMMatrix(getComputedStyle(row).transform).a || 1;

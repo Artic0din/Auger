@@ -1299,7 +1299,10 @@ for (const origin of ["home", "movies"] as const) appTest(`Change Account return
     assert.equal(await tv.page.locator('.account-badge').textContent(), "CURRENT");
     const geometry = await tv.page.evaluate(() => {
         const rail = document.querySelector('.accounts-rail button')!.getBoundingClientRect();
-        const card = document.querySelector('.account-card')!.getBoundingClientRect();
+        const cardNode = document.querySelector('.account-card')!;
+        // The harness pauses focus transitions; measure the final focused size.
+        for (const animation of cardNode.getAnimations()) animation.finish();
+        const card = cardNode.getBoundingClientRect();
         return { rail: [rail.width, rail.height], card: [card.width, card.height], headline: getComputedStyle(document.querySelector('.accounts-title')!).fontSize };
     });
     assert.deepEqual(geometry.rail, [520, 88]);
@@ -1325,7 +1328,10 @@ for (const origin of ["home", "movies"] as const) appTest(`Change Account return
     assert.ok(Math.abs(geometry.card[1]! - 128 * 1.03) < .1);
     assert.equal(await tv.page.getByRole('button', { name: 'Add', exact: true }).count(), 0, "tvOS has direct add-account and add-server actions");
     await tv.remote(10009);
-    assert.equal(await tv.page.locator('.accounts-rail button:focus').evaluate(node => getComputedStyle(node).backgroundColor), "rgb(237, 237, 237)");
+    assert.equal(await tv.page.locator('.accounts-rail button:focus').evaluate(node => {
+        for (const animation of node.getAnimations()) animation.finish();
+        return getComputedStyle(node).backgroundColor;
+    }), "rgb(237, 237, 237)");
     await tv.remote(10009);
     assert.equal(await tv.focused(), origin);
     assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-expanded"), "false");

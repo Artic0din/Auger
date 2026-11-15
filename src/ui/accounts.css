@@ -26,7 +26,12 @@
    A focused rail row is #EDEDED with no stroke. A focused card is the same fill, grown 3%,
    with a black shadow (radius 24, y 12; CSS blur is twice that radius) and no resting hairline. */
 .accounts-screen button:focus { color: #000; background: #ededed; outline: none; border-color: transparent; box-shadow: none; }
-.accounts-pane > button:focus { transform: scale(1.03); }
+/* Animate focus independently so pressing and releasing can replace its scale without a transition. */
+@property --account-focus-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+.accounts-rail button, .accounts-pane > button { transition: --account-focus-scale var(--silo-fast) ease-out, background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
+.accounts-pane > button { transform: scale(var(--account-focus-scale)); }
+.accounts-pane > button:focus { --account-focus-scale: 1.03; }
+.accounts-rail button:is(:active, [data-pressed]), .accounts-pane > button:is(:active, [data-pressed]) { transform: scale(.98); }
 .account-card { display: flex; align-items: center; gap: 22px; }
 .accounts-pane > button.account-card { height: 128px; border: 0; box-shadow: inset 0 0 0 1px #ffffff24; }
 .accounts-pane > button.account-card:focus { box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45); }

@@ -86,6 +86,43 @@ function calendarTest(name: string, body: (tv: Tv, catalog: FakeCalendar) => Pro
     });
 }
 
+calendarTest("Calendar week chevrons use semibold symbol geometry inside 64 by 64 buttons", async (tv) => {
+    await activate(tv, "calendar");
+    await ready(tv, 3);
+    for (const [key, label] of [["previous-week", "Previous week"], ["next-week", "Next week"]]) {
+        const button = tv.page.locator(`[data-focus="${key}"]`);
+        assert.equal(await button.getAttribute("aria-label"), label);
+        const geometry = await button.evaluate(node => {
+            const box = node.getBoundingClientRect();
+            const icon = node.querySelector("svg");
+            const path = icon?.querySelector("path");
+            const frame = icon?.getBoundingClientRect();
+            const ink = path?.getBBox();
+            return {
+                button: [box.width, box.height], text: node.textContent,
+                frame: frame === undefined ? null : [frame.width, frame.height],
+                centered: frame !== undefined && frame.x + frame.width / 2 === box.x + box.width / 2 && frame.y + frame.height / 2 === box.y + box.height / 2,
+                ink: ink === undefined ? null : [ink.width, ink.height],
+                pointsBackward: path === null || path === undefined ? null : path.getPointAtLength(path.getTotalLength() / 2).x < path.getPointAtLength(0).x,
+                stroke: path === null || path === undefined ? null : getComputedStyle(path).strokeWidth,
+                hidden: icon?.getAttribute("aria-hidden"),
+                color: path === null || path === undefined ? null : getComputedStyle(path).stroke,
+            };
+        });
+        assert.deepEqual(geometry, {
+            button: [64, 64], text: "", frame: [19, 26], centered: true,
+            pointsBackward: key === "previous-week",
+            ink: [9, 18], stroke: "3.2px", hidden: "true", color: "rgba(237, 237, 237, 0.7)",
+        });
+        await button.focus();
+        assert.equal(await button.locator("path").evaluate(node => getComputedStyle(node).stroke), "rgb(0, 0, 0)", "symbol inherits the focused button's color");
+    }
+    await activate(tv, "previous-week");
+    await ready(tv, 0);
+    await activate(tv, "next-week");
+    await ready(tv, 3);
+});
+
 calendarTest("Calendar loading focus stays on Apple's blank owner", async (tv) => {
     const held = tv.fake.hold("/calendar", true);
     await activate(tv, "calendar");
@@ -912,19 +949,23 @@ async function emulateChromium108EnglishHour(page: Tv["page"]): Promise<void> {
     });
 }
 
-test("Calendar noon and the first minute stay on a 12-hour clock under en-GB", async () => {
-    const tv = await openTv(browser, { app: "browse", locale: "en-GB", prepare: emulateChromium108EnglishHour });
+for (const locale of ["en-GB", "en-AU"]) {
+test(`Calendar air times use the app language under ${locale}`, async () => {
+    const tv = await openTv(browser, { app: "browse", locale, prepare: emulateChromium108EnglishHour });
     try {
         const catalog = await start(tv);
         catalog.events.push(
             { content_id: "episode:noon", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 3, episode_title: "Noon", air_date: "2026-01-02", local_air_date: "2026-01-02", air_at: "2026-01-02T01:00:00Z", watched: false, badges: [] },
             { content_id: "episode:after-midnight", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 4, episode_title: "After midnight", air_date: "2026-01-02", local_air_date: "2026-01-02", air_time: "00:05", watched: false, badges: [] },
+            { content_id: "episode:evening", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 5, episode_title: "Evening", air_date: "2026-01-02", local_air_date: "2026-01-02", air_time: "19:30", watched: false, badges: [] },
         );
         await activate(tv, "calendar");
         await ready(tv);
         const clock = (value: string): string => value.replace(/\s+/g, " ").trim();
-        assert.equal(clock(await tv.page.locator('[data-content-id="episode:noon"] .calendar-time').innerText()), "12:00 pm");
-        assert.equal(clock(await tv.page.locator('[data-content-id="episode:after-midnight"] .calendar-time').innerText()), "12:05 am");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:noon"] .calendar-time').innerText()), "12:00 PM");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:after-midnight"] .calendar-time').innerText()), "12:05 AM");
+        assert.equal(clock(await tv.page.locator('[data-content-id="episode:evening"] .calendar-time').innerText()), "7:30 PM");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+}

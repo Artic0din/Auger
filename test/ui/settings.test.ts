@@ -6,7 +6,8 @@ import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
-import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
+import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
 
@@ -67,12 +68,15 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
     settings.remainingRows = true;
     try {
         await openSettings(tv);
+        await pauseTvClock(tv);
         const rail = await tv.page.evaluate(() => {
             const first = document.querySelector<HTMLElement>('[data-focus="general"]')!;
             const second = document.querySelector<HTMLElement>('[data-focus="playback"]')!;
-            return { width: first.getBoundingClientRect().width, height: first.getBoundingClientRect().height, pitch: second.getBoundingClientRect().top - first.getBoundingClientRect().top, icons: document.querySelectorAll('.settings-category-icon').length };
+            for (const animation of first.getAnimations()) animation.finish();
+            return { width: Number(first.getBoundingClientRect().width.toFixed(3)), height: Number(first.getBoundingClientRect().height.toFixed(3)), pitch: Number((second.getBoundingClientRect().top - first.getBoundingClientRect().top).toFixed(3)), icons: document.querySelectorAll('.settings-category-icon').length };
         });
-        assert.deepEqual(rail, { width: 490, height: 82, pitch: 88, icons: 4 });
+        // The focused 490×82 row grows around its centre by Apple's 1.012.
+        assert.deepEqual(rail, { width: 495.88, height: 82.984, pitch: 88.492, icons: 4 });
         const railDetails = await tv.page.evaluate(() => ({
             signOutIcon: document.querySelector('[data-focus="settings-signout"] svg') !== null,
             iconSize: getComputedStyle(document.querySelector('.settings-category-icon svg')!).width,
@@ -138,24 +142,53 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
     } finally { await tv.page.context().close(); }
 });
 
-test("a held Select on a Settings row draws no pressed state and opens the row on release", async () => {
+test("Settings rail rows animate focus and snap pressed until Select release opens the pane", async () => {
     const { tv } = await setup();
     try {
         await openSettings(tv);
         const row = tv.page.locator('[data-focus="playback"]');
-        await row.focus();
-        await tv.jump(300);
-        const look = () => row.evaluate(node => { const style = getComputedStyle(node); return [style.transform, style.scale, style.opacity, style.backgroundColor, style.color, style.boxShadow, style.borderColor].join("|"); });
-        const resting = await look();
-        const pane = () => tv.page.locator(".settings-pane").innerText();
-        const before = await pane();
-        await tv.page.keyboard.down("Enter");
-        await tv.jump(300);
-        // Apple's TVSettingsRailRowStyle press (TVSettingsComponents.swift:208) is not matched yet, so a held row looks as it does on main.
-        assert.equal(await look(), resting, "a held Settings row shows no new visual state");
-        assert.equal(await pane(), before, "the row waits for release");
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await tv.focused(), "playback", "the rail waits for release");
         await tv.page.keyboard.up("Enter");
-        await tv.eventually(async () => await tv.focused() !== "playback" || await pane() !== before, "release opens the row");
+        await tv.eventually(async () => await tv.focused() === "quality", "release opens the pane");
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings pane rows snap on press and cancellation, then open on Select release", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        const row = tv.page.locator('[data-focus="quality"]');
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await tv.page.getByRole("radio").count(), 0, "holding does not open the picker");
+        await tv.page.keyboard.press("Shift");
+        assert.equal(await row.getAttribute("data-pressed"), null);
+        assert.deepEqual(await row.evaluate(node => ({ transform: getComputedStyle(node).transform, animations: node.getAnimations().length })),
+            { transform: "matrix(1.012, 0, 0, 1.012, 0, 0)", animations: 0 }, "ending a press snaps back without animating");
+        await tv.page.keyboard.up("Enter");
+        assert.equal(await tv.page.getByRole("radio").count(), 0, "the cancelled release does not run");
+        await holdSettingsRow(tv, row);
+        await tv.page.keyboard.up("Enter");
+        await tv.page.getByRole("radio").first().waitFor();
+    } finally { await tv.page.context().close(); }
+});
+
+test("Acknowledgements Done uses Settings row focus and pressed motion and closes on release", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="server"]').click();
+        await tv.page.locator('[data-focus="acknowledgements"]').click();
+        const row = tv.page.locator('[data-focus="done"]');
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await tv.page.locator(".acknowledgements-panel").count(), 1);
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator(".acknowledgements-panel").waitFor({ state: "detached" });
+        assert.equal(await tv.focused(), "acknowledgements");
     } finally { await tv.page.context().close(); }
 });
 
@@ -942,10 +975,12 @@ test("Settings uses the measured Apple pane margins and borderless sign out", as
             const header = document.querySelector('.settings-pane-header');
             const signout = document.querySelector('[data-focus="settings-signout"]');
             if (!rail?.isConnected || !row?.isConnected || !header?.isConnected || !signout?.isConnected) return null;
+            for (const animation of rail.getAnimations()) animation.finish();
             const signoutBox = signout.getBoundingClientRect();
-            return { rail: rail.getBoundingClientRect().x, row: row.getBoundingClientRect().x, width: row.getBoundingClientRect().width, header: header.getBoundingClientRect().y, signoutX: signoutBox.x, signoutY: signoutBox.y, signoutWidth: signoutBox.width, signoutHeight: signoutBox.height, border: getComputedStyle(signout).borderWidth };
+            return { rail: Number(rail.getBoundingClientRect().x.toFixed(3)), row: row.getBoundingClientRect().x, width: row.getBoundingClientRect().width, header: header.getBoundingClientRect().y, signoutX: signoutBox.x, signoutY: signoutBox.y, signoutWidth: signoutBox.width, signoutHeight: signoutBox.height, border: getComputedStyle(signout).borderWidth };
         }, null, () => true, "live Settings geometry");
-        assert.deepEqual(geometry, { rail: 164, row: 728, width: 1006, header: 108, signoutX: 192, signoutY: 842, signoutWidth: 150, signoutHeight: 33, border: "0px" });
+        // Focus moves the rail's drawn left edge to 164 - 490 × (1.012 - 1) / 2.
+        assert.deepEqual(geometry, { rail: 161.06, row: 728, width: 1006, header: 108, signoutX: 192, signoutY: 842, signoutWidth: 150, signoutHeight: 33, border: "0px" });
     } finally { await tv.page.context().close(); }
 });
 
@@ -956,10 +991,11 @@ test("Settings rail rows are unframed at rest and on focus", async () => {
         const focused = await readLive(tv, () => {
             const row = document.querySelector<HTMLElement>('[data-focus="general"]');
             if (row === null || document.activeElement !== row) return null;
+            for (const animation of row.getAnimations()) animation.finish();
             const style = getComputedStyle(row);
-            return { border: style.borderTopWidth, background: style.backgroundColor, color: style.color, width: row.getBoundingClientRect().width, height: row.getBoundingClientRect().height };
+            return { border: style.borderTopWidth, background: style.backgroundColor, color: style.color, width: Number(row.getBoundingClientRect().width.toFixed(3)), height: Number(row.getBoundingClientRect().height.toFixed(3)) };
         }, null, () => true, "focused rail row");
-        assert.deepEqual(focused, { border: "0px", background: "rgb(237, 237, 237)", color: "rgb(0, 0, 0)", width: 490, height: 82 });
+        assert.deepEqual(focused, { border: "0px", background: "rgb(237, 237, 237)", color: "rgb(0, 0, 0)", width: 495.88, height: 82.984 });
         const resting = await tv.page.locator('[data-focus="server"]').evaluate(node => {
             const style = getComputedStyle(node);
             return { border: style.borderTopWidth, background: style.backgroundColor };

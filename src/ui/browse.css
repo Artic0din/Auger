@@ -22,6 +22,25 @@
 
 /* Settings shares the browse focus grammar and one scrollable control pane. */
 
+/* TVSettingsComponents.swift:208,214,272,279 at silo-apple 08ff656f; SiloTheme.swift:164.
+   Animate only the focus value, so entering and ending a press both snap. */
+@property --settings-row-focus-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option) {
+    transform: scale(var(--settings-row-focus-scale));
+    transition: --settings-row-focus-scale 120ms ease-out;
+}
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option):focus {
+    --settings-row-focus-scale: 1.012;
+    transform: scale(var(--settings-row-focus-scale));
+}
+:is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option)[data-pressed] {
+    transform: scale(.98);
+    transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    :is(.settings-categories .browse-button, .settings-pane .browse-button, .acknowledgements-actions .browse-button, .accounts-settings > button, .watch-party-options .watch-party-option) { transition: none; }
+}
+
 .settings-scope { margin: -12px 0 40px; color: var(--silo-secondary); font-size: 26px; }
 .browse.settings { overflow: hidden; height: 100vh; box-sizing: border-box; padding: 108px 164px 44px; }
 .settings-panes { display: flex; align-items: stretch; gap: 52px; height: 100%; min-height: 0; }
@@ -1503,7 +1522,8 @@ svg.library-empty-icon { width: auto; }
 .calendar-day-number { font-size: 26px; font-weight: 700; }
 .calendar-day-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .calendar-event-dot { background: rgba(237,237,237,.8); }
-.calendar-week .calendar-chevron { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; min-height: 0; padding: 0; border: 0; border-radius: 50%; font-size: 24px; background: rgba(255,255,255,.08); color: rgba(237,237,237,.7); }
+.calendar-week .calendar-chevron { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.08); color: rgba(237,237,237,.7); }
+.calendar-chevron svg { width: 19px; height: 26px; }
 .calendar-month { margin-left: auto; white-space: nowrap; font-size: 24px; font-weight: 600; color: rgba(237,237,237,.6); }
 .calendar-week .calendar-day[aria-pressed="true"] { background: rgba(237,237,237,.88); color: #000; }
 .calendar-week .calendar-day[aria-current="date"]:not([aria-pressed="true"]):not(:focus) { border-color: rgba(255,255,255,.35); }

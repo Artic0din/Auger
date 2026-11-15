@@ -6,12 +6,61 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { fixture } from "../native/support/fakeSilo.ts";
 import { pressPin } from "./support/pin.ts";
+import { assertSelectLook } from "./support/pressed.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
 import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
 const KID_PIN = "2468";
+
+for (const reduced of [false, true]) {
+    for (const key of ["profile:p-kid", "add-profile", "change-server", "signout"]) {
+        tvTest(`Profiles ${key}: focus, held Select and release (reduced motion: ${reduced})`, async tv => {
+            await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+            await picker(tv);
+            const tile = key.startsWith("profile:") || key === "add-profile";
+            await assertSelectLook(tv, key, { focusScale: reduced ? 1 : tile ? 1.12 : 1.06,
+                heldScale: reduced ? 1 : tile ? 1.12 : 1.06, opacity: tile ? 0.8 : 0.7,
+                focusMs: reduced ? 0 : 320, ...(tile ? { face: key === "add-profile" ? ".profile-add-circle" : ".profile-face" } : {}) });
+            if (key === "profile:p-kid") await screenIs(tv, "pin");
+            if (key === "add-profile") await screenIs(tv, "profile-create");
+            if (key === "signout") await screenIs(tv, "profiles:signout");
+            if (key === "change-server") assert.equal(await tv.screen(), "server-selection");
+        });
+    }
+    for (const key of ["create-submit", "create-header-cancel", "create-cancel", "shuffle-avatars", "libraries-retry"]) {
+        tvTest(`Create Profile ${key}: focus, held Select and release (reduced motion: ${reduced})`, async tv => {
+            await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+            await picker(tv);
+            if (key === "libraries-retry") tv.fake.script("/user/libraries", { status: 503 });
+            await tv.page.locator('[data-focus="add-profile"]').click();
+            await screenIs(tv, "profile-create");
+            if (key === "libraries-retry") {
+                await tv.page.locator('[data-focus="create-child"]').click();
+                await tv.page.locator('[data-focus="create-libraries"]').click();
+                await tv.page.locator('[data-focus="libraries-retry"]').waitFor();
+            }
+            const primary = key === "create-submit";
+            if (primary) {
+                await tv.page.locator("#create-profile-name").fill("Guest");
+                tv.fake.script("/profiles", { status: 409 });
+            }
+            const avatar = await tv.page.locator('[data-focus="preset:0"] img').getAttribute("src");
+            const libraryReads = tv.fake.paths().filter(path => path === "GET /user/libraries").length;
+            await assertSelectLook(tv, key, { focusScale: primary ? reduced ? 1 : 1.055 : 1.04,
+                heldScale: primary ? reduced ? 1 : 1.055 : 1.04, opacity: primary ? 0.8 : 0.75,
+                focusMs: reduced ? 0 : primary ? 320 : 120, pressMs: primary && !reduced ? 120 : 0 });
+            if (key.includes("cancel")) await screenIs(tv, "profiles");
+            if (primary) {
+                await shows(tv, "The server could not create this profile. Check the name and household limits, or return to profiles.");
+                assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 1);
+            }
+            if (key === "shuffle-avatars") assert.notEqual(await tv.page.locator('[data-focus="preset:0"] img').getAttribute("src"), avatar);
+            if (key === "libraries-retry") await tv.eventually(async () => tv.fake.paths().filter(path => path === "GET /user/libraries").length === libraryReads + 1, "release retries libraries once");
+        });
+    }
+}
 
 /** MarqueeButtonStyle on tvOS: a focused button fills `Color.siloOnSurface` (#EDEDED) with black ink. */
 const APPLE_FOCUSED_BUTTON = ["rgb(237, 237, 237)", "rgb(0, 0, 0)"];

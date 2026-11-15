@@ -859,9 +859,11 @@ for (const removed of [false, true]) test(`later-page Details return ${removed ?
         const held = holdList(tv);
         await tv.remote(10009);
         assert.equal(await tv.focused(), "movie:m0050");
+        const cached = await tv.page.locator('.browse [data-focus="movie:m0050"]').elementHandle();
+        assert.ok(cached);
         held.release();
         await tv.eventually(async () => listReads(tv).length >= 4, "refresh sent");
-        await tv.page.waitForTimeout(200);
+        await tv.eventually(async () => await cached.evaluate(node => !node.isConnected), "personal-page refresh rendered");
         assert.equal(await tv.focused(), removed ? "movie:m0051" : "movie:m0050");
         assert.equal(await tv.page.locator('.browse [data-focus="movie:m0050"]').count(), removed ? 0 : 1);
     } finally { await tv.page.context().close(); }

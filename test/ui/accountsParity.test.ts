@@ -9,10 +9,44 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { ACTIVE, keys, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
 import { launchBrowser, type Tv } from "./support/tv.ts";
+import { assertSelectLook } from "./support/pressed.ts";
+import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
+
+for (const reduced of [false, true]) {
+    for (const kind of ["server", "add-server", "account", "add-account"] as const) {
+        test(`Change Account ${kind}: focus, held Select and release (reduced motion: ${reduced})`, async () => {
+            await withSignedInTv(browser, async tv => {
+                await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+                const { owner, baseUrl } = await seedAccounts(tv, 1, []);
+                await openChangeAccount(tv);
+                const rail = kind === "server" || kind === "add-server";
+                const key = kind === "server" ? baseUrl : kind === "account" ? owner : kind;
+                await assertSelectLook(tv, key, { focusScale: rail ? 1 : 1.03, heldScale: 0.98, opacity: 1,
+                    focusMs: reduced ? 0 : 120 });
+                if (kind === "add-server") await tv.page.locator('[data-screen="entry"]').waitFor();
+                if (kind === "add-account") await tv.page.locator('[data-screen="code"]').waitFor();
+                if (kind === "account") await tv.page.locator('[data-screen="profiles"]').waitFor();
+                if (kind === "server") assert.deepEqual(await keys(tv, ".accounts-pane button"), [owner, "add-account"]);
+            });
+        });
+    }
+}
+
+test("server management rows use Settings focus and pressed motion and open on release", async () => {
+    await withSignedInTv(browser, async tv => {
+        await openSettingsAccounts(tv);
+        const row = tv.page.locator('[data-focus="add-server"]');
+        await focusSettingsRow(row);
+        await holdSettingsRow(tv, row);
+        assert.equal(await tv.page.locator('[data-view="accounts-settings"]').count(), 1);
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator('[data-screen="entry"]').waitFor();
+    });
+});
 
 test("Change Account lists the active server first, then servers and accounts by last use", async () => {
     await withSignedInTv(browser, async tv => {
