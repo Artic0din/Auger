@@ -46,7 +46,7 @@ body:
     id: device-details
     attributes:
       label: Device model and OS version
-      placeholder: Samsung S95C (QE65S95C), Tizen 8.0
+      placeholder: Samsung S95C (QE65S95C), Tizen 9.0
     validations:
       required: true
   - type: input
