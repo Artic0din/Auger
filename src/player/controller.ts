@@ -3747,8 +3747,8 @@ function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
     const id = shownSubtitle(attempt, plan);
     if (id === undefined) return true;
     if (plan.subtitle.mode === "burn_in") return false;
-    // A plan artifact is drawn by the app (`readCaptions`) even for an embedded row; AVPlay draws only rows it is switched to.
-    if (id === plan.subtitle.trackId && plan.subtitle.artifact !== undefined && (plan.subtitle.mode === "render" || plan.subtitle.mode === "convert")) return true;
+    // A plan artifact is drawn by the app (`readCaptions`) even for an embedded row; a stream switch (`subtitleOverride`) hands the text to AVPlay.
+    if (attempt.subtitleOverride === undefined && id === plan.subtitle.trackId && plan.subtitle.artifact !== undefined && (plan.subtitle.mode === "render" || plan.subtitle.mode === "convert")) return true;
     const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
     return row === undefined || !inStreamCandidate(plan, row);
 }
