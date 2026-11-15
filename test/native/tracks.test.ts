@@ -2185,6 +2185,22 @@ test("Auto with no subtitle language skips a default track the plan flags unplay
     } finally { r.controller.destroy(); }
 });
 
+test("Auto with no subtitle language keeps the plan's selection when the server plays another version", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const catalog = catalogTracks(decision.plan.subtitle.inventory).map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track);
+    const r = await rig();
+    r.server.next.push({ effectiveFileId: "43" });
+    r.h.fake.script("/watch/movie-1?file_id=43", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "43", audio_tracks: r.server.files.get("43")?.audio }], effective_subtitle_mode: "auto", effective_show_forced_subtitles: true } });
+    try {
+        await playMovie(r, { ...MOVIE, subtitleTracks: catalog });
+        assert.equal([...r.server.sessions.values()][0]?.effectiveFileId, "43");
+        assert.equal(replans(r.h).length, 0, "the requested file's default flag says nothing about the version that plays");
+        assert.equal(tracks(r).selectedSubtitleId, undefined);
+    } finally { r.controller.destroy(); }
+});
+
 test("the plan decoder reads the unplayable flag and treats an absent one as playable", () => {
     const base = fixture("playback_start_opaque_ids");
     const plan: Record<string, unknown> = { ...(base.playback_plan as Record<string, unknown>) };
