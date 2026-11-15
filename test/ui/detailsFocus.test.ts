@@ -35,7 +35,7 @@ async function searchFor(tv: Tv, query: string, key: string): Promise<void> {
     await card.focus();
 }
 
-declare global { interface Window { seasonAnswers: string[]; detailsEntryFocus: (string | null)[]; heroDraws: number; readsInFlight: number } }
+declare global { interface Window { seasonAnswers: string[]; detailsEntryFocus: (string | null)[]; episodeReadPainted: boolean[]; heroDraws: number; readsInFlight: number } }
 
 /** Records each season whose episode list the app has read off the network, in the order it read them. */
 async function recordSeasonAnswers(page: Page): Promise<void> {
@@ -455,6 +455,46 @@ test("answers that land before the next frame redraw opening series Details once
         assert.equal(await tv.page.evaluate(() => window.heroDraws), routeDraws + 1, "one redraw for the burst");
         await tv.page.locator('.details-episodes [data-focus="episode:s1e11"]').waitFor();
         assert.notEqual(await tv.focused(), null);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("a focused episode's read leaves before the dwell repaints Details", async () => {
+    // On the S95C a Details repaint takes 140-180 ms; the 120 ms dwell's read must not wait behind it.
+    const tv = await openTv(browser, { app: "browse", prepare: async page => { await page.addInitScript(() => {
+        window.episodeReadPainted = [];
+        const fetch = window.fetch.bind(window);
+        window.fetch = (input, init) => {
+            if (/\/catalog\/items\/episode%3As1e1[1-7]/.test(String(input))) window.episodeReadPainted.push(document.querySelector("[data-before-dwell]") === null);
+            return fetch(input, init);
+        };
+    }); } });
+    const catalog = new FakeDetails();
+    for (const title of catalog.titles.values()) if (title.seriesId === "series:s1") catalog.titles.delete(title.id);
+    for (let episode = 1; episode <= 7; episode++) catalog.add({ id: `episode:s1e1${episode}`, type: "episode", title: `Chapter ${episode}`, libraryId: "13", seriesId: "series:s1", season: 1, episode });
+    tv.fake.catalog = catalog;
+    try {
+        await signedIn(tv);
+        await searchFor(tv, "Harbor Lights", "series:s1");
+        await tv.remote(ENTER);
+        await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').waitFor();
+        await tv.jump(2000);
+        await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').focus();
+        await tv.jump(2000);
+        await tv.page.evaluate(() => { window.episodeReadPainted = []; });
+        await pauseTvClock(tv);
+        await tv.remote(39);
+        assert.equal(await tv.focused(), "episode:s1e13");
+        // Marks the screen the focus move painted; the dwell's repaint replaces it.
+        await tv.page.evaluate(() => document.querySelector(".details-hero")?.setAttribute("data-before-dwell", ""));
+        await tv.jump(119);
+        assert.deepEqual(await tv.page.evaluate(() => window.episodeReadPainted), [], "no read before the dwell");
+        await tv.jump(1);
+        await tv.eventually(() => tv.page.evaluate(() => window.episodeReadPainted.length === 1), "the focused episode's read");
+        assert.deepEqual(await tv.page.evaluate(() => window.episodeReadPainted), [false], "the read left before the dwell's repaint");
+        // The repaint waits for the next animation frame, which the paused clock holds until it moves.
+        await jumpUntil(tv, 16, async () => await tv.page.locator("[data-before-dwell]").count() === 0, "the dwell's repaint");
+        assert.equal(await tv.focused(), "episode:s1e13");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });

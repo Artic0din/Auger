@@ -3031,6 +3031,10 @@ detailTest("series shares the full detail hero and next-episode track selectors"
     await tv.page.locator('[data-focus="subtitle:off"]').click();
     assert.equal(await tv.focused(), "subtitles");
     await tv.page.getByText("Off", { exact: true }).waitFor();
+    // Down from next-episode needs the season chips and episode rail. A read still in flight (the
+    // subtitle preference) repaints Details when it lands and hands focus back to Subtitles mid-move.
+    await tv.page.locator('[data-focus^="season:"]').first().waitFor();
+    await settledEpisodePrefetch(tv);
     await tv.page.locator('[data-focus="next-episode"]').focus();
     await tv.remote(40);
     assert.match(await tv.focused() ?? "", /^season:/);

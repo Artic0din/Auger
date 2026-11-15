@@ -66,8 +66,10 @@ export interface AVPlay {
      * READY is documented only for the synchronous `prepare`, which this client does not use.
      */
     getTotalTrackInfo?(): readonly AVPlayTrackInfo[];
+    /** The rows playing now. Valid in READY, PLAYING and PAUSED. */
+    getCurrentStreamInfo?(): readonly AVPlayTrackInfo[];
     /**
-     * Switch an AUDIO or TEXT track of the open stream. TEXT is valid in PLAYING and PAUSED.
+     * Switch an AUDIO or TEXT track of the open stream. AUDIO is valid in PLAYING, TEXT in PLAYING and PAUSED.
      * The index is `AVPlayStreamInfo.index`, not a server or FFmpeg stream index.
      */
     setSelectTrack?(trackType: "AUDIO" | "TEXT", trackIndex: number): void;

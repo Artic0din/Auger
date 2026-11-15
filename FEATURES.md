@@ -161,7 +161,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| In-player audio track switch | ✅ | ✅ | ✅ | Server replans. Audible change not confirmed on a TV (#11) |
+| In-player audio track switch | ✅ | ✅ | ✅ | Server replans. On direct play the server keeps the original file and AVPlay switches the track (`client_selected_audio_track_v1`, #507). Audible change not confirmed on a TV (#11) |
 | Preplay audio and file-version picker | ✅ | ✅ | ✅ | Tizen choice lasts one attempt; Apple persists per title or series. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow` |
 | Preplay subtitle picker (including Off) | ✅ | ✅ | ✅ | Tizen offers catalog tracks, Auto and Off, resolved against the authoritative playback inventory. Saved series preferences gate every cached episode until confirmed; sidecars without a stream index remain visit-only. Downloaded choices use the in-player menu. Native comparison remains pending. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow`; Auto policy not rechecked here |
 | Text subtitles (VTT/SRT, ASS dialogue) in an app overlay | ✅ | ✅ | ✅ | Captions not yet verified on a TV or simulator (#80). Android: Media3 `SubtitleManager` |

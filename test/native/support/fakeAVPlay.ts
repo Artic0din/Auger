@@ -37,10 +37,14 @@ export class FakeAVPlay implements AVPlay {
     readonly listeners: AVPlayListener[] = [];
     readonly urls: string[] = [];
     positionMs = 0;
-    /** Rows `getTotalTrackInfo` returns for the open stream. */
+    /** AUDIO rows of the open stream, listed before `tracks`. A TV lists every audio stream of an original file. */
+    audioTracks: AVPlayTrackInfo[] = [1, 2, 3].map((index) => ({ index, type: "AUDIO", extra_info: "{\"channels\":\"2\",\"fourCC\":\"audio/mpeg\"}" }));
+    /** Other rows `getTotalTrackInfo` returns for the open stream. */
     tracks: AVPlayTrackInfo[] = [];
     /** TEXT index from the last `setSelectTrack`, until subtitles are silenced. */
     textIndex: number | undefined;
+    /** AUDIO index from the last `setSelectTrack`; until then the stream's first AUDIO row plays. */
+    audioIndex: number | undefined;
     silentSubtitle = false;
     private stream = 0;
     private readonly prepares: Pending[] = [];
@@ -56,6 +60,7 @@ export class FakeAVPlay implements AVPlay {
         this.stream++;
         this.state = "IDLE";
         this.positionMs = 0;
+        this.audioIndex = undefined;
         this.urls.push(url);
         this.calls.push(`open ${url}`);
     }
@@ -134,18 +139,28 @@ export class FakeAVPlay implements AVPlay {
     getTotalTrackInfo(): readonly AVPlayTrackInfo[] {
         this.require("getTotalTrackInfo", ["PLAYING", "PAUSED"]);
         this.calls.push("getTotalTrackInfo");
-        return this.tracks;
+        return this.rows;
+    }
+
+    getCurrentStreamInfo(): readonly AVPlayTrackInfo[] {
+        this.require("getCurrentStreamInfo", ["READY", "PLAYING", "PAUSED"]);
+        this.calls.push("getCurrentStreamInfo");
+        const audio = this.audioIndex ?? this.audioTracks[0]?.index;
+        return this.rows.filter((track) => track.type === "AUDIO" ? track.index === audio : track.type === "TEXT" && track.index === this.textIndex);
     }
 
     setSelectTrack(trackType: "AUDIO" | "TEXT", trackIndex: number): void {
-        this.require("setSelectTrack", ["PLAYING", "PAUSED"]);
-        if (!this.tracks.some((track) => track.type === trackType && track.index === trackIndex)) {
+        // "PAUSED" is documented for TEXT tracks only.
+        this.require("setSelectTrack", trackType === "AUDIO" ? ["PLAYING"] : ["PLAYING", "PAUSED"]);
+        if (!this.rows.some((track) => track.type === trackType && track.index === trackIndex)) {
             throw new InvalidValuesError("setSelectTrack");
         }
         this.calls.push(`setSelectTrack ${trackType} ${trackIndex}`);
         if (trackType === "TEXT") {
             this.textIndex = trackIndex;
             this.silentSubtitle = false;
+        } else {
+            this.audioIndex = trackIndex;
         }
     }
 
@@ -154,6 +169,10 @@ export class FakeAVPlay implements AVPlay {
         this.calls.push(`setSilentSubtitle ${hidden}`);
         this.silentSubtitle = hidden;
         if (hidden) this.textIndex = undefined;
+    }
+
+    private get rows(): AVPlayTrackInfo[] {
+        return [...this.audioTracks, ...this.tracks];
     }
 
     // --- test controls ---
