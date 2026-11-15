@@ -64,6 +64,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Limited the UI tests to two files at a time. Node ran one Chromium per test file with no limit, which starved slow runners and made timing-sensitive tests fail now and then.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
 - Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.

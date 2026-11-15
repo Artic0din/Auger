@@ -23,7 +23,8 @@ Lost track-change replies cannot leave an obsolete local plan playing; definitiv
 
 ## Screens and composed app
 
-`npm run test:ui` bundles the real TypeScript screens for Chrome 108, as the TV build does, and runs them in desktop Chromium.
+`npm run test:ui` runs two test files at a time, because each file launches its own Chromium and an unlimited count starves a slow runner until timers and replies land out of order.
+It bundles the real TypeScript screens for Chrome 108, as the TV build does, and runs them in desktop Chromium.
 Playwright routes native API requests to the same fake Silo and serves synthetic SVG artwork.
 The fake server and browser clocks move together; polling and retry tests do not sleep.
 `openTv` installs a running browser clock; `fastForward` alone does not stop host time from consuming a deadline between jumps.
