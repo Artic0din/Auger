@@ -1551,7 +1551,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         }
                         current.data = { ...data, detail, details: previous };
                         startBoxSetRow();
-                        if (!previous.series?.selectionChanged && current.focus === undefined && data.contextSeason !== undefined && data.seasons.some(item => item.seasonNumber === data.contextSeason)) return { zone: "seasons", key: `season:${data.contextSeason}` };
+                        if (!previous.series?.selectionChanged && current.seriesContext?.episodeId === undefined && current.focus === undefined && data.contextSeason !== undefined && data.seasons.some(item => item.seasonNumber === data.contextSeason)) return { zone: "seasons", key: `season:${data.contextSeason}` };
                         return;
                     }
                     const details = createItemDetails(current, data.detail);

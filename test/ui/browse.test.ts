@@ -36,8 +36,8 @@ for (const outage of ["all", "supporting"] as const) browseTest(`offline Details
     assert.equal(await tv.page.locator('[data-focus="watchlist"]').count(), 1);
     await tv.page.unroute(blocked);
     const reads = tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length;
-    await tv.jump(35000);
-    await tv.eventually(async () => tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length > reads, "automatic supporting recovery");
+    // Stepping, not one jump: a failure that lands a frame after the jump schedules its 15 s retry after the jump fired the due timers.
+    await jumpUntil(tv, 5000, async () => tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length > reads, "automatic supporting recovery");
 }, { catalog: new FakeDetails() });
 
 browseTest("collection detail matches measured Apple layout and truncates long captions", async (tv, catalog) => {

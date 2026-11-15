@@ -13,6 +13,7 @@ import { fixture, problem } from "./support/fakeSilo.ts";
 import { WireError } from "../../src/contracts/v2/wire.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
+const SEEK_CACHE_KEY = "player.seek_cache_enabled";
 const QUALITY = "playback.preferred_quality" as SettingsKey;
 const BITRATE = "playback.max_bitrate_kbps" as SettingsKey;
 const SEEK_BACK = "player.video_skip_back_seconds" as SettingsKey;
@@ -559,10 +560,11 @@ test("late profile answers are discarded, and unsupported discovery never fetche
     next.stop();
 });
 
-test("HDR stays a device boolean and Dolby Vision is never read or written", async () => {
+test("HDR stays a device boolean and Dolby Vision and Seek Cache are never read or written", async () => {
     const { state, fakeSettings, core, fake } = await setup(true, true);
     assert.equal(state.definitions.some(def => def.key === HDR_KEY && def.device && !def.profile), true);
     assert.equal(state.definitions.some(def => (def.key as string) === DOLBY_VISION_KEY), false);
+    assert.equal(state.definitions.some(def => (def.key as string) === SEEK_CACHE_KEY), false);
     assert.equal(state.effective.get(HDR_KEY)?.value, true);
     assert.equal(state.scope(HDR_KEY), "profile_device");
     const profileReads = fake.requests.filter(request => {
@@ -576,7 +578,7 @@ test("HDR stays a device boolean and Dolby Vision is never read or written", asy
     assert.equal(fakeSettings.profile().has(HDR_KEY), false);
     assert.equal([...device.keys()].join(" ").includes(DOLBY_VISION_KEY), false);
     assert.equal(state.effective.get(HDR_KEY)?.value, false);
-    assert.equal(fake.requests.some(request => request.path.includes(DOLBY_VISION_KEY)), false);
+    assert.equal(fake.requests.some(request => request.path.includes(DOLBY_VISION_KEY) || request.path.includes(SEEK_CACHE_KEY)), false);
     assert.equal(fake.requests.filter(request => request.method === "PUT").every(request => request.path.endsWith("?scope=profile_device")), true);
     state.stop();
 });
