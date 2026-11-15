@@ -628,17 +628,15 @@ browseTest("Related shelf omits the watched badge Apple leaves off the similar c
 
 for (const visit of ["warm", "cold", "rounded square"] as const) {
 const coldStart = visit !== "warm";
-browseTest(`Search measures the default person, not the filter column, onto the second poster${coldStart ? " from the field on a cold visit" : ""}${visit === "rounded square" ? " with fractional portrait bounds" : ""}`, async tv => {
+browseTest(`Search measures the default person, not the filter column, onto the second poster${coldStart ? " after Done on a cold visit" : ""}${visit === "rounded square" ? " with fractional portrait bounds" : ""}`, async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.fill("#browse-search", "Movie 000"); await tv.remote(IME_DONE);
     await tv.page.locator('.browse-grid [data-focus="movie:m0002"]').waitFor();
     await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
     await tv.page.locator('[data-focus="movie:951"]').waitFor({ state: "attached" });
     await tv.eventually(async () => await tv.page.locator('.browse').evaluate(node => (node as HTMLElement).style.getPropertyValue("--poster-scale")) === "0.86", "compact Search poster geometry");
-    if (coldStart) {
-        assert.equal(await tv.focused(), "query");
-        await press(tv, "ArrowDown");
-    } else await tv.page.locator('[data-focus="search-filter:all"]').focus();
+    // Done lands on the selected filter on a cold visit.
+    if (!coldStart) await tv.page.locator('[data-focus="search-filter:all"]').focus();
     assert.equal(await tv.focused(), "search-filter:all");
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "person:edge-0", "People owns its default entry");
@@ -793,7 +791,7 @@ for (const reduced of [false, true]) {
         });
         assert.equal(await paints('[data-focus="person:edge-5"] .browse-art'), true, "the sixth portrait paints beyond the logical rail frame");
         const reads = tv.fake.requests.length;
-        await press(tv, "ArrowDown", "ArrowDown");
+        await press(tv, "ArrowDown");
         for (let step = 0; step < 5; step++) await press(tv, "ArrowRight");
         assert.equal(await tv.focused(), "person:edge-5");
         if (!reduced) {
@@ -4330,9 +4328,7 @@ browseTest("search uses the TV keyboard, shows only the latest query's answer, a
     await tv.jump(0);
     assert.deepEqual(await cardIds(tv), ["series:s2"], "the late answer for the older query is dropped");
     assert.match(browseReads(tv, "/catalog")[1]?.path ?? "", /q=night&type=video&limit=60/);
-    assert.equal(await tv.focused(), "query", "focus stays in the field while results arrive");
-    await press(tv, "ArrowDown");
-    assert.equal(await tv.focused(), "search-filter:all");
+    assert.equal(await tv.focused(), "search-filter:all", "Done leaves focus on the selected filter while results arrive");
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "series:s2");
 
