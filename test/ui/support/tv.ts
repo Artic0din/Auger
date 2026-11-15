@@ -281,9 +281,11 @@ export async function readLive<T, Arg>(tv: Pick<Tv, "page" | "eventually">, read
  * (because its request had not failed yet on a slow runner) never fires on a paused clock.
  * Stepping re-fires whatever was scheduled meanwhile.
  */
-export async function jumpUntil(tv: Pick<Tv, "jump" | "eventually">, stepMs: number, check: () => Promise<boolean>, what: string): Promise<void> {
+export async function jumpUntil(tv: Pick<Tv, "jump" | "eventually" | "pendingReplies" | "fake">, stepMs: number, check: () => Promise<boolean>, what: string): Promise<void> {
     await tv.eventually(async () => {
         if (await check()) return true;
+        // A reply still on its way would see the page's clock run ahead of it, and its request would time out; only a held one waits on purpose.
+        if (tv.pendingReplies > tv.fake.heldReplies) return false;
         await tv.jump(stepMs);
         return check();
     }, what);
