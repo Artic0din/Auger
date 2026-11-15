@@ -26,6 +26,8 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
 - **URL.** Each request goes to `base.apiRoot + path`.
 - **Redirects and cookies.** Requests use `redirect: "error"`, `credentials: "omit"` and `cache: "no-store"`. A redirect is refused so a bearer token or body cannot reach another origin.
 - **Timeout.** The default is 15 s (`DEFAULT_TIMEOUT_MS`). Callers may override it per request.
+  Subtitle files (`NativeHttp.subtitleText`) have no total limit and fail after 60 s with no bytes, Apple's `sidecarIdleTimeout`: the server streams an embedded-track extract as it demuxes, which takes minutes on a large remux.
+  They stop at 4 MiB.
 - **Headers on every request.**
   - `Accept: application/json, application/problem+json`
   - `X-Silo-Device-Id`

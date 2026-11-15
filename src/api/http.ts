@@ -54,6 +54,13 @@ const RETRY_DELAY_MS = 1000;
 /** A longer Retry-After is the caller's decision, not a transport retry. */
 const MAX_RETRY_AFTER_SECONDS = 5;
 const RETRYABLE_STATUSES = [502, 503, 504];
+/**
+ * Apple's `SubtitleDecoder.sidecarIdleTimeout`. An embedded-track extract streams as the server's
+ * demux reaches each cue, so a large remux takes minutes; only silence fails it, never total time.
+ */
+const SUBTITLE_IDLE_TIMEOUT_MS = 60000;
+/** Apple's `ExternalSubtitlePreparationPolicy.maximumFileBytes`. */
+const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
 
 export class NativeHttp {
     async subtitleText(url: string, signal: AbortSignal): Promise<string> {
@@ -63,13 +70,30 @@ export class NativeHttp {
         const cancel = (): void => abort.abort();
         signal.addEventListener("abort", cancel, { once: true });
         if (signal.aborted) cancel();
-        const timeout = this.clock.schedule(cancel, DEFAULT_TIMEOUT_MS);
+        let timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
+        const heard = (): void => {
+            timeout();
+            timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
+        };
         try {
             const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error" });
-            if (!response.ok || Number(response.headers.get("Content-Length")) > 4 * 1024 * 1024) throw new Error("Subtitle download failed");
-            const text = await response.text();
-            if (text.length > 4 * 1024 * 1024) throw new Error("Subtitle file too large");
-            return text;
+            if (!response.ok || Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle download failed");
+            if (response.body === null) return "";
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let text = "";
+            let bytes = 0;
+            for (;;) {
+                heard();
+                const chunk = await reader.read();
+                if (chunk.done) return text + decoder.decode();
+                bytes += chunk.value.byteLength;
+                if (bytes > SUBTITLE_MAX_BYTES) {
+                    cancel();
+                    throw new Error("Subtitle file too large");
+                }
+                text += decoder.decode(chunk.value, { stream: true });
+            }
         } finally {
             timeout();
             signal.removeEventListener("abort", cancel);

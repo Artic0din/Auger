@@ -437,6 +437,11 @@
 }
 
 .browse-error {
+    color: var(--silo-error-ink);
+}
+
+/* TVSettingsWarningFooter is .siloError; the rest of the app uses the ink. */
+.browse-error.settings-warning {
     color: var(--silo-error);
 }
 

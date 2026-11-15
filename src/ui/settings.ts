@@ -210,7 +210,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const feedback = (): HTMLElement[] => {
         const nodes: HTMLElement[] = [];
         if (state.busy) { const pending = el("p", "browse-text", state.loaded ? "Saving…" : "Loading settings…"); pending.setAttribute("role", "status"); nodes.push(pending); }
-        if (state.error !== undefined) { const error = el("p", "browse-text browse-error", state.error); error.setAttribute("role", "alert"); nodes.push(error); }
+        if (state.error !== undefined) { const error = el("p", "browse-text browse-error settings-warning", state.error); error.setAttribute("role", "alert"); nodes.push(error); }
         return nodes;
     };
     const retryButton = (): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void state.retry(); })];
@@ -420,7 +420,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 item.element.setAttribute("aria-disabled", String(launchPending));
                 return item;
             })];
-            showModal("settings:launch", "Profile Selection", [el("h1", "browse-title", "Profile Selection"), ...(launchError ? [el("p", "browse-error", "Could not save the launch choice. Try again.")] : []), ...(launchPending ? [el("p", "browse-text", "Saving launch choice…")] : [])], controls, "settings-launch");
+            showModal("settings:launch", "Profile Selection", [el("h1", "browse-title", "Profile Selection"), ...(launchError ? [el("p", "browse-error settings-warning", "Could not save the launch choice. Try again.")] : []), ...(launchPending ? [el("p", "browse-text", "Saving launch choice…")] : [])], controls, "settings-launch");
             return;
         }
         if (confirmingSignOut) {
@@ -532,7 +532,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             rows.push(item);
             body.append(el("h3", "settings-section-header", "PROFILE AT LAUNCH"), item.element, el("p", "settings-value", profileSelectionCaption(launch.behavior)));
             if (launchError) {
-                const error = el("p", "browse-text browse-error", "Could not save the launch choice.");
+                const error = el("p", "browse-text browse-error settings-warning", "Could not save the launch choice.");
                 error.setAttribute("role", "alert");
                 body.appendChild(error);
                 const retry = actionButton("retry-launch", "Retry launch choice", () => saveLaunch(launchTarget));
@@ -623,7 +623,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             beforeStreaming(body, [el("p", "settings-value settings-quality-footer", qualityFooter(typeof resolution === "string" ? resolution : null, typeof bitrate === "number" ? bitrate : null, bufferingRow !== undefined))]);
         }
         if (category === "playback" && connection.learnedResetError !== undefined) {
-            const warning = el("p", "browse-text browse-error", connection.learnedResetError);
+            const warning = el("p", "browse-text browse-error settings-warning", connection.learnedResetError);
             warning.setAttribute("role", "alert");
             beforeStreaming(body, [warning]);
         }
@@ -641,7 +641,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const ignoresLimit = state.effective.get(BUFFERING_MODE_KEY)?.value === "never" && connection.learnedLimit !== undefined;
             if (speed.budget !== undefined && !ignoresLimit) nodes.push(el("p", "settings-value settings-connection-budget", speed.budget));
             if (speed.message !== undefined) {
-                const warning = el("p", "browse-text browse-error", speed.message);
+                const warning = el("p", "browse-text browse-error settings-warning", speed.message);
                 warning.setAttribute("role", "alert");
                 nodes.push(warning);
             }

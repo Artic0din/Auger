@@ -55,6 +55,29 @@
     position: relative;
 }
 
+/* ASSSubtitleLayer.status: .callout (tvOS 31/38 Medium), white on black 0.8, centred 10% above the bottom. */
+.player-caption-status {
+    position: absolute;
+    left: 50%;
+    top: 90%;
+    transform: translate(-50%, -50%);
+    max-width: 80%;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 31px;
+    font-weight: 500;
+    line-height: 38px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.player-caption-status[hidden] {
+    display: none;
+}
+
 .player-captions span {
     padding: 4px 12px;
     box-decoration-break: clone;
@@ -686,7 +709,7 @@
     margin: 0 0 48px;
     font-size: 30px;
     line-height: 1.35;
-    color: var(--silo-error);
+    color: var(--silo-error-ink);
 }
 
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
