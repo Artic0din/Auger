@@ -27,7 +27,7 @@ export class FakeSettings {
     /** Offers `playback.buffering_quality_mode` (settings revision 23), default "always". */
     bufferingRows = false;
     /** `GET /settings/overlay-config`; undefined answers 404. */
-    overlayConfig: { enabled: boolean; defaults?: string } | undefined = { enabled: true };
+    overlayConfig: { enabled: boolean; defaults?: string; images?: readonly { ref: string; name?: string; url: string; width: number; height: number }[] } | undefined = { enabled: true };
     constructor(fake: FakeSilo) {
         const catalog = fake.catalog;
         fake.catalog = { route: (method, path, profile, body, headers) => {
