@@ -394,7 +394,10 @@ test("sidecar subtitles apply profile appearance and timing without blocking pla
         assert.ok(view.phase === "playing");
         assert.equal(view.captions?.text, fail ? "" : "Hello");
         if (!fail) assert.equal(view.captions?.appearance.fontSize, "xxlarge");
-        else assert.ok(view.tracks.notices.some(notice => notice.includes("Could not load")));
+        else {
+            assert.equal(view.captions?.status, "failed");
+            assert.ok(view.tracks.notices.includes("Subtitle data couldn’t be loaded. Turn subtitles off and on to retry."));
+        }
         r.controller.destroy();
     }
 });
@@ -2281,6 +2284,8 @@ test("series subtitle choice persists the server index or explicit Off without i
     for (const off of [true, false]) {
         const r = await episodeRig();
         if (!off) r.server.next.push({ subtitle: 4 });
+        // A failed preference read keeps the server's default track, which is the track these tests save.
+        r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
         r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
         await playMovie(r, EPISODE);
         r.controller.saveSeriesSubtitle();
@@ -2302,6 +2307,8 @@ test("series subtitle choice persists the server index or explicit Off without i
 test("series subtitle write is not resent after a 401 and token refresh", async () => {
     const r = await episodeRig();
     r.server.next.push({ subtitle: 4 });
+    // A failed preference read keeps the server's default track, which is the track these tests save.
+    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
     r.h.fake.script("/subtitle-prefs/series%3As1", problem(401, "authentication_required", "Authentication required"), { status: 204 });
     await playMovie(r, EPISODE);
     r.controller.saveSeriesSubtitle();
@@ -2317,6 +2324,8 @@ test("series subtitle write is not resent after a 401 and token refresh", async 
 test("series subtitle save refuses when the shown track is missing from the inventory instead of saving Off", async () => {
     const r = await episodeRig();
     r.server.next.push({ subtitle: 9 });
+    // A failed preference read keeps the server's default track, which is the track these tests save.
+    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
     r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
     await playMovie(r, EPISODE);
     r.controller.saveSeriesSubtitle();

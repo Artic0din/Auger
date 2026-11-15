@@ -17,6 +17,7 @@ import { detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTv
 
 const BACK = 10009;
 const IME_DONE = 65376;
+const IME_CANCEL = 65385;
 const PAGE_SIZE = 24;
 
 for (const outage of ["all", "supporting"] as const) browseTest(`offline Details retains supporting content and recovers: ${outage}`, async tv => {
@@ -36,8 +37,8 @@ for (const outage of ["all", "supporting"] as const) browseTest(`offline Details
     assert.equal(await tv.page.locator('[data-focus="watchlist"]').count(), 1);
     await tv.page.unroute(blocked);
     const reads = tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length;
-    await tv.jump(35000);
-    await tv.eventually(async () => tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length > reads, "automatic supporting recovery");
+    // Stepping, not one jump: a failure that lands a frame after the jump schedules its 15 s retry after the jump fired the due timers.
+    await jumpUntil(tv, 5000, async () => tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length > reads, "automatic supporting recovery");
 }, { catalog: new FakeDetails() });
 
 browseTest("collection detail matches measured Apple layout and truncates long captions", async (tv, catalog) => {
@@ -627,17 +628,15 @@ browseTest("Related shelf omits the watched badge Apple leaves off the similar c
 
 for (const visit of ["warm", "cold", "rounded square"] as const) {
 const coldStart = visit !== "warm";
-browseTest(`Search measures the default person, not the filter column, onto the second poster${coldStart ? " from the field on a cold visit" : ""}${visit === "rounded square" ? " with fractional portrait bounds" : ""}`, async tv => {
+browseTest(`Search measures the default person, not the filter column, onto the second poster${coldStart ? " after Done on a cold visit" : ""}${visit === "rounded square" ? " with fractional portrait bounds" : ""}`, async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.fill("#browse-search", "Movie 000"); await tv.remote(IME_DONE);
     await tv.page.locator('.browse-grid [data-focus="movie:m0002"]').waitFor();
     await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
     await tv.page.locator('[data-focus="movie:951"]').waitFor({ state: "attached" });
     await tv.eventually(async () => await tv.page.locator('.browse').evaluate(node => (node as HTMLElement).style.getPropertyValue("--poster-scale")) === "0.86", "compact Search poster geometry");
-    if (coldStart) {
-        assert.equal(await tv.focused(), "query");
-        await press(tv, "ArrowDown");
-    } else await tv.page.locator('[data-focus="search-filter:all"]').focus();
+    // Done lands on the selected filter on a cold visit.
+    if (!coldStart) await tv.page.locator('[data-focus="search-filter:all"]').focus();
     assert.equal(await tv.focused(), "search-filter:all");
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "person:edge-0", "People owns its default entry");
@@ -792,7 +791,7 @@ for (const reduced of [false, true]) {
         });
         assert.equal(await paints('[data-focus="person:edge-5"] .browse-art'), true, "the sixth portrait paints beyond the logical rail frame");
         const reads = tv.fake.requests.length;
-        await press(tv, "ArrowDown", "ArrowDown");
+        await press(tv, "ArrowDown");
         for (let step = 0; step < 5; step++) await press(tv, "ArrowRight");
         assert.equal(await tv.focused(), "person:edge-5");
         if (!reduced) {
@@ -828,6 +827,107 @@ for (const reduced of [false, true]) {
     }, { catalog: new SearchEdgeCatalog(), beforeConnect: tv => {
         new FakeSettings(tv.fake).profile().set(CARD_PRESENTATION_KEY, { poster_size: "compact", caption: "title_metadata" });
     } });
+}
+
+// The S95C leaves 568 px above the Samsung keyboard (#533 capture); the page itself does not move.
+const SAMSUNG_KEYBOARD_TOP = 568;
+/**
+ * The Samsung keyboard shrinks only the visual viewport: `innerHeight` and `visualViewport.height` drop to 568 while the
+ * layout viewport (and every media query) stays 1080 (#536 S95C capture). Resizing the page would move the layout viewport too.
+ */
+async function samsungKeyboard(tv: Tv, up: boolean | number): Promise<void> {
+    await tv.page.evaluate(keyboard => {
+        // Closed, the visible height follows the layout viewport again.
+        const height = (): number => keyboard ?? document.documentElement.clientHeight;
+        const viewport = window.visualViewport;
+        if (viewport !== null) Object.defineProperty(viewport, "height", { configurable: true, get: height });
+        Object.defineProperty(window, "innerHeight", { configurable: true, get: height });
+        viewport?.dispatchEvent(new Event("resize"));
+        window.dispatchEvent(new Event("resize"));
+    }, up === true ? SAMSUNG_KEYBOARD_TOP : up === false ? undefined : up);
+    assert.equal(await tv.page.evaluate(() => document.documentElement.clientHeight), 1080, "the layout viewport keeps its height");
+}
+browseTest("Search keeps the field, filters and first results row above the Samsung keyboard", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.locator("#browse-search").focus();
+    await samsungKeyboard(tv, true);
+    await tv.page.fill("#browse-search", "Tom");
+    await tv.jump(300);
+    await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
+    const open = await searchGeometry(tv);
+    assert.equal(open.field, 60, "the field stays at the top");
+    // silo-android's keyboard-up header (TvSearchScreen.kt SearchStage): chips Spacing.sm (8dp) under the field, left on the results' gutter.
+    assert.equal(open.filters, 146, "the filters sit 16 px under the field");
+    assert.deepEqual(open.chips.map(chip => chip.height), [68, 68, 68], "18sp text, 8dp padding");
+    assert.equal(await tv.page.locator('[data-focus="search-filter:all"]').evaluate(node => getComputedStyle(node).backgroundClip), "border-box", "the selected chip fills to its edge, as TvFilterChip's has no border");
+    assert.equal(open.chips[0]?.left, open.firstCard, "the first chip lines up with the first result");
+    assert.deepEqual(open.chips.slice(1).map((chip, index) => chip.left - (open.chips[index]?.right ?? 0)), [24, 24], "chips 12dp apart");
+    assert.ok(open.firstRow <= SAMSUNG_KEYBOARD_TOP, `the first results row ends above the keyboard, got ${open.firstRow}`);
+    assert.equal(open.scroll, 0);
+    // While the keyboard closes the S95C reports 1079 for about 0.75 s (#536); that is not the keyboard.
+    await samsungKeyboard(tv, 1079);
+    assert.equal((await searchGeometry(tv)).filters, 354, "a 1 px shortfall keeps Apple's layout");
+    await samsungKeyboard(tv, true);
+    assert.equal((await searchGeometry(tv)).filters, 146);
+    // Back with the keyboard up reaches the page as the IME's Cancel: it closes the keyboard and never leaves Search.
+    await tv.remote(IME_CANCEL);
+    assert.equal(await view(tv), "search");
+    assert.equal(await tv.focused(), "query");
+    await samsungKeyboard(tv, false);
+    const closed = await searchGeometry(tv);
+    assert.equal(closed.filters, 354, "with the keyboard closed Apple's layout returns");
+    assert.deepEqual(closed.chips.map(chip => chip.height), [68, 68, 68]);
+    assert.ok((closed.chips[0]?.left ?? 0) > 580, "Apple's centred pill");
+    // A keyboard that shrinks the layout viewport too (Kody on #536) still gets the keyboard-up header.
+    // The page's resize event lands on a later frame.
+    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await tv.eventually(async () => (await searchGeometry(tv)).filters === 146, "both viewports at 568");
+    await tv.page.setViewportSize({ width: 1920, height: 1080 });
+    await tv.eventually(async () => (await searchGeometry(tv)).filters === 354, "both viewports back at 1080");
+}, { catalog: new SearchEdgeCatalog() });
+
+class TitlesOnlyCatalog extends FakeRequests {
+    override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): Reply | undefined {
+        if (new URL(path, "https://fake.invalid").pathname === "/catalog/people") return { status: 200, body: { items: [] } };
+        return super.route(method, path, profileId, body);
+    }
+}
+
+browseTest("Search shows the first poster row above the Samsung keyboard when there are no People", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.locator("#browse-search").focus();
+    await samsungKeyboard(tv, true);
+    await tv.page.fill("#browse-search", "Movie 000");
+    await tv.jump(300);
+    await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor();
+    const art = await tv.page.locator('.browse-grid .browse-art').first().evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, height: rect.height }; });
+    // 568 px cannot hold the field, filters, count and a whole 330 px poster; most of the row shows instead of none.
+    assert.ok(art.top + art.height / 2 <= SAMSUNG_KEYBOARD_TOP, `most of the first poster row is above the keyboard, got top ${art.top}`);
+    assert.equal(await tv.page.locator(".browse").evaluate(node => node.scrollTop), 0);
+}, { catalog: new TitlesOnlyCatalog() });
+
+browseTest("Search Done leaves the field for the selected filter, as Apple TV's keyboard does", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
+    assert.equal(await tv.focused(), "search-filter:all");
+    await tv.page.locator('[data-focus="search-filter:movie"]').focus();
+    await tv.page.locator("#browse-search").focus();
+    const reads = tv.fake.requests.length;
+    await tv.page.fill("#browse-search", "Tomas"); await tv.remote(IME_DONE);
+    assert.equal(await tv.focused(), "search-filter:movie");
+    assert.equal(new URL(browseReads(tv, "/catalog").slice(-1)[0]?.path ?? "", "https://fake.invalid").searchParams.get("type"), "movie", "focusing the selected filter reads nothing else");
+    assert.ok(tv.fake.requests.length > reads);
+}, { catalog: new SearchEdgeCatalog() });
+
+interface SearchGeometry { field: number; filters: number; chips: { left: number; right: number; height: number }[]; firstCard: number; firstRow: number; scroll: number }
+async function searchGeometry(tv: Tv): Promise<SearchGeometry> {
+    return tv.page.evaluate(() => {
+        const top = (selector: string): number => document.querySelector(selector)?.getBoundingClientRect().top ?? -1;
+        const people = [...document.querySelectorAll(".search-people-rail .browse-art")].map(node => node.getBoundingClientRect());
+        const chips = [...document.querySelectorAll(".search-filters .browse-button")].map(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, height: rect.height }; });
+        return { field: top(".search-field"), filters: top(".search-filters"), chips, firstCard: people[0]?.left ?? -1, firstRow: Math.max(...people.map(rect => rect.bottom)), scroll: document.querySelector(".browse")?.scrollTop ?? -1 };
+    });
 }
 
 browseTest("Search fills Person name lines without leaving a lone second-line word", async tv => {
@@ -4255,9 +4355,7 @@ browseTest("search uses the TV keyboard, shows only the latest query's answer, a
     await tv.jump(0);
     assert.deepEqual(await cardIds(tv), ["series:s2"], "the late answer for the older query is dropped");
     assert.match(browseReads(tv, "/catalog")[1]?.path ?? "", /q=night&type=video&limit=60/);
-    assert.equal(await tv.focused(), "query", "focus stays in the field while results arrive");
-    await press(tv, "ArrowDown");
-    assert.equal(await tv.focused(), "search-filter:all");
+    assert.equal(await tv.focused(), "search-filter:all", "Done leaves focus on the selected filter while results arrive");
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "series:s2");
 
@@ -4483,3 +4581,4 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
 }, { catalog: new PrimSearchCatalog(), beforeConnect: tv => {
     new FakeSettings(tv.fake).profile().set(CARD_PRESENTATION_KEY, { poster_size: "compact", caption: "title_metadata" });
 } });
+

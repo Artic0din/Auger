@@ -32,7 +32,10 @@
     --silo-boundary: #767676;
     --silo-hairline: rgba(255, 255, 255, 0.12);
     --silo-selected: rgba(255, 255, 255, 0.14);
-    --silo-error: #ffb4ab;
+    /* Apple siloError, used on settings rows (Theme/Colors.swift). */
+    --silo-error: #b00020;
+    /* Apple siloErrorInk, the error text colour everywhere else. */
+    --silo-error-ink: #ff6961;
     --silo-font: "Inter", system-ui, sans-serif;
     --silo-mono: "Roboto Mono", ui-monospace, monospace;
     /* Inter's advances run wider than SF Pro. em resolves on each element, so a 24px title and a 28px title both tighten. A later letter-spacing rule still wins. */
