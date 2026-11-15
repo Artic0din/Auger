@@ -66,6 +66,8 @@ All notable changes to this project are documented in this file.
 
 - Refreshed the saved profile limit after remembered-profile startup and offline recovery, so Add Profile followed the server's current limit.
 - Hid Add Profile in the profile menu when the account already held its only allowed profile.
+- Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
+- Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
 - Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
