@@ -13,10 +13,10 @@
 import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
-import { CARD_OVERLAYS_ENABLED_KEY, CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, type EffectiveSetting, profileSettings, type SettingsCapabilities, type SettingsKey, TITLE_ART_KEY } from "../contracts/v2/settings.ts";
+import { CARD_OVERLAYS_ENABLED_KEY, CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, type EffectiveSetting, type OverlayConfig, type OverlayImage, profileSettings, type SettingsCapabilities, type SettingsKey, TITLE_ART_KEY } from "../contracts/v2/settings.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
-import { type CardOverlayPrefs, parseOverlayPrefs } from "./cardOverlays.ts";
+import { type CardOverlayPrefs, type OverlayImageAsset, parseOverlayPrefs } from "./cardOverlays.ts";
 
 type Read = <T>(spec: RequestSpec<T>) => Promise<T>;
 
@@ -69,7 +69,16 @@ async function readProfileOverlays(read: Read, capability: SettingsCapabilities 
 }
 
 function prefsKey(prefs: CardOverlayPrefs): string {
-    return JSON.stringify([prefs.preset, prefs.style, prefs.order, [...prefs.items]]);
+    return JSON.stringify([prefs.preset, prefs.style, prefs.order, [...prefs.items], [...prefs.images ?? []]]);
+}
+
+/** OverlayPrefsStore.swift:247-258: the listed images a card can draw, with usable dimensions; the first of a repeated ref wins. */
+function imageAssets(images: readonly OverlayImage[]): ReadonlyMap<string, OverlayImageAsset> {
+    const assets = new Map<string, OverlayImageAsset>();
+    for (const image of images) {
+        if (!assets.has(image.ref) && image.width > 0 && image.height > 0 && image.url !== "") assets.set(image.ref, { url: image.url, aspect: image.width / image.height });
+    }
+    return assets;
 }
 
 type Settled<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
@@ -86,6 +95,7 @@ export class PresentationSettings {
     private profileEnabled: boolean | undefined;
     private adminDefaults: string | undefined;
     private prefs: CardOverlayPrefs = parseOverlayPrefs(undefined);
+    private images: ReadonlyMap<string, OverlayImageAsset> = new Map();
     private overlaysHydrated = false;
     private controller: AbortController | undefined;
     private readonly session: NativeSession;
@@ -172,16 +182,15 @@ export class PresentationSettings {
         if (before !== this.showsTitleArt) this.changed();
     }
 
-    private applyOverlays(config: Settled<{ enabled: boolean; defaults: string | undefined }>, profile: Settled<"unsupported" | { document: unknown; enabled: boolean | undefined }>): void {
+    private applyOverlays(config: Settled<OverlayConfig>, profile: Settled<"unsupported" | { document: unknown; enabled: boolean | undefined }>): void {
         const before = this.cardOverlays;
         // A failed read keeps that half's last answer rather than re-enabling what the administrator turned off.
-        if (config.ok) { this.serverEnabled = config.value.enabled; this.adminDefaults = config.value.defaults; }
+        if (config.ok) { this.serverEnabled = config.value.enabled; this.adminDefaults = config.value.defaults; this.images = imageAssets(config.value.images); }
         const choice = profile.ok ? profile.value === "unsupported" ? { document: undefined, enabled: undefined } : profile.value : undefined;
-        if (choice !== undefined) {
-            this.profileEnabled = choice.enabled;
-            const prefs = parseOverlayPrefs(choice.document ?? this.adminDefaults);
-            if (prefsKey(prefs) !== prefsKey(this.prefs)) this.prefs = prefs;
-        }
+        if (choice !== undefined) this.profileEnabled = choice.enabled;
+        // Either half can change which image refs draw (OverlayPrefsStore.swift:208-209).
+        const prefs = { ...(choice === undefined ? this.prefs : parseOverlayPrefs(choice.document ?? this.adminDefaults)), images: this.images };
+        if (prefsKey(prefs) !== prefsKey(this.prefs)) this.prefs = prefs;
         this.overlaysHydrated = config.ok && profile.ok && profile.value !== "unsupported";
         if (before !== this.cardOverlays) this.changed();
     }

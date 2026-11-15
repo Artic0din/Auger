@@ -23,8 +23,8 @@ test("a version 2 document patches known ids only and keeps valid accents", () =
     const prefs = parseOverlayPrefs(doc);
     assert.equal(prefs.preset, "pill");
     assert.deepEqual(prefs.order, ["rating_imdb", "resolution"]);
-    assert.deepEqual(prefs.items.get("rating_imdb"), { enabled: true, position: "bottom-left", accentColor: "#ABCDEF", showIcon: true });
-    assert.deepEqual(prefs.items.get("rating_tmdb"), { enabled: true, position: "left-edge", accentColor: undefined, showIcon: undefined }, "an invalid position keeps the default and a non-hex accent is dropped");
+    assert.deepEqual(prefs.items.get("rating_imdb"), { enabled: true, position: "bottom-left", accentColor: "#ABCDEF", showIcon: true, image: undefined, valueImages: {} });
+    assert.deepEqual(prefs.items.get("rating_tmdb"), { enabled: true, position: "left-edge", accentColor: undefined, showIcon: undefined, image: undefined, valueImages: {} }, "an invalid position keeps the default and a non-hex accent is dropped");
     assert.equal(prefs.items.has("request_status"), false);
     assert.deepEqual(parseOverlayPrefs(JSON.stringify(doc)), prefs, "the administrator's baseline arrives as a JSON string");
 });
@@ -58,9 +58,24 @@ test("an original language shows its English name, and an unknown or invalid tag
 });
 
 test("the combined Resolution + HDR + Audio badge is a known id, off by default, so a stored document keeps it", () => {
-    assert.deepEqual(parseOverlayPrefs(undefined).items.get("resolution_hdr_audio"), { enabled: false, position: "top-left", accentColor: undefined, showIcon: undefined });
+    assert.deepEqual(parseOverlayPrefs(undefined).items.get("resolution_hdr_audio"), { enabled: false, position: "top-left", accentColor: undefined, showIcon: undefined, image: undefined, valueImages: {} });
     const prefs = parseOverlayPrefs({ version: 2, preset: "classic", order: ["resolution_hdr_audio"], items: { resolution_hdr_audio: { enabled: true, position: "bottom-left" } } });
     assert.deepEqual(prefs.order, ["resolution_hdr_audio"]);
     assert.equal(prefs.items.get("resolution_hdr_audio")?.enabled, true);
     assert.equal(prefs.items.get("resolution_hdr_audio")?.position, "bottom-left");
+});
+
+const ref = (digit: string): string => `${digit.repeat(64)}.webp`;
+
+// OverlaySchema.swift:98-121, :156-166, :188-191 at silo-apple 5780c84.
+test("a badge keeps only well-formed image refs, and at most 32 value images in key order", () => {
+    const many = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`k${String(index).padStart(2, "0")}`, ref("a")]));
+    const prefs = parseOverlayPrefs({ version: 2, preset: "classic", order: [], items: {
+        resolution: { enabled: true, position: "top-left", image: ref("b"), valueImages: { "2160p": ref("c"), "": ref("c"), bad: "c.png", [`${"é".repeat(64)}`]: ref("d"), [`${"x".repeat(65)}`]: ref("d") } },
+        hdr: { enabled: true, position: "top-left", image: "B".repeat(64) + ".webp", valueImages: many },
+    } });
+    assert.equal(prefs.items.get("resolution")?.image, ref("b"));
+    assert.deepEqual(prefs.items.get("resolution")?.valueImages, { "2160p": ref("c"), ["é".repeat(64)]: ref("d") }, "64 code points is the limit");
+    assert.equal(prefs.items.get("hdr")?.image, undefined, "refs are lowercase hex");
+    assert.deepEqual(Object.keys(prefs.items.get("hdr")?.valueImages ?? {}), Object.keys(many).sort().slice(0, 32));
 });
