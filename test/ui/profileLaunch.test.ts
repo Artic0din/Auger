@@ -206,7 +206,7 @@ test("Accounts Back stays usable after signing out the active account", async ()
     } finally { await tv.page.context().close(); await browser.close(); }
 });
 
-test("Switch Profile during an outage shows retry and keeps the remembered profile's cached Home", async () => {
+test("Switch Profile during an outage keeps root Back and the remembered profile's cached Home", async () => {
     const browser = await launchBrowser();
     const tv = await openTv(browser, { app: "application" });
     tv.fake.catalog = new FakeDetails();
@@ -235,7 +235,10 @@ test("Switch Profile during an outage shows retry and keeps the remembered profi
         assert.equal(tv.fake.devices.size, devices, "a network failure must not start a device code");
         assert.equal(tv.fake.revokedSessions.size, revoked, "a network failure must not sign out");
         await tv.remote(10009);
-        await tv.page.locator('[data-view="home"] .browse-card').first().waitFor();
+        assert.equal(await tv.focused(), "cancel-exit");
+        await tv.remote(10009);
+        assert.equal(await tv.page.locator('[data-screen="profiles-error"]').count(), 1);
+        assert.equal(await tv.focused(), "retry");
         assert.equal(await tv.page.evaluate(() => window.appHarness.storage.getItem("silo.browseSnapshots.v1")), snapshot);
         assert.equal(tv.fake.devices.size, devices);
         assert.equal(tv.fake.revokedSessions.size, revoked);
