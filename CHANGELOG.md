@@ -64,6 +64,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
 - Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
