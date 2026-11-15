@@ -831,10 +831,24 @@ for (const reduced of [false, true]) {
 
 // The S95C leaves 568 px above the Samsung keyboard (#533 capture); the page itself does not move.
 const SAMSUNG_KEYBOARD_TOP = 568;
+/**
+ * The Samsung keyboard shrinks only the visual viewport: `innerHeight` and `visualViewport.height` drop to 568 while the
+ * layout viewport (and every media query) stays 1080 (#536 S95C capture). Resizing the page would move the layout viewport too.
+ */
+async function samsungKeyboard(tv: Tv, up: boolean): Promise<void> {
+    await tv.page.evaluate(height => {
+        const viewport = window.visualViewport;
+        if (viewport !== null) Object.defineProperty(viewport, "height", { configurable: true, get: () => height });
+        Object.defineProperty(window, "innerHeight", { configurable: true, get: () => height });
+        viewport?.dispatchEvent(new Event("resize"));
+        window.dispatchEvent(new Event("resize"));
+    }, up ? SAMSUNG_KEYBOARD_TOP : 1080);
+    assert.equal(await tv.page.evaluate(() => document.documentElement.clientHeight), 1080, "the layout viewport keeps its height");
+}
 browseTest("Search keeps the field, filters and first results row above the Samsung keyboard", async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.locator("#browse-search").focus();
-    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await samsungKeyboard(tv, true);
     await tv.page.fill("#browse-search", "Tom");
     await tv.jump(300);
     await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
@@ -852,7 +866,7 @@ browseTest("Search keeps the field, filters and first results row above the Sams
     await tv.remote(IME_CANCEL);
     assert.equal(await view(tv), "search");
     assert.equal(await tv.focused(), "query");
-    await tv.page.setViewportSize({ width: 1920, height: 1080 });
+    await samsungKeyboard(tv, false);
     const closed = await searchGeometry(tv);
     assert.equal(closed.filters, 354, "with the keyboard closed Apple's layout returns");
     assert.deepEqual(closed.chips.map(chip => chip.height), [68, 68, 68]);
@@ -869,7 +883,7 @@ class TitlesOnlyCatalog extends FakeRequests {
 browseTest("Search shows the first poster row above the Samsung keyboard when there are no People", async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.locator("#browse-search").focus();
-    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await samsungKeyboard(tv, true);
     await tv.page.fill("#browse-search", "Movie 000");
     await tv.jump(300);
     await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor();

@@ -316,14 +316,13 @@
 .search-scene .search-filters .browse-button { flex: 1; margin: 0; padding: 0 12px; height: 68px; min-height: 68px; border: solid transparent; border-width: 1px 4px; border-radius: 34px; background: transparent; font-size: 29px; font-weight: 600; }
 .search-scene .search-filters .browse-button[aria-pressed="true"] { background: #454545; background-clip: padding-box; }
 .search-scene .search-filters .browse-button:focus { transform: none; color: #000; background: #ededed; }
-/* Platform constraint (#533): the Samsung keyboard shortens the viewport from below (to 568 of 1080 px on the S95C), where Apple's centred pill
-   under its keyboard row leaves the results hidden. While it is up, Search takes silo-android's keyboard-up header (TvSearchScreen.kt SearchStage at
-   c0fd4ff8): left-aligned TvFilterChips Spacing.sm under the field and above the results, at 2 px per dp: 8dp gaps, 14sp/18sp text, 22dp x 8dp padding, 12dp apart; Compose draws the 1dp border inside the chip. */
-@media (max-height: 1079px) {
-    .search-scene .search-filters { width: auto; height: auto; margin: 16px 162px; padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; }
-    .search-scene .search-filters .browse-button { flex: none; height: auto; min-height: 0; padding: 14px 42px; border: 2px solid rgba(255,255,255,.12); font-size: 28px; line-height: 36px; }
-    .search-scene .search-filters .browse-button[aria-pressed="true"], .search-scene .search-filters .browse-button:focus { border-color: transparent; background-clip: border-box; }
-}
+/* Platform constraint (#533): Apple's centred pill under its keyboard row leaves the results under the Samsung keyboard. While that keyboard is up
+   (`search-keyboard-up`, set in browse.ts from the visual viewport), Search takes silo-android's keyboard-up header (TvSearchScreen.kt SearchStage at
+   c0fd4ff8): left-aligned TvFilterChips Spacing.sm under the field and above the results, at 2 px per dp: 8dp gaps, 14sp/18sp text, 22dp x 8dp padding,
+   12dp apart; Compose draws the 1dp border inside the chip. */
+.search-scene.search-keyboard-up .search-filters { width: auto; height: auto; margin: 16px 162px; padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; }
+.search-scene.search-keyboard-up .search-filters .browse-button { flex: none; height: auto; min-height: 0; padding: 14px 42px; border: 2px solid rgba(255,255,255,.12); font-size: 28px; line-height: 36px; }
+.search-scene.search-keyboard-up .search-filters .browse-button[aria-pressed="true"], .search-scene.search-keyboard-up .search-filters .browse-button:focus { border-color: transparent; background-clip: border-box; }
 .search-scene .search-count { margin: 0 162px 24px; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 27px; }
 /* The first poster sits at x 238: the tvOS safe area 80, SearchView's 110 and SiloTheme.padding 48 (SearchView.swift:52, :64, :337). */
 /* TVCatalogGrid rows are HStacks of cards that cannot shrink. A full row wider than the 1444 px column (x 238 to 1682) overflows

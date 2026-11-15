@@ -263,6 +263,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     searchIcon.setAttribute("aria-hidden", "true");
     searchIcon.innerHTML = '<svg viewBox="0 0 48 48" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="5"/><path d="m31 31 12 12" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>';
     searchField.append(searchIcon, input);
+    // The Samsung keyboard shrinks only the visual viewport (to 568 of 1080 px on the S95C); the layout viewport and media queries keep 1080.
+    const keyboardUp = (): void => {
+        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) < document.documentElement.clientHeight);
+    };
+    window.visualViewport?.addEventListener("resize", keyboardUp);
+    window.addEventListener("resize", keyboardUp);
+    keyboardUp();
     // Apple hides Search's navigation bar (SearchView.swift:65-69); the title stays only as the page's hidden heading.
     const searchHead = [el("h1", "browse-title", "Search"), searchLabel, searchField];
 
@@ -794,6 +801,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         resolutionCap.stop();
         episodeSpoilers?.stop();
         document.removeEventListener("visibilitychange", themeVisibility);
+        window.visualViewport?.removeEventListener("resize", keyboardUp);
+        window.removeEventListener("resize", keyboardUp);
         themePrefs.stop();
         themeCenter.reset();
         activeSection?.stop();

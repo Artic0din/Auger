@@ -212,7 +212,7 @@ Other layers:
   Add any new remote key to `BY_CODE`/`BY_NAME` in `keys.ts` and, if it needs registration, to that list.
 - The on-screen keyboard's Done and Cancel arrive as `ime_done` (65376) and `ime_cancel` (65385).
   Down and Done advance a form; search treats Done as "search now" and moves focus to the selected filter, where Apple TV lands when focus leaves its keyboard.
-  While the Samsung keyboard is up it shortens the viewport (to 568 px on the S95C), so Search uses silo-android's keyboard-up header instead of Apple's layout (platform constraint, #533): left-aligned filter chips 16 px under the field, results 16 px under them. Cancel (the remote's Back with the keyboard up) closes the keyboard and stays on Search.
+  While the Samsung keyboard is up it shrinks the visual viewport (`innerHeight` 568 on the S95C) but not the layout viewport, so media queries never see it; a `visualViewport` and `window` resize listener sets `search-keyboard-up`, and Search uses silo-android's keyboard-up header instead of Apple's layout (platform constraint, #533): left-aligned filter chips 16 px under the field, results 16 px under them. Cancel (the remote's Back with the keyboard up) closes the keyboard and stays on Search.
 - `config.xml` sets `hwkey-event="enable"` and the `tv.inputdevice` privilege.
 - Hold-to-act: `FocusHost` turns a 650 ms Enter hold on a card into its quick action (`SELECT_HOLD_MS`).
   A quick press clicks on key release.
