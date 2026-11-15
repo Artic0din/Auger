@@ -52,3 +52,19 @@ export function homeArtworkQuery(capability: ImageCapabilities | undefined, scal
     if (name !== undefined && name !== "" && Number.isFinite(pixels)) query[name] = String(Math.min(pixels, MAX_SLOT_WIDTH));
     return query;
 }
+
+/**
+ * ArtworkSurface.detail on tvOS (silo-apple 5569b19 `Networking/ArtworkSurface.swift`): Home's hero and logo
+ * widths, so opening an item reuses Home's backdrop, plus the 460 pt audiobook cover and the 200 pt cast photo
+ * (`TVDetailCastRail.photoSize`). An unknown or unavailable capability adds nothing, which keeps Details' `large`.
+ */
+export function detailArtworkQuery(capability: ImageCapabilities | undefined, scale: number): Record<string, string> {
+    if (capability?.state !== "available") return {};
+    const query = homeArtworkQuery(capability, scale);
+    for (const [slot, points] of [["poster", 460], ["photo", 200]] as const) {
+        const name = capability.slotWidthParams[slot];
+        const pixels = Math.ceil(points * Math.max(1, scale));
+        if (name !== undefined && name !== "" && Number.isFinite(pixels)) query[name] = String(Math.min(pixels, MAX_SLOT_WIDTH));
+    }
+    return query;
+}

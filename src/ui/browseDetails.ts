@@ -13,7 +13,7 @@ import { actionButton, artwork, cardItem, heading, lines, mediaItem, type ViewCo
 import { boxSetMovieRow, type BoxSetRowState } from "./boxSetRow.ts";
 import { blurEpisodeStill, episodeDetailPresentation, hidesEpisodeListStill } from "./episodeSpoilers.ts";
 import { personMetadataBadges, personPortrait } from "./personHero.ts";
-import { el } from "./screen.ts";
+import { el, onDecoded } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
 import { initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
 import { audioTitle as trackAudioTitle } from "../player/trackLabels.ts";
@@ -156,7 +156,7 @@ export function decodedLogoTitle(holder: HTMLElement, logo: string | undefined, 
     image.alt = alt;
     image.referrerPolicy = "no-referrer";
     const cached = decodedTitleLogos.has(logo);
-    image.addEventListener("load", () => {
+    onDecoded(image, () => {
         if (!allowed() || !holder.isConnected || holder.closest("[hidden]") !== null) return;
         decodedTitleLogos.add(logo);
         if (image.parentElement === holder) return;
