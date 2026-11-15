@@ -151,6 +151,9 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
     const inventory = tracks.filter(deliverable);
     if (preferences === undefined) throw new Error("Subtitle preferences are unavailable.");
     const forced = (): string | undefined => preferences.showForced ? preferred(inventory.filter(track => track.forced), preferences.audioLanguage)?.trackId : undefined;
+    // Apple's last resolver branch when no track has the language: the first forced track in any language when forced subtitles are on, else `.noChange`.
+    const pickOrFallback = (): string | undefined => preferred(inventory, preferences.language, preferences.signature)?.trackId
+        ?? (preferences.showForced ? inventory.find(track => track.forced)?.trackId : undefined) ?? current;
     if (preferences.mode === "off") return forced();
     if (preferences.mode === "always") {
         const signature = preferences.signature;
@@ -158,7 +161,7 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
         if (exact.length === 1) return exact[0]?.trackId;
         // Apple's resolver with no language anywhere: `always` still shows the best track on offer.
         if (preferences.language === undefined) return bestAny(inventory, preferences.showForced)?.trackId;
-        return preferred(inventory, preferences.language, preferences.signature)?.trackId;
+        return pickOrFallback();
     }
     if (preferences.language === "") return undefined;
     if (preferences.language === undefined) {
@@ -169,5 +172,5 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
     const wanted = language(preferences.language);
     const audio = language(preferences.audioLanguage);
     if (!wanted || (audio && audio.split("-")[0] === wanted.split("-")[0])) return forced();
-    return preferred(inventory, preferences.language, preferences.signature)?.trackId;
+    return pickOrFallback();
 }
