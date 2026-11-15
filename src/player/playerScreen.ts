@@ -20,7 +20,7 @@ import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
 import type { AVPlay } from "./avplay.ts";
 import { type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, UNSUPPORTED_FORMAT } from "./controller.ts";
-import { fillSubtitleTools, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
+import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
@@ -186,13 +186,13 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
     }
     const searching = tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed";
     if (pane.kind !== "tracks" || searching) {
-        fillSubtitleTools(list, tracks, pane, true);
+        fillSubtitleTools(list, tracks, pane);
         return;
     }
-    // SubtitlesPane (TVPlayerInfoHUD.swift:1620, columns at 1653-1659): TRACKS beside OPTIONS. Choices that pick a track stay in TRACKS.
+    // SubtitlesPane (TVPlayerInfoHUD.swift, silo-apple main e958f58): TRACKS beside the OPTIONS, TIMING and STYLE groups. Choices that pick a track stay in TRACKS.
     const columns = el("div", "player-menu-columns player-menu-columns-subtitles");
     const trackColumn = paneColumn("TRACKS", "player-menu-column-tracks");
-    const optionColumn = paneColumn("OPTIONS", "player-menu-column-options");
+    const source: HTMLElement[] = [];
     trackColumn.rows.appendChild(choice(OFF, "Off", tracks.selectedSubtitleId === undefined));
     for (const track of tracks.subtitles) {
         const row = choice(track.id, track.label, track.id === tracks.selectedSubtitleId, track.detail);
@@ -210,11 +210,10 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
             if (result.unavailable === true) row.setAttribute("data-unavailable", "true");
             trackColumn.rows.appendChild(row);
         }
-        if (ai.available.translate && tracks.aiTranslate && ai.languages.length > 0) optionColumn.rows.appendChild(settingRow("ai-translate", "Translate current subtitles", "", { icon: sparklesIcon() }));
-        if (ai.available.transcribe) optionColumn.rows.appendChild(settingRow("ai-transcribe", "Transcribe current audio", "", { chevron: false, icon: sparklesIcon() }));
+        if (ai.available.translate && tracks.aiTranslate && ai.languages.length > 0) source.push(settingRow("ai-translate", "Translate current subtitles", "", { icon: sparklesIcon() }));
+        if (ai.available.transcribe) source.push(settingRow("ai-transcribe", "Transcribe current audio", "", { chevron: false, icon: sparklesIcon() }));
     }
-    fillSubtitleTools(optionColumn.rows, tracks, pane, false);
-    columns.append(trackColumn.column, optionColumn.column);
+    columns.append(trackColumn.column, optionColumn(tracks, source));
     list.appendChild(columns);
 }
 
@@ -1348,9 +1347,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             } else if (id === "video-quality" || id === "video-speed" || id === "video-aspect") {
                 const next = view.phase === "playing" || view.phase === "paused" ? videoPickerFor(view.hud, view.tracks, id.slice("video-".length)) : undefined;
                 if (next !== undefined) videoPicker = { ...next, origin: { pane: "video", focusId: id } };
-            } else if (id === "subtitle-delay" || id === "subtitle-video-delay" || id === "subtitle-size" || id === "subtitle-position") {
-                const field = id === "subtitle-size" ? "fontSize" : id === "subtitle-position" ? "position" : "delay";
-                const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, field) : undefined;
+            } else if (id === "subtitle-delay" || id === "subtitle-video-delay") {
+                const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, "delay") : undefined;
                 if (next !== undefined && id === "subtitle-video-delay") videoPicker = { ...next, origin: { pane: "video", focusId: id } };
                 else if (next !== undefined) subtitlePane = { ...next, origin: { pane: "tracks", focusId: id } };
             } else if (id === "subtitle-appearance") {

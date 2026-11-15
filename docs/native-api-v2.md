@@ -26,6 +26,8 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
 - **URL.** Each request goes to `base.apiRoot + path`.
 - **Redirects and cookies.** Requests use `redirect: "error"`, `credentials: "omit"` and `cache: "no-store"`. A redirect is refused so a bearer token or body cannot reach another origin.
 - **Timeout.** The default is 15 s (`DEFAULT_TIMEOUT_MS`). Callers may override it per request.
+  Subtitle files (`NativeHttp.subtitleText`) have no total limit and fail after 60 s with no bytes, Apple's `sidecarIdleTimeout`: the server streams an embedded-track extract as it demuxes, which takes minutes on a large remux.
+  They stop at 4 MiB.
 - **Headers on every request.**
   - `Accept: application/json, application/problem+json`
   - `X-Silo-Device-Id`
@@ -505,6 +507,10 @@ URLs failing `isPermittedUrl` fail the playback.
 The code comment calls this a "Gate C candidate" from silo-server's `docs/playback-api.md` (at the commit in `src/contracts/v2/SOURCE`), so the server's acceptance of the `token` query on stream and subtitle URLs is not marked final.
 On `visibilitychange` the stream URL is rebuilt with a fresh token (`urlWithToken`).
 
+Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
+After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
+A selection without its `index`, a stream with no matching AUDIO row, or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
+
 ### Markers
 
 `GET /markers/files/{fileId}` (`src/api/markerOperations.ts`).
@@ -565,7 +571,7 @@ AI subtitles (`src/player/subtitleAI.ts`):
 
 Subtitle search (`src/player/subtitleSearch.ts`) stays offered until provider status says the viewer is not allowed, the state is not `available`, or providers are not enabled. A failed probe is not retried and does not change that. Search and download are each sent once. A stored subtitle is selected through the existing track owner. An uncertain download is not sent again while the menu stays open.
 
-Subtitle delay and appearance (`src/player/subtitleDisplay.ts`) are shown only when the settings contract advertises `player.subtitle_sync_ms` and `playback.subtitle_appearance`, and only while the selected subtitle is not burn-in or text AVPlay is drawing itself. A scope is a name, or `{ "scope", "introduced_in" }` from that revision; delay's profile scope starts at revision 19. Delay is clamped to ±10000 ms and written at profile scope, or `profile_device` when "Only on this TV" is on or the manifest revision is below 19. The offset moves cues this app draws. AVPlay has no subtitle-offset call, so text it draws itself is not shifted; a TV has to confirm whether that platform can move its own TEXT track.
+Subtitle delay and appearance (`src/player/subtitleDisplay.ts`) are shown only when the settings contract advertises `player.subtitle_sync_ms` and `playback.subtitle_appearance`, and only while the selected subtitle is not burn-in or text AVPlay is drawing itself. An embedded track the plan sends as a subtitle `artifact` (such as a forced SubRip track on direct play) is drawn by this app, so both stay available. A scope is a name, or `{ "scope", "introduced_in" }` from that revision; delay's profile scope starts at revision 19. Delay is clamped to ±10000 ms and written at profile scope, or `profile_device` when "Only on this TV" is on or the manifest revision is below 19. The offset moves cues this app draws. AVPlay has no subtitle-offset call, so text it draws itself is not shifted; a TV has to confirm whether that platform can move its own TEXT track.
 
 ### Theme music
 

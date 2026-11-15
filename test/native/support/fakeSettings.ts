@@ -3,6 +3,7 @@ import { fixture, problem } from "./fakeSilo.ts";
 import { AUDIO_KEY, HDR_KEY, QUALITY_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SETTINGS_KEYS, SHOW_FORCED_KEY, SPOILER_IMAGE_KEY, SPOILER_OVERVIEW_KEY, THEME_MUSIC_ENABLED_KEY, THEME_MUSIC_LOOP_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, type SettingsKey, type SettingValue } from "../../../src/contracts/v2/settings.ts";
 const BUFFERING_MODE_KEY = "playback.buffering_quality_mode";
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
+const SEEK_CACHE_KEY = "player.seek_cache_enabled";
 const TITLE = "ui.title_art" as SettingsKey;
 
 export class FakeSettings {
@@ -21,7 +22,7 @@ export class FakeSettings {
     devicePlayback = true;
     /** Adds the profile subtitle definitions Apple TV edits. The vendored fixture omits them. */
     profileSubtitles = false;
-    /** Offers device-only HDR, and Dolby Vision, which this client must not read or write. The vendored fixture omits both. */
+    /** Offers device-only HDR, plus Dolby Vision and Seek Cache, which this client must not read or write. The vendored fixture omits all three. */
     hdrRows = false;
     remainingRows = false;
     /** Offers `playback.buffering_quality_mode` (settings revision 23), default "always". */
@@ -73,7 +74,7 @@ export class FakeSettings {
                     key, label, description, introduced_in: 1, persistence: "remote", allowed_scopes: ["profile_device"], resolution_order: ["profile_device", "default"],
                     value_schema: { type: "boolean" }, default_value: true, platforms: ["ios", "tvos", "macos", "android", "android_tv"], category: "player", recommended_control: "switch",
                 });
-                contract.definitions = [...contract.definitions.filter(def => def.key !== HDR_KEY && def.key !== DOLBY_VISION_KEY), hdrDefinition(HDR_KEY, "HDR", "Allow HDR output on this device."), hdrDefinition(DOLBY_VISION_KEY, "Dolby Vision", "Allow Dolby Vision output on this device.")];
+                contract.definitions = [...contract.definitions.filter(def => def.key !== HDR_KEY && def.key !== DOLBY_VISION_KEY && def.key !== SEEK_CACHE_KEY), hdrDefinition(HDR_KEY, "HDR", "Allow HDR output on this device."), hdrDefinition(DOLBY_VISION_KEY, "Dolby Vision", "Allow Dolby Vision output on this device."), hdrDefinition(SEEK_CACHE_KEY, "Seek Cache", "Keep recently played video buffered so seeking back is instant.")];
             }
             if (this.profileSubtitles && Array.isArray(contract.definitions)) {
                 const sets = contract.option_sets;

@@ -727,8 +727,14 @@ calendarTest("Calendar premiere, episode context fallback, badges and distinct e
         return season_number === undefined ? rest : { ...rest, season_number };
     });
     await activate(tv, "filter:trending"); await ready(tv, 3);
+    // The cached series paints first; the fresh series read, marked by its new extra, resolves the episode's season afterwards.
+    catalog.extras = [{ content_id: "extra:1", kind: "featurette", title: "Making Of", duration_seconds: 90 }];
+    const lateSeries = tv.fake.hold("/catalog/items/series%3As1");
     await tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]').first().focus(); await tv.page.keyboard.press("Enter");
-    await tv.eventually(async () => await tv.focused() === "next-episode", "resolved episode context focuses Apple's primary action");
+    await tv.eventually(async () => await tv.focused() === "next-episode", "cached episode context focuses Apple's primary action");
+    lateSeries.release();
+    await tv.page.locator(".details-extras").waitFor();
+    assert.equal(await tv.focused(), "next-episode", "resolved episode context keeps Apple's primary action");
     await tv.page.locator('[data-focus="season:2"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('.details-episodes [data-focus="episode:s1e22"]').waitFor();

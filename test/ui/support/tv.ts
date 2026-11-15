@@ -12,6 +12,7 @@ import { FakeSilo } from "../../native/support/fakeSilo.ts";
 
 const ORIGIN = "https://silo.example.test";
 const EVENTUALLY_TIMEOUT_MS = 10000;
+const jitterMs = Number(process.env.SILO_REPLY_JITTER_MS ?? 0);
 /** Which screens the page mounts: the sign-in harness or the browse harness. */
 export type TvApp = "signIn" | "browse" | "application";
 const ENTRY: Record<TvApp, string> = { signIn: "../harness.ts", browse: "../browseHarness.ts", application: "../appHarness.ts" };
@@ -234,6 +235,9 @@ export async function openTv(
             response.headers.forEach((value, key) => {
                 headers[key] = value;
             });
+            // Flake hunting: SILO_REPLY_JITTER_MS=150 delays each answer by up to that long, so a test
+            // that acts before an in-flight read lands fails every time instead of on a slow runner.
+            if (jitterMs > 0) await new Promise<void>(done => setTimeout(done, Math.random() * jitterMs));
             // The page may have abandoned the request while the fake held its answer.
             await route.fulfill({ status: response.status, headers, body: await response.text() }).catch(() => undefined);
         } finally {

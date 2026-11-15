@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
 - The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.
 - The Watch Party lobby now updates live over the room socket: people joining or stepping away, readiness, the host's pick and controls, and the party ending reach every TV in the room as they happen, with Apple's Connecting and Reconnecting states. Leave party and Back as the host now leave this TV only, as on Apple TV; End party is what ends it for everyone.
@@ -34,6 +35,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
+- Subtitles in the player are listed as on Apple TV: the profile's subtitle language first when the server names one, otherwise all languages A to Z, each language by format. A title with English, Chinese, Danish and German tracks and no subtitle language now lists Chinese before Danish.
+- Playback started without a subtitle choice, such as from Home, the next episode or Up Next, now follows the profile's subtitle settings as on Apple TV. With no subtitle language set, playback and the Details Auto summary start on the title's default subtitle, else a forced one, as on Apple TV: Aladdin starts with Portuguese Brazilian (Forced) instead of Off.
+- With a film's embedded subtitle selected, such as Aladdin's Portuguese Brazilian (Forced), the Subtitles tab again shows Delay, Appearance and Only on this TV, and the Video tab its Subtitle delay row, as on Apple TV. The TV draws that subtitle itself, so both settings apply to it.
+- Documented why Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay hidden on Samsung TVs, with the AVPlay limit for each.
 - Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
@@ -66,6 +72,16 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, so moving focus on the TV waits less on image decoding.
+- Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
+- Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
+- Embedded subtitles on long films now load: the TV keeps waiting while the server is still extracting them and gives up only after a minute with no data, as on Apple TV. If they still cannot load, the player now says "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video instead of showing nothing.
+- Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
+- Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
+- Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
+- Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
+- Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
+- Made the series Details test wait for the Details reads to be answered before it moves Down from the next-episode button. A late subtitle-preference answer repainted the page and handed focus back to Subtitles, so the test failed now and then.
+- Limited the UI tests to two files at a time. Node ran up to one fewer files than the machine has cores, each with its own Chromium, which starved shared and slow runners and made timing-sensitive tests fail now and then.
 - Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
 - Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
 - Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.

@@ -15,7 +15,7 @@ import { blurEpisodeStill, episodeDetailPresentation, hidesEpisodeListStill } fr
 import { personMetadataBadges, personPortrait } from "./personHero.ts";
 import { el, onDecoded } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
-import { initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
+import { defaultSubtitle, initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
 import { audioTitle as trackAudioTitle } from "../player/trackLabels.ts";
 import type { SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
 import { seriesEpisodesView } from "./seriesEpisodesView.ts";
@@ -389,7 +389,8 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         return codec ? `${name} · ${codec}` : name;
     };
     const selectedSubtitleLabel = subtitle?.kind === "track" ? subtitleLabel(subtitle.signature) : subtitle?.kind === "off" ? "Off" : "Auto";
-    const autoSubtitle = file?.effectiveSubtitle === undefined ? undefined : initialSubtitle({ kind: "auto" }, (file.subtitles ?? []).map((track, index) => ({ ...track, trackId: String(index), combinedIndex: index, delivery: "unknown" as const, url: undefined, streamIndex: undefined, containerTrackId: undefined, nativeSelectable: undefined, hlsRendition: undefined })), { ...file.effectiveSubtitle, audioLanguage: resolvedAudioTrack?.language });
+    const startDefault = defaultSubtitle(file?.subtitles ?? []);
+    const autoSubtitle = file?.effectiveSubtitle === undefined ? undefined : initialSubtitle({ kind: "auto" }, (file.subtitles ?? []).map((track, index) => ({ ...track, trackId: String(index), combinedIndex: index, delivery: "unknown" as const, url: undefined, streamIndex: undefined, containerTrackId: undefined, nativeSelectable: undefined, hlsRendition: undefined })), { ...file.effectiveSubtitle, audioLanguage: resolvedAudioTrack?.language }, startDefault === undefined ? undefined : String(file.subtitles?.indexOf(startDefault)));
     const autoSubtitleTrack = autoSubtitle === undefined ? undefined : file?.subtitles?.[Number(autoSubtitle)];
     const subtitleSummary = selectedSubtitleLabel !== "Auto" ? selectedSubtitleLabel : `Auto · ${autoSubtitleTrack === undefined ? "None" : subtitleLabel(autoSubtitleTrack)}`;
     const audioDetails = (index: number): string => {

@@ -327,7 +327,8 @@ test("transcription refuses with a notice when the plan omits the audio track's 
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
     r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, remaining: 2, period: "month" } })));
     r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }] } } } });
-    r.server.next.push({ omitAudioIndex: true });
+    // A packaged stream: an original file without the ordinal is a failed route (#507).
+    r.server.next.push({ omitAudioIndex: true, delivery: "server_remux_hls" });
     await playMovie(r);
     r.controller.startSubtitleAI("transcribe");
     await r.h.clock.advance(0);
@@ -393,7 +394,10 @@ test("sidecar subtitles apply profile appearance and timing without blocking pla
         assert.ok(view.phase === "playing");
         assert.equal(view.captions?.text, fail ? "" : "Hello");
         if (!fail) assert.equal(view.captions?.appearance.fontSize, "xxlarge");
-        else assert.ok(view.tracks.notices.some(notice => notice.includes("Could not load")));
+        else {
+            assert.equal(view.captions?.status, "failed");
+            assert.ok(view.tracks.notices.includes("Subtitle data couldn’t be loaded. Turn subtitles off and on to retry."));
+        }
         r.controller.destroy();
     }
 });
@@ -1017,6 +1021,8 @@ test("a start sends the v3 body under the active profile and plays the server's 
     assert.match(String(body.playback_attempt_id), BOUNDED_IDENTIFIER);
     const capabilities = JSON.stringify(body.client_capabilities);
     assert.ok(!capabilities.includes("dts"), "no DTS claim on Samsung TVs");
+    assert.doesNotMatch(capabilities, /truehd|flac|pcm/i, "no lossless claim: AVPlay lists no TrueHD decoder and the server has no lossless target");
+    assert.match(capabilities, /"codecs_audio":\["aac","ac3","eac3","mp3"\]/);
     assert.match(capabilities, /"video_evidence":"declared"/);
     assert.match(JSON.stringify(body.client_playback_context), /"audio_passthrough_codecs":\[\]/);
 
@@ -1033,7 +1039,7 @@ test("a start sends the v3 body under the active profile and plays the server's 
     assert.deepEqual(r.avplay.calls.slice(3), ["seekTo 12500"], "seeks to player_start before playing; nothing else during the seek");
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
-    assert.deepEqual(r.avplay.calls.slice(4), ["play"]);
+    assert.deepEqual(r.avplay.calls.slice(4), ["play", "getTotalTrackInfo", "getCurrentStreamInfo"], "the plan's audio ordinal already plays, so nothing is switched");
     const view = last(r.views);
     assert.equal(view.phase, "playing");
     assert.equal(view.phase === "playing" ? view.positionSeconds : -1, 12.5);
@@ -2278,6 +2284,8 @@ test("series subtitle choice persists the server index or explicit Off without i
     for (const off of [true, false]) {
         const r = await episodeRig();
         if (!off) r.server.next.push({ subtitle: 4 });
+        // A failed preference read keeps the server's default track, which is the track these tests save.
+        r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
         r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
         await playMovie(r, EPISODE);
         r.controller.saveSeriesSubtitle();
@@ -2299,6 +2307,8 @@ test("series subtitle choice persists the server index or explicit Off without i
 test("series subtitle write is not resent after a 401 and token refresh", async () => {
     const r = await episodeRig();
     r.server.next.push({ subtitle: 4 });
+    // A failed preference read keeps the server's default track, which is the track these tests save.
+    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
     r.h.fake.script("/subtitle-prefs/series%3As1", problem(401, "authentication_required", "Authentication required"), { status: 204 });
     await playMovie(r, EPISODE);
     r.controller.saveSeriesSubtitle();
@@ -2314,6 +2324,8 @@ test("series subtitle write is not resent after a 401 and token refresh", async 
 test("series subtitle save refuses when the shown track is missing from the inventory instead of saving Off", async () => {
     const r = await episodeRig();
     r.server.next.push({ subtitle: 9 });
+    // A failed preference read keeps the server's default track, which is the track these tests save.
+    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
     r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
     await playMovie(r, EPISODE);
     r.controller.saveSeriesSubtitle();

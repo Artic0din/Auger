@@ -23,13 +23,16 @@ Lost track-change replies cannot leave an obsolete local plan playing; definitiv
 
 ## Screens and composed app
 
-`npm run test:ui` bundles the real TypeScript screens for Chrome 108, as the TV build does, and runs them in desktop Chromium.
+`npm run test:ui` runs two test files at a time, because each file launches its own Chromium and Node's default (one fewer than the cores) leaves a shared or slow machine so busy that timers and replies land out of order.
+It bundles the real TypeScript screens for Chrome 108, as the TV build does, and runs them in desktop Chromium.
 Playwright routes native API requests to the same fake Silo and serves synthetic SVG artwork.
 The fake server and browser clocks move together; polling and retry tests do not sleep.
 `openTv` installs a running browser clock; `fastForward` alone does not stop host time from consuming a deadline between jumps.
 Call `pauseTvClock(tv)` before starting an exact deadline or intermediate animation under test, then use `tv.jump(ms)` or `page.clock.runFor(ms)` to advance it explicitly.
 The pause helper advances existing timers by a protocol margin, so call it before the timed action starts.
 Unexpected page logs and errors fail the screen tests.
+To hunt a timing flake, run a test with `SILO_REPLY_JITTER_MS=150`: every fake Silo answer is delayed by a random time up to that many milliseconds, so a test that acts before an in-flight read lands fails far more often.
+Wait for `tv.pendingReplies === 0` or for the screen's own condition, never for a fixed time.
 
 `test/ui/app.test.ts` composes real sign-in, profiles, browse and playback over FakeCatalog, FakePlayback and FakeAVPlay.
 It covers the approved device-code journey, returning from playback, PIN-proof revocation during playback, sign-out/relaunch, protected-account restore, exit modal focus/key isolation, unavailable AVPlay and startup failure recovery.
