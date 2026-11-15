@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { homeArtworkQuery, type ImageCapabilities } from "../../src/contracts/v2/images.ts";
+import { detailArtworkQuery, homeArtworkQuery, type ImageCapabilities } from "../../src/contracts/v2/images.ts";
 import { operations } from "../../src/api/operations.ts";
 
 const capability: ImageCapabilities = { state: "available", param: "image_size", sizes: ["small", "medium", "large"], slotWidthParams: {} };
@@ -23,4 +23,17 @@ test("tvOS asks for the 1344 fill width at display scale without inflating poste
     assert.deepEqual(homeArtworkQuery(slots, 2), { image_size: "medium", logo_width: "1760", backdrop_width: "2688" });
     assert.equal(operations.getCatalogItem("episode:e", homeArtworkQuery(slots, 1)).path,
         "/catalog/items/episode%3Ae?image_size=medium&logo_width=880&backdrop_width=1344");
+});
+
+test("Details asks for Apple TV's detail slot widths, so cast photos are not fetched at 500 px for a 200 px circle", () => {
+    const slots = { ...capability, slotWidthParams: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" } };
+    assert.deepEqual(detailArtworkQuery(slots, 1), { image_size: "medium", logo_width: "880", backdrop_width: "1344", poster_width: "460", photo_width: "200" });
+    assert.deepEqual(detailArtworkQuery(slots, 2), { image_size: "medium", logo_width: "1760", backdrop_width: "2688", poster_width: "920", photo_width: "400" });
+    assert.equal(detailArtworkQuery(slots, 1).backdrop_width, homeArtworkQuery(slots, 1).backdrop_width, "opening an item reuses Home's hero backdrop");
+});
+
+test("Details keeps its one-size fallbacks without per-slot widths", () => {
+    assert.deepEqual(detailArtworkQuery(undefined, 1), {});
+    assert.deepEqual(detailArtworkQuery({ ...capability, state: "unavailable" }, 1), {});
+    assert.deepEqual(detailArtworkQuery(capability, 1), { image_size: "large" });
 });
