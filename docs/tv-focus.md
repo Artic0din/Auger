@@ -234,6 +234,9 @@ This is an explicit exception to the general no-focus-fetch rule, approved for A
 Cached episodes need no read; leaving before the dwell cancels it.
 The existing queue runs at most four detail reads, drops superseded queued focus reads, and keeps failures for explicit Retry rather than retrying on focus.
 Uncached playback and version/audio/subtitle activation resolve the selected episode's extra details explicitly.
+Answers that reach Details with no key since the last render, such as seasons, episodes, related titles, personal lists and preferences, repaint once on the next animation frame (`detailsChanged` in `src/ui/browse.ts`).
+A burst of answers then costs one render instead of one each, as SwiftUI commits one view update per frame; one render takes 130–180 ms on the S95C.
+A change that follows a key still repaints at once, and a key first draws any pending repaint, so it acts on the screen as shown.
 Crossing into a loaded season in the Series rail only selects its cached page; it starts no reads.
 Initial row loading, every selected-season change (chip dwell or Select) and a reappearing Details restart the neighbour prefetch and warm the neighbouring episode window; plain focus moves and selected-season Retry do not.
 The narrow rail exception is focus resting for 70 ms on an outer loaded edge with a missing neighbour: it requests that one season once per edge, without stacking pending reads or chaining further reads.

@@ -389,7 +389,19 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         return pending;
     };
     let inputRevision = 0;
-    const recordInput = (): void => { inputRevision++; };
+    /** The input revision the last render saw: a Details change with no input since then is an async answer. */
+    let renderedRevision = 0;
+    /** One Details repaint per frame for answers that arrive together; SwiftUI likewise commits once per frame. */
+    let detailsPaint: { current: Route; frame: number } | undefined;
+    const flushDetailsPaint = (): void => {
+        if (detailsPaint === undefined) return;
+        const { current, frame } = detailsPaint;
+        cancelAnimationFrame(frame);
+        detailsPaint = undefined;
+        paintDetails(current);
+    };
+    // A key acts on the screen the last answers drew, as it did when each answer repainted at once.
+    const recordInput = (): void => { flushDetailsPaint(); inputRevision++; };
     document.addEventListener("keydown", recordInput, true);
     document.addEventListener("pointerdown", recordInput, true);
 
@@ -1056,17 +1068,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if ((current.kind === "item" || current.kind === "season") && current.data?.details?.changes.get("watched")?.pending) {
             invalidateWatched(current, current.data.details.detail);
         }
-        if (top() === current) {
-            // The card menu redraws its own rows; the screen under it rerenders when it closes.
-            if (cardActions.active) cardActions.refresh();
-            else {
-                const focus = host.focused();
-                const series = (current.kind === "item" || current.kind === "season") ? current.data?.details?.series : undefined;
-                const retry = focus?.key === "retry-episodes" && series?.failed;
-                render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
-            }
-            if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
+        if (top() !== current) return;
+        if (returnKey !== undefined || inputRevision !== renderedRevision) { paintDetails(current, returnKey); return; }
+        if (detailsPaint !== undefined) cancelAnimationFrame(detailsPaint.frame);
+        detailsPaint = { current, frame: requestAnimationFrame(flushDetailsPaint) };
+    };
+
+    const paintDetails = (current: Route, returnKey?: string): void => {
+        if (top() !== current) return;
+        // The card menu redraws its own rows; the screen under it rerenders when it closes.
+        if (cardActions.active) cardActions.refresh();
+        else {
+            const focus = host.focused();
+            const series = (current.kind === "item" || current.kind === "season") ? current.data?.details?.series : undefined;
+            const retry = focus?.key === "retry-episodes" && series?.failed;
+            render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
         }
+        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
     };
 
     const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail): DetailsState => {
@@ -2152,6 +2170,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const render = (focus?: FocusTarget): void => {
+        renderedRevision = inputRevision;
         syncThemeMusic();
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);
