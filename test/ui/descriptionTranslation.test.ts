@@ -229,6 +229,8 @@ for (const leave of [false, true]) test(leave ? "leaving a featured card at 1499
         const capability = tv.page.waitForResponse(response => response.url().includes('/capabilities/metadata-ai'));
         held.release();
         await (await capability).finished();
+        // The dwell starts when the capability answer is applied; settle it before the timed interval so 1499 + 1 ms measure the dwell itself.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "capability answer delivered");
         await tv.jump(0);
         assert.equal(translation.posts().length, 0);
         await tv.jump(1499);
@@ -245,7 +247,7 @@ for (const leave of [false, true]) test(leave ? "leaving a featured card at 1499
             return;
         }
         await tv.jump(1);
-        await jumpUntil(tv, 50, async () => translation.posts().length === 1, "featured dwell");
+        await tv.eventually(async () => translation.posts().length === 1, "featured dwell");
         assert.equal(translation.posts()[0]?.path.split("?")[0], "/catalog/items/movie%3Am0004/translate-description");
         await tv.page.locator(".skyline-translation-status").waitFor();
         assert.equal(await tv.page.locator(".skyline-translation-status").textContent(), "Translating…");

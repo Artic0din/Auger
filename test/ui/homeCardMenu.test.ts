@@ -343,7 +343,7 @@ test("a menu reopened while its card's change is out shows the real state when t
         assert.equal(await menu(tv).getByRole("menuitem", { name: "Add to Favorites" }).getAttribute("aria-disabled"), "true", "a pending change keeps the server state until confirmed");
         answer.release();
         const disabledRows = (): Promise<(string | null)[]> => menu(tv).getByRole("menuitem").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-disabled")));
-        await jumpUntil(tv, 100, async () => (await disabledRows()).every(state => state === null), "the open menu shows the failed change rolled back");
+        await jumpUntil(tv, 100, async () => (await disabledRows()).every(state => state === null) && await menu(tv).getByRole("menuitem", { name: "Add to Favorites" }).count() === 1, "the open menu shows the failed change rolled back");
         assert.deepEqual(await disabledRows(), [null, null, null]);
         assert.equal(await tv.focused(), "watched");
         await tv.remote(10009);
