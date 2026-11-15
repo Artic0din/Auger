@@ -319,14 +319,30 @@ test("a background read that was asked before a newer room arrived does not repl
 
 test("a live selection whose answer was lost and that the room confirms is a success, so Play for everyone is not sent twice", async () => {
     const playing = { phase: "playing", selected_content_id: "movie:m0001", selected_file_id: "42" };
+    let written = false;
     const { hub, plays } = lobby({
-        selectItem: async () => { throw new ApiError({ kind: "network" }); },
-        room: async () => roomAccess({ ...playing, selected_content_id: "movie:m0009", selected_file_id: "77" }),
+        selectItem: async () => { written = true; throw new ApiError({ kind: "network" }); },
+        room: async () => roomAccess(written ? { ...playing, selected_content_id: "movie:m0009", selected_file_id: "77", selection_revision: 1 } : playing),
     }, undefined, playing);
     await hub.create("host_pick");
     assert.equal(await hub.stage(movie("movie:m0009")), true);
     assert.equal(hub.state.page.kind, "lobby");
     assert.deepEqual(plays.map(play => play.contentId), ["movie:m0009"]);
+});
+
+test("a live selection of the title already playing whose answer was lost is not applied unless the selection revision rose", async () => {
+    const playing = { phase: "playing", selected_content_id: "movie:m0001", selected_file_id: "42", selection_revision: 3 };
+    const lost = async (): Promise<never> => { throw new ApiError({ kind: "network" }); };
+    const unchanged = lobby({ selectItem: lost, room: async () => roomAccess(playing) }, undefined, playing);
+    await unchanged.hub.create("host_pick");
+    assert.equal(await unchanged.hub.stage(movie("movie:m0001")), false, "the same title at the same revision proves nothing arrived");
+    assert.equal(unchanged.hub.state.error !== undefined, true);
+    assert.deepEqual(unchanged.plays, []);
+    let written = false;
+    const landed = lobby({ selectItem: async () => { written = true; return lost(); }, room: async () => roomAccess({ ...playing, selection_revision: written ? 4 : 3 }) }, undefined, playing);
+    await landed.hub.create("host_pick");
+    assert.equal(await landed.hub.stage(movie("movie:m0001")), true, "a higher revision with the title shows the write landed");
+    assert.equal(landed.hub.state.error, undefined);
 });
 
 test("backing out of the picker while it reloads does not strand the shelves it was reloading", async () => {

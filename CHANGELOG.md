@@ -34,6 +34,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
 - Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
@@ -65,9 +66,13 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
+- Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
+- Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
+- Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
 - Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
+- The Discord commit feed workflow now skips cleanly, instead of failing on every push to main, when its webhook secret or thread ID is not set.
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
@@ -339,6 +344,7 @@ All notable changes to this project are documented in this file.
 - Kept scrolled personal-list cards visible when pages appended or reads failed.
 - Opened History without the top menu, with a centered title, exact counts and Apple's unfiltered 60-item pages.
 - Kept personal-list focus and cached cards after failed reads and fitted large History posters to five columns.
+- Stopped a Watch Party selection of the title that is already playing from counting as applied when its answer was lost and the server never received it; it now counts only when the room's selection revision rose.
 
 ### Changed
 

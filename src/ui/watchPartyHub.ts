@@ -220,8 +220,9 @@ export class WatchPartyHub {
         const picked = this.mutate(
             signal => staged ? this.api.stageSelection(room.roomId, selection, signal) : this.api.selectItem(room.roomId, selection, signal),
             () => { this.state.selected = choice.lobby; this.state.selectedUnavailable = false; },
-            // A live selection whose answer is lost has taken effect when the room now holds the title.
-            staged ? undefined : room => room.selectedContentId === choice.contentId,
+            // A live selection whose answer is lost has taken effect when the room holds the title at a higher selection revision:
+            // the same title at the same revision may be the one that was already playing.
+            staged ? undefined : now => now.selectedContentId === choice.contentId && now.selectionRevision > room.selectionRevision,
         );
         const done = await picked;
         if (!done && !this.stopped && this.state.selected?.contentId === choice.contentId) this.state.selected = before;

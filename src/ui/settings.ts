@@ -27,7 +27,7 @@ import { EXPERIMENTAL_FEATURES, type ExperimentalFeatures } from "../session/exp
 type Category = "general" | "playback" | "subtitles" | "server";
 const CATEGORY_LABELS = { general: "General", playback: "Playback", subtitles: "Subtitles", server: "Server" } as const;
 const CATEGORY_DETAILS = { general: "App and navigation", playback: "Quality and episodes", subtitles: "Language and appearance", server: "Connection and version" } as const;
-const CATEGORY_ICONS = { general: "settings", playback: "playback", subtitles: "subtitles", server: "switch-server" } as const;
+const CATEGORY_ICONS = { general: "gearshape", playback: "playback", subtitles: "subtitles", server: "switch-server" } as const;
 const CATEGORY_BLURBS = {
     general: "App-level options for this TV.",
     playback: "Streaming quality and episode behavior for this TV.",
@@ -50,6 +50,16 @@ const PICKER_LABELS = { audio: "Audio Language", quality: "Resolution", bitrate:
 const BITRATE_CHOICES = [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500];
 export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
 export interface SettingsScreen { destroy(): void }
+
+function settingsChevron(): SVGSVGElement {
+    const icon = navigationIcon("chevron-right");
+    icon.classList.add("settings-chevron");
+    icon.setAttribute("viewBox", "7 3 12 18");
+    icon.setAttribute("stroke-width", "2.5");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    return icon;
+}
 
 export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences): SettingsScreen {
     const container = el("section", "browse settings");
@@ -183,7 +193,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const subtitlePicker = (id: "subtitle-language" | "subtitle-mode", value: SettingValue): FocusItem => {
         const text = id === "subtitle-language" ? (typeof value === "string" ? value : "None") : value === "always" ? "Always" : value === "off" ? "Off" : "Auto";
         const item = button(id, PICKER_LABELS[id], () => openPicker(id));
-        item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", text), el("span", "settings-chevron", "›"));
+        item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", text), settingsChevron());
         return item;
     };
     const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value) : key === SEEK_BACK_KEY || key === SEEK_FORWARD_KEY
@@ -446,7 +456,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             profile.element.classList.add("settings-profile");
             const copy = el("span", "settings-profile-copy");
             copy.append(el("span", "settings-profile-name", actions.profileName), el("span", "settings-profile-account", account));
-            profile.element.replaceChildren(profileMenuAvatar(actions.profileName, actions.profileAvatarUrl, actions.profileAvatarText, session.http.base.baseUrl, 68), copy, el("span", "settings-chevron", "›"));
+            profile.element.replaceChildren(profileMenuAvatar(actions.profileName, actions.profileAvatarUrl, actions.profileAvatarText, session.http.base.baseUrl, 68), copy, settingsChevron());
             profile.element.setAttribute("aria-label", `${actions.profileName}, ${account}`);
             categories.unshift(profile);
             if (actions.signOut !== undefined) {
@@ -511,13 +521,13 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         }
         if (category === "general" && launch !== undefined && actions?.switchProfile !== undefined) {
             const item = actionButton("paired-profile", "Paired Silo Profile", () => { destroy(); actions.switchProfile(); });
-            item.element.append(el("span", "settings-row-value", pairedProfileLabel(launch.rememberedProfileId, session.activeProfile?.id, actions.profileName)), el("span", "settings-chevron", "›"));
+            item.element.append(el("span", "settings-row-value", pairedProfileLabel(launch.rememberedProfileId, session.activeProfile?.id, actions.profileName)), settingsChevron());
             rows.push(item);
             body.append(el("h3", "settings-section-header", "TV USER"), item.element, el("p", "settings-value", pairedProfileDescription(launch.behavior === "askEveryLaunch")));
         }
         if (category === "general" && launch !== undefined) {
             const item = actionButton("remember-profile", "Profile Selection", () => { choosingLaunch = true; render(); });
-            item.element.append(el("span", "settings-row-value", LAUNCH_CHOICES.find(([value]) => value === launch.behavior)?.[1] ?? "Every Time"), el("span", "settings-chevron", "›"));
+            item.element.append(el("span", "settings-row-value", LAUNCH_CHOICES.find(([value]) => value === launch.behavior)?.[1] ?? "Every Time"), settingsChevron());
             item.element.setAttribute("aria-disabled", String(launchPending));
             rows.push(item);
             body.append(el("h3", "settings-section-header", "PROFILE AT LAUNCH"), item.element, el("p", "settings-value", profileSelectionCaption(launch.behavior)));
@@ -577,7 +587,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const item = button(id, PICKER_LABELS[id], () => openPicker(id));
             const value = state.effective.get(key)?.value ?? null;
             const displayValue = key === BITRATE_KEY ? bitrateLabel(typeof value === "number" ? value : null) : label(value, key);
-            item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", displayValue), el("span", "settings-chevron", "›"));
+            item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", displayValue), settingsChevron());
             rows.push(item);
             body.append(item.element);
         }
@@ -586,7 +596,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (bufferingRow !== undefined) {
             const mode = rowValue(bufferingRow, state);
             const item = button(BUFFERING_ROW_ID, BUFFERING_QUALITY_TITLE, () => { extraPicker = bufferingRow; render(); });
-            item.element.replaceChildren(el("span", "settings-row-title", BUFFERING_QUALITY_TITLE), el("span", "settings-row-value", BUFFERING_QUALITY_MODES.find(([value]) => value === mode)?.[1] ?? "Automatically"), el("span", "settings-chevron", "›"));
+            item.element.replaceChildren(el("span", "settings-row-title", BUFFERING_QUALITY_TITLE), el("span", "settings-row-value", BUFFERING_QUALITY_MODES.find(([value]) => value === mode)?.[1] ?? "Automatically"), settingsChevron());
             rows.push(item);
             beforeStreaming(body, [item.element]);
         }
@@ -684,7 +694,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 const outlineOff = row.member === "textOutlineColor" && rowValue({ ...row, member: "textOutline" }, state) !== true;
                 const backgroundOff = (row.member === "backgroundOpacity" || row.member === "backgroundColor") && rowValue({ ...row, member: "backgroundStyle" }, state) !== "box";
                 item.element.appendChild(el("span", "settings-row-value", outlineOff || backgroundOff ? "—" : row.choices.find(([choice]) => choice === value)?.[1] ?? String(value)));
-                if (row.id !== "advisory-age" && row.member !== "textOutline") item.element.appendChild(el("span", "settings-chevron", "›"));
+                if (row.id !== "advisory-age" && row.member !== "textOutline") item.element.appendChild(settingsChevron());
                 if (row.id === "advisory-age" || row.member === "textOutline") { item.element.setAttribute("role", "switch"); item.element.setAttribute("aria-label", row.title); item.element.setAttribute("aria-checked", String(value === true)); }
                 rows.push(item); body.appendChild(item.element);
                 if (row.id === "advisory-age") body.appendChild(el("p", "settings-value", "Show a suggested minimum viewer age, such as Common Sense Media’s, on movie and show details. This does not change what the profile may watch."));
@@ -722,7 +732,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 if (skipRows.length > 0) body.appendChild(el("h3", "settings-section-header", "VIDEO"));
                 for (const id of skipRows) {
                     const item = button(id, PICKER_LABELS[id], () => openPicker(id));
-                    item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", label(state.effective.get(PICKER_KEYS[id])?.value ?? (id === "seek-back" ? 10 : 30), PICKER_KEYS[id])), el("span", "settings-chevron", "›"));
+                    item.element.replaceChildren(el("span", "settings-row-title", PICKER_LABELS[id]), el("span", "settings-row-value", label(state.effective.get(PICKER_KEYS[id])?.value ?? (id === "seek-back" ? 10 : 30), PICKER_KEYS[id])), settingsChevron());
                     rows.push(item); body.appendChild(item.element);
                 }
                 if (skipRows.length > 0) body.appendChild(el("p", "settings-value", "Used by the remote and on-screen skip buttons. Applies to every device signed in to this profile."));
