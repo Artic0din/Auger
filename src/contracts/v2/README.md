@@ -2,7 +2,7 @@
 
 `SOURCE` pins the API v2 contract to `silo-server` commit `feae205be9fc7bf2f78f79a023cd3805b63a94ac`, whose `ProfileCollection.max_profiles` is an optional integer.
 The fixture sync was run at that revision for the profile limit change.
-Its published `list_profiles_ok.json` still omits `max_profiles`; decoder tests supply the optional field and test omission separately.
+Its published `list_profiles_ok.json` omits `max_profiles`, and so does the one on server `main` at `c7f2c0ad1c7ce3796f4a40bb40ecffa3d1d1ead2`, so there is no newer body to vendor; decoder tests supply the optional field and test omission separately.
 All response fixtures and Settings subsets were retained at the previous snapshot, `cc8514943289045e7b9f7ac8d36d4968bfe93926`, except the separately pinned Requests fixture below.
 The sync also changed error text, device-login capability, playback, user libraries, profile Requests flags and the Settings manifest revision; those unrelated fixture changes were reverted after the production decoder fixture tests passed.
 `fixtures/` holds the response bodies this client consumes, copied unchanged from

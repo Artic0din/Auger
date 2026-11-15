@@ -43,6 +43,8 @@ export class Profiles {
     private checking = false;
     /** Increases on every select and clear; a PIN proof is installed only for the choice it was checked under. */
     private selection = 0;
+    /** Increases on every profile list read; only the newest read to start may write the display cache. */
+    private latestRead = 0;
 
     constructor(session: NativeSession, clock: Clock, accounts: AccountVault) {
         this.session = session;
@@ -55,9 +57,10 @@ export class Profiles {
     }
 
     async listCollection(signal?: AbortSignal): Promise<ProfileCollection> {
+        const read = ++this.latestRead;
         const collection = await this.session.call({ ...operations.listProfiles(), profileScoped: false, signal });
         const id = this.accounts.localAccountId;
-        if (id) {
+        if (id && read === this.latestRead) {
             try { this.accounts.directory.update(id, { profileCount: collection.items.length, maxProfiles: collection.maxProfiles }); }
             catch { /* This is a display cache; the profile response remains usable. */ }
         }

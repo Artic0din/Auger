@@ -49,6 +49,23 @@ for (const method of ["list", "listCollection"] as const) {
     });
 }
 
+test("an older profile read that answers last does not overwrite the newer cached limit", async () => {
+    const h = await connected();
+    await signIn(h);
+    const id = h.core.accounts.localAccountId;
+    assert.ok(id);
+    h.fake.profiles = { ...h.fake.profiles, max_profiles: 5 };
+    const held = h.fake.hold("/profiles");
+    const sent = h.fake.requests.filter((request) => request.path === "/profiles").length;
+    const older = h.core.profiles.listCollection();
+    while (h.fake.requests.filter((request) => request.path === "/profiles").length === sent) await new Promise<void>((resolve) => setImmediate(resolve));
+    h.fake.profiles = { ...h.fake.profiles, max_profiles: 1 };
+    await h.core.profiles.listCollection();
+    held.release();
+    assert.equal((await older).maxProfiles, 5, "the caller still receives its own answer");
+    assert.equal(h.core.accounts.directory.list().find(row => row.id === id)?.maxProfiles, 1);
+});
+
 test("profile headers go only on profile-scoped calls; public calls carry no account bearer", async () => {
     const { h, owner } = await household();
     assert.deepEqual(h.core.profiles.select(owner), { status: "selected" });
