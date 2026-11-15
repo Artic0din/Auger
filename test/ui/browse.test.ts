@@ -835,7 +835,7 @@ const SAMSUNG_KEYBOARD_TOP = 568;
  * The Samsung keyboard shrinks only the visual viewport: `innerHeight` and `visualViewport.height` drop to 568 while the
  * layout viewport (and every media query) stays 1080 (#536 S95C capture). Resizing the page would move the layout viewport too.
  */
-async function samsungKeyboard(tv: Tv, up: boolean): Promise<void> {
+async function samsungKeyboard(tv: Tv, up: boolean | number): Promise<void> {
     await tv.page.evaluate(keyboard => {
         // Closed, the visible height follows the layout viewport again.
         const height = (): number => keyboard ?? document.documentElement.clientHeight;
@@ -844,7 +844,7 @@ async function samsungKeyboard(tv: Tv, up: boolean): Promise<void> {
         Object.defineProperty(window, "innerHeight", { configurable: true, get: height });
         viewport?.dispatchEvent(new Event("resize"));
         window.dispatchEvent(new Event("resize"));
-    }, up ? SAMSUNG_KEYBOARD_TOP : undefined);
+    }, up === true ? SAMSUNG_KEYBOARD_TOP : up === false ? undefined : up);
     assert.equal(await tv.page.evaluate(() => document.documentElement.clientHeight), 1080, "the layout viewport keeps its height");
 }
 browseTest("Search keeps the field, filters and first results row above the Samsung keyboard", async tv => {
@@ -864,6 +864,11 @@ browseTest("Search keeps the field, filters and first results row above the Sams
     assert.deepEqual(open.chips.slice(1).map((chip, index) => chip.left - (open.chips[index]?.right ?? 0)), [24, 24], "chips 12dp apart");
     assert.ok(open.firstRow <= SAMSUNG_KEYBOARD_TOP, `the first results row ends above the keyboard, got ${open.firstRow}`);
     assert.equal(open.scroll, 0);
+    // While the keyboard closes the S95C reports 1079 for about 0.75 s (#536); that is not the keyboard.
+    await samsungKeyboard(tv, 1079);
+    assert.equal((await searchGeometry(tv)).filters, 354, "a 1 px shortfall keeps Apple's layout");
+    await samsungKeyboard(tv, true);
+    assert.equal((await searchGeometry(tv)).filters, 146);
     // Back with the keyboard up reaches the page as the IME's Cancel: it closes the keyboard and never leaves Search.
     await tv.remote(IME_CANCEL);
     assert.equal(await view(tv), "search");

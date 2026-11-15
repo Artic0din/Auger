@@ -117,6 +117,11 @@ export interface Browse {
 /** SearchViewModel.onQueryChanged and RequestSearchSectionViewModel.onQueryChanged both wait 300 ms. */
 /** app/index.html lays the page out at 1920 x 1080. */
 const PAGE_HEIGHT = 1080;
+/**
+ * The S95C keyboard leaves 568 px; while it closes the page reads 1079 for about 0.75 s (#536). Halfway between the
+ * open and closed heights (824 px) counts as up, so the closing frames keep the normal layout.
+ */
+const KEYBOARD_UP_HEIGHT = (568 + PAGE_HEIGHT) / 2;
 const SEARCH_DELAY_MS = 300;
 const SLOW_MS = 5000;
 /** SectionRowLimit.cards (silo-apple SectionRowLimit.swift:6). */
@@ -268,7 +273,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     // The Samsung keyboard shrinks only the visual viewport (to 568 px on the S95C); the layout viewport and media queries keep 1080.
     // The visual viewport is never taller than the layout one, so this also catches a keyboard that shrinks both.
     const keyboardUp = (): void => {
-        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) < PAGE_HEIGHT);
+        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) <= KEYBOARD_UP_HEIGHT);
     };
     window.visualViewport?.addEventListener("resize", keyboardUp);
     window.addEventListener("resize", keyboardUp);
