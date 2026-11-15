@@ -1795,8 +1795,6 @@ export class PlaybackController implements PlayerControls {
         if (restore !== undefined && !this.applyStreamSubtitle(attempt, restore.id) && attempt.plan?.subtitle.artifact !== undefined) {
             try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* Sidecar captions remain independent of native rendering. */ }
             this.readCaptions(attempt, attempt.plan);
-            // The plan's own track is drawn from its artifact again, not switched on the stream.
-            if (restore.id === attempt.plan.subtitle.trackId) attempt.subtitleOverride = undefined;
         }
     }
 
@@ -3749,8 +3747,8 @@ function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
     const id = shownSubtitle(attempt, plan);
     if (id === undefined) return true;
     if (plan.subtitle.mode === "burn_in") return false;
-    // A plan artifact is drawn by the app (`readCaptions`) even for an embedded row; a stream switch (`subtitleOverride`) hands the text to AVPlay.
-    if (attempt.subtitleOverride === undefined && id === plan.subtitle.trackId && plan.subtitle.artifact !== undefined && (plan.subtitle.mode === "render" || plan.subtitle.mode === "convert")) return true;
+    // The app draws the plan's artifact even for an embedded row: `readCaptions` keys it, and every AVPlay TEXT switch clears the key.
+    if (id === plan.subtitle.trackId && (attempt.captionKey !== undefined || attempt.captionNotice === CAPTION_FAILED)) return true;
     const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
     return row === undefined || !inStreamCandidate(plan, row);
 }

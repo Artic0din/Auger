@@ -1621,6 +1621,33 @@ test("a refused change that falls back to the plan's sidecar keeps Delay and App
     } finally { r.controller.destroy(); }
 });
 
+test("a kept HLS plan whose track AVPlay re-selects hides Delay and Appearance even though the plan has an artifact", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    for (let n = 0; n < 3; n++) r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    const artifact = { url: `${r.h.fake.origin}/api/v2/captions?token=signs`, format: "vtt", timing_origin_seconds: 0 };
+    const { decisionRendition: _signs, ...signs } = renditionPlan(1, "English Signs", 1);
+    r.server.next.push({ ...signs, subtitleArtifact: artifact });
+    try {
+        const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const report = r.h.fake.hold(`/playback/${id}/replan`);
+        const { decisionRendition: _french, ...french } = renditionPlan(5, "French", 2);
+        r.server.next.push({ ...french, subtitleArtifact: artifact });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.selectSubtitle("file:42:subtitle:0");
+        await settle(r);
+        const correction = r.h.fake.hold(`/playback/${id}/replan`);
+        report.release();
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 3", "AVPlay draws the kept plan's French track");
+        assert.equal(tracks(r).subtitleTools?.overlay, false);
+        correction.release();
+    } finally { r.controller.destroy(); }
+});
+
 test("published rendition order wins over incomplete language metadata", async () => {
     const r = await rig();
     frenchInventory(r);
