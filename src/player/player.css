@@ -709,7 +709,7 @@
     margin: 0 0 48px;
     font-size: 30px;
     line-height: 1.35;
-    color: var(--silo-error);
+    color: var(--silo-error-ink);
 }
 
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
