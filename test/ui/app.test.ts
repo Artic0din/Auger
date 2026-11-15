@@ -449,10 +449,10 @@ async function moviesProfileMenu(tv: Tv, mode: "Recommended" | "Browse" = "Recom
     await tv.page.locator('[data-focus="profiles"]').click();
 }
 
-async function returnedToMovies(tv: Tv): Promise<void> {
+async function returnedToMovies(tv: Tv, focus = "profiles"): Promise<void> {
     assert.equal(await tv.page.locator('.browse:visible').getAttribute("data-view"), "library:12");
     assert.equal(await tv.page.locator('.skyline-roots [aria-current="page"]').getAttribute("data-focus"), "movies");
-    assert.equal(await tv.focused(), "profiles", "Add Profile dismissal restores avatar focus");
+    assert.equal(await tv.focused(), focus, "Add Profile dismissal restores the page's Apple TV focus target");
     assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0);
 }
 
@@ -538,14 +538,15 @@ appTest("choosing a different profile from Movies starts fresh at Home", async t
     assert.equal(await tv.page.locator('.skyline-roots [aria-current="page"]').getAttribute("data-focus"), "home");
 });
 
-appTest("Back from Add Profile retains the Movies Browse scope with avatar focus", async tv => {
+appTest("Back from Add Profile retains Movies Browse with Sort focused", async tv => {
     await signInWithOneProfile(tv);
     await moviesProfileMenu(tv, "Browse");
     await tv.page.locator('[data-focus="add-profile"]').click();
     await tv.page.locator('[data-screen="profile-create"]').waitFor();
     await tv.remote(10009);
-    await returnedToMovies(tv);
+    await returnedToMovies(tv, "sort");
     assert.equal(await tv.page.locator('.browse.library-browse:visible').count(), 1);
+    assert.match(await tv.page.locator('[data-focus="sort"]').innerText(), /Sort · Title/);
 });
 
 appTest("creating a profile from Movies discards the previous Browse visit", async (tv, _playback, catalog) => {
@@ -581,7 +582,7 @@ appTest("Back from Settings Switch Profile takes the root exit path", async tv =
     assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 1);
 });
 
-appTest("Back from Add Profile's form returns to Home with the open profile", async tv => {
+appTest("Back from Add Profile's form returns to Home with the open profile and avatar focused", async tv => {
     await signInWithOneProfile(tv);
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.locator('[data-focus="add-profile"]').click();

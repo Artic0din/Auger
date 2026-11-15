@@ -2814,7 +2814,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (origin !== undefined) origin.focus = { zone: "nav", key: selected };
         },
         switchProfile: chooseProfile,
-        ...(options.onAddProfile === undefined ? {} : { addProfile: () => coverBrowse(back => options.onAddProfile?.(back), { zone: "nav", key: "profiles" }) }),
+        ...(options.onAddProfile === undefined ? {} : { addProfile: () => {
+            const current = top();
+            // Apple TV's live Browse return lands on its first control, despite the shell's avatar claim.
+            const focus = current?.kind === "library" && current.discovery?.mode === "Browse"
+                ? { zone: "controls", key: "sort" }
+                : { zone: "nav", key: "profiles" };
+            coverBrowse(back => options.onAddProfile?.(back), focus);
+        } }),
         profileCount: () => {
             try { return server.accounts.directory.list().find(row => row.id === server.accounts.localAccountId)?.profileCount ?? 0; }
             catch { return 0; } // An unreadable account list is a list not read yet: Switch Profile.
