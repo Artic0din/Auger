@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeCatalogSubtitles, decodeSubtitlePreferences, type CatalogSubtitleTrack, type SubtitlePreferences } from "../../src/contracts/v2/preplaySubtitles.ts";
 import { initialSubtitle, startSubtitleTrackId } from "../../src/player/preplaySubtitles.ts";
+import { subtitlePillSummary } from "../../src/player/trackLabels.ts";
 import type { AudioTrackInfo, SubtitleTrack } from "../../src/contracts/v2/playback.ts";
 import type { PlayableFile } from "../../src/contracts/v2/catalog.ts";
 import { withStartAudioLanguage } from "../../src/ui/browseModel.ts";
@@ -211,4 +212,14 @@ test("a start request for a title lacking the subtitle language names the forced
     assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows, finnish), "file:42:subtitle:1");
     assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows, { ...finnish, showForced: false }), "file:42:subtitle:1", "forced subtitles off still falls to `.noChange`, which takes the default, else a forced row");
     assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows.slice(0, 1), finnish), undefined, "no default or forced row leaves subtitles off");
+});
+
+test("the Details subtitle line reads as Apple's pill: language, SDH and Forced in parentheses, then the format", () => {
+    const entry = { label: undefined, language: "pt-BR", codec: "subrip", forced: false, hearingImpaired: false };
+    assert.equal(subtitlePillSummary(entry, "Unknown language"), "Portuguese · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, forced: true }, "Unknown language"), "Portuguese (Forced) · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, hearingImpaired: true, forced: true }, "Unknown language"), "Portuguese (SDH) (Forced) · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, label: "Brazilian (Forced)", forced: true }, "Unknown language"), "Portuguese (Forced) · SRT", "a title never repeats the flag or leads the name");
+    assert.equal(subtitlePillSummary({ ...entry, language: undefined, label: "Signs & Songs", codec: undefined }, "Unknown language"), "Signs & Songs");
+    assert.equal(subtitlePillSummary({ ...entry, language: undefined, label: undefined }, "Unknown language"), "Unknown language · SRT");
 });

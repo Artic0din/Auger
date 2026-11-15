@@ -1760,7 +1760,7 @@ detailTest('Auto subtitle readout with no subtitle language names the default tr
         })),
     } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
-    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · Brazilian Portuguese · Brazilian \(Forced\) · Forced/);
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · Portuguese \(Forced\) · SRT$/);
 });
 
 detailTest('Auto subtitle readout with a subtitle language the file lacks names the first forced track, as Apple TV does', async tv => {
@@ -1774,7 +1774,22 @@ detailTest('Auto subtitle readout with a subtitle language the file lacks names 
         })),
     } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
-    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · English · Signs · Forced/);
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · English \(Forced\) · SRT$/);
+});
+
+detailTest("Auto subtitle readout with only the profile's subtitle language set names the forced track, as Apple TV does", async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    // The server sets an effective field only when a stored setting supplies it: a profile language alone leaves mode and show-forced out.
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: undefined, effective_show_forced_subtitles: undefined, effective_subtitle_language: 'ar',
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'en', codec: 'aac' }],
+            subtitle_tracks: [{ language: 'de', title: 'German', codec: 'subrip', external: false, forced: false }, { language: 'pt-BR', title: 'Brazilian (Forced)', codec: 'subrip', external: false, forced: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.equal(await tv.page.locator('[data-track-summary="subtitles"] span').textContent(), 'Auto · Portuguese (Forced) · SRT');
 });
 
 detailTest('Auto subtitle readout with forced tracks in two sources names the external one, as Apple TV does', async tv => {
@@ -1788,7 +1803,7 @@ detailTest('Auto subtitle readout with forced tracks in two sources names the ex
         })),
     } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
-    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · French · Panneaux · Forced/);
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · French \(Forced\) · SRT$/);
 });
 
 detailTest('Auto subtitle readout resolves forced tracks using effective and explicitly selected audio', async tv => {
@@ -1806,7 +1821,7 @@ detailTest('Auto subtitle readout resolves forced tracks using effective and exp
     assert.match(await summary.textContent() ?? '', /Auto · English.*Forced/);
     await tv.page.locator('[data-focus="audio"]').click();
     await tv.page.locator('[data-focus="audio:1"]').click();
-    assert.match(await summary.textContent() ?? '', /Auto · English.*Dialogue/);
+    assert.equal(await summary.textContent(), 'Auto · English · SRT');
     assert.doesNotMatch(await summary.textContent() ?? '', /Forced/);
 });
 
