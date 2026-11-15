@@ -25,10 +25,12 @@ before(async () => {
 after(async () => { await browser.close(); });
 
 interface Badge { readonly text: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly style: Record<string, string>; readonly ring: Record<string, string>; readonly labelShadow: string; readonly labelSpacing: string; readonly labelWidth: number; readonly labelLeft: number; readonly icon?: { readonly width: number; readonly height: number; readonly path: string; readonly fillRule: string; readonly color: string; readonly frameWidth: number; readonly beforeLabel: boolean }; readonly mark?: { readonly text: string; readonly width: number; readonly height: number; readonly fontSize: string; readonly fontWeight: string; readonly letterSpacing: string; readonly color: string } }
-interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }> }
+interface Band { readonly edge: string; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; readonly backgroundImage: string; readonly padding: string; readonly shown: string[]; readonly dividers: { readonly width: number; readonly height: number; readonly color: string; readonly gapBefore: number; readonly gapAfter: number }[]; readonly rowLeft: number; readonly rowRight: number; readonly shownLeft: number; readonly shownRight: number }
+interface Render { readonly badges: Badge[]; readonly stacks: Record<string, { left: number; right: number; top: number; bottom: number }>; readonly bands: Band[]; readonly chips: { readonly text: string; readonly color: string; readonly background: string; readonly padding: string; readonly radius: string; readonly height: number; readonly truncated: boolean; readonly overflow: string; readonly textOverflow: string; readonly whiteSpace: string }[]; readonly pictures: { readonly src: string; readonly width: number; readonly height: number; readonly whole: boolean }[] }
 
 /** Renders one card's badge layer on a `width` × `height` artwork at the page origin. */
-async function render(doc: unknown, card: Record<string, unknown>, width: number, height: number, variant: "poster" | "wide" = "poster"): Promise<Render> {
+type Images = readonly (readonly [string, { readonly url: string; readonly aspect: number }])[];
+async function render(doc: unknown, card: Record<string, unknown>, width: number, height: number, variant: "poster" | "wide" = "poster", images: Images = []): Promise<Render> {
     const page: Page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     try {
         await page.setContent(`<!doctype html><style>@font-face { font-family: Inter; src: url(data:font/woff2;base64,${font}) format("woff2"); font-weight: 100 900; }</style><main style="font-family:var(--silo-font)"><div class="browse-art" id="art" style="position:absolute;left:0;top:0;width:${width}px;height:${height}px"></div></main>`);
@@ -40,11 +42,11 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
             return [...document.fonts].some(face => face.family.replace(/"/g, "") === "Inter" && face.status === "loaded");
         });
         assert.equal(loaded, true, "Inter loaded");
-        return await page.evaluate(({ doc, card, width, variant }) => {
-            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => unknown };
-            const layer = api.overlayLayer({ id: "series:1", type: "series", title: "Show", ...card }, api.parseOverlayPrefs(doc), variant, width);
+        return await page.evaluate(({ doc, card, width, variant, images }) => {
+            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number, baseUrl: string) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => object };
+            const layer = api.overlayLayer({ id: "series:1", type: "series", title: "Show", ...card }, { ...api.parseOverlayPrefs(doc), images: new Map(images) }, variant, width, "https://silo.invalid");
             const art = document.getElementById("art");
-            if (layer === undefined || art === null) return { badges: [], stacks: {} };
+            if (layer === undefined || art === null) return { badges: [], stacks: {}, bands: [], chips: [], pictures: [] };
             art.append(layer);
             const props = ["fontSize", "fontWeight", "letterSpacing", "lineHeight", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius", "backgroundColor", "backgroundImage", "color", "boxShadow", "textShadow", "textTransform"] as const;
             const badges = [...layer.querySelectorAll<HTMLElement>(".card-overlay")].map(node => {
@@ -72,8 +74,25 @@ async function render(doc: unknown, card: Record<string, unknown>, width: number
                 const rect = stack.getBoundingClientRect();
                 return [name, { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }];
             }));
-            return { badges, stacks };
-        }, { doc, card, width, variant });
+            const bands = [...layer.querySelectorAll<HTMLElement>(".card-overlay-band")].map(strip => {
+                const rect = strip.getBoundingClientRect();
+                const row = strip.querySelector(".card-overlay-band-row")?.getBoundingClientRect();
+                const visible = [...strip.querySelectorAll<HTMLElement>(".card-overlay-band-item")].filter(item => row !== undefined && item.getBoundingClientRect().top < row.bottom);
+                const shownBadges = visible.map(item => item.querySelector(".card-overlay")?.getBoundingClientRect());
+                const dividers = visible.flatMap(item => {
+                    const divider = item.querySelector<HTMLElement>(".card-overlay-band-divider");
+                    if (divider === null) return [];
+                    const box = divider.getBoundingClientRect();
+                    const before = (item.previousElementSibling?.querySelector(".card-overlay") as HTMLElement | null)?.getBoundingClientRect();
+                    const after = item.querySelector(".card-overlay")?.getBoundingClientRect();
+                    return [{ width: box.width, height: box.height, color: getComputedStyle(divider).backgroundColor, gapBefore: box.left - (before?.right ?? 0), gapAfter: (after?.left ?? 0) - box.right }];
+                });
+                return { edge: strip.classList.contains("card-overlay-band-top") ? "top" : "bottom", left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, backgroundImage: getComputedStyle(strip).backgroundImage, padding: getComputedStyle(strip).padding, shown: visible.map(item => item.querySelector(".card-overlay")?.textContent ?? ""), dividers, rowLeft: row?.left ?? 0, rowRight: row?.right ?? 0, shownLeft: Math.min(...shownBadges.map(box => box?.left ?? 0)), shownRight: Math.max(...shownBadges.map(box => box?.right ?? 0)) };
+            });
+            const chips = [...layer.querySelectorAll<HTMLElement>(".card-overlay-chip")].map(chip => { const style = getComputedStyle(chip); return { text: chip.textContent ?? "", color: style.color, background: style.backgroundColor, padding: style.padding, radius: style.borderTopLeftRadius, height: chip.getBoundingClientRect().height, truncated: chip.scrollWidth > chip.clientWidth, overflow: style.overflowX, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace }; });
+            const pictures = [...layer.querySelectorAll<HTMLImageElement>(".card-overlay-image")].map(image => { const box = image.getBoundingClientRect(); return { src: image.src, width: box.width, height: box.height, whole: image.parentElement?.classList.contains("card-overlay-value-image") === true }; });
+            return { badges, stacks, bands, chips, pictures };
+        }, { doc, card, width, variant, images });
     } finally { await page.close(); }
 }
 
@@ -102,6 +121,50 @@ for (const symbol of [
             assert.equal(badge.icon.color, badge.style.color);
             assert.equal(badge.icon.color, "rgb(0, 0, 0)");
             assert.equal(badge.icon.beforeLabel, true, "symbol precedes its label");
+        }
+    });
+}
+
+for (const preset of ["plate", "band"] as const) {
+    test(`${preset} keeps generic symbol boxes with preset, item and style overrides`, async () => {
+        const width = 220, scale = width / 185;
+        for (const symbol of [
+            { id: "resolution", value: "1080p", width: 14.75, height: 12.25 },
+            { id: "audio", value: "EAC3", width: 15.125, height: 10.875 },
+        ]) {
+            for (const config of [
+                { showIcon: undefined, size: 1 },
+                { showIcon: true, size: 1 },
+                { showIcon: false, size: 1 },
+                { showIcon: true, size: 1.5 },
+            ]) {
+                const styled = config.size !== 1;
+                const { badges } = await render({
+                    ...only({ [symbol.id]: { enabled: true, showIcon: config.showIcon } }), preset,
+                    ...(styled ? { style: { size: config.size, textColor: "#abcdef", fontWeight: "regular", uppercase: false } } : {}),
+                }, { overlay: { [symbol.id]: symbol.value } }, width, 330);
+                const badge = badges[0];
+                assert.equal(badge?.text, symbol.value, "a generic symbol keeps its label");
+                const shown = config.showIcon ?? preset === "plate";
+                if (!shown) {
+                    assert.equal(badge?.icon, undefined, "the item overrides the preset's icon preference");
+                    continue;
+                }
+                assert.ok(badge?.icon);
+                // Measured at a 12pt icon size; both presets use 13pt before the style and poster scales.
+                const iconScale = 13 / 12 * config.size * scale;
+                near(badge.icon.width, symbol.width * iconScale, "native symbol width", 0.05);
+                near(badge.icon.height, symbol.height * iconScale, "native symbol height", 0.05);
+                near(badge.icon.frameWidth, symbol.width * iconScale, "the frame preserves a wider glyph", 0.05);
+                near(badge.labelLeft - badge.left, px(badge.style.paddingLeft) + symbol.width * iconScale + (preset === "plate" ? 5 : 3) * config.size * scale, "symbol and gap precede the label", 0.05);
+                assert.equal(badge.icon.beforeLabel, true);
+                assert.equal(badge.icon.color, badge.style.color);
+                assert.equal(badge.mark, undefined, "a symbol never becomes a wordmark");
+                if (styled) {
+                    assert.equal(badge.icon.color, "rgb(171, 205, 239)");
+                    assert.equal(badge.style.fontWeight, "400");
+                }
+            }
         }
     });
 }
@@ -307,4 +370,180 @@ test("Dolby Vision is a drawn ring with its right half filled, beside the whole 
     near(badge?.icon?.height, 12 * scale, "an iconSize square", 0.05);
     assert.equal(badge?.icon?.path, "M14 8A6 6 0 1 1 2 8A6 6 0 1 1 14 8ZM8 3.5A4.5 4.5 0 0 0 8 12.5Z", "a 6-unit disc less the left half of a 4.5-unit one, in 16 units");
     assert.equal(badge?.icon?.fillRule, "evenodd");
+});
+
+// OverlayPresets.swift:174-201 and CardOverlays.swift:364-449 at silo-apple 5780c84.
+test("plate draws a heavy rounded plate, and a rating's source as an accent chip ahead of its score", async () => {
+    const scale = 220 / 185;
+    const { badges, chips } = await render({ ...only({ rating_imdb: { enabled: true } }), preset: "plate" }, { ratingImdb: 8.46 }, 220, 330);
+    const badge = badges[0];
+    assert.equal(badge?.text, "IMDb8.5", "the chip, then the bare score");
+    assert.equal(badge?.style.fontWeight, "800");
+    near(px(badge?.style.fontSize), 12 * scale * CAP_SCALE, "12pt", 0.02);
+    assert.equal(badge?.style.backgroundColor, "rgba(0, 0, 0, 0.72)");
+    assert.equal(badge?.style.borderTopRightRadius, "7.14px", "a left-rail tab, 6pt corners on its open side");
+    assert.match(badge?.style.boxShadow ?? "", /rgba\(0, 0, 0, 0\.35\) 0px 2\.38px 7\.14px/);
+    assert.match(badge?.ring.boxShadow ?? "", /rgba\(245, 197, 24, 0\.45\) 0px 0px 0px 1\.19px inset/, "the accent at 45% on the border");
+    near(px(badge?.style.paddingRight), (7 + 1) * scale, "inline padding and the border", 0.02);
+    const chip = chips[0];
+    assert.equal(chip?.text, "IMDb");
+    assert.equal(chip?.background, "rgb(245, 197, 24)");
+    assert.equal(chip?.color, "rgb(0, 0, 0)", "black reads on IMDb yellow (OverlayColor.swift:84-87)");
+    assert.equal(chip?.padding, `${Math.round(12 * 0.15 * scale * 100) / 100}px ${Math.round(12 * 0.35 * scale * 100) / 100}px`);
+    near(px(chip?.radius), 12 * 0.2 * scale, "0.2 of the font size", 0.02);
+    near(chip?.height, 12 * 1.3 * scale, "the line and its block padding", 0.1);
+    const plain = await render({ ...only({ rating_imdb: { enabled: true } }), preset: "classic" }, { ratingImdb: 8.46 }, 220, 330);
+    assert.equal(plain.chips.length, 0, "other presets keep the one label");
+});
+
+for (const rating of [
+    { name: "IMDb at size 2", id: "rating_imdb", card: { ratingImdb: 8.46 }, source: "IMDb", score: "8.5", size: 2 },
+    { name: "RT Audience at default size", id: "rating_rt_audience", card: { ratingRtAudience: 80 }, source: "RT Audience", score: "80%", size: 1 },
+]) {
+    test(`Plate right-rail ${rating.name} truncates its source and keeps the whole score inside the poster`, async () => {
+        const width = 185;
+        const { badges, chips, stacks } = await render({ ...only({ [rating.id]: { enabled: true, position: "right-edge" } }), preset: "plate", style: { size: rating.size } }, rating.card, width, width * 1.5);
+        const badge = badges[0];
+        const chip = chips[0];
+        assert.ok(badge);
+        assert.ok(chip);
+        assert.equal(badge.text, rating.source + rating.score);
+        near(badge.right, width, "Plate tab is flush with the poster's right edge");
+        assert.ok(badge.labelLeft >= badge.left, "score starts inside the plate");
+        assert.ok(badge.labelLeft + badge.labelWidth <= badge.right - px(badge.style.paddingRight) + 0.02,
+            `whole score ends inside the plate: ${badge.labelLeft + badge.labelWidth} <= ${badge.right - px(badge.style.paddingRight)}`);
+        assert.ok(badge.labelLeft + badge.labelWidth <= width, "whole score stays inside the poster");
+        assert.ok(badge.right - badge.left <= width * 0.6 + 0.02, "plate respects the rail's 60% maximum width");
+        near(stacks["right-edge"]?.right, width, "right rail stays on the poster edge");
+        assert.equal(chip.truncated, true, "source text exceeds its rendered chip width");
+        assert.equal(chip.whiteSpace, "nowrap", "source stays on one line");
+        assert.equal(chip.overflow, "hidden", "source is clipped to the chip");
+        assert.equal(chip.textOverflow, "ellipsis", "source truncates at the tail");
+    });
+}
+
+// OverlayPresets.swift:203-226 and CardOverlays.swift:74-119, :146-157, :295-330.
+test("the edge band draws each edge as one strip of marks with dividers over a scrim", async () => {
+    const width = 220, scale = width / 185;
+    const doc = { version: 2, preset: "band", order: [], items: { video_codec: { enabled: true, position: "top-left" }, year: { enabled: true, position: "bottom-left" }, studio: { enabled: true, position: "bottom-right" } } };
+    const { bands, badges } = await render(doc, { year: 2024, studios: ["A24"], overlay: { resolution: "1080p", hdr: "HDR10", audio: "AAC", videoCodec: "HEVC", releaseType: "WEB-DL" } }, width, 330);
+    const top = bands.find(band => band.edge === "top");
+    const bottom = bands.find(band => band.edge === "bottom");
+    assert.ok(top !== undefined && bottom !== undefined);
+    near(top.left, 0, "the strip spans the edge");
+    near(top.right, width, "the strip spans the edge");
+    near(top.top, 0, "from the top edge");
+    const inset = Math.round(8 * scale * 100) / 100;
+    assert.equal(top.padding, `${inset}px ${Math.round((8 + 22 + 8) * scale * 100) / 100}px ${Math.round(24 * scale * 100) / 100}px ${inset}px`, "inset, the watch-status clearance and three insets below");
+    assert.equal(top.backgroundImage, "linear-gradient(rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.6) 55%, rgba(0, 0, 0, 0) 100%)");
+    assert.equal(bottom.backgroundImage, "linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.6) 55%, rgba(0, 0, 0, 0) 100%)");
+    near(bottom.bottom, 330, "to the bottom edge");
+    assert.deepEqual(bottom.shown, ["WEB-DL", "2024", "A24"], "one strip for the whole bottom edge, left corner first");
+    near((bottom.shownLeft + bottom.shownRight) / 2, width / 2, "centred", 0.6);
+    assert.equal(top.dividers.length, top.shown.length - 1);
+    const divider = top.dividers[0];
+    near(divider?.width, 1, "a 1pt divider, unscaled");
+    near(divider?.height, 12.5 * 0.9 * scale, "0.9 of the font size", 0.05);
+    assert.equal(divider?.color, "rgba(255, 255, 255, 0.4)");
+    near(divider?.gapBefore, 7 * scale, "the stack gap on each side", 0.05);
+    near(divider?.gapAfter, 7 * scale, "the stack gap on each side", 0.05);
+    const mark = badges.find(badge => badge.text === "1080P" || badge.text === "1080p");
+    assert.equal(mark?.style.fontWeight, "800");
+    assert.equal(mark?.style.backgroundColor, "rgba(0, 0, 0, 0)");
+    near(px(mark?.style.paddingLeft), 0, "no inline padding", 0.01);
+    near(px(mark?.style.paddingTop), 1 * scale, "1pt block padding", 0.02);
+    assert.match(mark?.labelShadow ?? "", /rgba\(0, 0, 0, 0\.75\) 0px 1\.19px 3\.57px/);
+    // CoreText SF Pro heavy at 14.86pt with tracking-wide: 1080P 50.93, HDR10 53.25, AAC 33.93, plus two dividers and
+    // their gaps, is 173.4 against a 165.3 row, so Apple drops AAC too.
+    assert.deepEqual(top.shown, ["1080p", "HDR10"], "the marks that fit whole");
+    const narrow = await render(doc, { overlay: { resolution: "1080p", hdr: "HDR10", audio: "TrueHD Atmos" } }, 150, 225);
+    const strip = narrow.bands.find(band => band.edge === "top");
+    assert.deepEqual(strip?.shown, ["1080p", "HDR10"], "TrueHD Atmos does not fit whole, so it is dropped with its divider");
+    assert.equal(strip?.dividers.length, 1);
+    assert.ok((strip?.shownRight ?? Infinity) <= (strip?.rowRight ?? 0) + 0.01, "the marks shown stay inside the row");
+    const alone = await render(doc, { overlay: { audio: "Dolby TrueHD Atmos 7.1 Lossless" } }, 150, 225);
+    const cut = alone.badges.find(badge => badge.text.startsWith("Dolby"));
+    assert.ok(cut !== undefined && cut.labelWidth < 150 - (8 + 38) * 150 / 185 + 0.5, "only a first mark too wide on its own truncates");
+});
+
+test("the edge band keeps its rails inset, and a style turns capitals off", async () => {
+    const width = 185;
+    const banded = await render({ ...only({ show_status: { enabled: true } }), preset: "band" }, RETURNING, width, 277.5);
+    near(banded.badges[0]?.right, width - 8, "a band rail keeps the corner inset (CardOverlays.swift:77)");
+    const lower = await render({ ...only({ show_status: { enabled: true } }), preset: "classic", style: { uppercase: false, size: 1.5 } }, RETURNING, width, 277.5);
+    assert.equal(lower.badges[0]?.style.textTransform, "none");
+    near(px(lower.badges[0]?.style.fontSize), 15 * CAP_SCALE, "size 1.5", 0.02);
+});
+
+// OverlaySchema.swift:195-206, CardOverlays.swift:336-464 at silo-apple 5780c84.
+const REF = `${"a".repeat(64)}.webp`;
+const LISTED: Images = [[REF, { url: `/api/v2/overlay-images/${REF}`, aspect: 2.5 }]];
+
+test("a value image replaces the whole badge at 1.6 times its height while the badge shows that value", async () => {
+    const scale = 220 / 185;
+    const doc = only({ resolution: { enabled: true, position: "top-left", valueImages: { "2160p": REF } } });
+    const { pictures, badges } = await render(doc, { overlay: { resolution: "2160p" } }, 220, 330, "poster", LISTED);
+    assert.equal(pictures.length, 1);
+    assert.equal(pictures[0]?.whole, true);
+    assert.equal(pictures[0]?.src, `https://silo.invalid/api/v2/overlay-images/${REF}`, "resolved against the server");
+    near(pictures[0]?.height, (10 + 2 * 2) * 1.6 * scale, "classic's text badge height times 1.6", 0.05);
+    near(pictures[0]?.width, (10 + 2 * 2) * 1.6 * scale * 2.5, "the image's own aspect", 0.1);
+    assert.equal(badges[0]?.text, "", "no text beside it");
+    const other = await render(doc, { overlay: { resolution: "1080p" } }, 220, 330, "poster", LISTED);
+    assert.equal(other.pictures.length, 0, "another value keeps the text badge");
+    assert.equal(other.badges[0]?.text, "1080p");
+    const unlisted = await render(doc, { overlay: { resolution: "2160p" } }, 220, 330, "poster", []);
+    assert.equal(unlisted.pictures.length, 0, "a ref the library does not list draws nothing");
+    assert.equal(unlisted.badges[0]?.text, "4K");
+});
+
+test("an image in the icon's place stands for a rating's source, so the label keeps only the score", async () => {
+    const scale = 220 / 185;
+    const { pictures, badges, chips } = await render({ ...only({ rating_imdb: { enabled: true, image: REF } }), preset: "plate" }, { ratingImdb: 8.46 }, 220, 330, "poster", LISTED);
+    assert.equal(pictures[0]?.whole, false);
+    near(pictures[0]?.height, 13 * scale, "plate's icon size", 0.05);
+    near(pictures[0]?.width, 13 * scale * 2.5, "the image's own aspect", 0.1);
+    assert.equal(badges[0]?.text, "8.5");
+    assert.equal(chips.length, 0, "the image replaces plate's source chip");
+});
+
+test("uploaded icons replace generic symbols on Plate and Edge band with style overrides", async () => {
+    const scale = 220 / 185;
+    for (const preset of ["plate", "band"]) {
+        const { pictures, badges } = await render({
+            ...only({ resolution: { enabled: true, showIcon: true, image: REF } }),
+            preset, style: { size: 1.5, textColor: "#abcdef" },
+        }, { overlay: { resolution: "1080p" } }, 220, 330, "poster", LISTED);
+        assert.equal(pictures.length, 1);
+        assert.equal(pictures[0]?.whole, false);
+        near(pictures[0]?.height, 13 * 1.5 * scale, "the image uses the styled icon height", 0.05);
+        assert.equal(badges[0]?.icon, undefined, "the image takes the generic symbol's place");
+        assert.equal(badges[0]?.text, "1080p", "the label stays beside the image");
+    }
+});
+
+test("an image that does not load puts back the badge it replaced", async () => {
+    const page = await browser.newPage();
+    try {
+        await page.setContent(`<!doctype html><div id="art" style="position:absolute;width:185px;height:277px"></div>`);
+        await page.addStyleTag({ content: `${theme}\n${browse}` });
+        await page.addScriptTag({ content: bundle });
+        const texts = await page.evaluate(async ref => {
+            const api = window as unknown as { overlayLayer: (card: unknown, prefs: unknown, variant: string, width: number, baseUrl: string) => HTMLElement | undefined; parseOverlayPrefs: (raw: unknown) => object };
+            const doc = { version: 2, preset: "plate", order: [], items: { hdr: { enabled: false, position: "top-left" }, audio: { enabled: false, position: "top-left" }, release_type: { enabled: false, position: "bottom-left" }, resolution: { enabled: true, position: "top-left", valueImages: { "2160p": ref } }, studio: { enabled: true, position: "bottom-right", image: ref } } };
+            const images = new Map([[ref, { url: `/api/v2/overlay-images/${ref}`, aspect: 2 }]]);
+            const layer = api.overlayLayer({ id: "m", type: "movie", title: "M", studios: ["A24"], overlay: { resolution: "2160p" } }, { ...api.parseOverlayPrefs(doc), images }, "poster", 185, "https://silo.invalid");
+            document.getElementById("art")?.append(layer as HTMLElement);
+            const drawn = layer?.querySelectorAll(".card-overlay-image").length ?? 0;
+            const symbolsBefore = layer?.querySelectorAll("svg").length ?? 0;
+            for (let wait = 0; wait < 250 && layer?.querySelector(".card-overlay-image") !== null; wait++) await new Promise(resolve => setTimeout(resolve, 20));
+            const studio = [...(layer?.querySelectorAll(".card-overlay") ?? [])].find(node => node.textContent === "A24");
+            return { drawn, symbolsBefore, symbolsAfter: layer?.querySelectorAll("svg").length ?? 0, trailing: studio?.classList.contains("card-overlay-trailing") === true, after: [...(layer?.querySelectorAll(".card-overlay-top-left .card-overlay") ?? [])].map(node => node.textContent) };
+        }, REF);
+        assert.equal(texts.drawn, 2, "both images are drawn first");
+        assert.equal(texts.symbolsBefore, 0, "both images replace their generic symbols");
+        assert.equal(texts.symbolsAfter, 2, "both generic symbols return after image failure");
+        assert.equal(texts.trailing, true, "a bottom-right badge keeps its corner");
+        assert.deepEqual(texts.after, ["4K"], "a broken value image falls back to the text badge (CardOverlays.swift:344-357)");
+    } finally { await page.close(); }
 });

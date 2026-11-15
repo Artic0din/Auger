@@ -1,26 +1,37 @@
 // Poster badges (`ui.card_overlays`): the document parser, the badge registry and the layout renderer.
 // Ported (AGPL-3.0-or-later) from silo-apple 1a7cceeaf3b2bfc4f889c00487d19b2c6f843940:
 // iosApp/iosApp/Overlays/{OverlayTypes,OverlaySchema,OverlayRegistry,OverlayExtractors,OverlayPresets,CardOverlays,OverlayIcon}.swift.
-// Positions, presets, layout and the CardWatchStatus corner follow silo-apple 5780c84f4a9c1e2bff006e653dd787e01ca24480 (#1117). Its plate and
-// band presets, style overrides and uploaded badge images are not drawn here.
+// Positions, presets, style overrides, layout, uploaded images and the CardWatchStatus corner follow silo-apple
+// 5780c84f4a9c1e2bff006e653dd787e01ca24480 (#1117); the presets themselves are in overlayPresets.ts.
 // Generic icon ids follow silo-apple 08ff656ff2c35bca13f40901cfe9ed83b8f84d7e
 // OverlayRegistry.swift:90-100, :115-249, :300-318, :349-382, :436-455.
 // Inline SVGs substitute for SF Symbols; the measured tv glyph keeps its secondary screen fill.
 // Wordmarks are text and Dolby Vision a drawn ring in both.
 
 import type { Card } from "../contracts/v2/catalog.ts";
+import { artworkUrl } from "./browseModel.ts";
 import { resolutionLabel, runtimeText } from "./cardPresentation.ts";
+import { applyStyle, css, hexColor, type OverlayStyle, parseStyle, type Preset, PRESET_STYLES, type PresetId, PRESETS, readableText, type Rgba, type Shadow } from "./overlayPresets.ts";
 import { el } from "./screen.ts";
 import { menuIcon } from "./navigationIcon.ts";
 
 /** OverlayTypes.swift:44-65: the top-right corner belongs to the watch status, so badges use the side rails. */
 type Position = "top-left" | "bottom-left" | "bottom-right" | "left-edge" | "right-edge";
-type PresetId = "minimal" | "classic" | "vibrant" | "pill" | "square";
 type SymbolIcon = "clock" | "tv" | "film" | "ribbon" | "subtitles" | "languages" | "building" | "shield" | "users" | "layout" | "monitor" | "volume" | "globe";
 type Icon = SymbolIcon | "HDR" | "HDR10" | "DV" | "ATMOS" | "AV1";
 
-interface ItemConfig { readonly enabled: boolean; readonly position: Position; readonly accentColor: string | undefined; readonly showIcon: boolean | undefined }
-export interface CardOverlayPrefs { readonly preset: PresetId; readonly order: readonly string[]; readonly items: ReadonlyMap<string, ItemConfig> }
+interface ItemConfig {
+    readonly enabled: boolean; readonly position: Position; readonly accentColor: string | undefined; readonly showIcon: boolean | undefined;
+    /** OverlayTypes.swift:87-91: an uploaded image ref drawn in the icon's place, and refs by value key that replace the whole badge. */
+    readonly image: string | undefined; readonly valueImages: Readonly<Record<string, string>>;
+}
+/** OverlayTypes.swift:269-275: a listed badge image, its server-relative URL and width over height. */
+export interface OverlayImageAsset { readonly url: string; readonly aspect: number }
+export interface CardOverlayPrefs {
+    readonly preset: PresetId; readonly style?: OverlayStyle | undefined; readonly order: readonly string[]; readonly items: ReadonlyMap<string, ItemConfig>;
+    /** The overlay-config image list by ref; a ref it does not list draws nothing (OverlaySchema.swift:195-206). */
+    readonly images?: ReadonlyMap<string, OverlayImageAsset> | undefined;
+}
 
 interface OverlayDef {
     readonly id: string;
@@ -32,14 +43,23 @@ interface OverlayDef {
     readonly staticIcon?: Icon;
     readonly icon?: (card: Card) => Icon | undefined;
     readonly value: (card: Card) => string | undefined;
+    /** A rating's source mark ("IMDb") and bare score, for presets that draw the mark as a chip (OverlayTypes.swift:194-197). */
+    readonly sourceMark?: string;
+    readonly score?: (card: Card) => string | undefined;
+    /** The key a `valueImages` entry matches: the value as the API sends it; absent for badges without per-value images. */
+    readonly valueKey?: (card: Card) => string | undefined;
 }
 
 function nonEmpty(value: string | undefined): string | undefined {
     return value === undefined || value === "" ? undefined : value;
 }
 const oneDecimal = (value: number): string => (Math.round(value * 10) / 10).toFixed(1);
-const decimalRating = (mark: string, value: number | undefined): string | undefined => value === undefined ? undefined : `${mark} ${oneDecimal(value)}`;
-const percentRating = (mark: string, value: number | undefined): string | undefined => value === undefined ? undefined : `${mark} ${value}%`;
+const decimalScore = (value: number | undefined): string | undefined => value === undefined ? undefined : oneDecimal(value);
+const percentScore = (value: number | undefined): string | undefined => value === undefined ? undefined : `${value}%`;
+/** OverlayRegistry.swift:271-293: a rating's label is its source mark and score, "IMDb 8.5". */
+function rating(id: string, mark: string, accent: string, score: (card: Card) => string | undefined): OverlayDef {
+    return { id, position: "left-edge", enabled: false, accent, iconCapable: false, sourceMark: mark, score, value: card => { const value = score(card); return value === undefined ? undefined : `${mark} ${value}`; } };
+}
 
 /** OverlayRegistry.swift:63-69, web's `compactHdrSuffix`. */
 function compactHdrSuffix(value: string | undefined): string | undefined {
@@ -56,6 +76,7 @@ function hdrIcon(value: string | undefined): Icon | undefined {
     return value === "HDR10" ? "HDR10" : value === "HDR" ? "HDR" : undefined;
 }
 
+/** OverlayRegistry.swift:391-434: the English status every client recognises, which is also the value key, or the value itself. */
 function showStatus(value: string | undefined): string | undefined {
     const raw = nonEmpty(value);
     if (raw === undefined) return undefined;
@@ -64,6 +85,12 @@ function showStatus(value: string | undefined): string | undefined {
     if (lowered === "ended") return "Ended";
     if (lowered === "cancelled" || lowered === "canceled") return "Cancelled";
     return lowered === "upcoming" || lowered === "planned" ? "Upcoming" : raw;
+}
+
+/** OverlayRegistry.swift:109-113: the parts the item has, joined by a space. */
+function joinedKey(parts: readonly (string | undefined)[]): string | undefined {
+    const key = parts.filter((part): part is string => part !== undefined && part !== "").join(" ");
+    return key === "" ? undefined : key;
 }
 
 export function languageName(value: string | undefined): string | undefined {
@@ -80,40 +107,40 @@ const firstNonEmpty = (values: readonly string[] | undefined): string | undefine
 
 /** Registry order is the default render order within a corner. */
 const REGISTRY: readonly OverlayDef[] = [
-    { id: "resolution", position: "top-left", enabled: true, iconCapable: true, staticIcon: "monitor", value: card => resolutionLabel(card.overlay?.resolution) },
-    { id: "hdr", position: "top-left", enabled: true, iconCapable: true, icon: card => hdrIcon(card.overlay?.hdr), value: card => nonEmpty(card.overlay?.hdr) },
+    { id: "resolution", position: "top-left", enabled: true, iconCapable: true, staticIcon: "monitor", value: card => resolutionLabel(card.overlay?.resolution), valueKey: card => nonEmpty(card.overlay?.resolution) },
+    { id: "hdr", position: "top-left", enabled: true, iconCapable: true, icon: card => hdrIcon(card.overlay?.hdr), value: card => nonEmpty(card.overlay?.hdr), valueKey: card => nonEmpty(card.overlay?.hdr) },
     { id: "resolution_hdr", position: "top-left", enabled: false, iconCapable: true, icon: combinedHdrIcon, value: card => {
         const resolution = resolutionLabel(card.overlay?.resolution);
         const hdr = compactHdrSuffix(card.overlay?.hdr);
         return resolution === undefined ? undefined : hdr === undefined ? resolution : `${resolution} ${hdr}`;
-    } },
+    }, valueKey: card => nonEmpty(card.overlay?.resolution) === undefined ? undefined : joinedKey([card.overlay?.resolution, card.overlay?.hdr]) },
     // OverlayRegistry.swift:154-173 (silo-apple #1016): the parts the file has, so one without a resolution still shows its audio.
     { id: "resolution_hdr_audio", position: "top-left", enabled: false, iconCapable: true, icon: combinedHdrIcon, value: card => {
         const parts = [resolutionLabel(card.overlay?.resolution), compactHdrSuffix(card.overlay?.hdr), nonEmpty(card.overlay?.audio)].filter((part): part is string => part !== undefined && part !== "");
         return parts.length === 0 ? undefined : parts.join(" ");
-    } },
+    }, valueKey: card => joinedKey([card.overlay?.resolution, card.overlay?.hdr, card.overlay?.audio]) },
     // OverlayRegistry.swift:90-96: the ATMOS wordmark only for a value it fully expresses, so "TrueHD Atmos" keeps its label.
-    { id: "audio", position: "top-left", enabled: true, iconCapable: true, icon: card => nonEmpty(card.overlay?.audio) === undefined ? undefined : card.overlay?.audio?.toLowerCase() === "atmos" ? "ATMOS" : "volume", value: card => nonEmpty(card.overlay?.audio) },
-    { id: "audio_channels", position: "top-left", enabled: false, iconCapable: true, staticIcon: "volume", value: card => nonEmpty(card.overlay?.audioChannels) },
-    { id: "video_codec", position: "top-left", enabled: false, iconCapable: true, staticIcon: "film", icon: card => nonEmpty(card.overlay?.videoCodec) === undefined ? undefined : card.overlay?.videoCodec === "AV1" ? "AV1" : "film", value: card => nonEmpty(card.overlay?.videoCodec) },
-    { id: "container", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.container) },
-    { id: "aspect_ratio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "layout", value: card => nonEmpty(card.overlay?.aspectRatio) },
-    { id: "release_type", position: "bottom-left", enabled: true, iconCapable: false, value: card => nonEmpty(card.overlay?.releaseType) },
-    { id: "edition", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.edition) },
+    { id: "audio", position: "top-left", enabled: true, iconCapable: true, icon: card => nonEmpty(card.overlay?.audio) === undefined ? undefined : card.overlay?.audio?.toLowerCase() === "atmos" ? "ATMOS" : "volume", value: card => nonEmpty(card.overlay?.audio), valueKey: card => nonEmpty(card.overlay?.audio) },
+    { id: "audio_channels", position: "top-left", enabled: false, iconCapable: true, staticIcon: "volume", value: card => nonEmpty(card.overlay?.audioChannels), valueKey: card => nonEmpty(card.overlay?.audioChannels) },
+    { id: "video_codec", position: "top-left", enabled: false, iconCapable: true, staticIcon: "film", icon: card => nonEmpty(card.overlay?.videoCodec) === undefined ? undefined : card.overlay?.videoCodec === "AV1" ? "AV1" : "film", value: card => nonEmpty(card.overlay?.videoCodec), valueKey: card => nonEmpty(card.overlay?.videoCodec) },
+    { id: "container", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.container), valueKey: card => nonEmpty(card.overlay?.container) },
+    { id: "aspect_ratio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "layout", value: card => nonEmpty(card.overlay?.aspectRatio), valueKey: card => nonEmpty(card.overlay?.aspectRatio) },
+    { id: "release_type", position: "bottom-left", enabled: true, iconCapable: false, value: card => nonEmpty(card.overlay?.releaseType), valueKey: card => nonEmpty(card.overlay?.releaseType) },
+    { id: "edition", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.edition), valueKey: card => nonEmpty(card.overlay?.edition) },
     { id: "multi_audio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "languages", value: card => card.overlay?.multiAudio === true ? "Multi-Audio" : undefined },
     { id: "multi_sub", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "subtitles", value: card => card.overlay?.multiSub === true ? "CC" : undefined },
-    { id: "rating_imdb", position: "left-edge", enabled: false, accent: "#f5c518", iconCapable: false, value: card => decimalRating("IMDb", card.ratingImdb) },
-    { id: "rating_tmdb", position: "left-edge", enabled: false, accent: "#01b4e4", iconCapable: false, value: card => decimalRating("TMDB", card.ratingTmdb) },
-    { id: "rating_rt", position: "left-edge", enabled: false, accent: "#fa320a", iconCapable: false, value: card => percentRating("RT", card.ratingRtCritic) },
-    { id: "rating_rt_audience", position: "left-edge", enabled: false, accent: "#fa6400", iconCapable: false, value: card => percentRating("RT Audience", card.ratingRtAudience) },
-    { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "shield", value: card => card.contentRating },
+    rating("rating_imdb", "IMDb", "#f5c518", card => decimalScore(card.ratingImdb)),
+    rating("rating_tmdb", "TMDB", "#01b4e4", card => decimalScore(card.ratingTmdb)),
+    rating("rating_rt", "RT", "#fa320a", card => percentScore(card.ratingRtCritic)),
+    rating("rating_rt_audience", "RT Audience", "#fa6400", card => percentScore(card.ratingRtAudience)),
+    { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "shield", value: card => card.contentRating, valueKey: card => nonEmpty(card.contentRating) },
     { id: "advisory_age", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "users", value: card => card.advisoryAge !== undefined && card.advisoryAge > 0 ? `${card.advisoryAge}+` : undefined },
     { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? String(card.year) : undefined },
     { id: "runtime", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "clock", value: card => runtimeText(card.runtimeMinutes) },
-    { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "globe", value: card => languageName(card.originalLanguage) },
-    { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "building", value: card => firstNonEmpty(card.studios) },
-    { id: "network", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "tv", value: card => firstNonEmpty(card.networks) },
-    { id: "show_status", position: "right-edge", enabled: false, iconCapable: true, staticIcon: "tv", value: card => showStatus(card.showStatus) },
+    { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "globe", value: card => languageName(card.originalLanguage), valueKey: card => nonEmpty(card.originalLanguage) },
+    { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "building", value: card => firstNonEmpty(card.studios), valueKey: card => firstNonEmpty(card.studios) },
+    { id: "network", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "tv", value: card => firstNonEmpty(card.networks), valueKey: card => firstNonEmpty(card.networks) },
+    { id: "show_status", position: "right-edge", enabled: false, iconCapable: true, staticIcon: "tv", value: card => showStatus(card.showStatus), valueKey: card => showStatus(card.showStatus) },
     // Ribbons whose data the server does not send yet; kept so stored documents keep their entries.
     { id: "imdb_top_250", position: "right-edge", enabled: false, accent: "#f5c518", iconCapable: true, staticIcon: "ribbon", value: () => undefined },
     { id: "rt_certified_fresh", position: "right-edge", enabled: false, accent: "#fa320a", iconCapable: false, value: () => undefined },
@@ -125,10 +152,22 @@ const POSITIONS: readonly Position[] = ["top-left", "bottom-left", "bottom-right
 function storedPosition(value: unknown): Position | undefined {
     return value === "top-right" ? "right-edge" : POSITIONS.find(position => position === value);
 }
-const PRESETS: readonly PresetId[] = ["minimal", "classic", "vibrant", "pill", "square"];
 
 function registryDefaults(): Map<string, ItemConfig> {
-    return new Map(REGISTRY.map(def => [def.id, { enabled: def.enabled, position: def.position, accentColor: undefined, showIcon: undefined }]));
+    return new Map(REGISTRY.map(def => [def.id, { enabled: def.enabled, position: def.position, accentColor: undefined, showIcon: undefined, image: undefined, valueImages: {} }]));
+}
+
+/** OverlaySchema.swift:188-191: an uploaded image's content reference, as overlay-config lists it. */
+const isImageRef = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{64}\.webp$/.test(value);
+const MAX_VALUE_IMAGES = 32;
+const MAX_VALUE_KEY_LENGTH = 64;
+
+/** OverlaySchema.swift:156-166: sorted, so a document over the cap keeps the same entries every parse; the length counts code points. */
+function valueImages(raw: unknown): Readonly<Record<string, string>> {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+    const entries = raw as Record<string, unknown>;
+    const valid = Object.keys(entries).sort().filter(key => key !== "" && [...key].length <= MAX_VALUE_KEY_LENGTH && isImageRef(entries[key]));
+    return Object.fromEntries(valid.slice(0, MAX_VALUE_IMAGES).map(key => [key, entries[key] as string]));
 }
 
 function patch(base: ItemConfig, raw: unknown): ItemConfig {
@@ -139,6 +178,8 @@ function patch(base: ItemConfig, raw: unknown): ItemConfig {
         position: storedPosition(entry.position) ?? base.position,
         accentColor: typeof entry.accentColor === "string" && /^#[0-9a-fA-F]{6}$/.test(entry.accentColor) ? entry.accentColor : undefined,
         showIcon: typeof entry.showIcon === "boolean" ? entry.showIcon : undefined,
+        image: isImageRef(entry.image) ? entry.image : undefined,
+        valueImages: valueImages(entry.valueImages),
     };
 }
 
@@ -154,13 +195,15 @@ export function parseOverlayPrefs(raw: unknown): CardOverlayPrefs {
     const items = registryDefaults();
     if (typeof doc !== "object" || doc === null || Array.isArray(doc)) return { preset: "classic", order: [], items };
     const obj = doc as Record<string, unknown>;
-    const v2 = obj.version === 2;
+    // OverlaySchema.swift:51-56: version 2, or at least a preset and an items object.
+    const v2 = obj.version === 2 || (typeof obj.preset === "string" && typeof obj.items === "object" && obj.items !== null && !Array.isArray(obj.items));
     const patches = v2 ? obj.items : obj;
     if (typeof patches === "object" && patches !== null) {
         for (const [id, base] of items) items.set(id, patch(base, (patches as Record<string, unknown>)[id]));
     }
     return {
         preset: (v2 && PRESETS.find(preset => preset === obj.preset)) || "classic",
+        style: v2 ? parseStyle(obj.style) : undefined,
         order: v2 && Array.isArray(obj.order) ? obj.order.filter((id): id is string => typeof id === "string" && REGISTRY.some(def => def.id === id)) : [],
         items,
     };
@@ -182,64 +225,6 @@ function enabledAt(position: Position, prefs: CardOverlayPrefs): OverlayDef[] {
     if (prefs.order.length === 0) return candidates;
     const rank = (id: string): number => { const index = prefs.order.indexOf(id); return index < 0 ? Number.MAX_SAFE_INTEGER : index; };
     return candidates.map((def, index) => ({ def, index })).sort((a, b) => rank(a.def.id) - rank(b.def.id) || a.index - b.index).map(entry => entry.def);
-}
-
-/** A straight-alpha sRGB colour: channels 0–255, alpha 0–1. */
-type Rgba = readonly [number, number, number, number];
-const css = ([r, g, b, a]: Rgba): string => `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${Math.round(a * 1000) / 1000})`;
-/** OverlayColor.swift:52-67, CSS `color-mix(in srgb, color share, other)` on premultiplied channels. */
-function mixed(color: Rgba, share: number, other: Rgba): Rgba {
-    const rest = 1 - share;
-    const alpha = color[3] * share + other[3] * rest;
-    if (alpha <= 0) return [0, 0, 0, 0];
-    const channel = (index: 0 | 1 | 2): number => (color[index] * color[3] * share + other[index] * other[3] * rest) / alpha;
-    return [channel(0), channel(1), channel(2), alpha];
-}
-const WHITE: Rgba = [255, 255, 255, 1];
-const BLACK_60: Rgba = [0, 0, 0, 0.6];
-const PILL_BASE: Rgba = [20, 20, 30, 0.7];
-const WHITE_BORDER = "rgba(255,255,255,0.15)";
-
-/** An offset shadow in points at the reference width. CSS blur is twice SwiftUI's radius (CardOverlays.swift:501-519). */
-interface Shadow { readonly y: number; readonly blur: number; readonly color: string }
-interface Paint { readonly background: string; readonly foreground: string; readonly border?: string; readonly bar?: string }
-interface Preset {
-    readonly fontSize: number; readonly weight: number;
-    /** Letter spacing as a share of the font size. */
-    readonly tracking: number;
-    readonly padX: number; readonly padY: number;
-    /** Undefined is a capsule. */
-    readonly radius: number | undefined;
-    readonly border: number | undefined;
-    /** The accent bar on the badge's left side. */
-    readonly bar: number | undefined;
-    readonly textShadow: Shadow | undefined; readonly boxShadow: Shadow | undefined;
-    readonly iconSize: number; readonly iconGap: number; readonly preferIcon: boolean; readonly gap: number;
-    /** A filled badge on a rail is a tab flush against the card edge; a transparent one keeps the corner inset. */
-    readonly flushRails: boolean;
-    readonly paint: (accent: Rgba | undefined) => Paint;
-}
-
-/** Tailwind's `tracking-wide` and `tracking-widest` (OverlayPresets.swift:26-28). */
-const TRACKING_WIDE = 0.025;
-const TRACKING_WIDEST = 0.1;
-
-/** OverlayPresets.swift:32-172 at 5780c84, the web's numbers with its default theme's radii. */
-const PRESET_STYLES: Readonly<Record<PresetId, Preset>> = {
-    minimal: { fontSize: 9, weight: 600, tracking: TRACKING_WIDEST, padX: 4, padY: 0, radius: 8, border: undefined, bar: undefined, textShadow: { y: 1, blur: 2, color: "rgba(0,0,0,0.85)" }, boxShadow: undefined, iconSize: 10, iconGap: 4, preferIcon: false, gap: 2, flushRails: false,
-        paint: accent => ({ background: "transparent", foreground: accent === undefined ? "rgba(255,255,255,0.85)" : css(accent) }) },
-    classic: { fontSize: 10, weight: 600, tracking: TRACKING_WIDE, padX: 8, padY: 2, radius: undefined, border: 1, bar: undefined, textShadow: undefined, boxShadow: undefined, iconSize: 11, iconGap: 4, preferIcon: false, gap: 4, flushRails: true,
-        paint: accent => ({ background: css(accent === undefined ? BLACK_60 : mixed(accent, 0.28, BLACK_60)), foreground: css(WHITE), border: WHITE_BORDER }) },
-    vibrant: { fontSize: 10, weight: 700, tracking: TRACKING_WIDE, padX: 8, padY: 2, radius: 10, border: undefined, bar: undefined, textShadow: undefined, boxShadow: { y: 1, blur: 2, color: "rgba(0,0,0,0.25)" }, iconSize: 12, iconGap: 4, preferIcon: true, gap: 4, flushRails: true,
-        paint: accent => ({ background: css(accent ?? [220, 220, 220, 0.95]), foreground: accent === undefined ? "#000" : css(WHITE) }) },
-    pill: { fontSize: 10, weight: 600, tracking: TRACKING_WIDE, padX: 10, padY: 4, radius: undefined, border: 1, bar: undefined, textShadow: undefined, boxShadow: undefined, iconSize: 12, iconGap: 4, preferIcon: true, gap: 4, flushRails: true,
-        paint: accent => ({ background: css(accent === undefined ? PILL_BASE : mixed(accent, 0.2, PILL_BASE)), foreground: css(WHITE), border: WHITE_BORDER }) },
-    square: { fontSize: 9, weight: 700, tracking: TRACKING_WIDEST, padX: 6, padY: 2, radius: 8, border: undefined, bar: 2, textShadow: undefined, boxShadow: undefined, iconSize: 10, iconGap: 4, preferIcon: false, gap: 2, flushRails: true,
-        paint: accent => ({ background: "rgba(0,0,0,0.8)", foreground: css(accent ?? WHITE), ...(accent === undefined ? {} : { bar: css(accent) }) }) },
-};
-
-function hex(value: string): Rgba {
-    return [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16), 1];
 }
 
 /** CardOverlays.swift:29-38: lengths are points at the 185pt web poster; wide (Continue Watching) badges stay at 1. */
@@ -302,9 +287,20 @@ function watchedCheck(size: string): SVGSVGElement {
 
 type Rail = "left" | "right";
 /** `mark` is a drawn icon: a wordmark, the Dolby Vision ring or a symbol. */
-interface Resolved { readonly label: string; readonly mark: Icon | undefined; readonly accent: Rgba | undefined }
+interface Resolved {
+    readonly label: string; readonly mark: Icon | undefined; readonly accent: Rgba | undefined;
+    /** The rating's source mark and bare score, when it has both (CardOverlays.swift:171-173, :192-193). */
+    readonly sourceMark: string | undefined; readonly score: string | undefined;
+    /** Uploaded images, resolved against the server: one in the icon's place, or one for the whole badge (:168-170, :190-191). */
+    readonly image?: OverlayImageAsset | undefined; readonly valueImage?: OverlayImageAsset | undefined;
+}
 
-function resolve(card: Card, prefs: CardOverlayPrefs, preset: Preset, position: Position, limit: number): Resolved[] {
+function resolve(card: Card, prefs: CardOverlayPrefs, preset: Preset, position: Position, limit: number, baseUrl: string): Resolved[] {
+    const asset = (ref: string | undefined): OverlayImageAsset | undefined => {
+        const listed = ref === undefined ? undefined : prefs.images?.get(ref);
+        const url = listed === undefined ? undefined : artworkUrl(listed.url, baseUrl);
+        return listed === undefined || url === undefined ? undefined : { url, aspect: listed.aspect };
+    };
     return enabledAt(position, prefs).flatMap(def => {
         const label = def.value(card);
         if (label === undefined) return [];
@@ -312,16 +308,23 @@ function resolve(card: Card, prefs: CardOverlayPrefs, preset: Preset, position: 
         const icon = def.icon?.(card) ?? def.staticIcon;
         const showIcon = icon !== undefined && def.iconCapable && (config?.showIcon ?? preset.preferIcon);
         const accent = config?.accentColor ?? def.accent;
-        return [{ label, mark: showIcon ? icon : undefined, accent: accent === undefined ? undefined : hex(accent) }];
+        const score = def.score?.(card);
+        const key = def.valueKey?.(card);
+        const image = asset(config?.image), valueImage = asset(key === undefined ? undefined : config?.valueImages[key]);
+        return [{ label, mark: showIcon ? icon : undefined, accent: accent === undefined ? undefined : hexColor(accent), sourceMark: score === undefined ? undefined : def.sourceMark, score,
+            ...(image === undefined ? {} : { image }), ...(valueImage === undefined ? {} : { valueImage }) }];
     }).slice(0, limit);
 }
 
 /** The badge layer for one card's artwork, or undefined when no badge has a value. */
-export function overlayLayer(card: Card, prefs: CardOverlayPrefs, variant: "poster" | "wide", artWidth: number): HTMLElement | undefined {
-    const preset = PRESET_STYLES[prefs.preset];
+export function overlayLayer(card: Card, prefs: CardOverlayPrefs, variant: "poster" | "wide", artWidth: number, baseUrl: string): HTMLElement | undefined {
+    const preset = applyStyle(PRESET_STYLES[prefs.preset], prefs.style);
+    const band = preset.layout === "band";
+    // CardOverlays.swift:74-78: a filled badge on a rail is a tab flush against the edge; minimal and band keep the inset.
+    const flushRails = !band && preset.id !== "minimal";
     const scale = variant === "poster" ? artWidth / POSTER_REFERENCE_WIDTH : 1;
     const px = (value: number): string => `${Math.round(value * scale * 100) / 100}px`;
-    const at = (position: Position, limit: number): Resolved[] => resolve(card, prefs, preset, position, limit);
+    const at = (position: Position, limit: number): Resolved[] => resolve(card, prefs, preset, position, limit, baseUrl);
     const layer = el("span", "card-overlays");
     layer.setAttribute("aria-hidden", "true");
     const stack = (name: string, badges: readonly Resolved[], align: "flex-start" | "flex-end" | "stretch", rail?: Rail): HTMLElement => {
@@ -331,29 +334,36 @@ export function overlayLayer(card: Card, prefs: CardOverlayPrefs, variant: "post
         for (const badge of badges) node.appendChild(badgeNode(badge, preset, scale, px, rail));
         return layer.appendChild(node);
     };
+    const topTrailing = variant === "poster" ? EDGE_INSET + WATCH_STATUS_SIZE + EDGE_GAP : EDGE_INSET;
     const topLeft = at("top-left", MAX_BADGES_PER_CORNER);
-    if (topLeft.length > 0) {
+    if (topLeft.length > 0 && band) {
+        layer.appendChild(bandStrip(topLeft, "top", `${px(EDGE_INSET)} ${px(topTrailing)} ${px(EDGE_INSET * 3)} ${px(EDGE_INSET)}`, preset, scale, px));
+    } else if (topLeft.length > 0) {
         const node = stack("top-left", topLeft, "flex-start");
         node.style.top = px(EDGE_INSET);
         node.style.left = px(EDGE_INSET);
-        node.style.right = px(variant === "poster" ? EDGE_INSET + WATCH_STATUS_SIZE + EDGE_GAP : EDGE_INSET);
+        node.style.right = px(topTrailing);
     }
     for (const side of ["left", "right"] as const) {
         const badges = at(`${side}-edge`, MAX_BADGES_PER_RAIL);
         if (badges.length === 0) continue;
-        const node = stack(`${side}-edge`, badges, side === "left" ? "flex-start" : "flex-end", preset.flushRails ? side : undefined);
-        node.style.setProperty(side, preset.flushRails ? "0" : px(EDGE_INSET));
+        const node = stack(`${side}-edge`, badges, side === "left" ? "flex-start" : "flex-end", flushRails ? side : undefined);
+        node.style.setProperty(side, flushRails ? "0" : px(EDGE_INSET));
         node.style.maxWidth = RAIL_MAX_WIDTH;
     }
     const left = at("bottom-left", MAX_BADGES_PER_CORNER);
     const right = at("bottom-right", MAX_BADGES_PER_CORNER);
     const levels = Math.max(left.length, right.length);
-    if (levels > 0) {
+    const bottom = variant === "wide" ? `${WIDE_BOTTOM_INSET}px` : px(EDGE_INSET);
+    if (levels > 0 && band) {
+        // CardOverlays.swift:107-114: one centred strip for the whole bottom edge, left corner first.
+        layer.appendChild(bandStrip([...left, ...right], "bottom", `${px(EDGE_INSET * 3)} ${px(EDGE_INSET)} ${bottom} ${px(EDGE_INSET)}`, preset, scale, px));
+    } else if (levels > 0) {
         // BottomRows: one row per level from the bottom up, the shorter corner aligned with the bottom; a pair too wide wraps.
         const node = stack("bottom", [], "stretch");
         node.style.left = px(EDGE_INSET);
         node.style.right = px(EDGE_INSET);
-        node.style.bottom = variant === "wide" ? `${WIDE_BOTTOM_INSET}px` : px(EDGE_INSET);
+        node.style.bottom = bottom;
         for (let level = 0; level < levels; level += 1) {
             const row = node.appendChild(el("span", "card-overlay-row"));
             row.style.columnGap = px(EDGE_GAP);
@@ -367,8 +377,74 @@ export function overlayLayer(card: Card, prefs: CardOverlayPrefs, variant: "post
     return layer.childElementCount === 0 ? undefined : layer;
 }
 
-/** OverlayBadgeView (CardOverlays.swift:364-439): padding, then the border outside it; a rail tab is open on its flush side. */
+/**
+ * BandMarks (CardOverlays.swift:295-330) over the band scrim (:146-157): one row of marks with 1pt dividers between
+ * them. The row keeps the marks that fit whole, in order, and drops the rest; only a first mark too wide truncates.
+ * The row wraps and shows its first line, so a mark that does not fit leaves with its divider.
+ */
+function bandStrip(badges: readonly Resolved[], edge: "top" | "bottom", padding: string, preset: Preset, scale: number, px: (value: number) => string): HTMLElement {
+    const strip = el("span", `card-overlay-band card-overlay-band-${edge}`);
+    strip.style.padding = padding;
+    strip.style.backgroundImage = `linear-gradient(to ${edge === "top" ? "bottom" : "top"}, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 55%, rgba(0,0,0,0) 100%)`;
+    const row = strip.appendChild(el("span", "card-overlay-band-row"));
+    row.style.justifyContent = edge === "top" ? "flex-start" : "center";
+    row.style.height = px(Math.max(...badges.map(badge => badgeHeight(badge, preset))));
+    badges.forEach((badge, index) => {
+        const item = row.appendChild(el("span", "card-overlay-band-item"));
+        if (index > 0) {
+            const divider = item.appendChild(el("span", "card-overlay-band-divider"));
+            divider.style.height = px(preset.fontSize * 0.9);
+            divider.style.margin = `0 ${px(preset.gap)}`;
+        }
+        item.appendChild(badgeNode(badge, preset, scale, px));
+    });
+    return strip;
+}
+
+/** A badge's height in points: its tallest part, the padding and the border (CardOverlays.swift:377-398, :443-449). */
+function badgeHeight(badge: Resolved, preset: Preset): number {
+    if (badge.valueImage !== undefined) return valueImageHeight(preset);
+    const chip = preset.sourceChips && badge.image === undefined && badge.sourceMark !== undefined ? preset.fontSize * 1.3 : 0;
+    const icon = badge.mark === undefined && badge.image === undefined ? 0 : preset.iconSize;
+    return Math.max(preset.fontSize, chip, icon) + 2 * (preset.padY + (preset.border ?? 0));
+}
+
+const cssShadow = (shadow: Shadow, px: (value: number) => string): string => `0 ${px(shadow.y)} ${px(shadow.blur)} ${css(shadow.color)}`;
+
+/** CardOverlays.swift:336-338, :351-353: an image that replaces a badge is 1.6 times the text badge's height. */
+const VALUE_IMAGE_SCALE = 1.6;
+const valueImageHeight = (preset: Preset): number => (preset.fontSize + preset.padY * 2) * VALUE_IMAGE_SCALE;
+
+/**
+ * An uploaded image at `height` points and the image's own aspect. One that does not load (an administrator deleted
+ * it) puts back what the badge draws without it (CardOverlays.swift:344-362, :451-464).
+ */
+function uploadedImage(asset: OverlayImageAsset, height: number, px: (value: number) => string, fallback: () => HTMLElement, replace: () => HTMLElement): HTMLImageElement {
+    const image = el("img", "card-overlay-image");
+    image.alt = "";
+    image.style.height = px(height);
+    image.style.width = px(height * asset.aspect);
+    image.addEventListener("error", () => {
+        const shown = replace();
+        const next = fallback();
+        // overlayLayer marks a bottom-right badge after building it; the fallback keeps that corner.
+        if (shown.classList.contains("card-overlay-trailing")) next.classList.add("card-overlay-trailing");
+        shown.replaceWith(next);
+    }, { once: true });
+    image.src = asset.url;
+    return image;
+}
+
+/** OverlayBadgeView (CardOverlays.swift:350-357): a value image stands for the whole badge; otherwise the text badge. */
 function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: number) => string, rail?: Rail): HTMLElement {
+    if (badge.valueImage === undefined) return textBadge(badge, preset, scale, px, rail);
+    const holder = el("span", "card-overlay card-overlay-value-image");
+    holder.appendChild(uploadedImage(badge.valueImage, valueImageHeight(preset), px, () => badgeNode({ ...badge, valueImage: undefined }, preset, scale, px, rail), () => holder));
+    return holder;
+}
+
+/** CardOverlays.swift:364-439: padding, then the border outside it; a rail tab is open on its flush side. */
+function textBadge(badge: Resolved, preset: Preset, scale: number, px: (value: number) => string, rail?: Rail): HTMLElement {
     const paint = preset.paint(badge.accent);
     const node = el("span", "card-overlay");
     const style = node.style;
@@ -386,18 +462,37 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
         node.classList.add("card-overlay-framed");
         if (rail !== undefined) node.classList.add(`card-overlay-tab-${rail}`);
         style.setProperty("--card-overlay-border", px(border));
-        style.setProperty("--card-overlay-border-color", paint.border ?? paint.foreground);
+        style.setProperty("--card-overlay-border-color", css(paint.border ?? paint.foreground));
     }
     const radius = preset.radius === undefined ? "999px" : px(preset.radius);
     style.borderRadius = rail === "left" ? `0 ${radius} ${radius} 0` : rail === "right" ? `${radius} 0 0 ${radius}` : radius;
-    style.backgroundColor = paint.background;
-    if (bar > 0 && paint.bar !== undefined) style.backgroundImage = `linear-gradient(to right, ${paint.bar} ${px(bar)}, transparent ${px(bar)})`;
-    style.color = paint.foreground;
-    if (preset.boxShadow !== undefined) style.boxShadow = `0 ${px(preset.boxShadow.y)} ${px(preset.boxShadow.blur)} ${preset.boxShadow.color}`;
+    style.backgroundColor = css(paint.background);
+    if (bar > 0 && paint.bar !== undefined) style.backgroundImage = `linear-gradient(to right, ${css(paint.bar)} ${px(bar)}, transparent ${px(bar)})`;
+    style.color = css(paint.foreground);
+    if (!preset.uppercase) style.textTransform = "none";
+    if (preset.boxShadow !== undefined) style.boxShadow = cssShadow(preset.boxShadow, px);
     // CardOverlays.swift:196-202: a label that says what its wordmark spells is dropped ("HDR10 HDR10"); DV has no wordmark.
     const wordmark = badge.mark === "HDR" || badge.mark === "HDR10" || badge.mark === "ATMOS" || badge.mark === "AV1" ? badge.mark : undefined;
-    const label = wordmark !== undefined && badge.label.trim().toLowerCase() === wordmark.toLowerCase() ? "" : badge.label;
-    if (badge.mark !== undefined && wordmark === undefined && badge.mark !== "DV" && badge.mark !== "tv") {
+    // CardOverlays.swift:367-372: an uploaded image beside a rating stands for its source, so the label drops the mark;
+    // without one, plate draws the mark as a chip. The image replaces the icon.
+    const chip = badge.image === undefined && preset.sourceChips ? badge.sourceMark : undefined;
+    const scoreOnly = (badge.image !== undefined || chip !== undefined) && badge.score !== undefined;
+    const label = scoreOnly ? badge.score ?? "" : wordmark !== undefined && badge.label.trim().toLowerCase() === wordmark.toLowerCase() ? "" : badge.label;
+    const tracking = px((preset.tracking + interShortfall(preset.fontSize * scale, preset.weight)) * preset.fontSize);
+    if (badge.image !== undefined) {
+        const image = node.appendChild(uploadedImage(badge.image, preset.iconSize, px, () => textBadge({ ...badge, image: undefined }, preset, scale, px, rail), () => node));
+        if (label !== "") image.style.marginRight = px(preset.iconGap);
+    } else if (chip !== undefined) {
+        // :441-449: the mark in the badge's type, readable on its accent, padded 0.35 × 0.15 of the font size.
+        const accent = badge.accent ?? [255, 255, 255, 1];
+        const chipNode = node.appendChild(el("span", "card-overlay-chip", chip));
+        chipNode.style.letterSpacing = tracking;
+        chipNode.style.color = css(readableText(accent));
+        chipNode.style.backgroundColor = css(accent);
+        chipNode.style.padding = `${px(preset.fontSize * 0.15)} ${px(preset.fontSize * 0.35)}`;
+        chipNode.style.borderRadius = px(preset.fontSize * 0.2);
+        if (label !== "") chipNode.style.marginRight = px(preset.iconGap);
+    } else if (badge.mark !== undefined && wordmark === undefined && badge.mark !== "DV" && badge.mark !== "tv") {
         const frame = el("span", "card-overlay-symbol");
         frame.style.cssText = "display:inline-flex;align-items:center;justify-content:center;flex:none";
         frame.style.minWidth = frame.style.height = px(preset.iconSize);
@@ -419,7 +514,7 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
         frame.appendChild(glyph);
         node.appendChild(frame);
     }
-    if (badge.mark === "tv") {
+    if (badge.image === undefined && badge.mark === "tv") {
         const glyph = tvIcon();
         // OverlayIcon.swift:29-36: the symbol at 85% of iconSize in an iconSize-high frame. "tv" is wider than the
         // frame's minimum width and a little taller than it, so the frame keeps the symbol's width and iconSize's height.
@@ -430,13 +525,13 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
         if (label !== "") glyph.style.marginRight = px(preset.iconGap);
         node.appendChild(glyph);
     }
-    if (badge.mark === "DV") {
+    if (badge.image === undefined && badge.mark === "DV") {
         const ring = dolbyVisionMark();
         ring.style.width = ring.style.height = px(preset.iconSize);
         if (label !== "") ring.style.marginRight = px(preset.iconGap);
         node.appendChild(ring);
     }
-    if (wordmark !== undefined) {
+    if (badge.image === undefined && wordmark !== undefined) {
         // OverlayIcon.swift:15-24: 10-unit black text in a 12-unit-high box; ATMOS is 9 units spaced half a unit apart.
         const units = wordmark === "ATMOS" ? 9 : 10;
         const points = preset.iconSize * units / 12;
@@ -449,10 +544,12 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
     }
     if (label !== "") {
         const text = node.appendChild(el("span", "card-overlay-label", label));
+        // A cut score ("6.") misleads, so a bare score never truncates (CardOverlays.swift:386-388).
+        if (scoreOnly) text.classList.add("card-overlay-score");
         // Set on the label itself: theme.css gives every element its own tracking, so it would not inherit.
-        text.style.letterSpacing = px((preset.tracking + interShortfall(preset.fontSize * scale, preset.weight)) * preset.fontSize);
+        text.style.letterSpacing = tracking;
         // The text shadow lifts the label only, not the icon (CardOverlays.swift:385-390).
-        if (preset.textShadow !== undefined) text.style.textShadow = `0 ${px(preset.textShadow.y)} ${px(preset.textShadow.blur)} ${preset.textShadow.color}`;
+        if (preset.textShadow !== undefined) text.style.textShadow = cssShadow(preset.textShadow, px);
     }
     return node;
 }
@@ -460,10 +557,12 @@ function badgeNode(badge: Resolved, preset: Preset, scale: number, px: (value: n
 /**
  * Inter's per-letter shortfall against SF Pro Text at badge sizes, in em of Apple's point size. SF Pro Text spaces
  * small sizes wider than Inter at the cap-scaled size: measured with CoreText (macOS SF Pro) against InterVariable
- * over twelve badge labels from 8 to 14pt, fitted within 0.002em. Larger text uses theme.css's tracking instead.
+ * over twelve badge labels from 8 to 14pt, fitted within 0.002em. Regular and heavy keep the semibold and bold slope,
+ * offset by their measured difference from semibold over the same labels. Larger text uses theme.css's tracking instead.
  */
+const INTER_SHORTFALL_AT_10: Readonly<Record<number, number>> = { 400: 0.0325, 600: 0.044, 700: 0.051, 800: 0.063 };
 function interShortfall(points: number, weight: number): number {
-    return Math.max(0, (weight >= 700 ? 0.051 : 0.044) - 0.0062 * (points - 10));
+    return Math.max(0, (INTER_SHORTFALL_AT_10[weight] ?? 0.044) - 0.0062 * (points - 10));
 }
 
 /**

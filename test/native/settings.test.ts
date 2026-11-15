@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { operations } from "../../src/api/operations.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, SETTINGS_KEYS, decodeEffectiveSettings, decodeExplicitSettings, decodeSettingsCapabilities, decodeSettingsContract, decodeSettingValue, numericLibraryId, profileSettings, type SettingsKey } from "../../src/contracts/v2/settings.ts";
+import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, SETTINGS_KEYS, decodeEffectiveSettings, decodeExplicitSettings, decodeOverlayConfig, decodeSettingsCapabilities, decodeSettingsContract, decodeSettingValue, numericLibraryId, profileSettings, type SettingsKey } from "../../src/contracts/v2/settings.ts";
 import { PlaybackController } from "../../src/player/controller.ts";
 import { FakePlayback } from "./support/fakePlayback.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -10,6 +10,7 @@ import { connected, signIn } from "./support/harness.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { FakeSettings } from "./support/fakeSettings.ts";
 import { fixture, problem } from "./support/fakeSilo.ts";
+import { WireError } from "../../src/contracts/v2/wire.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
 const QUALITY = "playback.preferred_quality" as SettingsKey;
@@ -629,4 +630,14 @@ test("decoders retain policy metadata, require all requested rows and use opaque
     assert.throws(() => decodeEffectiveSettings(SETTINGS_KEYS, { items: [raw], revision: 24 }));
     assert.throws(() => decodeExplicitSettings([AUDIO_KEY], { items: [], revision: 24 }));
     assert.throws(() => decodeExplicitSettings([AUDIO_KEY], { items: [{ key: AUDIO_KEY, scope: "profile", is_set: true }], revision: 24 }));
+});
+
+// OverlayConfig.images at silo-server 3f1081bdfe82285ede3925473a1d63bb197e68f5 (OverlayImage: ref, name, url, width, height).
+test("overlay-config lists its badge images, an older server none, and a malformed image fails the read", () => {
+    const image = { ref: `${"a".repeat(64)}.webp`, name: "4K Dolby Vision", url: `/api/v2/overlay-images/${"a".repeat(64)}.webp`, width: 300, height: 120 };
+    const base = { enabled: true, quick_actions_enabled: false, quick_actions_default: "both" };
+    assert.deepEqual(decodeOverlayConfig({ ...base, images: [image], image_uploads_available: true }).images, [{ ref: image.ref, url: image.url, width: 300, height: 120 }]);
+    assert.deepEqual(decodeOverlayConfig(base).images, []);
+    assert.throws(() => decodeOverlayConfig({ ...base, images: {} }), WireError);
+    assert.throws(() => decodeOverlayConfig({ ...base, images: [{ ...image, width: "300" }] }), WireError);
 });

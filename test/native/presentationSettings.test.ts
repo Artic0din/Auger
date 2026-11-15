@@ -220,3 +220,40 @@ test("poster badges keep the profile's document when its reread fails", async ()
     await settle();
     assert.equal(badges(presentation), "square");
 });
+
+test("a profile that changes only its badge style redraws the cards", async () => {
+    const h = await setup();
+    h.settings.profile().set(OVERLAYS, { version: 2, preset: "plate", order: [], items: {} });
+    let changes = 0;
+    const presentation = new PresentationSettings(h.core.session, () => { changes++; }, h.storage, KEY);
+    presentation.ensure();
+    await settle();
+    const before = changes;
+    h.settings.profile().set(OVERLAYS, { version: 2, preset: "plate", order: [], items: {}, style: { size: 1.5 } });
+    presentation.reload();
+    await settle();
+    assert.deepEqual(presentation.cardOverlays?.style, { size: 1.5 });
+    assert.equal(changes, before + 1, "the style is part of what cards draw");
+});
+
+const IMAGE = `${"a".repeat(64)}.webp`;
+
+test("poster badges carry overlay-config's usable images, and a new image list redraws the cards", async () => {
+    const h = await setup();
+    h.settings.overlayConfig = { enabled: true, images: [
+        { ref: IMAGE, name: "4K", url: `/api/v2/overlay-images/${IMAGE}`, width: 300, height: 120 },
+        { ref: IMAGE, name: "Again", url: "/other", width: 10, height: 10 },
+        { ref: `${"b".repeat(64)}.webp`, name: "Flat", url: "/flat", width: 300, height: 0 },
+    ] };
+    let changes = 0;
+    const presentation = new PresentationSettings(h.core.session, () => { changes++; }, h.storage, KEY);
+    presentation.ensure();
+    await settle();
+    assert.deepEqual([...presentation.cardOverlays?.images ?? []], [[IMAGE, { url: `/api/v2/overlay-images/${IMAGE}`, aspect: 2.5 }]], "the first of a repeated ref wins and a zero dimension is dropped (OverlayPrefsStore.swift:247-258)");
+    const before = changes;
+    h.settings.overlayConfig = { enabled: true, images: [] };
+    presentation.reload();
+    await settle();
+    assert.equal(presentation.cardOverlays?.images?.size, 0);
+    assert.equal(changes, before + 1, "a deleted image redraws the cards");
+});
