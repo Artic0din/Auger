@@ -8,6 +8,8 @@ Favorites filters Movies and TV Shows locally without changing stored list order
 History appends unfiltered 60-card catalog pages and uses the TV safe area plus 48-point content padding.
 All lists preserve native source ordering.
 Moving focus never fetches data.
+History, Watchlist and Favorites align both card caption lines with the poster's leading edge.
+This follows the tvOS `TVMediaCardCaption` in [MediaCard.swift:648–666](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Components/MediaCard.swift#L648-L666); History reaches it through `CatalogGrid`, while Watchlist and Favorites use `MediaCard` directly.
 
 Cards open the existing Details route and its playback handoff.
 Holding Select opens the shared [card actions](skyline-browse-shell.md) without pushing Details.
