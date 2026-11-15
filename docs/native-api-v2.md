@@ -505,6 +505,10 @@ URLs failing `isPermittedUrl` fail the playback.
 The code comment calls this a "Gate C candidate" from silo-server's `docs/playback-api.md` (at the commit in `src/contracts/v2/SOURCE`), so the server's acceptance of the `token` query on stream and subtitle URLs is not marked final.
 On `visibilitychange` the stream URL is rebuilt with a fresh token (`urlWithToken`).
 
+Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
+After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
+A missing row or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
+
 ### Markers
 
 `GET /markers/files/{fileId}` (`src/api/markerOperations.ts`).

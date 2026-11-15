@@ -1033,7 +1033,7 @@ test("a start sends the v3 body under the active profile and plays the server's 
     assert.deepEqual(r.avplay.calls.slice(3), ["seekTo 12500"], "seeks to player_start before playing; nothing else during the seek");
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
-    assert.deepEqual(r.avplay.calls.slice(4), ["play"]);
+    assert.deepEqual(r.avplay.calls.slice(4), ["play", "getTotalTrackInfo", "getCurrentStreamInfo"], "the plan's audio ordinal already plays, so nothing is switched");
     const view = last(r.views);
     assert.equal(view.phase, "playing");
     assert.equal(view.phase === "playing" ? view.positionSeconds : -1, 12.5);

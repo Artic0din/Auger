@@ -453,6 +453,97 @@ test("an audio choice is a server track_change from the current source position;
     assert.equal(tracks(r).change.state, "idle");
 });
 
+/** File 42's three audio streams as AVPlay lists an original MKV: AVPlay indexes, not server ordinals (#507). */
+const ORIGINAL_AUDIO_ROWS = [
+    { index: 1, type: "AUDIO" as const, extra_info: "{\"language\":\"eng\",\"channels\":\"6\",\"fourCC\":\"audio/x-eac3\"}" },
+    { index: 2, type: "AUDIO" as const, extra_info: "{\"language\":\"jpn\",\"channels\":\"2\",\"fourCC\":\"audio/mpeg\"}" },
+    { index: 3, type: "AUDIO" as const, extra_info: "{\"language\":\"eng\",\"channels\":\"2\",\"fourCC\":\"audio/mpeg\"}" },
+];
+
+test("original HTTP claims client-selected audio so a second track stays direct play (#507)", async () => {
+    const r = await rig();
+    await playMovie(r);
+    const context = only(requests(r.h, "/playback/start")).body?.client_playback_context;
+    assert.ok(typeof context === "object" && context !== null && "deliveries" in context);
+    const deliveries = context.deliveries as Record<string, { validated_claims: readonly string[] }>;
+    assert.deepEqual(deliveries.original_http?.validated_claims, ["client_selected_audio_track_v1"]);
+    assert.deepEqual(deliveries.hls?.validated_claims, [], "packaged HLS carries only the selected audio");
+});
+
+test("a direct-play audio choice plays the plan's ordinal as AVPlay's AUDIO row (#507)", async () => {
+    const r = await rig();
+    r.avplay.audioTracks = ORIGINAL_AUDIO_ROWS;
+    await playMovie(r);
+    assert.equal(r.avplay.calls.some((call) => call.startsWith("setSelectTrack AUDIO")), false, "the default track already plays");
+    r.controller.selectAudio("file:42:audio:1");
+    await settle(r);
+    await playReplacement(r);
+    assert.ok(r.avplay.calls.includes("setSelectTrack AUDIO 2"), r.avplay.calls.join(", "));
+    assert.equal(r.avplay.audioIndex, 2);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(replans(r.h).length, 1, "no recovery replan");
+    assert.equal(tracks(r).selectedAudioId, "file:42:audio:1");
+    r.controller.destroy();
+});
+
+test("a paused viewer's audio choice is selected while AVPlay plays, then paused (#507)", async () => {
+    const r = await rig();
+    r.avplay.audioTracks = ORIGINAL_AUDIO_ROWS;
+    await playMovie(r);
+    r.controller.togglePause();
+    r.controller.selectAudio("file:42:audio:2");
+    await settle(r);
+    await playReplacement(r);
+    assert.equal(r.avplay.audioIndex, 3);
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(replans(r.h).length, 1, "no recovery replan");
+    r.controller.destroy();
+});
+
+test("a stream prepared while hidden selects the plan's audio when it starts on restore (#507)", async () => {
+    const r = await rig();
+    r.avplay.audioTracks = ORIGINAL_AUDIO_ROWS;
+    r.controller.play({ ...MOVIE, startSeconds: 0, audioTrackId: "file:42:audio:1" });
+    await settle(r);
+    r.controller.suspend();
+    r.avplay.finishPrepare();
+    await settle(r);
+    assert.equal(r.avplay.audioIndex, undefined, "nothing is selected while suspended in READY");
+    r.controller.restore();
+    await settle(r);
+    assert.equal(last(r.views).phase, "playing");
+    assert.equal(r.avplay.audioIndex, 2);
+    r.controller.destroy();
+});
+
+test("an audio ordinal AVPlay does not list is a typed failure the server can replan (#507)", async () => {
+    const r = await rig();
+    r.avplay.audioTracks = ORIGINAL_AUDIO_ROWS.slice(0, 1);
+    await playMovie(r);
+    r.controller.selectAudio("file:42:audio:1");
+    await settle(r);
+    await playReplacement(r);
+    const recovery = replans(r.h)[1];
+    assert.equal(recovery?.operation, "failure_recovery");
+    assert.deepEqual(recovery?.failure, { classification: "audioTrackSwitchFailed" });
+    r.controller.destroy();
+});
+
+test("an original file whose audio AVPlay cannot list or switch is a typed failure, never assumed played (#507)", async () => {
+    for (const unavailable of ["no AUDIO rows", "no track API"]) {
+        const r = await rig();
+        if (unavailable === "no AUDIO rows") r.avplay.audioTracks = [];
+        else Reflect.set(r.avplay, "setSelectTrack", undefined);
+        r.controller.play(MOVIE);
+        await settle(r);
+        await playReplacement(r);
+        const recovery = only(replans(r.h));
+        assert.equal(recovery.operation, "failure_recovery", unavailable);
+        assert.deepEqual(recovery.failure, { classification: "audioTrackSwitchFailed" }, unavailable);
+        r.controller.destroy();
+    }
+});
+
 test("an embedded subtitle is burned in by the server and keeps the chosen audio", async () => {
     const r = await rig();
     await playMovie(r);

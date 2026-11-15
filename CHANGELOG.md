@@ -65,6 +65,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
 - Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
 - Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
