@@ -1885,7 +1885,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         current.error = undefined;
     };
     /** Titles, People, box sets and Requests each stay on screen until their own replacement answers. */
-    const search = (current: Extract<Route, { kind: "search" }>, quiet = false): void => {
+    const search = (current: Extract<Route, { kind: "search" }>, quiet = false, focus?: FocusTarget): void => {
         searchReturnFocus = undefined;
         cancelSearch();
         stopSearchSupplement();
@@ -1898,7 +1898,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         searchRequests(current);
         current.pages ??= newPages();
         loadSearch(current, false, quiet);
-        render();
+        render(focus);
     };
     const moreSearch = (current: Extract<Route, { kind: "search" }>): void => {
         if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.query !== current.resultsFor || current.filter !== current.resultsFilter || current.pages?.page?.nextCursor === undefined) return;
@@ -1931,7 +1931,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // The TV keyboard's Done key, or Enter on a desktop keyboard: search now.
         if (current?.kind === "search" && (event.keyCode === 65376 || event.key === "Enter") && input.value !== "") {
             current.query = input.value;
-            search(current);
+            // Done closes the Samsung keyboard; leaving Apple's keyboard lands on the selected filter.
+            search(current, false, event.keyCode === 65376 ? { zone: "search-filters", key: `search-filter:${current.filter ?? "all"}` } : undefined);
         }
     });
 

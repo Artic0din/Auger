@@ -313,6 +313,8 @@
 .search-scene .search-field .browse-input::-webkit-search-cancel-button,
 .search-scene .search-field .browse-input::-webkit-search-decoration { -webkit-appearance: none; }
 .search-scene .search-filters { display: flex; align-items: center; gap: 10px; width: 760px; height: 84px; margin: 224px auto 47px; padding: 8px 4px; border: 1px solid rgba(255,255,255,.1); border-radius: 42px; background: #161616; }
+/* The Samsung keyboard shortens the viewport from below (to 568 of 1080 on the S95C), so the row Apple's keyboard takes above the filters is empty. */
+@media (max-height: 1079px) { .search-scene .search-filters { margin-top: 16px; } }
 .search-scene .search-filters .browse-button { flex: 1; margin: 0; padding: 0 12px; height: 68px; min-height: 68px; border: solid transparent; border-width: 1px 4px; border-radius: 34px; background: transparent; font-size: 29px; font-weight: 600; }
 .search-scene .search-filters .browse-button[aria-pressed="true"] { background: #454545; background-clip: padding-box; }
 .search-scene .search-filters .browse-button:focus { transform: none; color: #000; background: #ededed; }

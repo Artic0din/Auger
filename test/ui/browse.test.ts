@@ -830,6 +830,66 @@ for (const reduced of [false, true]) {
     } });
 }
 
+// The S95C leaves 568 px above the Samsung keyboard (#533 capture); the page itself does not move.
+const SAMSUNG_KEYBOARD_TOP = 568;
+browseTest("Search keeps the field, filters and first results row above the Samsung keyboard", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.locator("#browse-search").focus();
+    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await tv.page.fill("#browse-search", "Tom");
+    await tv.jump(300);
+    await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
+    const open = await searchGeometry(tv);
+    assert.equal(open.field, 60, "the field stays at the top");
+    assert.equal(open.filters, 146, "the filters take Apple's keyboard row, SiloTheme.smallPadding under the field");
+    assert.ok(open.firstRow <= SAMSUNG_KEYBOARD_TOP, `the first results row ends above the keyboard, got ${open.firstRow}`);
+    assert.equal(open.scroll, 0);
+    await tv.page.setViewportSize({ width: 1920, height: 1080 });
+    assert.equal((await searchGeometry(tv)).filters, 354, "with the keyboard closed the filters sit under Apple's keyboard row again");
+}, { catalog: new SearchEdgeCatalog() });
+
+class TitlesOnlyCatalog extends FakeRequests {
+    override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): Reply | undefined {
+        if (new URL(path, "https://fake.invalid").pathname === "/catalog/people") return { status: 200, body: { items: [] } };
+        return super.route(method, path, profileId, body);
+    }
+}
+
+browseTest("Search shows the first poster row above the Samsung keyboard when there are no People", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.locator("#browse-search").focus();
+    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await tv.page.fill("#browse-search", "Movie 000");
+    await tv.jump(300);
+    await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor();
+    const art = await tv.page.locator('.browse-grid .browse-art').first().evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, height: rect.height }; });
+    // 568 px cannot hold the field, filters, count and a whole 330 px poster; most of the row shows instead of none.
+    assert.ok(art.top + art.height / 2 <= SAMSUNG_KEYBOARD_TOP, `most of the first poster row is above the keyboard, got top ${art.top}`);
+    assert.equal(await tv.page.locator(".browse").evaluate(node => node.scrollTop), 0);
+}, { catalog: new TitlesOnlyCatalog() });
+
+browseTest("Search Done leaves the field for the selected filter, as Apple TV's keyboard does", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
+    assert.equal(await tv.focused(), "search-filter:all");
+    await tv.page.locator('[data-focus="search-filter:movie"]').focus();
+    await tv.page.locator("#browse-search").focus();
+    const reads = tv.fake.requests.length;
+    await tv.page.fill("#browse-search", "Tomas"); await tv.remote(IME_DONE);
+    assert.equal(await tv.focused(), "search-filter:movie");
+    assert.equal(new URL(browseReads(tv, "/catalog").slice(-1)[0]?.path ?? "", "https://fake.invalid").searchParams.get("type"), "movie", "focusing the selected filter reads nothing else");
+    assert.ok(tv.fake.requests.length > reads);
+}, { catalog: new SearchEdgeCatalog() });
+
+async function searchGeometry(tv: Tv): Promise<{ field: number; filters: number; firstRow: number; scroll: number }> {
+    return tv.page.evaluate(() => {
+        const top = (selector: string): number => document.querySelector(selector)?.getBoundingClientRect().top ?? -1;
+        const people = [...document.querySelectorAll(".search-people-rail .browse-art")].map(node => node.getBoundingClientRect().bottom);
+        return { field: top(".search-field"), filters: top(".search-filters"), firstRow: Math.max(...people), scroll: document.querySelector(".browse")?.scrollTop ?? -1 };
+    });
+}
+
 browseTest("Search fills Person name lines without leaving a lone second-line word", async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
@@ -4483,3 +4543,4 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
 }, { catalog: new PrimSearchCatalog(), beforeConnect: tv => {
     new FakeSettings(tv.fake).profile().set(CARD_PRESENTATION_KEY, { poster_size: "compact", caption: "title_metadata" });
 } });
+
