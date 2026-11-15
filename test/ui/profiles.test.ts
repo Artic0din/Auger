@@ -518,7 +518,7 @@ tvTest("Back, Cancel and further digits wait while a PIN is checked, then the an
     assert.equal(await tv.page.evaluate(() => window.harness.probe()), "painted");
 });
 
-tvTest("switching ends the old profile's work before the PIN, its late answers never paint, and Back keeps the profile", async (tv) => {
+tvTest("switching ends the old profile's work before the PIN, its late answers never paint, and Back keeps the root picker", async (tv) => {
     await picker(tv);
     await tv.page.keyboard.press("Enter");
     await handedCount(tv, 1);
@@ -546,8 +546,8 @@ tvTest("switching ends the old profile's work before the PIN, its late answers n
     await screenIs(tv, "profiles");
     assert.equal(await tv.focused(), "profile:p-kid");
     await tv.remote(BACK);
-    await handedCount(tv, 3);
-    assert.deepEqual((await handed(tv))[2], kid, "Back returns the same profile and authority");
+    await screenIs(tv, "profiles");
+    assert.equal((await handed(tv)).length, 2, "root Back never hands the old profile back to Browse");
     assert.equal(await tv.page.evaluate(() => window.harness.profileEnded(1)), false);
     assert.equal(pinChecks(tv), 1, "Back asked for no PIN");
 });

@@ -295,7 +295,22 @@ The menu header's 44 px avatar sits on white 16%.
 The anchored profile menu follows Apple's `TVProfileDropdown` order: History, capability-gated Requests and Watch Party, a divider, then Settings, the profile row, Change Account and a red, unfocused Sign Out row.
 The profile row is Add Profile when the open account's cached list holds one profile, and Switch Profile otherwise, as Apple's `ProfileMenuRow` chooses it.
 Tizen does not read the account's profile limit, so Add Profile also shows for an account that may hold only one profile; the server refuses the creation.
-Add Profile reads the profiles again and routes by that fresh list, as Apple's `AddProfileRequest.start` does: profile creation when the only profile is the open one, ending on the profiles after a creation and back on Home with the open profile when closed without one, as Back from Switch Profile does (returning to the originating page instead is #466); the picker when the household has grown; and a refusal when the only profile is not the open one.
+Add Profile reads the profiles again and routes by that fresh list, as Apple's `AddProfileRequest.start` does: profile creation when the only profile is the open one, ending on the profiles after a creation; the picker when the household has grown; and a refusal when the only profile is not the open one.
+Closing Add Profile's form or PIN prompt restores the retained page, tab and library scope.
+Browse returns focus to its first control, Sort; Home and the other root pages retain the top-bar avatar return.
+Switch Profile replaces Browse or Settings with the root Who's watching screen; Back takes the app's existing root Exit confirmation path and never returns to the originating page.
+Choosing a profile or completing creation discards that return path and starts fresh Browse at Home for the profile that opens, matching Apple's tvOS selection reset in [`ProfileSelectionViewModel.swift:109–135`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Screens/Profiles/ProfileSelectionViewModel.swift#L109-L135).
+Renewing the primary profile's PIN proof also replaces authority and destroys the retained content; cancellation after successful PIN verification therefore opens fresh Browse, while closing the PIN prompt without verification restores the original visit.
+Apple main `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e` confirms Add Profile's tvOS cover and cancellation in [`AddProfileFromMenu.swift:3–15,49–58`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Screens/Profiles/AddProfileFromMenu.swift#L3-L58) and [`CreateProfileView.swift:92–98,177`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L92-L177).
+Switch Profile already matched Apple (root, no return); #466 changes Add Profile only.
+Apple's [`AppRouter.swift:1127–1130,1154–1163`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Navigation/AppRouter.swift#L1127-L1163) replaces the authenticated root with the picker, with no root cancel handler.
+At Apple main `fc86b2019762ac10224140e1ad721a0c04532072`, [`TVMainTabView.swift:220–226`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift#L220-L226) requests avatar focus after Add Profile dismissal.
+Its [`focusTopMenuIfVisible:1210–1239`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift#L1210-L1239) only guards the navigation stack being empty; it does not test grid scrolling or bar visibility.
+Browse is embedded in the root at [`TVLibraryTypeTabView.swift:108–121`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryTypeTabView.swift#L108-L121), so this guard does not explain the observed difference.
+The supplied live comparison built from that SHA returned Movies Browse to Sort ([sequence](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/466-profile-return/a490-seq.png)) and Home to the avatar ([capture](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/466-profile-return/a490-home-after.png)).
+Tizen follows those observed return targets.
+Sort is also Apple's explicit Browse content-entry target: [`TVLibraryGridView.swift:245–249`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryGridView.swift#L245-L249) requests the controls, and [`TVBrowseFilterUI.swift:81–88`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVBrowseFilterUI.swift#L81-L88) focuses Sort.
+The reason tvOS's avatar claim loses on the captured Browse dismissal remains unverified; no scroll-visibility rule is inferred from the helper's name.
 The dwell opens a passive preview with focus left on the avatar; Select, or Down, enters History, as Apple's `openProfilePanelImmediately` does.
 Watchlist and Favorites remain under For You.
 Requests pushes a screen without the top bar.
@@ -405,7 +420,9 @@ Badges follow Apple `CardOverlays` at silo-apple `5780c84`: the top-left corner,
 The top-right corner is left to the watch-status mark, so a badge stored at `top-right` draws on the right rail, and the top-left row stops short of that corner on posters.
 A corner draws three badges and a rail four; a filled badge on a rail is a tab flush against the card edge.
 Ratings default to the left rail and series status to the right.
-The Plate and Edge band presets, style overrides and uploaded badge images are not drawn yet.
+All seven presets are drawn: Plate is a heavy rounded plate whose ratings show their source as an accent chip ahead of the score, and Edge band draws each edge's badges as one strip of marks with thin dividers over a dark scrim, keeping only the marks that fit whole.
+The document's `style` (size, shape, fill, text and border colour, border width, weight, capitals and shadow) is layered on the preset as Apple `OverlayPreset.applying` does.
+Uploaded badge images are not drawn yet.
 Wordmarks (HDR, HDR10, ATMOS, AV1) are black-weight text at 10/12 of the icon size, ATMOS at 9/12 with half a unit of tracking, and replace a label that says the same thing; Dolby Vision is Apple's drawn ring beside the whole label.
 The ATMOS mark shows only for an audio value of exactly Atmos, so TrueHD Atmos keeps its label.
 The combined Resolution + HDR + Audio badge shows the parts the file has and hides the resolution, HDR, audio and Resolution + HDR badges while it is on.
@@ -418,7 +435,7 @@ The 10.2 pt font comes from Vibrant's 12 pt icon size × 0.85 (`OverlayPresets.s
 Original SVG drawings follow the same probe's 48 pt semibold shapes: a 5 pt display outline with a stand and secondary screen fill, and a filled speaker body with 5 pt waves.
 At the 185 pt poster reference, Vibrant's 8 pt padding and 4 pt gap place the label at 26.75 pt after a display and 27.125 pt after a speaker (`OverlayPresets.swift:95,103`; `CardOverlays.swift:445-460`).
 At 260 px those offsets scale to 37.59 and 38.12 px; the display's ink is about 17.2 px wide.
-Vibrant, Pill and Square enable icons by default; a badge's `showIcon` overrides the preset.
+Vibrant, Pill and Plate enable icons by default; a badge's `showIcon` overrides the preset, including on Edge band.
 The SVG substitutes still require same-state Apple TV and Samsung TV captures to establish hardware parity.
 The settings are read when Home loads and again after Settings closes, never on focus.
 Home shows non-empty rows in the server's profile order, matching the Apple TV client.
