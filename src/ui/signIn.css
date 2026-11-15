@@ -49,7 +49,7 @@
 }
 
 .signin-error {
-    color: var(--silo-error);
+    color: var(--silo-error-ink);
 }
 
 .signin-note {

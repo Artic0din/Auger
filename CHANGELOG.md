@@ -66,6 +66,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
 - Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
