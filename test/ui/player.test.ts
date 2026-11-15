@@ -777,6 +777,28 @@ test("the caption layer reports its load state, cue count and clock reading", as
     } finally { await page.close(); }
 });
 
+test("a subtitle that could not load says so over the video until it loads", async () => {
+    const { page } = await open();
+    try {
+        const status = page.locator(".player-caption-status");
+        await show(page, { ...playing(TRACKS), captions: { text: "", appearance: DEFAULT_APPEARANCE, status: "loading" } });
+        assert.equal(await status.isVisible(), false, "loading stays quiet, as on Apple TV");
+        await show(page, { ...playing(TRACKS), captions: { text: "", appearance: DEFAULT_APPEARANCE, status: "failed" } });
+        assert.equal(await status.innerText(), "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry.");
+        // ASSSubtitleLayer.status: .callout (tvOS 31/38 Medium), white on black 0.8, padding 12, radius 8, centred 10% above the bottom.
+        const style = await status.evaluate(node => {
+            const computed = getComputedStyle(node);
+            const box = node.getBoundingClientRect();
+            return { size: computed.fontSize, weight: computed.fontWeight, color: computed.color, background: computed.backgroundColor, padding: computed.padding, radius: computed.borderRadius, centre: Math.round(box.top + box.height / 2), middle: Math.round(box.left + box.width / 2) };
+        });
+        assert.deepEqual(style, { size: "31px", weight: "500", color: "rgb(255, 255, 255)", background: "rgba(0, 0, 0, 0.8)", padding: "12px", radius: "8px", centre: 972, middle: 960 });
+        await show(page, { ...playing(TRACKS), captions: { text: "Hello", appearance: DEFAULT_APPEARANCE, status: "ready", cueCount: 1 } });
+        assert.equal(await status.isVisible(), false);
+        await show(page, { phase: "loading", title: "Movie", detail: "reconnecting" });
+        assert.equal(await status.isVisible(), false);
+    } finally { await page.close(); }
+});
+
 test("captions paint above the overlay gradient but below its controls and the menu", async () => {
     const { page } = await open();
     try {
