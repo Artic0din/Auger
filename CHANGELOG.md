@@ -65,9 +65,12 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Stopped a Watch Party selection of the title that is already playing from counting as applied when its answer was lost and the server never received it; it now counts only when the room's selection revision rose.
+- Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
+- Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
 - Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
+- The Discord commit feed workflow now skips cleanly, instead of failing on every push to main, when its webhook secret or thread ID is not set.
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.

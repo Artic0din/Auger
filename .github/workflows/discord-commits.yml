@@ -6,7 +6,28 @@ on:
       - main
 
 jobs:
+  # A job-level `if` cannot read secrets, so a step maps them to an output.
+  configured:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_COMMITS_WEBHOOK_URL }}
+          THREAD_ID: ${{ vars.DISCORD_COMMITS_THREAD_ID }}
+        run: |
+          if [ -n "$WEBHOOK_URL" ] && [ -n "$THREAD_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Discord commit feed skipped: DISCORD_COMMITS_WEBHOOK_URL or DISCORD_COMMITS_THREAD_ID is not set."
+          fi
+
   notify:
+    needs: configured
+    if: needs.configured.outputs.enabled == 'true'
     permissions:
       contents: read
     uses: Silo-Server/silo-server/.github/workflows/reusable-discord-commits.yml@main
