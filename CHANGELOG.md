@@ -35,6 +35,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
 - The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
 - Subtitles in the player are listed as on Apple TV: the profile's subtitle language first when the server names one, otherwise all languages A to Z, each language by format. A title with English, Chinese, Danish and German tracks and no subtitle language now lists Chinese before Danish.
