@@ -67,7 +67,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Search now keeps its results in view while you type: with the Samsung keyboard up, the filters sit right under the field and the first results row shows above the keyboard, and Done moves focus to the selected filter as on Apple TV.
+- Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
 - Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
 - Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.

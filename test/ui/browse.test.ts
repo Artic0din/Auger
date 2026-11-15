@@ -17,6 +17,7 @@ import { detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTv
 
 const BACK = 10009;
 const IME_DONE = 65376;
+const IME_CANCEL = 65385;
 const PAGE_SIZE = 24;
 
 for (const outage of ["all", "supporting"] as const) browseTest(`offline Details retains supporting content and recovers: ${outage}`, async tv => {
@@ -841,11 +842,22 @@ browseTest("Search keeps the field, filters and first results row above the Sams
     await tv.page.locator('[data-focus="person:edge-0"]').waitFor();
     const open = await searchGeometry(tv);
     assert.equal(open.field, 60, "the field stays at the top");
-    assert.equal(open.filters, 146, "the filters take Apple's keyboard row, SiloTheme.smallPadding under the field");
+    // silo-android's keyboard-up header (TvSearchScreen.kt SearchStage): chips Spacing.sm (8dp) under the field, left on the results' gutter.
+    assert.equal(open.filters, 146, "the filters sit 16 px under the field");
+    assert.deepEqual(open.chips.map(chip => chip.height), [68, 68, 68], "18sp text, 8dp padding");
+    assert.equal(open.chips[0]?.left, open.firstCard, "the first chip lines up with the first result");
+    assert.deepEqual(open.chips.slice(1).map((chip, index) => chip.left - (open.chips[index]?.right ?? 0)), [24, 24], "chips 12dp apart");
     assert.ok(open.firstRow <= SAMSUNG_KEYBOARD_TOP, `the first results row ends above the keyboard, got ${open.firstRow}`);
     assert.equal(open.scroll, 0);
+    // Back with the keyboard up reaches the page as the IME's Cancel: it closes the keyboard and never leaves Search.
+    await tv.remote(IME_CANCEL);
+    assert.equal(await view(tv), "search");
+    assert.equal(await tv.focused(), "query");
     await tv.page.setViewportSize({ width: 1920, height: 1080 });
-    assert.equal((await searchGeometry(tv)).filters, 354, "with the keyboard closed the filters sit under Apple's keyboard row again");
+    const closed = await searchGeometry(tv);
+    assert.equal(closed.filters, 354, "with the keyboard closed Apple's layout returns");
+    assert.deepEqual(closed.chips.map(chip => chip.height), [68, 68, 68]);
+    assert.ok((closed.chips[0]?.left ?? 0) > 580, "Apple's centred pill");
 }, { catalog: new SearchEdgeCatalog() });
 
 class TitlesOnlyCatalog extends FakeRequests {
@@ -882,11 +894,13 @@ browseTest("Search Done leaves the field for the selected filter, as Apple TV's 
     assert.ok(tv.fake.requests.length > reads);
 }, { catalog: new SearchEdgeCatalog() });
 
-async function searchGeometry(tv: Tv): Promise<{ field: number; filters: number; firstRow: number; scroll: number }> {
+interface SearchGeometry { field: number; filters: number; chips: { left: number; right: number; height: number }[]; firstCard: number; firstRow: number; scroll: number }
+async function searchGeometry(tv: Tv): Promise<SearchGeometry> {
     return tv.page.evaluate(() => {
         const top = (selector: string): number => document.querySelector(selector)?.getBoundingClientRect().top ?? -1;
-        const people = [...document.querySelectorAll(".search-people-rail .browse-art")].map(node => node.getBoundingClientRect().bottom);
-        return { field: top(".search-field"), filters: top(".search-filters"), firstRow: Math.max(...people), scroll: document.querySelector(".browse")?.scrollTop ?? -1 };
+        const people = [...document.querySelectorAll(".search-people-rail .browse-art")].map(node => node.getBoundingClientRect());
+        const chips = [...document.querySelectorAll(".search-filters .browse-button")].map(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, height: rect.height }; });
+        return { field: top(".search-field"), filters: top(".search-filters"), chips, firstCard: people[0]?.left ?? -1, firstRow: Math.max(...people.map(rect => rect.bottom)), scroll: document.querySelector(".browse")?.scrollTop ?? -1 };
     });
 }
 
