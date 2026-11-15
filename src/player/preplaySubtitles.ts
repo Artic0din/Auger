@@ -147,8 +147,7 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
     if (preferences.language === undefined) {
         const signature = preferences.signature;
         const exact = signature === undefined ? [] : inventory.filter(track => matchesSubtitle(track, signature));
-        // Apple freezes the player's own pick, else the first forced track, into the start (`initialProtocolV3SubtitleIntent`, `.noChange`).
-        return exact.length === 1 ? exact[0]?.trackId : current ?? inventory.find(track => track.forced)?.trackId;
+        return exact.length === 1 ? exact[0]?.trackId : current;
     }
     const wanted = language(preferences.language);
     const audio = language(preferences.audioLanguage);
