@@ -68,6 +68,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
+- Embedded subtitles on long films now load: the TV keeps waiting while the server is still extracting them and gives up only after a minute with no data, as on Apple TV. If they still cannot load, the player now says "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video instead of showing nothing.
 - Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
 - Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.

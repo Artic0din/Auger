@@ -47,6 +47,7 @@ AVPlay state and server responses were observed; picture, dialogue and audible t
 The TV keyboard, minimum-version Tizen 8.0 hardware, store builds, full remux/transcode acceptance and audible/visible track acceptance remain open.
 
 The player renders sidecar text subtitles (WebVTT, SRT and the dialogue text of ASS/SSA) in an app overlay; it declares no embedded or bitmap subtitle rendering.
+A subtitle file that cannot load shows "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video until the track loads or changes.
 Movie and episode Details offer Audio Auto or an explicit track from the displayed file, for this attempt only.
 Changing version clears that track choice; explicitly choosing a version pins its source through playback.
 Resume checks fresh profile progress for up to three seconds; Play from start sends source position zero.
