@@ -1853,6 +1853,38 @@ test("a direct-play sidecar at the resume seek shows its cue text before the nex
     r.controller.destroy();
 });
 
+for (const answer of ["slow", "silent"] as const) test(`an embedded-track extract that is ${answer === "slow" ? "slow to start still draws its cues" : "silent for a minute says it could not load"}`, async () => {
+    const r = await rig();
+    embeddedEnglishSrts(r);
+    // A large remux: the server demuxes for tens of seconds before the extract answers.
+    const extract = r.h.fake.hold("/captions?token=extract");
+    r.h.fake.script("/captions?token=extract", { status: 200, text: EMBEDDED_SRT_VTT });
+    r.server.next.push({
+        subtitle: 5,
+        subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=extract`, format: "vtt", timing_origin_seconds: 0 },
+        timeline: { source_start_seconds: 0, stream_origin_seconds: 0, player_start_seconds: 857.2, timeline_offset_seconds: 0, can_seek_anywhere: true, seek_restoration: "player_position" },
+    });
+    await playMovie(r, { ...MOVIE, startSeconds: 857.2 });
+    const status = (): string | undefined => { const view = last(r.views); return view.phase === "playing" || view.phase === "paused" ? view.captions?.status : undefined; };
+    assert.equal(status(), "loading");
+    if (answer === "slow") {
+        await r.h.clock.advance(40000);
+        assert.equal(status(), "loading", "past the old 15 s cap the extract is still awaited");
+        extract.release();
+        await settle(r);
+        assert.equal(status(), "ready");
+    } else {
+        await r.h.clock.advance(59999);
+        assert.equal(status(), "loading");
+        await r.h.clock.advance(1);
+        await settle(r);
+        assert.equal(status(), "failed");
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.tracks?.notices.includes("Subtitle data couldn’t be loaded. Turn subtitles off and on to retry."));
+    }
+    r.controller.destroy();
+});
+
 test("an embedded SRT sidecar on the same direct-play URL switches without reopening and shows the cue", async () => {
     const r = await rig();
     embeddedEnglishSrts(r);

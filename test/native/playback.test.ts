@@ -393,7 +393,10 @@ test("sidecar subtitles apply profile appearance and timing without blocking pla
         assert.ok(view.phase === "playing");
         assert.equal(view.captions?.text, fail ? "" : "Hello");
         if (!fail) assert.equal(view.captions?.appearance.fontSize, "xxlarge");
-        else assert.ok(view.tracks.notices.some(notice => notice.includes("Could not load")));
+        else {
+            assert.equal(view.captions?.status, "failed");
+            assert.ok(view.tracks.notices.includes("Subtitle data couldn’t be loaded. Turn subtitles off and on to retry."));
+        }
         r.controller.destroy();
     }
 });

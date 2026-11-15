@@ -128,7 +128,8 @@ export const UNSUPPORTED_FORMAT = "Unsupported format";
 
 /** An inventory row the plan lists, minus the ones its `unplayable` flag says the server cannot show. */
 const CAPTION_LOADING = "Loading subtitles…";
-const CAPTION_FAILED = "Could not load these subtitles. Choose another track or turn subtitles off.";
+/** Apple's `player.subtitles.dataLoadFailed`. Turning the track off and on fetches it again. */
+export const CAPTION_FAILED = "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry.";
 
 function selectableSubtitle(plan: PlaybackPlan, trackId: string): boolean {
     return plan.subtitle.inventory.some((entry) => entry.trackId === trackId && entry.unplayable !== true);
