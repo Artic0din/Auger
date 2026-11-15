@@ -220,3 +220,18 @@ test("poster badges keep the profile's document when its reread fails", async ()
     await settle();
     assert.equal(badges(presentation), "square");
 });
+
+test("a profile that changes only its badge style redraws the cards", async () => {
+    const h = await setup();
+    h.settings.profile().set(OVERLAYS, { version: 2, preset: "plate", order: [], items: {} });
+    let changes = 0;
+    const presentation = new PresentationSettings(h.core.session, () => { changes++; }, h.storage, KEY);
+    presentation.ensure();
+    await settle();
+    const before = changes;
+    h.settings.profile().set(OVERLAYS, { version: 2, preset: "plate", order: [], items: {}, style: { size: 1.5 } });
+    presentation.reload();
+    await settle();
+    assert.deepEqual(presentation.cardOverlays?.style, { size: 1.5 });
+    assert.equal(changes, before + 1, "the style is part of what cards draw");
+});

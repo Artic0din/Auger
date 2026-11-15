@@ -420,7 +420,9 @@ Badges follow Apple `CardOverlays` at silo-apple `5780c84`: the top-left corner,
 The top-right corner is left to the watch-status mark, so a badge stored at `top-right` draws on the right rail, and the top-left row stops short of that corner on posters.
 A corner draws three badges and a rail four; a filled badge on a rail is a tab flush against the card edge.
 Ratings default to the left rail and series status to the right.
-The Plate and Edge band presets, style overrides and uploaded badge images are not drawn yet.
+All seven presets are drawn: Plate is a heavy rounded plate whose ratings show their source as an accent chip ahead of the score, and Edge band draws each edge's badges as one strip of marks with thin dividers over a dark scrim, keeping only the marks that fit whole.
+The document's `style` (size, shape, fill, text and border colour, border width, weight, capitals and shadow) is layered on the preset as Apple `OverlayPreset.applying` does.
+Uploaded badge images are not drawn yet.
 Wordmarks (HDR, HDR10, ATMOS, AV1) are black-weight text at 10/12 of the icon size, ATMOS at 9/12 with half a unit of tracking, and replace a label that says the same thing; Dolby Vision is Apple's drawn ring beside the whole label.
 The ATMOS mark shows only for an audio value of exactly Atmos, so TrueHD Atmos keeps its label.
 The combined Resolution + HDR + Audio badge shows the parts the file has and hides the resolution, HDR, audio and Resolution + HDR badges while it is on.
@@ -433,7 +435,7 @@ The 10.2 pt font comes from Vibrant's 12 pt icon size × 0.85 (`OverlayPresets.s
 Original SVG drawings follow the same probe's 48 pt semibold shapes: a 5 pt display outline with a stand and secondary screen fill, and a filled speaker body with 5 pt waves.
 At the 185 pt poster reference, Vibrant's 8 pt padding and 4 pt gap place the label at 26.75 pt after a display and 27.125 pt after a speaker (`OverlayPresets.swift:95,103`; `CardOverlays.swift:445-460`).
 At 260 px those offsets scale to 37.59 and 38.12 px; the display's ink is about 17.2 px wide.
-Vibrant, Pill and Square enable icons by default; a badge's `showIcon` overrides the preset.
+Vibrant, Pill and Plate enable icons by default; a badge's `showIcon` overrides the preset, including on Edge band.
 The SVG substitutes still require same-state Apple TV and Samsung TV captures to establish hardware parity.
 The settings are read when Home loads and again after Settings closes, never on focus.
 Home shows non-empty rows in the server's profile order, matching the Apple TV client.
