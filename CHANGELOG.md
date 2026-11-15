@@ -72,6 +72,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Made the watchParty, topBar, requests and preplay UI tests wait for the reads, sockets and menu rows they depend on instead of acting while an answer is still on its way, so they pass when the test server answers up to 150 ms late.
+- Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
 - Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
 - Embedded subtitles on long films now load: the TV keeps waiting while the server is still extracting them and gives up only after a minute with no data, as on Apple TV. If they still cannot load, the player now says "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video instead of showing nothing.
 - Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
