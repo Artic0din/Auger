@@ -35,6 +35,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
+- Subtitles in the player are listed as on Apple TV: your language first, then the others A to Z, each language by format. A title with English, Chinese, Danish and German tracks now lists Chinese before Danish.
 - Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.

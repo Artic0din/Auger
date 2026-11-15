@@ -55,7 +55,7 @@ import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleC
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { initialSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
-import { audioRow, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
+import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
 import { planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
@@ -3678,7 +3678,8 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         },
         audio: tracks === undefined || tracks.state !== "ready" ? { state: tracks?.state ?? "loading" } : { state: "ready", choices: audioChoices(attempt, plan) },
         selectedAudioId: plan.selectedTracks.audio?.id,
-        subtitles: plan.subtitle.inventory.map((entry) => {
+        // SubtitleDisplayOrder: display position only; every row keeps the id it selects. The inventory carries no default flag.
+        subtitles: orderSubtitles(plan.subtitle.inventory, attempt.hud.metadata?.versions.find(version => version.fileId === plan.effectiveMediaFileId)?.effectiveSubtitle?.language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false })).map((entry) => {
             const generated = attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label;
             return subtitleChoice(entry, generated);
         }),

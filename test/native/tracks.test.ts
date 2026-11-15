@@ -997,10 +997,19 @@ test("track rows lead with the language and put codec, layout and flags on the s
     assert.deepEqual(view.subtitles.map((choice) => ({ label: choice.label, detail: choice.detail })), [
         { label: "English", detail: "SRT · External" },
         { label: "English", detail: "English (Signs) · ASS · Forced" },
-        { label: "Japanese", detail: "PGS" },
         { label: "French", detail: "VobSub" },
+        { label: "Japanese", detail: "PGS" },
         { label: "Spanish", detail: "Spanish (downloaded) · SRT · External" },
     ]);
+});
+
+test("subtitle rows follow Apple's display order: the item's effective language first, the rest A to Z", async () => {
+    const r = await rig();
+    r.h.fake.script("/catalog/items/movie-1?image_size=large", { status: 200, body: { ...fixture("get_catalog_item_ok"), content_id: "movie-1", type: "movie", effective_subtitle_mode: "always", effective_subtitle_language: "ja", effective_show_forced_subtitles: false, versions: [{ file_id: "42", duration: 7200, audio_tracks: [], subtitle_tracks: [] }] } });
+    await playMovie(r);
+    const view = tracks(r);
+    assert.deepEqual(view.subtitles.map((choice) => choice.label), ["Japanese", "English", "English", "French", "Spanish"]);
+    assert.equal(view.subtitles[0]?.id, "file:42:subtitle:2", "ordering changes the display position, never the id a row selects");
 });
 
 test("only server alternatives expose Auto plus server labels; Original alone is hidden", async () => {
@@ -2070,8 +2079,8 @@ test("a track the plan flags unplayable is listed as unavailable and Select neve
     withUnplayable(r, 2);
     await playMovie(r);
     const view = tracks(r);
-    assert.deepEqual(view.subtitles.map(choice => choice.unavailable === true), [false, false, true, false, false]);
-    assert.match(view.subtitles[2]?.detail ?? "", /Unsupported format/);
+    assert.deepEqual(view.subtitles.map(choice => choice.unavailable === true), [false, false, false, true, false]);
+    assert.match(view.subtitles[3]?.detail ?? "", /Unsupported format/);
     assert.doesNotMatch(view.subtitles[1]?.detail ?? "", /Unsupported format/);
 
     const before = replans(r.h).length;
