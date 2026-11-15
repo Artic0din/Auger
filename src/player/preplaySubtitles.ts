@@ -31,6 +31,20 @@ export function preferredCatalogSubtitle(tracks: readonly SubtitleSignature[], s
     return best;
 }
 
+/** bestLanguageMatch(nil, …): the first class that has a track (forced first when asked), embedded before external before downloaded, then list order. */
+function bestAny(tracks: readonly SubtitleTrack[], preferForced: boolean): SubtitleTrack | undefined {
+    const plain = (track: SubtitleTrack): boolean => !track.forced && !track.hearingImpaired;
+    const classes: ((track: SubtitleTrack) => boolean)[] = preferForced
+        ? [track => track.forced, track => !track.forced && track.hearingImpaired, plain, track => !track.forced, () => true]
+        : [plain, track => !track.forced, track => track.forced, () => true];
+    const sourceRank = (track: SubtitleTrack): number => track.source === "embedded" ? 0 : track.source === "external" ? 1 : 2;
+    for (const wanted of classes) {
+        const found = tracks.filter(wanted).reduce<SubtitleTrack | undefined>((best, track) => best === undefined || sourceRank(track) < sourceRank(best) ? track : best, undefined);
+        if (found !== undefined) return found;
+    }
+    return undefined;
+}
+
 function preferred(tracks: readonly SubtitleTrack[], wanted: string | undefined, signature?: SubtitleSignature): SubtitleTrack | undefined {
     const tag = language(wanted);
     if (!tag) return undefined;
@@ -124,7 +138,10 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
     if (preferences.mode === "always") {
         const signature = preferences.signature;
         const exact = signature === undefined ? [] : inventory.filter(track => matchesSubtitle(track, signature));
-        return (exact.length === 1 ? exact[0] : preferred(inventory, preferences.language, preferences.signature))?.trackId;
+        if (exact.length === 1) return exact[0]?.trackId;
+        // Apple's resolver with no language anywhere: `always` still shows the best track on offer.
+        if (preferences.language === undefined) return bestAny(inventory, preferences.showForced)?.trackId;
+        return preferred(inventory, preferences.language, preferences.signature)?.trackId;
     }
     if (preferences.language === "") return undefined;
     const wanted = language(preferences.language);

@@ -119,3 +119,14 @@ test("the automatic and initial pick never choose a track the plan flags unplaya
     assert.equal(initialSubtitle({ kind: "track", signature: french }, [french, track]), undefined, "a chosen unplayable track starts with subtitles off, as Apple does");
     assert.throws(() => initialSubtitle({ kind: "track", signature: french }, [track]), "a chosen track missing from the plan is still an error");
 });
+
+test("mode always with no subtitle language picks the best available track as Apple does, and an empty language still means none", () => {
+    const sdh: SubtitleTrack = { ...track, trackId: "file:42:subtitle:10", combinedIndex: 10, hearingImpaired: true };
+    const external: SubtitleTrack = { ...track, trackId: "file:42:subtitle:11", combinedIndex: 11, source: "external" };
+    const always: SubtitlePreferences = { ...prefs, mode: "always", language: undefined, showForced: false };
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, sdh, external, track], always), track.trackId, "full dialogue first, embedded before external");
+    assert.equal(initialSubtitle({ kind: "auto" }, [sdh, forced], always), sdh.trackId, "a forced track is the last resort");
+    assert.equal(initialSubtitle({ kind: "auto" }, [track, forced], { ...always, showForced: true }), forced.trackId, "show forced puts the forced class first");
+    assert.equal(initialSubtitle({ kind: "auto" }, [track, forced], { ...always, language: "" }), undefined);
+    assert.equal(initialSubtitle({ kind: "auto" }, [], always), undefined);
+});
