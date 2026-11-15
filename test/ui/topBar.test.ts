@@ -161,6 +161,7 @@ test("the profile menu lists Apple's rows in Apple's order with the divider befo
         await start(tv, null, new ProfileDestinationsCatalog(), true);
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.jump(250);
+        await tv.page.locator('.skyline-selector[data-menu-kind="profile"] [data-focus="requests"]').waitFor();
         const rows = await tv.page.locator(".skyline-selector[data-menu-kind=\"profile\"] > *").evaluateAll(nodes => nodes.map(node =>
             node.classList.contains("skyline-menu-divider") ? "divider" : node.classList.contains("skyline-profile-header") ? "header" : node.textContent ?? ""));
         assert.deepEqual(rows, ["header", "History", "Requests", "divider", "Settings", "Switch Profile", "Sign Out"]);
@@ -999,6 +1000,7 @@ test("profile and For You menus draw Apple's filled glyphs at Apple's ink size i
         }));
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.jump(250);
+        await tv.page.locator('.skyline-selector[data-menu-kind="profile"] [data-focus="requests"]').waitFor();
         const profile = await icons("profile");
         await tv.page.locator('[data-focus="for_you"]').focus();
         await tv.jump(250);

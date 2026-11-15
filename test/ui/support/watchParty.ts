@@ -1,4 +1,4 @@
-import type { Tv } from "./tv.ts";
+import { afterPaint, type Tv } from "./tv.ts";
 import { FakeSettings } from "../../native/support/fakeSettings.ts";
 import { FakeWatchParty } from "../../native/support/fakeWatchParty.ts";
 
@@ -26,6 +26,12 @@ export const menuTitles = async (tv: Tv): Promise<string[]> => {
 };
 export async function openHub(tv: Tv): Promise<void> {
     if (!(await button(tv, "watch-party").isVisible())) await button(tv, "profiles").click();
+    const checks = (): number => tv.fake.requests.filter(request => request.path === "/watch-together/capabilities").length;
+    const checksBefore = checks();
     await button(tv, "watch-party").click();
     await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
+    // The hub's support check clears the page's error text when it lands, so act only after it has.
+    await tv.eventually(async () => checks() > checksBefore && tv.pendingReplies === 0, "the hub's support check");
+    // pendingReplies drops when the reply is handed to the page; two frames later the page has processed it.
+    await afterPaint(tv);
 }

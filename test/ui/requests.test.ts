@@ -4,7 +4,7 @@ import type { Browser } from "playwright";
 import { mkdir } from "node:fs/promises";
 import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -377,11 +377,12 @@ test("either failed hub read fails a first load, and a later failed refresh keep
         // A settled write marks the hub stale, and Back reads it again.
         await button(tv, "request-one").click(); await button(tv, "cancel").waitFor();
         await button(tv, "cancel").click();
-        await tv.eventually(async () => fake.cancelled && await button(tv, "cancel").count() === 0, "cancelled");
+        // A read still in flight would take the scripted failure meant for the refresh on Back.
+        await tv.eventually(async () => fake.cancelled && tv.pendingReplies === 0 && await button(tv, "cancel").count() === 0, "cancelled");
         tv.fake.script("/requests/mine?limit=50", problem(400, "validation_failed", "Unavailable"));
         const failed = tv.page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/requests/mine"));
         await tv.remote(10009); await failed;
-        await tv.eventually(async () => await tv.page.getByRole("button", { name: "Try Again", exact: true }).count() === 0 && await tv.page.getByText("Unavailable", { exact: true }).count() === 0, "a failed refresh is silent");
+        await tv.eventually(async () => tv.pendingReplies === 0 && await tv.page.getByText("Loading requests…").count() === 0 && await tv.page.getByRole("button", { name: "Try Again", exact: true }).count() === 0 && await tv.page.getByText("Unavailable", { exact: true }).count() === 0, "a failed refresh is silent");
         assert.equal(await button(tv, "movie:949").count(), 1);
         assert.equal(await button(tv, "request-one").count(), 1, "the earlier rows stay");
         assert.equal(await button(tv, "refresh").count(), 0);
@@ -1756,7 +1757,7 @@ test("Remove Request confirms with Apple's copy, deletes once, and focuses the n
         assert.equal(removals(tv)[0]?.headers["x-profile-id"], "p-owner");
         await tv.jump(3000);
         assert.equal(await tv.page.locator(".requests-list-notice").count(), 0);
-        assert.equal(await button(tv, "failed-b").getAttribute("data-request-actions"), "remove");
+        await tv.eventually(async () => await button(tv, "failed-b").getAttribute("data-request-actions") === "remove", "the neighbor shows its remove action");
     } finally { await tv.page.context().close(); }
 });
 
@@ -2102,7 +2103,9 @@ test("an ordinary hub load started before cancel cannot restore the cancelled ca
         await openRequests(tv);
         await tv.eventually(async () => tv.fake.paths().filter(path => path === "GET /requests/mine?limit=50").length > mineReads, "reopened hub mine is held");
         cancel.release();
-        await tv.eventually(async () => tv.fake.paths().filter(path => path === "POST /requests/request-one/cancel").length === 1, "cancel settles while the hub load is still out");
+        // The fake answered the cancel and delivered it, so only the held hub read is still out.
+        await tv.eventually(async () => fake.cancelled && tv.pendingReplies === 1, "cancel settles while the hub load is still out");
+        await afterPaint(tv);
         mine.release();
         await tv.eventually(async () => await button(tv, "request-two").count() === 1, "the held hub load installs");
         assert.equal(await button(tv, "request-one").count(), 0, "a pre-cancel hub load cannot put the cancelled card back");
