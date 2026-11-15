@@ -142,7 +142,8 @@ test("mode always puts renderable tracks ahead of burn-in-only ones, as Apple's 
 test("Auto with no subtitle language leaves the plan's selection alone, and a saved pick still wins", () => {
     const quiet: SubtitlePreferences = { ...prefs, mode: "auto", language: undefined, showForced: false };
     assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], quiet, forced.trackId), forced.trackId, "the plan's own track stands");
-    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], quiet, undefined), undefined, "nothing selected stays nothing");
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], quiet, undefined), forced.trackId, "with nothing selected, Apple's no-change fallback promotes the forced track");
+    assert.equal(initialSubtitle({ kind: "auto" }, [track], quiet, undefined), undefined, "and with no forced track nothing is selected");
     const signature = { source: track.source, language: track.language, codec: track.codec, label: track.label, forced: false, hearingImpaired: false };
     assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...quiet, signature }, forced.trackId), track.trackId);
     assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...prefs, language: "" }, forced.trackId), undefined, "an empty language is an explicit none");
