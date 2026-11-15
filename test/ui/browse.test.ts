@@ -36,7 +36,7 @@ for (const outage of ["all", "supporting"] as const) browseTest(`offline Details
     assert.equal(await tv.page.locator('[data-focus="watchlist"]').count(), 1);
     await tv.page.unroute(blocked);
     const reads = tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length;
-    // Stepping, not one jump: an answer that lands after a jump repaints Details (and so retries) on the next frame of the paused clock.
+    // Stepping, not one jump: a failure that lands a frame after the jump schedules its 15 s retry after the jump fired the due timers.
     await jumpUntil(tv, 5000, async () => tv.fake.requests.filter(request => request.path.startsWith("/recommendations/similar/")).length > reads, "automatic supporting recovery");
 }, { catalog: new FakeDetails() });
 
