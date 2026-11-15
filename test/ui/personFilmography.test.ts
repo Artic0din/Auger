@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { after, before, test } from "node:test";
-import type { Browser } from "playwright";
+import type { Browser, Locator } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import type { SettingsKey } from "../../src/contracts/v2/settings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -73,8 +73,15 @@ async function all(tv: Tv): Promise<void> {
     await tv.eventually(async () => await grid(tv).count() === 60, "inline filmography first page");
 }
 
+/** A late Person answer repaints the grid and drops a scroll made before it, so scroll only once the page has settled. */
+async function settledScroll(tv: Tv, target: Locator): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Person answers delivered");
+    await afterPaint(tv);
+    await target.scrollIntoViewIfNeeded();
+}
+
 async function next(tv: Tv, number: number): Promise<void> {
-    await grid(tv).nth((number - 1) * 60 - 48).scrollIntoViewIfNeeded();
+    await settledScroll(tv, grid(tv).nth((number - 1) * 60 - 48));
     await tv.eventually(async () => await grid(tv).count() === Math.min(number * 60, 124), "near-end append");
 }
 
@@ -304,7 +311,11 @@ journey("near-end append keeps mounted focus and allows only one page in flight"
 });
 
 journey("Person uses the Apple source geometry and remote zones", async tv => {
-    const style = async (selector: string, property: string): Promise<string> => tv.page.locator(selector).first().evaluate((node, key) => getComputedStyle(node).getPropertyValue(key), property);
+    // A repaint can swap the node between locating and reading it; read the connected one.
+    const style = (selector: string, property: string): Promise<string> => readLive(tv, ({ selector, property }) => {
+        const node = document.querySelector(selector);
+        return node === null || !node.isConnected ? null : getComputedStyle(node).getPropertyValue(property);
+    }, { selector, property }, value => value !== "", `${selector} ${property}`);
     assert.equal(await style(".browse", "padding"), "108px 160px 132px");
     assert.equal(await style(".details-person-hero", "margin-bottom"), "48px");
     assert.equal(await style(".details-person-hero .browse-title", "margin-bottom"), "0px");
@@ -550,7 +561,7 @@ journey("failed append retains cards without an error panel and waits for near-e
     const end = grid(tv).last();
     const focused = await end.getAttribute("data-focus");
     await end.focus();
-    await grid(tv).last().scrollIntoViewIfNeeded();
+    await settledScroll(tv, grid(tv).last());
     await tv.eventually(async () => queries(tv).length === 2 && await tv.page.locator('[aria-label="Loading more titles"]').count() === 0, "failed append settled");
     assert.equal(await tv.focused(), focused, "failed append retains remote focus on the end card");
     assert.equal(await tv.page.locator('[data-focus="retry"]').count(), 0);
@@ -570,7 +581,7 @@ journey("failed append retains cards without an error panel and waits for near-e
 journey("Details Back after a failed append keeps the loaded pages without reading them again", async (tv, catalog) => {
     await all(tv);
     catalog.personReplies.push(problem(500, "internal_error", "Synthetic lookup failure"));
-    await grid(tv).last().scrollIntoViewIfNeeded();
+    await settledScroll(tv, grid(tv).last());
     await tv.eventually(async () => queries(tv).length === 2 && await tv.page.locator('[aria-label="Loading more titles"]').count() === 0, "failed append settled");
     const ids = await grid(tv).evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
     const count = queries(tv).length;
@@ -590,7 +601,7 @@ for (const continuation of ["missing", "empty", "repeated"]) journey(`malformed 
     const before = await grid(tv).evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
     catalog.personReplies.push({ status: 200, body: { items: [], total: 124, total_exact: true, window_cursor: "synthetic", page: { has_more: true,
         ...(continuation === "missing" ? {} : { next_cursor: continuation === "empty" ? "" : previous }) } } });
-    await grid(tv).last().scrollIntoViewIfNeeded();
+    await settledScroll(tv, grid(tv).last());
     await tv.eventually(async () => queries(tv).length === 3 && await tv.page.locator('[aria-label="Loading more titles"]').count() === 0, "malformed append settled");
     assert.deepEqual(await grid(tv).evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), before);
     const count = queries(tv).length;
@@ -618,8 +629,10 @@ journey("interrupted Next cannot advance after visible-card Details, one resume 
     await all(tv);
     const held = tv.fake.hold("/catalog/query", true);
     const before = queries(tv).length;
-    await grid(tv).last().scrollIntoViewIfNeeded();
-    await tv.eventually(async () => queries(tv).length === before + 1, "held Next");
+    await tv.eventually(async () => {
+        await grid(tv).last().scrollIntoViewIfNeeded();
+        return queries(tv).length === before + 1;
+    }, "held Next");
     await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').click();
     await tv.page.locator('[data-focus="resume"]').click();
     await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.plays.length) === 1, "fresh Resume handoff");
@@ -777,7 +790,10 @@ for (const action of ["unchanged filter focus", "moved focus", "Back and menu", 
     await tv.jump(5000);
     await tv.page.locator('[aria-label="Loading titles"]').waitFor();
     assert.equal(await tv.page.locator('[aria-label="Loading titles"]').textContent(), "", "Apple reserves a clear loading frame");
-    assert.equal(await tv.page.locator('[aria-label="Loading titles"]').evaluate(node => node.getBoundingClientRect().height), 420);
+    assert.equal(await readLive(tv, () => {
+        const node = document.querySelector('[aria-label="Loading titles"]');
+        return node === null || !node.isConnected ? null : node.getBoundingClientRect().height;
+    }, null, height => height > 0, "the loading frame's height"), 420);
     if (action === "moved focus") {
         await tv.page.keyboard.press("ArrowRight");
         assert.equal(await tv.focused(), "filter:movie");
@@ -840,12 +856,18 @@ journey("Series filmography retains season, episode, and authorized playback own
 
 for (const outcome of ["pending", "lost"]) journey(`Details reconciles ${outcome} membership after filmography without duplicating its write`, async (tv, catalog) => {
     await tv.remote(BACK);
-    await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).waitFor();
+    const add = tv.page.getByRole("button", { name: "Add to watchlist", exact: true });
+    await add.waitFor();
+    await tv.eventually(async () => await add.getAttribute("aria-disabled") !== "true" && tv.pendingReplies === 0, "Details personal actions ready");
+    await afterPaint(tv);
     const path = "/watchlist/movie%3Am0001";
     const held = outcome === "pending" ? tv.fake.hold(path, true) : undefined;
     if (outcome === "lost") tv.fake.dropNextAnswer(path);
-    await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click();
-    await tv.eventually(async () => catalog.mutations.length === 1, "membership write");
+    // Details' personal reads can still repaint the button under a first press; press again only while no write has been sent.
+    await tv.eventually(async () => {
+        if (catalog.mutations.length === 0) await add.click({ timeout: 2000 }).catch(() => undefined);
+        return catalog.mutations.length === 1;
+    }, "membership write");
     // A lost answer is Apple's Change Not Confirmed alert; the Watchlist circle keeps its label.
     if (outcome === "lost") {
         const alert = tv.page.getByRole("alertdialog", { name: "Change Not Confirmed", exact: true });

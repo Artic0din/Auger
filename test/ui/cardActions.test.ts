@@ -4,7 +4,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { homeDetailsRead, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -23,6 +23,9 @@ async function start(tv: Tv, rows = true): Promise<FakeDetails> {
     await tv.page.evaluate(() => window.browseHarness.mount());
     await tv.page.locator('[data-section="recently_added"] .browse-card').first().waitFor();
     await homeDetailsRead(tv);
+    // A late Home answer repaints the rows and swaps the card node a test is about to hold or measure.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home reads answered");
+    await afterPaint(tv);
     return catalog;
 }
 const origin = (tv: Tv, continuing = false, id = "movie:m0001") => tv.page.locator(`[data-section="${continuing ? "continue_watching" : "recently_added"}"] [data-focus="${id}"]`);
@@ -327,8 +330,10 @@ test("reopening a card before Home rereads shows the change the server accepted"
         const catalog = await start(tv);
         await hold(tv);
         const reread = tv.fake.hold("/home/sections", true);
+        const readsBefore = homeReads(tv);
         await row(tv, "Add to Favorites").click();
-        await tv.eventually(async () => catalog.favorite, "favorite applied");
+        // Only the held Home reread is still out once the page has the favorite answer.
+        await tv.eventually(async () => catalog.favorite && homeReads(tv) > readsBefore && tv.pendingReplies === 1, "favorite applied and answered");
         await tv.jump(300);
         await hold(tv);
         assert.deepEqual(await rowLabels(tv), ["Mark as Watched", "Remove from Favorites", "Add to Watchlist"], "the row's stale state does not offer the same change again");
@@ -454,6 +459,9 @@ test("a card hold made while the card is disabled opens no menu and runs nothing
     const tv = await openTv(browser, { app: "browse" });
     try {
         const catalog = await start(tv);
+        // The test sets attributes on the card node itself; a Home repaint from a late answer would swap that node out.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home reads answered");
+        await afterPaint(tv);
         await origin(tv).focus();
         await origin(tv).evaluate(node => node.setAttribute("aria-disabled", "true"));
         await tv.page.keyboard.down("Enter");
@@ -605,10 +613,13 @@ test("a pending Details change keeps the card menu's changes locked until it lan
         await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
         const watchlist = tv.page.locator('.browse [data-focus="watchlist"]').first();
         await watchlist.waitFor({ timeout: 1500 });
-        await tv.eventually(async () => await watchlist.getAttribute("aria-disabled") !== "true", "Details personal actions ready");
+        await tv.eventually(async () => await watchlist.getAttribute("aria-disabled") !== "true" && tv.pendingReplies === 0, "Details personal actions ready");
         const first = tv.fake.hold("/watchlist/movie%3Am0001", true);
-        await watchlist.click();
-        await tv.eventually(async () => catalog.mutations.length === 1, "Details write dispatched");
+        // Details' personal reads can still repaint the button under a first press; press again only while no write has been sent.
+        await tv.eventually(async () => {
+            if (catalog.mutations.length === 0) await watchlist.click({ timeout: 2000 }).catch(() => undefined);
+            return catalog.mutations.length === 1;
+        }, "Details write dispatched");
         const related = tv.page.locator('[data-detail-section="related"] [data-focus="movie:m0002"]');
         await related.focus(); await tv.down(13); await tv.jump(650); await tv.up(13);
         const watched = row(tv, "Mark as Watched");
@@ -794,6 +805,15 @@ for (const surface of ["library-shelf", "library-grid", "collection", "search", 
         }
         const card = surface === "season" ? tv.page.locator('[data-focus="season:1"]') : surface === "episode" ? tv.page.locator('.details-episodes .browse-card').first() : surface === "related" ? tv.page.locator('.browse [data-detail-section="related"] .browse-card').first() : tv.page.locator('.browse .browse-card:not(.discovery-collection)').first();
         const id = surface === "season" ? "series:s1-S1" : await card.getAttribute("data-focus");
+        // The page's own answers repaint its cards, and resting on a card starts a preview read.
+        // Rest on the card until a full rest starts no request, so only the hold's reads are counted below.
+        await tv.eventually(async () => {
+            const requests = tv.fake.requests.length;
+            await card.focus();
+            await tv.jump(500);
+            await afterPaint(tv);
+            return tv.pendingReplies === 0 && tv.fake.requests.length === requests;
+        }, "the card's rest reads done");
         const before = tv.fake.requests.length;
         await card.focus(); await tv.down(13); await tv.jump(650); await tv.up(13);
         await menu(tv).locator('[data-focus="watched"]').waitFor();
