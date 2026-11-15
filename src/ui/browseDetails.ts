@@ -16,7 +16,7 @@ import { personMetadataBadges, personPortrait } from "./personHero.ts";
 import { el } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
-import { audioTitle as trackAudioTitle } from "../player/trackLabels.ts";
+import { audioTitle as trackAudioTitle, orderSubtitles, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
 import type { SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
 import { seriesEpisodesView } from "./seriesEpisodesView.ts";
 import { languageName } from "./cardOverlays.ts";
@@ -592,15 +592,8 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         return detailPanel(view, state, "Version", options);
     }
     if (state?.panel === "subtitles") {
-        const ordered = (file?.subtitles ?? []).map((track, index) => ({ track, index })).sort((a, b) => {
-            const language = (track: SubtitleSignature): string => languageName(track.language) ?? '\uffff';
-            const preferred = file?.effectiveSubtitle?.language;
-            const preference = (track: SubtitleSignature): number => preferred !== undefined && language(track) === (languageName(preferred) ?? preferred) ? 0 : 1;
-            const rank = (track: SubtitleSignature): number => ['srt|subrip', 'ass', 'ssa', 'vtt|webvtt', 'mov_text|movtext|tx3g', 'sup|pgs|hdmv', 'dvd|vobsub|dvb'].findIndex(pattern => new RegExp(pattern, 'i').test(track.codec ?? ''));
-            const format = (track: SubtitleSignature): number => rank(track) < 0 ? 7 : rank(track);
-            const variant = (track: SubtitleSignature): number => track.hearingImpaired || /\b(SDH|CC)\b/i.test(track.label ?? '') ? 2 : track.forced ? 1 : 0;
-            return preference(a.track) - preference(b.track) || language(a.track).localeCompare(language(b.track)) || format(a.track) - format(b.track) || variant(a.track) - variant(b.track) || a.index - b.index;
-        });
+        // Rows keep their wire index; only the display position follows the player's shared order.
+        const ordered = orderSubtitles((file?.subtitles ?? []).map((track, index) => ({ track, index })), file?.effectiveSubtitle?.language, ({ track }) => ({ language: track.language, codec: track.codec, forced: track.forced, hearingImpaired: track.hearingImpaired || titleIndicatesHearingImpaired(track.label), isDefault: track.isDefault === true }));
         const choices = [undefined, "off" as const, ...ordered.map(item => item.index)];
         const options = choices.map(choice => {
             const track = typeof choice === "number" ? file?.subtitles?.[choice] : undefined;
