@@ -247,7 +247,7 @@ export function cardItem(card: Card, context: ViewContext): FocusItem | undefine
     const scale = context.homeCaptions === true ? context.posterScale?.() ?? 1 : 1;
     const artWidth = (thumbnail ? HOME_STILL_WIDTH : context.posterWidth ?? (context.homeCaptions === true ? HOME_POSTER_WIDTH : 260)) * scale;
     const overlays = context.overlays ?? context.cardOverlays?.();
-    const badges = overlays === undefined ? undefined : overlayLayer(saved === undefined ? card : { ...card, overlay: saved }, overlays, thumbnail ? "wide" : "poster", artWidth);
+    const badges = overlays === undefined ? undefined : overlayLayer(saved === undefined ? card : { ...card, overlay: saved }, overlays, thumbnail ? "wide" : "poster", artWidth, context.baseUrl);
     if (badges !== undefined) element.firstElementChild?.insertBefore(badges, element.firstElementChild.querySelector(".skyline-progress"));
     // TVMediaCard.swift:237-243 draws CardWatchStatus on every poster; a still keeps EpisodeThumbCard's check (:211-225).
     const status = thumbnail ? undefined : watchStatus(card, artWidth);

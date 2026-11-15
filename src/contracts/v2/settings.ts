@@ -367,16 +367,27 @@ export function decodeEffectiveSettings(keys: readonly SettingsKey[], value: unk
     }));
 }
 
-/** `GET /settings/overlay-config`: the server-wide badge default and the administrator's baseline document. */
+/** `OverlayImage`: an image an administrator uploaded for badges; `url` is server-relative. */
+export interface OverlayImage { readonly ref: string; readonly url: string; readonly width: number; readonly height: number }
+
+/** `GET /settings/overlay-config`: the server-wide badge default, the administrator's baseline document and the badge images. */
 export interface OverlayConfig {
     readonly enabled: boolean;
     /** A JSON document string; absent when the administrator set none. */
     readonly defaults: string | undefined;
+    /** In upload order; newer than `SOURCE` (silo-server 3f1081bd), so an older server lists none. */
+    readonly images: readonly OverlayImage[];
 }
 
 export function decodeOverlayConfig(value: unknown): OverlayConfig {
     const obj = object(value, "overlay_config");
     const defaults = obj.defaults;
     if (defaults !== undefined && typeof defaults !== "string") throw new WireError("overlay_config.defaults", "a string");
-    return { enabled: boolean(obj, "enabled", "overlay_config"), defaults };
+    if (obj.images !== undefined && !Array.isArray(obj.images)) throw new WireError("overlay_config.images", "an array");
+    const images = (obj.images ?? []).map((entry, index): OverlayImage => {
+        const path = `overlay_config.images[${index}]`;
+        const image = object(entry, path);
+        return { ref: string(image, "ref", path), url: string(image, "url", path), width: integer(image, "width", path), height: integer(image, "height", path) };
+    });
+    return { enabled: boolean(obj, "enabled", "overlay_config"), defaults, images };
 }

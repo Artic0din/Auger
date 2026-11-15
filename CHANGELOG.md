@@ -66,6 +66,7 @@ All notable changes to this project are documented in this file.
 
 - Refreshed the saved profile limit after remembered-profile startup and offline recovery, so Add Profile followed the server's current limit.
 - Hid Add Profile in the profile menu when the account already held its only allowed profile.
+- Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
 - Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
 - Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
 - Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
