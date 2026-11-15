@@ -67,6 +67,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
 - Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.

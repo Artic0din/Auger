@@ -5,7 +5,7 @@ import { FakeCalendar } from "../native/support/fakeCalendar.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import type { CatalogRoutes, FakeSilo, Reply } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -86,11 +86,13 @@ test("Details offers Translate Description and shows the translating and transla
         await panel.locator('[data-focus="translate-description"]').click();
         assert.equal(await tv.page.locator(".description-translation-status").textContent(), "Translating…");
         // DescriptionTranslationStatusLabel: the translate symbol 6 before the text, 21 medium, pulsing while translating.
-        const status = await tv.page.locator(".description-translation-status").evaluate(node => {
+        const status = await readLive(tv, () => {
+            const node = document.querySelector(".description-translation-status");
+            if (node === null || !node.isConnected) return null;
             const style = getComputedStyle(node);
             const icon = node.querySelector("svg");
             return { gap: style.columnGap, size: style.fontSize, weight: style.fontWeight, icon: icon !== null && node.firstElementChild === icon, pulse: icon === null ? "" : getComputedStyle(icon).animationName };
-        });
+        }, null, value => value.size !== "", "the live translation status");
         assert.deepEqual(status, { gap: "6px", size: `${Math.round(21 * 0.9685 * 1e4) / 1e4}px`, weight: "500", icon: true, pulse: "details-symbol-pulse" });
         assert.equal(await tv.page.getByRole("dialog", { name: "More", exact: true }).count(), 0, "the menu closes so the synopsis status is visible");
         await tv.eventually(() => Promise.resolve(translation.posts().length === 1), "description translation");
@@ -243,12 +245,11 @@ for (const leave of [false, true]) test(leave ? "leaving a featured card at 1499
             return;
         }
         await tv.jump(1);
-        await tv.eventually(() => Promise.resolve(translation.posts().length === 1), "featured dwell");
+        await jumpUntil(tv, 50, async () => translation.posts().length === 1, "featured dwell");
         assert.equal(translation.posts()[0]?.path.split("?")[0], "/catalog/items/movie%3Am0004/translate-description");
         await tv.page.locator(".skyline-translation-status").waitFor();
         assert.equal(await tv.page.locator(".skyline-translation-status").textContent(), "Translating…");
-        await tv.jump(1000);
-        await tv.eventually(async () => await tv.page.locator(".skyline-translation-status").textContent() === "Translated by AI", "landed marquee translation");
+        await jumpUntil(tv, 100, () => tv.page.evaluate(() => document.querySelector(".skyline-translation-status")?.textContent === "Translated by AI"), "landed marquee translation");
         assert.match(await tv.page.locator(".skyline-synopsis").textContent() ?? "", /Translated overview/);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
@@ -294,9 +295,7 @@ test("a replaced marquee keeps the new card's translation on the incoming layer"
         await tv.page.locator('[data-view="home"] .skyline-marquee h1').waitFor();
         await tv.eventually(() => Promise.resolve(tv.fake.requests.some((request) => request.path.startsWith("/capabilities/metadata-ai"))), "metadata AI capability");
         await tv.jump(1500);
-        await tv.page.locator(".skyline-translation-status").waitFor();
-        await tv.jump(1000);
-        await tv.eventually(async () => await tv.page.locator(".skyline-synopsis").textContent() === "Translated overview", "landed marquee translation");
+        await jumpUntil(tv, 100, () => tv.page.evaluate(() => document.querySelector(".skyline-synopsis")?.textContent === "Translated overview"), "landed marquee translation");
         await tv.page.locator('[data-view="home"] [data-section="recent/12"] .browse-card').first().focus();
         await tv.jump(200);
         await tv.page.locator('[data-section="hero/opaque"] [data-focus="movie:m0004"]').focus();

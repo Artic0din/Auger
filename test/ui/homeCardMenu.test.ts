@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem, type Reply } from "../native/support/fakeSilo.ts";
-import { homeDetailsRead, jumpUntil, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, jumpUntil, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -66,6 +66,9 @@ async function start(tv: Tv, catalog = new HomeMenuFake()): Promise<HomeMenuFake
     await tv.page.evaluate(() => window.browseHarness.mount());
     await tv.page.locator('[data-section="continue_watching"] .browse-card').first().waitFor();
     await homeDetailsRead(tv);
+    // A late Home answer repaints the rows and swaps the card the test is about to hold; no test holds a reply before this returns.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Home reads answered");
+    await afterPaint(tv);
     return catalog;
 }
 
@@ -155,6 +158,8 @@ test("choosing a row closes the menu, and the next menu shows the changed favori
         assert.equal(await menu(tv).count(), 0, "a chosen row closes the menu");
         await jumpUntil(tv, 250, async () => catalog.mutations.includes("PUT /favorites/movie%3Am0002") && homeReads() > before, "favorite write and Home read");
         await card(tv, "recently_added", "movie:m0002").waitFor();
+        // The reread's answer unlocks the card's rows; a row pressed before it lands does nothing.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home reread answered");
         assert.equal(await tv.focused(), "movie:m0002");
         await hold(tv, "recently_added", "movie:m0002");
         await menu(tv).getByRole("menuitem", { name: "Remove from Favorites" }).waitFor();
@@ -162,6 +167,7 @@ test("choosing a row closes the menu, and the next menu shows the changed favori
         await menu(tv).getByRole("menuitem", { name: "Add to Watchlist" }).click();
         await jumpUntil(tv, 250, async () => catalog.mutations.includes("PUT /watchlist/movie%3Am0002") && homeReads() > watchlistBefore, "watchlist write and Home read");
         await card(tv, "recently_added", "movie:m0002").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home reread answered");
         await hold(tv, "recently_added", "movie:m0002");
         assert.deepEqual(await rows(tv), ["Mark as Watched", "Remove from Favorites", "Remove from Watchlist"]);
         assert.deepEqual(tv.console, []);
@@ -336,8 +342,9 @@ test("a menu reopened while its card's change is out shows the real state when t
         await hold(tv, "recently_added", "movie:m0002");
         assert.equal(await menu(tv).getByRole("menuitem", { name: "Add to Favorites" }).getAttribute("aria-disabled"), "true", "a pending change keeps the server state until confirmed");
         answer.release();
-        await jumpUntil(tv, 100, async () => await menu(tv).getByRole("menuitem", { name: "Add to Favorites" }).count() === 1, "the open menu shows the failed change rolled back");
-        assert.deepEqual(await menu(tv).getByRole("menuitem").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-disabled"))), [null, null, null]);
+        const disabledRows = (): Promise<(string | null)[]> => menu(tv).getByRole("menuitem").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-disabled")));
+        await jumpUntil(tv, 100, async () => (await disabledRows()).every(state => state === null), "the open menu shows the failed change rolled back");
+        assert.deepEqual(await disabledRows(), [null, null, null]);
         assert.equal(await tv.focused(), "watched");
         await tv.remote(10009);
         await tv.page.getByRole("alertdialog").waitFor();
