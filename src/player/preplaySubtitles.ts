@@ -31,15 +31,15 @@ export function preferredCatalogSubtitle(tracks: readonly SubtitleSignature[], s
     return best;
 }
 
-/** bestLanguageMatch(nil, …): the first class that has a track (forced first when asked), embedded before external before downloaded, then list order. */
+/** bestLanguageMatch(nil, …): renderable tracks before burn-in ones, then the first class that has a track (forced first when asked), embedded before external before downloaded, then list order. */
 function bestAny(tracks: readonly SubtitleTrack[], preferForced: boolean): SubtitleTrack | undefined {
     const plain = (track: SubtitleTrack): boolean => !track.forced && !track.hearingImpaired;
     const classes: ((track: SubtitleTrack) => boolean)[] = preferForced
         ? [track => track.forced, track => !track.forced && track.hearingImpaired, plain, track => !track.forced, () => true]
         : [plain, track => !track.forced, track => track.forced, () => true];
     const sourceRank = (track: SubtitleTrack): number => track.source === "embedded" ? 0 : track.source === "external" ? 1 : 2;
-    for (const wanted of classes) {
-        const found = tracks.filter(wanted).reduce<SubtitleTrack | undefined>((best, track) => best === undefined || sourceRank(track) < sourceRank(best) ? track : best, undefined);
+    for (const burnIn of [false, true]) for (const wanted of classes) {
+        const found = tracks.filter(track => (track.delivery === "burn_in_only") === burnIn && wanted(track)).reduce<SubtitleTrack | undefined>((best, track) => best === undefined || sourceRank(track) < sourceRank(best) ? track : best, undefined);
         if (found !== undefined) return found;
     }
     return undefined;
@@ -122,8 +122,8 @@ export function playableIntent(intent: SubtitleIntent, tracks: readonly Subtitle
     return matches.length === 1 && matches[0] !== undefined && !deliverable(matches[0]) ? { kind: "auto" } : intent;
 }
 
-/** Only identities published by this plan may leave this resolver. */
-export function initialSubtitle(intent: SubtitleIntent, tracks: readonly SubtitleTrack[], preferences?: SubtitlePreferences): string | undefined {
+/** Only identities published by this plan may leave this resolver. `current` is the plan's own selection, which Auto leaves alone when no preference points anywhere (Apple's `.noChange`). */
+export function initialSubtitle(intent: SubtitleIntent, tracks: readonly SubtitleTrack[], preferences?: SubtitlePreferences, current?: string): string | undefined {
     if (intent.kind === "off") return undefined;
     if (intent.kind === "track") {
         const matches = tracks.filter(track => matchesSubtitle(track, intent.signature));
@@ -144,6 +144,11 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
         return preferred(inventory, preferences.language, preferences.signature)?.trackId;
     }
     if (preferences.language === "") return undefined;
+    if (preferences.language === undefined) {
+        const signature = preferences.signature;
+        const exact = signature === undefined ? [] : inventory.filter(track => matchesSubtitle(track, signature));
+        return exact.length === 1 ? exact[0]?.trackId : current;
+    }
     const wanted = language(preferences.language);
     const audio = language(preferences.audioLanguage);
     if (!wanted || (audio && audio.split("-")[0] === wanted.split("-")[0])) return forced();

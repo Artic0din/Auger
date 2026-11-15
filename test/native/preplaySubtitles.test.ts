@@ -130,3 +130,20 @@ test("mode always with no subtitle language picks the best available track as Ap
     assert.equal(initialSubtitle({ kind: "auto" }, [track, forced], { ...always, language: "" }), undefined);
     assert.equal(initialSubtitle({ kind: "auto" }, [], always), undefined);
 });
+
+test("mode always puts renderable tracks ahead of burn-in-only ones, as Apple's ranking does", () => {
+    const bitmap: SubtitleTrack = { ...track, trackId: "file:42:subtitle:13", combinedIndex: 13, codec: "hdmv_pgs_subtitle", delivery: "burn_in_only" };
+    const external: SubtitleTrack = { ...track, trackId: "file:42:subtitle:14", combinedIndex: 14, source: "external" };
+    const always: SubtitlePreferences = { ...prefs, mode: "always", language: undefined, showForced: false };
+    assert.equal(initialSubtitle({ kind: "auto" }, [bitmap, external], always), external.trackId);
+    assert.equal(initialSubtitle({ kind: "auto" }, [bitmap], always), bitmap.trackId, "burn-in still wins when nothing else is on offer");
+});
+
+test("Auto with no subtitle language leaves the plan's selection alone, and a saved pick still wins", () => {
+    const quiet: SubtitlePreferences = { ...prefs, mode: "auto", language: undefined, showForced: false };
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], quiet, forced.trackId), forced.trackId, "the plan's own track stands");
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], quiet, undefined), undefined, "nothing selected stays nothing");
+    const signature = { source: track.source, language: track.language, codec: track.codec, label: track.label, forced: false, hearingImpaired: false };
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...quiet, signature }, forced.trackId), track.trackId);
+    assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...prefs, language: "" }, forced.trackId), undefined, "an empty language is an explicit none");
+});

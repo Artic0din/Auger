@@ -1468,7 +1468,7 @@ export class PlaybackController implements PlayerControls {
                 }
             }
             if (!attempt.live) return;
-            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences);
+            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences, plan.subtitle.trackId);
             if (subtitle === plan.subtitle.trackId) this.adopt(attempt, plan, serverFeatures);
             else this.changeTracks(attempt, plan, { ...(plan.selectedTracks.audio === undefined ? {} : { audio: plan.selectedTracks.audio }), ...(subtitle === undefined ? {} : { subtitle: { id: subtitle } }) });
         } catch {

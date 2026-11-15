@@ -1046,6 +1046,17 @@ test("a start with no subtitle choice follows the profile's subtitle policy inst
     }
 });
 
+test("a start with no subtitle choice and no subtitle language keeps the server's default track", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 0 });
+    scriptWatch(r, { effective_subtitle_mode: "auto", effective_show_forced_subtitles: false });
+    try {
+        await playMovie(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:0");
+        assert.equal(replans(r.h).length, 0);
+    } finally { r.controller.destroy(); }
+});
+
 test("a start with no subtitle choice still plays on the server's default when the preference read fails", async () => {
     const r = await rig();
     r.server.next.push({ subtitle: 0 });
