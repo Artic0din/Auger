@@ -230,11 +230,6 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             (collection) => deliver(() => {
                 if (token !== view) return;
                 pending = undefined;
-                const id = server.accounts.localAccountId;
-                if (id) {
-                    try { server.accounts.directory.update(id, { profileCount: collection.items.length, maxProfiles: collection.maxProfiles }); }
-                    catch { /* This is a display cache; the profile response remains usable. */ }
-                }
                 then(collection.items);
             }),
             (error: unknown) => deliver(() => {

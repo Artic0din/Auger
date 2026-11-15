@@ -63,6 +63,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Refreshed the saved profile limit after remembered-profile startup and offline recovery, so Add Profile followed the server's current limit.
 - Hid Add Profile in the profile menu when the account already held its only allowed profile.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.

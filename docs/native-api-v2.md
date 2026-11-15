@@ -213,6 +213,8 @@ It is also used for a replaced account, a refresh that finished after an account
 | verifyProfilePIN | `POST /profiles/{id}/verify-pin` | Bearer, no Profile | never | `src/api/operations.ts` |
 
 `Profiles` (`src/session/profiles.ts`) sends both with `profileScoped: false`.
+Every successful profile collection read refreshes the account's cached profile count and limit, including remembered-profile reconciliation after startup or offline recovery.
+An absent `max_profiles` clears the cached limit; a failed display-cache write still returns the profiles.
 A profile without a PIN is selected locally with no request.
 A PIN-locked profile needs `verify-pin`, which returns a `profile_token` that becomes `X-Profile-Token`.
 One check runs at a time and it is never resent, because every check counts toward the lockout.
