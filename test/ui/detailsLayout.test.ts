@@ -1777,6 +1777,20 @@ detailTest('Auto subtitle readout with a subtitle language the file lacks names 
     assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · English · Signs · Forced/);
 });
 
+detailTest('Auto subtitle readout with forced tracks in two sources names the external one, as Apple TV does', async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: 'auto', effective_subtitle_language: 'fi', effective_show_forced_subtitles: true,
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'ja', codec: 'aac' }],
+            subtitle_tracks: [{ language: 'en', title: 'Signs', codec: 'subrip', external: false, forced: true }, { language: 'fr', title: 'Panneaux', codec: 'subrip', external: true, forced: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · French · Panneaux · Forced/);
+});
+
 detailTest('Auto subtitle readout resolves forced tracks using effective and explicitly selected audio', async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
     const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };

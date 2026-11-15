@@ -161,6 +161,8 @@ export function initialSubtitle(intent: SubtitleIntent, tracks: readonly Subtitl
         if (exact.length === 1) return exact[0]?.trackId;
         // Apple's resolver with no language anywhere: `always` still shows the best track on offer.
         if (preferences.language === undefined) return bestAny(inventory, preferences.showForced)?.trackId;
+        // Apple's `rawLang.isEmpty`: an explicit "no subs" at any mode.
+        if (preferences.language === "") return undefined;
         return pickOrFallback();
     }
     if (preferences.language === "") return undefined;

@@ -199,6 +199,7 @@ test("Auto with a subtitle language the file lacks starts on the first forced tr
     assert.equal(initialSubtitle({ kind: "auto" }, [german, { ...signs, unplayable: true }], finnish, undefined), undefined, "a forced row the server cannot deliver is never picked");
     assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, language: "" }, "file:42:subtitle:0"), undefined, "an empty language is still an explicit no");
     assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, mode: "off" }, "file:42:subtitle:0"), undefined, "Off keeps its own audio-language forced rule");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, mode: "always", language: "" }, "file:42:subtitle:0"), undefined, "always with an empty language is an explicit no, forced row or default notwithstanding");
 });
 
 test("a start request for a title lacking the subtitle language names the forced track", () => {
