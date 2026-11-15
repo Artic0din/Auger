@@ -4,7 +4,7 @@ import type { Browser } from "playwright";
 import { mkdir } from "node:fs/promises";
 import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -2105,6 +2105,7 @@ test("an ordinary hub load started before cancel cannot restore the cancelled ca
         cancel.release();
         // The fake answered the cancel and delivered it, so only the held hub read is still out.
         await tv.eventually(async () => fake.cancelled && tv.pendingReplies === 1, "cancel settles while the hub load is still out");
+        await afterPaint(tv);
         mine.release();
         await tv.eventually(async () => await button(tv, "request-two").count() === 1, "the held hub load installs");
         assert.equal(await button(tv, "request-one").count(), 0, "a pre-cancel hub load cannot put the cancelled card back");

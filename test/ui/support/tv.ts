@@ -289,6 +289,11 @@ export async function jumpUntil(tv: Pick<Tv, "jump" | "eventually">, stepMs: num
     }, what);
 }
 
+/** Resolves after the page has painted what an answer that has just landed changed; Details repaints a frame later. */
+export async function afterPaint(tv: Pick<Tv, "page">): Promise<void> {
+    await tv.page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+}
+
 /** Call before starting a deadline or intermediate animation under test. */
 export async function pauseTvClock(tv: Tv): Promise<void> {
     // pauseAt advances existing timers; leave room for the protocol round trip
