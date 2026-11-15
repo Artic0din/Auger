@@ -231,6 +231,7 @@ The signed same-state comparison on 5 November 2026 at `93a39b3` confirmed the p
 The current season keeps its current episode on focus, while a different season starts at E01 and retains pill focus until Down.
 Episode-card focus paints the loaded summary immediately, then reads missing full detail after 120 ms on the same episode, matching `TVItemDetailView.swift:805-858` at Apple source `df891d2e`.
 This is an explicit exception to the general no-focus-fetch rule, approved for Apple TV parity.
+The read leaves first and the loading readout repaints in the next task, as Apple's `TVItemDetailView.swift:1012-1023` at `9ff49dca` starts its reads right after the 120 ms sleep; a synchronous Details repaint takes 140–180 ms on the S95C and used to hold the read back.
 Cached episodes need no read; leaving before the dwell cancels it.
 The existing queue runs at most four detail reads, drops superseded queued focus reads, and keeps failures for explicit Retry rather than retrying on focus.
 Uncached playback and version/audio/subtitle activation resolve the selected episode's extra details explicitly.
