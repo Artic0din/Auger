@@ -84,10 +84,14 @@
 /* TVSettingsRailRowStyle (TVSettingsComponents.swift:183-220): clear fill and no stroke at rest, selected fill when current, white platter on focus. */
 .settings-categories .browse-button:not(.settings-signout) { border: 0; background: transparent; box-shadow: none; }
 .settings-categories .settings-profile { height: 98px; margin-bottom: 28px; gap: 18px; }
-/* TVSettingsView:183-205 and TVSettingsComponents:200-201 at fc86b201:
-   6 + 24 + 6 between rows, then 15pt row padding before the label (51px minimum).
+/* ProfileAvatarView:12-20 at fc86b201, used by TVSettingsView:214-218.
+   Keep this fill scoped to the Settings header, including while its row is focused. */
+.settings-profile .navigation-avatar { background: #0e0f12; color: #ededed; }
+/* TVSettingsView:183-205 at fc86b201: the spacer can grow beyond its 24pt minimum.
+   The 1920×1080 Apple capture has about 135px between baselines: 50px between row bounds,
+   then TVSettingsComponents:200-201's 15pt vertical / 20pt horizontal row padding.
    Sign Out is 27pt medium (:279-280); use the existing Inter/SF cap-height adjustment. */
-.settings-categories .settings-signout { flex-shrink: 0; margin-top: 30px; margin-left: 28px; width: 150px; height: 63px; padding: 15px 0; border: 0; border-radius: 0; background: transparent; font-size: calc(27px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 33px; gap: 8px; white-space: nowrap; }
+.settings-categories .settings-signout { flex-shrink: 0; margin-top: 44px; height: 63px; padding: 15px 20px; border: 0; border-radius: 0; background: transparent; font-size: calc(27px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 33px; gap: 16px; white-space: nowrap; }
 .settings-categories .browse-title { font-size: 48px; margin: 0 20px 26px; }
 .settings-pane .browse-button, .settings-info-row { box-sizing: border-box; min-height: 66px; line-height: 32px; }
 .settings-info-row { display: flex; align-items: center; gap: 16px; padding: 17px 24px; font-size: 26px; margin-bottom: 8px; background: #202020d6; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; }

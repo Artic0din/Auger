@@ -14,16 +14,25 @@ The two Settings source files below are unchanged from `8655b06b077ab09a4604073a
   [TVSettingsComponents.swift:313-325](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L313-L325) uses the same symbol at 18 pt semibold and 0.55 opacity for picker rows.
   Settings draws these as rounded SVG strokes instead of font-dependent text chevrons.
 - [TVSettingsView.swift:182-208](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L182-L208) puts Sign Out after the categories and a spacer with a 24 pt minimum, with 6 pt stack gaps and 10 pt top padding on the following version line.
-  **Source/capture distinction:** Swift allows the spacer to expand, but the [supplied same-state capture](https://github.com/Artic0din/silo-tizen/blob/evidence/107-sweep-settings/cmp-settings.png) shows Sign Out under the rail items.
-  [TVSettingsComponents.swift:198-201](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L198-L201) adds 15 pt of vertical padding inside each rail row, including Sign Out.
-  Tizen follows the requested placement with the minimum spacer and both adjacent gaps: 6 + 24 + 6 = 36 px between row bounds, then 15 px of Sign Out row padding puts its label box 51 px below the final category row.
+  **Source/capture distinction:** Swift allows the spacer to expand; the [second same-state capture](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/484-settings-styling/cmp484b-rail.png) shows about 135 px between the Server and Sign Out baselines, compared with about 120 px on Samsung at `68efd0ee`.
+  The old minimum-only translation (6 + 24 + 6 = 36 px between row bounds) underfilled this gap.
+  Tizen now uses the capture's 50 px between row bounds, equivalent to a 38 px expanded spacer and both 6 px stack gaps.
+  [TVSettingsComponents.swift:198-202](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L198-L202) adds 15 pt of vertical and 20 pt of horizontal padding inside each rail row, including Sign Out, and fills the rail width.
+  The vertical padding puts Sign Out's label box 65 px below Server's row bounds; the rendered baseline gap is approximately 134 px with the bundled font.
+  The 50 px gap is capture-derived, not an explicit Swift constant; it is measured relative to Server, so Apple's additional Diagnostics row does not enter the calculation.
   The label's 33 px line box plus its two 15 px padding edges makes the Sign Out row 63 px high; the version follows after its existing 6 + 10 = 16 px gap.
   There is no bottom pinning or fixed screen coordinate.
+  [TVSettingsView.swift:275-281](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L275-L281) gives Sign Out the same 34 pt icon slot and 16 pt content spacing as the categories.
+  Removing Tizen's separate left margin aligns both the icon slot and text column with the categories.
+- [TVSettingsView.swift:211-219](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L211-L219) directly uses `ProfileAvatarView` at 68 pt for the Settings header.
+  [ProfileAvatarView.swift:12-20](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Components/ProfileAvatarView.swift#L12-L20) draws a filled circle behind the fallback initial, [sized at 0.34 of the diameter in semibold at lines 45-52](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Components/ProfileAvatarView.swift#L45-L52).
+  Its default fill and text colours are `#0E0F12` and `#EDEDED` ([Colors.swift:12-22](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Theme/Colors.swift#L12-L22)).
+  Tizen applies those colours only to the Settings header avatar, including on focus; other avatars retain their existing styling.
 - [TVSettingsView.swift:275-280](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L275-L280) explicitly uses 27 pt medium for Sign Out, while category titles use 25 pt medium.
   Tizen applies its existing 0.9685 SF-to-Inter cap-height adjustment to the 27 pt size (26.1495 CSS px) and uses weight 500, reducing the previous label's visible size and weight without inventing a smaller Apple source value.
   The resting destructive colour is `.siloError` in [TVSettingsComponents.swift:217-220](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L217-L220), defined as `#B00020` in [Theme/Colors.swift:52-53](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Theme/Colors.swift#L52-L53).
 
-Rendered regressions check the painted icon bounds, medium stroke sizes, Sign Out geometry at two viewport heights, font metrics and colour, alongside the existing subtitle, chevron and focus/pressed checks.
+Rendered regressions check the painted icon bounds, medium stroke sizes, Sign Out columns and baseline gap at two viewport heights, font metrics and colour, and the profile circle's painted pixels at rest and on focus, alongside the existing subtitle, chevron and focus/pressed checks.
 Fresh same-state Samsung and Apple TV captures of the final candidate remain a separate acceptance check supplied by the parent.
 
 ## Row behavior

@@ -64,6 +64,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
 - Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
