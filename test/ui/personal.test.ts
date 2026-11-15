@@ -177,6 +177,41 @@ test("History captions a series with the years it ran and Favorites keeps its ye
         assert.equal(await line("series:s2"), "2021");
     } finally { await tv.page.context().close(); }
 });
+for (const source of ["history", "watchlist", "favorites"] as const) test(`${source} card captions start at the poster's leading edge`, async () => {
+    const { tv, catalog } = await setup();
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        const id = source === "history" ? "series:s2" : "movie:m0001";
+        const title = catalog.titles.get(id);
+        assert.ok(title !== undefined);
+        catalog.add({ ...title, title: "Test", year: 2021, showStatus: "returning" });
+        const item = catalog.route("GET", `/catalog/items/${encodeURIComponent(id)}`, "p-owner")?.body;
+        catalog.pageReplies.push({ status: 200, body: { window_cursor: "caption-window", items: [item], total: 1, total_exact: true, page: { has_more: false } } });
+        await openList(tv, source);
+        await tv.page.evaluate(() => document.fonts.ready);
+        const card = tv.page.locator(`[data-view="personal:${source}"] .browse-card`);
+        assert.equal(await card.count(), 1);
+        assert.equal(await card.locator(".browse-card-subtitle").textContent(), source === "history" ? "2021 – Present" : "2021");
+        if (source === "history") assert.equal(await tv.page.locator(".personal-count").textContent(), "1 item");
+        for (const focused of [false, true]) {
+            const frame = await card.evaluate((node, focus) => {
+                if (focus) node.focus();
+                else node.blur();
+                const art = node.querySelector(".browse-art")?.getBoundingClientRect();
+                const captions = [...node.querySelectorAll(".browse-card-title, .browse-card-subtitle")].map(line => {
+                    const range = document.createRange();
+                    range.selectNodeContents(line);
+                    return range.getBoundingClientRect().x;
+                });
+                return { focused: node === document.activeElement, artX: art?.x, artWidth: art?.width, artHeight: art?.height, captions };
+            }, focused);
+            assert.equal(frame.focused, focused);
+            assert.equal(frame.artWidth, source === "history" ? 260 : 176);
+            assert.equal(frame.artHeight, source === "history" ? 390 : 264);
+            assert.deepEqual(frame.captions, [frame.artX, frame.artX], `${source} title and subtitle align with the poster (${focused ? "focused" : "unfocused"})`);
+        }
+    } finally { await tv.page.context().close(); }
+});
 test("native comparison: History title matches the captured system title", async () => {
     const { tv } = await setup();
     try {
