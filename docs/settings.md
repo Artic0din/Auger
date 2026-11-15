@@ -6,17 +6,25 @@ The styling reference is tvOS-only silo-apple [`fc86b2019762ac10224140e1ad721a0c
 The two Settings source files below are unchanged from `8655b06b077ab09a4604073ab3f9718fbfe66c6d`, the Apple simulator revision identified in issue #484.
 
 - [TVSettingsView.swift:242-258](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L242-L258) uses 22 pt medium category symbols in 34 pt slots, and regular 16 pt subtitles at 0.62 opacity.
-  The original SVG substitutes use 32 px boxes to draw roughly 26 px of ink, matching the issue's Apple capture; an SVG box is not a Swift symbol font size.
+  The [same-state Apple capture supplied for the follow-up](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/484-settings-styling/cmp484-rail.png) measures approximately 24 × 24 px of General gear ink, 26 × 20 px for Playback, 24 × 22 px for Subtitles and 24 × 20 px for Server at 1920 × 1080.
+  The original SVG substitutes keep the 34 px slots and use per-symbol proportions with approximately 1.7–2 px medium strokes.
+  These are capture measurements, not values specified by the Swift font size.
   [The category symbols at lines 675-681](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L675-L681) include `gearshape` for General.
 - [TVSettingsView.swift:233-235](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L233-L235) uses `chevron.forward` at 17 pt semibold and 0.5 opacity for the profile.
   [TVSettingsComponents.swift:313-325](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L313-L325) uses the same symbol at 18 pt semibold and 0.55 opacity for picker rows.
   Settings draws these as rounded SVG strokes instead of font-dependent text chevrons.
 - [TVSettingsView.swift:182-208](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L182-L208) puts Sign Out after the categories and a spacer with a 24 pt minimum, with 6 pt stack gaps and 10 pt top padding on the following version line.
   **Source/capture distinction:** Swift allows the spacer to expand, but the [supplied same-state capture](https://github.com/Artic0din/silo-tizen/blob/evidence/107-sweep-settings/cmp-settings.png) shows Sign Out under the rail items.
-  Tizen follows the requested placement with the minimum spacer and both adjacent gaps (36 px after the final category), followed by the version line.
+  [TVSettingsComponents.swift:198-201](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L198-L201) adds 15 pt of vertical padding inside each rail row, including Sign Out.
+  Tizen follows the requested placement with the minimum spacer and both adjacent gaps: 6 + 24 + 6 = 36 px between row bounds, then 15 px of Sign Out row padding puts its label box 51 px below the final category row.
+  The label's 33 px line box plus its two 15 px padding edges makes the Sign Out row 63 px high; the version follows after its existing 6 + 10 = 16 px gap.
   There is no bottom pinning or fixed screen coordinate.
+- [TVSettingsView.swift:275-280](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L275-L280) explicitly uses 27 pt medium for Sign Out, while category titles use 25 pt medium.
+  Tizen applies its existing 0.9685 SF-to-Inter cap-height adjustment to the 27 pt size (26.1495 CSS px) and uses weight 500, reducing the previous label's visible size and weight without inventing a smaller Apple source value.
+  The resting destructive colour is `.siloError` in [TVSettingsComponents.swift:217-220](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L217-L220), defined as `#B00020` in [Theme/Colors.swift:52-53](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/Theme/Colors.swift#L52-L53).
 
-The new rendered regressions cover these four details; fresh same-state Samsung and Apple TV captures remain a separate acceptance check supplied by the parent.
+Rendered regressions check the painted icon bounds, medium stroke sizes, Sign Out geometry at two viewport heights, font metrics and colour, alongside the existing subtitle, chevron and focus/pressed checks.
+Fresh same-state Samsung and Apple TV captures of the final candidate remain a separate acceptance check supplied by the parent.
 
 ## Row behavior
 

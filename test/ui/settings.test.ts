@@ -41,21 +41,32 @@ async function openSettings(tv: Tv): Promise<void> {
     await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
 }
 
-test("Settings rail symbols use Apple's measured ink size and gearshape", async () => {
+test("Settings rail symbols match Apple's per-symbol ink boxes and medium strokes", async () => {
     const { tv } = await setup();
     try {
         await openSettings(tv);
-        const icons = await tv.page.locator('.settings-category-icon svg').evaluateAll(nodes => nodes.map(node => ({
-            width: getComputedStyle(node).width, height: getComputedStyle(node).height,
-        })));
-        assert.deepEqual(icons, Array.from({ length: 4 }, () => ({ width: "32px", height: "32px" })));
-        const inkWidths = await tv.page.locator('.settings-category-icon svg').evaluateAll(nodes => nodes.map(node => {
-            const icon = node as SVGSVGElement;
-            const path = icon.querySelector('path')!;
-            // Compare the resting ink size independently of the row's focus transform.
-            return ((path.getBBox().width + Number(icon.getAttribute('stroke-width'))) * Number.parseFloat(getComputedStyle(icon).width) / icon.viewBox.baseVal.width).toFixed(1);
-        }));
-        assert.deepEqual(inkWidths, ["26.4", "26.4", "26.4", "26.4"]);
+        await tv.page.keyboard.press("ArrowRight");
+        await tv.jump(300);
+        for (const [key, width, height] of [["general", 24, 24], ["playback", 26, 20], ["subtitles", 24, 22], ["server", 24, 20]] as const) {
+            const icon = tv.page.locator(`[data-focus="${key}"] .settings-category-icon svg`);
+            const encoded = (await icon.screenshot()).toString("base64");
+            const ink = await tv.page.evaluate(async data => {
+                const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+                const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+                const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+                const pixels = context.getImageData(0, 0, image.width, image.height).data;
+                let left = image.width, right = -1, top = image.height, bottom = -1;
+                for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+                    if ((pixels[(y * image.width + x) * 4] ?? 0) <= 150) continue;
+                    left = Math.min(left, x); right = Math.max(right, x);
+                    top = Math.min(top, y); bottom = Math.max(bottom, y);
+                }
+                return { width: right - left + 1, height: bottom - top + 1 };
+            }, encoded);
+            assert.ok(Math.abs(ink.width - width) <= 1 && Math.abs(ink.height - height) <= 1, `${key}: painted ${ink.width}×${ink.height}, expected approximately ${width}×${height}`);
+            const stroke = await icon.evaluate(node => Number.parseFloat(getComputedStyle(node).strokeWidth) * Number.parseFloat(getComputedStyle(node).width) / (node as SVGSVGElement).viewBox.baseVal.width);
+            assert.ok(stroke >= 1.7 && stroke <= 2, `${key}: medium stroke is 1.7–2px, got ${stroke}`);
+        }
         const gear = tv.page.locator('[data-focus="general"] svg path');
         assert.match(await gear.getAttribute("d") ?? "", /^M9 3H15/);
         assert.equal(await tv.page.locator('.settings-category-icon').first().evaluate(node => getComputedStyle(node).width), "34px");
@@ -91,7 +102,7 @@ test("Settings uses drawn semibold chevrons for profile and picker rows", async 
     } finally { await tv.page.context().close(); }
 });
 
-test("Settings places Sign Out and version after the categories at any viewport height", async () => {
+test("Settings places Sign Out content after Apple's spacer and row padding", async () => {
     const { tv } = await setup();
     try {
         await openSettings(tv);
@@ -99,12 +110,33 @@ test("Settings places Sign Out and version after the categories at any viewport 
             await tv.page.setViewportSize({ width: 1920, height });
             const placement = await tv.page.evaluate(() => {
                 const server = document.querySelector('[data-focus="server"]')!.getBoundingClientRect();
-                const signout = document.querySelector('[data-focus="settings-signout"]')!.getBoundingClientRect();
+                const signoutNode = document.querySelector('[data-focus="settings-signout"]')!;
+                const signout = signoutNode.getBoundingClientRect();
+                const padding = Number.parseFloat(getComputedStyle(signoutNode).paddingTop);
                 const version = document.querySelector('.settings-version')!.getBoundingClientRect();
-                return { afterCategories: signout.top - server.bottom, versionGap: version.top - signout.bottom };
+                return { afterCategories: signout.top - server.bottom, contentAfterCategories: signout.top + padding - server.bottom, height: signout.height, versionGap: version.top - signout.bottom };
             });
-            assert.deepEqual(placement, { afterCategories: 36, versionGap: 16 });
+            assert.deepEqual(placement, { afterCategories: 36, contentAfterCategories: 51, height: 63, versionGap: 16 });
         }
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings Sign Out uses Apple's medium font, cap height and destructive colour", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        const appearance = await tv.page.locator('[data-focus="settings-signout"]').evaluate(node => {
+            const style = getComputedStyle(node);
+            const canvas = document.createElement("canvas"); const context = canvas.getContext("2d")!;
+            context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+            const metrics = context.measureText("Sign Out");
+            return { size: Number.parseFloat(style.fontSize), weight: style.fontWeight, color: style.color, capHeight: context.measureText("H").actualBoundingBoxAscent, inkWidth: metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight };
+        });
+        assert.ok(Math.abs(appearance.size - 27 * .9685) < .001, `27pt in the existing Inter/SF cap-height scale: ${appearance.size}`);
+        assert.equal(appearance.weight, "500");
+        assert.equal(appearance.color, "rgb(176, 0, 32)");
+        assert.ok(Math.abs(appearance.capHeight - 27 * .7046) < 1, `Apple's cap height: ${appearance.capHeight}`);
+        assert.ok(appearance.inkWidth < 105, `Sign Out ink should be smaller than the previous bold label: ${appearance.inkWidth}`);
     } finally { await tv.page.context().close(); }
 });
 
@@ -150,7 +182,7 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
             profileGap: getComputedStyle(document.querySelector('.settings-profile')!).gap,
             versionTop: getComputedStyle(document.querySelector('.settings-version')!).marginTop,
         }));
-        assert.deepEqual(railDetails, { signOutIcon: true, iconSize: "32px", profileGap: "18px", versionTop: "10px" });
+        assert.deepEqual(railDetails, { signOutIcon: true, iconSize: "29.5px", profileGap: "18px", versionTop: "10px" });
         await tv.page.locator('[data-focus="subtitles"]').click();
         const appearance = await tv.page.evaluate(() => {
             const first = document.querySelector('[data-focus="appearance-fontSize"]')!.getBoundingClientRect();
@@ -1047,7 +1079,7 @@ test("Settings uses the measured Apple pane margins and borderless sign out", as
             return { rail: Number(rail.getBoundingClientRect().x.toFixed(3)), row: row.getBoundingClientRect().x, width: row.getBoundingClientRect().width, header: header.getBoundingClientRect().y, signoutX: signoutBox.x, signoutWidth: signoutBox.width, signoutHeight: signoutBox.height, border: getComputedStyle(signout).borderWidth };
         }, null, () => true, "live Settings geometry");
         // Focus moves the rail's drawn left edge to 164 - 490 × (1.012 - 1) / 2.
-        assert.deepEqual(geometry, { rail: 161.06, row: 728, width: 1006, header: 108, signoutX: 192, signoutWidth: 150, signoutHeight: 33, border: "0px" });
+        assert.deepEqual(geometry, { rail: 161.06, row: 728, width: 1006, header: 108, signoutX: 192, signoutWidth: 150, signoutHeight: 63, border: "0px" });
     } finally { await tv.page.context().close(); }
 });
 

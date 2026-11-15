@@ -50,8 +50,13 @@
 .settings-header-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; background: #ffffff12; flex-shrink: 0; }
 .settings-header-icon svg { width: 34px; height: 34px; margin: 0; }
 .settings-category-icon, .settings-signout-icon { display: grid; place-items: center; width: 34px; flex-shrink: 0; }
-/* TVSettingsView at fc86b201: 22pt medium symbols in 34pt slots; these inset line drawings need a 32px box for roughly 26px of ink. */
-.settings-category-icon svg { width: 32px; height: 32px; margin: 0; }
+/* TVSettingsView:247-249 at fc86b201 uses 22pt medium symbols, not 22px ink boxes.
+   The same-state Apple capture measures gear 24×24, play 26×20, captions 24×22 and server 24×20. */
+.settings-category-icon svg { width: 29.5px; height: 29.5px; margin: 0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+[data-focus="playback"] .settings-category-icon svg { width: 32px; height: 32px; }
+.settings-category-icon path { transform-box: fill-box; transform-origin: center; }
+[data-focus="subtitles"] .settings-category-icon path { transform: scaleY(.92); }
+[data-focus="server"] .settings-category-icon path { transform: scaleY(.84); }
 .settings-signout-icon svg { width: 22px; height: 22px; margin: 0; }
 /* TVSettingsView.swift:455-462 at silo-apple 2ef3a171. 50 + 5 + 25 keeps the header 80 tall, so the first section text starts at y 240. */
 .settings-pane-header .browse-section-title { margin: 0 0 5px; font-size: 42px; font-weight: 700; line-height: 50px; }
@@ -79,8 +84,10 @@
 /* TVSettingsRailRowStyle (TVSettingsComponents.swift:183-220): clear fill and no stroke at rest, selected fill when current, white platter on focus. */
 .settings-categories .browse-button:not(.settings-signout) { border: 0; background: transparent; box-shadow: none; }
 .settings-categories .settings-profile { height: 98px; margin-bottom: 28px; gap: 18px; }
-/* The supplied Apple capture keeps the spacer at its 24pt minimum, plus the 6pt rail gap on each side (TVSettingsView:183-205 at fc86b201). */
-.settings-categories .settings-signout { margin-top: 30px; margin-left: 28px; width: 150px; height: 33px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 27px; line-height: 33px; gap: 8px; white-space: nowrap; }
+/* TVSettingsView:183-205 and TVSettingsComponents:200-201 at fc86b201:
+   6 + 24 + 6 between rows, then 15pt row padding before the label (51px minimum).
+   Sign Out is 27pt medium (:279-280); use the existing Inter/SF cap-height adjustment. */
+.settings-categories .settings-signout { flex-shrink: 0; margin-top: 30px; margin-left: 28px; width: 150px; height: 63px; padding: 15px 0; border: 0; border-radius: 0; background: transparent; font-size: calc(27px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 33px; gap: 8px; white-space: nowrap; }
 .settings-categories .browse-title { font-size: 48px; margin: 0 20px 26px; }
 .settings-pane .browse-button, .settings-info-row { box-sizing: border-box; min-height: 66px; line-height: 32px; }
 .settings-info-row { display: flex; align-items: center; gap: 16px; padding: 17px 24px; font-size: 26px; margin-bottom: 8px; background: #202020d6; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; }
@@ -92,7 +99,8 @@
 .settings-picker-hint { position: absolute; right: 30px; top: 30px; font-size: 18px; color: var(--silo-secondary); }
 .settings-modal { position: relative; }
 .settings-categories .settings-profile { display: flex; align-items: center; }
-.settings-categories .settings-signout { color: #ff453a; }
+/* TVSettingsRailRowStyle's destructive foreground, Theme/Colors.swift:53 at fc86b201. */
+.settings-categories .settings-signout { color: #b00020; }
 .settings .browse-button:focus .settings-category-detail,
 .settings .browse-button:focus .settings-profile-account { color: inherit; }
 .settings-controls .browse-button { padding: 17px 24px; font-size: 26px; }
