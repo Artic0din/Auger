@@ -389,8 +389,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         return pending;
     };
     let inputRevision = 0;
-    /** The input revision the last render saw: a Details change with no input since then is an async answer. */
-    let renderedRevision = 0;
+    /** Keys, pointer presses and focus moves; a Details change with none since the last render is an async answer. */
+    let interactions = 0;
+    let renderedInteractions = 0;
     /** One Details repaint per frame for answers that arrive together; SwiftUI likewise commits once per frame. */
     let detailsPaint: { current: Route; frame: number } | undefined;
     const flushDetailsPaint = (): void => {
@@ -400,10 +401,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         detailsPaint = undefined;
         paintDetails(current);
     };
+    const recordInput = (): void => { inputRevision++; interactions++; };
     // A key acts on the screen the last answers drew, as it did when each answer repainted at once.
-    const recordInput = (): void => { flushDetailsPaint(); inputRevision++; };
-    document.addEventListener("keydown", recordInput, true);
+    // A pointer press does not: repainting between its down and up would drop the click.
+    const recordKey = (): void => { flushDetailsPaint(); recordInput(); };
+    const recordFocus = (): void => { interactions++; };
+    document.addEventListener("keydown", recordKey, true);
     document.addEventListener("pointerdown", recordInput, true);
+    document.addEventListener("focus", recordFocus, true);
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
@@ -813,8 +818,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSlow();
         cancelSearch();
         cancelCalendarDay();
-        document.removeEventListener("keydown", recordInput, true);
+        document.removeEventListener("keydown", recordKey, true);
         document.removeEventListener("pointerdown", recordInput, true);
+        document.removeEventListener("focus", recordFocus, true);
         stack = [];
         roots.clear();
         seriesSeasons.clear();
@@ -1069,7 +1075,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             invalidateWatched(current, current.data.details.detail);
         }
         if (top() !== current) return;
-        if (returnKey !== undefined || inputRevision !== renderedRevision) { paintDetails(current, returnKey); return; }
+        if (returnKey !== undefined || interactions !== renderedInteractions) { paintDetails(current, returnKey); return; }
         if (detailsPaint !== undefined) cancelAnimationFrame(detailsPaint.frame);
         detailsPaint = { current, frame: requestAnimationFrame(flushDetailsPaint) };
     };
@@ -2170,7 +2176,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const render = (focus?: FocusTarget): void => {
-        renderedRevision = inputRevision;
+        // Focus that a render moves itself is not a viewer's move.
+        try { draw(focus); } finally { renderedInteractions = interactions; }
+    };
+
+    const draw = (focus?: FocusTarget): void => {
         syncThemeMusic();
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);
