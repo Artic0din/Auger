@@ -69,7 +69,7 @@ async function readProfileOverlays(read: Read, capability: SettingsCapabilities 
 }
 
 function prefsKey(prefs: CardOverlayPrefs): string {
-    return JSON.stringify([prefs.preset, prefs.order, [...prefs.items]]);
+    return JSON.stringify([prefs.preset, prefs.style, prefs.order, [...prefs.items]]);
 }
 
 type Settled<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
