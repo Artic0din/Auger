@@ -9,6 +9,8 @@
 // That call is one boolean. A true result claims HDR10 only. HDR10+ and HLG stay unclaimed:
 // Samsung documents no per-format probe, and the year specifications do not list those formats
 // for every TV on Tizen 8.0 or later. dolby_vision_profiles stays empty. Audio passthrough is never claimed.
+// Original HTTP claims client_selected_audio_track_v1, as Apple TV 4K does: AVPlay plays the plan's
+// audio ordinal with setSelectTrack, so a non-default track stays direct play (#507).
 // Every subtitle capability
 // uses the app's plain-text sidecar renderer for sidecars. Embedded text is selected with AVPlay setSelectTrack
 // when the open stream lists a TEXT row; bitmap and ASS styling stay off. The progressive class
@@ -87,7 +89,10 @@ const NO_SUBTITLES = {
     font_attachments: false,
 };
 
-function delivery(containers: readonly string[], features: readonly string[], hdr?: HdrDetails): DeliveryCapability {
+/** Original HTTP only: packaged HLS already carries just the selected audio. */
+const CLIENT_SELECTED_AUDIO_TRACK_CLAIM = "client_selected_audio_track_v1";
+
+function delivery(containers: readonly string[], features: readonly string[], hdr?: HdrDetails, validatedClaims: readonly string[] = []): DeliveryCapability {
     return {
         enabled: true,
         supported_on_device: true,
@@ -99,7 +104,7 @@ function delivery(containers: readonly string[], features: readonly string[], hd
         features,
         // AVPlay cannot change a URL's credential without reopening it.
         auth_header_refresh: false,
-        validated_claims: [],
+        validated_claims: validatedClaims,
         transformations: [],
         ...(hdr === undefined ? {} : { hdr_details: hdr }),
     };
@@ -158,7 +163,7 @@ export function clientCapabilities(report?: HdrReport): ClientCapabilities {
 
 export function playbackContext(model: string, appVersion: string, report?: HdrReport, originalEmbeddedText = true): ClientPlaybackContext {
     const details = report === undefined ? undefined : hdrDetails(report);
-    const original = delivery(["mp4", "m4v", "mkv", "matroska"], [], details);
+    const original = delivery(["mp4", "m4v", "mkv", "matroska"], [], details, [CLIENT_SELECTED_AUDIO_TRACK_CLAIM]);
     const context: ClientPlaybackContext = {
         protocol_version: 3,
         form_factor: "tv",
