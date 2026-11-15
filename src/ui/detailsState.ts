@@ -606,7 +606,9 @@ export class DetailsState {
                 if (this.episodeFocusOwner !== id || this.heroEpisodeId !== id) return;
                 this.queueEpisode(id, true);
                 this.syncEpisode();
-                this.changed();
+                // The read reaches fetch only after microtasks; a synchronous repaint (140-180 ms on the S95C) would hold it back.
+                const controller = this.controller;
+                setTimeout(() => { if (controller !== undefined && this.current(controller)) this.changed(); }, 0);
             }, EPISODE_FOCUS_DWELL_MS);
         }
         this.syncEpisode();
