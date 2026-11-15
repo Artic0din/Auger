@@ -836,13 +836,15 @@ const SAMSUNG_KEYBOARD_TOP = 568;
  * layout viewport (and every media query) stays 1080 (#536 S95C capture). Resizing the page would move the layout viewport too.
  */
 async function samsungKeyboard(tv: Tv, up: boolean): Promise<void> {
-    await tv.page.evaluate(height => {
+    await tv.page.evaluate(keyboard => {
+        // Closed, the visible height follows the layout viewport again.
+        const height = (): number => keyboard ?? document.documentElement.clientHeight;
         const viewport = window.visualViewport;
-        if (viewport !== null) Object.defineProperty(viewport, "height", { configurable: true, get: () => height });
-        Object.defineProperty(window, "innerHeight", { configurable: true, get: () => height });
+        if (viewport !== null) Object.defineProperty(viewport, "height", { configurable: true, get: height });
+        Object.defineProperty(window, "innerHeight", { configurable: true, get: height });
         viewport?.dispatchEvent(new Event("resize"));
         window.dispatchEvent(new Event("resize"));
-    }, up ? SAMSUNG_KEYBOARD_TOP : 1080);
+    }, up ? SAMSUNG_KEYBOARD_TOP : undefined);
     assert.equal(await tv.page.evaluate(() => document.documentElement.clientHeight), 1080, "the layout viewport keeps its height");
 }
 browseTest("Search keeps the field, filters and first results row above the Samsung keyboard", async tv => {
@@ -871,6 +873,12 @@ browseTest("Search keeps the field, filters and first results row above the Sams
     assert.equal(closed.filters, 354, "with the keyboard closed Apple's layout returns");
     assert.deepEqual(closed.chips.map(chip => chip.height), [68, 68, 68]);
     assert.ok((closed.chips[0]?.left ?? 0) > 580, "Apple's centred pill");
+    // A keyboard that shrinks the layout viewport too (Kody on #536) still gets the keyboard-up header.
+    // The page's resize event lands on a later frame.
+    await tv.page.setViewportSize({ width: 1920, height: SAMSUNG_KEYBOARD_TOP });
+    await tv.eventually(async () => (await searchGeometry(tv)).filters === 146, "both viewports at 568");
+    await tv.page.setViewportSize({ width: 1920, height: 1080 });
+    await tv.eventually(async () => (await searchGeometry(tv)).filters === 354, "both viewports back at 1080");
 }, { catalog: new SearchEdgeCatalog() });
 
 class TitlesOnlyCatalog extends FakeRequests {

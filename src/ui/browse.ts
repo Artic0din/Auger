@@ -115,6 +115,8 @@ export interface Browse {
 }
 
 /** SearchViewModel.onQueryChanged and RequestSearchSectionViewModel.onQueryChanged both wait 300 ms. */
+/** app/index.html lays the page out at 1920 x 1080. */
+const PAGE_HEIGHT = 1080;
 const SEARCH_DELAY_MS = 300;
 const SLOW_MS = 5000;
 /** SectionRowLimit.cards (silo-apple SectionRowLimit.swift:6). */
@@ -263,9 +265,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     searchIcon.setAttribute("aria-hidden", "true");
     searchIcon.innerHTML = '<svg viewBox="0 0 48 48" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="5"/><path d="m31 31 12 12" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>';
     searchField.append(searchIcon, input);
-    // The Samsung keyboard shrinks only the visual viewport (to 568 of 1080 px on the S95C); the layout viewport and media queries keep 1080.
+    // The Samsung keyboard shrinks only the visual viewport (to 568 px on the S95C); the layout viewport and media queries keep 1080.
+    // The visual viewport is never taller than the layout one, so this also catches a keyboard that shrinks both.
     const keyboardUp = (): void => {
-        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) < document.documentElement.clientHeight);
+        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) < PAGE_HEIGHT);
     };
     window.visualViewport?.addEventListener("resize", keyboardUp);
     window.addEventListener("resize", keyboardUp);
