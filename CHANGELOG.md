@@ -68,6 +68,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
 - Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
 - Made the series Details test wait for the Details reads to be answered before it moves Down from the next-episode button. A late subtitle-preference answer repainted the page and handed focus back to Subtitles, so the test failed now and then.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
 const ENTER = 13;
@@ -35,7 +35,7 @@ async function searchFor(tv: Tv, query: string, key: string): Promise<void> {
     await card.focus();
 }
 
-declare global { interface Window { seasonAnswers: string[]; detailsEntryFocus: (string | null)[]; episodeReadPainted: boolean[] } }
+declare global { interface Window { seasonAnswers: string[]; detailsEntryFocus: (string | null)[]; episodeReadPainted: boolean[]; heroDraws: number; readsInFlight: number } }
 
 /** Records each season whose episode list the app has read off the network, in the order it read them. */
 async function recordSeasonAnswers(page: Page): Promise<void> {
@@ -134,7 +134,9 @@ test("a card-actions dialog keeps focus while the Play claim is still retrying",
         await primary.waitFor();
         await tv.eventually(async () => await primary.getAttribute("aria-disabled") !== "true", "movie Play ready");
         const related = tv.page.locator('[data-detail-section="related"] [data-focus]').first();
-        await related.waitFor();
+        // Answers paint on the next frame; step frames only once the answer is out, so the 50 ms claim retry stays pending.
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.includes("/recommendations/similar/")), "related read");
+        await jumpUntil(tv, 16, async () => await related.count() > 0, "related rail");
         await related.click({ button: "right" });
         await tv.page.locator(".card-menu").waitFor();
         const dialog = await owner(tv);
@@ -418,6 +420,45 @@ test("Left through a loaded previous season after a fast chip walk sends no seas
     } finally { await tv.page.context().close(); }
 });
 
+test("answers that land before the next frame redraw opening series Details once", async () => {
+    // On the S95C one Details redraw takes 130-180 ms; one per answer kept the TV busy for about 2 s after opening.
+    const tv = await openTv(browser, { app: "browse", prepare: async page => { await page.addInitScript(() => {
+        window.heroDraws = 0;
+        window.readsInFlight = 0;
+        const fetch = window.fetch.bind(window);
+        window.fetch = async (input, init) => {
+            window.readsInFlight++;
+            try { const response = await fetch(input, init); await response.clone().text(); return response; } finally { window.readsInFlight--; }
+        };
+        new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) {
+                if (node instanceof Element && (node.matches(".details-hero") || node.querySelector(".details-hero") !== null)) window.heroDraws++;
+            }
+        }).observe(document, { childList: true, subtree: true });
+    }); } });
+    tv.fake.catalog = new FakeDetails();
+    const settled = async (): Promise<void> => {
+        let idle = 0;
+        await tv.eventually(async () => { idle = await tv.page.evaluate(() => window.readsInFlight) === 0 ? idle + 1 : 0; return idle >= 10; }, "Details answers");
+    };
+    try {
+        await signedIn(tv);
+        await searchFor(tv, "Harbor Lights", "series:s1");
+        await pauseTvClock(tv);
+        await tv.page.evaluate(() => { window.heroDraws = 0; });
+        await tv.remote(ENTER);
+        await tv.page.locator(".details-hero").waitFor();
+        await settled();
+        const routeDraws = await tv.page.evaluate(() => window.heroDraws);
+        assert.ok(routeDraws <= 2, `the answers redrew Details ${routeDraws} times before the next frame`);
+        await tv.jump(16);
+        assert.equal(await tv.page.evaluate(() => window.heroDraws), routeDraws + 1, "one redraw for the burst");
+        await tv.page.locator('.details-episodes [data-focus="episode:s1e11"]').waitFor();
+        assert.notEqual(await tv.focused(), null);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
 test("a focused episode's read leaves before the dwell repaints Details", async () => {
     // On the S95C a Details repaint takes 140-180 ms; the 120 ms dwell's read must not wait behind it.
     const tv = await openTv(browser, { app: "browse", prepare: async page => { await page.addInitScript(() => {
@@ -451,8 +492,8 @@ test("a focused episode's read leaves before the dwell repaints Details", async 
         await tv.jump(1);
         await tv.eventually(() => tv.page.evaluate(() => window.episodeReadPainted.length === 1), "the focused episode's read");
         assert.deepEqual(await tv.page.evaluate(() => window.episodeReadPainted), [false], "the read left before the dwell's repaint");
-        await tv.jump(0);
-        await tv.eventually(async () => await tv.page.locator("[data-before-dwell]").count() === 0, "the dwell's repaint");
+        // The repaint waits for the next animation frame, which the paused clock holds until it moves.
+        await jumpUntil(tv, 16, async () => await tv.page.locator("[data-before-dwell]").count() === 0, "the dwell's repaint");
         assert.equal(await tv.focused(), "episode:s1e13");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
