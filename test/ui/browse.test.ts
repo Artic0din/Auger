@@ -13,7 +13,7 @@ import type { Reply } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
-import { detailReads, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
@@ -1776,11 +1776,14 @@ browseTest("Search stops restarting when a later page's cursor keeps being rejec
     await tv.page.locator('[data-focus="search"]').click();
     await tv.page.fill("#browse-search", "Movie"); await tv.remote(IME_DONE);
     await tv.page.locator('.browse-grid [data-focus="movie:m0060"]').waitFor({ state: "attached" });
-    for (let step = 0; step < 12 && await tv.page.locator(".search-failure").count() === 0; step++) {
+    // Each page reply lands in real time, so scroll and jump until the failure shows instead of for a fixed count.
+    await jumpUntil(tv, 300, async () => {
         await tv.page.locator(".browse").evaluate(node => { node.scrollTop = node.scrollHeight; });
-        await tv.jump(300);
-    }
+        return await tv.page.locator(".search-failure").count() > 0;
+    }, "the search failure after the rejected continuation");
     await tv.page.getByRole("button", { name: "Try Again", exact: true }).waitFor();
+    // Playwright reports a response after the page has already drawn the error.
+    await tv.eventually(async () => rejected >= 2, "both rejected continuations reported");
     assert.equal(rejected, 2, "one restart, then the error with Try Again");
 }, { catalog: new SearchCatalog(240) });
 

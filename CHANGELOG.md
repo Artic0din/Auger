@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
 - The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.
 - The Watch Party lobby now updates live over the room socket: people joining or stepping away, readiness, the host's pick and controls, and the party ending reach every TV in the room as they happen, with Apple's Connecting and Reconnecting states. Leave party and Back as the host now leave this TV only, as on Apple TV; End party is what ends it for everyone.
@@ -65,6 +66,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
+- Made the series Details test wait for the Details reads to be answered before it moves Down from the next-episode button. A late subtitle-preference answer repainted the page and handed focus back to Subtitles, so the test failed now and then.
+- Limited the UI tests to two files at a time. Node ran up to one fewer files than the machine has cores, each with its own Chromium, which starved shared and slow runners and made timing-sensitive tests fail now and then.
 - Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
 - Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
 - Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
