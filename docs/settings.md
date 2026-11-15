@@ -148,8 +148,6 @@ A row that nothing on this TV acts on stays hidden.
 | Row | Reason |
 | --- | --- |
 | Dolby Vision | Samsung exposes no Dolby Vision support check, and this client claims no Dolby Vision profile. A switch would not change playback. This is not a measurement that the panel lacks Dolby Vision. |
-| Paired Silo Profile | Open PR #292. This branch does not change it. |
-| Show Next Up | Playback offers Play next only after the episode ends. Nothing reads `playback.next_up_prompt_seconds`. Open PR #213 owns the pre-end reader. |
 | Audiobooks Skip Back, Skip Forward | No audiobook player yet. The audiobook screens ship first (#55). |
 | Use Device Settings | tvOS reads Media Accessibility caption preferences (`SystemCaptionAppearance.swift`). Samsung captions are the app overlay. No TV caption-style API is available, so the switch would not change language, behavior, or appearance. |
 | Diagnostics | Open issue #218, parked. |

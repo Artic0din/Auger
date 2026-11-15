@@ -34,6 +34,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
 - Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
