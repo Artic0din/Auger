@@ -72,6 +72,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
 - Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
 - Made the watchParty, topBar, requests and preplay UI tests wait for the reads, sockets and menu rows they depend on instead of acting while an answer is still on its way, so they pass when the test server answers up to 150 ms late.
 - Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
