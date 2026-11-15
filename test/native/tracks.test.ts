@@ -1595,6 +1595,32 @@ for (const choice of ["off", "refused"] as const) {
     });
 }
 
+test("a refused change that falls back to the plan's sidecar keeps Delay and Appearance: the app draws it again", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    const { decisionRendition: _rendition, ...plan } = renditionPlan(1, "English Signs", 1);
+    r.server.next.push({ ...plan, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=signs`, format: "vtt", timing_origin_seconds: 0 } });
+    try {
+        const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const held = r.h.fake.hold(`/playback/${id}/replan`);
+        r.server.next.push({ terminal: "subtitle_unavailable" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, false, "AVPlay draws the French rendition");
+        r.avplay.tracks = [];
+        held.release();
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.captions?.text, "Signs", "the restore fell back to the app-drawn sidecar");
+        assert.equal(view.tracks.subtitleTools?.overlay, true);
+    } finally { r.controller.destroy(); }
+});
+
 test("published rendition order wins over incomplete language metadata", async () => {
     const r = await rig();
     frenchInventory(r);

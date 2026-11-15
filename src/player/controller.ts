@@ -1795,6 +1795,8 @@ export class PlaybackController implements PlayerControls {
         if (restore !== undefined && !this.applyStreamSubtitle(attempt, restore.id) && attempt.plan?.subtitle.artifact !== undefined) {
             try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* Sidecar captions remain independent of native rendering. */ }
             this.readCaptions(attempt, attempt.plan);
+            // The plan's own track is drawn from its artifact again, not switched on the stream.
+            if (restore.id === attempt.plan.subtitle.trackId) attempt.subtitleOverride = undefined;
         }
     }
 
