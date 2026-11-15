@@ -234,14 +234,14 @@ function scriptSubtitlePreferences(r: Rig): void {
     r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], effective_subtitle_mode: "always", effective_subtitle_language: "ja", effective_show_forced_subtitles: false } });
 }
 
-test("Details Auto resolves effective preferences before AVPlay; explicit Off performs no preference read", async () => {
+test("Details Auto resolves effective preferences before AVPlay; explicit Off only reads them for the display order", async () => {
     for (const kind of ["auto", "off"] as const) {
         const r = await rig();
         scriptSubtitlePreferences(r);
         try {
             await playMovie(r, { ...MOVIE, subtitle: { kind } });
             assert.equal(replans(r.h).length, kind === "auto" ? 1 : 0);
-            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/")).length, kind === "auto" ? 2 : 1, "one chapter read plus the optional preference read");
+            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/")).length, 2, "one chapter read plus the preference read; an explicit Off uses it only for the display order");
             assert.equal(tracks(r).selectedSubtitleId === undefined, kind === "off");
             assert.equal(r.avplay.urls.length, 1);
         } finally { r.controller.destroy(); }
@@ -1015,13 +1015,46 @@ test("the ordered inventory is sorted once per inventory and language, not on ev
     assert.equal(orderedInventory([...inventory], "ja").length, inventory.length, "a new inventory is sorted afresh");
 });
 
-test("subtitle rows follow Apple's display order: the item's effective language first, the rest A to Z", async () => {
+function scriptWatch(r: Rig, body: Record<string, unknown>): void {
+    r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], ...body } });
+}
+
+test("subtitle rows follow Apple's display order: the watch read's language first, the rest A to Z", async () => {
+    for (const language of ["ja", undefined] as const) {
+        const r = await rig();
+        scriptWatch(r, { effective_subtitle_mode: "always", ...(language === undefined ? {} : { effective_subtitle_language: language }), effective_show_forced_subtitles: false });
+        // The catalog item's own language is not used: Apple reads the language only from the watch detail.
+        r.h.fake.script("/catalog/items/movie-1?image_size=large", { status: 200, body: { ...fixture("get_catalog_item_ok"), content_id: "movie-1", type: "movie", effective_subtitle_mode: "always", effective_subtitle_language: "es", effective_show_forced_subtitles: false, versions: [{ file_id: "42", duration: 7200, audio_tracks: [], subtitle_tracks: [] }] } });
+        try {
+            await playMovie(r, { ...MOVIE, subtitle: { kind: "off" } });
+            const view = tracks(r);
+            assert.deepEqual(view.subtitles.map((choice) => choice.label), language === undefined ? ["English", "English", "French", "Japanese", "Spanish"] : ["Japanese", "English", "English", "French", "Spanish"]);
+            if (language === "ja") assert.equal(view.subtitles[0]?.id, "file:42:subtitle:2", "ordering changes the display position, never the id a row selects");
+        } finally { r.controller.destroy(); }
+    }
+});
+
+test("a start with no subtitle choice follows the profile's subtitle policy instead of the server's default track", async () => {
+    for (const [showForced, selected] of [[false, undefined], [true, "file:42:subtitle:1"]] as const) {
+        const r = await rig();
+        r.server.next.push({ subtitle: 0 });
+        scriptWatch(r, { effective_subtitle_mode: "off", effective_show_forced_subtitles: showForced });
+        try {
+            await playMovie(r);
+            assert.equal(tracks(r).selectedSubtitleId, selected, `show forced ${showForced}`);
+        } finally { r.controller.destroy(); }
+    }
+});
+
+test("a start with no subtitle choice still plays on the server's default when the preference read fails", async () => {
     const r = await rig();
-    r.h.fake.script("/catalog/items/movie-1?image_size=large", { status: 200, body: { ...fixture("get_catalog_item_ok"), content_id: "movie-1", type: "movie", effective_subtitle_mode: "always", effective_subtitle_language: "ja", effective_show_forced_subtitles: false, versions: [{ file_id: "42", duration: 7200, audio_tracks: [], subtitle_tracks: [] }] } });
-    await playMovie(r);
-    const view = tracks(r);
-    assert.deepEqual(view.subtitles.map((choice) => choice.label), ["Japanese", "English", "English", "French", "Spanish"]);
-    assert.equal(view.subtitles[0]?.id, "file:42:subtitle:2", "ordering changes the display position, never the id a row selects");
+    r.server.next.push({ subtitle: 0 });
+    r.h.fake.script("/watch/movie-1?file_id=42", { status: 500 });
+    try {
+        await playMovie(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:0");
+        assert.equal(last(r.views).phase, "playing");
+    } finally { r.controller.destroy(); }
 });
 
 test("only server alternatives expose Auto plus server labels; Original alone is hidden", async () => {

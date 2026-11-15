@@ -2912,6 +2912,8 @@ test("Subtitles shows an OPTIONS, TIMING or STYLE group only when it has a row, 
         ["delay without styling", { search: { ...CLOSED_SEARCH, offered: false }, display: { ...ALL_TOOLS.display!, styling: false, deviceScope: false }, overlay: true }, ["TRACKS", "TIMING"]],
         ["styling without delay", { search: { ...CLOSED_SEARCH, offered: false }, display: { ...ALL_TOOLS.display!, delay: false }, overlay: true }, ["TRACKS", "STYLE"]],
         ["everything, on a stream the app cannot style", { ...ALL_TOOLS, overlay: false }, ["TRACKS", "OPTIONS"]],
+        ["no search, on a stream the app cannot style: no empty OPTIONS heading", { search: { ...CLOSED_SEARCH, offered: false }, display: ALL_TOOLS.display!, overlay: false }, ["TRACKS"]],
+        ["no search, subtitles Off: Delay and Appearance show, as on Apple TV", { search: { ...CLOSED_SEARCH, offered: false }, display: ALL_TOOLS.display!, overlay: true }, ["TRACKS", "TIMING", "STYLE"]],
         ["everything", ALL_TOOLS, ["TRACKS", "OPTIONS", "TIMING", "STYLE"]],
     ];
     for (const [name, subtitleTools, headings] of cases) {
