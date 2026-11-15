@@ -213,6 +213,12 @@ function painted(tv: Tv, target: Locator, what: string): Promise<void> {
     return jumpUntil(tv, 16, async () => await target.count() > 0, what);
 }
 
+/** Waits until every answer is delivered and its frame paint has run, so no later repaint replaces nodes under test. */
+async function answersPainted(tv: Tv): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies === 0, "Details answers delivered");
+    await tv.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+}
+
 /** Season acceptance reads the playback episode, not every painted card. Count focus only after those replies, and every read they start, have finished. */
 async function settledEpisodePrefetch(tv: Tv): Promise<void> {
     let stable = -1;
@@ -1828,8 +1834,7 @@ for (const [kind, id] of [['Movie', 'movie:m0001'], ['Episode', 'episode:s1e11']
     }, null, value => value.actionBottom <= value.heroBottom, "playback actions stay inside the hero");
     assert.ok(geometry.actionBottom <= geometry.heroBottom, JSON.stringify(geometry));
     // Programmatic focus does not end the opening Play claim the way a remote key does; let the last answers paint first.
-    await tv.eventually(async () => tv.pendingReplies === 0, "Details answers delivered");
-    await tv.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    await answersPainted(tv);
     for (const key of [kind === 'Season' ? 'next-episode' : 'play', 'audio', 'subtitles', 'more']) {
         await tv.page.locator(`[data-focus="${key}"]`).focus();
         const revealed = await readLive(tv, focusKey => {
@@ -2418,6 +2423,7 @@ for (const check of ['cast', 'caption', 'season', 'description', 'menu', 'metada
         assert.equal(rail.right, 1920);
     } else if (check === 'caption') {
         const caption = tv.page.locator('.details-episodes .browse-card-title').first();
+        await answersPainted(tv);
         await caption.evaluate(node => { node.textContent = "S02E01 · Electro's Gotta Glow"; });
         const metrics = await caption.evaluate(node => ({ width: node.clientWidth, content: node.scrollWidth, padding: getComputedStyle(node).paddingLeft, weight: getComputedStyle(node).fontWeight }));
         assert.equal(metrics.padding, '0px');
