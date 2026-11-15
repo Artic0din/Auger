@@ -241,10 +241,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
                 stopContent();
                 profiles?.switchProfile();
             },
-            onAddProfile: () => {
-                stopContent();
-                profiles?.addProfile();
-            },
+            onAddProfile: back => profiles?.addProfile(back),
             onPlay: (request) => play(server, active, content, request),
             ...(options.core.clock === undefined ? {} : { clock: options.core.clock }),
         });

@@ -64,6 +64,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
 - Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
 - Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
