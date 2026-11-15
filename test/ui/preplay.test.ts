@@ -126,6 +126,8 @@ preplay("an in-flight resume lookup defers handoff if another episode starts a s
     await tv.eventually(async () => await primary.getAttribute('aria-disabled') === 'false', 'Play is live again after confirmation');
     const prompt = tv.page.getByText('Press Play again to start playback.');
     await prompt.waitFor();
+    // The confirmed preference still refreshes Details; a Play press while those reads were in flight started nothing.
+    await tv.eventually(async () => tv.pendingReplies === 0, "the preference refresh answered");
     await primary.click();
     await prepare(tv);
     assert.equal(await prompt.count(), 0);
@@ -297,7 +299,7 @@ async function series(tv: Tv): Promise<void> {
     await tv.page.locator('[data-view="home"] .browse-card[data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="next-episode"]').waitFor();
     await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').waitFor();
-    await tv.eventually(async () => await tv.page.locator('[data-focus="next-episode"]').getAttribute("aria-disabled") !== "true", "primary episode metadata");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="next-episode"]').getAttribute("aria-disabled") !== "true" && tv.pendingReplies === 0, "primary episode metadata");
 }
 
 preplay("direct episode activation refreshes cached-zero progress and returns to its rail", async (tv, catalog, playback) => {
@@ -349,7 +351,7 @@ preplay("series primary action resumes its actual numbered episode directly", as
     playback.items.set("episode:s1e11", ["42"]);
     await series(tv);
     const primary = tv.page.locator('[data-focus="next-episode"]');
-    assert.equal(await primary.textContent(), "Resume S1:E1");
+    await tv.eventually(async () => await primary.textContent() === "Resume S1:E1", "the saved position reaches the primary action");
     await primary.click();
     await prepare(tv);
     assert.equal(starts(tv).length, 1);
@@ -431,7 +433,7 @@ preplay("series Resume and Start Over keep the series line when the episode item
     }
     tv.fake.script(path, { status: 200, body });
     await series(tv);
-    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Resume S1:E1");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="next-episode"]').textContent() === "Resume S1:E1", "the saved position reaches the primary action");
     await tv.page.locator('[data-focus="next-episode"]').click();
     await prepare(tv);
     assert.equal(await tv.page.locator(".player-series").textContent(), "Harbor Lights");
@@ -789,7 +791,11 @@ for (const reduced of [false, true]) {
         assert.ok(file);
         catalog.audioFiles.set("42", { ...file, audio: Array.from({ length: 16 }, (_, index) => ({ default: index === 0, language: "en", title: `Audio ${index + 1}` })) });
         await tv.remote(10009);
+        const itemReads = (): number => tv.fake.requests.filter(request => request.path.startsWith("/catalog/items/movie%3Am0001")).length;
+        const readsBefore = itemReads();
         await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        // The reopened Details shows its cached audio list until this read lands; opening the picker earlier lists the old tracks.
+        await tv.eventually(async () => itemReads() > readsBefore && tv.pendingReplies === 0, "the reopened Details read");
         await tv.page.locator('[data-focus="audio"]').click();
         assert.equal(await tv.focused(), "audio:auto");
         const visible = (scrolled: boolean, what: string) => readLive(tv, () => {

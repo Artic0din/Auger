@@ -202,6 +202,8 @@ test("Start a party creates a host-pick room and shows the code and members the 
         assert.deepEqual(await tv.page.locator(".watch-party-seat:not(.watch-party-seat-invite) .watch-party-seat-name").allTextContents(), ["Owner", "Sam"]);
         assert.deepEqual(await tv.page.locator(".watch-party-seat-detail").allTextContents(), ["Host · You", "not ready"]);
         assert.equal(await tv.page.locator(".watch-party-presence").textContent(), "1 of 2 ready");
+        // Back before the ticket answer lands leaves no socket to close; wait until the room socket is open.
+        await tv.eventually(async () => fake.sockets.length === 1, "the room socket opens");
         await tv.remote(10009);
         await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
         assert.equal(await tv.focused(), "create", "Back returns to the entry on its first control");
