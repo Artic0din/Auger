@@ -5,7 +5,7 @@ import type { FocusItem, FocusTarget, View, Zone } from "./browseFocus.ts";
 import { artworkUrl } from "./browseModel.ts";
 import { marqueeBadges, marqueeMeta, marqueeRating, marqueeTitle } from "./cardPresentation.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
-import { el } from "./screen.ts";
+import { el, onDecoded } from "./screen.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { SCROLL_START_EVENT, SkylineScroll } from "./skylineScroll.ts";
 import { MARQUEE_REST_MILLISECONDS } from "./homeEnrichment.ts";
@@ -634,7 +634,7 @@ export class Skyline {
             const image = el("img", "skyline-logo");
             image.alt = title.textContent ?? "";
             image.referrerPolicy = "no-referrer";
-            image.addEventListener("load", () => {
+            onDecoded(image, () => {
                 if (!this.titleArt() || !layer.isConnected) return;
                 title.textContent = "";
                 title.classList.add("skyline-title-logo");
