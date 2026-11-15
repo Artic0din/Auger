@@ -1057,6 +1057,30 @@ test("a start with no subtitle choice and no subtitle language keeps the server'
     } finally { r.controller.destroy(); }
 });
 
+test("Auto with no subtitle language starts on the file's default track, else a forced one, as Apple's start does", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = catalogTracks(decision.plan.subtitle.inventory);
+    const watch = { effective_subtitle_mode: "auto", effective_show_forced_subtitles: true };
+    const preferences = { mode: "auto" as const, language: undefined, audioLanguage: "en", showForced: true, signature: undefined };
+    for (const [label, catalog] of [["forced", inventory], ["default", inventory.map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track)]] as const) {
+        const expected = label === "forced" ? "file:42:subtitle:1" : "file:42:subtitle:2";
+        for (const request of [{ ...MOVIE, subtitleTracks: catalog }, { ...MOVIE, subtitle: { kind: "auto" as const }, subtitleTracks: catalog, subtitlePreferences: preferences }]) {
+            const r = await rig();
+            scriptWatch(r, watch);
+            try {
+                await playMovie(r, request);
+                if (request.subtitle !== undefined) {
+                    assert.equal(only(requests(r.h, "/playback/start")).body?.subtitle_track_id, expected, `${label}: the start request names it`);
+                    assert.equal(replans(r.h).length, 0, label);
+                }
+                assert.equal(tracks(r).selectedSubtitleId, expected, `${label}, choice ${request.subtitle?.kind ?? "none"}`);
+            } finally { r.controller.destroy(); }
+        }
+    }
+});
+
 test("a start with no subtitle choice still plays on the server's default when the preference read fails", async () => {
     const r = await rig();
     r.server.next.push({ subtitle: 0 });

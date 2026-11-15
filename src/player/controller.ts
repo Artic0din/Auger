@@ -53,7 +53,7 @@ import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts"
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
 import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleCue } from "../contracts/v2/subtitles.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
-import { initialSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
+import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
 import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
@@ -151,6 +151,14 @@ export function orderedInventory(inventory: readonly SubtitleTrack[], language: 
     const ordered = orderSubtitles(inventory, language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false }));
     orderedInventories.set(inventory, { language, ordered });
     return ordered;
+}
+
+/** The plan row of the file's default (else forced) subtitle that Apple's start freezes; the plan inventory carries no default flag. */
+function startingDefault(request: PlayRequest, plan: PlaybackPlan): string | undefined {
+    const catalog = request.subtitleTracks === undefined ? undefined : defaultSubtitle(request.subtitleTracks);
+    if (catalog === undefined) return undefined;
+    const rows = plan.subtitle.inventory.filter(entry => matchesSubtitle(entry, catalog));
+    return rows.length === 1 ? rows[0]?.trackId : undefined;
 }
 
 function subtitleChoice(entry: SubtitleTrack, generated: string | undefined): TrackChoice {
@@ -1468,7 +1476,7 @@ export class PlaybackController implements PlayerControls {
                 }
             }
             if (!attempt.live) return;
-            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences, plan.subtitle.trackId);
+            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences, startingDefault(attempt.request, plan) ?? plan.subtitle.trackId);
             if (subtitle === plan.subtitle.trackId) this.adopt(attempt, plan, serverFeatures);
             else this.changeTracks(attempt, plan, { ...(plan.selectedTracks.audio === undefined ? {} : { audio: plan.selectedTracks.audio }), ...(subtitle === undefined ? {} : { subtitle: { id: subtitle } }) });
         } catch {

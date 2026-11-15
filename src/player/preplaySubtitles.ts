@@ -76,8 +76,10 @@ export function startSubtitleTrackId(fileId: string, intent: SubtitleIntent | un
     // A saved downloaded choice has no catalog row; naming a catalog row would only force a track change.
     if (intent.kind !== "track" && preferences?.mode !== "off" && preferences?.signature?.source === "downloaded") return undefined;
     try {
-        const inventory = provisionalInventory(fileId, tracks);
-        const id = initialSubtitle(intent, inventory, preferences);
+        const ordered = combinedOrder(tracks);
+        const inventory = provisionalInventory(fileId, ordered);
+        const untouched = defaultSubtitle(tracks);
+        const id = initialSubtitle(intent, inventory, preferences, untouched === undefined ? undefined : inventory[ordered.indexOf(untouched)]?.trackId);
         // A downloaded row's server ordinal follows created_at, which the catalog does not publish.
         if (inventory.find(track => track.trackId === id)?.source === "downloaded") return undefined;
         return id;
@@ -86,13 +88,26 @@ export function startSubtitleTrackId(fileId: string, intent: SubtitleIntent | un
     }
 }
 
-/** Combined ordinals before a plan exists. Catalog array order is kept inside each source. */
-function provisionalInventory(fileId: string, tracks: readonly CatalogSubtitleTrack[]): readonly SubtitleTrack[] {
-    const ordered = [
+/** The combined ordinal order: externals, then embedded, then downloaded. Catalog array order is kept inside each source. */
+function combinedOrder(tracks: readonly CatalogSubtitleTrack[]): readonly CatalogSubtitleTrack[] {
+    return [
         ...tracks.filter(track => track.source === "external"),
         ...tracks.filter(track => track.source !== "external" && track.source !== "downloaded"),
         ...tracks.filter(track => track.source === "downloaded"),
     ];
+}
+
+/**
+ * What Apple's start request freezes when Auto has no preference to apply (`.noChange`):
+ * the file's default track, else a forced one, skipping a row the server cannot deliver.
+ */
+export function defaultSubtitle(tracks: readonly CatalogSubtitleTrack[]): CatalogSubtitleTrack | undefined {
+    const routable = combinedOrder(tracks).filter(track => track.source === "external" || Boolean(track.codec?.trim()));
+    return routable.find(track => track.isDefault === true) ?? routable.find(track => track.forced);
+}
+
+/** Combined ordinals before a plan exists, over `combinedOrder`. */
+function provisionalInventory(fileId: string, ordered: readonly CatalogSubtitleTrack[]): readonly SubtitleTrack[] {
     return ordered.map((track, index): SubtitleTrack => ({
         trackId: `file:${fileId}:subtitle:${index}`,
         combinedIndex: index,
@@ -124,7 +139,7 @@ export function playableIntent(intent: SubtitleIntent, tracks: readonly Subtitle
     return matches.length === 1 && matches[0] !== undefined && !deliverable(matches[0]) ? { kind: "auto" } : intent;
 }
 
-/** Only identities published by this plan may leave this resolver. `current` is the plan's own selection, which Auto leaves alone when no preference points anywhere (Apple's `.noChange`). */
+/** Only identities published by this plan may leave this resolver. `current` is what Auto keeps when no preference points anywhere (Apple's `.noChange`): the file's default before start, the plan's selection after. */
 export function initialSubtitle(intent: SubtitleIntent, tracks: readonly SubtitleTrack[], preferences?: SubtitlePreferences, current?: string): string | undefined {
     if (intent.kind === "off") return undefined;
     if (intent.kind === "track") {
