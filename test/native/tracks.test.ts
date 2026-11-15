@@ -8,7 +8,7 @@ import { decodeItemDetail } from "../../src/contracts/v2/catalog.ts";
 import { decodeFileVersionTracks, decodePlaybackDecision, decodePlaybackDefaults, type SubtitleTrack } from "../../src/contracts/v2/playback.ts";
 import type { CatalogSubtitleTrack } from "../../src/contracts/v2/preplaySubtitles.ts";
 import { playChoices } from "../../src/ui/browseModel.ts";
-import { PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
+import { orderedInventory, PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { operations } from "../../src/api/operations.ts";
@@ -1001,6 +1001,18 @@ test("track rows lead with the language and put codec, layout and flags on the s
         { label: "Japanese", detail: "PGS" },
         { label: "Spanish", detail: "Spanish (downloaded) · SRT · External" },
     ]);
+});
+
+test("the ordered inventory is sorted once per inventory and language, not on every playback tick", () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = decision.plan.subtitle.inventory;
+    const first = orderedInventory(inventory, "ja");
+    assert.equal(orderedInventory(inventory, "ja"), first, "an unchanged inventory and language reuse the sorted list");
+    assert.notEqual(orderedInventory(inventory, undefined), first, "a new preferred language sorts again");
+    assert.equal(orderedInventory(inventory, undefined)[0]?.language === "ja", false);
+    assert.equal(orderedInventory([...inventory], "ja").length, inventory.length, "a new inventory is sorted afresh");
 });
 
 test("subtitle rows follow Apple's display order: the item's effective language first, the rest A to Z", async () => {

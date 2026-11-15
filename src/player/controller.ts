@@ -142,6 +142,17 @@ function aiView(attempt: Attempt, plan: PlaybackPlan): SubtitleAIView | undefine
     return { ...view, results: view.results.map(result => plan.subtitle.inventory.some(entry => entry.syncKey === `stored-${result.id}` && entry.unplayable === true) ? { ...result, unavailable: true } : result) };
 }
 
+const orderedInventories = new WeakMap<readonly SubtitleTrack[], { readonly language: string | undefined; readonly ordered: readonly SubtitleTrack[] }>();
+
+/** The plan's subtitle rows in display order, sorted once per inventory and language: the view is rebuilt on every playback tick. The inventory carries no default flag. */
+export function orderedInventory(inventory: readonly SubtitleTrack[], language: string | undefined): readonly SubtitleTrack[] {
+    const cached = orderedInventories.get(inventory);
+    if (cached !== undefined && cached.language === language) return cached.ordered;
+    const ordered = orderSubtitles(inventory, language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false }));
+    orderedInventories.set(inventory, { language, ordered });
+    return ordered;
+}
+
 function subtitleChoice(entry: SubtitleTrack, generated: string | undefined): TrackChoice {
     const choice: TrackChoice = generated === undefined ? { id: entry.trackId, ...subtitleRow(entry, entry.combinedIndex) } : { id: entry.trackId, label: generated };
     if (entry.unplayable !== true) return choice;
@@ -3678,8 +3689,8 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         },
         audio: tracks === undefined || tracks.state !== "ready" ? { state: tracks?.state ?? "loading" } : { state: "ready", choices: audioChoices(attempt, plan) },
         selectedAudioId: plan.selectedTracks.audio?.id,
-        // SubtitleDisplayOrder: display position only; every row keeps the id it selects. The inventory carries no default flag.
-        subtitles: orderSubtitles(plan.subtitle.inventory, attempt.hud.metadata?.versions.find(version => version.fileId === plan.effectiveMediaFileId)?.effectiveSubtitle?.language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false })).map((entry) => {
+        // SubtitleDisplayOrder: display position only; every row keeps the id it selects.
+        subtitles: orderedInventory(plan.subtitle.inventory, attempt.hud.metadata?.versions.find(version => version.fileId === plan.effectiveMediaFileId)?.effectiveSubtitle?.language).map((entry) => {
             const generated = attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label;
             return subtitleChoice(entry, generated);
         }),
