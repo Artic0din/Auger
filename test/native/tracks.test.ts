@@ -8,7 +8,7 @@ import { decodeItemDetail } from "../../src/contracts/v2/catalog.ts";
 import { decodeFileVersionTracks, decodePlaybackDecision, decodePlaybackDefaults, type SubtitleTrack } from "../../src/contracts/v2/playback.ts";
 import type { CatalogSubtitleTrack } from "../../src/contracts/v2/preplaySubtitles.ts";
 import { playChoices } from "../../src/ui/browseModel.ts";
-import { PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
+import { orderedInventory, PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { operations } from "../../src/api/operations.ts";
@@ -234,14 +234,14 @@ function scriptSubtitlePreferences(r: Rig): void {
     r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], effective_subtitle_mode: "always", effective_subtitle_language: "ja", effective_show_forced_subtitles: false } });
 }
 
-test("Details Auto resolves effective preferences before AVPlay; explicit Off performs no preference read", async () => {
+test("Details Auto resolves effective preferences before AVPlay; explicit Off only reads them for the display order", async () => {
     for (const kind of ["auto", "off"] as const) {
         const r = await rig();
         scriptSubtitlePreferences(r);
         try {
             await playMovie(r, { ...MOVIE, subtitle: { kind } });
             assert.equal(replans(r.h).length, kind === "auto" ? 1 : 0);
-            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/")).length, kind === "auto" ? 2 : 1, "one chapter read plus the optional preference read");
+            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/")).length, 2, "one chapter read plus the preference read; an explicit Off uses it only for the display order");
             assert.equal(tracks(r).selectedSubtitleId === undefined, kind === "off");
             assert.equal(r.avplay.urls.length, 1);
         } finally { r.controller.destroy(); }
@@ -997,10 +997,99 @@ test("track rows lead with the language and put codec, layout and flags on the s
     assert.deepEqual(view.subtitles.map((choice) => ({ label: choice.label, detail: choice.detail })), [
         { label: "English", detail: "SRT · External" },
         { label: "English", detail: "English (Signs) · ASS · Forced" },
-        { label: "Japanese", detail: "PGS" },
         { label: "French", detail: "VobSub" },
+        { label: "Japanese", detail: "PGS" },
         { label: "Spanish", detail: "Spanish (downloaded) · SRT · External" },
     ]);
+});
+
+test("the ordered inventory is sorted once per inventory and language, not on every playback tick", () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = decision.plan.subtitle.inventory;
+    const first = orderedInventory(inventory, "ja");
+    assert.equal(orderedInventory(inventory, "ja"), first, "an unchanged inventory and language reuse the sorted list");
+    assert.notEqual(orderedInventory(inventory, undefined), first, "a new preferred language sorts again");
+    assert.equal(orderedInventory(inventory, undefined)[0]?.language === "ja", false);
+    assert.equal(orderedInventory([...inventory], "ja").length, inventory.length, "a new inventory is sorted afresh");
+});
+
+function scriptWatch(r: Rig, body: Record<string, unknown>): void {
+    r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], ...body } });
+}
+
+test("subtitle rows follow Apple's display order: the watch read's language first, the rest A to Z", async () => {
+    for (const language of ["ja", undefined] as const) {
+        const r = await rig();
+        scriptWatch(r, { effective_subtitle_mode: "always", ...(language === undefined ? {} : { effective_subtitle_language: language }), effective_show_forced_subtitles: false });
+        // The catalog item's own language is not used: Apple reads the language only from the watch detail.
+        r.h.fake.script("/catalog/items/movie-1?image_size=large", { status: 200, body: { ...fixture("get_catalog_item_ok"), content_id: "movie-1", type: "movie", effective_subtitle_mode: "always", effective_subtitle_language: "es", effective_show_forced_subtitles: false, versions: [{ file_id: "42", duration: 7200, audio_tracks: [], subtitle_tracks: [] }] } });
+        try {
+            await playMovie(r, { ...MOVIE, subtitle: { kind: "off" } });
+            const view = tracks(r);
+            assert.deepEqual(view.subtitles.map((choice) => choice.label), language === undefined ? ["English", "English", "French", "Japanese", "Spanish"] : ["Japanese", "English", "English", "French", "Spanish"]);
+            if (language === "ja") assert.equal(view.subtitles[0]?.id, "file:42:subtitle:2", "ordering changes the display position, never the id a row selects");
+        } finally { r.controller.destroy(); }
+    }
+});
+
+test("a start with no subtitle choice follows the profile's subtitle policy instead of the server's default track", async () => {
+    for (const [showForced, selected] of [[false, undefined], [true, "file:42:subtitle:1"]] as const) {
+        const r = await rig();
+        r.server.next.push({ subtitle: 0 });
+        scriptWatch(r, { effective_subtitle_mode: "off", effective_show_forced_subtitles: showForced });
+        try {
+            await playMovie(r);
+            assert.equal(tracks(r).selectedSubtitleId, selected, `show forced ${showForced}`);
+        } finally { r.controller.destroy(); }
+    }
+});
+
+test("a start with no subtitle choice and no subtitle language keeps the server's default track", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 0 });
+    scriptWatch(r, { effective_subtitle_mode: "auto", effective_show_forced_subtitles: false });
+    try {
+        await playMovie(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:0");
+        assert.equal(replans(r.h).length, 0);
+    } finally { r.controller.destroy(); }
+});
+
+test("Auto with no subtitle language starts on the file's default track, else a forced one, as Apple's start does", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = catalogTracks(decision.plan.subtitle.inventory);
+    const watch = { effective_subtitle_mode: "auto", effective_show_forced_subtitles: true };
+    const preferences = { mode: "auto" as const, language: undefined, audioLanguage: "en", showForced: true, signature: undefined };
+    for (const [label, catalog] of [["forced", inventory], ["default", inventory.map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track)]] as const) {
+        const expected = label === "forced" ? "file:42:subtitle:1" : "file:42:subtitle:2";
+        for (const request of [{ ...MOVIE, subtitleTracks: catalog }, { ...MOVIE, subtitle: { kind: "auto" as const }, subtitleTracks: catalog, subtitlePreferences: preferences }]) {
+            const r = await rig();
+            scriptWatch(r, watch);
+            try {
+                await playMovie(r, request);
+                if (request.subtitle !== undefined) {
+                    assert.equal(only(requests(r.h, "/playback/start")).body?.subtitle_track_id, expected, `${label}: the start request names it`);
+                    assert.equal(replans(r.h).length, 0, label);
+                }
+                assert.equal(tracks(r).selectedSubtitleId, expected, `${label}, choice ${request.subtitle?.kind ?? "none"}`);
+            } finally { r.controller.destroy(); }
+        }
+    }
+});
+
+test("a start with no subtitle choice still plays on the server's default when the preference read fails", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 0 });
+    r.h.fake.script("/watch/movie-1?file_id=42", { status: 500 });
+    try {
+        await playMovie(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:0");
+        assert.equal(last(r.views).phase, "playing");
+    } finally { r.controller.destroy(); }
 });
 
 test("only server alternatives expose Auto plus server labels; Original alone is hidden", async () => {
@@ -1432,6 +1521,41 @@ test("a downloaded subtitle present in the refreshed inventory is selected", asy
     r.controller.destroy();
 });
 
+test("an embedded track the plan sends as a sidecar artifact is drawn by the app and keeps Delay and Appearance (Aladdin's forced track)", async () => {
+    const r = await rig();
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(view.captions?.text, "Forced", "the app draws the cues");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay does not draw this track");
+        assert.equal(view.tracks.subtitleTools?.overlay, true, "Delay and Appearance act on the app's cues, so they are offered");
+    } finally { r.controller.destroy(); }
+});
+
+test("returning to the artifact track through AVPlay keeps overlay-only tools hidden: AVPlay draws it now", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2", "AVPlay draws the track again");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(tracks(r).subtitleTools?.overlay, false);
+    } finally { r.controller.destroy(); }
+});
+
 test("a native subtitle selected from an Off plan hides overlay-only tools", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
@@ -1470,6 +1594,59 @@ for (const choice of ["off", "refused"] as const) {
         r.controller.destroy();
     });
 }
+
+test("a refused change that falls back to the plan's sidecar keeps Delay and Appearance: the app draws it again", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    const { decisionRendition: _rendition, ...plan } = renditionPlan(1, "English Signs", 1);
+    r.server.next.push({ ...plan, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=signs`, format: "vtt", timing_origin_seconds: 0 } });
+    try {
+        const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const held = r.h.fake.hold(`/playback/${id}/replan`);
+        r.server.next.push({ terminal: "subtitle_unavailable" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, false, "AVPlay draws the French rendition");
+        r.avplay.tracks = [];
+        held.release();
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.captions?.text, "Signs", "the restore fell back to the app-drawn sidecar");
+        assert.equal(view.tracks.subtitleTools?.overlay, true);
+    } finally { r.controller.destroy(); }
+});
+
+test("a kept HLS plan whose track AVPlay re-selects hides Delay and Appearance even though the plan has an artifact", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    for (let n = 0; n < 3; n++) r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+    const artifact = { url: `${r.h.fake.origin}/api/v2/captions?token=signs`, format: "vtt", timing_origin_seconds: 0 };
+    const { decisionRendition: _signs, ...signs } = renditionPlan(1, "English Signs", 1);
+    r.server.next.push({ ...signs, subtitleArtifact: artifact });
+    try {
+        const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const report = r.h.fake.hold(`/playback/${id}/replan`);
+        const { decisionRendition: _french, ...french } = renditionPlan(5, "French", 2);
+        r.server.next.push({ ...french, subtitleArtifact: artifact });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.selectSubtitle("file:42:subtitle:0");
+        await settle(r);
+        const correction = r.h.fake.hold(`/playback/${id}/replan`);
+        report.release();
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 3", "AVPlay draws the kept plan's French track");
+        assert.equal(tracks(r).subtitleTools?.overlay, false);
+        correction.release();
+    } finally { r.controller.destroy(); }
+});
 
 test("published rendition order wins over incomplete language metadata", async () => {
     const r = await rig();
@@ -2081,6 +2258,37 @@ function withUnplayable(r: Rig, ordinal: number): void {
     r.server.files.set("42", { ...file, inventory: file.inventory.map((entry, index) => index === ordinal ? { ...entry, unplayable: true } : entry) });
 }
 
+test("Auto with no subtitle language skips a default track the plan flags unplayable and takes the forced one", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const catalog = catalogTracks(decision.plan.subtitle.inventory).map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track);
+    const r = await rig();
+    withUnplayable(r, 2);
+    scriptWatch(r, { effective_subtitle_mode: "auto", effective_show_forced_subtitles: true });
+    try {
+        await playMovie(r, { ...MOVIE, subtitleTracks: catalog });
+        assert.equal(replans(r.h).some(body => (body.selected_tracks as { subtitle?: { id?: string } } | undefined)?.subtitle?.id === "file:42:subtitle:2"), false, "no replan names the unplayable track");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
+test("Auto with no subtitle language keeps the plan's selection when the server plays another version", async () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const catalog = catalogTracks(decision.plan.subtitle.inventory).map((track, index) => index === 2 ? { ...track, isDefault: true as const } : track);
+    const r = await rig();
+    r.server.next.push({ effectiveFileId: "43" });
+    r.h.fake.script("/watch/movie-1?file_id=43", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "43", audio_tracks: r.server.files.get("43")?.audio }], effective_subtitle_mode: "auto", effective_show_forced_subtitles: true } });
+    try {
+        await playMovie(r, { ...MOVIE, subtitleTracks: catalog });
+        assert.equal([...r.server.sessions.values()][0]?.effectiveFileId, "43");
+        assert.equal(replans(r.h).length, 0, "the requested file's default flag says nothing about the version that plays");
+        assert.equal(tracks(r).selectedSubtitleId, undefined);
+    } finally { r.controller.destroy(); }
+});
+
 test("the plan decoder reads the unplayable flag and treats an absent one as playable", () => {
     const base = fixture("playback_start_opaque_ids");
     const plan: Record<string, unknown> = { ...(base.playback_plan as Record<string, unknown>) };
@@ -2102,8 +2310,8 @@ test("a track the plan flags unplayable is listed as unavailable and Select neve
     withUnplayable(r, 2);
     await playMovie(r);
     const view = tracks(r);
-    assert.deepEqual(view.subtitles.map(choice => choice.unavailable === true), [false, false, true, false, false]);
-    assert.match(view.subtitles[2]?.detail ?? "", /Unsupported format/);
+    assert.deepEqual(view.subtitles.map(choice => choice.unavailable === true), [false, false, false, true, false]);
+    assert.match(view.subtitles[3]?.detail ?? "", /Unsupported format/);
     assert.doesNotMatch(view.subtitles[1]?.detail ?? "", /Unsupported format/);
 
     const before = replans(r.h).length;

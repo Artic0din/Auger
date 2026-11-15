@@ -57,7 +57,7 @@ test("delay, size, position and appearance use Apple's picker values and write s
     assert.equal(options[0]?.id, "-2000");
     assert.equal(options.at(-2)?.id, "2000");
     assert.equal(options.at(-1)?.id, "2500");
-    assert.equal(appearanceSummary(DEFAULT_APPEARANCE), "Box, Large, Bottom");
+    assert.equal(appearanceSummary(DEFAULT_APPEARANCE), "Large · Box · Bottom");
     assert.equal(editAppearance(DEFAULT_APPEARANCE, "textOutlineColor", "#374151").textOutline, true);
     const colored = editAppearance(DEFAULT_APPEARANCE, "backgroundColor", "#1e3a5f");
     assert.equal(colored.backgroundStyle, "box");

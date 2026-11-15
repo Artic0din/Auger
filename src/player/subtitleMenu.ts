@@ -27,7 +27,7 @@ function choice(id: string, label: string, current: boolean, detail?: string): H
  * `HUDSettingRow` (TVPlayerInfoHUD.swift:494, label at 548): label left, value right-aligned, then a chevron when the row opens a picker.
  * `glyph` (text) or `icon` (inline SVG) stands in for its `systemImage` at 20pt semibold; Appearance's `textformat` reads "Aa".
  */
-export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean } = {}): HTMLButtonElement {
+export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly detail?: string; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean } = {}): HTMLButtonElement {
     const button = el("button", "player-choice player-setting");
     button.type = "button";
     button.setAttribute("data-focus", id);
@@ -38,7 +38,13 @@ export function settingRow(id: string, label: string, value: string, options: { 
         glyph.setAttribute("aria-hidden", "true");
         button.append(glyph);
     }
-    button.append(el("span", "player-setting-label", label));
+    if (options.detail === undefined) button.append(el("span", "player-setting-label", label));
+    else {
+        // `detail` is HUDSettingRow's second line: 17pt, dimmed, under the label.
+        const copy = el("span", "player-choice-copy");
+        copy.append(el("span", "player-setting-label", label), el("span", "player-choice-detail", options.detail));
+        button.append(copy);
+    }
     if (value !== "") button.append(el("span", "player-setting-value", value));
     if (options.chevron !== false) {
         const chevron = el("span", "player-setting-chevron");
@@ -113,8 +119,8 @@ export function appearanceDetail(appearance: SubtitleAppearance, field: string):
     }
 }
 
-/** Search and the delay, size, position and appearance rows: the OPTIONS column, or a pane that replaces both columns. */
-export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: SubtitlePane, replace: boolean): void {
+/** The Appearance and Search panes, which replace both columns. */
+export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: SubtitlePane): void {
     const tools = tracks.subtitleTools;
     if (tools === undefined) return;
     if (pane.kind === "appearance") {
@@ -150,14 +156,36 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
         }
         return;
     }
-    // SubtitlesPane.optionRowsContent (TVPlayerInfoHUD.swift:1964): Search, Delay, the device toggle, Size, Position, Appearance.
-    if (!replace && search.offered) list.append(settingRow("subtitle-search", "Search Subtitles…", "", { icon: magnifyingGlassIcon() }));
-    const display = tools.display;
-    if (display === undefined || !tools.overlay) return;
-    if (display.delay) list.append(settingRow("subtitle-delay", "Delay", delayLabel(display.delayMs)));
-    if (display.deviceScope) list.append(settingRow("subtitle-device", "Only on this TV", display.deviceOverride ? "On" : "Off", { chevron: false, pressed: display.deviceOverride }));
-    if (!display.styling) return;
-    list.append(settingRow("subtitle-size", "Size", named(FONT_SIZES, display.appearance.fontSize)));
-    list.append(settingRow("subtitle-position", "Position", named(POSITIONS, display.appearance.position)));
-    list.append(settingRow("subtitle-appearance", "Appearance", appearanceSummary(display.appearance), { glyph: "Aa" }));
+}
+
+function group(heading: string, rows: readonly HTMLElement[]): HTMLElement[] {
+    if (rows.length === 0) return [];
+    const box = el("section", "player-menu-group");
+    const body = el("div", "player-menu-group-rows");
+    body.append(...rows);
+    box.append(el("h2", "player-menu-heading", heading), body);
+    return [box];
+}
+
+/**
+ * SubtitlesPane.optionRows (TVPlayerInfoHUD.swift, silo-apple main e958f58): one scrolling column of OPTIONS (what supplies subtitles:
+ * `source`, then Search), TIMING (Delay) and STYLE (Appearance, then the device switch). A group with no row is left out, and a column with
+ * none has no heading. Delay and style act on overlay cues only, so they wait for `overlay`.
+ */
+export function optionColumn(tracks: TrackView, source: readonly HTMLElement[]): HTMLElement {
+    const tools = tracks.subtitleTools;
+    const display = tools?.overlay === true ? tools.display : undefined;
+    const options = [...source];
+    if (tools?.search.offered === true) options.push(settingRow("subtitle-search", "Search Subtitles…", "", { icon: magnifyingGlassIcon() }));
+    const timing = display?.delay === true ? [settingRow("subtitle-delay", "Delay", delayLabel(display.delayMs))] : [];
+    const style: HTMLElement[] = [];
+    if (display?.styling === true) {
+        style.push(settingRow("subtitle-appearance", "Appearance", "", { detail: appearanceSummary(display.appearance), glyph: "Aa" }));
+        if (display.deviceScope) style.push(settingRow("subtitle-device", "Only on this TV", display.deviceOverride ? "On" : "Off", { chevron: false, pressed: display.deviceOverride }));
+    }
+    const column = el("div", "player-menu-column player-menu-column-options");
+    const rows = el("div", "player-menu-column-rows");
+    rows.append(...group("OPTIONS", options), ...group("TIMING", timing), ...group("STYLE", style));
+    column.append(rows);
+    return column;
 }

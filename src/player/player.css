@@ -1022,6 +1022,11 @@
     width: 440px;
 }
 
+/* optionRows: a VStack(spacing: 20) of PaneColumns, each a heading over its rows. */
+.player-menu-group + .player-menu-group {
+    margin-top: 20px;
+}
+
 .player-menu-column-rows {
     flex: 1;
     min-height: 0;
@@ -1061,7 +1066,7 @@
 
 /*
  * HStack(spacing: 14) around Spacer(minLength: 18) (TVPlayerInfoHUD.swift:559, :578): the value starts at least
- * 14 + 18 + 14 after the label and takes only what is left, so a long value truncates ("Box, Large, Bott…").
+ * 14 + 18 + 14 after the label and takes only what is left, so a long value truncates.
  */
 .player-setting-value {
     flex: 0 1 auto;
