@@ -66,6 +66,23 @@ test("an older profile read that answers last does not overwrite the newer cache
     assert.equal(h.core.accounts.directory.list().find(row => row.id === id)?.maxProfiles, 1);
 });
 
+test("a newer profile read that fails does not block an older successful read from saving", async () => {
+    const h = await connected();
+    await signIn(h);
+    const id = h.core.accounts.localAccountId;
+    assert.ok(id);
+    h.fake.profiles = { ...h.fake.profiles, max_profiles: 5 };
+    const held = h.fake.hold("/profiles");
+    const sent = h.fake.requests.filter((request) => request.path === "/profiles").length;
+    const older = h.core.profiles.listCollection();
+    while (h.fake.requests.filter((request) => request.path === "/profiles").length === sent) await new Promise<void>((resolve) => setImmediate(resolve));
+    h.fake.script("/profiles", problem(400, "bad_request", "Cannot list profiles"));
+    await assert.rejects(h.core.profiles.listCollection());
+    held.release();
+    await older;
+    assert.equal(h.core.accounts.directory.list().find(row => row.id === id)?.maxProfiles, 5);
+});
+
 test("profile headers go only on profile-scoped calls; public calls carry no account bearer", async () => {
     const { h, owner } = await household();
     assert.deepEqual(h.core.profiles.select(owner), { status: "selected" });
