@@ -64,6 +64,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The Discord commit feed workflow now skips cleanly, instead of failing on every push to main, when its webhook secret or thread ID is not set.
 - Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
 - Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
 - Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
