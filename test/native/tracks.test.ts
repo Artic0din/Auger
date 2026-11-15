@@ -1521,6 +1521,23 @@ test("a downloaded subtitle present in the refreshed inventory is selected", asy
     r.controller.destroy();
 });
 
+test("an embedded track the plan sends as a sidecar artifact is drawn by the app and keeps Delay and Appearance (Aladdin's forced track)", async () => {
+    const r = await rig();
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(view.captions?.text, "Forced", "the app draws the cues");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay does not draw this track");
+        assert.equal(view.tracks.subtitleTools?.overlay, true, "Delay and Appearance act on the app's cues, so they are offered");
+    } finally { r.controller.destroy(); }
+});
+
 test("a native subtitle selected from an Off plan hides overlay-only tools", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
