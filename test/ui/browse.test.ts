@@ -518,6 +518,8 @@ for (const reduced of [false, true]) {
         await press(tv, "ArrowUp", "ArrowUp"); await tv.jump(250);
         assert.equal(await tv.page.locator('.browse').evaluate(node => node.scrollTop), 0, "Up to filters restores the search field");
         await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
+        // movie:960 and the People are already on screen from the first search; only the old titles leaving shows that Tom's answer landed.
+        await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor({ state: "detached" });
         await tv.page.locator('[data-focus="movie:960"]').waitFor({ state: "attached" });
         await tv.page.locator('[data-focus="person:edge-3"]').focus();
         await press(tv, "ArrowDown"); await tv.jump(250);
