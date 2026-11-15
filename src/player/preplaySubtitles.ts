@@ -1,4 +1,5 @@
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences, SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
+import { titleIndicatesHearingImpaired } from "./trackLabels.ts";
 import type { SubtitleTrack } from "../contracts/v2/playback.ts";
 
 const normalized = (value: string | undefined): string => value?.trim().toLowerCase() ?? "";
@@ -33,9 +34,10 @@ export function preferredCatalogSubtitle(tracks: readonly SubtitleSignature[], s
 
 /** bestLanguageMatch(nil, …): renderable tracks before burn-in ones, then the first class that has a track (forced first when asked), embedded before external before downloaded, then list order. */
 function bestAny(tracks: readonly SubtitleTrack[], preferForced: boolean): SubtitleTrack | undefined {
-    const plain = (track: SubtitleTrack): boolean => !track.forced && !track.hearingImpaired;
+    const accessible = (track: SubtitleTrack): boolean => track.hearingImpaired || titleIndicatesHearingImpaired(track.label);
+    const plain = (track: SubtitleTrack): boolean => !track.forced && !accessible(track);
     const classes: ((track: SubtitleTrack) => boolean)[] = preferForced
-        ? [track => track.forced, track => !track.forced && track.hearingImpaired, plain, track => !track.forced, () => true]
+        ? [track => track.forced, track => !track.forced && accessible(track), plain, track => !track.forced, () => true]
         : [plain, track => !track.forced, track => track.forced, () => true];
     const sourceRank = (track: SubtitleTrack): number => track.source === "embedded" ? 0 : track.source === "external" ? 1 : 2;
     for (const burnIn of [false, true]) for (const wanted of classes) {

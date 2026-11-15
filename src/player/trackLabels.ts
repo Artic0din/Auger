@@ -159,7 +159,7 @@ export function audioTitle(title: string | undefined, language: string | undefin
     return displayTitle(remainder);
 }
 
-function titleIndicatesHearingImpaired(title: string | undefined): boolean {
+export function titleIndicatesHearingImpaired(title: string | undefined): boolean {
     const text = nonEmpty(title);
     if (text === undefined) return false;
     const lowered = text.toLowerCase();

@@ -147,3 +147,10 @@ test("Auto with no subtitle language leaves the plan's selection alone, and a sa
     assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...quiet, signature }, forced.trackId), track.trackId);
     assert.equal(initialSubtitle({ kind: "auto" }, [forced, track], { ...prefs, language: "" }, forced.trackId), undefined, "an empty language is an explicit none");
 });
+
+test("mode always with no language treats a CC or SDH title as an accessibility track, as Apple's classes do", () => {
+    const cc: SubtitleTrack = { ...track, trackId: "file:42:subtitle:15", combinedIndex: 15, label: "English (CC)" };
+    const always: SubtitlePreferences = { ...prefs, mode: "always", language: undefined, showForced: false };
+    assert.equal(initialSubtitle({ kind: "auto" }, [cc, track], always), track.trackId);
+    assert.equal(initialSubtitle({ kind: "auto" }, [cc], always), cc.trackId, "an accessibility track still beats nothing");
+});
