@@ -507,7 +507,7 @@ On `visibilitychange` the stream URL is rebuilt with a fresh token (`urlWithToke
 
 Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
 After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
-A missing row or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
+A selection without its `index`, a stream with no matching AUDIO row, or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
 
 ### Markers
 

@@ -327,7 +327,8 @@ test("transcription refuses with a notice when the plan omits the audio track's 
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
     r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, remaining: 2, period: "month" } })));
     r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }] } } } });
-    r.server.next.push({ omitAudioIndex: true });
+    // A packaged stream: an original file without the ordinal is a failed route (#507).
+    r.server.next.push({ omitAudioIndex: true, delivery: "server_remux_hls" });
     await playMovie(r);
     r.controller.startSubtitleAI("transcribe");
     await r.h.clock.advance(0);

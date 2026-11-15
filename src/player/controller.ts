@@ -1800,8 +1800,9 @@ export class PlaybackController implements PlayerControls {
     private selectPlanAudio(plan: PlaybackPlan): boolean {
         const ordinal = plan.selectedTracks.audio?.index;
         const avplay = this.deps.avplay;
-        if (plan.delivery !== "original_http" || ordinal === undefined) return true;
-        if (avplay.getTotalTrackInfo === undefined || avplay.setSelectTrack === undefined) return false;
+        if (plan.delivery !== "original_http" || plan.selectedTracks.audio === undefined) return true;
+        // The id alone is opaque: without the ordinal this client cannot honor the selection.
+        if (ordinal === undefined || avplay.getTotalTrackInfo === undefined || avplay.setSelectTrack === undefined) return false;
         try {
             const target = avplay.getTotalTrackInfo().filter((track) => track.type === "AUDIO")[ordinal];
             if (target === undefined) return false;

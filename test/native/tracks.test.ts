@@ -529,11 +529,12 @@ test("an audio ordinal AVPlay does not list is a typed failure the server can re
     r.controller.destroy();
 });
 
-test("an original file whose audio AVPlay cannot list or switch is a typed failure, never assumed played (#507)", async () => {
-    for (const unavailable of ["no AUDIO rows", "no track API"]) {
+test("an original-file audio selection that cannot be mapped or switched is a typed failure, never assumed played (#507)", async () => {
+    for (const unavailable of ["no AUDIO rows", "no track API", "no server ordinal"]) {
         const r = await rig();
         if (unavailable === "no AUDIO rows") r.avplay.audioTracks = [];
-        else Reflect.set(r.avplay, "setSelectTrack", undefined);
+        else if (unavailable === "no track API") Reflect.set(r.avplay, "setSelectTrack", undefined);
+        else r.server.next.push({ omitAudioIndex: true });
         r.controller.play(MOVIE);
         await settle(r);
         await playReplacement(r);
