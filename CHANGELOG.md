@@ -66,7 +66,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Made the offline Details recovery test step the paused clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, a late answer waited for a clock that never moved, and the test failed in CI.
+- Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
+- Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
 - Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
 - Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
 - Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
