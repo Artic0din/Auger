@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
+import { orderSubtitles } from "../../src/player/trackLabels.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
@@ -144,6 +145,55 @@ detailTest("Subtitles Apple can't deliver stay listed, dimmed and unfocusable, a
     assert.equal(visited.has("subtitle:1") || visited.has("subtitle:2"), false, `disabled rows take no focus: ${[...visited].join(", ")}`);
     await tv.page.locator('[data-focus="subtitle:1"]').dispatchEvent("click");
     assert.equal(await tv.page.locator(".details-track-popover").count(), 1, "a disabled track cannot be chosen");
+});
+
+/** #524: Details lists subtitles through the player's shared order (silo-apple SubtitleDisplayOrder); each row keeps its own index. */
+type WireSubtitle = { readonly index: number; readonly language?: string; readonly codec: string; readonly title?: string; readonly forced?: boolean; readonly hearing_impaired?: boolean; readonly default?: boolean };
+const MIXED_SUBTITLES: readonly WireSubtitle[] = [
+    { index: 2, language: "de", codec: "subrip" },
+    { index: 3, language: "eng", codec: "subrip" },
+    { index: 4, language: "eng", codec: "subrip", title: "Closed Caption" },
+    { index: 5, language: "en", codec: "ass" },
+    { index: 6, codec: "ass" },
+    { index: 7, codec: "subrip" },
+    { index: 8, language: "fr", codec: "hdmv_pgs_subtitle" },
+    { index: 9, language: "fr", codec: "subrip", forced: true },
+];
+
+async function subtitleRowOrder(tv: Tv, details: FakeDetails, subtitles: readonly WireSubtitle[]): Promise<string[]> {
+    await movieTracks(tv, details, { subtitles: [...subtitles] });
+    await openMovie(tv);
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await settled(tv);
+    const keys = await tv.page.locator('.details-audio-options [data-focus^="subtitle:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus") ?? ""));
+    return keys.filter(key => key !== "subtitle:auto" && key !== "subtitle:off");
+}
+
+detailTest("Details lists a mixed-language, mixed-format set in the player's order", async (tv, details) => {
+    const player = orderSubtitles(MIXED_SUBTITLES.map((track, position) => ({ position, ...track })), undefined, track => ({ language: track.language, codec: track.codec, forced: track.forced === true, hearingImpaired: track.title !== undefined, isDefault: false })).map(track => `subtitle:${track.position}`);
+    const expected = ["subtitle:1", "subtitle:2", "subtitle:3", "subtitle:7", "subtitle:6", "subtitle:0", "subtitle:5", "subtitle:4"];
+    assert.deepEqual(player, expected, "English by format then full before SDH, French forced before bitmap, German, then no language by format");
+    assert.deepEqual(await subtitleRowOrder(tv, details, MIXED_SUBTITLES), expected);
+});
+
+/** Aladdin (2019) as in test/native/preplaySubtitles.test.ts: 24 embedded SubRip rows, regional variants and Default forced rows. */
+const ALADDIN_SUBTITLES: readonly WireSubtitle[] = ([
+    ["zh-HK", "Hong Kong"], ["zh-Hans", "Simplified"], ["zh-Hant", "Traditional"], ["cs"], ["da"], ["nl"],
+    ["fr-CA", "Canadian"], ["fr-FR", "European (SDH)", { hearing_impaired: true }], ["de"], ["el"], ["it"], ["ja"],
+    ["ko"], ["nb"], ["pt-BR", "Brazilian"], ["pt-BR", "Brazilian (SDH)", { hearing_impaired: true }], ["pt-PT", "European"],
+    ["pt-BR", "Brazilian (Forced)", { forced: true, default: true }], ["pt-PT", "European (Forced)", { forced: true, default: true }],
+    ["es-419", "Latin American"], ["es-419", "Latin American (SDH)", { hearing_impaired: true }], ["es-ES", "European"], ["sv"], ["tr"],
+] as const).map(([language, title, flags], index) => ({ index: index + 3, language, codec: "subrip", ...(title === undefined ? {} : { title }), ...flags }));
+
+detailTest("Details lists Aladdin's subtitles in the player's order", async (tv, details) => {
+    const player = orderSubtitles(ALADDIN_SUBTITLES.map((track, position) => ({ position, ...track })), undefined, track => ({ language: track.language, codec: track.codec, forced: track.forced === true, hearingImpaired: track.hearing_impaired === true, isDefault: false })).map(track => `subtitle:${track.position}`);
+    const listed = await subtitleRowOrder(tv, details, ALADDIN_SUBTITLES);
+    assert.deepEqual(listed, player);
+});
+
+detailTest("Details puts a default-flagged track ahead of an otherwise equal one, as Apple's Details does", async (tv, details) => {
+    const order = await subtitleRowOrder(tv, details, [{ index: 2, language: "en", codec: "subrip" }, { index: 3, language: "en", codec: "subrip", default: true }]);
+    assert.deepEqual(order, ["subtitle:1", "subtitle:0"]);
 });
 
 detailTest("Audio rows lead with the language and move the track's own title to the detail line", async (tv, details) => {
