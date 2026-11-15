@@ -12,7 +12,7 @@ import type { HomeDismissal } from "../api/detailOperations.ts";
 import { artworkSymbol, defaultArtwork, type DefaultArtworkFactory } from "./defaultArtwork.ts";
 import { blurEpisodeStill, cardUsesBackdrop, hidesCardImage, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { thumbhashCanvas } from "./heroBackdrop.ts";
-import { el } from "./screen.ts";
+import { el, onDecoded } from "./screen.ts";
 import type { MediaChoice } from "./watchPartyChoice.ts";
 
 /** Home artwork widths in browse.css (Apple SiloTheme poster and EpisodeThumbCard widths); badges scale from them. */
@@ -186,7 +186,7 @@ export function artwork(className: string, reference: string | undefined, baseUr
     });
     // AsyncImageView fades a loaded image in with easeOut(fastDuration) unless a decode was already in memory
     // (silo-apple 85679e7 `Components/Images/AsyncImageView.swift:80-86`, `:123`; `Theme/SiloTheme.swift:164`).
-    image.addEventListener("load", () => image.classList.add("is-loaded"));
+    onDecoded(image, () => image.classList.add("is-loaded"));
     image.src = src;
     if (image.complete && image.naturalWidth > 0) image.classList.add("is-cached");
     box.appendChild(image);
