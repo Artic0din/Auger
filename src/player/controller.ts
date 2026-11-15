@@ -19,6 +19,7 @@
 // overlay draws the VTT, so the plan does not need a new AVPlay open. A renewed `st` on that
 // path is the same media. A different path, an audio change, a native embedded selection, or
 // a burn-in still reopens. A refused change leaves the current plan playing.
+// On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
@@ -291,6 +292,8 @@ const PROGRESS_INTERVAL_MS = 10000;
 const STARTUP_TIMEOUT_MS = 60000;
 /** Failed routes this client replans before giving up; the protocol allows up to 8. */
 const MAX_RECOVERY_REPLANS = 3;
+/** Apple's typed failure for a track its engine could not select (AetherEngine PlaybackErrorKind). */
+const AUDIO_TRACK_SWITCH_FAILED = "audioTrackSwitchFailed";
 /** Waits before resending an identical start, replan or stop that got no usable answer. */
 const RESEND_DELAYS_MS = [1000, 2000];
 /** AVPlay's display coordinates are in the app's 1920x1080 space. */
@@ -1789,6 +1792,29 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
+    /**
+     * client_selected_audio_track_v1: the plan's audio index is an ordinal in the server's audio_tracks,
+     * the source's probed order, so it is the nth AUDIO row of the original file. Call right after play():
+     * AVPlay switches AUDIO only in PLAYING. False, a failed route, whenever the stream cannot show
+     * or play that row: the claim promises the ordinal, so the server must be told to package instead.
+     */
+    private selectPlanAudio(plan: PlaybackPlan): boolean {
+        const ordinal = plan.selectedTracks.audio?.index;
+        const avplay = this.deps.avplay;
+        if (plan.delivery !== "original_http" || plan.selectedTracks.audio === undefined) return true;
+        // The id alone is opaque: without the ordinal this client cannot honor the selection.
+        if (ordinal === undefined || avplay.getTotalTrackInfo === undefined || avplay.setSelectTrack === undefined) return false;
+        try {
+            const target = avplay.getTotalTrackInfo().filter((track) => track.type === "AUDIO")[ordinal];
+            if (target === undefined) return false;
+            const playing = avplay.getCurrentStreamInfo?.().find((track) => track.type === "AUDIO");
+            if (playing?.index !== target.index) avplay.setSelectTrack("AUDIO", target.index);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     private alignOpenStream(attempt: Attempt, plan: PlaybackPlan): boolean {
         if (plan.subtitle.mode === "off" || plan.subtitle.mode === "burn_in" || plan.subtitle.mode === "unknown" || plan.subtitle.artifact !== undefined) return true;
         const id = shownSubtitle(attempt, plan);
@@ -2080,14 +2106,20 @@ export class PlaybackController implements PlayerControls {
                 }
                 return;
             }
+            let audioSelected: boolean;
             try {
                 this.deps.avplay.play();
+                audioSelected = this.selectPlanAudio(plan);
                 attempt.hud.restore(this.deps.avplay, plan);
                 if (attempt.paused) {
                     this.deps.avplay.pause();
                 }
             } catch {
                 this.routeFailed(attempt, "avplay_play_failed");
+                return;
+            }
+            if (!audioSelected) {
+                this.routeFailed(attempt, AUDIO_TRACK_SWITCH_FAILED);
                 return;
             }
             attempt.started = true;
@@ -3067,6 +3099,10 @@ export class PlaybackController implements PlayerControls {
             attempt.suspendedReady = false;
             try {
                 this.deps.avplay.play();
+                if (attempt.plan !== undefined && !this.selectPlanAudio(attempt.plan)) {
+                    this.routeFailed(attempt, AUDIO_TRACK_SWITCH_FAILED);
+                    return;
+                }
                 if (attempt.plan !== undefined) attempt.hud.restore(this.deps.avplay, attempt.plan);
                 if (attempt.paused) {
                     this.deps.avplay.pause();

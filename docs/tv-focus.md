@@ -231,10 +231,13 @@ The signed same-state comparison on 5 November 2026 at `93a39b3` confirmed the p
 The current season keeps its current episode on focus, while a different season starts at E01 and retains pill focus until Down.
 Episode-card focus paints the loaded summary immediately, then reads missing full detail after 120 ms on the same episode, matching `TVItemDetailView.swift:805-858` at Apple source `df891d2e`.
 This is an explicit exception to the general no-focus-fetch rule, approved for Apple TV parity.
-The read leaves first and the loading readout repaints in the next task, as Apple's `TVItemDetailView.swift:1012-1023` at `9ff49dca` starts its reads right after the 120 ms sleep; a synchronous Details repaint takes 140–180 ms on the S95C and used to hold the read back.
+The read leaves first and the loading readout repaints on the next animation frame, as Apple's `TVItemDetailView.swift:1012-1023` at `9ff49dca` starts its reads right after the 120 ms sleep; a synchronous Details repaint takes 140–180 ms on the S95C and used to hold the read back.
 Cached episodes need no read; leaving before the dwell cancels it.
 The existing queue runs at most four detail reads, drops superseded queued focus reads, and keeps failures for explicit Retry rather than retrying on focus.
 Uncached playback and version/audio/subtitle activation resolve the selected episode's extra details explicitly.
+Answers that reach Details with no key or focus move since the last render, such as seasons, episodes, related titles, personal lists and preferences, repaint once on the next animation frame (`detailsChanged` in `src/ui/browse.ts`).
+A burst of answers then costs one render instead of one each, as SwiftUI commits one view update per frame; one render takes 130–180 ms on the S95C.
+A change that follows a key or focus move still repaints at once, and a key first draws any pending repaint, so it acts on the screen as shown.
 Crossing into a loaded season in the Series rail only selects its cached page; it starts no reads.
 Initial row loading, every selected-season change (chip dwell or Select) and a reappearing Details restart the neighbour prefetch and warm the neighbouring episode window; plain focus moves and selected-season Retry do not.
 The narrow rail exception is focus resting for 70 ms on an outer loaded edge with a missing neighbour: it requests that one season once per edge, without stacking pending reads or chaining further reads.
