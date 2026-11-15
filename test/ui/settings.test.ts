@@ -10,6 +10,7 @@ import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts
 import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
+const SEEK_CACHE_KEY = "player.seek_cache_enabled";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -1488,6 +1489,27 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         await tv.page.locator('[data-focus="hdr"]').focus();
         await tv.remote(40);
         assert.equal(await tv.focused(), "spoiler-images");
+    } finally { await tv.page.context().close(); }
+});
+
+// Apple's STREAMING pane also lists these rows (TVPlaybackSettingsView.swift:206-248, silo-apple e958f584). AVPlay has no control for any of them
+// (docs/settings.md), so Samsung hides them, as Apple hides TrueHD Atmos and DTS:X when its build cannot render them.
+test("Playback offers no Streaming row AVPlay cannot honour, even when the server offers the key", async () => {
+    const { tv, settings } = await setup();
+    settings.hdrRows = true;
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        const order = await tv.page.locator(".settings-pane [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        assert.deepEqual(order.slice(order.indexOf("audio"), order.indexOf("spoiler-images")), ["audio", "hdr"]);
+        const text = await tv.page.locator(".settings-pane").innerText();
+        for (const name of ["Seek Cache", "Buffer Ahead", "Lossless", "TrueHD", "DTS:X", "Deinterlacing"]) assert.equal(text.includes(name), false, name);
+        assert.equal(await tv.page.getByRole("switch", { name: /Seek Cache|Lossless|TrueHD/ }).count(), 0);
+        assert.equal(await tv.page.getByRole("button", { name: /Buffer Ahead|Deinterlacing/ }).count(), 0);
+        assert.equal(tv.fake.requests.some(request => request.path.includes(SEEK_CACHE_KEY)), false);
+        const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+        assert.ok(deviceId);
+        assert.equal([...settings.device("p-owner", deviceId).keys()].includes(SEEK_CACHE_KEY as never), false);
     } finally { await tv.page.context().close(); }
 });
 
