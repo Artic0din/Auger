@@ -1,3 +1,8 @@
+import { translate } from "../i18n/translate.ts";
+
+/** What Apple's `DeviceNoun` says for this device: the catalog's `{device}` reads "this TV" here, as Settings does. */
+const DEVICE_NOUN = "TV";
+
 /**
  * Apple tvOS sign-out confirmation (`confirmSignOut` / `signOutMessage` in
  * `AppRouter+Accounts.swift`, silo-apple 2ef3a171). "this TV" stands in for
@@ -14,10 +19,10 @@ export function signOutRemovesServer(readAccounts: () => readonly { readonly bas
 }
 
 export function signOutConfirmationCopy(accountName: string | undefined, serverName: string | undefined, removesServer: boolean): { readonly title: string; readonly message: string } {
-    const account = accountName?.trim() || "this account";
-    const server = serverName?.trim() || "this server";
+    const account = accountName?.trim() || translate("account.fallback.thisAccount");
+    const server = serverName?.trim() || translate("account.fallback.thisServer");
     const message = removesServer
-        ? `This account's profiles and settings leave this TV, and ${server} will be removed from it.`
-        : "This account's profiles and settings leave this TV. The server stays saved, so you can sign in again.";
-    return { title: `Sign out of ${account} on ${server}?`, message };
+        ? translate("account.signOut.leavesRemovingServer", { device: DEVICE_NOUN, server })
+        : translate("account.signOut.leaves", { device: DEVICE_NOUN });
+    return { title: translate("shell.signOut.titleNamed", { account, server }), message };
 }

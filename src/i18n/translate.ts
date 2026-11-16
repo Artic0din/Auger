@@ -55,6 +55,27 @@ export function translate(key: MessageKey, args?: MessageArgs, language: string 
 }
 
 /**
+ * Text the server wrote (a Home section title), as `AppLanguage.serverText` shows it: the language's own
+ * translation of the catalog key the server sent, else the server's text. English always shows the server's
+ * text as sent, and a key this language lacks never falls back to the English catalog.
+ */
+export function resolveServerText(catalogs: Catalogs, text: string, key: string | undefined, args: Readonly<Record<string, string>> | undefined, language: string): string {
+    if (key === undefined || key === "" || language === SOURCE_LANGUAGE) return text;
+    const template = catalogs[language]?.[key];
+    if (template === undefined) return text;
+    try {
+        return formatMessage(parseMessage(template), args ?? {}, formattingLocale(language, deviceLanguages()[0]));
+    } catch {
+        // A placeholder the server did not fill: its own text reads whole.
+        return text;
+    }
+}
+
+export function serverText(text: string, key: string | undefined, args?: Readonly<Record<string, string>>, language: string = shownLanguage()): string {
+    return resolveServerText(catalogs, text, key, args, language);
+}
+
+/**
  * Text Apple wrote for "this Apple TV", said of this TV. Settings reads "this TV" for it, and the same
  * substitution holds in every language, where the brand stays "Apple TV".
  */

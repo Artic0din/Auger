@@ -5,12 +5,13 @@ import { test } from "node:test";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../../src/contracts/v2/settings.ts";
 import { setAppLanguage, shownLanguage } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
-import { APP_LANGUAGE_INTRODUCED_IN, AppLanguagePreferences, appLanguageSettingsSupported } from "../../src/ui/appLanguagePreferences.ts";
+import { APP_LANGUAGE_INTRODUCED_IN, AppLanguagePreferences, appLanguageCacheKey, appLanguageSettingsSupported } from "../../src/ui/appLanguagePreferences.ts";
 import { settle } from "./support/clock.ts";
 import { FakeSettings } from "./support/fakeSettings.ts";
 import { problem } from "./support/fakeSilo.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
 import { connected, signIn } from "./support/harness.ts";
+import { MemoryPublicStorage } from "./support/keyManager.ts";
 
 registerSourceCatalogs();
 
@@ -266,4 +267,66 @@ test("with the real setter, the stored English choice is what every later reques
         assert.equal(shownLanguage(), "en");
         assert.equal(h.fake.requests.at(-1)?.headers["accept-language"], "en");
     } finally { h.store.stop(); setAppLanguage(null); }
+});
+
+async function cached(storage: MemoryPublicStorage, scope = "server-a") {
+    const shown: (string | null)[] = [];
+    const h = await shownBy(tag => shown.push(tag));
+    h.store.stop();
+    const profileId = h.core.session.activeProfile?.id;
+    assert.ok(profileId);
+    const store = new AppLanguagePreferences(h.core.session, tag => shown.push(tag), { storage, scope });
+    return { ...h, store, shown, profileId };
+}
+
+test("the last answer is kept per server and profile, and a later launch shows it before any request", async () => {
+    const storage = new MemoryPublicStorage();
+    const first = await cached(storage);
+    try {
+        assert.equal(first.store.applyCached(), false, "nothing is kept before the first answer");
+        assert.deepEqual(first.shown, []);
+        first.settings.profile().set(APP_LANGUAGE_KEY, "de");
+        await first.store.refresh();
+        assert.equal(first.shown.at(-1), "de");
+        // What is kept is the choice only: no server address, token or account, just the key's scope and profile id and a language tag.
+        assert.deepEqual([...storage.items], [[appLanguageCacheKey("server-a", first.profileId), "de"]]);
+        assert.ok(![...storage.items].flat().some(text => /https?:|token|secret/i.test(text)));
+    } finally { first.store.stop(); }
+
+    const second = await cached(storage);
+    try {
+        const requests = second.fake.requests.length;
+        assert.equal(second.store.applyCached(), true);
+        assert.equal(second.shown.at(-1), "de", "the first render already has the kept language");
+        assert.equal(second.fake.requests.length, requests, "applied without a request");
+    } finally { second.store.stop(); }
+
+    const otherServer = await cached(storage, "server-b");
+    try {
+        assert.equal(otherServer.store.applyCached(), false, "another server's kept language is not this one's");
+    } finally { otherServer.store.stop(); }
+});
+
+test("Match Device is kept as such, a server that cannot store the language drops the kept one, and unusable storage never breaks the app", async () => {
+    const storage = new MemoryPublicStorage();
+    const h = await cached(storage);
+    try {
+        h.settings.profile().set(APP_LANGUAGE_KEY, "de");
+        await h.store.refresh();
+        h.settings.profile().set(APP_LANGUAGE_KEY, null);
+        await h.store.refresh();
+        assert.equal(storage.items.get(appLanguageCacheKey("server-a", h.profileId)), "", "Match Device is an empty value");
+        assert.equal(h.store.applyCached(), true);
+        assert.equal(h.shown.at(-1), null, "applied as Match Device");
+        h.settings.revision = 27;
+        await h.store.refresh();
+        assert.equal(storage.items.size, 0, "a server that cannot store it has no choice to keep");
+        storage.failGet = true;
+        storage.failSet = true;
+        assert.equal(h.store.applyCached(), false);
+        h.settings.revision = 28;
+        h.settings.profile().set(APP_LANGUAGE_KEY, "en");
+        await h.store.refresh();
+        assert.equal(h.shown.at(-1), "en", "the answer still shows when it cannot be kept");
+    } finally { h.store.stop(); }
 });

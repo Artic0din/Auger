@@ -129,7 +129,7 @@ Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/d
 
 Platform limits, which Apple does not have:
 
-- Only Settings, Details and Search are translated so far ([translation.md](translation.md) lists what is on the catalog). Apple's catalog switches every string; here each screen moves over in its own #571 pull request, and the others still show English whatever the choice. Right-to-left layout for Arabic is a later pull request too, so Arabic reads with left-to-right layout for now.
+- Only Settings, Details, Search, the top bar and its menus, and Home's row titles and empty and loading states are translated so far ([translation.md](translation.md) lists what is on the catalog). Apple's catalog switches every string; here each screen moves over in its own #571 pull request, and the others still show English whatever the choice. Right-to-left layout for Arabic is a later pull request too, so Arabic reads with left-to-right layout for now.
 - Apple also writes the choice as the app's system language (`AppleLanguages`) and reads a change made in system settings back as this device's value. Tizen has no per-app system language, so neither direction exists here.
 
 ### Settings text
@@ -145,6 +145,18 @@ A screen builds its text when it draws, so a language change repaints Settings a
 
 The catalog files are vendored as `src/i18n/catalog/README.md` describes. English holds every key Apple ships; each other language holds only the keys `src` names, which a test holds to both sides, so one script carries no text a screen never shows.
 Only English is in `main.js`. Each other language is its own file in the package (`catalog/<tag>.js`, 21 files) and loads when it is the language shown, from the package with no network, so a language costs the script nothing. Until the file lands Settings reads English, and it draws again in the language when it arrives; a file that will not load leaves English. On the S95C the bundled languages made first paint 277 ms slower ([#595](https://github.com/Artic0din/silo-tizen/issues/595)).
+
+### Home and navigation text
+
+The top bar (Home, Movies, Series, Music, Audiobooks, For You, Calendar, and the Search and Profile buttons), its For You, library and profile menus, the sign-out confirmation, Home's `Explore all` card, and Home's empty and loading states read from the catalog with Apple's keys (silo-apple `dce56e3c`, `tvOS/Navigation/TVTopMenuBar.swift`, `TVCascadeSelector.swift`, `TVLibraryPillRow.swift`, `Screens/Home/HomeView.swift`, `Components/SectionExploreAllCard.swift`).
+The language the last answer left for this server and profile is kept in public storage (`silo.appLanguage.choice:[serverId, profileId]`, one language tag, empty for Match Device; no address, token or account) and shown from the first draw, as Apple shows `AppLanguage.displayedTag` from launch. The server's answer then confirms it.
+When an answer differs from what is shown, or Settings changes it, one path handles both (`reconcileLanguage` in `src/ui/browse.ts`): the bar is rebuilt, the screen in front is drawn once more in place with focus restored by zone and item id as a Back return does, and a Select held on a replaced control ends, so its release activates nothing. While playback, Settings or another screen covers browse, the change waits and is applied when browse returns.
+
+- Home's row titles are the server's text, translated only through the key the server sends. A section carries `title_key` (a `home.section.*` catalog key) and `title_args` (its placeholder values, `{"library": "Movies"}`) while the title is the server's own, never after an admin's rename. `serverText` shows the shown language's own translation of that key, filled from the arguments, and otherwise the server's text: English always shows it as sent, a key the language lacks never falls back to the English catalog, and a placeholder the server did not fill leaves the server's text. This is Apple's `AppLanguage.serverText`. Every `home.section.*` key ships in every language file, because no screen spells them.
+- A row with no key, such as an admin's own name or a recommendation row's subject, stays as sent.
+- The sign-out confirmation's title and message read from `shell.signOut.titleNamed`, `account.signOut.leaves` and `account.signOut.leavesRemovingServer`, with `{device}` filled as "TV". Settings, Accounts and the profile picker share that copy, so they read the same.
+- Spoken names follow Apple's: a libraries panel is `Movies libraries`, and a single library's section list is `{library} sections`. The top bar's `Main navigation` label and the Silo wordmark have no Apple key and stay English.
+- Not moved yet, still English: Home's card captions and its Aired line, the card context menu and its update-failed alert, the For You page's own text, library and search screens, and server error text. They follow in later #571 pull requests.
 
 ## Theme music
 

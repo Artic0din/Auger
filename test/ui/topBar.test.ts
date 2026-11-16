@@ -676,7 +676,7 @@ test("horizontal navigation between passive dropdowns keeps normal dwell", async
         await tv.jump(250);
         assert.equal(await tv.focused(), "series");
         assert.equal(await tv.page.locator(".skyline-selector:not(.skyline-flyout)").evaluate(node => (node as HTMLElement).hidden), false);
-        assert.equal(await tv.page.locator(".skyline-selector:not(.skyline-flyout)").getAttribute("aria-label"), "SHOWS menu");
+        assert.equal(await tv.page.locator(".skyline-selector:not(.skyline-flyout)").getAttribute("aria-label"), "Shows sections");
     } finally { await tv.page.context().close(); }
 });
 
