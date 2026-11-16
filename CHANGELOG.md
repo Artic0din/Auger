@@ -74,6 +74,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - After Mark Series Watched, More on the series page now offers Mark Series Unwatched even when a slower series read sent before the change answers last, as on Apple TV. Before, that older answer could put the series back to unwatched on screen.
+- Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
 - A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
 - Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
 - A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
@@ -81,6 +82,7 @@ All notable changes to this project are documented in this file.
 - Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
 - Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
 - Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
+- Made the detailsHeroStates, detailsFocus and titleArt UI tests wait for the answers they depend on (Home painted before a card click, season 24 re-read before Left, the title-art setting answered before Details opens), so they pass when the test server answers up to 150 ms late.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
 - Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
