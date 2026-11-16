@@ -3,6 +3,7 @@
 // and `OpenSourceAcknowledgementsView.swift` (TVOpenSourceAcknowledgementsOverlay), listing only the
 // services this app names or shows.
 
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 
 /** TMDB's approved "alt short" logo, shipped unmodified (app/third-party/README.md). */
@@ -15,7 +16,8 @@ interface Credit {
     readonly logo?: string;
 }
 
-const CREDITS: readonly Credit[] = [
+/** Built when the document opens, so it reads in the language on screen. Lines Apple words differently stay as this app words them. */
+const credits = (): readonly Credit[] => [
     // TMDB's API terms (section 3) require this notice and TMDB's logo wherever its data is shown.
     {
         name: "TMDB",
@@ -23,14 +25,12 @@ const CREDITS: readonly Credit[] = [
         notice: "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.",
         logo: TMDB_LOGO_PATH,
     },
-    { name: "IMDb", use: "Ratings shown on titles, when your server provides them." },
+    { name: "IMDb", use: translate("settings.about.creditImdb") },
     { name: "YouTube", use: "Trailer thumbnails and listings supplied by your server." },
-    { name: "Rotten Tomatoes", use: "Critic and audience scores shown on titles, when your server provides them." },
-    { name: "Common Sense Media and MDBList", use: "Suggested minimum viewer ages, when your server provides them." },
+    { name: "Rotten Tomatoes", use: translate("settings.about.creditRottenTomatoes") },
+    { name: "Common Sense Media and MDBList", use: translate("settings.about.creditAdvisoryAges") },
     { name: "Profile avatars", use: "Fun Emoji remixes Fun Emoji Set by Davis Uche, via DiceBear, under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Artwork source: https://www.figma.com/community/file/968125295144990435. Bottts Neutral uses Bottts by Pablo Stanley (https://bottts.com/), via DiceBear. Identicon and Pixel Art Neutral are by DiceBear, under CC0 1.0. Styles and terms: https://www.dicebear.com/licenses/. Generated avatars are displayed with circular or rounded cropping." },
 ];
-
-const TRADEMARK_NOTICE = "These names and logos belong to their owners. Silo is not affiliated with or endorsed by them.";
 
 const OPEN_SOURCE: readonly string[] = [
     "Silo for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/silo-tizen",
@@ -42,7 +42,7 @@ const OPEN_SOURCE: readonly string[] = [
 /** The passive document: credits first, then the trademark and open source notices. */
 export function acknowledgementsDocument(): HTMLElement {
     const document = el("div", "acknowledgements-document");
-    for (const credit of CREDITS) {
+    for (const credit of credits()) {
         const row = el("div", "acknowledgements-credit");
         if (credit.logo !== undefined) {
             // The logo replaces the name, smaller than Silo's own marks as TMDB's terms ask.
@@ -57,7 +57,7 @@ export function acknowledgementsDocument(): HTMLElement {
         if (credit.notice !== undefined) row.appendChild(el("p", "acknowledgements-detail", credit.notice));
         document.appendChild(row);
     }
-    document.appendChild(el("p", "acknowledgements-detail", TRADEMARK_NOTICE));
+    document.appendChild(el("p", "acknowledgements-detail", translate("settings.about.trademarkNotice")));
     for (const line of OPEN_SOURCE) document.appendChild(el("p", "acknowledgements-license", line));
     return document;
 }

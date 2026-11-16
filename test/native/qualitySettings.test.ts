@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BUFFERING_QUALITY_DESCRIPTION, BUFFERING_QUALITY_TITLE, BUFFERING_QUALITY_MODES, bitrateLabel, qualityFooter } from "../../src/ui/qualitySettings.ts";
+import { bufferingQualityDescription, bufferingQualityModes, bufferingQualityTitle, bitrateLabel, qualityFooter } from "../../src/ui/qualitySettings.ts";
 
 // SiloQualityPresets.bitrateLabel / ApplePlaybackQuality.formatBitrate and
 // SettingsViewModel.qualityFooterText at silo-apple 2ef3a171.
@@ -26,9 +26,9 @@ test("quality footer matches Apple for the effective resolution and bitrate cap"
 });
 
 test("buffering rows use the settings manifest's title, description and option labels", () => {
-    assert.equal(BUFFERING_QUALITY_TITLE, "Lower quality when buffering");
-    assert.equal(BUFFERING_QUALITY_DESCRIPTION, "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.");
-    assert.deepEqual(BUFFERING_QUALITY_MODES, [["never", "Never"], ["ask", "Ask first"], ["always", "Automatically"]]);
+    assert.equal(bufferingQualityTitle(), "Lower quality when buffering");
+    assert.equal(bufferingQualityDescription(), "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.");
+    assert.deepEqual(bufferingQualityModes(), [["never", "Never"], ["ask", "Ask first"], ["always", "Automatically"]]);
 });
 
 test("quality footer adds Apple's two buffering sentences only when the buffering row is shown", () => {
