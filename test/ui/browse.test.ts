@@ -2483,6 +2483,15 @@ async function settled(tv: Tv): Promise<void> {
     await afterPaint(tv);
 }
 
+/** Waits until a whole settled turn sends no request: the reads a change starts after its own answer have all been issued and answered. */
+async function quiet(tv: Tv): Promise<void> {
+    await tv.eventually(async () => {
+        const requests = tv.fake.requests.length;
+        await settled(tv);
+        return tv.fake.requests.length === requests;
+    }, "no further reads");
+}
+
 async function detailsMore(tv: Tv): Promise<void> {
     // Details' answers repaint the page, and a repaint replaces the menu button or closes the menu; open it once they have landed.
     await settled(tv);
@@ -2554,7 +2563,9 @@ browseTest("S-D2 aggregate watched reconciles visible episodes in both direction
     assert.equal(await tv.page.locator('.browse-episode .browse-watched').count(), 3);
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).waitFor();
     assert.equal(catalog.watchedEpisodes.has("episode:s1e11"), false);
     assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 0, "authoritative rows must reflect aggregate unwatch");
@@ -2637,7 +2648,9 @@ browseTest("S-D2 failed episode reconciliation retries reads without another agg
     fail = false;
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).waitFor();
     assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 0);
     assert.equal(catalog.mutations.length, 1);
@@ -2666,7 +2679,9 @@ for (const aggregate of ["series", "season"]) {
             await press(tv, "Enter");
             await detailsMore(tv);
             await tv.page.getByRole("button", { name: played ? aggregate === "series" ? "Mark Series Watched" : "Mark Season Watched" : aggregate === "series" ? "Mark Series Unwatched" : "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
             await tv.page.getByRole("button", { name: played ? aggregate === "series" ? "Mark Series Unwatched" : "Mark Season Unwatched" : aggregate === "series" ? "Mark Series Watched" : "Mark Season Watched", exact: true }).waitFor();
             assert.equal(catalog.watchedEpisodes.has(episodeId), played);
             await tv.remote(BACK);
@@ -2728,7 +2743,9 @@ browseTest("S-D2 aggregate reconciliation cannot paint after profile authority e
     const episodes = tv.fake.hold("/catalog/series/series%3As1/seasons/1/episodes", true);
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.eventually(async () => browseReads(tv, "/catalog/series/series%3As1/seasons/1/episodes").length === 3, "reconciliation read");
     await tv.page.evaluate(() => window.browseHarness.clearProfile());
     episodes.release();
@@ -3924,6 +3941,7 @@ browseTest("many libraries stay bounded; dwell and Back never commit; scope surv
     await showing(tv, "home");
     release();
     await homeDetailsRead(tv, previousReads);
+    await settled(tv);
     assert.equal(await tv.page.locator(".browse").evaluate((node) => node.scrollWidth), 1920);
     await tv.page.clock.pauseAt(await tv.page.evaluate(() => Date.now() + 1000));
     await tv.page.evaluate(() => { window.retainedNavigation = document.querySelector(".browse-nav"); });
