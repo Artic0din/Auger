@@ -30,7 +30,7 @@ class KeyedHome extends FakeHome {
     }
 }
 
-async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
+async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly cached?: string; readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new KeyedHome();
     if (options.empty === true) {
@@ -51,6 +51,7 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         await tv.jump(5000);
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
         // The profile's language answers late: Home draws in English first.
         // A hold answers one read, and Browse makes several effective reads at launch; hold the first few.
         if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
@@ -211,7 +212,7 @@ test("a language that arrives during playback shows on the top bar when browse r
     }, { stored: "de", holdLanguage: true });
 });
 
-test("a Select held on a top-bar button while the language arrives still runs when released", async () => {
+test("a Select held on a top-bar button while the language arrives is cancelled, so its release activates nothing", async () => {
     await withHome(async (tv, _settings, _catalog, _releaseLanguage, holds) => {
         // Release every held read but the language's, so the bar is complete and only the language is late.
         const reads = tv.fake.paths().filter(path => path.startsWith("GET /settings/values/effective"));
@@ -224,7 +225,35 @@ test("a Select held on a top-bar button while the language arrives still runs wh
         holds[language]?.release();
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar while Select is down");
         assert.equal(await tv.focused(), "calendar");
+        assert.equal(await tv.page.locator("[data-pressed]").count(), 0, "the redrawn bar shows no pressed button");
         await tv.page.keyboard.up("Enter");
-        await tv.page.locator('.browse[data-view="calendar"]').waitFor({ state: "visible" });
+        await tv.jump(500);
+        assert.equal(await tv.page.locator('.browse[data-view="calendar"]').count(), 0, "the press ended with the redraw: releasing it opens nothing");
+        assert.equal(await tv.focused(), "calendar");
     }, { stored: "de", holdLanguage: true });
+});
+
+test("a language kept from the last answer shows on the first draw, before the server answers", async () => {
+    await withHome(async tv => {
+        // The language read is still held: only the kept choice can have made this German.
+        // The libraries wait on the same held reads, so the bar has only its fixed tabs.
+        assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
+        const titles = await sectionTitles(tv);
+        assert.ok(titles.includes(de("home.section.continueWatching")) && titles.includes(de("home.section.recentlyAddedIn", { library: "Movies" })), titles.join(" | "));
+    }, { stored: "de", cached: "de", holdLanguage: true });
+});
+
+test("a late answer that differs from the kept language redraws the screen once and keeps focus on the same card", async () => {
+    await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
+        assert.ok((await rootTitles(tv)).includes("Calendar"), "the kept choice was Match Device, so the first draw is English");
+        const card = tv.page.locator('[data-section="recent/12"] .browse-card:not(.skyline-explore)').first();
+        const key = await card.getAttribute("data-focus");
+        assert.ok(key);
+        await card.focus();
+        assert.equal(await tv.focused(), key);
+        releaseLanguage();
+        await tv.eventually(async () => (await sectionTitles(tv)).includes(de("home.section.recentlyAddedIn", { library: "Movies" })), "German rows");
+        assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
+        assert.equal(await tv.focused(), key, "focus is restored by section and item id");
+    }, { stored: "de", cached: "", holdLanguage: true });
 });
