@@ -117,20 +117,35 @@ Off, an unsupported panel, a throwing probe, or a failed read of the HDR key the
 
 ## App language
 
-Settings › General › LANGUAGE, after Profile at Launch and before Title Pages, shows an `App Language` row that opens a picker of Match Device and English.
+Settings › General › LANGUAGE, after Profile at Launch and before Title Pages, shows an `App Language` row that opens a picker of Match Device and the languages this build ships, in Apple's order (English, then the others sorted by tag) and by Apple's names for them (Deutsch, Español, 日本語, 简体中文…).
 The footer is Apple's: `The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.`
 Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/dce56e3c), `tvOS/Screens/Settings/TVGeneralSettingsView.swift` (`languageGroup`, the `.appLanguage` picker) and `Networking/AppLanguagePreferences.swift`.
 
 - Key `ui.app_language` (settings revision 28, a language tag; null is Match Device, the default). The row appears only once the server has answered for the active profile: the capability must be available, allowed, batched and at revision 28 or later.
 - The choice is stored on the server for the profile, so every device signed into it shares it. Picking a language writes the profile value, then clears this TV's own `profile_device` row if one hid it (a 404 on that delete counts as already absent). Picking Match Device writes null. Choosing the language already stored does nothing, except over a device row, where it still saves.
 - Picking closes the picker at once and the save settles behind it, as Apple's `TVSettingsPickerSheet` does. While a save runs the picker shows `Saving the app language…` and takes no choice. A failed save restores the stored language and shows Apple's connection, unsupported or generic message under the row.
-- A language tag stored by another client that this build lacks (Español from an iPhone, for example) shows as itself in the row and the picker, with `Silo isn’t available in Español yet, so it uses the device language.`, so saving never clears it.
+- A language tag stored by another client that this build lacks (Íslenska, for example) shows as itself in the row and the picker, with `Silo isn’t available in Íslenska yet, so it uses the device language.`, so saving never clears it. Its name comes from the browser's own language data, because only the shipped languages have a fixed name.
 - Browse reads the answer when it starts (launch, and each profile or server switch), and Settings reads it again once its own load has finished, as Apple reads when Settings opens. The read waits for that load because a capability read made at the same time raced it. A launch read that missed therefore does not hide the row. Nothing is cached.
 
 Platform limits, which Apple does not have:
 
-- Tizen has no localised text yet: every string is English. Apple's picker switches a generated catalog of 3,566 strings in 22 languages, so English is the only language this build ships and picking it changes nothing on screen. The foundation is in: `src/i18n` holds the vendored catalog and the lookup, the stored choice sets the language the app shows, and every Silo request names it in `Accept-Language` (see [`src/i18n/catalog/README.md`](../src/i18n/catalog/README.md)). Moving screen text onto the catalog, right-to-left layout and the language list are the rest of #571.
+- Only Settings is translated so far. Apple's catalog switches every string; here each screen moves over in its own #571 pull request, and the others still show English whatever the choice. Right-to-left layout for Arabic is a later pull request too, so Arabic reads with left-to-right layout for now.
 - Apple also writes the choice as the app's system language (`AppleLanguages`) and reads a change made in system settings back as this device's value. Tizen has no per-app system language, so neither direction exists here.
+
+### Settings text
+
+Every string on the four Settings panes, their pickers and dialogs, the Privacy Policy and Acknowledgements screens, Connection speed and the sign-out confirmation reads from the catalog through `translate(key)`, with Apple's key for it (silo-apple `dce56e3c`, tvOS `TVGeneralSettingsView`, `TVPlaybackSettingsView`, `TVSubtitleSettingsView`, `TVSettingsView` and the label helpers they call).
+A screen builds its text when it draws, so a language change repaints Settings at once.
+
+- Apple's catalog names Apple TV in the keys whose text says "this Apple TV" (`…AppleTv`, `…Tv`). `translateTv(key)` reads them as Settings always has, "this TV", by replacing the brand in every language. A test pins the list of those keys and shows none keeps "Apple TV".
+- Apple keeps some labels out of the catalog, so Tizen does too: the subtitle Behavior values (Auto, Always, Off), the Resolution value Auto, and the units in rates. A rate keeps `Mbps` and `kbps` in English and writes its digits and decimal mark in the language's, as Apple's `LocaleFormat.localized` does (`4,5 Mbps`, `٤٨ Mbps`). Subtitle opacity writes `50 %` in German.
+- Server text with no key stays as the server sent it: option labels such as the skip intervals and the metadata and subtitle language names.
+- Lines with no Apple key to take stay English whatever the language, because they are Tizen's own wording or name something Apple's lines do not: the Settings load, save and conflict errors, the theme music and spoiler save errors, the launch-choice save and retry text, `Loading settings…`, `Check and retry`, `Reload settings`, `Use inherited default`, `Restore All Libraries`, `No supported settings in this category.`, the Playback audio picker's two scope notes, the not-offered note, `None hidden` and `Custom appearance`, the HDR footer (it leaves out Apple's Dolby Vision sentence), the skip-interval footer (Apple's names the Siri Remote), the Acknowledgements lines for TMDB, YouTube, profile avatars and open source, and the sign-out confirmation's message. Apple's own text for the Playback reset dialog counts device settings that Samsung has no row for, so the dialog uses Apple's title and its reset footer instead.
+- A key a language lacks shows the English text, as Apple's does for a key outside a language's table.
+
+The catalog files are vendored as `src/i18n/catalog/README.md` describes. English holds every key Apple ships; each other language holds only the keys `src` names, which a test holds to both sides, so one script carries no text a screen never shows.
+Shipping all 21 other languages whole would add about 5 MB to the script (1.4 MB zipped); shipping only the used keys adds 814 KB to it (main.js 1.94 to 2.75 MB, 155 KB zipped in the package).
+The remaining PRs load a language on demand instead, and then the whole catalog can ship.
 
 ## Theme music
 

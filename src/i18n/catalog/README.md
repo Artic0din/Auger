@@ -4,18 +4,19 @@
 `<tag>.json` is that repository's `catalog/<tag>.arb`, reduced to `key -> ICU message`.
 The keys are the ones Apple ships (no `x-platforms`, or one naming `apple`), because tvOS is the parity target and Apple's keys use the ICU subset `src/i18n/icu.ts` reads.
 Metadata and Info.plist prompts are left out, and a message outside that subset stops the sync.
-Today only `en.json` is vendored: 3,571 messages, 247 KB (57 KB gzipped).
+`en.json` holds all 3,571 messages (247 KB, 57 KB gzipped).
+Each of the other 21 languages (Apple's list) holds only the keys `src` names as strings, 226 today at 16 to 26 KB each: the whole catalog would add about 5 MB to the one script, and a key no screen shows is dead weight there. A test holds each file to exactly the keys in use, so a screen that starts using a key needs a new sync, and one that stops using it a new sync too.
 Phone-only text is in it, because `x-platforms` names `apple` for all Apple devices; trim it by key prefix if the size ever matters.
 
 Refresh at an explicit commit or release tag, never a moving branch:
 
 ```sh
 npm run sync:translations -- <silo-translations commit or tag>
-npm run sync:translations -- <commit or tag> --languages en,es,de
+npm run sync:translations -- <commit or tag> --languages en,ar,cs,da,de,es,fi,fr,hr,it,ja,ko,nb,nl,pl,pt-BR,ru,sv,tr,uk,zh-Hans,zh-Hant
 ```
 
-Then add each new language to `SHIPPED_LANGUAGES` (`src/i18n/language.ts`) and `CATALOGS` (`src/i18n/translate.ts`), and run `npm test`.
+`SHIPPED_LANGUAGES` (`src/i18n/language.ts`) lists them in Apple's order, English first and the rest sorted by tag, with the name Apple shows for each; `CATALOGS` (`src/i18n/translate.ts`) imports the files. Add a new language to both, and run `npm test`.
 A test holds the shipped list to the files here.
-Nothing in `src` imports a catalog file except `translate.ts`, so a build that shows no catalog text carries none of it.
+Nothing in `src` imports a catalog file except `translate.ts`.
 
 How screens use it is in [docs/settings.md](../../../docs/settings.md#app-language).

@@ -5,10 +5,32 @@
 /** The language the catalog is written in, and the fallback for a key another language lacks. */
 export const SOURCE_LANGUAGE = "en";
 /**
- * The languages with a catalog file in `catalog/`, source language first. Apple's list is the bundle's
- * localizations, never a hand-kept list; a test holds this to the files.
+ * The languages with a catalog file in `catalog/`, in the order Apple lists them: the source language first,
+ * then the others sorted by tag (`AppLanguage.shipped`). Apple's list is the bundle's localizations, never a
+ * hand-kept list; a test holds this to the files.
  */
-export const SHIPPED_LANGUAGES: readonly string[] = [SOURCE_LANGUAGE];
+export const SHIPPED_LANGUAGES: readonly string[] = [SOURCE_LANGUAGE, "ar", "cs", "da", "de", "es", "fi", "fr", "hr", "it", "ja", "ko", "nb", "nl", "pl", "pt-BR", "ru", "sv", "tr", "uk", "zh-Hans", "zh-Hant"];
+
+/**
+ * Each shipped language's name in itself, as Apple's `AppLanguage.endonym` prints it. A fixed table, so the
+ * list reads the same whatever names the TV's Chromium carries.
+ */
+const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
+    en: "English", ar: "العربية", cs: "Čeština", da: "Dansk", de: "Deutsch", es: "Español", fi: "Suomi", fr: "Français", hr: "Hrvatski", it: "Italiano", ja: "日本語", ko: "한국어", nb: "Norsk bokmål",
+    nl: "Nederlands", pl: "Polski", "pt-BR": "Português (Brasil)", ru: "Русский", sv: "Svenska", tr: "Türkçe", uk: "Українська", "zh-Hans": "简体中文", "zh-Hant": "繁體中文",
+};
+
+/** A language's own name, capitalised for a list; the tag itself when it has no name. */
+export function languageEndonym(tag: string): string {
+    const known = LANGUAGE_NAMES[tag];
+    if (known !== undefined) return known;
+    try {
+        const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
+        return name === undefined ? tag : name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
+    } catch {
+        return tag;
+    }
+}
 
 /** Apple's `AppLanguage.match` maps these to Norwegian Bokmål, the one Norwegian the catalog ships. */
 const LANGUAGE_ALIASES: Readonly<Record<string, string>> = { no: "nb", nn: "nb" };

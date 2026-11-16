@@ -143,6 +143,10 @@ test("every vendored English message parses and formats", () => {
     }
 });
 
+test("the shipped languages are Apple's: English, then the rest sorted by tag", () => {
+    assert.deepEqual(SHIPPED_LANGUAGES, ["en", "ar", "cs", "da", "de", "es", "fi", "fr", "hr", "it", "ja", "ko", "nb", "nl", "pl", "pt-BR", "ru", "sv", "tr", "uk", "zh-Hans", "zh-Hant"]);
+});
+
 test("the shipped languages are the catalog files, English first", () => {
     const files = readdirSync(new URL("../../src/i18n/catalog/", import.meta.url)).filter(name => name.endsWith(".json")).map(name => name.slice(0, -".json".length)).sort();
     assert.deepEqual([...SHIPPED_LANGUAGES].sort(), files);

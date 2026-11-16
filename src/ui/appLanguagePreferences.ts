@@ -3,21 +3,19 @@
 // server for the profile; picking one also clears this TV's own value so the choice takes effect here.
 // Nothing is cached: the row shows only an answer read from the server for the active profile.
 // The stored choice sets the language the app shows (src/i18n/language.ts), which every request names in
-// Accept-Language. Tizen has no per-app system language (Apple also writes `AppleLanguages`), and the only
-// shipped language is English, so the choice changes no on-screen text yet (see docs/settings.md).
+// Accept-Language and the text of the screens that have moved onto the catalog. Tizen has no per-app system
+// language (Apple also writes `AppleLanguages`) (see docs/settings.md).
 import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
-import { matchShipped, SHIPPED_LANGUAGES, setAppLanguage } from "../i18n/language.ts";
+import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage } from "../i18n/language.ts";
+import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
 
 /** Settings manifest revision that introduced the key (SettingKeyRevisions.swift). */
 export const APP_LANGUAGE_INTRODUCED_IN = 28;
-const MATCH_DEVICE = "Match Device";
-const FOOTER = "The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.";
-export const APP_LANGUAGE_SAVING = "Saving the app language…";
 
 export interface AppLanguageChoice {
     /** Null: Match Device. */
@@ -39,24 +37,14 @@ export function appLanguageSettingsSupported(capability: SettingsCapabilities | 
         && capability.manifestRevision >= APP_LANGUAGE_INTRODUCED_IN;
 }
 
-/** A language's own name, capitalised for a list ("English", "Español"); the tag itself when it has no name. */
-export function languageEndonym(tag: string): string {
-    try {
-        const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
-        return name === undefined ? tag : name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-    } catch {
-        return tag;
-    }
-}
-
 function isShipped(tag: string): boolean {
     return matchShipped(tag) !== undefined;
 }
 
 function writeFailure(error: unknown): string {
-    if (error instanceof ApiError && (error.failure.kind === "network" || error.failure.kind === "timeout")) return "Couldn't save the app language. Check the connection and try again.";
-    if (error instanceof ApiError && (error.status === 404 || error.status === 501 || error.problemId === "unknown_setting" || error.problemId === "server_upgrade_required" || error.problemId === "scope_not_allowed")) return "This server can't save the app language.";
-    return "The server didn't save the app language. Try again.";
+    if (error instanceof ApiError && (error.failure.kind === "network" || error.failure.kind === "timeout")) return translate("settings.appLanguage.saveFailedConnection");
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501 || error.problemId === "unknown_setting" || error.problemId === "server_upgrade_required" || error.problemId === "scope_not_allowed")) return translate("settings.appLanguage.saveUnsupported");
+    return translate("settings.appLanguage.saveFailed");
 }
 
 export class AppLanguagePreferences {
@@ -91,15 +79,15 @@ export class AppLanguagePreferences {
     get options(): readonly AppLanguageOption[] {
         const stored = this.currentChoice?.tag;
         const tags = stored !== undefined && stored !== null && !SHIPPED_LANGUAGES.includes(stored) ? [...SHIPPED_LANGUAGES, stored] : SHIPPED_LANGUAGES;
-        return [{ tag: null, label: MATCH_DEVICE }, ...tags.map(tag => ({ tag, label: languageEndonym(tag) }))];
+        return [{ tag: null, label: translate("settings.appLanguage.option.matchDevice") }, ...tags.map(tag => ({ tag, label: languageEndonym(tag) }))];
     }
     get selectedLabel(): string {
         const tag = this.currentChoice?.tag;
-        return tag === undefined || tag === null ? MATCH_DEVICE : languageEndonym(tag);
+        return tag === undefined || tag === null ? translate("settings.appLanguage.option.matchDevice") : languageEndonym(tag);
     }
     get footer(): string {
         const tag = this.currentChoice?.tag;
-        return tag !== undefined && tag !== null && !isShipped(tag) ? `Silo isn’t available in ${languageEndonym(tag)} yet, so it uses the device language.` : FOOTER;
+        return tag !== undefined && tag !== null && !isShipped(tag) ? translate("settings.appLanguage.unshippedFooter", { language: languageEndonym(tag) }) : translate("settings.appLanguage.footer");
     }
 
     subscribe(listener: () => void): () => void {

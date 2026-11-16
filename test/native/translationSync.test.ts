@@ -2,7 +2,7 @@
 // because tvOS is the parity target and Apple's keys use the shared ICU subset.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scopeCatalog } from "../../scripts/sync-translations.ts";
+import { scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
 
 const arb = {
     "@@locale": "en",
@@ -30,4 +30,12 @@ test("a language file has no metadata, so its keys are scoped by the English key
 
 test("a scoped message outside the shared ICU subset stops the sync", () => {
     assert.throws(() => scopeCatalog({ "a.bad": "{n, select, a {x} other {y}}", "@a.bad": { description: "d" } }), /a\.bad/);
+});
+
+test("a translation keeps only the keys source files name as strings, so one script carries no dead text", () => {
+    const keys = new Set(["common.cancel", "settings.title", "settingsManifest.ui.app_language.label", "never.used"]);
+    const used = usedKeys([`translate("common.cancel"); const t = 'settings.title';`, "title: `settingsManifest.ui.app_language.label`, other: \"not.a.key\""], keys);
+    assert.deepEqual([...used].sort(), ["common.cancel", "settings.title", "settingsManifest.ui.app_language.label"]);
+    const scoped = scopeCatalog({ "common.cancel": "Abbrechen", "settings.title": "Einstellungen", "never.used": "x" }, used);
+    assert.deepEqual(scoped, { "common.cancel": "Abbrechen", "settings.title": "Einstellungen" });
 });

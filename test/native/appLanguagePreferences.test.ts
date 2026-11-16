@@ -4,11 +4,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../../src/contracts/v2/settings.ts";
 import { setAppLanguage, shownLanguage } from "../../src/i18n/language.ts";
+import { translate } from "../../src/i18n/translate.ts";
 import { APP_LANGUAGE_INTRODUCED_IN, AppLanguagePreferences, appLanguageSettingsSupported } from "../../src/ui/appLanguagePreferences.ts";
 import { settle } from "./support/clock.ts";
 import { FakeSettings } from "./support/fakeSettings.ts";
 import { problem } from "./support/fakeSilo.ts";
 import { connected, signIn } from "./support/harness.ts";
+
+/** silo-apple `AppLanguage.shipped` (the development language, then the rest sorted by tag) with `AppLanguage.endonym`'s name for each, as Foundation prints them. */
+const APPLE_LANGUAGES: readonly (readonly [string, string])[] = [
+    ["en", "English"], ["ar", "العربية"], ["cs", "Čeština"], ["da", "Dansk"], ["de", "Deutsch"], ["es", "Español"], ["fi", "Suomi"], ["fr", "Français"],
+    ["hr", "Hrvatski"], ["it", "Italiano"], ["ja", "日本語"], ["ko", "한국어"], ["nb", "Norsk bokmål"], ["nl", "Nederlands"], ["pl", "Polski"],
+    ["pt-BR", "Português (Brasil)"], ["ru", "Русский"], ["sv", "Svenska"], ["tr", "Türkçe"], ["uk", "Українська"], ["zh-Hans", "简体中文"], ["zh-Hant", "繁體中文"],
+];
 
 function capability(revision: number, extras: Partial<SettingsCapabilities> = {}): SettingsCapabilities {
     return { apiVersion: 1, revision: "opaque", manifestRevision: revision, state: "available", allowed: true, scopes: ["profile", "profile_device"], supportsBatchedEffective: true, supportsAtomicShortcuts: true, clientFamilies: ["tv"], ...extras };
@@ -29,6 +37,7 @@ const profilePath = `/settings/values/${APP_LANGUAGE_KEY}?scope=profile`;
 const devicePath = `/settings/values/${APP_LANGUAGE_KEY}?scope=profile_device`;
 
 async function preferences(revision = 28) {
+    setAppLanguage(null);
     const h = await connected();
     await signIn(h);
     const profile = (await h.core.profiles.list())[0];
@@ -47,7 +56,7 @@ test("a profile with no language shows Match Device, with Match Device and Engli
         assert.equal(h.store.isOffered, true);
         assert.deepEqual(h.store.currentChoice, { tag: null, isDeviceValue: false });
         assert.equal(h.store.selectedLabel, "Match Device");
-        assert.deepEqual(h.store.options, [{ tag: null, label: "Match Device" }, { tag: "en", label: "English" }]);
+        assert.deepEqual(h.store.options, [{ tag: null, label: "Match Device" }, ...APPLE_LANGUAGES.map(([tag, label]) => ({ tag, label }))]);
         assert.equal(h.store.footer, "The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.");
     } finally { h.store.stop(); }
 });
@@ -100,21 +109,26 @@ test("this TV's own value shows, and picking a language replaces it with the pro
 test("a language another client stored that this build lacks shows as itself, with Apple's footer", async () => {
     const h = await preferences();
     try {
-        h.settings.profile().set(APP_LANGUAGE_KEY, "es");
+        h.settings.profile().set(APP_LANGUAGE_KEY, "is");
         await h.store.refresh();
-        assert.equal(h.store.selectedLabel, "Español");
-        assert.deepEqual(h.store.options.map(option => option.tag), [null, "en", "es"], "re-saving never clears it");
-        assert.equal(h.store.footer, "Silo isn’t available in Español yet, so it uses the device language.");
+        assert.equal(h.store.selectedLabel, "Íslenska");
+        assert.deepEqual(h.store.options.map(option => option.tag), [null, ...APPLE_LANGUAGES.map(([tag]) => tag), "is"], "re-saving never clears it");
+        assert.equal(h.store.footer, "Silo isn’t available in Íslenska yet, so it uses the device language.");
     } finally { h.store.stop(); }
 });
 
-test("a regional English tag counts as shipped", async () => {
+test("a shipped language shows by Apple's name for it, and a regional tag counts as shipped", async () => {
     const h = await preferences();
     try {
+        h.settings.profile().set(APP_LANGUAGE_KEY, "de");
+        await h.store.refresh();
+        assert.equal(h.store.selectedLabel, "Deutsch");
+        assert.equal(h.store.footer, translate("settings.appLanguage.footer", undefined, "de"), "the row reads in the language it picked");
+        assert.notEqual(h.store.footer, translate("settings.appLanguage.footer", undefined, "en"));
         h.settings.profile().set(APP_LANGUAGE_KEY, "en-GB");
         await h.store.refresh();
-        assert.equal(h.store.footer.startsWith("The language of Silo"), true);
-        assert.deepEqual(h.store.options.map(option => option.tag), [null, "en", "en-GB"], "kept as stored, as Apple lists it");
+        assert.equal(h.store.footer, translate("settings.appLanguage.footer", undefined, "en"));
+        assert.deepEqual(h.store.options.map(option => option.tag), [null, ...APPLE_LANGUAGES.map(([tag]) => tag), "en-GB"], "kept as stored, as Apple lists it");
     } finally { h.store.stop(); }
 });
 
