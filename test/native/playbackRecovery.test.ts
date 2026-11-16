@@ -631,6 +631,32 @@ test("a pending preparation cannot play before foreground authority is revalidat
     r.controller.destroy();
 });
 
+// The start's own reads (markers, versions) may answer after the app is hidden and shown again.
+for (const stage of ["foreground validation", "AVPlay restore"] as const) test(`a late start read cannot hide Restoring during ${stage}`, async () => {
+    const r = await rig();
+    const markers = r.h.fake.hold("/markers/files/42", true);
+    const versions = r.h.fake.hold("/catalog/items/movie-1/versions", true);
+    await play(r);
+    r.controller.suspend();
+    const gate = stage === "foreground validation" ? r.h.fake.hold("/playback/capabilities", true) : undefined;
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    if (gate === undefined) {
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 1, "restore is waiting on AVPlay");
+    }
+    markers.release();
+    versions.release();
+    await r.h.clock.advance(0);
+    assert.deepEqual([last(r.views).phase, last(r.views).phase === "loading" ? (last(r.views) as { detail?: string }).detail : undefined], ["loading", "restoring"]);
+    gate?.release();
+    await r.h.clock.advance(0);
+    if (gate !== undefined) assert.equal(last(r.views).phase, "loading", "AVPlay restore still pending");
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
+    r.controller.destroy();
+});
+
 test("an obsolete restore cannot resume through a newer held authority check", async () => {
     const r = await rig();
     await play(r);

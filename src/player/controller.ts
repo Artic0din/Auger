@@ -454,6 +454,8 @@ interface Attempt {
     suspendedReady: boolean;
     deferredOpen: boolean;
     restoring: boolean;
+    /** restoreAsync was issued and has not answered; revalidation already cleared `restoring`. */
+    restoreOpen: boolean;
     /** The next open is a reconnect handoff and should say so. */
     resuming: boolean;
     recovery: PlaybackRecovery | undefined;
@@ -615,6 +617,7 @@ export class PlaybackController implements PlayerControls {
             suspendedReady: false,
             deferredOpen: false,
             restoring: false,
+            restoreOpen: false,
             resuming: false,
             recovery: undefined,
             recoveryPending: false,
@@ -3238,9 +3241,11 @@ export class PlaybackController implements PlayerControls {
         const generation = attempt.resumeGeneration;
         const transport = this.transport;
         this.showLoading(attempt, "restoring");
-        return new Promise((resolve) => {
+        attempt.restoreOpen = true;
+        return new Promise<boolean>((resolve) => {
             try {
                 restore.call(this.deps.avplay, url, resumeMs, false, () => {
+                    attempt.restoreOpen = false;
                     if (transport !== this.transport) {
                         resolve(false);
                         return;
@@ -3279,7 +3284,7 @@ export class PlaybackController implements PlayerControls {
             } catch {
                 resolve(false);
             }
-        });
+        }).finally(() => { attempt.restoreOpen = false; });
     }
 
     private urlWithToken(plan: PlaybackPlan, token: string): string | undefined {
@@ -3364,7 +3369,8 @@ export class PlaybackController implements PlayerControls {
 
     private showPlayback(attempt: Attempt): void {
         const plan = attempt.plan;
-        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined) {
+        // A late read must not draw over the Restoring overlay; the restore itself draws the view when it ends.
+        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined || attempt.restoring || attempt.restoreOpen) {
             return;
         }
         const frozen = attempt.busy && !attempt.reporting;

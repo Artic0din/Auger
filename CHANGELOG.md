@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Returning to a paused or playing video now keeps the Restoring message up until the video is back, even when the server answers an earlier request late.
 - Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
 - A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
 - Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.
