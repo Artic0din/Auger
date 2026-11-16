@@ -5,12 +5,14 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { translate, translateTv } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
+registerSourceCatalogs();
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 
@@ -37,10 +39,11 @@ async function withTv(revision: number, body: (tv: Tv, settings: FakeSettings) =
     } finally { await tv.page.context().close(); }
 }
 
-async function openGeneral(tv: Tv, anchor = '[data-focus="app-language"]'): Promise<void> {
+/** `settings` is the profile menu's name for Settings in the shown language. */
+async function openGeneral(tv: Tv, anchor = '[data-focus="app-language"]', settings = "Settings"): Promise<void> {
     await tv.page.locator('[data-focus="profiles"]').focus();
     await tv.page.keyboard.press("Enter");
-    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.getByRole("menuitem", { name: settings, exact: true }).click();
     await tv.page.locator(anchor).waitFor();
 }
 
@@ -215,7 +218,7 @@ test("picking German shows Settings in German, and Match Device reads back in En
 test("no Settings pane or picker shows a catalog key as text in German", async () => {
     const keyShaped = /\b(?:settings|settingsManifest|player|common|accounts|servers|detail|shell)\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*/;
     await withTv(28, async tv => {
-        await openGeneral(tv);
+        await openGeneral(tv, undefined, translate("menu.settings", undefined, "de"));
         const panes = tv.page.locator(".settings-panes");
         await tv.eventually(async () => await panes.locator("h1.browse-title").innerText() === "Einstellungen", "German is shown");
         const seen: string[] = [];

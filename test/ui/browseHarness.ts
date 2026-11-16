@@ -10,6 +10,7 @@ import { browseCache, clearBrowseCache } from "../../src/session/browseCache.ts"
 import { operations } from "../../src/api/operations.ts";
 import type { ThemeAudioOutput } from "../../src/ui/themeMusic.ts";
 import { ExperimentalFeatures, type ExperimentalFeature } from "../../src/session/experimentalFeatures.ts";
+import { appLanguageCacheKey } from "../../src/ui/appLanguagePreferences.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
 
 export interface BrowseHarness {
@@ -27,6 +28,8 @@ export interface BrowseHarness {
     resume(): void;
     destroy(): void;
     clearResponseCache(): void;
+    /** Keeps a language choice for the selected profile, as an earlier launch's answer left it ("" is Match Device). */
+    seedAppLanguage(choice: string): void;
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -157,6 +160,11 @@ const harness: BrowseHarness = {
         browse?.destroy();
     },
     clearResponseCache() { clearBrowseCache(publicStorage); },
+    seedAppLanguage(choice) {
+        const profileId = connected().session.activeProfile?.id;
+        if (profileId === undefined) throw new Error("missing active profile");
+        publicStorage.setItem(appLanguageCacheKey(connected().server.serverId, profileId), choice);
+    },
     cacheOffline(route = "home") {
         const server = connected();
         const session = server.session;

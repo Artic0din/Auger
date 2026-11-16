@@ -9,12 +9,14 @@
 //
 // English keeps every key. Another language keeps only the keys `src` names as strings: they all ship in
 // one script until the catalogs load on demand, and a key a screen does not show is dead weight there.
+// The exception is text the server names by key (`title_key`): no screen spells those keys, so every key under
+// SERVER_KEY_PREFIXES stays.
 //
 // Usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]
 //   --languages   the language files to vendor (default: every shipped language). Each must be in locales.json.
 //
-// Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts) and CATALOGS
-// (src/i18n/translate.ts), then run npm test: a test holds the shipped list to the files.
+// Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts), then run npm test: the build
+// packages its file as catalog/<tag>.js, and a test holds the shipped list to the files.
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +26,8 @@ import { SHIPPED_LANGUAGES } from "../src/i18n/language.ts";
 const REPOSITORY = "Silo-Server/silo-translations";
 const SCOPE_PLATFORM = "apple";
 const EXCLUDED_PREFIX = "apple.infoPlist.";
+/** Home section titles: the server sends the key (`home.section.recentlyAddedIn`) with the title it wrote. */
+const SERVER_KEY_PREFIXES: readonly string[] = ["home.section."];
 
 type ArbEntry = string | { readonly description?: string; readonly "x-platforms"?: readonly string[] };
 
@@ -55,9 +59,10 @@ export function scopeCatalog(arb: Readonly<Record<string, ArbEntry>>, englishKey
 
 const KEY_IN_SOURCE = /["'`]([A-Za-z][\w]*(?:\.[\w]+)+)["'`]/g;
 
-/** The catalog keys a source text names as a string. A name that is not a catalog key is ignored. */
+/** The catalog keys a source text names as a string, and the keys the server names. A name that is not a catalog key is ignored. */
 export function usedKeys(sources: readonly string[], catalogKeys: ReadonlySet<string>): Set<string> {
     const used = new Set<string>();
+    for (const key of catalogKeys) if (SERVER_KEY_PREFIXES.some(prefix => key.startsWith(prefix))) used.add(key);
     for (const source of sources) {
         for (const [, name] of source.matchAll(KEY_IN_SOURCE)) if (name !== undefined && catalogKeys.has(name)) used.add(name);
     }

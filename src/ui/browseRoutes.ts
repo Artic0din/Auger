@@ -17,7 +17,8 @@ import { detailsLoadingView } from "./detailsLoading.ts";
 import { browseCardDestination, type SearchFilter, type EpisodeSelection, type PlayRequest, type SeriesContext, type SeriesLine, type DetailSeed } from "./browseModel.ts";
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
-import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
+import { translate } from "../i18n/translate.ts";
+import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
@@ -171,9 +172,9 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     }
     switch (current.kind) {
         case "home": {
-            if (current.data === undefined) return pageLoadingView("home:loading", "Loading home");
+            if (current.data === undefined) return pageLoadingView("home:loading", translate("home.loading"));
             const view = homeView(current.data.libraries, current.data.sections, context, {
-                expand: section => handlers.push(newRoute({ kind: "homeSection", id: section.id, title: section.title, continuing: section.sectionType === "continue_watching", pages: newPages(), pendingIndex: undefined })),
+                expand: section => handlers.push(newRoute({ kind: "homeSection", id: section.id, title: sectionTitle(section), continuing: section.sectionType === "continue_watching", pages: newPages(), pendingIndex: undefined })),
                 search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
                 library: (library) => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,

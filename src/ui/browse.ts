@@ -57,6 +57,8 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { textLanguage } from "../i18n/translate.ts";
+import { heldSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
@@ -74,6 +76,7 @@ import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
 import { avatarReference, avatarText } from "./profilePicker.ts";
 import { ExperimentalFeatures } from "../session/experimentalFeatures.ts";
 import { WatchPartyHub, watchPartyApi } from "./watchPartyHub.ts";
+import { translate } from "../i18n/translate.ts";
 import { watchPartyScreen } from "./watchParty.ts";
 import type { MediaChoice } from "./watchPartyChoice.ts";
 
@@ -264,9 +267,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     input.type = "search";
     input.spellcheck = false;
     input.autocomplete = "off";
-    input.placeholder = "Search movies and series...";
+    input.placeholder = translate("search.fieldPrompt.video");
     input.setAttribute("data-focus", "query");
-    const searchLabel = el("label", "browse-label", "Search titles");
+    const searchLabel = el("label", "browse-label", input.placeholder);
     searchLabel.htmlFor = input.id;
     // Kept across renders so the field, and the TV keyboard open on it, are never detached.
     const searchField = el("div", "search-field");
@@ -283,7 +286,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     window.addEventListener("resize", keyboardUp);
     keyboardUp();
     // Apple hides Search's navigation bar (SearchView.swift:65-69); the title stays only as the page's hidden heading.
-    const searchHead = [el("h1", "browse-title", "Search"), searchLabel, searchField];
+    const searchTitle = el("h1", "browse-title", translate("search.title"));
+    const searchHead = [searchTitle, searchLabel, searchField];
 
     let stack: Route[] = [];
     const seriesSeasons = new Map<string, number>();
@@ -431,8 +435,28 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
-    const languagePrefs = new AppLanguagePreferences(session);
+    // The language the last answer left for this server and profile is shown from the first draw; the server's answer then confirms it.
+    const languagePrefs = new AppLanguagePreferences(session, undefined, options.publicStorage === undefined ? undefined : { storage: options.publicStorage, scope: server.server.serverId });
+    languagePrefs.applyCached();
     void languagePrefs.refresh();
+    let paintedLanguage = textLanguage();
+    /**
+     * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
+     * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
+     * return does. `redraw` is false where the screen is about to be shown anyway. A redraw waits, as it does while browse is covered, while
+     * a Select is held or a card or request menu is open, so no press or menu is replaced under the viewer; the next key release runs it.
+     */
+    const reconcileLanguage = (redraw: boolean): void => {
+        if (textLanguage() === paintedLanguage) return;
+        if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
+        paintedLanguage = textLanguage();
+        const focus = host.focused();
+        shell.relabel();
+        if (redraw) render(focus);
+    };
+    // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
+    const reconcileAfterKey = (): void => { if (textLanguage() === paintedLanguage) return; window.setTimeout(() => { if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true); }, 0); };
+    document.addEventListener("keyup", reconcileAfterKey);
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
         const grant = await session.call({ ...operations.themePlayback(ownerId, themeId, themeAudioFormats(probe)), profileScoped: true });
@@ -855,6 +879,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSearch();
         cancelCalendarDay();
         document.removeEventListener("keydown", recordKey, true);
+        document.removeEventListener("keyup", reconcileAfterKey);
         document.removeEventListener("pointerdown", recordInput, true);
         document.removeEventListener("focus", recordFocus, true);
         stack = [];
@@ -2223,6 +2248,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             root.appendChild(container);
             container.hidden = false;
             host.listen();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) showRoute(current, focus ?? tabFocus(current));
         });
@@ -2276,7 +2302,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         container.classList.toggle("watch-party-scene", current.kind === "watchParty");
         container.classList.toggle("search-scene", current.kind === "search");
         // SearchView.searchPrompt: the field names audiobooks only while they take part in Search.
-        if (current.kind === "search") input.placeholder = audiobooksInSearch() ? "Search movies, series, audiobooks..." : "Search movies and series...";
+        if (current.kind === "search") {
+            const prompt = translate(audiobooksInSearch() ? "search.fieldPrompt.audiobooks" : "search.fieldPrompt.video");
+            input.placeholder = prompt;
+            searchLabel.textContent = prompt;
+            searchTitle.textContent = translate("search.title");
+        }
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
         container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
         if (browsing) activeBrowse = current.pages;
@@ -2852,6 +2883,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
+                reconcileLanguage(false);
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2917,6 +2949,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
+    languagePrefs.subscribe(() => {
+        if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true);
+    });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
     translations.cards.subscribe(() => { if (!torn) shell.refreshTranslation(); });
@@ -2966,6 +3001,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             invalidateCalendar();
             host.listen();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) {
                 showRoute(current, current.focus);

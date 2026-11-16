@@ -7,11 +7,17 @@ import type { SeriesEpisodes } from "./seriesEpisodes.ts";
 import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { defaultArtwork } from "./defaultArtwork.ts";
 import { orderedEpisodeSeasons } from "./episodeRail.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
+
+/** "Specials" or "Season N" in the shown language, the name Apple gives a season that has no title of its own. */
+export function seasonName(seasonNumber: number): string {
+    return seasonNumber === 0 ? translate("detail.specials") : translate("detail.season", { number: integerText(seasonNumber) });
+}
 
 /** TVSeriesDetailView.seasonLabel: the season's title, else "Specials" or "Season N". */
 export function seasonLabel(season: Season): string {
-    if (season.title.trim() !== "") return season.title;
-    return season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`;
+    return season.title.trim() !== "" ? season.title : seasonName(season.seasonNumber);
 }
 
 /** SeriesEpisodeWindow.orderedSeasons: by number, Specials last, one pill per number. */
@@ -85,28 +91,28 @@ export function seriesEpisodesView(state: SeriesEpisodes, context: ViewContext, 
     if (state.windowReachesSeriesStart) row.dataset.windowOrigin = "series-start";
     if (state.entryEpisode !== undefined) row.dataset.scrollEntry = state.entryEpisode;
     const section = el("section", "home-section details-series-rail");
-    section.setAttribute("aria-label", "Episodes");
+    section.setAttribute("aria-label", translate("detail.episodes.title"));
     const zones: Zone[] = [{ id: "seasons", layout: "row", items: seasons, get entry() { return `season:${state.seasonNumber}`; } }, { id: "episodes", layout: "row", items: episodes, get entry() { return state.entryEpisode; } }];
     const waiting = episodes.length === 0 && !state.failed && !state.interrupted && (state.episodes === undefined ? state.seasons.length > 0 : state.loading);
     section.appendChild(waiting ? episodePlaceholders() : row);
     if (state.failed || state.interrupted) {
-        const retry = actionButton("retry-episodes", "Retry", () => state.retry());
+        const retry = actionButton("retry-episodes", translate("common.retry"), () => state.retry());
         if (state.failed) {
             const notice = el("div", episodes.length > 0 ? "details-episode-error" : "details-episode-error details-episode-error-empty");
             notice.setAttribute("role", "alert");
-            notice.append(el("span", "", "Couldn't load episodes."), retry.element);
+            notice.append(el("span", "", translate("detail.error.loadEpisodes")), retry.element);
             section.appendChild(notice);
         } else section.append(zoneNode("browse-actions", [retry]));
         zones.push({ id: "episode-retry", layout: "row", items: [retry] });
     } else if (!waiting && episodes.length === 0) {
         // TVSeriesDetailView.swift:831-835: 22pt secondary text in the rail's reserved height.
-        const empty = el("p", "details-episodes-empty", "No episodes available");
+        const empty = el("p", "details-episodes-empty", translate("detail.episodes.empty"));
         empty.setAttribute("role", "status");
         section.appendChild(empty);
     }
     // TVSeriesDetailView.swift:590-592: 18pt secondary text, no button. Reaching the rail edge again retries.
     if (state.boundaryFailed) {
-        const notice = el("p", "details-edge-error", "Couldn't load more episodes. Move away and back to retry.");
+        const notice = el("p", "details-edge-error", translate("detail.episodes.loadMoreFailed"));
         notice.setAttribute("role", "status");
         section.appendChild(notice);
     }
@@ -134,7 +140,7 @@ function episodeCard(episode: Episode, context: ViewContext): FocusItem {
     if (position !== undefined && duration !== undefined && duration > 0 && position > 0 && position < duration) {
         element.firstElementChild?.appendChild(thumbnailProgress(position / duration));
     }
-    if (episode.played) { const badge = el("span", "browse-watched"); badge.setAttribute("aria-label", "Watched"); element.firstElementChild?.appendChild(badge); }
+    if (episode.played) { const badge = el("span", "browse-watched"); badge.setAttribute("aria-label", translate("detail.watched")); element.firstElementChild?.appendChild(badge); }
     // Anchoring on mouse-down moves the button away before mouse-up can click it.
     element.addEventListener("mousedown", event => event.preventDefault());
     element.addEventListener("click", () => {
