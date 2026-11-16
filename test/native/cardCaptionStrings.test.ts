@@ -8,6 +8,9 @@ import { durationText } from "../../src/i18n/format.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { resolveMessage, type Catalogs, type MessageKey } from "../../src/i18n/translate.ts";
 import { homeCaption, marqueeMeta, runtimeText } from "../../src/ui/cardPresentation.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const file = (tag: string): Record<string, string> => JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
 /** What Foundation's `Duration.UnitsFormatStyle` printed for 5, 45, 60, 102 and 135 minutes in each shipped language (Swift 6, macOS). */

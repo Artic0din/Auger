@@ -7,11 +7,14 @@ import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { selectLibraryMode } from "./support/library.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });

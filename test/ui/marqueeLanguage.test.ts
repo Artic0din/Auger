@@ -5,8 +5,11 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { launchBrowser, openTv } from "./support/tv.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });

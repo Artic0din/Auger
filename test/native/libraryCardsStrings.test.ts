@@ -12,6 +12,9 @@ import { resolveMessage, translate, type Catalogs, type MessageKey } from "../..
 import { cardYears, homeCaption, marqueeMeta, runtimeText } from "../../src/ui/cardPresentation.ts";
 import { episodeAirDate, episodeRuntime } from "../../src/ui/episodeCaption.ts";
 import { DEFAULT_FILTER, directionLabel, facetSummary, facetTitle, FACETS, options, sortKeysFor, sortLabel, SORT_KEYS, toggled } from "../../src/ui/libraryBrowse.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const file = (tag: string): Record<string, string> => JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
 

@@ -4,6 +4,9 @@ import { decodeRecommendations, decodeRecommendationRow } from "../../src/contra
 import { operations } from "../../src/api/operations.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { sectionTitle } from "../../src/ui/browseViews.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const card = { content_id: "movie:1", type: "movie", title: "A film" };
 test("recommendations share catalog cards, omit empty rows and stably put For You first", () => {
