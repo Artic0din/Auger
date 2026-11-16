@@ -103,11 +103,11 @@ export class DetailsState {
         const episodes = this.series?.episodes;
         return (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id;
     }
-    /** TVSeriesDetailView.displayedEpisode: a visit's episode the loaded season does not list shows the suggested episode instead. */
+    /** TVSeriesDetailView.displayedEpisode: a visit's episode the loaded season does not list shows the suggested episode instead; an empty season has none to show. */
     private get entryUnlisted(): boolean {
         // The selected season's list, not the rail: the rail also holds prefetched neighbours, and the hero reads this list.
         const episodes = this.series?.episodes;
-        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && episodes !== undefined && !episodes.some(episode => episode.id === this.focusedEpisodeId);
+        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && episodes !== undefined && !episodes.some(episode => episode.id === this.focusedEpisodeId) && this.suggestedEpisodeId !== undefined;
     }
     private get shownEpisodeId(): string | undefined { return this.entryUnlisted ? this.suggestedEpisodeId : this.focusedEpisodeId; }
     get playbackTargetId(): string | undefined {
