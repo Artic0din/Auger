@@ -1259,3 +1259,114 @@
     }
     .player-spinner-mark { animation: none; }
 }
+
+/*
+ * SubtitleTranslateMenu's tvOS panel (TVSubtitleDialog.swift, SubtitleTranslateMenu.swift): a 32pt semibold title over a 22pt line at 65%,
+ * language rows with a 22pt symbol, a 24pt name, an 18pt hint at 65% and a chevron, the quota line at 16pt and section headings at 14pt.
+ * The job's title and bar are system-drawn on tvOS, so their sizes are measured from Apple's capture, not read from source.
+ */
+.player-ai-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.player-ai-title {
+    margin: 0;
+    padding: 0 16px;
+    font-size: 32px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.player-ai-subtitle {
+    margin: 8px 0 22px;
+    padding: 0 16px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.player-ai-menu .player-menu-heading {
+    margin: 10px 0 0;
+    padding: 0 12px 8px;
+    font-size: 14px;
+    letter-spacing: 1.2px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-ai-row {
+    gap: 18px;
+    padding: 18px 20px;
+    border-radius: 12px;
+    font-size: 24px;
+}
+
+.player-ai-row .player-setting-glyph {
+    flex: none;
+    width: 34px;
+    opacity: 0.8;
+}
+
+.player-ai-row .player-choice-detail {
+    font-size: 18px;
+    line-height: 22px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.player-ai-row:focus .player-choice-detail {
+    color: rgba(0, 0, 0, 0.62);
+}
+
+.player-ai-row .player-setting-chevron {
+    width: 11px;
+    margin-left: 0;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.player-ai-row:focus .player-setting-chevron {
+    color: rgba(0, 0, 0, 0.55);
+}
+
+.player-ai-quota {
+    margin: 0;
+    padding: 6px 16px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-ai-quota-exhausted {
+    color: #ffc107;
+}
+
+.player-ai-quota-note {
+    margin: 0;
+    padding: 0 16px 4px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-ai-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 12px;
+}
+
+.player-ai-job {
+    margin: 0;
+    font-size: 29px;
+    font-weight: 600;
+}
+
+.player-ai-progress-message,
+.player-ai-failure {
+    margin: 0;
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-ai-failure {
+    padding: 8px 12px;
+    font-size: 22px;
+}

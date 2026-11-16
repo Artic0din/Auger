@@ -48,6 +48,7 @@ import { NEXT_UP_KEY } from "../contracts/v2/settings.ts";
 import { BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { nextShuffle, nextShufflePart } from "./nextShuffle.ts";
 import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
+import { aiMenu, aiRoute, hasActionableSource, quotaText, relyOnTranscription, type AIInputs, type AIMenu } from "./subtitleAIRoute.ts";
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
@@ -136,6 +137,36 @@ function selectableSubtitle(plan: PlaybackPlan, trackId: string): boolean {
     return plan.subtitle.inventory.some((entry) => entry.trackId === trackId && entry.unplayable !== true);
 }
 
+/** What the AI Subtitles… menu chooses from: the text subtitles the server can translate and every audio track, by the server's index. */
+function aiInputs(attempt: Attempt, plan: PlaybackPlan): AIInputs | undefined {
+    const view = attempt.ai?.view;
+    if (view === undefined) return undefined;
+    const shown = shownSubtitle(attempt, plan);
+    const tracks = attempt.tracks;
+    const version = tracks?.state === "ready" ? tracks.versions.find(candidate => candidate.fileId === plan.effectiveMediaFileId) : undefined;
+    const selectedAudio = plan.selectedTracks.audio?.index;
+    return {
+        translateEnabled: view.available.translate,
+        transcribeEnabled: view.available.transcribe,
+        // The inventory carries no default flag.
+        sources: plan.subtitle.inventory.filter(track => textSubtitle(track.codec) && track.combinedIndex >= 0).map(track => ({ index: track.combinedIndex, language: track.language, selected: track.trackId === shown, isDefault: false })),
+        audio: (version?.audio ?? []).map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
+        quotaExhausted: view.quota?.limited === true && view.quota.remaining <= 0,
+    };
+}
+
+let cachedAIMenu: { readonly key: string; readonly menu: AIMenu } | undefined;
+
+function aiMenuView(attempt: Attempt, plan: PlaybackPlan): TrackView["aiMenu"] {
+    const inputs = aiInputs(attempt, plan);
+    const view = attempt.ai?.view;
+    if (inputs === undefined || view === undefined || view.languages.length === 0 || !hasActionableSource(inputs)) return undefined;
+    // The view is rebuilt on every playback tick and every language label is an Intl lookup: build the menu once per input.
+    const key = JSON.stringify([inputs, view.languages, view.preferred]);
+    if (cachedAIMenu?.key !== key) cachedAIMenu = { key, menu: aiMenu(inputs, view.languages, view.preferred) };
+    return { menu: cachedAIMenu.menu, quota: relyOnTranscription(inputs, view.languages) ? quotaText(view.quota) : undefined, quotaExhausted: inputs.quotaExhausted };
+}
+
 /** Marks an AI result whose stored track the plan cannot show, so its row says why instead of doing nothing. */
 function aiView(attempt: Attempt, plan: PlaybackPlan): SubtitleAIView | undefined {
     const view = attempt.ai?.view;
@@ -185,7 +216,8 @@ export type TrackChange =
 
 export interface TrackView {
     readonly ai?: SubtitleAIView | undefined;
-    readonly aiTranslate?: boolean | undefined;
+    /** The AI Subtitles… menu, present only when the server and this file offer something to run. */
+    readonly aiMenu?: { readonly menu: AIMenu; /** Shown while a language relies on transcription. */ readonly quota: string | undefined; readonly quotaExhausted: boolean } | undefined;
     readonly seriesSubtitle?: { readonly busy: boolean; readonly message: string } | undefined;
     readonly quality?: { readonly choices: readonly TrackChoice[]; readonly selectedId: string | undefined };
     readonly audio: AudioTracks;
@@ -282,7 +314,10 @@ export interface PlayerControls {
     cancelAutoplay(): void;
     keepWatching(): void;
     saveSeriesSubtitle(): void;
-    startSubtitleAI(kind: "translate" | "transcribe", language?: string): void;
+    /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
+    startSubtitleAI(language: string): void;
+    /** Cancel stops the running job, Dismiss clears a failure or a finished job, Discard lets a request go out after one whose outcome is unknown. */
+    subtitleAIAction(action: "cancel" | "dismiss" | "discard"): void;
     selectAIResult(id: string): void;
     subtitleTool(action: SubtitleToolAction): void;
     seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined>;
@@ -1041,16 +1076,22 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    startSubtitleAI(kind: "translate" | "transcribe", language = ""): void {
+    startSubtitleAI(language: string): void {
         const attempt = this.changeable();
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined || attempt.hidden || attempt.restoring) return;
-        const subtitle = plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan));
-        // The server's index, never a list position: a guess could transcribe the wrong audio and spend quota.
-        const sourceIndex = kind === "translate" ? subtitle?.combinedIndex : plan.selectedTracks.audio?.index;
-        if (kind === "transcribe" && sourceIndex === undefined) { attempt.ai?.notice("Could not identify the audio track to transcribe. Playback continues."); return; }
-        if (sourceIndex === undefined || sourceIndex < 0 || (kind === "translate" && !textSubtitle(subtitle?.codec))) return;
-        void attempt.ai?.start({ media_file_id: plan.effectiveMediaFileId, kind, source_index: sourceIndex, source_language: kind === "translate" ? subtitle?.language ?? "" : "", target_language: language, start_position: attempt.sourceSeconds });
+        const inputs = aiInputs(attempt, plan);
+        // The route is chosen from the same inputs the menu was drawn from, so a row that was enabled sends what it showed.
+        const route = inputs === undefined ? undefined : aiRoute(inputs, language);
+        if (route === undefined) return;
+        void attempt.ai?.start({ media_file_id: plan.effectiveMediaFileId, kind: route.kind, source_index: route.sourceIndex, source_language: route.sourceLanguage, target_language: route.targetLanguage, start_position: attempt.sourceSeconds });
+    }
+
+    subtitleAIAction(action: "cancel" | "dismiss" | "discard"): void {
+        const ai = this.active()?.ai;
+        if (action === "cancel") void ai?.cancel();
+        else if (action === "dismiss") ai?.acknowledge();
+        else ai?.discardHeld();
     }
 
     selectAIResult(id: string): void {
@@ -3718,7 +3759,7 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
     }
     return {
         ai: aiView(attempt, plan),
-        aiTranslate: textSubtitle(plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan))?.codec),
+        aiMenu: aiMenuView(attempt, plan),
         seriesSubtitle: attempt.seriesSubtitle,
         quality: {
             choices: qualityChoices(plan),

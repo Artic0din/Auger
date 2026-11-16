@@ -162,3 +162,93 @@ test("the duplicate-job block for a file survives switching to another file and 
     assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length, 1);
     back.destroy();
 });
+
+test("the quota keeps its used and limit counts and a job its progress", async () => {
+    const { h, ai } = await setup();
+    assert.deepEqual({ used: ai.view?.quota?.used, limit: ai.view?.quota?.limit }, { used: 2, limit: 5 });
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("running", { progress: 0.42, progress_message: "Translating cues" }) });
+    h.fake.script("/subtitles/ai/jobs/opaque-job", { status: 200, body: job("running", { progress: 2, progress_message: "" }) });
+    await ai.start(request);
+    assert.deepEqual(ai.view && { phase: ai.view.phase, kind: ai.view.kind, progress: ai.view.progress }, { phase: "busy", kind: "translate", progress: { percent: 42, message: "Translating cues" } });
+    await h.clock.advance(2000);
+    assert.deepEqual(ai.view?.progress, { percent: 100, message: "" }, "progress is clamped to 0 to 100");
+    ai.destroy();
+});
+
+test("a transcription that translates needs both capabilities, a listed language and quota", async () => {
+    const both = { ...request, kind: "transcribe_translate" as const, source_index: -1, source_language: "" };
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("completed", { kind: "transcribe_translate", source_index: -1 }) });
+    await ai.start({ ...both, target_language: "xx" });
+    assert.equal(h.fake.requests.some(row => row.path === "/subtitles/ai/translate"), false, "a language the server does not list is not sent");
+    await ai.start(both);
+    assert.deepEqual(h.fake.requests.find(row => row.path === "/subtitles/ai/translate")?.body, both);
+    assert.equal(ai.view?.results.length, 1);
+    ai.destroy();
+    const empty = await setup(0);
+    await empty.ai.start(both);
+    assert.equal(empty.h.fake.requests.some(row => row.path === "/subtitles/ai/translate"), false, "no quota, nothing spent");
+    empty.ai.destroy();
+});
+
+test("a finished, failed or cancelled job leaves a phase the menu can read, and Dismiss clears a failure", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("failed", { error_message: "Provider could not decode the source track." }) });
+    await ai.start(request);
+    assert.deepEqual(ai.view && { phase: ai.view.phase, message: ai.view.message }, { phase: "failed", message: "Provider could not decode the source track." });
+    ai.acknowledge();
+    assert.equal(ai.view?.phase, "idle");
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("completed") });
+    await ai.start(request);
+    assert.equal(ai.view?.phase, "completed");
+    ai.acknowledge();
+    assert.equal(ai.view?.phase, "idle");
+    ai.destroy();
+});
+
+test("Cancel asks the server to stop the job, stops polling and keeps the quota spent as it is", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("running") });
+    h.fake.script("/subtitles/ai/jobs/opaque-job/cancel", { status: 200, body: job("cancelled") });
+    await ai.start(request);
+    await ai.cancel();
+    assert.equal(h.fake.requests.filter(row => row.method === "POST" && row.path === "/subtitles/ai/jobs/opaque-job/cancel").length, 1);
+    assert.equal(ai.view?.phase, "idle");
+    const count = h.fake.requests.length;
+    await h.clock.advance(10000);
+    assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/jobs/opaque-job").length, 0, "no further polls");
+    assert.ok(h.fake.requests.length >= count);
+    await ai.cancel();
+    assert.equal(h.fake.requests.filter(row => row.path.endsWith("/cancel")).length, 1, "nothing to cancel");
+    ai.destroy();
+});
+
+test("a held request shows as failed with Discard, which lets the next start go out", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", problem(503, "unavailable", "Try later"), { status: 202, body: job("completed") });
+    await ai.start(request);
+    assert.deepEqual(ai.view && { phase: ai.view.phase, held: ai.view.held }, { phase: "failed", held: true });
+    await ai.start(request);
+    assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length, 1, "held until discarded");
+    ai.discardHeld();
+    assert.equal(ai.view?.held, false);
+    await ai.start(request);
+    assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length, 2);
+    ai.destroy();
+});
+
+test("Cancel before the server has named the new job never cancels the previous one", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("completed") });
+    await ai.start(request);
+    const hold = h.fake.hold("/subtitles/ai/translate");
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("running", { id: "second-job" }) });
+    const second = ai.start(request);
+    await h.clock.advance(0);
+    await ai.cancel();
+    assert.equal(h.fake.requests.some(row => row.path.endsWith("/cancel")), false);
+    assert.equal(ai.view?.busy, true, "the new job is still being created");
+    hold.release();
+    await second;
+    ai.destroy();
+});

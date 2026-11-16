@@ -35,6 +35,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
 - The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.

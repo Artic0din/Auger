@@ -2,6 +2,7 @@ import type { Clock } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { subtitleAIOperations as operations, type SubtitleAIRequest } from "../api/subtitleAIOperations.ts";
+import { subtitleSearchOperations } from "../api/subtitleSearchOperations.ts";
 import type { SubtitleAIJob, SubtitleAIQuota, SubtitleAIStatus } from "../contracts/v2/subtitleAI.ts";
 import type { NativeSession } from "../session/session.ts";
 
@@ -9,10 +10,19 @@ export interface AIResult { readonly id: string; readonly label: string; /** The
 export interface SubtitleAIView {
     readonly available: SubtitleAIStatus;
     readonly languages: readonly string[];
+    /** The profile's preferred subtitle language, floated to the top of the menu. */
+    readonly preferred: string | undefined;
     readonly quota: SubtitleAIQuota | undefined;
     readonly busy: boolean;
     readonly message: string;
     readonly results: readonly AIResult[];
+    /** The menu's panel: the languages, a running job, a failure, or the job that just finished. */
+    readonly phase: "idle" | "busy" | "failed" | "completed";
+    /** The running job's kind, as the server names it. */
+    readonly kind: string | undefined;
+    readonly progress: { readonly percent: number; readonly message: string } | undefined;
+    /** A request may have started a job whose outcome is unknown, so none is sent until it is discarded. */
+    readonly held: boolean;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -31,7 +41,13 @@ export class SubtitleAI {
     private message = "";
     private available: SubtitleAIStatus | undefined;
     private languages: readonly string[] = [];
+    private preferred: string | undefined;
     private quota: SubtitleAIQuota | undefined;
+    private failed = false;
+    private completed = false;
+    private jobId: string | undefined;
+    private kind: string | undefined;
+    private progress: SubtitleAIView["progress"];
     /** Files whose server job outcome is unknown; owned by the caller so it outlives this instance. */
     private readonly blockedFiles: Set<string>;
 
@@ -52,7 +68,9 @@ export class SubtitleAI {
     private get uncertain(): boolean { return this.blockedFiles.has(this.fileId); }
 
     get view(): SubtitleAIView | undefined {
-        return this.available === undefined ? undefined : { available: this.available, languages: this.languages, quota: this.quota, busy: this.busy || this.uncertain, message: this.message, results: this.results };
+        if (this.available === undefined) return undefined;
+        const phase = this.busy && !this.failed ? "busy" : this.failed || this.uncertain ? "failed" : this.completed ? "completed" : "idle";
+        return { available: this.available, languages: this.languages, preferred: this.preferred, quota: this.quota, busy: this.busy || this.uncertain, message: this.message, results: this.results, phase, kind: this.kind, progress: this.progress, held: this.uncertain };
     }
 
     destroy(): void {
@@ -82,6 +100,8 @@ export class SubtitleAI {
             await Promise.all([
                 this.call(operations.subtitleAILanguages()).then(languages => { if (!this.abort.signal.aborted) this.languages = languages; }, () => this.notice("Could not load translation languages.")),
                 this.refreshQuota(),
+                // The menu is usable without it; the preferred row is only a shortcut.
+                this.call(subtitleSearchOperations.preferredLanguage()).then(preferred => { if (!this.abort.signal.aborted) this.preferred = preferred; }, () => undefined),
             ]);
             if (!this.abort.signal.aborted) this.changed();
         } catch { /* Unsupported AI is omitted; it never gates playback. */ }
@@ -96,8 +116,14 @@ export class SubtitleAI {
 
     async start(request: SubtitleAIRequest): Promise<void> {
         if (this.abort.signal.aborted || this.busy || this.uncertain || request.media_file_id !== this.fileId || this.available === undefined) return;
-        if (request.kind === "translate" && (!this.available.translate || !this.languages.includes(request.target_language))) return;
-        if (request.kind === "transcribe" && (!this.available.transcribe || this.quota === undefined || (this.quota.limited && this.quota.remaining <= 0))) { this.notice("Transcription quota is exhausted or unavailable. Playback continues."); return; }
+        if (request.kind !== "transcribe" && (!this.available.translate || !this.languages.includes(request.target_language))) return;
+        if (request.kind !== "translate" && (!this.available.transcribe || this.quota === undefined || (this.quota.limited && this.quota.remaining <= 0))) { this.notice("Transcription quota is exhausted or unavailable. Playback continues."); return; }
+        this.failed = false;
+        this.completed = false;
+        this.kind = request.kind;
+        this.progress = undefined;
+        // The last job's id must not stand in for this one: Cancel before the server answers has nothing to cancel.
+        this.jobId = undefined;
         this.busy = true;
         this.notice("Starting AI subtitles…");
         try {
@@ -108,6 +134,7 @@ export class SubtitleAI {
         } catch (error) {
             if (this.abort.signal.aborted) return;
             this.busy = false;
+            this.failed = true;
             // A problem body is the server's answer; 429 (e.g. quota_exceeded) refuses, unlike 408/5xx whose outcome is unknown.
             if (!(error instanceof ApiError && error.problemId !== undefined && (!error.transient || error.status === 429))) this.blockedFiles.add(this.fileId);
             this.notice(error instanceof ApiError && error.problemId ? `AI subtitles could not start: ${error.problemId}. Playback continues.` : "Could not confirm the AI request. It may still finish on the server; it was not sent again.");
@@ -115,22 +142,62 @@ export class SubtitleAI {
         }
     }
 
+    /** Dismiss: the viewer has seen a failure or a finished job, so the menu reopens on its languages. */
+    acknowledge(): void {
+        if (this.failed || this.completed) {
+            this.failed = false;
+            this.completed = false;
+            this.message = "";
+            this.changed();
+        }
+    }
+
+    /** Lets a request go out again after one whose outcome is unknown. */
+    discardHeld(): void {
+        if (this.blockedFiles.delete(this.fileId)) {
+            this.failed = false;
+            this.message = "";
+            this.changed();
+        }
+    }
+
+    /** Best effort: stops polling and asks the server to stop the job. Quota already spent stays spent. */
+    async cancel(): Promise<void> {
+        const id = this.jobId;
+        if (!this.busy || id === undefined || this.abort.signal.aborted) return;
+        this.cancelPoll?.();
+        this.busy = false;
+        this.progress = undefined;
+        this.message = "";
+        this.changed();
+        try { await this.call(operations.cancelSubtitleAIJob(id)); } catch { /* The job may still finish; its result is not listed. */ }
+        void this.refreshQuota();
+    }
+
     private async update(job: SubtitleAIJob): Promise<void> {
-        if (this.abort.signal.aborted) return;
+        // A poll that was in flight when the viewer cancelled must not restart the job's panel.
+        if (this.abort.signal.aborted || !this.busy) return;
+        this.jobId = job.id;
         if (job.status === "completed") {
             this.busy = false;
+            this.completed = true;
+            this.progress = undefined;
             if (job.resultId !== undefined && !this.results.some(result => result.id === job.resultId)) this.results.push({ id: job.resultId, label: `${job.kind === "translate" ? "AI-translated" : "AI-transcribed"}${job.language ? ` · ${job.language.toUpperCase()}` : ""}` });
             this.notice(job.resultId === undefined ? "AI job completed without a subtitle result." : "AI subtitles are ready to select.");
             void this.refreshQuota();
         } else if (job.status === "failed" || job.status === "cancelled") {
             this.busy = false;
+            this.failed = true;
+            this.progress = undefined;
             this.notice(job.error || `AI subtitles ${job.status}. Playback continues.`);
             void this.refreshQuota();
         } else if (job.status === "pending" || job.status === "running") {
+            this.progress = { percent: Math.round(Math.min(1, Math.max(0, job.progress ?? 0)) * 100), message: job.progressMessage ?? "" };
             this.notice("Generating AI subtitles…");
             this.poll(job, 0);
         } else {
             this.busy = false;
+            this.failed = true;
             this.blockedFiles.add(this.fileId);
             this.notice("The server returned an unknown AI job state. Playback continues.");
         }
@@ -145,6 +212,7 @@ export class SubtitleAI {
                 if (this.abort.signal.aborted) return;
                 if (failures + 1 < POLL_ATTEMPTS) { this.poll(job, failures + 1); return; }
                 this.busy = false;
+                this.failed = true;
                 this.blockedFiles.add(this.fileId);
                 this.notice("Could not check the AI job. It may still finish on the server; another request is blocked for this playback. Playback continues.");
             });

@@ -3,7 +3,7 @@ import { decodeAIJob, decodeAILanguages, decodeAIQuota, decodeAIStatus } from ".
 
 export interface SubtitleAIRequest {
     readonly media_file_id: string;
-    readonly kind: "translate" | "transcribe";
+    readonly kind: "translate" | "transcribe" | "transcribe_translate";
     readonly source_index: number;
     readonly source_language: string;
     readonly target_language: string;
@@ -14,5 +14,7 @@ export const subtitleAIOperations = {
     subtitleAIQuota: (): RequestSpec<ReturnType<typeof decodeAIQuota>> => ({ method: "GET", path: "/subtitles/ai/quota", retry: "safe", decode: decodeAIQuota }),
     subtitleAILanguages: (): RequestSpec<readonly string[]> => ({ method: "GET", path: "/settings/contract", retry: "safe", decode: decodeAILanguages }),
     createSubtitleAI: (body: SubtitleAIRequest): RequestSpec<ReturnType<typeof decodeAIJob>> => ({ method: "POST", path: "/subtitles/ai/translate", retry: "never", body: { ...body }, decode: decodeAIJob }),
+    /** cancelSubtitleAIJob: best effort; the server answers with the job. */
+    cancelSubtitleAIJob: (id: string): RequestSpec<ReturnType<typeof decodeAIJob>> => ({ method: "POST", path: `/subtitles/ai/jobs/${encodeURIComponent(id)}/cancel`, retry: "never", decode: decodeAIJob }),
     subtitleAIJob: (id: string): RequestSpec<ReturnType<typeof decodeAIJob>> => ({ method: "GET", path: `/subtitles/ai/jobs/${encodeURIComponent(id)}`, retry: "safe", decode: decodeAIJob }),
 };

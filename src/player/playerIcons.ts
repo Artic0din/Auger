@@ -85,3 +85,18 @@ export function sparklesIcon(): string {
     };
     return svg(`<path fill="currentColor" d="${star(9.5, 13.5, 8)}${star(18.5, 5.5, 3.6)}${star(19, 18, 2.6)}"/>`);
 }
+
+/** `waveform`: the Spoken language row's symbol. Six rounded bars. */
+export function waveformIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M3.5 10v4M7.5 6.5v11M11.5 3.5v17M15.5 7.5v9M19.5 9.5v5"/>`);
+}
+
+/** `globe`: a language row's symbol. */
+export function globeIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></g>`);
+}
+
+/** `star.fill`: the preferred language's symbol. */
+export function starFillIcon(): string {
+    return svg(`<path fill="currentColor" d="m12 2.8 2.7 6 6.5.6-4.9 4.3 1.5 6.4L12 16.7 6.2 20.1l1.5-6.4L2.8 9.4l6.5-.6z"/>`);
+}
