@@ -16,12 +16,12 @@ after(async () => { await browser.close(); });
 const PROFILE_WRITE = `PUT /settings/values/${APP_LANGUAGE_KEY}?scope=profile`;
 const BACK = 10009;
 
-async function withTv(revision: number, body: (tv: Tv, settings: FakeSettings) => Promise<void>, stored?: string): Promise<void> {
+async function withTv(revision: number, body: (tv: Tv, settings: FakeSettings) => Promise<void>, prepare?: (settings: FakeSettings) => void): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     tv.fake.catalog = new FakeDetails();
     const settings = new FakeSettings(tv.fake);
     settings.revision = revision;
-    if (stored !== undefined) settings.profile().set(APP_LANGUAGE_KEY, stored);
+    prepare?.(settings);
     try {
         await tv.page.evaluate(() => window.browseHarness.connect());
         await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
@@ -97,7 +97,7 @@ test("a language another client stored that this build lacks shows as itself, wi
         await openGeneral(tv);
         assert.match(await tv.page.locator('[data-focus="app-language"]').innerText(), /^App Language\s*Español$/);
         await tv.page.getByText("Silo isn’t available in Español yet, so it uses the device language.", { exact: true }).waitFor();
-    }, "es");
+    }, settings => settings.profile().set(APP_LANGUAGE_KEY, "es"));
 });
 
 test("a failed save keeps the stored language and shows the reason under the row", async () => {
@@ -143,4 +143,12 @@ test("the remote opens the picker on the stored option, moves to English and pic
         assert.equal(await tv.focused(), "app-language");
         await tv.eventually(async () => settings.profile().get(APP_LANGUAGE_KEY) === "en", "English stored");
     });
+});
+
+test("opening Settings reads again, so a launch read that missed does not hide the row", async () => {
+    await withTv(28, async (tv, settings) => {
+        settings.allowed = true;
+        await openGeneral(tv);
+        assert.match(await tv.page.locator('[data-focus="app-language"]').innerText(), /^App Language\s*Match Device$/);
+    }, settings => { settings.allowed = false; });
 });

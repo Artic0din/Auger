@@ -82,6 +82,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     let confirmingSignOut = false;
     let choosingLaunch = false;
     let choosingLanguage = false;
+    let languageRead = false;
     let torn = false;
     let launchPending = false;
     let launchError = false;
@@ -563,6 +564,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 rows.push(retry); body.appendChild(retry.element);
             }
         }
+        // As Apple reads when Settings opens, but only after this screen's own load, so the two capability reads never race.
+        if (state.loaded && !languageRead) { languageRead = true; void appLanguage?.refresh(); }
         if (category === "general" && appLanguage?.isOffered === true) {
             const item = actionButton("app-language", "App Language", () => { choosingLanguage = true; render(); });
             item.element.append(el("span", "settings-row-value", appLanguage.selectedLabel), settingsChevron());

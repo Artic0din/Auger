@@ -119,7 +119,7 @@ Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/d
 - The choice is stored on the server for the profile, so every device signed into it shares it. Picking a language writes the profile value, then clears this TV's own `profile_device` row if one hid it (a 404 on that delete counts as already absent). Picking Match Device writes null. Choosing the language already stored does nothing, except over a device row, where it still saves.
 - Picking closes the picker at once and the save settles behind it, as Apple's `TVSettingsPickerSheet` does. While a save runs the picker shows `Saving the app language…` and takes no choice. A failed save restores the stored language and shows Apple's connection, unsupported or generic message under the row.
 - A language tag stored by another client that this build lacks (Español from an iPhone, for example) shows as itself in the row and the picker, with `Silo isn’t available in Español yet, so it uses the device language.`, so saving never clears it.
-- Browse reads the answer when it starts (launch, and each profile or server switch). Apple also reads when Settings opens; this client does not, because that extra capability read would race the Settings load, so a change made on another device shows after the next launch or profile switch. Nothing is cached.
+- Browse reads the answer when it starts (launch, and each profile or server switch), and Settings reads it again once its own load has finished, as Apple reads when Settings opens. The read waits for that load because a capability read made at the same time raced it. A launch read that missed therefore does not hide the row. Nothing is cached.
 
 Platform limits, which Apple does not have:
 
