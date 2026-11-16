@@ -149,3 +149,22 @@ test("Collections and its empty state read in German, with the count in capitals
         assert.equal(await tv.page.locator(".library-empty-body").innerText(), de("collections.emptyBody"));
     }, catalog);
 });
+
+test("For You's row titles read in German through the key the server sends, and a row without one keeps its text", async () => {
+    const catalog = new FakeCatalog();
+    await inGerman(async tv => {
+        await tv.page.route("**/api/v2/recommendations/discover*", async route => {
+            const sections = catalog.route("GET", "/home/sections", "p-owner")?.body as { sections: { items: unknown[] }[] } | undefined;
+            const items = sections?.sections.find(row => row.items.length > 0)?.items ?? [];
+            const rows = [
+                { type: "cluster", title: "For You", kind: "for-you-main", title_key: "home.section.forYou", items },
+                { type: "popular", title: "Popular on This Server", kind: "popular", title_key: "home.section.popularOnServer", items },
+                { type: "genre", title: "Drama", kind: "genre", key: "Drama", items },
+            ];
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: rows }) });
+        });
+        await tv.page.locator('[data-focus="for_you"]').click();
+        await tv.page.locator('[data-view="for_you"] .browse-card').first().waitFor();
+        assert.deepEqual(await tv.page.locator('[data-view="for_you"] .browse-section-title').allInnerTexts(), [de("home.section.forYou"), de("home.section.popularOnServer"), "Drama"]);
+    }, catalog);
+});
