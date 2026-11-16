@@ -4,7 +4,7 @@ This slice applies the [Skyline guide](https://github.com/Silo-Server/silo-apple
 Home, Movies, Series and Profiles share mounted root navigation.
 Only visible video library types appear, and mixed libraries can be scoped to either video type.
 Search, Detail, season and playback routes remove the root chrome.
-The library dropdown offers Recommended, Collections and Browse, in that order, matching the tvOS cascade.
+The library dropdown offers Recommended, Browse and Collections, in that order, matching the tvOS cascade.
 
 ## Details layout and selection
 

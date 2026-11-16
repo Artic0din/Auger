@@ -1047,8 +1047,8 @@ export class Skyline {
     }
 
     private modeItems(library: UserLibrary, type: VideoTab): FocusItem[] {
-        // tvOS's cascade offers three destinations; legacy filters stay within Browse.
-        return (["Recommended", "Collections", "Browse"] as const).map(mode => {
+        // tvOS lists them in TVLibraryPill case order (TVLibraryPillRow.swift:11-17); legacy filters stay within Browse.
+        return (["Recommended", "Browse", "Collections"] as const).map(mode => {
             const item = this.menuItem(`section:${mode === "Browse" ? "browse" : mode}`, mode, () => this.commit(this.panelAnchor === `library:${library.id}` ? library : { ...library, type }, mode), mode);
             item.element.setAttribute("role", "menuitem");
             return item;
