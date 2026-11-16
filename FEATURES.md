@@ -212,8 +212,9 @@ File pointers are repository-relative.
 ## Platform summary
 
 **Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests and AVPlay playback with audio, text subtitles and AI subtitles.
-It has no music browsing, audiobook playback, Watch Party, diagnostics, Smart Hub row or sleep timer.
+It has no music browsing, audiobook playback, diagnostics, Smart Hub row or sleep timer.
 Its playback speed is limited to 1× and 2× on direct-file plans.
+Watch Party is partly built and off by default: the lobby, Ready and voting work, and synchronized playback waits on #13 ([Watch Party](docs/features/watch-party.md)).
 
 **Android TV** is a 10-foot D-pad client built on Media3/ExoPlayer, with the same top-bar layout as tvOS: Home, library-type tabs, For You and Calendar, with Requests in the profile menu.
 It covers audiobooks, trailers, the subtitle suite, player extras, diagnostics, the notifications inbox and a Watch Next row.
