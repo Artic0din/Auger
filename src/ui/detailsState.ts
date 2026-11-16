@@ -105,8 +105,9 @@ export class DetailsState {
     }
     /** TVSeriesDetailView.displayedEpisode: a visit's episode the loaded season does not list shows the suggested episode instead. */
     private get entryUnlisted(): boolean {
-        const rail = this.series?.railEpisodes;
-        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && rail !== undefined && !rail.some(episode => episode.id === this.focusedEpisodeId);
+        // The selected season's list, not the rail: the rail also holds prefetched neighbours, and the hero reads this list.
+        const episodes = this.series?.episodes;
+        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && episodes !== undefined && !episodes.some(episode => episode.id === this.focusedEpisodeId);
     }
     private get shownEpisodeId(): string | undefined { return this.entryUnlisted ? this.suggestedEpisodeId : this.focusedEpisodeId; }
     get playbackTargetId(): string | undefined {
