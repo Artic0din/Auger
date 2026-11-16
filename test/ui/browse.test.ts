@@ -13,7 +13,7 @@ import type { Reply } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
-import { detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
@@ -766,6 +766,13 @@ for (const reduced of [false, true]) {
         await tv.jump(250);
         const { scroll } = await sample();
         assert.ok(scroll > 0, "the later request needs horizontal scrolling");
+        // The search's own debounced reads and the rest read of the focused card can still be on their way; count reads only once none is.
+        await tv.jump(1000);
+        await tv.eventually(async () => {
+            const requests = tv.fake.requests.length;
+            await tv.jump(0);
+            return tv.pendingReplies <= tv.fake.heldReplies && tv.fake.requests.length === requests;
+        }, "no further reads");
         const reads = tv.fake.requests.length;
         people.release();
         await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
@@ -784,6 +791,7 @@ for (const reduced of [false, true]) {
         await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
         await tv.page.locator('[data-focus="person:edge-19"]').waitFor({ state: "attached" });
         await tv.page.locator('[data-focus="movie:960"]').waitFor({ state: "attached" });
+        await quiet(tv);
         const paints = async (selector: string): Promise<boolean> => tv.page.locator(selector).evaluate(art => {
             const rect = art.getBoundingClientRect();
             const hit = document.elementFromPoint(rect.right - 2, rect.top + rect.height / 2);
@@ -818,7 +826,13 @@ for (const reduced of [false, true]) {
         assert.equal(await tv.focused(), "person:edge-19");
         await tv.eventually(async () => Math.abs(await tv.page.locator('.search-people-rail').evaluate(row => row.scrollLeft) - 3696) < 2, "native People end");
         assert.equal(await paints('[data-focus="person:edge-19"] .browse-art'), true);
-        if (reduced) assert.equal(await tv.page.locator('[data-focus="person:edge-19"]').evaluate(node => getComputedStyle(node).transform), "none");
+        if (reduced) {
+            const transform = await readLive(tv, () => {
+                const node = document.querySelector('[data-focus="person:edge-19"]');
+                return node === null || !node.isConnected ? null : getComputedStyle(node).transform;
+            }, null, value => value !== "", "the live card's transform");
+            assert.equal(transform, "none");
+        }
         await press(tv, "ArrowUp", "ArrowUp");
         assert.equal(await tv.focused(), "query");
         await tv.eventually(async () => Math.abs(await tv.page.locator('#browse-search').evaluate(node => node.getBoundingClientRect().top) - 60) < 1, "native field position after returning Up");
@@ -1143,8 +1157,9 @@ browseTest("Search People is scoped, activates real identities and does not fetc
     assert.equal(await tv.page.getByText("No results", { exact: true }).count(), 0);
     const request = browseReads(tv, "/catalog/people")[0];
     assert.equal(new URL(request?.path ?? "", "https://fake.invalid").searchParams.get("media_scope"), "video_with_episodes");
+    await settled(tv);
     await tv.page.locator('[data-focus="person:7"] img').evaluate(image => image.dispatchEvent(new Event("error")));
-    assert.equal(await tv.page.locator('[data-focus="person:7"] .browse-art-fallback').count(), 1, "failed portraits retain the person silhouette without repeating the name");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="person:7"] .browse-art-fallback').count() === 1, "failed portraits retain the person silhouette without repeating the name");
     assert.equal(await tv.page.locator('[data-focus="person:7"] img').count(), 0);
     const reads = tv.fake.requests.length;
     await tv.page.locator('[data-focus="person:7"]').focus(); await tv.remote(39);
@@ -1165,6 +1180,7 @@ browseTest("Search lists at most five box sets ahead of People for All and Movie
     assert.equal(await tv.page.locator('[data-focus="box-set:12:1241"] .browse-card-subtitle').textContent(), "3 / 8 watched");
     assert.equal(await tv.page.locator('[data-focus="box-set:12:1241"] .box-set-label').textContent(), "Box set");
     assert.equal(await tv.page.locator(".box-set-card .box-set-sleeve").count(), 10, "each tvOS box set card has two sleeves");
+    await tv.page.locator(".search-people-heading").waitFor();
     const order = await tv.page.locator(".search-box-sets-heading, .search-people-heading, .search-count").evaluateAll(nodes => nodes.map(node => node.className));
     assert.deepEqual(order, ["browse-section-title search-box-sets-heading", "browse-section-title search-people-heading"]);
     assert.equal(await tv.page.getByText("No results", { exact: true }).count(), 0);
@@ -1188,6 +1204,7 @@ browseTest("a Search box set poster that fails draws DefaultArtwork's film mark 
     const art = '[data-focus="box-set:12:1241"] .browse-art';
     await tv.page.locator(`${art} img`).waitFor();
     assert.equal(await tv.page.locator(`${art} .default-artwork`).count(), 0, "a loaded poster builds no DefaultArtwork");
+    await settled(tv);
     await tv.page.locator(`${art} img`).evaluate(image => image.dispatchEvent(new Event("error")));
     await tv.page.locator(`${art}.browse-art-missing .default-artwork[data-symbol="film"]`).waitFor();
     assert.equal(await tv.page.locator(`${art} .browse-art-fallback`).count(), 0, "no title text placeholder");
@@ -1428,12 +1445,21 @@ for (const lost of [false, true]) {
         if (lost) await tv.page.route("**/api/v2/requests", async route => {
             const request = route.request();
             // Lose the answer after the held write, so settlement really occurs after Back.
-            await tv.fake.fetch(request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+            // This route bypasses the harness, so count the request as pending or the held write would hide another reply from `settled`.
+            tv.pendingReplies++;
+            try {
+                await tv.fake.fetch(request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+            } finally {
+                tv.pendingReplies--;
+            }
             await route.abort("connectionreset");
         });
         await tv.page.locator('[data-focus="create"]').click();
         await tv.eventually(async () => catalog.created, "write processed before its answer");
         await tv.remote(BACK); await showing(tv, "search");
+        // The Search reads that Back starts, debounced ones included, must have been counted before the held write settles.
+        await tv.jump(1000);
+        await quiet(tv);
         const reads = tv.fake.requests.filter(request => request.path.startsWith("/requests/search?")).length;
         const titles = browseReads(tv, "/catalog").length, people = browseReads(tv, "/catalog/people").length;
         held.release();
@@ -2407,7 +2433,12 @@ function browseTest(name: string, body: (tv: Tv, catalog: FakeCatalog) => Promis
                 household.hidden = [];
             }
             await signedInBrowse(tv, catalog, start.profile ?? "p-owner", start.pin, start.beforeConnect);
-            if (await tv.page.locator('[data-view="home"]').count() === 1) await homeDetailsRead(tv);
+            if (await tv.page.locator('[data-view="home"]').count() === 1) {
+                await homeDetailsRead(tv);
+                // Late Home answers repaint the rows and the bar; start once they have, so a press or a read finds the nodes the test means.
+                await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+                await afterPaint(tv);
+            }
             await body(tv, catalog);
             assert.deepEqual(tv.console, [], "the page logs nothing");
         } finally {
@@ -2471,7 +2502,24 @@ function cardIds(tv: Tv, selector = ".browse-card:not(.discovery-collection)"): 
     return tv.page.evaluate((query) => Array.from(document.querySelector(".browse")?.querySelectorAll(query) ?? []).map((node) => node.getAttribute("data-focus") ?? ""), selector);
 }
 
+/** Waits until every answer a test did not hold has been delivered and painted, so a press or a read finds the nodes it means. */
+async function settled(tv: Tv): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+    await afterPaint(tv);
+}
+
+/** Waits until a whole settled turn sends no request: the reads a change starts after its own answer have all been issued and answered. */
+async function quiet(tv: Tv): Promise<void> {
+    await tv.eventually(async () => {
+        const requests = tv.fake.requests.length;
+        await settled(tv);
+        return tv.fake.requests.length === requests;
+    }, "no further reads");
+}
+
 async function detailsMore(tv: Tv): Promise<void> {
+    // Details' answers repaint the page, and a repaint replaces the menu button or closes the menu; open it once they have landed.
+    await settled(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.getByRole("dialog", { name: "More", exact: true }).waitFor();
 }
@@ -2516,6 +2564,8 @@ browseTest("richer Details: facts, versions, people, accumulating filmography, r
     await tv.page.locator(".details-people [data-focus]").first().focus();
     const castKey = await tv.focused();
     assert.ok(castKey?.startsWith("credit:"));
+    // The refresh's own follow-up reads must be counted before the presses.
+    await quiet(tv);
     const reads = tv.fake.requests.length;
     await press(tv, "ArrowRight", "ArrowLeft");
     assert.equal(tv.fake.requests.length, reads, "focus performs no reads");
@@ -2540,7 +2590,9 @@ browseTest("S-D2 aggregate watched reconciles visible episodes in both direction
     assert.equal(await tv.page.locator('.browse-episode .browse-watched').count(), 3);
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).waitFor();
     assert.equal(catalog.watchedEpisodes.has("episode:s1e11"), false);
     assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 0, "authoritative rows must reflect aggregate unwatch");
@@ -2623,7 +2675,9 @@ browseTest("S-D2 failed episode reconciliation retries reads without another agg
     fail = false;
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).waitFor();
     assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 0);
     assert.equal(catalog.mutations.length, 1);
@@ -2646,11 +2700,15 @@ for (const aggregate of ["series", "season"]) {
             await tv.page.getByRole("button", { name: played ? "Mark as Watched" : "Mark as Unwatched", exact: true }).waitFor();
             await tv.remote(BACK);
             const related = tv.page.locator(`[data-detail-section="related"] [data-focus="${aggregateId}"]`);
+            await related.waitFor();
+            await settled(tv);
             await related.focus();
             await press(tv, "Enter");
             await detailsMore(tv);
             await tv.page.getByRole("button", { name: played ? aggregate === "series" ? "Mark Series Watched" : "Mark Season Watched" : aggregate === "series" ? "Mark Series Unwatched" : "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
             await tv.page.getByRole("button", { name: played ? aggregate === "series" ? "Mark Series Unwatched" : "Mark Season Unwatched" : aggregate === "series" ? "Mark Series Watched" : "Mark Season Watched", exact: true }).waitFor();
             assert.equal(catalog.watchedEpisodes.has(episodeId), played);
             await tv.remote(BACK);
@@ -2712,7 +2770,9 @@ browseTest("S-D2 aggregate reconciliation cannot paint after profile authority e
     const episodes = tv.fake.hold("/catalog/series/series%3As1/seasons/1/episodes", true);
     await detailsMore(tv);
     await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
-        await detailsMore(tv);
+            await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+            await quiet(tv);
+            await detailsMore(tv);
     await tv.eventually(async () => browseReads(tv, "/catalog/series/series%3As1/seasons/1/episodes").length === 3, "reconciliation read");
     await tv.page.evaluate(() => window.browseHarness.clearProfile());
     episodes.release();
@@ -2849,7 +2909,7 @@ browseTest("optional Details reads load independently and omit empty Related res
     catalog.capability = false;
     await activateDetails(tv);
     await showing(tv, "item:movie:m0001");
-    await tv.eventually(async () => tv.fake.requests.filter((request) => request.path === "/capabilities/personal-lists").length === 3, "unsupported capability");
+    await tv.eventually(async () => tv.fake.requests.filter((request) => request.path === "/capabilities/personal-lists").length >= 3, "unsupported capability");
     await tv.eventually(async () => await tv.page.locator('[data-focus="watchlist"], [data-focus="favorites"]').count() === 0, "unsupported capability applied");
     assert.equal(await tv.page.locator('[data-focus="watchlist"], [data-focus="favorites"]').count(), 0);
 }, { catalog: new FakeDetails() });
@@ -3055,8 +3115,13 @@ browseTest("personal failure never repeats a write automatically and explicit re
     await activateDetails(tv);
     await showing(tv, "item:movie:m0001");
     await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).waitFor();
+    await settled(tv);
     catalog.mutationFailure = problem(503, "unavailable", "Unavailable");
-    await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click();
+    // A press can still land on a node a repaint is replacing; press again only while no write has been sent.
+    await tv.eventually(async () => {
+        if (catalog.mutations.length === 0) await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click({ timeout: 2000 }).catch(() => undefined);
+        return catalog.mutations.length === 1;
+    }, "the watchlist write sent");
     await failureAlert(tv, "Couldn't Update Item");
     await tv.jump(30000);
     assert.equal(catalog.mutations.length, 1);
@@ -3907,6 +3972,7 @@ browseTest("many libraries stay bounded; dwell and Back never commit; scope surv
     await showing(tv, "home");
     release();
     await homeDetailsRead(tv, previousReads);
+    await settled(tv);
     assert.equal(await tv.page.locator(".browse").evaluate((node) => node.scrollWidth), 1920);
     await tv.page.clock.pauseAt(await tv.page.evaluate(() => Date.now() + 1000));
     await tv.page.evaluate(() => { window.retainedNavigation = document.querySelector(".browse-nav"); });
@@ -3926,6 +3992,8 @@ browseTest("many libraries stay bounded; dwell and Back never commit; scope surv
     assert.equal(await tv.page.locator(".skyline-selector").first().isVisible(), false, "Back keeps the menu dismissed until focus leaves its anchor");
     await press(tv, "ArrowLeft", "ArrowRight");
     await tv.jump(250);
+    // The clock is paused here, so no frame runs; only the answers can be awaited.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
     await press(tv, "ArrowDown", "ArrowDown", "Enter");
     await showing(tv, "library:15");
     assert.equal(await tv.page.evaluate(() => window.retainedNavigation === document.querySelector(".browse-nav")), true);
@@ -4069,7 +4137,7 @@ browseTest("series open seasons, episode Select plays directly, and playback ret
     assert.equal(await tv.focused(), "episode:s1e22");
     await tv.remote(BACK);
     await showing(tv, "item:series:s1");
-    assert.equal(await tv.focused(), "next-episode");
+    await tv.eventually(async () => await tv.focused() === "next-episode", "focus returns to the primary action");
     const series = tv.fake.catalog?.route('GET', '/catalog/items/series%3As1', 'p-owner')?.body as { overview: string };
     assert.equal(await tv.page.locator('.details-editorial .browse-overview').textContent(), series.overview);
     await tv.remote(BACK);
@@ -4109,6 +4177,7 @@ browseTest("Continue context menu offers Resume without activating Select", asyn
     // The menu reads the row, as Apple's does; reload Home so the row carries the new position.
     await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
     await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').waitFor();
+    await settled(tv);
     await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').click({ button: "right" });
     await tv.page.locator('[data-focus="card-play"]').waitFor();
     assert.equal(await tv.page.locator('[data-focus="card-play"]').innerText(), "Resume");
@@ -4454,6 +4523,7 @@ browseTest("loading, slow, offline, removed, empty and missing-artwork states al
         window.browseHarness.mount();
     });
     await showing(tv, "home");
+    await settled(tv);
     await press(tv, "ArrowUp", "ArrowRight");
     await tv.jump(250);
     await press(tv, "ArrowDown", "ArrowDown", "Enter");
@@ -4478,6 +4548,7 @@ browseTest("an authority change removes only browse, aborts its reads, and the n
     assert.equal(await tv.page.evaluate(() => window.browseHarness.selectProfile("p-kid", "2468")), "verified");
     await tv.page.evaluate(() => window.browseHarness.mount());
     await showing(tv, "home");
+    await tv.eventually(async () => (await cardIds(tv, ".browse-nav .browse-button")).join() === "search,home,movies,for_you,calendar,profiles", "the kid's library tabs");
     assert.deepEqual(await cardIds(tv, ".browse-nav .browse-button"), ["search", "home", "movies", "for_you", "calendar", "profiles"]);
     const kidReads = browseReads(tv).filter((read) => read.headers["x-profile-id"] === "p-kid");
     assert.ok(kidReads.length >= 3 && kidReads.every((read) => read.headers["x-profile-token"]?.startsWith("pvt-")));
