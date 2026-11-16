@@ -3,22 +3,23 @@
 // at 7baff3ef657757cc0a69202e86dd4bd5c7fcb585. tvOS is the only caller that matters.
 
 import type { ItemVideo, LocalExtra } from "../contracts/v2/catalog.ts";
+import { translate, type MessageKey } from "../i18n/translate.ts";
 import { clockTime } from "./browseModel.ts";
 
-const KIND_LABELS: Readonly<Record<string, string>> = {
-    trailer: "Trailer",
-    teaser: "Teaser",
-    featurette: "Featurette",
-    clip: "Clip",
-    behind_the_scenes: "Behind the Scenes",
-    bloopers: "Bloopers",
-    deleted_scene: "Deleted Scene",
-    other: "Extra",
+const KIND_LABELS: Readonly<Record<string, MessageKey>> = {
+    trailer: "catalog.extra.trailer",
+    teaser: "catalog.extra.teaser",
+    featurette: "catalog.extra.featurette",
+    clip: "catalog.extra.clip",
+    behind_the_scenes: "catalog.extra.behind_the_scenes",
+    bloopers: "catalog.extra.bloopers",
+    deleted_scene: "catalog.extra.deleted_scene",
+    other: "catalog.extra.otherExtra",
 };
 
 /** Singular card label. An unknown kind stays "Extra" rather than a raw id. */
 export function extraKindLabel(kind: string): string {
-    return KIND_LABELS[kind] ?? "Extra";
+    return translate(KIND_LABELS[kind] ?? "catalog.extra.otherExtra");
 }
 
 export function trailerTitle(name: string | undefined, kind: string): string {

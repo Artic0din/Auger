@@ -12,6 +12,8 @@ import { requestProgress } from "./requestProgress.ts";
 import { el } from "./screen.ts";
 import { searchRail } from "./searchRail.ts";
 import { balanceTwoLineText, fitCentredLines } from "./textLayout.ts";
+import { groupedCountText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 
 export interface SearchSupplement {
     people?: readonly Person[];
@@ -50,7 +52,7 @@ export function searchRequestCard(title: RequestTitle, baseUrl: string, open: ()
 }
 
 export function globalSearchView(view: View, route: Extract<Route, { kind: "search" }>, h: RouteHandlers): View {
-    const choices: readonly (readonly [SearchFilter | undefined, string])[] = [[undefined, "All"], ["movie", "Movies"], ["series", "Series"], ...(h.audiobooksEnabled ? [["audiobook", "Audiobooks"] as const] : [])];
+    const choices: readonly (readonly [SearchFilter | undefined, string])[] = [[undefined, translate("search.filter.all")], ["movie", translate("search.filter.movies")], ["series", translate("search.filter.series")], ...(h.audiobooksEnabled ? [["audiobook", translate("search.filter.audiobooks")] as const] : [])];
     const filters = choices.map(([value, label]) => {
         const item = actionButton(`search-filter:${value ?? "all"}`, label, () => h.searchFilter(route, value));
         item.element.addEventListener("focus", () => h.searchFilter(route, value));
@@ -75,7 +77,7 @@ export function globalSearchView(view: View, route: Extract<Route, { kind: "sear
         const grid = zoneNode("browse-grid", items);
         grid.dataset.section = "search-box-sets";
         lockSearchColumns(grid, h.gridColumns);
-        content.push(el("h2", "browse-section-title search-box-sets-heading", "Box Sets"), grid);
+        content.push(el("h2", "browse-section-title search-box-sets-heading", translate("boxSets.searchHeading")), grid);
         zones.push({ id: "search-box-sets", layout: "grid", spatial: true, columns: h.gridColumns, items });
     }
     if (route.failure === undefined && people.length > 0) {
@@ -91,14 +93,14 @@ export function globalSearchView(view: View, route: Extract<Route, { kind: "sear
             if (!rail.isConnected) return;
             for (const caption of rail.querySelectorAll<HTMLElement>(".browse-card-title")) balanceTwoLineText(caption);
         });
-        content.push(el("h2", "browse-section-title search-people-heading", "People"), rail);
+        content.push(el("h2", "browse-section-title search-people-heading", translate("search.people")), rail);
         zones.push({ id: "search-people", layout: "row", spatial: true, items });
     }
     const page = route.pages?.page;
     if (route.failure === undefined && page !== undefined && page.items.length > 0) {
         // SearchViewModel.total: the response total, or the loaded count when the server sends none (search.resultCount).
         const total = page.total ?? page.items.length;
-        content.push(el("p", "browse-text search-count", `${total.toLocaleString("en-US")} ${total === 1 ? "result" : "results"}`));
+        content.push(el("p", "browse-text search-count", translate("search.resultCount", { count: total, count_text: groupedCountText(total) })));
     }
     content.push(...view.content.slice(h.searchHead.length).filter(node => {
         if (node.classList.contains("search-empty") && (people.length > 0 || boxSets.length > 0 || waitingForSupplement)) return false;
@@ -111,7 +113,7 @@ export function globalSearchView(view: View, route: Extract<Route, { kind: "sear
             const id = searchRequestCatalogId(title);
             h.push(id === undefined ? newRoute({ kind: "requests", requests: requestsState({ kind: "media", title }) }) : newRoute({ kind: "item", id, title: title.title, data: undefined }));
         })) ?? [];
-        const heading = el("h2", "browse-section-title search-requests-heading", "Available to request");
+        const heading = el("h2", "browse-section-title search-requests-heading", translate("requests.search.availableTitle"));
         const symbol = el("span", "search-requests-symbol");
         symbol.setAttribute("aria-hidden", "true");
         symbol.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m14 0 2 9 6 3-6 3-2 9-2-9-6-3 6-3 2-9ZM4 1l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM4 16l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></svg>';
@@ -119,7 +121,7 @@ export function globalSearchView(view: View, route: Extract<Route, { kind: "sear
         const rail = searchRail("requests-rail search-request-rail", items);
         rail.dataset.section = "search-requests";
         content.push(heading,
-            el("p", "search-requests-description", "Not in the library yet · tap to request"), rail);
+            el("p", "search-requests-description", translate("requests.search.availableSubtitle")), rail);
         zones.push({ id: "search-requests", layout: "row", spatial: true, items });
     }
     const grids = content.filter(node => node.classList.contains("browse-grid"));
