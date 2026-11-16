@@ -5,7 +5,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import type { SettingsKey } from "../../src/contracts/v2/settings.ts";
-import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 
 const TITLE = "ui.title_art" as SettingsKey;
 let browser: Browser;
@@ -29,8 +29,11 @@ async function setup(prepare?: (tv: Tv, settings: FakeSettings) => Promise<void>
     await tv.page.locator('[data-view="home"]').waitFor();
     // Home reads title art and poster badges when it loads; let those settle before scripting settings replies.
     if (settled) await tv.eventually(async () => ["keys=ui.title_art", "keys=ui.card_overlays"].every(key => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes(key))), "Home settings reads");
-    // Details asks for the logo as soon as it opens, so the settings answers must have landed or a late "off" answer arrives after the request.
-    if (settled) await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+    // Details asks for the logo as soon as it opens, so the page must have applied the settings answers first: delivery, then a painted frame.
+    if (settled) {
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+        await afterPaint(tv);
+    }
     return { tv, catalog, settings };
 }
 async function details(tv: Tv, _catalog: FakeDetails): Promise<void> {
