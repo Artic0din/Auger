@@ -5,12 +5,14 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { translate, translateTv } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
+registerSourceCatalogs();
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 

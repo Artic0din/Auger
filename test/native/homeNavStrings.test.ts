@@ -9,7 +9,10 @@ import type { UserLibrary } from "../../src/contracts/v2/catalog.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { resolveServerText, serverText, translate, type Catalogs } from "../../src/i18n/translate.ts";
 import { navigationRoots } from "../../src/ui/navigation.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
 import { signOutConfirmationCopy } from "../../src/ui/signOutConfirmation.ts";
+
+registerSourceCatalogs();
 
 const file = (tag: string): Record<string, string> => JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
 const library = (type: UserLibrary["type"]): UserLibrary => ({ id: type, name: type, type }) as UserLibrary;

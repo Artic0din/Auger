@@ -57,7 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
-import { shownLanguage } from "../i18n/language.ts";
+import { textLanguage } from "../i18n/translate.ts";
 import { heldSelect, moveSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
@@ -435,12 +435,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const themePrefs = new ThemeMusicPreferences(session);
     const languagePrefs = new AppLanguagePreferences(session);
     void languagePrefs.refresh();
-    // The profile's language arrives after Home first draws, and Settings changes it; the bar and the page read it again.
-    let paintedLanguage = shownLanguage();
-    /** Rebuilds the bar in the shown language when it changed since the bar was drawn; true when it did. */
+    // The profile's language, and then its text file, arrive after Home first draws, and Settings changes it; the bar and the page read it again.
+    let paintedLanguage = textLanguage();
+    /** Rebuilds the bar when the language its text is read in changed since the bar was drawn (the shown language once its file has landed); true when it did. */
     const relabelBar = (): boolean => {
-        if (shownLanguage() === paintedLanguage) return false;
-        paintedLanguage = shownLanguage();
+        if (textLanguage() === paintedLanguage) return false;
+        paintedLanguage = textLanguage();
         shell.relabel();
         return true;
     };

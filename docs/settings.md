@@ -144,8 +144,7 @@ A screen builds its text when it draws, so a language change repaints Settings a
 - A key a language lacks shows the English text, as Apple's does for a key outside a language's table.
 
 The catalog files are vendored as `src/i18n/catalog/README.md` describes. English holds every key Apple ships; each other language holds only the keys `src` names, which a test holds to both sides, so one script carries no text a screen never shows.
-Shipping all 21 other languages whole would add about 5 MB to the script (1.4 MB zipped); shipping only the used keys adds 814 KB to it (main.js 1.94 to 2.75 MB, 155 KB zipped in the package).
-The remaining PRs load a language on demand instead, and then the whole catalog can ship.
+Only English is in `main.js`. Each other language is its own file in the package (`catalog/<tag>.js`, 21 files) and loads when it is the language shown, from the package with no network, so a language costs the script nothing. Until the file lands Settings reads English, and it draws again in the language when it arrives; a file that will not load leaves English. On the S95C the bundled languages made first paint 277 ms slower ([#595](https://github.com/Artic0din/silo-tizen/issues/595)).
 
 ### Home and navigation text
 
