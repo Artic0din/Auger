@@ -2343,6 +2343,26 @@ browseTest("an episode-rail read waits for a probe still in flight, so its first
     assert.ok(reads.every(path => path.endsWith("/episodes?still_width=360")), reads.join("\n"));
 }, { catalog: lateEpisodeImagesCatalog, beforeConnect: tv => { lateEpisodeImages = tv.fake.hold("/images/capabilities", true); } });
 
+const stalledEpisodeImagesCatalog = new FakeCatalog();
+stalledEpisodeImagesCatalog.failNext("/images/capabilities", { status: 200, body: {
+    revision: "r1", state: "available", allowed: true, param: "image_size", sizes: ["small", "medium", "large", "original"], widths: {}, original_max_width_px: 3840,
+    episode_still_provenance: true, episode_parent_artwork: true, extended_item_artwork: true, season_list_artwork_param: "include_artwork", storage_backend: "local", delivery: "server",
+    slot_width_params: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" },
+} });
+let stalledEpisodeImages: { release(): void };
+browseTest("an episode-rail read goes out with the small still when the capability probe never answers", async tv => {
+    await tv.page.locator('.browse-card[data-focus="series:s1"]').first().click();
+    await showing(tv, "item:series:s1");
+    await tv.jump(1000);
+    await tv.page.waitForTimeout(300);
+    const reads = (): string[] => tv.fake.requests.filter(request => /\/seasons\/\d+\/episodes/.test(request.path)).map(request => request.path);
+    assert.deepEqual(reads(), [], "the rail waits for the probe for a moment");
+    await tv.jump(2000);
+    await tv.eventually(async () => reads().length > 0, "episode rail read after the wait");
+    assert.ok(reads().every(path => path.endsWith("/episodes?image_size=small")), reads().join("\n"));
+    stalledEpisodeImages.release();
+}, { catalog: stalledEpisodeImagesCatalog, beforeConnect: tv => { stalledEpisodeImages = tv.fake.hold("/images/capabilities", true); } });
+
 const failedCollectionsCatalog = new FakeCatalog();
 failedCollectionsCatalog.failNext("/library/12/collections", problem(422, "validation_failed", "Collections unavailable"));
 browseTest("Recommended defers collections reads and a refused Collections read shows no collections", async tv => {

@@ -144,6 +144,9 @@ function unsupportedHomeItemLimit(error: unknown): boolean {
  */
 const rememberedLibraryTabs = new Map<string, UserLibrary[]>();
 
+/** Longest an episode read waits for the image-capability probe before asking for the one-size still. */
+const EPISODE_PROBE_WAIT_MILLISECONDS = 2000;
+
 export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const server = options.server;
     const session = server.session;
@@ -771,9 +774,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }, true);
     }
     const episodeArtwork = (): Record<string, string> => episodeArtworkQuery(imageCapability, window.devicePixelRatio);
-    // Apple's episode read waits for the probe when no capability is known yet (`requestQueryForImageRequest`); a settled probe, even a failed one, never waits again. Details itself does not wait.
+    // Apple's episode read waits for the probe when no capability is known yet (`requestQueryForImageRequest`), bounded only by its HTTP timeout.
+    // A stalled probe would hold the first rail read for two 15 s attempts, so the wait is capped and the read falls back to `small`. A settled probe never waits again. Details itself does not wait.
     const episodeArtworkWhenKnown = async (): Promise<Record<string, string>> => {
-        if (imageCapability === undefined) await probeImages();
+        if (imageCapability === undefined) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, EPISODE_PROBE_WAIT_MILLISECONDS); });
+            await Promise.race([probeImages(), cap]);
+            clearTimeout(timer);
+        }
         return episodeArtwork();
     };
     const probeImages = (): Promise<ImageCapabilities | undefined> => imageProbe ??= session.call({ ...operations.imageCapabilities(), profileScoped: true, signal: requestsController.signal }).then(found => {
