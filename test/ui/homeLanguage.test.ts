@@ -30,7 +30,7 @@ class KeyedHome extends FakeHome {
     }
 }
 
-async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void) => Promise<void>, options: { readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
+async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new KeyedHome();
     if (options.empty === true) {
@@ -56,7 +56,7 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
-        await body(tv, settings, catalog, () => held.forEach(hold => hold.release()));
+        await body(tv, settings, catalog, () => held.forEach(hold => hold.release()), held);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 }
@@ -208,5 +208,23 @@ test("a language that arrives during playback shows on the top bar when browse r
         const titles = await rootTitles(tv);
         for (const key of ["topBar.home", "topBar.forYou", "topBar.calendar"] as const) assert.ok(titles.includes(de(key)), `${de(key)} in ${titles.join(" | ")}`);
         assert.ok(!titles.includes("Calendar") && !titles.includes("For You"), "no English left on the bar");
+    }, { stored: "de", holdLanguage: true });
+});
+
+test("a Select held on a top-bar button while the language arrives still runs when released", async () => {
+    await withHome(async (tv, _settings, _catalog, _releaseLanguage, holds) => {
+        // Release every held read but the language's, so the bar is complete and only the language is late.
+        const reads = tv.fake.paths().filter(path => path.startsWith("GET /settings/values/effective"));
+        const language = reads.findIndex(path => path.includes(APP_LANGUAGE_KEY));
+        assert.ok(language >= 0 && language < holds.length, `language read among ${reads.length} effective reads`);
+        holds.forEach((hold, index) => { if (index !== language) hold.release(); });
+        await tv.eventually(async () => (await rootTitles(tv)).includes("Movies"), "library tabs without the language");
+        await tv.page.locator('[data-focus="calendar"]').focus();
+        await tv.page.keyboard.down("Enter");
+        holds[language]?.release();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar while Select is down");
+        assert.equal(await tv.focused(), "calendar");
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator('.browse[data-view="calendar"]').waitFor({ state: "visible" });
     }, { stored: "de", holdLanguage: true });
 });
