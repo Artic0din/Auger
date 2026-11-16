@@ -57,6 +57,7 @@ The zone's `skipDisabled` flag does this once for every row (`docs/tv-focus.md`)
 A row that is focused when it becomes disabled keeps focus, and a key press then moves off it.
 Each pane is a focus section on Apple TV (`.focusSection()` in `TVSettingsView.swift`, silo-apple `dce56e3c`): vertical movement stays in the pane and Left/Right bridges panes.
 The rows zone names itself as its own `up` and `down` target, so Up at the first row and Down at the last stay put in every pane and only Left leaves for the rail.
+The rail is a `.focusSection()` too, so its zone names itself as `up` and `down` as well: Down from Sign Out stays on it instead of entering the pane (`TVSettingsView.swift`, silo-apple `dce56e3c`).
 While a save is in flight every row ignores presses but stays reachable, because Apple's view models ignore presses while saving and its rows stay in the focus graph.
 Apple's one dimmed Settings group is `TVSettingsNestedGroup` (0.42 opacity while Use Device Settings is on), which this client has no counterpart for: Samsung has no system caption appearance to follow.
 
