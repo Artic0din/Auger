@@ -67,7 +67,7 @@ test("a server older than revision 28 does not offer the row", async () => {
 /** silo-apple `AppLanguagePreferences.options`: each shipped language by its own name, sorted by name. */
 const APPLE_LANGUAGE_NAMES = ["Čeština", "Dansk", "Deutsch", "English", "Español", "Français", "Hrvatski", "Italiano", "Nederlands", "Norsk bokmål", "Polski", "Português (Brasil)", "Suomi", "Svenska", "Türkçe", "Русский", "Українська", "العربية", "한국어", "日本語", "简体中文", "繁體中文"];
 
-test("the picker lists Match Device and Apple's languages in Apple's order, marks the stored one, and Back closes it without a write", async () => {
+test("the picker lists Match Device and Apple's languages sorted by name, marks the stored one, and Back closes it without a write", async () => {
     await withTv(28, async tv => {
         await openGeneral(tv);
         await tv.page.locator('[data-focus="app-language"]').click();
