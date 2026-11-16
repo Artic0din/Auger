@@ -802,6 +802,14 @@ calendarTest("an empty selected season keeps Play on the Calendar episode a neig
     assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S2:E2");
 }, undefined, new EmptySeasonOneCalendar());
 
+calendarTest("an empty selected season does not keep a Calendar episode nothing lists as the Play target", async (tv, catalog) => {
+    replaceEpisodeEvent(catalog, true);
+    catalog.events = catalog.events.map(event => event.content_id === "episode:s1e99" ? { ...event, season_number: 1 } : event);
+    await openEpisodeFromCalendar(tv, "episode:s1e99");
+    await tv.jump(2000);
+    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S1:E1", "Play falls back to the series' own next episode");
+}, undefined, new EmptySeasonOneCalendar());
+
 calendarTest("a Calendar episode the season lists opens Details with its own header", async (tv) => {
     await openEpisodeFromCalendar(tv, "episode:s1e22");
     await tv.eventually(async () => /Season 2.*Episode 2/.test((await header(tv)).meta) && /^Harbor Lights chapter 2\.2/.test((await header(tv)).overview), "episode header");

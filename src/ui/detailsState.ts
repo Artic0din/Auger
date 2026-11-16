@@ -103,13 +103,15 @@ export class DetailsState {
         const episodes = this.series?.episodes;
         return (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id;
     }
-    /** TVSeriesDetailView.displayedEpisode: a visit's episode the loaded season does not list shows the suggested episode instead; an empty season has none to show. */
-    private get entryUnlisted(): boolean {
-        // The selected season's list, not the rail: the rail also holds prefetched neighbours, and the hero reads this list.
-        const episodes = this.series?.episodes;
-        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && episodes !== undefined && !episodes.some(episode => episode.id === this.focusedEpisodeId) && this.suggestedEpisodeId !== undefined;
+    /**
+     * TVSeriesDetailView.displayedEpisode: a visit's episode the selected season does not list shows the suggested
+     * episode instead. An empty season has none, so the episode stays only while a prefetched neighbour lists it.
+     */
+    private get shownEpisodeId(): string | undefined {
+        const id = this.focusedEpisodeId, episodes = this.series?.episodes;
+        if (id === undefined || id !== this.entryEpisodeId || episodes === undefined || episodes.some(episode => episode.id === id)) return id;
+        return this.suggestedEpisodeId ?? (this.series?.railEpisodes?.some(episode => episode.id === id) ? id : undefined);
     }
-    private get shownEpisodeId(): string | undefined { return this.entryUnlisted ? this.suggestedEpisodeId : this.focusedEpisodeId; }
     get playbackTargetId(): string | undefined {
         if (this.series?.selectionOwnsHero) return this.series.episodes?.[0]?.id;
         return this.shownEpisodeId ?? this.suggestedEpisodeId ?? this.detail.playContentId;
@@ -598,7 +600,7 @@ export class DetailsState {
         if (this.series?.railEpisodes !== undefined && this.focusedEpisodeId !== undefined && this.focusedEpisodeId !== this.entryEpisodeId && !this.series.railEpisodes.some(episode => episode.id === this.focusedEpisodeId)) this.focusedEpisodeId = undefined;
         const target = this.playbackTargetId;
         if (this.queuedFocusEpisode !== undefined && this.queuedFocusEpisode !== target) this.cancelEpisodeFocus();
-        if (target !== undefined && !this.series?.selectionOwnsHero && (this.focusedEpisodeId === undefined || this.entryUnlisted)) this.queueEpisode(target);
+        if (target !== undefined && !this.series?.selectionOwnsHero && (this.focusedEpisodeId === undefined || this.shownEpisodeId !== this.focusedEpisodeId)) this.queueEpisode(target);
         this.syncEpisode();
         this.changed();
         this.descriptions?.consider(translate);
