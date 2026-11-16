@@ -766,7 +766,8 @@ for (const reduced of [false, true]) {
         await tv.jump(250);
         const { scroll } = await sample();
         assert.ok(scroll > 0, "the later request needs horizontal scrolling");
-        // The rest read of the focused card can still be on its way; count reads only once none is.
+        // The search's own debounced reads and the rest read of the focused card can still be on their way; count reads only once none is.
+        await tv.jump(1000);
         await tv.eventually(async () => {
             const requests = tv.fake.requests.length;
             await tv.jump(0);
@@ -790,6 +791,7 @@ for (const reduced of [false, true]) {
         await tv.page.fill("#browse-search", "Tom"); await tv.remote(IME_DONE);
         await tv.page.locator('[data-focus="person:edge-19"]').waitFor({ state: "attached" });
         await tv.page.locator('[data-focus="movie:960"]').waitFor({ state: "attached" });
+        await quiet(tv);
         const paints = async (selector: string): Promise<boolean> => tv.page.locator(selector).evaluate(art => {
             const rect = art.getBoundingClientRect();
             const hit = document.elementFromPoint(rect.right - 2, rect.top + rect.height / 2);
@@ -824,7 +826,13 @@ for (const reduced of [false, true]) {
         assert.equal(await tv.focused(), "person:edge-19");
         await tv.eventually(async () => Math.abs(await tv.page.locator('.search-people-rail').evaluate(row => row.scrollLeft) - 3696) < 2, "native People end");
         assert.equal(await paints('[data-focus="person:edge-19"] .browse-art'), true);
-        if (reduced) assert.equal(await tv.page.locator('[data-focus="person:edge-19"]').evaluate(node => getComputedStyle(node).transform), "none");
+        if (reduced) {
+            const transform = await readLive(tv, () => {
+                const node = document.querySelector('[data-focus="person:edge-19"]');
+                return node === null || !node.isConnected ? null : getComputedStyle(node).transform;
+            }, null, value => value !== "", "the live card's transform");
+            assert.equal(transform, "none");
+        }
         await press(tv, "ArrowUp", "ArrowUp");
         assert.equal(await tv.focused(), "query");
         await tv.eventually(async () => Math.abs(await tv.page.locator('#browse-search').evaluate(node => node.getBoundingClientRect().top) - 60) < 1, "native field position after returning Up");
@@ -1149,8 +1157,9 @@ browseTest("Search People is scoped, activates real identities and does not fetc
     assert.equal(await tv.page.getByText("No results", { exact: true }).count(), 0);
     const request = browseReads(tv, "/catalog/people")[0];
     assert.equal(new URL(request?.path ?? "", "https://fake.invalid").searchParams.get("media_scope"), "video_with_episodes");
+    await settled(tv);
     await tv.page.locator('[data-focus="person:7"] img').evaluate(image => image.dispatchEvent(new Event("error")));
-    assert.equal(await tv.page.locator('[data-focus="person:7"] .browse-art-fallback').count(), 1, "failed portraits retain the person silhouette without repeating the name");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="person:7"] .browse-art-fallback').count() === 1, "failed portraits retain the person silhouette without repeating the name");
     assert.equal(await tv.page.locator('[data-focus="person:7"] img').count(), 0);
     const reads = tv.fake.requests.length;
     await tv.page.locator('[data-focus="person:7"]').focus(); await tv.remote(39);
@@ -1442,6 +1451,9 @@ for (const lost of [false, true]) {
         await tv.page.locator('[data-focus="create"]').click();
         await tv.eventually(async () => catalog.created, "write processed before its answer");
         await tv.remote(BACK); await showing(tv, "search");
+        // The Search reads that Back starts, debounced ones included, must have been counted before the held write settles.
+        await tv.jump(1000);
+        await quiet(tv);
         const reads = tv.fake.requests.filter(request => request.path.startsWith("/requests/search?")).length;
         const titles = browseReads(tv, "/catalog").length, people = browseReads(tv, "/catalog/people").length;
         held.release();
