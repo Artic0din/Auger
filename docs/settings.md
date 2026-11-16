@@ -117,7 +117,7 @@ Off, an unsupported panel, a throwing probe, or a failed read of the HDR key the
 
 ## App language
 
-Settings › General › LANGUAGE, after Profile at Launch and before Title Pages, shows an `App Language` row that opens a picker of Match Device and the languages this build ships, in Apple's order (English, then the others sorted by tag) and by Apple's names for them (Deutsch, Español, 日本語, 简体中文…).
+Settings › General › LANGUAGE, after Profile at Launch and before Title Pages, shows an `App Language` row that opens a picker of Match Device and the languages this build ships, by Apple's names for them (Deutsch, Español, 日本語, 简体中文…), sorted by name as Apple's `AppLanguagePreferences.options` sorts them: `localizedStandardCompare` in the TV's locale, so Čeština, Dansk, Deutsch, English, Español… then Cyrillic, Arabic, Korean, Japanese and the two Chinese last. Match Device stays first and a stored tag this build lacks goes last.
 The footer is Apple's: `The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.`
 Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/dce56e3c), `tvOS/Screens/Settings/TVGeneralSettingsView.swift` (`languageGroup`, the `.appLanguage` picker) and `Networking/AppLanguagePreferences.swift`.
 

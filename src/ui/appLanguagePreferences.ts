@@ -9,7 +9,7 @@ import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
-import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage } from "../i18n/language.ts";
+import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shippedByName } from "../i18n/language.ts";
 import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
@@ -75,10 +75,10 @@ export class AppLanguagePreferences {
     get isBusy(): boolean { return this.saving; }
     get error(): string | undefined { return this.errorMessage; }
 
-    /** Match Device, each shipped language by its own name, and a stored tag this build lacks as itself, so re-saving never clears it. */
+    /** Match Device, each shipped language by its own name in name order, and a stored tag this build lacks as itself, so re-saving never clears it. */
     get options(): readonly AppLanguageOption[] {
         const stored = this.currentChoice?.tag;
-        const tags = stored !== undefined && stored !== null && !SHIPPED_LANGUAGES.includes(stored) ? [...SHIPPED_LANGUAGES, stored] : SHIPPED_LANGUAGES;
+        const tags = stored !== undefined && stored !== null && !SHIPPED_LANGUAGES.includes(stored) ? [...shippedByName(), stored] : shippedByName();
         return [{ tag: null, label: translate("settings.appLanguage.option.matchDevice") }, ...tags.map(tag => ({ tag, label: languageEndonym(tag) }))];
     }
     get selectedLabel(): string {

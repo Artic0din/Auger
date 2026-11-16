@@ -32,6 +32,16 @@ export function languageEndonym(tag: string): string {
     }
 }
 
+/**
+ * The picker's order, from silo-apple `AppLanguagePreferences.options`: each shipped language by its own name,
+ * sorted with `localizedStandardCompare` (case-insensitive, accent-sensitive, numbers by value) in the device's
+ * locale. That is a sort in the view model, not `AppLanguage.shipped`, whose order stays English then by tag.
+ */
+export function shippedByName(shipped: readonly string[] = SHIPPED_LANGUAGES, locale: string | undefined = deviceLanguages()[0]): string[] {
+    const collator = new Intl.Collator(locale, { sensitivity: "accent", numeric: true });
+    return [...shipped].sort((first, second) => collator.compare(languageEndonym(first), languageEndonym(second)));
+}
+
 /** Apple's `AppLanguage.match` maps these to Norwegian Bokmål, the one Norwegian the catalog ships. */
 const LANGUAGE_ALIASES: Readonly<Record<string, string>> = { no: "nb", nn: "nb" };
 

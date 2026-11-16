@@ -11,11 +11,15 @@ import { FakeSettings } from "./support/fakeSettings.ts";
 import { problem } from "./support/fakeSilo.ts";
 import { connected, signIn } from "./support/harness.ts";
 
-/** silo-apple `AppLanguage.shipped` (the development language, then the rest sorted by tag) with `AppLanguage.endonym`'s name for each, as Foundation prints them. */
+/**
+ * The picker's order: silo-apple `AppLanguagePreferences.options` sorts `shipped` by `AppLanguage.endonym` with
+ * `localizedStandardCompare`, so by name, not by tag. Names are as Foundation prints them. Scripts follow ICU's root
+ * order: Latin, Cyrillic, Arabic, Hangul, Kana, then Han.
+ */
 const APPLE_LANGUAGES: readonly (readonly [string, string])[] = [
-    ["en", "English"], ["ar", "العربية"], ["cs", "Čeština"], ["da", "Dansk"], ["de", "Deutsch"], ["es", "Español"], ["fi", "Suomi"], ["fr", "Français"],
-    ["hr", "Hrvatski"], ["it", "Italiano"], ["ja", "日本語"], ["ko", "한국어"], ["nb", "Norsk bokmål"], ["nl", "Nederlands"], ["pl", "Polski"],
-    ["pt-BR", "Português (Brasil)"], ["ru", "Русский"], ["sv", "Svenska"], ["tr", "Türkçe"], ["uk", "Українська"], ["zh-Hans", "简体中文"], ["zh-Hant", "繁體中文"],
+    ["cs", "Čeština"], ["da", "Dansk"], ["de", "Deutsch"], ["en", "English"], ["es", "Español"], ["fr", "Français"], ["hr", "Hrvatski"], ["it", "Italiano"],
+    ["nl", "Nederlands"], ["nb", "Norsk bokmål"], ["pl", "Polski"], ["pt-BR", "Português (Brasil)"], ["fi", "Suomi"], ["sv", "Svenska"], ["tr", "Türkçe"],
+    ["ru", "Русский"], ["uk", "Українська"], ["ar", "العربية"], ["ko", "한국어"], ["ja", "日本語"], ["zh-Hans", "简体中文"], ["zh-Hant", "繁體中文"],
 ];
 
 function capability(revision: number, extras: Partial<SettingsCapabilities> = {}): SettingsCapabilities {

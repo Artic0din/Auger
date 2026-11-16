@@ -15,7 +15,7 @@ npm run sync:translations -- <silo-translations commit or tag>   # every shipped
 npm run sync:translations -- <commit or tag> --languages en,de   # a subset deletes the other files
 ```
 
-`SHIPPED_LANGUAGES` (`src/i18n/language.ts`) lists them in Apple's order, English first and the rest sorted by tag, with the name Apple shows for each; `CATALOGS` (`src/i18n/translate.ts`) imports the files. Add a new language to both, and run `npm test`.
+`SHIPPED_LANGUAGES` (`src/i18n/language.ts`) lists them in Apple's order, English first and the rest sorted by tag, with the name Apple shows for each (`AppLanguage.shipped`; the picker sorts by that name instead, `shippedByName`); `CATALOGS` (`src/i18n/translate.ts`) imports the files. Add a new language to both, and run `npm test`.
 A test holds the shipped list to the files here.
 Nothing in `src` imports a catalog file except `translate.ts`.
 

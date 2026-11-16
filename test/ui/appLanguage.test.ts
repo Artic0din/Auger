@@ -64,8 +64,8 @@ test("a server older than revision 28 does not offer the row", async () => {
     });
 });
 
-/** silo-apple `AppLanguage.shipped` with `AppLanguage.endonym`'s name for each. */
-const APPLE_LANGUAGE_NAMES = ["English", "العربية", "Čeština", "Dansk", "Deutsch", "Español", "Suomi", "Français", "Hrvatski", "Italiano", "日本語", "한국어", "Norsk bokmål", "Nederlands", "Polski", "Português (Brasil)", "Русский", "Svenska", "Türkçe", "Українська", "简体中文", "繁體中文"];
+/** silo-apple `AppLanguagePreferences.options`: each shipped language by its own name, sorted by name. */
+const APPLE_LANGUAGE_NAMES = ["Čeština", "Dansk", "Deutsch", "English", "Español", "Français", "Hrvatski", "Italiano", "Nederlands", "Norsk bokmål", "Polski", "Português (Brasil)", "Suomi", "Svenska", "Türkçe", "Русский", "Українська", "العربية", "한국어", "日本語", "简体中文", "繁體中文"];
 
 test("the picker lists Match Device and Apple's languages in Apple's order, marks the stored one, and Back closes it without a write", async () => {
     await withTv(28, async tv => {
@@ -142,8 +142,11 @@ test("the remote opens the picker on the stored option, moves to English and pic
         await tv.page.keyboard.press("Enter");
         await tv.page.getByRole("dialog", { name: "App Language" }).waitFor();
         assert.equal(await tv.focused(), "language:device");
-        await tv.page.keyboard.press("ArrowDown");
-        assert.equal(await tv.focused(), "language:en");
+        // Name order: Čeština, Dansk, Deutsch, then English.
+        for (const next of ["language:cs", "language:da", "language:de", "language:en"]) {
+            await tv.page.keyboard.press("ArrowDown");
+            assert.equal(await tv.focused(), next);
+        }
         await tv.page.keyboard.press("Enter");
         await tv.page.getByRole("dialog", { name: "App Language" }).waitFor({ state: "detached" });
         assert.equal(await tv.focused(), "app-language");
