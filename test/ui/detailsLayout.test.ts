@@ -294,6 +294,9 @@ detailTest('hero Up falls back from vanished Start Over and disabled selectors t
     await tv.remote(38);
     await tv.remote(38);
     assert.equal(await tv.focused(), 'next-episode');
+    // Play's focus claim holds until the viewer presses a direction key, so a script `.focus()` below could lose to a late repaint; press Right first.
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === 'version', 'Version focused by remote');
     for (const key of ['version', 'audio', 'subtitles']) {
         await tv.page.locator(`[data-focus="${key}"]`).focus();
         // A mounted selector can become unavailable while episode details load.
@@ -1357,7 +1360,10 @@ detailTest('Hero uses measured series colours and genres only at rest', async tv
         if (overview === null || !overview.isConnected) return null;
         return getComputedStyle(overview).color;
     }, null, value => value === "rgba(255, 255, 255, 0.92)", "series overview colour"), "rgba(255, 255, 255, 0.92)");
-    await tv.page.locator('[data-focus="audio"]').focus();
+    // The page's one Play claim runs until the viewer moves by key, so a script `.focus()` can lose to a late repaint; Right is what a viewer presses.
+    await tv.eventually(async () => await tv.focused() === "next-episode", "Play focused");
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === "version", "Version focused by remote");
     assert.equal(await readLive(tv, () => {
         const node = document.querySelector(".details-play");
         if (node === null || !node.isConnected) return null;
