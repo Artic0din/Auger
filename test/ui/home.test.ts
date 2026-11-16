@@ -14,7 +14,7 @@ import { type SettingsKey, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY } from "../../
 const CARD_OVERLAYS_KEY = "ui.card_overlays" as SettingsKey;
 const CARD_OVERLAYS_ENABLED_KEY = "ui.card_overlays_enabled" as SettingsKey;
 const CARD_PRESENTATION_KEY = "ui.card_presentation" as SettingsKey;
-import { detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -189,7 +189,12 @@ function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void
             if (options.beforeReady !== undefined) await options.beforeReady(tv);
             await tv.page.locator('[data-view="home"] [data-section]').first().waitFor(options.readyTimeout === undefined ? undefined : { timeout: options.readyTimeout });
             // The focused card's detail waits for the marquee to rest. Journeys start once that read is out.
-            if (options.whileReading !== true) await detailsRead(tv);
+            if (options.whileReading !== true) {
+                await detailsRead(tv);
+                // A late answer repaints the rows and swaps the nodes a test reads or presses; start once the rest has landed.
+                await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+                await afterPaint(tv);
+            }
             await body(tv, catalog);
             assert.deepEqual(tv.console, []);
         } finally { await tv.page.context().close(); }
@@ -273,8 +278,10 @@ journey("a delayed Home libraries read cannot remove a library restored in Setti
 journey("a failed libraries read keeps Home and retries the tabs after the app returns", async tv => {
     const libraryReads = (): number => tv.fake.requests.filter(request => request.path === "/user/libraries").length;
     assert.equal(await tv.page.locator('[data-section="recent/12"]').count(), 1);
-    await tv.jump(1000);
-    await tv.eventually(async () => libraryReads() >= 2, "libraries read exhausted its retry");
+    await jumpUntil(tv, 250, async () => libraryReads() >= 2, "libraries read exhausted its retry");
+    // The second failure must have landed, or the page is still retrying and ignores the return.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "failed libraries reads delivered");
+    await afterPaint(tv);
     assert.equal(await tv.page.locator('[data-focus="movies"]').count(), 0);
     await tv.page.locator('[data-focus="calendar"]').focus();
     await tv.page.keyboard.press("Enter");
@@ -282,6 +289,7 @@ journey("a failed libraries read keeps Home and retries the tabs after the app r
     await tv.page.locator('[data-focus="home"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.eventually(async () => await tv.page.locator('.browse[data-view="home"] [data-section="recent/12"]').count() === 1, "Home again");
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
     assert.equal(libraryReads(), 2, "leaving Home and returning does not reread libraries");
     assert.equal(await tv.page.locator('[data-focus="movies"]').count(), 0);
     await tv.page.evaluate(() => {
@@ -290,7 +298,7 @@ journey("a failed libraries read keeps Home and retries the tabs after the app r
         Object.defineProperty(document, "hidden", { configurable: true, value: false });
         document.dispatchEvent(new Event("visibilitychange"));
     });
-    await tv.eventually(async () => await tv.page.locator('[data-focus="movies"]').count() === 1, "library tabs after returning to the app");
+    await jumpUntil(tv, 250, async () => await tv.page.locator('[data-focus="movies"]').count() === 1, "library tabs after returning to the app");
     assert.equal(await tv.page.locator('[data-section="recent/12"]').count(), 1);
     assert.ok(libraryReads() > 2);
 }, catalog => {
