@@ -209,6 +209,16 @@ export function subtitleRow(entry: { readonly label: string | undefined; readonl
     return row(name, [qualifier, formatPill, showsForced ? "Forced" : undefined, showsHearingImpaired ? "SDH" : undefined, external]);
 }
 
+/** Apple's `subtitlePillSummary`: the language leads, SDH and Forced follow in parentheses, then the format. */
+export function subtitlePillSummary(entry: { readonly label: string | undefined; readonly language: string | undefined; readonly codec?: string | undefined; readonly forced: boolean; readonly hearingImpaired: boolean }, fallback: string): string {
+    const showsHearingImpaired = entry.hearingImpaired || titleIndicatesHearingImpaired(entry.label);
+    let name = languageName(entry.language) ?? subtitleTitle(entry.label, entry.language, entry.codec, showsHearingImpaired) ?? fallback;
+    if (showsHearingImpaired && !/\b(?:sdh|cc|hi)\b|hearing impaired/i.test(name)) name += " (SDH)";
+    if ((entry.forced || (entry.label?.toLowerCase().includes("forced") ?? false)) && !name.toLowerCase().includes("forced")) name += " (Forced)";
+    const format = subtitleCodec(entry.codec);
+    return format === undefined ? name : `${name} · ${format}`;
+}
+
 /** Apple's in-player quality line: the server's name plus `(6 Mbps)` when a cap is known. */
 export function qualityMenuLabel(quality: { readonly label: string; readonly displayName: string | undefined; readonly bitrateKbps: number | undefined }): string {
     const name = quality.displayName !== undefined && quality.displayName.trim() !== "" ? quality.displayName : quality.label;
