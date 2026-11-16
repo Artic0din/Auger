@@ -3,29 +3,31 @@
 // CatalogFacets and CatalogQueryBuilder at the pinned silo-apple source).
 
 import type { UserLibrary } from "../contracts/v2/catalog.ts";
+import { localizeNumerals } from "../i18n/format.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { CatalogFilters, CatalogQueryRequest, FilterGroup, FilterRule, Order } from "../contracts/v2/discovery.ts";
 import { scopeOf } from "./browseModel.ts";
 
 export type SortKey = "title" | "added_at" | "release_date" | "year" | "rating_imdb" | "runtime" | "resolution" | "author" | "narrator" | "series";
-/** CatalogSortKey.available(for: .movie / .series), in display order, with labels and natural order. */
-export const SORT_KEYS: readonly { readonly key: SortKey; readonly label: string; readonly order: Order }[] = [
-    { key: "title", label: "Title", order: "asc" },
-    { key: "added_at", label: "Date Added", order: "desc" },
-    { key: "release_date", label: "Release Date", order: "desc" },
-    { key: "year", label: "Year", order: "desc" },
-    { key: "rating_imdb", label: "Rating", order: "desc" },
-    { key: "runtime", label: "Runtime", order: "desc" },
-    { key: "resolution", label: "Resolution", order: "desc" },
+/** CatalogSortKey.available(for: .movie / .series), in display order, with the label's catalog key (CatalogSortKey.label) and natural order. */
+export const SORT_KEYS: readonly { readonly key: SortKey; readonly name: MessageKey; readonly order: Order }[] = [
+    { key: "title", name: "catalog.sort.title", order: "asc" },
+    { key: "added_at", name: "catalog.sort.added", order: "desc" },
+    { key: "release_date", name: "catalog.sort.released", order: "desc" },
+    { key: "year", name: "catalog.sort.year", order: "desc" },
+    { key: "rating_imdb", name: "catalog.sort.imdbRating", order: "desc" },
+    { key: "runtime", name: "catalog.sort.duration", order: "desc" },
+    { key: "resolution", name: "catalog.sort.resolution", order: "desc" },
 ];
 
 /** CatalogSortKey.available(for: .audiobook), in display order. */
 const AUDIOBOOK_SORT_KEYS: typeof SORT_KEYS = [
-    { key: "title", label: "Title", order: "asc" },
-    { key: "author", label: "Author", order: "asc" },
-    { key: "narrator", label: "Narrator", order: "asc" },
-    { key: "series", label: "Series", order: "asc" },
-    { key: "added_at", label: "Date Added", order: "desc" },
-    { key: "runtime", label: "Runtime", order: "desc" },
+    { key: "title", name: "catalog.sort.title", order: "asc" },
+    { key: "author", name: "catalog.sort.author", order: "asc" },
+    { key: "narrator", name: "catalog.sort.narrator", order: "asc" },
+    { key: "series", name: "catalog.sort.series", order: "asc" },
+    { key: "added_at", name: "catalog.sort.added", order: "desc" },
+    { key: "runtime", name: "catalog.sort.duration", order: "desc" },
 ];
 
 /** The sort keys a library of this type offers. */
@@ -34,18 +36,19 @@ export function sortKeysFor(libraryType: string): typeof SORT_KEYS {
 }
 
 export type Facet = "genre" | "decade" | "watchStatus" | "contentRating" | "resolution" | "dynamicRange" | "studio" | "network" | "country" | "audioLanguage" | "subtitleLanguage" | "originalLanguage";
-/** CatalogFacet.available(for: .movie / .series), in display order. */
-export const FACETS: readonly { readonly facet: Facet; readonly title: string }[] = [
-    { facet: "genre", title: "Genre" }, { facet: "decade", title: "Decade" }, { facet: "watchStatus", title: "Watch Status" },
-    { facet: "contentRating", title: "Content Rating" }, { facet: "resolution", title: "Resolution" }, { facet: "dynamicRange", title: "Dynamic Range" },
-    { facet: "studio", title: "Studio" }, { facet: "network", title: "Network" }, { facet: "country", title: "Country" },
-    { facet: "audioLanguage", title: "Audio Language" }, { facet: "subtitleLanguage", title: "Subtitle Language" }, { facet: "originalLanguage", title: "Original Language" },
+/** CatalogFacet.available(for: .movie / .series), in display order, with the title's catalog key (CatalogFacet.title). */
+export const FACETS: readonly { readonly facet: Facet; readonly name: MessageKey }[] = [
+    { facet: "genre", name: "filters.facet.genre" }, { facet: "decade", name: "filters.facet.decade" }, { facet: "watchStatus", name: "filters.facet.watchStatus" },
+    { facet: "contentRating", name: "filters.facet.contentRating" }, { facet: "resolution", name: "filters.facet.resolution" }, { facet: "dynamicRange", name: "filters.facet.dynamicRange" },
+    { facet: "studio", name: "filters.facet.studio" }, { facet: "network", name: "filters.facet.network" }, { facet: "country", name: "filters.facet.country" },
+    { facet: "audioLanguage", name: "filters.facet.audioLanguage" }, { facet: "subtitleLanguage", name: "filters.facet.subtitleLanguage" }, { facet: "originalLanguage", name: "filters.facet.originalLanguage" },
 ];
 
 const DECADES = [2020, 2010, 2000, 1990, 1980, 1970, 1960];
-const WATCH_STATUS: readonly (readonly [string, string, string])[] = [
-    ["unwatched", "Unwatched", "watched"], ["inProgress", "In Progress", "in_progress"], ["watched", "Watched", "watched"],
-    ["favorited", "Favorited", "favorited"], ["watchlist", "Watchlist", "in_watchlist"],
+/** WatchStatusFilter: the stored value, its label's catalog key and the server rule it lowers to. */
+const WATCH_STATUS: readonly (readonly [string, MessageKey, string])[] = [
+    ["unwatched", "filters.value.unwatched", "watched"], ["inProgress", "filters.value.inProgress", "in_progress"], ["watched", "filters.value.watched", "watched"],
+    ["favorited", "filters.value.favorited", "favorited"], ["watchlist", "filters.value.watchlist", "in_watchlist"],
 ];
 
 export interface BrowseFilter {
@@ -64,16 +67,26 @@ export function sortKey(key: SortKey): (typeof SORT_KEYS)[number] {
     return SORT_KEYS.find(entry => entry.key === key) ?? AUDIOBOOK_SORT_KEYS.find(entry => entry.key === key) ?? SORT_KEYS[0] as (typeof SORT_KEYS)[number];
 }
 
+/** A sort's name in the shown language. */
+export function sortLabel(key: SortKey): string {
+    return translate(sortKey(key).name);
+}
+
+/** A facet's title in the shown language. */
+export function facetTitle(facet: Facet): string {
+    return translate((FACETS.find(entry => entry.facet === facet) ?? FACETS[0] as (typeof FACETS)[number]).name);
+}
+
 export function effectiveOrder(filter: BrowseFilter): Order {
     return filter.order ?? sortKey(filter.sort).order;
 }
 
 /** CatalogSortKey.directionLabel. */
 export function directionLabel(key: SortKey, order: Order): string {
-    if (key === "title") return order === "asc" ? "A–Z" : "Z–A";
-    if (key === "release_date" || key === "year" || key === "added_at") return order === "asc" ? "Oldest" : "Newest";
-    if (key === "runtime") return order === "asc" ? "Shortest" : "Longest";
-    return order === "asc" ? "Lowest" : "Highest";
+    if (key === "title" || key === "author" || key === "narrator" || key === "series") return translate(order === "asc" ? "library.direction.az" : "library.direction.za");
+    if (key === "release_date" || key === "year" || key === "added_at") return translate(order === "asc" ? "library.direction.oldest" : "library.direction.newest");
+    if (key === "runtime") return translate(order === "asc" ? "library.direction.shortest" : "library.direction.longest");
+    return translate(order === "asc" ? "library.direction.lowest" : "library.direction.highest");
 }
 
 /** Picking the active key flips its order; another key starts at its natural order. */
@@ -114,9 +127,9 @@ export function canReset(filter: BrowseFilter): boolean {
 export function options(facet: Facet, vocabulary: CatalogFilters | undefined): readonly { readonly value: string; readonly label: string }[] {
     const plain = (values: readonly string[] | undefined): { value: string; label: string }[] => (values ?? []).map(value => ({ value, label: value }));
     switch (facet) {
-        case "decade": return DECADES.map(year => ({ value: String(year), label: `${year}s` }));
-        case "dynamicRange": return [{ value: "hdr", label: "HDR" }, { value: "dolby_vision", label: "Dolby Vision" }];
-        case "watchStatus": return WATCH_STATUS.map(([value, label]) => ({ value, label }));
+        case "decade": return DECADES.map(year => ({ value: String(year), label: translate("filters.decade", { year: localizeNumerals(String(year)) }) }));
+        case "dynamicRange": return [{ value: "hdr", label: translate("filters.value.hdr") }, { value: "dolby_vision", label: translate("filters.value.dolby_vision") }];
+        case "watchStatus": return WATCH_STATUS.map(([value, name]) => ({ value, label: translate(name) }));
         case "genre": return plain(vocabulary?.genres);
         case "contentRating": return plain(vocabulary?.contentRatings);
         case "studio": return plain(vocabulary?.studios);
@@ -132,8 +145,8 @@ export function options(facet: Facet, vocabulary: CatalogFilters | undefined): r
 /** "Any", the one chosen value's label, or "N selected". */
 export function facetSummary(filter: BrowseFilter, facet: Facet, vocabulary: CatalogFilters | undefined): string {
     const values = selected(filter, facet);
-    if (values.length === 0) return "Any";
-    if (values.length > 1) return `${values.length} selected`;
+    if (values.length === 0) return translate("filters.any");
+    if (values.length > 1) return translate("filters.selected", { count: values.length });
     return options(facet, vocabulary).find(option => option.value === values[0])?.label ?? values[0] ?? "";
 }
 

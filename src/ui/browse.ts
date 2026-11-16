@@ -75,6 +75,7 @@ import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
 import { avatarReference, avatarText } from "./profilePicker.ts";
 import { ExperimentalFeatures } from "../session/experimentalFeatures.ts";
 import { WatchPartyHub, watchPartyApi } from "./watchPartyHub.ts";
+import { translate } from "../i18n/translate.ts";
 import { watchPartyScreen } from "./watchParty.ts";
 import type { MediaChoice } from "./watchPartyChoice.ts";
 
@@ -608,10 +609,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (!owns()) return;
                 const request = await shufflePick(spec => read(spec, requestsController.signal), shuffle, resolutionCap.quality);
                 if (!owns()) return;
-                if (request === undefined) { shuffleFailure = { route: current, text: "Nothing here can be played." }; return; }
+                if (request === undefined) { shuffleFailure = { route: current, text: translate("shuffle.nothingToPlay") }; return; }
                 play(request);
             } catch (error) {
-                if (owns() && !(error instanceof ApiError && error.aborted)) shuffleFailure = { route: current, text: error instanceof ApiError && error.status === 404 ? "This is no longer available to shuffle." : "Couldn't start the shuffle. Try again." };
+                if (owns() && !(error instanceof ApiError && error.aborted)) shuffleFailure = { route: current, text: translate(error instanceof ApiError && error.status === 404 ? "shuffle.notFound" : "shuffle.failed") };
             } finally {
                 shuffleStarting = false;
                 if (owns()) render(host.focused());

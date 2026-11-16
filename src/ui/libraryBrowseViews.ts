@@ -6,7 +6,9 @@ import type { FocusItem, Zone } from "./browseFocus.ts";
 import type { Route, RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, errorView, failureError, zoneNode } from "./browseViews.ts";
 import { feedGrid, feedGridMinWidth, feedGridWidth } from "./catalogFeed.ts";
-import { activeFacetCount, canReset, cleared, directionLabel, effectiveOrder, FACETS, facetSummary, options, reset, selected, sortKey, sortKeysFor, toggled, withSort, type BrowseFilter } from "./libraryBrowse.ts";
+import { localizeNumerals, shownLocale } from "../i18n/format.ts";
+import { translate } from "../i18n/translate.ts";
+import { activeFacetCount, canReset, cleared, directionLabel, effectiveOrder, FACETS, facetSummary, facetTitle, options, reset, selected, sortKeysFor, sortLabel, toggled, withSort, type BrowseFilter } from "./libraryBrowse.ts";
 import type { DiscoveryState } from "./libraryDiscovery.ts";
 import { emptyState, type StateSymbol } from "./libraryStates.ts";
 import { el } from "./screen.ts";
@@ -24,6 +26,11 @@ const shownPanels = new WeakMap<LibraryRoute, "sort" | "filter" | undefined>();
 /** minimumScaleFactor (TVBrowseFilterUI.swift:284-285, :480-481 and :346-347). */
 const LABEL_MINIMUM_SCALE = 0.85;
 const FACET_SUMMARY_MINIMUM_SCALE = 0.8;
+
+/** `uppercased(with: locale)`: the headings Apple writes in capitals, in the shown language's casing (Turkish dotted İ). */
+function upper(text: string): string {
+    return text.toLocaleUpperCase(shownLocale());
+}
 
 /** minimumScaleFactor: a line wider than its box shrinks to fit, down to `minimum`, then truncates. FocusHost places the view synchronously. */
 function fitText(node: HTMLElement, minimum: number): void {
@@ -149,11 +156,11 @@ export function shuffleAlert(content: HTMLElement[], zones: Zone[], handlers: Ro
     for (const node of content) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
     // ShuffleFailureAlert: a modal "Couldn't Shuffle" with the reason and one OK; Back also closes it.
     const dismiss = handlers.shuffle.dismiss;
-    const ok = actionButton("alert-ok", "OK", dismiss);
+    const ok = actionButton("alert-ok", translate("shuffle.ok"), dismiss);
     const box = el("div", "browse-panel browse-alert");
     box.setAttribute("role", "alertdialog");
     box.setAttribute("aria-modal", "true");
-    const title = el("h2", "browse-alert-title", "Couldn't Shuffle");
+    const title = el("h2", "browse-alert-title", translate("shuffle.failedTitle"));
     title.id = "browse-alert-title";
     const message = el("p", "browse-alert-message", failure);
     message.id = "browse-alert-message";
@@ -174,14 +181,14 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const filter = state.filter;
     const apply = (next: BrowseFilter): void => handlers.browse(route, { filter: next, panel: undefined });
     const order = effectiveOrder(filter);
-    const sortButton = row("sort", [symbol("arrow.up.arrow.down"), `Sort · ${sortKey(filter.sort).label}`, el("span", "browse-control-detail", directionLabel(filter.sort, order))], () => handlers.browse(route, { panel: { kind: "sort" } }));
+    const sortButton = row("sort", [symbol("arrow.up.arrow.down"), translate("library.sortPill", { name: sortLabel(filter.sort) }), el("span", "browse-control-detail", directionLabel(filter.sort, order))], () => handlers.browse(route, { panel: { kind: "sort" } }));
     const count = activeFacetCount(filter);
-    const filterButton = row("filter", [symbol("line.3.horizontal.decrease"), "Filter", ...(count > 0 ? [el("span", "browse-control-count", String(count))] : [])], () => handlers.browse(route, { panel: { kind: "filter", draft: filter, facet: undefined, lastFacet: undefined } }), count > 0 ? `Filter, ${count} active` : "Filter");
+    const filterButton = row("filter", [symbol("line.3.horizontal.decrease"), translate("library.filterPill"), ...(count > 0 ? [el("span", "browse-control-count", localizeNumerals(String(count)))] : [])], () => handlers.browse(route, { panel: { kind: "filter", draft: filter, facet: undefined, lastFacet: undefined } }), count > 0 ? `${translate("library.filterPill")}, ${localizeNumerals(String(count))}` : translate("library.filterPill"));
     filterButton.element.setAttribute("aria-pressed", String(count > 0));
     const controls = [sortButton, filterButton];
     // TVBrowseControlRow's Shuffle: whole movie, series or mixed libraries only, never a narrowed tab view.
     if (handlers.shuffle !== undefined) {
-        const shuffle = row("shuffle", [symbol("shuffle"), "Shuffle"], () => handlers.shuffle?.start(route));
+        const shuffle = row("shuffle", [symbol("shuffle"), translate("library.shufflePill")], () => handlers.shuffle?.start(route));
         if (handlers.shuffle.starting) shuffle.element.classList.add("browse-control-starting");
         controls.push(shuffle);
     }
@@ -192,15 +199,19 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     if (rail === undefined) {
         const items = LETTERS.map(letter => {
             const value = letter === "All" ? undefined : letter;
-            const item = actionButton(`letter:${letter}`, letter, () => handlers.browse(route, { filter: { ...(route.discovery?.filter ?? filter), prefix: value } }));
-            item.element.setAttribute("aria-label", letter === "All" ? "All titles" : letter === "#" ? "Titles starting with a number or symbol" : `Titles starting with ${letter}`);
-            return item;
+            return actionButton(`letter:${letter}`, letter, () => handlers.browse(route, { filter: { ...(route.discovery?.filter ?? filter), prefix: value } }));
         });
         rail = { node: zoneNode("browse-letters", items), items };
         railLetters.set(route, rail);
     }
     const letters = rail.items;
-    for (const item of letters) item.element.setAttribute("aria-pressed", String(filter.prefix === (item.key === "letter:All" ? undefined : item.key.slice("letter:".length))));
+    for (const item of letters) {
+        const letter = item.key.slice("letter:".length);
+        // The rail outlives a render (and a language change), so its text is set on every draw. Only "All" is text; the rest are the server's prefixes.
+        item.element.textContent = letter === "All" ? translate("catalog.letters.all") : letter;
+        item.element.setAttribute("aria-label", letter === "All" ? translate("catalog.letters.all") : letter === "#" ? translate("library.startsWithSymbol") : translate("library.startsWithLetter", { letter }));
+        item.element.setAttribute("aria-pressed", String(filter.prefix === (letter === "All" ? undefined : letter)));
+    }
     const content: HTMLElement[] = [zoneNode("browse-controls", controls)];
     // TVLibraryGridView's control row onMoveUp is the top bar, not a pill row.
     const controlZone: Zone = { id: "controls", layout: "row", down: "grid", up: "nav", items: controls };
@@ -228,14 +239,14 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         skeleton.style.setProperty("--grid-columns", String(handlers.gridColumns));
         skeleton.style.width = `${feedGridWidth(handlers.gridColumns, handlers.context.posterScale?.() ?? 1)}px`;
         skeleton.setAttribute("role", "status");
-        skeleton.setAttribute("aria-label", "Loading");
+        skeleton.setAttribute("aria-label", translate("common.loading"));
         for (let index = 0; index < 12; index++) skeleton.appendChild(el("div", "poster-skeleton"));
         content.push(skeleton);
     } else if (state.emptyReason === "noFilterMatches") {
         // TVLibraryGridView.emptyState .noFilterMatches (:268-284): Clear filters keeps the sort.
-        const clear = row("clear-filters", [symbol("xmark.circle"), "Clear filters"], () => handlers.browse(route, { filter: { ...reset(filter), prefix: undefined }, focus: { zone: "controls", key: "sort" } }));
+        const clear = row("clear-filters", [symbol("xmark.circle"), translate("library.clearFilters")], () => handlers.browse(route, { filter: { ...reset(filter), prefix: undefined }, focus: { zone: "controls", key: "sort" } }));
         const empty = el("div", "browse-empty-state");
-        empty.append(emptyState("line.3.horizontal.decrease.circle", "No titles match your filters"), zoneNode("browse-empty-actions", [clear]));
+        empty.append(emptyState("line.3.horizontal.decrease.circle", translate("library.noMatches")), zoneNode("browse-empty-actions", [clear]));
         roundLabels([clear.element]);
         content.push(empty);
         zones.push({ id: "empty", layout: "row", up: "controls", right: "letters", items: [clear] });
@@ -245,7 +256,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         // TVLibraryGridView.emptyState .libraryEmpty (:262-267, :296-300): inert; the controls and rail keep focus.
         const symbol: StateSymbol = route.library.type === "series" ? "tv" : route.library.type === "audiobooks" ? "book.closed" : "film.stack";
         const empty = el("div", "browse-empty-state");
-        empty.append(emptyState(symbol, "This library is empty", "There is nothing in this library yet."));
+        empty.append(emptyState(symbol, translate("library.empty"), translate("library.emptyBody")));
         content.push(empty);
     }
     // TVLibraryGridView.swift:98-108, :185, :230: the column is at least the grid plus 80 + 80 padding. With the rail (18 closed,
@@ -283,16 +294,17 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     if (panel.kind === "sort") {
         const items = sortKeysFor(route.library.type).map(entry => {
             const current = entry.key === filter.sort;
-            const parts: (HTMLElement | string)[] = [symbol("checkmark", current), entry.label];
+            const name = translate(entry.name);
+            const parts: (HTMLElement | string)[] = [symbol("checkmark", current), name];
             if (current) parts.push(el("span", "browse-panel-detail", directionLabel(entry.key, order)), icon(order === "asc" ? "up" : "down"));
-            const item = row(`sort:${entry.key}`, parts, () => apply(withSort(filter, entry.key)), current ? `${entry.label}, ${directionLabel(entry.key, order)}` : entry.label);
+            const item = row(`sort:${entry.key}`, parts, () => apply(withSort(filter, entry.key)), current ? `${name}, ${directionLabel(entry.key, order)}` : name);
             item.element.setAttribute("aria-checked", String(current));
             item.element.setAttribute("role", "menuitemradio");
             return item;
         });
         const box = el("div", `browse-panel browse-sort-panel${entering}`);
         box.setAttribute("role", "menu");
-        box.append(el("p", "browse-panel-eyebrow", "SORT BY"), ...items.map(item => item.element));
+        box.append(el("p", "browse-panel-eyebrow", upper(translate("library.sortBy"))), ...items.map(item => item.element));
         return { content: [...content, scrim, box], zones: [...zones.map(zone => ({ ...zone, items: [] })), { id: "panel", layout: "column", up: "panel", down: "panel", items }], back: () => handlers.browse(route, { panel: undefined, focus: { zone: "controls", key: "sort" } }) };
     }
     const draft = panel.draft;
@@ -301,50 +313,51 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const done = (): void => handlers.browse(route, { filter: draft, panel: undefined, focus: { zone: "controls", key: "sort" } });
     const items: FocusItem[] = [];
     const body: HTMLElement[] = [];
-    const section = (title: string): void => { body.push(el("p", "browse-panel-section", title)); };
+    const section = (title: string): void => { body.push(el("p", "browse-panel-section", upper(title))); };
     if (panel.facet === undefined) {
         const available = FACETS.filter(({ facet }) => options(facet, vocabulary).length > 0);
-        if (available.length === 0) body.push(el("p", "browse-panel-note", "No filters available"));
-        for (const { facet, title } of available) {
+        if (available.length === 0) body.push(el("p", "browse-panel-note", translate("filters.none")));
+        for (const { facet } of available) {
+            const title = facetTitle(facet);
             const summary = el("span", "browse-panel-detail", facetSummary(draft, facet, vocabulary));
             fitText(summary, FACET_SUMMARY_MINIMUM_SCALE);
             const item = row(`facet:${facet}`, [title, summary, icon("chevronRight")], () => edit(draft, facet), `${title}, ${facetSummary(draft, facet, vocabulary)}`);
             items.push(item);
             body.push(item.element);
         }
-        section("MATCH");
-        for (const [all, title] of [[true, "All selected filters"], [false, "Any selected filter"]] as const) {
+        section(translate("filters.match"));
+        for (const [all, title] of [[true, translate("filters.matchAll")], [false, translate("filters.matchAny")]] as const) {
             const item = row(`match:${all ? "all" : "any"}`, [icon(draft.matchAll === all ? "selectedCircle" : "circle"), title], () => edit({ ...draft, matchAll: all }));
             item.element.setAttribute("role", "menuitemradio");
             item.element.setAttribute("aria-checked", String(draft.matchAll === all));
             items.push(item);
             body.push(item.element);
         }
-        section("OPTIONS");
+        section(translate("filters.options"));
         const preserve = handlers.preserve(route);
-        const preserveRow = row("preserve", [icon(preserve ? "checkedBox" : "checkbox"), "Preserve sort & filters"], () => handlers.browse(route, { preserve: !preserve }));
+        const preserveRow = row("preserve", [icon(preserve ? "checkedBox" : "checkbox"), translate("filters.preserve")], () => handlers.browse(route, { preserve: !preserve }));
         preserveRow.element.setAttribute("role", "menuitemcheckbox");
         preserveRow.element.setAttribute("aria-checked", String(preserve));
         items.push(preserveRow);
         body.push(preserveRow.element);
         // Apple disables Reset when there is nothing to reset: shown, dimmed and not a focus stop.
-        const resetRow = row("reset", [icon("reset"), "Reset filters"], () => handlers.browse(route, { panel: { ...panel, draft: reset(draft) }, focus: { zone: "panel", key: "done" } }));
+        const resetRow = row("reset", [icon("reset"), translate("filters.reset")], () => handlers.browse(route, { panel: { ...panel, draft: reset(draft) }, focus: { zone: "panel", key: "done" } }));
         if (canReset(draft)) items.push(resetRow);
         else { resetRow.element.setAttribute("aria-disabled", "true"); resetRow.element.setAttribute("disabled", ""); }
         body.push(resetRow.element);
-        const finish = row("done", [icon("check"), "Done"], done);
+        const finish = row("done", [icon("check"), translate("filters.done")], done);
         finish.element.classList.add("browse-panel-done");
         items.push(finish);
         body.push(finish.element);
     } else {
         const facet = panel.facet;
-        const back = row("facet-back", [icon("chevronLeft"), "All filters"], () => handlers.browse(route, { panel: { ...panel, facet: undefined, lastFacet: facet } }));
+        const back = row("facet-back", [icon("chevronLeft"), translate("filters.allFilters")], () => handlers.browse(route, { panel: { ...panel, facet: undefined, lastFacet: facet } }));
         items.push(back);
         body.push(back.element);
         if (selected(draft, facet).length > 0) {
-            const title = FACETS.find(entry => entry.facet === facet)?.title ?? "";
+            const title = facetTitle(facet);
             const first = options(facet, vocabulary)[0];
-            const clear = row(`clear:${facet}`, [icon("clear"), `Clear ${title}`], () => handlers.browse(route, { panel: { ...panel, draft: cleared(draft, facet) }, focus: first === undefined ? { zone: "panel", key: "facet-back" } : { zone: "panel", key: `value:${first.value}` } }));
+            const clear = row(`clear:${facet}`, [icon("clear"), translate("filters.clearFacet", { facet: title })], () => handlers.browse(route, { panel: { ...panel, draft: cleared(draft, facet) }, focus: first === undefined ? { zone: "panel", key: "facet-back" } : { zone: "panel", key: `value:${first.value}` } }));
             items.push(clear);
             body.push(clear.element);
         }
@@ -359,15 +372,15 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
             body.push(item.element);
         }
     }
-    const facetTitle = panel.facet === undefined ? undefined : FACETS.find(entry => entry.facet === panel.facet)?.title;
+    const shownFacet = panel.facet === undefined ? undefined : facetTitle(panel.facet);
     const box = el("div", `browse-panel browse-filter-panel${entering}`);
     box.setAttribute("role", "menu");
     const list = el("div", "browse-panel-list");
     list.setAttribute("data-scroll-key", panel.facet ?? "filters");
     list.append(...body);
-    const panelTitle = el("h2", "browse-panel-title", facetTitle ?? "Filters");
+    const panelTitle = el("h2", "browse-panel-title", shownFacet ?? translate("filters.title"));
     fitText(panelTitle, LABEL_MINIMUM_SCALE);
-    box.append(el("p", "browse-panel-eyebrow", facetTitle === undefined ? "FILTER BY" : "FILTER"), panelTitle, el("div", "browse-panel-divider"), list);
+    box.append(el("p", "browse-panel-eyebrow", upper(translate(shownFacet === undefined ? "filters.eyebrowList" : "filters.eyebrowValues"))), panelTitle, el("div", "browse-panel-divider"), list);
     // Back on a facet's values returns to the list; on the list it applies and closes, as Apple's onExitCommand.
     const back = panel.facet === undefined ? done : () => handlers.browse(route, { panel: { ...panel, facet: undefined, lastFacet: panel.facet } });
     // Left on a facet's values returns to the list (TVBrowseFilterPanel.onMoveCommand).
