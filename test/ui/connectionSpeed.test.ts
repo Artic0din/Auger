@@ -4,6 +4,7 @@ import type { Browser, Page } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { fixture, problem, type Reply } from "../native/support/fakeSilo.ts";
+import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const NOW = "2026-01-02T03:04:05.678Z";
@@ -273,6 +274,7 @@ test("a cellular connection skips the test", async () => {
         assert.equal(await tv.page.locator('[data-focus="connection-speed"] .settings-row-value').count(), 0);
         assert.equal(await tv.page.locator(".settings-connection-budget").count(), 0);
         assert.equal(await tv.page.locator('[data-focus="connection-speed"]').getAttribute("aria-disabled"), "true");
+        await assertDisabledRowsFullBrightness(tv, ["connection-speed"]);
         await tv.page.locator('[data-focus="connection-speed"]').click({ force: true });
         assert.equal(probes(tv).length, 0);
         assert.deepEqual(tv.console, []);

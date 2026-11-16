@@ -74,6 +74,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - A subtitle download that ends early now keeps the cues that arrived and is fetched again after 2, 5, 10, 10 and 10 seconds, as on Apple TV, instead of showing "Subtitle data couldn’t be loaded". The largest partial stays if every refetch ends early.
+- Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
 - A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
 - Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.
 - Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
