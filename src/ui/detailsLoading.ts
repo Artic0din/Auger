@@ -10,6 +10,7 @@ import { runtimeText } from "./cardPresentation.ts";
 import { blurEpisodeStill, hidesEpisodeImage, hidesEpisodeOverview } from "./episodeSpoilers.ts";
 import { heroBackdrop } from "./heroBackdrop.ts";
 import { decodedLogoTitle, detailPalette } from "./browseDetails.ts";
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 
 export interface LoadingRoute {
@@ -100,7 +101,7 @@ export function detailsLoadingView(route: LoadingRoute, context: ViewContext, ba
     }
 
     const readout = el("div", "details-loading-readout");
-    for (const [label, width, bar] of [["VERSION", 245, 100], ["AUDIO", 285, 130], ["SUBTITLES", 264, 60]] as const) {
+    for (const [label, width, bar] of [[translate("detail.readout.version"), 245, 100], [translate("detail.readout.audio"), 285, 130], [translate("detail.readout.subtitles"), 264, 60]] as const) {
         const column = el("div", "");
         column.style.width = `${width}px`;
         column.append(el("span", "details-loading-label", label), placeholder(bar, 14, 4));
@@ -123,7 +124,7 @@ export function detailsLoadingView(route: LoadingRoute, context: ViewContext, ba
     page.tabIndex = 0;
     page.dataset.focus = "loading";
     page.setAttribute("aria-busy", "true");
-    page.setAttribute("aria-label", title === undefined ? "Loading details" : `Loading details for ${title}`);
+    page.setAttribute("aria-label", title === undefined ? translate("detail.loadingDetails") : translate("detail.loadingDetailsFor", { title }));
     page.append(hero, rail);
     return {
         name: "item:loading",

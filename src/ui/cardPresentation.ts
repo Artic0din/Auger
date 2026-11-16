@@ -4,12 +4,14 @@
 // tvOS/Components/TVFocusMarquee.swift (TVMarqueeContent) and Components/Ratings/DisplayRating.swift.
 
 import type { Card, CardOverlay } from "../contracts/v2/catalog.ts";
-import { durationText, localizeNumerals } from "../i18n/format.ts";
+import { durationText } from "../i18n/duration.ts";
+import { localizeNumerals } from "../i18n/format.ts";
 import { translate } from "../i18n/translate.ts";
 
 /** "45m", "1h 0m" or "2h 15m" ("2h 15min" in German); nothing for a missing or non-positive runtime. */
 export function runtimeText(minutes: number | undefined): string | undefined {
-    return durationText(minutes);
+    if (minutes === undefined || minutes <= 0) return undefined;
+    return durationText(minutes, true);
 }
 
 /** The metadata runtime, else the file duration the card carries. */

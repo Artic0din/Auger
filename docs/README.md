@@ -37,6 +37,7 @@ Start with the root [README](../README.md) for build, signing and release, [FEAT
 - [Title art](features/title-art.md)
 - [Details actions](features/details-actions.md)
 - [Personal lists](features/personal-lists.md)
+- [Translating screens](translation.md) - which screens read the string catalog and which text is still English
 - [Person hero](features/person-hero.md) and [filmography](features/person-filmography.md)
 - [Profile launch](features/profile-launch.md)
 - [Requests](features/requests.md)

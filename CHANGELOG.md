@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
 - Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
 - Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
 - Sent the language the app shows in `Accept-Language` on every Silo request, as Apple TV does, and added the English string catalog and the lookup that screens will use to show text in that language. Nothing on screen changes yet: English is the only language this build ships.
