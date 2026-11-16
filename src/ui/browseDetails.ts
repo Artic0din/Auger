@@ -16,7 +16,7 @@ import { personMetadataBadges, personPortrait } from "./personHero.ts";
 import { el, onDecoded } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
-import { audioTitle as trackAudioTitle, orderSubtitles, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
+import { audioTitle as trackAudioTitle, orderSubtitles, subtitlePillSummary, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
 import type { SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
 import { seriesEpisodesView } from "./seriesEpisodesView.ts";
 import { languageName } from "./cardOverlays.ts";
@@ -382,17 +382,13 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const effectiveAudio = explicitAudio >= 0 ? explicitAudio : file?.effectiveAudioTrackIndex ?? audio.findIndex(track => track.isDefault);
     const resolvedAudioTrack = audio[effectiveAudio] ?? audio[0];
     const subtitle = tracks?.subtitleIntent();
-    const subtitleLabel = (track: SubtitleSignature): string => {
-        const codec = /subrip|srt/i.test(track.codec ?? '') ? 'SRT' : track.codec?.toUpperCase();
-        const label = track.label && ![track.codec?.toUpperCase(), codec].includes(track.label.toUpperCase()) ? track.label : undefined;
-        const name = [languageName(track.language) ?? "Unknown language", label, track.forced ? "Forced" : undefined, track.hearingImpaired ? "SDH" : undefined].filter(Boolean).join(' · ');
-        return codec ? `${name} · ${codec}` : name;
-    };
+    const subtitleLabel = (track: SubtitleSignature): string => subtitlePillSummary(track, "Unknown language");
     const selectedSubtitleLabel = subtitle?.kind === "track" ? subtitleLabel(subtitle.signature) : subtitle?.kind === "off" ? "Off" : "Auto";
     const startDefault = defaultSubtitle(file?.subtitles ?? []);
-    const autoSubtitle = file?.effectiveSubtitle === undefined ? undefined : initialSubtitle({ kind: "auto" }, (file.subtitles ?? []).map((track, index) => ({ ...track, trackId: String(index), combinedIndex: index, delivery: "unknown" as const, url: undefined, streamIndex: undefined, containerTrackId: undefined, nativeSelectable: undefined, hlsRendition: undefined })), { ...file.effectiveSubtitle, audioLanguage: resolvedAudioTrack?.language }, startDefault === undefined ? undefined : String(file.subtitles?.indexOf(startDefault)));
+    // Apple orders the Details preview as the start request does, externals first, so a forced fallback names the track that plays; ids stay catalog offsets.
+    const autoSubtitle = file?.effectiveSubtitle === undefined ? undefined : initialSubtitle({ kind: "auto" }, (file.subtitles ?? []).map((track, index) => ({ ...track, trackId: String(index), combinedIndex: index, delivery: "unknown" as const, url: undefined, streamIndex: undefined, containerTrackId: undefined, nativeSelectable: undefined, hlsRendition: undefined })).sort((a, b) => Number(b.source === "external") - Number(a.source === "external")), { ...file.effectiveSubtitle, audioLanguage: resolvedAudioTrack?.language }, startDefault === undefined ? undefined : String(file.subtitles?.indexOf(startDefault)));
     const autoSubtitleTrack = autoSubtitle === undefined ? undefined : file?.subtitles?.[Number(autoSubtitle)];
-    const subtitleSummary = selectedSubtitleLabel !== "Auto" ? selectedSubtitleLabel : `Auto · ${autoSubtitleTrack === undefined ? "None" : subtitleLabel(autoSubtitleTrack)}`;
+    const subtitleSummary = subtitle?.kind === "track" || subtitle?.kind === "off" ? selectedSubtitleLabel : `Auto · ${autoSubtitleTrack === undefined ? "None" : subtitleLabel(autoSubtitleTrack)}`;
     const audioDetails = (index: number): string => {
         const track = audio[index];
         const rawLayout = track?.layout?.replace(/\(.*\)/, '').trim();
