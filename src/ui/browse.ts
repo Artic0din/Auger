@@ -57,6 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { shownLanguage } from "../i18n/language.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
@@ -433,6 +434,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const themePrefs = new ThemeMusicPreferences(session);
     const languagePrefs = new AppLanguagePreferences(session);
     void languagePrefs.refresh();
+    // The profile's language arrives after Home first draws, and Settings changes it; the bar and the page read it again.
+    let paintedLanguage = shownLanguage();
+    const languageChanged = (): boolean => {
+        const changed = shownLanguage() !== paintedLanguage;
+        paintedLanguage = shownLanguage();
+        return changed;
+    };
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
         const grant = await session.call({ ...operations.themePlayback(ownerId, themeId, themeAudioFormats(probe)), profileScoped: true });
@@ -2852,6 +2860,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
+                if (languageChanged()) shell.relabel();
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2917,6 +2926,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
+    languagePrefs.subscribe(() => {
+        if (torn || playing || settingsScreen !== undefined || !languageChanged()) return;
+        shell.relabel();
+        render(host.focused());
+    });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
     translations.cards.subscribe(() => { if (!torn) shell.refreshTranslation(); });
