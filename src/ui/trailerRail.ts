@@ -19,7 +19,9 @@ const KIND_LABELS: Readonly<Record<string, MessageKey>> = {
 
 /** Singular card label. An unknown kind stays "Extra" rather than a raw id. */
 export function extraKindLabel(kind: string): string {
-    return translate(KIND_LABELS[kind] ?? "catalog.extra.otherExtra");
+    // `kind` is server data: a name on Object.prototype ("constructor") must not resolve through it.
+    const key = Object.hasOwn(KIND_LABELS, kind) ? KIND_LABELS[kind] : undefined;
+    return translate(key ?? "catalog.extra.otherExtra");
 }
 
 export function trailerTitle(name: string | undefined, kind: string): string {
