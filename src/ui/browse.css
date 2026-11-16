@@ -593,7 +593,7 @@
 .requests-detail-actions .browse-button { background: rgba(0,0,0,.52); }
 .requests-detail-actions .requests-primary-action:not(:focus) { color: #fff; }
 .requests-detail-actions .requests-primary-action { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-width: 0; height: 76px; padding: 0 80px; border: 0; font-weight: 600; }
-.browse .requests-detail-actions .requests-primary-action:focus { transform: scale(1.025); box-shadow: 0 4px 20px rgba(0,0,0,.24); }
+.browse .requests-detail-actions .browse-button:focus { transform: scale(1.025); box-shadow: 0 4px 20px rgba(0,0,0,.24); }
 .requests-action-spinner { flex: 0 0 32px; width: 32px; height: 32px; color: var(--silo-secondary); animation: search-spin 1s steps(8) infinite; }
 .requests-action-spinner svg { display: block; width: 32px; height: 32px; }
 .requests-scene .requests-detail-actions .requests-action-message { flex: 0 1 auto; min-width: 0; margin: 0; white-space: normal; font-size: 22px; line-height: 27px; color: var(--silo-secondary); }
@@ -2218,3 +2218,21 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .details-failure .search-state-title { letter-spacing: .4px; }
 .details-failure .search-state-description, .details-failure .browse-button + .browse-button { letter-spacing: -.235px; }
 .details-failure .browse-button { letter-spacing: .15px; }
+
+/* Pressed looks for pill buttons and Details extras, silo-apple dce56e3c (tvOS). `data-pressed` comes from selectRelease.ts.
+   TVPillButtonStyle (TVDetailActions.swift:745,771): Select presses to 0.98 of the focus scale, easing out over SiloTheme.fastDuration.
+   The individual `scale` property multiplies the focus transform, so the ratio is exact and the focus rules stay as they are.
+   Used by Request detail actions (RequestDetailView.swift:398) and Watch Party (WatchPartyComponents.swift:389). */
+:is(.requests-detail-actions .browse-button, .watch-party-ui .watch-party-button) { transition: scale var(--silo-fast) ease-out; }
+:is(.requests-detail-actions .browse-button, .watch-party-ui .watch-party-button)[data-pressed] { scale: .98; }
+/* TVSeriesModeTabStyle (TVSeriesDetailView.swift:1291), shared by the Watch Party picker (WatchPartyMediaPicker.swift:891): 0.98, snapped. */
+:is(.details-season-chips .browse-button, .watch-party-season-tab)[data-pressed] { transform: scale(.98); }
+/* TVAnchoredEpisodeButtonStyle (TVEpisodeRail.swift:477-481): opacity 0.96 over easeOut fastDuration.
+   Its lift is tvCardLift(isFocused:) without isPressed, so the 0.97 art scale of plain cards does not apply. */
+.details-series-rail .browse-card { transition: transform 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out, opacity var(--silo-fast) ease-out; }
+.details-series-rail .browse-card[data-pressed] { opacity: .96; }
+@media (prefers-reduced-motion: no-preference) {
+    .browse .details-series-rail .browse-card:focus[data-pressed] .browse-art { transform: scale(var(--card-focus-scale)); }
+}
+/* TVActionPopoverButtonStyle (TVActionPopoverMenu.swift:128): opacity 0.94, snapped. */
+.details-track-popover .browse-button[data-pressed] { opacity: .94; }
