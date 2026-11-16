@@ -1,4 +1,5 @@
 // Handwritten from the pinned v2 contract in SOURCE. Only fields displayed on Details.
+import type { MessageKey } from "../../i18n/translate.ts";
 import { boolean, integer, object, optionalString, string, WireError } from "./wire.ts";
 
 export interface Credit {
@@ -13,7 +14,8 @@ export interface DetailExtras {
     readonly cast: readonly Credit[];
     readonly crew: readonly Credit[];
     readonly ratings: readonly { readonly name: string; readonly display: string }[];
-    readonly facts: readonly { readonly label: string; readonly value: string }[];
+    /** `label` is a catalog key, so the label reads in the language shown when the page draws. */
+    readonly facts: readonly { readonly label: MessageKey; readonly value: string }[];
 }
 
 function entries(value: unknown, path: string): unknown[] {
@@ -30,16 +32,15 @@ export function decodeDetailExtras(value: unknown): DetailExtras {
         if (key === "cast") integer(credit, "order", path);
         return { id: optionalString(credit, "person_id", path), name: string(credit, "name", path), role: string(credit, key === "cast" ? "character" : "job", path), photoUrl: optionalString(credit, "photo_url", path) };
     });
-    const facts: { label: string; value: string }[] = [];
-    for (const [key, label] of [["studios", "Studio"], ["networks", "Network"], ["countries", "Country"]]) {
-        if (key === undefined || label === undefined) continue;
+    const facts: { label: MessageKey; value: string }[] = [];
+    for (const [key, label] of [["studios", "detail.studio"], ["networks", "detail.network"], ["countries", "detail.country"]] as const) {
         const values = entries(obj[key], `item_detail.${key}`).map((value) => {
             if (typeof value !== "string") throw new WireError(`item_detail.${key}`, "strings");
             return value;
         });
         if (values.length > 0) facts.push({ label, value: values.slice(0, 3).join(", ") });
     }
-    for (const [key, label] of [["air_date", "Aired"], ["release_date", "Released"], ["first_air_date", "First Aired"], ["last_air_date", "Last Aired"]] as const) {
+    for (const [key, label] of [["air_date", "detail.aired"], ["release_date", "detail.released"], ["first_air_date", "detail.firstAired"], ["last_air_date", "detail.lastAired"]] as const) {
         const raw = optionalString(obj, key, "item_detail");
         if (raw === undefined) continue;
         const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);

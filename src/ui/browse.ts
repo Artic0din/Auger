@@ -74,6 +74,7 @@ import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
 import { avatarReference, avatarText } from "./profilePicker.ts";
 import { ExperimentalFeatures } from "../session/experimentalFeatures.ts";
 import { WatchPartyHub, watchPartyApi } from "./watchPartyHub.ts";
+import { translate } from "../i18n/translate.ts";
 import { watchPartyScreen } from "./watchParty.ts";
 import type { MediaChoice } from "./watchPartyChoice.ts";
 
@@ -264,9 +265,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     input.type = "search";
     input.spellcheck = false;
     input.autocomplete = "off";
-    input.placeholder = "Search movies and series...";
+    input.placeholder = translate("search.fieldPrompt.video");
     input.setAttribute("data-focus", "query");
-    const searchLabel = el("label", "browse-label", "Search titles");
+    const searchLabel = el("label", "browse-label", input.placeholder);
     searchLabel.htmlFor = input.id;
     // Kept across renders so the field, and the TV keyboard open on it, are never detached.
     const searchField = el("div", "search-field");
@@ -283,7 +284,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     window.addEventListener("resize", keyboardUp);
     keyboardUp();
     // Apple hides Search's navigation bar (SearchView.swift:65-69); the title stays only as the page's hidden heading.
-    const searchHead = [el("h1", "browse-title", "Search"), searchLabel, searchField];
+    const searchTitle = el("h1", "browse-title", translate("search.title"));
+    const searchHead = [searchTitle, searchLabel, searchField];
 
     let stack: Route[] = [];
     const seriesSeasons = new Map<string, number>();
@@ -2276,7 +2278,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         container.classList.toggle("watch-party-scene", current.kind === "watchParty");
         container.classList.toggle("search-scene", current.kind === "search");
         // SearchView.searchPrompt: the field names audiobooks only while they take part in Search.
-        if (current.kind === "search") input.placeholder = audiobooksInSearch() ? "Search movies, series, audiobooks..." : "Search movies and series...";
+        if (current.kind === "search") {
+            const prompt = translate(audiobooksInSearch() ? "search.fieldPrompt.audiobooks" : "search.fieldPrompt.video");
+            input.placeholder = prompt;
+            searchLabel.textContent = prompt;
+            searchTitle.textContent = translate("search.title");
+        }
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
         container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
         if (browsing) activeBrowse = current.pages;

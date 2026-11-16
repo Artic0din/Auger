@@ -17,6 +17,7 @@ import { PreplayTrackPreference } from "./preplayTrackPreference.ts";
 import { subtitlePreferenceOperations, type SubtitlePreferencePick, type SubtitlePreference } from "../api/subtitlePreferenceOperations.ts";
 import { matchesSubtitle, preferredCatalogSubtitle } from "../player/preplaySubtitles.ts";
 import { DescriptionTranslations, type ItemDescriptionTranslation } from "./descriptionTranslation.ts";
+import { translate } from "../i18n/translate.ts";
 import { TrailerFetch } from "./trailerFetch.ts";
 
 /** A failure Apple TV presents as a system alert with one OK button. */
@@ -36,14 +37,16 @@ function heldAlert(kind: PersonalAction): DetailsAlert {
     return { id: "details-change-held", title: "Change Not Confirmed", message: HELD_MESSAGE, held: kind };
 }
 /** TVSeriesDetailView's season watched alert (detail.watchedError). */
-const SEASON_WATCHED_FAILED: DetailsAlert = { id: "details-season-watched-failed", title: "Couldn't Update Watched Status", message: "Please check your connection and try again." };
+function seasonWatchedFailed(): DetailsAlert {
+    return { id: "details-season-watched-failed", title: translate("detail.watchedError.title"), message: translate("detail.watchedError.body") };
+}
 /** ShuffleLauncher.failureMessage under the shuffle.failedTitle alert. */
 function shuffleFailure(error: unknown): DetailsAlert {
     // ShuffleError.classify reads Problem Details only.
     const failure = error instanceof ApiError ? error.failure : undefined;
     const status = failure?.kind === "problem" ? failure.problem.status : undefined;
-    const message = status === 409 ? "Nothing here can be played." : status === 404 ? "This is no longer available to shuffle." : "Couldn't start the shuffle. Try again.";
-    return { id: "details-shuffle-failed", title: "Couldn't Shuffle", message };
+    const message = translate(status === 409 ? "shuffle.nothingToPlay" : status === 404 ? "shuffle.notFound" : "shuffle.failed");
+    return { id: "details-shuffle-failed", title: translate("shuffle.failedTitle"), message };
 }
 
 export interface PersonalChange {
@@ -934,7 +937,7 @@ export class DetailsState {
             if (!this.current(controller)) return;
             const held = this.presentsAlerts && unanswered && this.detail.type !== "season";
             this.changes.set(kind, { target, pending: false, failed: true, ...(held ? { held: true as const } : {}) });
-            if (this.presentsAlerts) this.alert = this.detail.type === "season" ? SEASON_WATCHED_FAILED : held ? heldAlert(kind) : ITEM_UPDATE_FAILED;
+            if (this.presentsAlerts) this.alert = this.detail.type === "season" ? seasonWatchedFailed() : held ? heldAlert(kind) : ITEM_UPDATE_FAILED;
             this.changed();
         });
     }
