@@ -57,6 +57,31 @@ test("Settings reads English while German's file is on its way, then relabels in
     });
 });
 
+test("a Select held on a Settings row while the language's file lands still runs on release, and Settings relabels after it", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await withTv("de", async page => { await page.route("**/tv/catalog/de.js", async route => { await gate; await route.fallback(); }); }, async tv => {
+        await openSettings(tv, "Settings");
+        const row = tv.page.locator('[data-focus="app-language"]');
+        await row.waitFor();
+        await row.focus();
+        await tv.page.keyboard.down("Enter");
+        const landed = tv.page.waitForResponse(response => new URL(response.url()).pathname === "/tv/catalog/de.js");
+        release();
+        await landed;
+        // The repaint waits for the release: the held row is not replaced under the finger.
+        await tv.jump(500);
+        assert.equal(await tv.page.locator(".settings-panes h1.browse-title").innerText(), "Settings", "still English while Select is held");
+        assert.equal(await tv.page.locator('[data-focus="app-language"][data-pressed]').count(), 1, "the held row stays pressed");
+        await tv.page.keyboard.up("Enter");
+        const dialog = tv.page.getByRole("dialog", { name: "App-Sprache" });
+        await dialog.waitFor();
+        await tv.remote(BACK);
+        await dialog.waitFor({ state: "detached" });
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === "Einstellungen", "Settings relabels in German after the release");
+    });
+});
+
 test("a language file that is missing leaves English and breaks nothing", async () => {
     await withTv("de", async page => { await page.route("**/tv/catalog/de.js", route => route.fulfill({ status: 404, body: "" })); }, async tv => {
         await openSettings(tv, "Settings");
