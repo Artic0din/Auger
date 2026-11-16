@@ -156,7 +156,8 @@ The top bar and the page in front draw again when the shown language changes, wh
 - A row with no key, such as an admin's own name or a recommendation row's subject, stays as sent.
 - The sign-out confirmation's title and message read from `shell.signOut.titleNamed`, `account.signOut.leaves` and `account.signOut.leavesRemovingServer`, with `{device}` filled as "TV". Settings, Accounts and the profile picker share that copy, so they read the same.
 - Spoken names follow Apple's: a libraries panel is `Movies libraries`, and a single library's section list is `{library} sections`. The top bar's `Main navigation` label and the Silo wordmark have no Apple key and stay English.
-- Not moved yet, still English: Home's card captions and its Aired line, the card context menu and its update-failed alert, the For You page's own text, library and search screens, and server error text. They follow in later #571 pull requests.
+- A card's hero line and caption read from the catalog too: the time left (`home.timeLeft`), the season and episode (`home.seasonEpisode`, `home.seasonOnly`, `home.episodeOnly`) and the caption's episode code (`catalog.episodeTag`, `detail.episodeCard.title`), with lengths written as Apple's `LocaleFormat.duration` does (`3h 18min` in German). `Intl` writes several languages' units differently from Foundation, so `src/i18n/format.ts` keeps them as Foundation prints them and a test holds all 22 languages to Foundation's own output. A code keeps ASCII digits (`S01F25`).
+- Not moved yet, still English: Home's Aired line and years, the card context menu and its update-failed alert, the For You page's own text, library and search screens, and server error text. They follow in later #571 pull requests.
 
 ## Theme music
 
