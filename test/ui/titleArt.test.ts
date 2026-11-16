@@ -29,6 +29,8 @@ async function setup(prepare?: (tv: Tv, settings: FakeSettings) => Promise<void>
     await tv.page.locator('[data-view="home"]').waitFor();
     // Home reads title art and poster badges when it loads; let those settle before scripting settings replies.
     if (settled) await tv.eventually(async () => ["keys=ui.title_art", "keys=ui.card_overlays"].every(key => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes(key))), "Home settings reads");
+    // Details asks for the logo as soon as it opens, so the settings answers must have landed or a late "off" answer arrives after the request.
+    if (settled) await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
     return { tv, catalog, settings };
 }
 async function details(tv: Tv, _catalog: FakeDetails): Promise<void> {

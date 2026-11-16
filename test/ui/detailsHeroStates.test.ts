@@ -5,7 +5,7 @@ import type { Browser, Route } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
-import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const CAP = 0.9685;
 const px = (points: number): string => `${Math.round(points * CAP * 1e4) / 1e4}px`;
@@ -30,10 +30,18 @@ function detailTest(name: string, body: (tv: Tv) => Promise<void>, size?: "large
             await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
             await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
             await tv.page.evaluate(() => window.browseHarness.mount());
+            await homeSettled(tv);
             await body(tv);
             assert.deepEqual(tv.console, []);
         } finally { await tv.page.context().close(); }
     });
+}
+
+/** Waits until Home has rows and every answer the test did not hold has landed and painted; a late answer repaints the rows, and a click on a node about to be replaced is lost. */
+async function homeSettled(tv: Tv): Promise<void> {
+    await tv.page.locator('[data-section="recently_added"] .browse-card').first().waitFor();
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+    await afterPaint(tv);
 }
 
 /** Serves the fake's own answer for a GET after `edit` rewrites it. */
@@ -67,6 +75,7 @@ async function patchDetail(tv: Tv, id: string, fields: Record<string, unknown>):
 async function holdDetail(tv: Tv, id: string): Promise<void> {
     await tv.page.route(`**/api/v2/catalog/items/${encodeURIComponent(id)}?**`, () => undefined);
     await tv.page.evaluate(() => { window.browseHarness.clearResponseCache(); window.browseHarness.destroy(); window.browseHarness.mount(); });
+    await homeSettled(tv);
 }
 
 function skeleton(): Record<string, unknown> | null {
