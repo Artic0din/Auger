@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { afterPaint, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -2204,3 +2205,19 @@ test("another request cannot be cancelled or removed while one removal is in fli
         assert.equal(removals(tv).length, 1);
     } finally { await tv.page.context().close(); }
 });
+
+// TVPillButtonStyle(.compact) at silo-apple dce56e3c (TVDetailActions.swift:737-771): focus 1.025, Select presses to 0.98 of that, easeOut 0.12 s.
+for (const reduced of [false, true]) {
+    for (const key of ["create", "follow"]) {
+        test(`Request detail ${key} pill: held Select presses it to 0.98 of its focus scale (reduced motion: ${reduced})`, async () => {
+            const tv = await openTv(browser, { app: "browse" });
+            try {
+                await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+                const fake = await start(tv);
+                if (key === "follow") { fake.following = true; fake.requestedByOther = true; }
+                await openRequests(tv); await button(tv, "movie:949").click(); await button(tv, key).waitFor();
+                await assertPressedLook(tv, button(tv, key), { focusScale: 1.025, heldScale: 1.025 * 0.98, heldOpacity: 1, animates: "scale" }, reduced);
+            } finally { await tv.page.context().close(); }
+        });
+    }
+}
