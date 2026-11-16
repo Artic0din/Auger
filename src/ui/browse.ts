@@ -1110,7 +1110,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
     };
 
-    const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail): DetailsState => {
+    const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail, artwork: Readonly<Record<string, string>>): DetailsState => {
         let seasonFocus: { season: number | undefined; revision: number } | undefined;
         const details = new DetailsState(detail, session, (audioClosed) => {
             if (details.series?.focusSelectedEpisode && seasonFocus?.season !== details.series.seasonNumber) {
@@ -1124,7 +1124,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (top() === current && enter && episode !== undefined) { render({ zone: "seasons", key: `season:${details.series.seasonNumber}` }); return; }
             }
             detailsChanged(current, audioClosed);
-        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), () => detailArtworkQuery(imageCapability, window.devicePixelRatio));
+        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
         resolutionCap.ensure();
         return details;
@@ -1541,12 +1541,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (current.data?.details === undefined) stopDetails();
                 load(current, async (signal) => {
                     // Slots follow response fields: backdrop_width also sizes a still returned in backdrop_url.
-                    const detail = await read(operations.getCatalogItem(current.id, detailArtworkQuery(imageCapability, window.devicePixelRatio)), signal);
+                    const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
+                    const detail = await read(operations.getCatalogItem(current.id, artwork), signal);
                     const seasons = detail.type === "series" ? await read(operations.listSeriesSeasons(detail.id), signal) : [];
                     const episodeId = current.seriesContext?.episodeId;
                     const episode = detail.type === "series" && current.seriesContext?.seasonNumber === undefined && episodeId !== undefined
                         ? await read(operations.getCatalogItem(episodeId), signal).catch((error: unknown) => { if (error instanceof ApiError && error.status === 404) return undefined; throw error; }) : undefined;
-                    return { detail, seasons, contextSeason: current.seriesContext?.seasonNumber ?? (episode?.seriesId === detail.id ? episode.seasonNumber : undefined) };
+                    return { detail, seasons, artwork, contextSeason: current.seriesContext?.seasonNumber ?? (episode?.seriesId === detail.id ? episode.seasonNumber : undefined) };
                 }, (data) => {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
@@ -1571,7 +1572,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         if (!previous.series?.selectionChanged && current.seriesContext?.episodeId === undefined && current.focus === undefined && data.contextSeason !== undefined && data.seasons.some(item => item.seasonNumber === data.contextSeason)) return { zone: "seasons", key: `season:${data.contextSeason}` };
                         return;
                     }
-                    const details = createItemDetails(current, data.detail);
+                    const details = createItemDetails(current, data.detail, data.artwork);
                     details.restore(previous);
                     const repick = repickSeasons.delete(data.detail.id);
                     if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId);
@@ -2052,7 +2053,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const detail = cached === undefined ? undefined : previous?.detail ?? cached;
             if (detail !== undefined) {
                 const seasons = cache.peek(operations.listSeriesSeasons(current.id)) ?? [];
-                const details = createItemDetails(current, detail);
+                const details = createItemDetails(current, detail, detailArtworkQuery(imageCapability, window.devicePixelRatio));
                 details.restore(previous);
                 if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId);
                 details.series?.restore(previous?.series, false, true);

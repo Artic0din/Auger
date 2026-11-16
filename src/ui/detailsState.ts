@@ -153,9 +153,9 @@ export class DetailsState {
     private readonly quality: () => string | undefined;
     private readonly capReady: (signal: AbortSignal) => Promise<void>;
     /** The open read's artwork query, so every re-read of the title returns the same image URLs. */
-    private readonly artwork: () => Readonly<Record<string, string>>;
+    private readonly artwork: Readonly<Record<string, string>>;
 
-    constructor(detail: ItemDetail, session: NativeSession, changed: (returnKey?: string) => void, watchedChanged: (detail: ItemDetail, signal: AbortSignal) => Promise<void>, pendingElsewhere: () => boolean = () => false, translations?: DescriptionTranslations, quality: () => string | undefined = () => undefined, capReady: (signal: AbortSignal) => Promise<void> = async () => undefined, artwork: () => Readonly<Record<string, string>> = () => ({})) {
+    constructor(detail: ItemDetail, session: NativeSession, changed: (returnKey?: string) => void, watchedChanged: (detail: ItemDetail, signal: AbortSignal) => Promise<void>, pendingElsewhere: () => boolean = () => false, translations?: DescriptionTranslations, quality: () => string | undefined = () => undefined, capReady: (signal: AbortSignal) => Promise<void> = async () => undefined, artwork: Readonly<Record<string, string>> = {}) {
         this.detail = detail;
         this.artwork = artwork;
         this.quality = quality;
@@ -190,7 +190,7 @@ export class DetailsState {
                 series.publishTranslatedEpisodes(season, episodes);
                 return !episodes.some((episode) => episode.pendingTranslationLanguage !== undefined);
             },
-            artwork: () => this.artwork(),
+            artwork: () => this.artwork,
             changed: () => this.changed(),
         });
         this.changed = changed;
@@ -497,7 +497,7 @@ export class DetailsState {
         });
     }
 
-    private item(id: string): RequestSpec<ItemDetail> { return operations.getCatalogItem(id, this.artwork()); }
+    private item(id: string): RequestSpec<ItemDetail> { return operations.getCatalogItem(id, this.artwork); }
 
     private async read<T>(spec: RequestSpec<T>, controller: AbortController, cachedDisplay = true): Promise<T> {
         try {
