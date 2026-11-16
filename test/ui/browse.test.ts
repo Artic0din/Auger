@@ -2780,6 +2780,58 @@ for (const aggregate of ["series", "season"]) {
     }
 }
 
+browseTest("S-D2 a movie read sent before Mark as Watched still starts the cached movie's box-set row", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:movie:m0001");
+    await tv.page.locator(".box-set-row .box-set-current-label").waitFor();
+    await tv.remote(BACK); await showing(tv, "boxSet:12:1241");
+    await settled(tv);
+    // The revisit shows the cached movie and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/movie%3Am0001", true);
+    await tv.page.locator('.box-set-grid [data-focus="movie:m0001"]').click();
+    await showing(tv, "item:movie:m0001");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older movie read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await tv.page.locator(".box-set-row .box-set-current-label").waitFor();
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Unwatched", exact: true }).waitFor();
+}, { catalog: new BoxSetCatalog() });
+
+browseTest("S-D2 a series read sent before Mark Series Watched still brings the seasons a cached series lacked", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    // Leaving before the season list answers keeps the series in the cache without its seasons.
+    tv.fake.hold("/catalog/series/series%3As1/seasons");
+    await press(tv, "ArrowDown", "Enter");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "season list in flight");
+    await tv.remote(BACK);
+    await showing(tv, "home");
+    await settled(tv);
+    // The revisit shows the cached series and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1", true);
+    await press(tv, "Enter");
+    await showing(tv, "item:series:s1");
+    // The first visit's abandoned season-list answer stays held as well.
+    await tv.eventually(async () => tv.fake.heldReplies === 2, "older series read held");
+    assert.equal(await tv.page.locator('[data-focus="season:1"]').count(), 0, "the cached series has no season list yet");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await tv.page.locator('[data-focus="season:1"]').waitFor();
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Unwatched", exact: true }).waitFor();
+}, { catalog: new FakeDetails() });
+
 browseTest("S-D2 a series read sent before Mark Series Watched cannot undo the refreshed state", async (tv, catalog) => {
     assert.ok(catalog instanceof FakeDetails);
     catalog.watchedEpisodes.clear();
