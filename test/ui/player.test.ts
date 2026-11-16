@@ -918,7 +918,7 @@ test("the Spoken language row leads the suggestions when the spoken language is 
         await remote(page, ENTER);
         const first = await page.locator(".player-ai-menu [data-focus^='ai-language:']").first().evaluate(row => [row.getAttribute("data-focus"), row.querySelector(".player-choice-detail")?.textContent]);
         assert.deepEqual(first, ["ai-language:ai-detected-spoken-language", "Detected from the audio"]);
-        await remote(page, DOWN);
+        assert.equal(await focused(page), "ai-language:ai-detected-spoken-language", "focus starts on the Spoken language row");
         await remote(page, ENTER);
         assert.deepEqual(await commands(page), ["startSubtitleAI ai-detected-spoken-language"]);
     } finally { await page.close(); }
