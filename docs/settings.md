@@ -112,7 +112,7 @@ Off, an unsupported panel, a throwing probe, or a failed read of the HDR key the
 ## Theme music
 
 Settings › General › THEME MUSIC, after the Title Pages group and before Cards & Posters, shows `Play Theme Music` and `Loop Theme Music`.
-Both are switches. Loop is disabled until Play is on. The footer is Apple's: `Play a title's theme song from your library while its page is open. Only affects this TV.`
+Both are switches. Loop is disabled until Play is on. A disabled Loop row is drawn at full brightness (Apple's `TVSettingsPaneRowStyle` sets an explicit foreground, so `.disabled` does not dim it); it stays focusable and ignores presses. The footer is Apple's: `Play a title's theme song from your library while its page is open. Only affects this TV.`
 Source: [silo-apple `650a0b8a`](https://github.com/Silo-Server/silo-apple/tree/650a0b8a), `TVGeneralSettingsView.themeMusicGroup`, `ThemeMusicPreferences.swift`, `Screens/Detail/ThemeMusic/*`, and silo-server `df9f5501` (`docs/catalog-api.md`, "Local theme songs, V2").
 
 - Keys `ui.theme_music_enabled` and `ui.theme_music_loop` (settings revision 11, boolean, default off). The rows appear only when the capability is available, allowed, batched, at revision 11 or later, with a `profile_device` scope.
