@@ -2558,6 +2558,8 @@ browseTest("richer Details: facts, versions, people, accumulating filmography, r
     await tv.page.locator(".details-people [data-focus]").first().focus();
     const castKey = await tv.focused();
     assert.ok(castKey?.startsWith("credit:"));
+    // The refresh's own follow-up reads must be counted before the presses.
+    await quiet(tv);
     const reads = tv.fake.requests.length;
     await press(tv, "ArrowRight", "ArrowLeft");
     assert.equal(tv.fake.requests.length, reads, "focus performs no reads");
