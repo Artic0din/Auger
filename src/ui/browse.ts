@@ -58,6 +58,7 @@ import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
 import { shownLanguage } from "../i18n/language.ts";
+import { heldSelect, moveSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
@@ -2932,9 +2933,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
     languagePrefs.subscribe(() => {
         if (torn || playing || settingsScreen !== undefined) return;
-        // The rebuilt bar replaces the focused button, so the target is read before it.
+        // The rebuilt bar replaces the focused button, so its focus target and any Select held on it are read before.
         const focus = host.focused();
-        if (relabelBar()) render(focus);
+        const press = heldSelect();
+        if (!relabelBar()) return;
+        render(focus);
+        // The press ended with the old button; the replacement takes it, so its release still runs it.
+        const replacement = document.activeElement;
+        if (press !== undefined && !press.element.isConnected && replacement instanceof HTMLElement) moveSelect(press, replacement);
     });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });

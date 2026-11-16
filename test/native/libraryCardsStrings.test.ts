@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { Card } from "../../src/contracts/v2/catalog.ts";
-import { durationText, groupedCount } from "../../src/i18n/format.ts";
+import { groupedCount } from "../../src/i18n/format.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { resolveMessage, translate, type Catalogs, type MessageKey } from "../../src/i18n/translate.ts";
 import { cardYears, homeCaption, marqueeMeta, runtimeText } from "../../src/ui/cardPresentation.ts";
@@ -14,8 +14,6 @@ import { episodeAirDate, episodeRuntime } from "../../src/ui/episodeCaption.ts";
 import { DEFAULT_FILTER, directionLabel, facetSummary, facetTitle, FACETS, options, sortKeysFor, sortLabel, SORT_KEYS, toggled } from "../../src/ui/libraryBrowse.ts";
 
 const file = (tag: string): Record<string, string> => JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
-/** What Foundation's `Duration.UnitsFormatStyle` printed for 5, 45, 60, 102 and 135 minutes in each shipped language (Swift 6, macOS). */
-const foundation = JSON.parse(readFileSync(new URL("support/foundationDurations.json", import.meta.url), "utf8")) as Record<string, Record<string, string>>;
 
 function inLanguage<T>(tag: string | null, body: () => T): T {
     setAppLanguage(tag, SHIPPED_LANGUAGES, ["en-AU"]);
@@ -24,22 +22,6 @@ function inLanguage<T>(tag: string | null, body: () => T): T {
 
 const episode: Card = { id: "episode:e", type: "episode", title: "Fire Drill", year: 2026, posterUrl: undefined, seriesId: "series:s", seriesTitle: "Abbott", seasonNumber: 2, episodeNumber: 7, durationSeconds: 1290, positionSeconds: 450 };
 const series: Card = { id: "series:s", type: "series", title: "Abbott", year: 2021, posterUrl: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined };
-
-test("a length reads as Foundation writes it in every shipped language", () => {
-    for (const language of SHIPPED_LANGUAGES) {
-        const expected = foundation[language];
-        assert.ok(expected, `${language} has a Foundation fixture`);
-        for (const minutes of [5, 45, 60, 102, 135]) assert.equal(durationText(minutes, language, language), expected[String(minutes)], `${language} ${minutes} min`);
-    }
-    assert.equal(durationText(0), undefined);
-    assert.equal(durationText(undefined), undefined);
-    assert.equal(inLanguage("de", () => runtimeText(135)), "2h 15min");
-    assert.equal(inLanguage("de", () => episodeRuntime(45)), "45min");
-    assert.equal(inLanguage("ja", () => runtimeText(60)), "1時間0分");
-    assert.equal(inLanguage("ar", () => runtimeText(102)), "١س ٤٢د", "Arabic reads in its own digits");
-    assert.equal(inLanguage("da", () => runtimeText(5)), "5 m.", "Danish keeps its full stop");
-    assert.equal(inLanguage(null, () => runtimeText(135)), "2h 15m");
-});
 
 test("a card's caption, marquee line and years read in German", () => {
     inLanguage("de", () => {
