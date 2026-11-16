@@ -505,7 +505,7 @@ export function searchView(head: readonly HTMLElement[], input: HTMLInputElement
     const zones: Zone[] = [{ id: "field", layout: "row", items: [field] }];
     switch (results.status) {
         case "idle":
-            content.push(searchState("Search Silo", "Find movies, series, and people", "search-prompt"));
+            content.push(searchState(translate("search.initial"), translate("search.initialBodyPeople"), "search-prompt"));
             break;
         case "searching":
             content.push(searchLoading());
@@ -527,7 +527,7 @@ export function searchView(head: readonly HTMLElement[], input: HTMLInputElement
         }
         case "ready":
             if (results.grid.zones[0]?.items.length === 0) {
-                content.push(searchState("No results", "Try a different search term", "search-empty"));
+                content.push(searchState(translate("search.empty"), translate("search.emptyBody"), "search-empty"));
             }
             content.push(...results.grid.content);
             zones.push(...results.grid.zones);
@@ -540,7 +540,7 @@ export const FAILURE_ICON = '<svg viewBox="0 0 48 48"><path fill="currentColor" 
 export function searchLoading(): HTMLElement {
     const progress = el("div", "search-progress");
     progress.setAttribute("role", "status");
-    progress.setAttribute("aria-label", "Searching");
+    progress.setAttribute("aria-label", translate("search.searchingAccessibility"));
     progress.appendChild(el("span", "search-progress-icon"));
     return progress;
 }

@@ -129,7 +129,7 @@ Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/d
 
 Platform limits, which Apple does not have:
 
-- Only Settings, the top bar and its menus, and Home's row titles and empty and loading states are translated so far. Apple's catalog switches every string; here each screen moves over in its own #571 pull request, and the others still show English whatever the choice. Right-to-left layout for Arabic is a later pull request too, so Arabic reads with left-to-right layout for now.
+- Only Settings, Details, Search, the top bar and its menus, and Home's row titles and empty and loading states are translated so far ([translation.md](translation.md) lists what is on the catalog). Apple's catalog switches every string; here each screen moves over in its own #571 pull request, and the others still show English whatever the choice. Right-to-left layout for Arabic is a later pull request too, so Arabic reads with left-to-right layout for now.
 - Apple also writes the choice as the app's system language (`AppleLanguages`) and reads a change made in system settings back as this device's value. Tizen has no per-app system language, so neither direction exists here.
 
 ### Settings text

@@ -1,0 +1,112 @@
+{
+  "ar" : {
+    "hour" : "{n}س",
+    "join" : " ",
+    "minute" : "{n}د"
+  },
+  "cs" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} m"
+  },
+  "da" : {
+    "hour" : "{n} t.",
+    "join" : " ",
+    "minute" : "{n} m."
+  },
+  "de" : {
+    "hour" : "{n}h",
+    "join" : " ",
+    "minute" : "{n}min"
+  },
+  "en" : {
+    "hour" : "{n}h",
+    "join" : " ",
+    "minute" : "{n}m"
+  },
+  "es" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} min"
+  },
+  "fi" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} min"
+  },
+  "fr" : {
+    "hour" : "{n}h",
+    "join" : " ",
+    "minute" : "{n}min"
+  },
+  "hr" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} m"
+  },
+  "it" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} min"
+  },
+  "ja" : {
+    "hour" : "{n}時間",
+    "join" : "",
+    "minute" : "{n}分"
+  },
+  "ko" : {
+    "hour" : "{n}시간",
+    "join" : " ",
+    "minute" : "{n}분"
+  },
+  "nb" : {
+    "hour" : "{n} t",
+    "join" : ", ",
+    "minute" : "{n} min"
+  },
+  "nl" : {
+    "hour" : "{n} u",
+    "join" : ", ",
+    "minute" : "{n} m"
+  },
+  "pl" : {
+    "hour" : "{n}h",
+    "join" : " ",
+    "minute" : "{n}min"
+  },
+  "pt-BR" : {
+    "hour" : "{n}h",
+    "join" : " ",
+    "minute" : "{n}min"
+  },
+  "ru" : {
+    "hour" : "{n} ч",
+    "join" : " ",
+    "minute" : "{n} мин"
+  },
+  "sv" : {
+    "hour" : "{n} h",
+    "join" : " ",
+    "minute" : "{n} m"
+  },
+  "tr" : {
+    "hour" : "{n}sa",
+    "join" : " ",
+    "minute" : "{n}d"
+  },
+  "uk" : {
+    "hour" : "{n} г",
+    "join" : " ",
+    "minute" : "{n} хв"
+  },
+  "zh-Hans" : {
+    "hour" : "{n}小时",
+    "join" : "",
+    "minute" : "{n}分钟"
+  },
+  "zh-Hant" : {
+    "hour" : "{n}時",
+    "join" : "",
+    "minute" : "{n}分"
+  }
+}
