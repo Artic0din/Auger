@@ -664,7 +664,11 @@ test("Search request writes restore the result, then Back returns to the root be
         assert.equal(tv.fake.paths().filter(path => path === "POST /requests").length, 1);
     } finally { await tv.page.context().close(); }
 });
-for (const order of [["titles", "people", "requests"], ["people", "requests", "titles"], ["requests", "titles", "people"]] as const) {
+const SEARCH_READ_ORDERS = [
+    ["titles", "people", "requests"], ["titles", "requests", "people"], ["people", "titles", "requests"],
+    ["people", "requests", "titles"], ["requests", "titles", "people"], ["requests", "people", "titles"],
+] as const;
+for (const order of SEARCH_READ_ORDERS) {
     test(`Back from a Search request result restores focus to that card when answers land ${order.join(", ")}`, async () => {
         const tv = await openTv(browser, { app: "browse" });
         try {
