@@ -197,6 +197,7 @@ export interface PlanRecipe {
     readonly bitrateKbps: number;
     readonly frameRate: number | undefined;
     readonly dynamicRange: string | undefined;
+    readonly audioChannels: number | undefined;
 }
 
 /** `PlaybackSource`: the file as stored, before any server transform. */
@@ -376,6 +377,7 @@ function decodeRecipe(value: unknown, path: string): PlanRecipe | undefined {
         bitrateKbps: integer(obj, "bitrate_kbps", path),
         frameRate: optionalNumber(obj, "frame_rate", path),
         dynamicRange: optionalText(obj, "dynamic_range", path),
+        audioChannels: optionalInteger(obj, "audio_channels", path),
     };
 }
 

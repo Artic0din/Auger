@@ -62,7 +62,7 @@ Issue #391 matches Apple's two-column panes (`Silo-Server/silo-apple` at `7e478b
 Still different from Apple, outside this issue: Speed offers 1× and 2× and Aspect Fit and Stretch, because AVPlay supports only those (see Platform limits). Liquid Glass also blurs the video under the panel; AVPlay draws video on a plane below the web page, so the CSS blur cannot reach it, and the video shows through the tint unblurred. Inter replaces SF Pro, so text widths differ by a few pixels.
 
 Stats and Info's Now playing rows come from the playback plan (`src/player/playerHUD.ts`, `planStats`).
-The picture is the plan's `effective_recipe` (what reaches the TV, where Apple reads its engine's decoded stream), falling back to `source`; the Video row's bitrate is the recipe's, never a measured throughput.
+The picture and the Stats Audio format are the plan's `effective_recipe` (what reaches the TV, where Apple reads its engine's decoded stream), falling back to `source` and the selected track; Info's Audio row names the track as the Audio tab does. The Video row's bitrate is the recipe's, never a measured throughput.
 Dynamic range is the source's, or "source → output" when the recipe changes it, as Apple's planned-range label.
 Apple's engine-measured rows (buffer, network, read bitrates, dropped frames, A/V sync, decoders, Aether counters) are left out because AVPlay does not report them; no estimate is substituted (#556).
 The Info and Stats panes have no focus ring yet, and Stats scrolls by page rather than by section (#556).

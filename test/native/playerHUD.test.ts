@@ -111,7 +111,8 @@ test("a transcode names the server's work, the range change, the speed and every
         { label: "Playback", value: "Transcoded by the server · MKV" },
         { label: "Video", value: "HEVC · 3840×1600 · 24 fps · 20.0 Mbps" },
         { label: "Dynamic range", value: "Dolby Vision Profile 8 → SDR" },
-        { label: "Audio", value: "Portuguese · EAC3 5.1" },
+        // Stats names the audio that reaches the TV (the recipe's AAC stereo); Info keeps the track as the Audio tab names it.
+        { label: "Audio", value: "Portuguese · AAC Stereo" },
         { label: "Subtitles", value: "Portuguese · PGS · Forced" },
         { label: "Playback rate", value: "2×" },
         { label: "Diagnostics", value: "Video codec unsupported" },

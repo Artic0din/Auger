@@ -3155,9 +3155,9 @@ test("the HUD's Now playing and Stats rows name the plan's audio track and follo
         assert.ok((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined);
         return view.hud.stats;
     };
-    // The fake's file 42 plays its first track: English, EAC3, six channels.
+    // Info names the fake's file 42 track (English, EAC3, six channels); Stats gives the format the plan's recipe delivers (AAC stereo).
     assert.equal(stats().nowPlaying.find(row => row.label === "Audio")?.value, "English · EAC3 5.1");
-    assert.equal(stats().playback.find(row => row.label === "Audio")?.value, "English · EAC3 5.1");
+    assert.equal(stats().playback.find(row => row.label === "Audio")?.value, "English · AAC Stereo");
     assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Playing" }]);
     assert.equal(stats().engine.find(row => row.label === "Source")?.value !== undefined, true);
     r.controller.setPaused(true);
