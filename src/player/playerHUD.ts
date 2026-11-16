@@ -108,7 +108,7 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const to = recipe?.dynamicRange?.trim().toLowerCase();
     const sourceRange = rangeLabel(from, source.dolbyVisionProfile);
     const outputRange = rangeLabel(to, undefined);
-    const range = !picture ? undefined : from !== to && sourceRange !== undefined && outputRange !== undefined ? `${sourceRange} → ${outputRange}` : sourceRange;
+    const range = !picture ? undefined : from !== to && sourceRange !== undefined && outputRange !== undefined ? `${sourceRange} → ${outputRange}` : sourceRange ?? outputRange;
     const audioInfo = live.audio === undefined ? undefined : audioInfoLine(live.audio.track, live.audio.ordinal);
     // Apple reads the decoded stream's track: the selected track's language with the format the recipe delivers. A recipe
     // without a channel count leaves the layout out rather than borrow the source's.

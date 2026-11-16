@@ -156,3 +156,14 @@ test("a recipe with no channel count names its codec alone, never the source tra
     assert.equal(stats.playback.find(row => row.label === "Audio")?.value, "English · AAC");
     assert.equal(stats.nowPlaying.find(row => row.label === "Audio")?.value, "English · DTS 5.1");
 });
+
+test("with no source range, Dynamic range names what the recipe delivers", () => {
+    const plan = planWith(plan => {
+        const source = { ...(plan.source as Record<string, unknown>) };
+        delete source.dynamic_range;
+        plan.source = source;
+        plan.effective_recipe = { ...(plan.effective_recipe as Record<string, unknown>), dynamic_range: "hdr10" };
+    });
+    const stats = planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined });
+    assert.equal(stats.playback.find(row => row.label === "Dynamic range")?.value, "HDR10");
+});
