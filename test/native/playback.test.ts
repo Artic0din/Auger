@@ -3146,3 +3146,22 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
     }
     r.controller.destroy();
 });
+
+test("the HUD's Now playing and Stats rows name the plan's audio track and follow pause", async () => {
+    const r = await rig();
+    await playMovie(r);
+    const stats = (): NonNullable<Extract<PlaybackView, { phase: "playing" | "paused" }>["hud"]>["stats"] => {
+        const view = last(r.views);
+        assert.ok((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined);
+        return view.hud.stats;
+    };
+    // The fake's file 42 plays its first track: English, EAC3, six channels.
+    assert.equal(stats().nowPlaying.find(row => row.label === "Audio")?.value, "English · EAC3 5.1");
+    assert.equal(stats().playback.find(row => row.label === "Audio")?.value, "English · EAC3 5.1");
+    assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Playing" }]);
+    assert.equal(stats().engine.find(row => row.label === "Source")?.value !== undefined, true);
+    r.controller.setPaused(true);
+    await r.h.clock.advance(0);
+    assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Paused" }]);
+    r.controller.destroy();
+});

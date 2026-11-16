@@ -107,12 +107,13 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const from = source.dynamicRange?.trim().toLowerCase();
     const to = recipe?.dynamicRange?.trim().toLowerCase();
     const sourceRange = rangeLabel(from, source.dolbyVisionProfile);
-    const range = !picture ? undefined : from !== undefined && to !== undefined && from !== to && sourceRange !== undefined && rangeLabel(to, undefined) !== undefined ? `${sourceRange} → ${rangeLabel(to, undefined) ?? ""}` : sourceRange;
+    const outputRange = rangeLabel(to, undefined);
+    const range = !picture ? undefined : from !== to && sourceRange !== undefined && outputRange !== undefined ? `${sourceRange} → ${outputRange}` : sourceRange;
     const audioInfo = live.audio === undefined ? undefined : audioInfoLine(live.audio.track, live.audio.ordinal);
     const audioStats = live.audio === undefined ? undefined : audioStatsLine(live.audio.track);
     const subtitleInfo = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleSingleLine(live.subtitle.entry, live.subtitle.entry.combinedIndex);
     const subtitleStats = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleStatsLine(live.subtitle.entry);
-    const container = plan.source.container === undefined ? undefined : CONTAINERS[plan.source.container.toLowerCase()] ?? plan.source.container;
+    const container = source.container === undefined ? undefined : CONTAINERS[source.container.toLowerCase()] ?? source.container;
     const reason = plan.decisionReason?.replaceAll("_", " ");
     // The reason and the warnings share one label; only the first row carries it.
     const notes = [reason === undefined ? undefined : reason.charAt(0).toUpperCase() + reason.slice(1), ...plan.warnings.map(warning => warning.message)].filter((note): note is string => note !== undefined && note.trim() !== "");
