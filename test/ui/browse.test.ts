@@ -2295,12 +2295,15 @@ browseTest("a late Recommended artwork probe upgrades only image fields", async 
     assert.equal(await tv.page.locator('[data-section="library-picks"] [data-focus="movie:m0001"] .browse-card-title').textContent(), title.title);
 }, { catalog: libraryImagesCatalog, beforeConnect: tv => { lateLibraryImages = tv.fake.hold("/images/capabilities", true); } });
 
-const detailImagesCatalog = new FakeCatalog();
-detailImagesCatalog.failNext("/images/capabilities", { status: 200, body: {
+const detailImageCapabilities = { status: 200, body: {
     revision: "r1", state: "available", allowed: true, param: "image_size", sizes: ["small", "medium", "large", "original"], widths: {}, original_max_width_px: 3840,
     episode_still_provenance: true, episode_parent_artwork: true, extended_item_artwork: true, season_list_artwork_param: "include_artwork", storage_backend: "local", delivery: "server",
     slot_width_params: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" },
-} });
+} };
+const detailImagesCatalog = new FakeCatalog();
+detailImagesCatalog.failNext("/images/capabilities", detailImageCapabilities);
+const detailRereadCatalog = new FakeDetails();
+detailRereadCatalog.failNext("/images/capabilities", detailImageCapabilities);
 browseTest("Details reads its title at Apple TV's detail widths, Home's hero backdrop included", async tv => {
     await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/images/capabilities"), "capability probe");
     await tv.page.locator('.browse-card[data-focus="movie:m0002"]').first().click();
@@ -2308,6 +2311,19 @@ browseTest("Details reads its title at Apple TV's detail widths, Home's hero bac
     assert.ok(tv.fake.requests.some(request => request.path === "/catalog/items/movie%3Am0002?image_size=medium&logo_width=880&backdrop_width=1344&poster_width=460&photo_width=200"),
         tv.fake.requests.filter(request => request.path.startsWith("/catalog/items/movie%3Am0002")).map(request => request.path).join("\n"));
 }, { catalog: detailImagesCatalog });
+
+browseTest("Details re-reads its title at the same artwork widths, so the hero keeps its backdrop URL", async tv => {
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/images/capabilities"), "capability probe");
+    await tv.page.locator('.browse-card[data-focus="movie:m0002"]').first().click();
+    await showing(tv, "item:movie:m0002");
+    const itemReads = (): string[] => tv.fake.requests.filter(request => request.path.startsWith("/catalog/items/movie%3Am0002?")).map(request => request.path);
+    const opened = itemReads();
+    assert.equal(opened.length, 1, opened.join("\n"));
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Watched", exact: true }).click();
+    await tv.eventually(async () => itemReads().length > opened.length, "the watched readback");
+    assert.deepEqual([...new Set(itemReads())], opened);
+}, { catalog: detailRereadCatalog });
 
 const failedCollectionsCatalog = new FakeCatalog();
 failedCollectionsCatalog.failNext("/library/12/collections", problem(422, "validation_failed", "Collections unavailable"));

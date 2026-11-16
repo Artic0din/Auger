@@ -1124,7 +1124,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (top() === current && enter && episode !== undefined) { render({ zone: "seasons", key: `season:${details.series.seasonNumber}` }); return; }
             }
             detailsChanged(current, audioClosed);
-        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal));
+        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), () => detailArtworkQuery(imageCapability, window.devicePixelRatio));
         details.presentsAlerts = true;
         resolutionCap.ensure();
         return details;

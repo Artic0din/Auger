@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
 - Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
