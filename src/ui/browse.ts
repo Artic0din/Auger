@@ -1920,7 +1920,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
     /** Titles, People, box sets and Requests each stay on screen until their own replacement answers. */
     const search = (current: Extract<Route, { kind: "search" }>, quiet = false, focus?: FocusTarget): void => {
-        searchReturnFocus = undefined;
         cancelSearch();
         stopSearchSupplement();
         current.failure = undefined;
@@ -1964,6 +1963,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         // The TV keyboard's Done key, or Enter on a desktop keyboard: search now.
         if (current?.kind === "search" && (event.keyCode === 65376 || event.key === "Enter") && input.value !== "") {
+            // Only a viewer's search drops the result Back is returning to; the reread of an answer an earlier push interrupted keeps it.
+            searchReturnFocus = undefined;
             current.query = input.value;
             // Done closes the Samsung keyboard; leaving Apple's keyboard lands on the selected filter.
             search(current, false, event.keyCode === 65376 ? { zone: "search-filters", key: `search-filter:${current.filter ?? "all"}` } : undefined);
