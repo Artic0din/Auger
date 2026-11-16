@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
 - Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
 - A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
 - Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.

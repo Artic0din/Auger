@@ -1621,14 +1621,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             case "season":
                 if (current.data?.details === undefined) stopDetails();
                 load(current, async (signal) => {
+                    const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
                     const [episodes, detail] = await Promise.all([
                         read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber), signal),
-                        current.id === undefined ? undefined : read(operations.getCatalogItem(current.id), signal).catch((error: unknown) => {
+                        current.id === undefined ? undefined : read(operations.getCatalogItem(current.id, artwork), signal).catch((error: unknown) => {
                             if (error instanceof ApiError && error.status === 404) return undefined;
                             throw error;
                         }),
                     ]);
-                    return { episodes, detail };
+                    return { episodes, detail, artwork };
                 }, (data) => {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
@@ -1644,7 +1645,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     stopDetails();
                     current.data = data;
                     if (data.detail !== undefined) {
-                        const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal));
+                        const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
                         resolutionCap.ensure();
                         details.restore(previous);
