@@ -6,6 +6,7 @@ import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -417,3 +418,25 @@ railTest("a related episode keeps its season when it replaces a related page, an
     await tv.remote(10009);
     await tv.eventually(async () => await view() === "item:movie:m0001", "Back returns to the movie the rail started from");
 });
+
+// silo-apple dce56e3c, tvOS only. TVSeriesModeTabStyle (TVSeriesDetailView.swift:1291): 0.98, snapped, no focus scale.
+// TVAnchoredEpisodeButtonStyle (TVEpisodeRail.swift:477-481): opacity 0.96 over easeOut 0.12 s; it takes no 0.97 art scale
+// (`tvCardLift(isFocused:)` is called without isPressed, TVEpisodeRail.swift:~506, TVCardFocusStyle.swift:158).
+for (const reduced of [false, true]) {
+    railTest(`a season pill snaps to 0.98 on held Select (reduced motion: ${reduced})`, async (tv, details) => {
+        await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await routeSeasons(tv, details, [{ number: 1, title: "Season 1" }, { number: 2, title: "Season 2" }]);
+        await tv.page.locator(SERIES).first().click();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').waitFor();
+        await assertPressedLook(tv, tv.page.locator('[data-focus="season:2"]'), { focusScale: 1, heldScale: 0.98, heldOpacity: 1 }, reduced);
+    });
+    railTest(`an anchored episode card dims to 0.96 on held Select and keeps its lift (reduced motion: ${reduced})`, async (tv, details) => {
+        await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await routeSeasons(tv, details, [{ number: 1, title: "Season 1" }]);
+        await tv.page.locator(SERIES).first().click();
+        await tv.page.locator('[data-focus="episode:rail:1:1"]').waitFor();
+        await tv.jump(500);
+        const lift = reduced ? 1 : 1.05;
+        await assertPressedLook(tv, tv.page.locator('[data-focus="episode:rail:1:1"]'), { focusScale: lift, heldScale: lift, heldOpacity: 0.96, face: ".browse-art", animates: "opacity" }, reduced);
+    });
+}
