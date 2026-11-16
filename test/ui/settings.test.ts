@@ -1628,3 +1628,19 @@ test("the rail's own Up and Down are unchanged", async () => {
         assert.equal(await tv.focused(), keys[0], "Up at the first rail item stays");
     } finally { await tv.page.context().close(); }
 });
+
+// The rail is a `.focusSection()` too (TVSettingsView.swift, silo-apple dce56e3c): Down from Sign Out, its last item, stays on it.
+test("Down from Sign Out, the last rail item, stays on it in every pane", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        for (const category of ["general", "playback", "subtitles", "server"]) {
+            await tv.page.locator(`[data-focus="${category}"]`).focus();
+            await tv.page.locator('[data-focus="settings-signout"]').focus();
+            await tv.page.keyboard.press("ArrowDown");
+            assert.equal(await tv.focused(), "settings-signout", `${category}: Down from Sign Out stays`);
+            await tv.page.keyboard.press("ArrowUp");
+            assert.notEqual(await tv.focused(), "settings-signout", `${category}: Up still leaves Sign Out`);
+        }
+    } finally { await tv.page.context().close(); }
+});

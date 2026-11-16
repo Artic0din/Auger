@@ -863,7 +863,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         panes.append(rail, body);
         paneSnapshot = panes;
         host.show({ name: "settings", content: [panes], zones: [
-            { id: "settings-categories", layout: "column", right: "settings-rows", items: categories },
+            // The rail is a focus section too: Up at the profile card and Down at Sign Out stay in it.
+            { id: "settings-categories", layout: "column", up: "settings-categories", down: "settings-categories", right: "settings-rows", items: categories },
             // A save in flight blocks every row's press, so only then do the rows stay reachable (Apple's view models ignore presses while saving).
             // Apple's panes are focus sections: Up at the first row and Down at the last stay in the pane, and only Left leaves it.
             { id: "settings-rows", layout: "column", left: "settings-categories", up: "settings-rows", down: "settings-rows", skipDisabled: !state.busy, items: rows },
