@@ -57,7 +57,7 @@ import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, star
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
 import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
-import { planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
 /** What browse hands over: one file of one catalog item. */
 export interface PlayRequest {
@@ -3393,7 +3393,7 @@ export class PlaybackController implements PlayerControls {
                 chapters: attempt.hud.chapters, chapterState: attempt.hud.chapterState,
                 overview: attempt.hud.metadata?.overview ?? attempt.request.overview,
                 metadata: attempt.hud.metadata, metadataFailed: attempt.hud.metadataFailed,
-                stats: planStats(plan),
+                stats: planStats(plan, liveStats(attempt, plan, this.deps.session.http.base.baseUrl)),
                 ...videoOptions(this.deps.avplay.setSpeed !== undefined, this.deps.avplay.setDisplayMethod !== undefined, plan.streamProtocol),
                 speed: attempt.hud.speed, aspect: attempt.hud.aspect,
                 autoNext: attempt.autoNextSupported ? attempt.autoNext : undefined,
@@ -3701,6 +3701,25 @@ function sameStart(attempt: Attempt): PlayRequest {
     const request = attempt.request;
     if (attempt.plan === undefined || request.startSeconds === attempt.sourceSeconds) return request;
     return { ...request, startSeconds: attempt.sourceSeconds };
+}
+
+/** The selected tracks, speed, phase and media host the Stats and Info rows need beside the plan. */
+function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string): LiveStats {
+    const fileId = plan.effectiveMediaFileId;
+    const version = attempt.tracks?.state === "ready" ? attempt.tracks.versions.find(candidate => candidate.fileId === fileId) : undefined;
+    const ordinal = version?.audio.findIndex((_, index) => `file:${fileId}:audio:${index}` === plan.selectedTracks.audio?.id) ?? -1;
+    const track = version?.audio[ordinal];
+    const shown = shownSubtitle(attempt, plan);
+    const entry = shown === undefined ? undefined : plan.subtitle.inventory.find(row => row.trackId === shown);
+    let host: string | undefined;
+    try { host = new URL(plan.streamUrl, baseUrl).hostname || undefined; } catch { host = undefined; }
+    return {
+        audio: track === undefined ? undefined : { track, ordinal },
+        subtitle: entry === undefined ? undefined : { entry, generated: attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label },
+        speed: attempt.hud.speed,
+        status: attempt.buffering ? "Rebuffering" : attempt.paused ? "Paused" : "Playing",
+        host,
+    };
 }
 
 function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
