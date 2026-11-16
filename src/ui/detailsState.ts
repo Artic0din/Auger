@@ -97,12 +97,26 @@ export class DetailsState {
         return [...this.episodeStates.values(), ...this.previousEpisodeStates.values()].find(state => state.audioPreference.pending || state.audioPreference.failed || state.subtitlePreference.pending || state.subtitlePreference.failed);
     }
     get episodePreferencesBlocked(): boolean { return this.unsettledEpisode !== undefined; }
-    get playbackTargetId(): string | undefined {
+    /** The episode the visit opened with, from a Calendar episode. */
+    entryEpisodeId: string | undefined;
+    private get suggestedEpisodeId(): string | undefined {
         const episodes = this.series?.episodes;
-        if (this.series?.selectionOwnsHero) return episodes?.[0]?.id;
-        return this.focusedEpisodeId ?? (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id ?? this.detail.playContentId;
+        return (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id;
     }
-    get heroEpisodeId(): string | undefined { return this.series?.selectionOwnsHero ? this.series.episodes?.[0]?.id : this.focusedEpisodeId; }
+    /**
+     * TVSeriesDetailView.displayedEpisode: a visit's episode the selected season does not list shows the suggested
+     * episode instead. An empty season has none, so the episode stays only while a prefetched neighbour lists it.
+     */
+    private get shownEpisodeId(): string | undefined {
+        const id = this.focusedEpisodeId, episodes = this.series?.episodes;
+        if (id === undefined || id !== this.entryEpisodeId || episodes === undefined || episodes.some(episode => episode.id === id)) return id;
+        return this.suggestedEpisodeId ?? (this.series?.railEpisodes?.some(episode => episode.id === id) ? id : undefined);
+    }
+    get playbackTargetId(): string | undefined {
+        if (this.series?.selectionOwnsHero) return this.series.episodes?.[0]?.id;
+        return this.shownEpisodeId ?? this.suggestedEpisodeId ?? this.detail.playContentId;
+    }
+    get heroEpisodeId(): string | undefined { return this.series?.selectionOwnsHero ? this.series.episodes?.[0]?.id : this.shownEpisodeId; }
     nextEpisodeLoading = false;
     nextEpisodeFailed = false;
     extraPending: string | undefined;
@@ -138,15 +152,18 @@ export class DetailsState {
     private readonly pendingElsewhere: () => boolean;
     private readonly quality: () => string | undefined;
     private readonly capReady: (signal: AbortSignal) => Promise<void>;
+    /** The open read's artwork query, so every re-read of the title returns the same image URLs. */
+    private readonly artwork: Readonly<Record<string, string>>;
 
-    constructor(detail: ItemDetail, session: NativeSession, changed: (returnKey?: string) => void, watchedChanged: (detail: ItemDetail, signal: AbortSignal) => Promise<void>, pendingElsewhere: () => boolean = () => false, translations?: DescriptionTranslations, quality: () => string | undefined = () => undefined, capReady: (signal: AbortSignal) => Promise<void> = async () => undefined) {
+    constructor(detail: ItemDetail, session: NativeSession, changed: (returnKey?: string) => void, watchedChanged: (detail: ItemDetail, signal: AbortSignal) => Promise<void>, pendingElsewhere: () => boolean = () => false, translations?: DescriptionTranslations, quality: () => string | undefined = () => undefined, capReady: (signal: AbortSignal) => Promise<void> = async () => undefined, artwork: Readonly<Record<string, string>> = {}) {
         this.detail = detail;
+        this.artwork = artwork;
         this.quality = quality;
         this.capReady = capReady;
         this.session = session;
         this.trailers = new TrailerFetch(
             signal => session.call({ ...detailOperations.refreshTrailers(detail.id), profileScoped: true, replayAfterRefresh: false, signal }),
-            signal => session.call({ ...operations.getCatalogItem(detail.id), profileScoped: true, signal }),
+            signal => session.call({ ...this.item(detail.id), profileScoped: true, signal }),
             found => { this.detail = { ...found, played: this.detail.played, watch: this.detail.watch }; },
             () => this.changed(),
         );
@@ -173,20 +190,21 @@ export class DetailsState {
                 series.publishTranslatedEpisodes(season, episodes);
                 return !episodes.some((episode) => episode.pendingTranslationLanguage !== undefined);
             },
+            artwork: () => this.artwork,
             changed: () => this.changed(),
         });
         this.changed = changed;
         this.watchedChanged = watchedChanged;
         this.pendingElsewhere = pendingElsewhere;
         this.audioPreference = new PreplayAudioPreference(session, detail.seriesId || detail.id, () => this.changed(), async signal => {
-            const refreshed = await session.call({ ...operations.getCatalogItem(detail.id), profileScoped: true, signal });
+            const refreshed = await session.call({ ...this.item(detail.id), profileScoped: true, signal });
             if (refreshed.id !== detail.id) throw new Error("Audio readback item mismatch");
             if (signal.aborted) return;
             this.detail = refreshed;
             this.audioTrackId();
         });
         this.subtitlePreference = new PreplayTrackPreference(subtitlePreferenceOperations, session, detail.seriesId || detail.id, () => this.changed(), async signal => {
-            const refreshed = await session.call({ ...operations.getCatalogItem(detail.id), profileScoped: true, signal });
+            const refreshed = await session.call({ ...this.item(detail.id), profileScoped: true, signal });
             if (refreshed.id !== detail.id) throw new Error("Subtitle readback item mismatch");
             if (signal.aborted) return;
             this.detail = refreshed;
@@ -479,6 +497,8 @@ export class DetailsState {
         });
     }
 
+    private item(id: string): RequestSpec<ItemDetail> { return operations.getCatalogItem(id, this.artwork); }
+
     private async read<T>(spec: RequestSpec<T>, controller: AbortController, cachedDisplay = true): Promise<T> {
         try {
             const value = await this.session.call({ ...spec, profileScoped: true, signal: controller.signal });
@@ -572,7 +592,7 @@ export class DetailsState {
         if (season !== undefined && (this.aggregateWatched !== undefined || season.userData !== undefined) && !this.seasonStates.has(season.seasonNumber)) {
             const owner = new DetailsState({ ...this.detail, id: season.id, type: "season", seriesId: this.detail.id, seasonNumber: season.seasonNumber, played: this.aggregateWatched ?? season.userData?.played },
                 this.session, () => this.changed(), (detail, signal) => this.seasonWatchedChanged(detail, signal),
-                () => this.pending || this.pendingElsewhere());
+                () => this.pending || this.pendingElsewhere(), undefined, undefined, undefined, this.artwork);
             owner.presentsAlerts = this.presentsAlerts;
             this.seasonStates.set(season.seasonNumber, owner);
             owner.start("personal");
@@ -583,10 +603,10 @@ export class DetailsState {
         if (this.series?.focusSelectedEpisode && this.series.selectionOwnsHero) {
             this.focusedEpisodeId = this.series.episodes?.[0]?.id;
         }
-        if (this.series?.railEpisodes !== undefined && this.focusedEpisodeId !== undefined && !this.series.railEpisodes.some(episode => episode.id === this.focusedEpisodeId)) this.focusedEpisodeId = undefined;
+        if (this.series?.railEpisodes !== undefined && this.focusedEpisodeId !== undefined && this.focusedEpisodeId !== this.entryEpisodeId && !this.series.railEpisodes.some(episode => episode.id === this.focusedEpisodeId)) this.focusedEpisodeId = undefined;
         const target = this.playbackTargetId;
         if (this.queuedFocusEpisode !== undefined && this.queuedFocusEpisode !== target) this.cancelEpisodeFocus();
-        if (target !== undefined && !this.series?.selectionOwnsHero && this.focusedEpisodeId === undefined) this.queueEpisode(target);
+        if (target !== undefined && !this.series?.selectionOwnsHero && (this.focusedEpisodeId === undefined || this.shownEpisodeId !== this.focusedEpisodeId)) this.queueEpisode(target);
         this.syncEpisode();
         this.changed();
         this.descriptions?.consider(translate);
@@ -606,7 +626,9 @@ export class DetailsState {
                 if (this.episodeFocusOwner !== id || this.heroEpisodeId !== id) return;
                 this.queueEpisode(id, true);
                 this.syncEpisode();
-                this.changed();
+                // The read reaches fetch only after microtasks; a synchronous repaint (140-180 ms on the S95C) would hold it back.
+                const controller = this.controller;
+                setTimeout(() => { if (controller !== undefined && this.current(controller)) this.changed(); }, 0);
             }, EPISODE_FOCUS_DWELL_MS);
         }
         this.syncEpisode();
@@ -635,7 +657,7 @@ export class DetailsState {
     private async seasonWatchedChanged(detail: ItemDetail, signal: AbortSignal): Promise<void> {
         await this.watchedChanged(detail, signal);
         const [series, seasons] = await Promise.all([
-            this.session.call({ ...operations.getCatalogItem(this.detail.id), profileScoped: true, signal }),
+            this.session.call({ ...this.item(this.detail.id), profileScoped: true, signal }),
             this.session.call({ ...operations.listSeriesSeasons(this.detail.id), profileScoped: true, signal }),
         ]);
         if (series.id !== this.detail.id || series.played === undefined) throw new Error("Series watch state missing");
@@ -680,7 +702,7 @@ export class DetailsState {
             const season = this.series?.seasons.find(season => season.seasonNumber === number);
             if (season === undefined) continue;
             const owner = new DetailsState({ ...prior.detail, played: season.userData?.played }, this.session, () => this.changed(),
-                (detail, signal) => this.seasonWatchedChanged(detail, signal), () => this.pending || this.pendingElsewhere());
+                (detail, signal) => this.seasonWatchedChanged(detail, signal), () => this.pending || this.pendingElsewhere(), undefined, undefined, undefined, this.artwork);
             owner.presentsAlerts = this.presentsAlerts;
             for (const [kind, change] of prior.changes) owner.changes.set(kind, { ...change, pending: false, failed: true });
             this.seasonStates.set(number, owner);
@@ -692,7 +714,7 @@ export class DetailsState {
         this.nextEpisodeState = id === undefined ? undefined : this.episodeStates.get(id);
         const previous = id === undefined || this.episodeRefusals.has(id) ? undefined : this.previousEpisodeStates.get(id) ?? (this.previousNextEpisodeState?.detail.id === id ? this.previousNextEpisodeState : undefined);
         if (id !== undefined && this.nextEpisodeState === undefined && previous !== undefined && !previous.audioPreference.pending && !previous.audioPreference.failed && !previous.subtitlePreference.pending && !previous.subtitlePreference.failed && this.controller !== undefined) {
-            const state = new DetailsState(previous.detail, this.session, key => this.episodePreferenceChanged(state, key), this.watchedChanged, this.pendingElsewhere, undefined, this.quality);
+            const state = new DetailsState(previous.detail, this.session, key => this.episodePreferenceChanged(state, key), this.watchedChanged, this.pendingElsewhere, undefined, this.quality, undefined, this.artwork);
             state.restore(previous);
             this.episodeStates.set(id, state);
             state.start("playback");
@@ -724,11 +746,11 @@ export class DetailsState {
             const id = this.episodeQueue.shift();
             if (id === undefined) break;
             this.episodeWorkers++;
-            this.session.call({ ...operations.getCatalogItem(id), profileScoped: true, signal: episodeController.signal }).then(detail => {
+            this.session.call({ ...this.item(id), profileScoped: true, signal: episodeController.signal }).then(detail => {
                 if (!current()) return;
                 if (detail.id !== id || detail.type !== "episode") throw new ApiError({ kind: "invalid_response", path: "nextEpisode.item" });
                 this.episodeRefusals.delete(id);
-                const state = new DetailsState(detail, this.session, key => this.episodePreferenceChanged(state, key), this.watchedChanged, this.pendingElsewhere, undefined, this.quality);
+                const state = new DetailsState(detail, this.session, key => this.episodePreferenceChanged(state, key), this.watchedChanged, this.pendingElsewhere, undefined, this.quality, undefined, this.artwork);
                 // The fallback already on screen can hold this visit's version, audio, or subtitles.
                 const active = this.episodeStates.get(id);
                 const retained = active ?? this.previousEpisodeStates.get(id) ?? (this.previousNextEpisodeState?.detail.id === id ? this.previousNextEpisodeState : undefined);
@@ -915,7 +937,7 @@ export class DetailsState {
 
     private async refresh(kind: PersonalAction, controller: AbortController, requested = false, writeAccepted = false): Promise<boolean> {
         if (kind === "watched") {
-            const detail = await this.read(operations.getCatalogItem(this.detail.id), controller, false);
+            const detail = await this.read(this.item(this.detail.id), controller, false);
             if (detail.id !== this.detail.id || detail.played === undefined) throw new Error("Watch state missing");
             if (!this.current(controller)) return detail.played;
             await this.watchedChanged(detail, controller.signal);

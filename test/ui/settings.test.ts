@@ -6,10 +6,12 @@ import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
+import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
+const SEEK_CACHE_KEY = "player.seek_cache_enabled";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -689,6 +691,29 @@ test("Use Synced TV Settings removes only the older poster device override", asy
         await tv.page.getByRole("button", { name: "Use Profile Default", exact: true }).click();
         await tv.eventually(async () => !settings.device("p-owner", "client:tv").has("ui.card_presentation"), "TV-family override cleared");
     } finally { await tv.page.context().close(); }
+});
+
+test("a poster size overridden on this TV is disabled and drawn at full brightness, as on Apple TV", async () => {
+    const { tv, settings } = await setup();
+    settings.remainingRows = true;
+    const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+    assert.ok(deviceId);
+    settings.device("p-owner", deviceId).set("ui.card_presentation", { poster_size: "compact", caption: "title_metadata" });
+    try {
+        await openSettings(tv);
+        await assertDisabledRowsFullBrightness(tv, ["poster-size"]);
+    } finally { await tv.page.context().close(); }
+});
+
+test("rows disabled while a save is in flight are drawn at full brightness, as on Apple TV", async () => {
+    const { tv } = await setup();
+    const held = tv.fake.hold("/settings/values/ui.title_art", true);
+    try {
+        await openSettings(tv);
+        await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).click();
+        await tv.eventually(async () => tv.fake.requests.some(request => request.method === "PUT" && request.path.includes("ui.title_art")), "title art save waiting");
+        await assertDisabledRowsFullBrightness(tv, ["title-art", "title-art-all"]);
+    } finally { held.release(); await tv.page.context().close(); }
 });
 
 test("profile subtitle editors read and compare profile values while narrower overrides remain active", async () => {
@@ -1488,6 +1513,27 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         await tv.page.locator('[data-focus="hdr"]').focus();
         await tv.remote(40);
         assert.equal(await tv.focused(), "spoiler-images");
+    } finally { await tv.page.context().close(); }
+});
+
+// Apple's STREAMING pane also lists these rows (TVPlaybackSettingsView.swift:206-248, silo-apple e958f584). AVPlay has no control for any of them
+// (docs/settings.md), so Samsung hides them, as Apple hides TrueHD Atmos and DTS:X when its build cannot render them.
+test("Playback offers no Streaming row AVPlay cannot honour, even when the server offers the key", async () => {
+    const { tv, settings } = await setup();
+    settings.hdrRows = true;
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        const order = await tv.page.locator(".settings-pane [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        assert.deepEqual(order.slice(order.indexOf("audio"), order.indexOf("spoiler-images")), ["audio", "hdr"]);
+        const text = await tv.page.locator(".settings-pane").innerText();
+        for (const name of ["Seek Cache", "Buffer Ahead", "Lossless", "TrueHD", "DTS:X", "Deinterlacing"]) assert.equal(text.includes(name), false, name);
+        assert.equal(await tv.page.getByRole("switch", { name: /Seek Cache|Lossless|TrueHD/ }).count(), 0);
+        assert.equal(await tv.page.getByRole("button", { name: /Buffer Ahead|Deinterlacing/ }).count(), 0);
+        assert.equal(tv.fake.requests.some(request => request.path.includes(SEEK_CACHE_KEY)), false);
+        const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+        assert.ok(deviceId);
+        assert.equal([...settings.device("p-owner", deviceId).keys()].includes(SEEK_CACHE_KEY as never), false);
     } finally { await tv.page.context().close(); }
 });
 

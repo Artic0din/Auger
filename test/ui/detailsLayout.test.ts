@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_PRESENTATION_KEY, CARD_OVERLAYS_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { after, before, test } from "node:test";
-import type { Browser } from "playwright";
+import type { Browser, Locator } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 detailTest("cached series Play retains its episode label offline", async tv => {
     const card = tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first();
@@ -13,6 +13,7 @@ detailTest("cached series Play retains its episode label offline", async tv => {
     const primary = tv.page.locator('[data-focus="next-episode"]');
     await tv.eventually(async () => /^Play S/.test(await primary.innerText()), "episode ready");
     const label = await primary.innerText();
+    await answersPainted(tv);
     await tv.remote(10009);
     await tv.page.route("**/api/v2/**", route => route.abort("connectionrefused"));
     await card.click();
@@ -21,8 +22,7 @@ detailTest("cached series Play retains its episode label offline", async tv => {
     assert.equal(await primary.getAttribute("aria-disabled"), "false");
     const before = await tv.page.evaluate(() => window.browseHarness.plays.length);
     await primary.click();
-    await tv.jump(35000);
-    await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.plays.length) === before + 1, "cached episode reaches the ordinary playback handoff");
+    await jumpUntil(tv, 5000, async () => await tv.page.evaluate(() => window.browseHarness.plays.length) === before + 1, "cached episode reaches the ordinary playback handoff");
 });
 
 function ratingChipFrame(): { media: string; text: string; font: boolean; lineHeight: string; rowTop: number; rowBottom: number; rowHeight: number; chipTop: number; chipBottom: number; chipHeight: number; textTop: number; textBottom: number; heroRowTop: number; belowTop: number; logoReady: boolean; titleHeight: number; stack: number[] } | null {
@@ -82,7 +82,8 @@ function liveRail(_arg: null): { left: number; width: number; scroll: number; pa
 detailTest("season Details automatically recovers an offline next episode", async tv => {
     await pauseTvClock(tv);
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-    await tv.page.locator('[data-focus="series:s1-S1"]').waitFor();
+    // Details paints answers on the next animation frame, which the paused clock holds until it moves.
+    await jumpUntil(tv, 16, async () => await tv.page.locator('[data-focus="series:s1-S1"]').count() > 0, "season card");
     let failures = 0;
     tv.page.on("requestfailed", request => { if (request.url().includes("/catalog/items/episode%3A")) failures++; });
     await tv.page.route("**/api/v2/catalog/items/episode%3A*", route => route.abort("connectionrefused"));
@@ -91,13 +92,12 @@ detailTest("season Details automatically recovers an offline next episode", asyn
     await tv.eventually(async () => failures >= 1, "first episode transport failure");
     await tv.jump(1000);
     await tv.eventually(async () => failures >= 2, "episode transport retry exhausted");
-    await tv.jump(0);
-    await tv.eventually(async () => await primary.getAttribute("aria-disabled") === "true", "episode read failed offline");
+    await jumpUntil(tv, 16, async () => await primary.getAttribute("aria-disabled") === "true", "episode read failed offline");
     let seasonFailures = 0;
     tv.page.on("requestfailed", request => { if (request.url().includes("/seasons/1/episodes")) seasonFailures++; });
     await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/1/episodes?**", route => route.abort("connectionrefused"));
     await tv.jump(15000);
-    await tv.eventually(async () => seasonFailures >= 1, "automatic recovery attempted while still offline");
+    await jumpUntil(tv, 250, async () => seasonFailures >= 1, "automatic recovery attempted while still offline");
     await tv.jump(1000);
     await tv.eventually(async () => seasonFailures >= 2, "automatic recovery exhausted transport retry");
     await tv.jump(0);
@@ -111,12 +111,13 @@ detailTest("season Details automatically recovers an offline next episode", asyn
     await tv.page.locator('[data-focus="more"]').click();
     const panel = tv.page.getByRole("dialog", { name: "More", exact: true });
     await panel.locator('[data-focus="watched"]').click();
+    await jumpUntil(tv, 16, async () => await tv.page.getByRole("alertdialog").count() > 0, "watched failure alert");
     await dismissAlert(tv, "Couldn't Update Watched Status");
     const mutations = [...catalog.mutations];
     await tv.page.unroute("**/api/v2/catalog/items/episode%3A*");
     await tv.page.unroute("**/api/v2/catalog/series/series%3As1/seasons/1/episodes?**");
     await tv.jump(15000);
-    await tv.eventually(async () => await primary.getAttribute("aria-disabled") === "false", "season next episode recovered automatically");
+    await jumpUntil(tv, 16, async () => await primary.getAttribute("aria-disabled") === "false", "season next episode recovered automatically");
     assert.match(await primary.innerText(), /Play S1:E1/);
     assert.equal(await tv.page.getByRole("alertdialog").count(), 0, "recovery does not repeat the alert");
     assert.deepEqual(catalog.mutations, mutations, "automatic recovery never resends the failed write");
@@ -137,6 +138,7 @@ detailTest("stale season return restarts its personal action owner", async tv =>
     await tv.remote(10009);
     await tv.page.locator('.browse-episodes').waitFor();
     await tv.eventually(async () => /^Play S/.test(await tv.page.locator('[data-focus="next-episode"]').innerText()), "stale season refreshed");
+    await answersPainted(tv);
     const before = catalog.mutations.length;
     await tv.page.locator('[data-focus="more"]').click();
     await panel.locator('[data-focus="watched"]').click();
@@ -177,7 +179,7 @@ detailTest("focused episode hero loads full versions after Apple's dwell and reu
     await tv.jump(119);
     assert.equal(reads(), before, 'no request before 120ms');
     await tv.jump(1);
-    await tv.eventually(async () => (await tv.page.locator('.details-editorial .details-fact').allTextContents()).includes('24m'), 'full episode duration');
+    await jumpUntil(tv, 16, async () => (await tv.page.locator('.details-editorial .details-fact').allTextContents()).includes('24m'), 'full episode duration');
     assert.deepEqual(await tv.page.locator('.details-playback-summary strong').allTextContents(), ['VERSION', 'AUDIO', 'SUBTITLES']);
     assert.deepEqual(await tv.page.locator('.details-playback-summary span').allTextContents(), ['Auto · 1080p', 'Auto · Unknown', 'Auto · None']);
     assert.equal(reads(), before + 1, 'one detail read for the settled episode');
@@ -198,14 +200,25 @@ detailTest("focused episode hero loads full versions after Apple's dwell and reu
     await tv.jump(200);
     assert.equal(reads(), loaded, 'leaving the rail for hero controls cancels the read');
     await tv.page.locator('[data-focus="season:2"]').click();
-    await tv.page.locator('[data-focus="episode:s1e21"][aria-current="true"]').waitFor();
+    await jumpUntil(tv, 16, async () => await tv.page.locator('[data-focus="episode:s1e21"][aria-current="true"]').count() > 0, 'season 2 rail');
     await tv.page.locator('[data-focus="episode:s1e21"]').focus();
     await tv.jump(120);
-    await tv.eventually(async () => (await tv.page.locator('.details-editorial .details-fact').allTextContents()).includes('24m'), 'neighbour full duration');
+    await jumpUntil(tv, 16, async () => (await tv.page.locator('.details-editorial .details-fact').allTextContents()).includes('24m'), 'neighbour full duration');
     assert.deepEqual(await tv.page.locator('.details-playback-summary strong').allTextContents(), ['VERSION', 'AUDIO', 'SUBTITLES']);
     assert.deepEqual(await tv.page.locator('.details-playback-summary span').allTextContents(), ['Auto · 1080p', 'Auto · Unknown', 'Auto · None']);
     assert.equal(reads(), before + 2, 'one detail read for each settled episode across seasons');
 });
+
+/** Details paints server answers on the next animation frame, which a paused clock holds until it moves. */
+function painted(tv: Tv, target: Locator, what: string): Promise<void> {
+    return jumpUntil(tv, 16, async () => await target.count() > 0, what);
+}
+
+/** Waits until every answer is delivered and its frame paint has run, so no later repaint replaces nodes under test. */
+async function answersPainted(tv: Tv): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies === 0, "Details answers delivered");
+    await tv.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+}
 
 /** Season acceptance reads the playback episode, not every painted card. Count focus only after those replies, and every read they start, have finished. */
 async function settledEpisodePrefetch(tv: Tv): Promise<void> {
@@ -232,6 +245,9 @@ for (const media of ['movie:m0001', 'series:s1']) detailTest(`${media} hero Up r
     catalog.fileIds.set('episode:s1e11', '42');
     await tv.page.locator(`[data-section="recently_added"] [data-focus="${media}"]`).first().click();
     await tv.page.locator('[data-focus="version"][aria-disabled="false"]').waitFor();
+    // A series' episode answers repaint the primary action as loading; start once they have landed.
+    if (media.startsWith('series')) await settledEpisodePrefetch(tv); else await answersPainted(tv);
+    await answersPainted(tv);
     const primary = media.startsWith('movie') ? 'resume' : 'next-episode';
     const below = media.startsWith('movie') ? '.details-people [data-focus]' : '[data-focus="season:1"]';
     const keys = [primary, ...(media.startsWith('movie') ? ['play'] : []), 'version', 'audio', 'subtitles', 'watchlist', 'more'];
@@ -266,7 +282,11 @@ detailTest('hero Up falls back from vanished Start Over and disabled selectors t
     await tv.page.route('**/api/v2/catalog/items/episode%3As1e11?**', route => route.fulfill({ json: { ...body, user_data: { played: false, position_seconds: 120 } } }));
     await tv.page.route('**/api/v2/catalog/series/series%3As1/seasons/2/episodes?**', route => route.fulfill({ json: { items: [] } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-    await tv.page.locator('[data-focus="start-over-episode"]').focus();
+    // Play's focus claim holds until a direction key, so reach Start Over by key rather than by a script focus a late repaint could undo.
+    await tv.page.locator('[data-focus="start-over-episode"]').waitFor();
+    await tv.eventually(async () => await tv.focused() === 'next-episode', 'Play focused');
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === 'start-over-episode', 'Start Over focused by remote');
     await tv.remote(40);
     await tv.remote(38);
     assert.equal(await tv.focused(), 'start-over-episode');
@@ -278,6 +298,9 @@ detailTest('hero Up falls back from vanished Start Over and disabled selectors t
     await tv.remote(38);
     await tv.remote(38);
     assert.equal(await tv.focused(), 'next-episode');
+    // Play's focus claim holds until the viewer presses a direction key, so a script `.focus()` below could lose to a late repaint; press Right first.
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === 'version', 'Version focused by remote');
     for (const key of ['version', 'audio', 'subtitles']) {
         await tv.page.locator(`[data-focus="${key}"]`).focus();
         // A mounted selector can become unavailable while episode details load.
@@ -324,6 +347,7 @@ detailTest('loaded season hero uses cached values or omits unavailable playback 
     // The readout labels paint at once; wait for a value so the read baseline follows the first load.
     await tv.page.locator('[data-track-summary="version"] span:not(:empty)').waitFor();
     const original = await tv.page.locator('.details-playback-summary').textContent();
+    await settledEpisodePrefetch(tv);
     const reads = tv.fake.requests.length;
     for (const season of [2, 1]) {
         await tv.page.locator(`[data-focus="season:${season}"]`).focus(); await tv.jump(3100);
@@ -350,7 +374,7 @@ detailTest("reopening a series card keeps its season and returns to series text 
     await tv.page.keyboard.press('Escape');
     await card.click();
     await tv.page.locator('[data-focus="season:2"][aria-pressed="true"]').waitFor();
-    assert.equal(await tv.focused(), 'next-episode');
+    await tv.eventually(async () => await tv.focused() === 'next-episode', "focus on the primary action once the season loads");
     assert.equal(await tv.page.locator('.browse-overview').textContent(), overview);
 });
 
@@ -454,6 +478,7 @@ for (const media of ['movie:m0001', 'series:s1']) detailTest(`${media} reveals s
     await tv.page.locator('.details-extras [data-focus]').first().waitFor();
     await tv.page.locator('[data-detail-section="related"] [data-focus]').first().waitFor();
     await tv.page.evaluate(() => document.fonts.ready);
+    await answersPainted(tv);
     await tv.jump(500);
     if (media.startsWith('movie')) {
         const stack = await readLive(tv, () => {
@@ -620,7 +645,7 @@ for (const id of ['movie:m0001', 'series:s1']) detailTest(`${id} reopening start
     assert.ok(before.scroll > 0);
     await tv.remote(10009);
     await open();
-    assert.equal(await tv.focused(), id.startsWith('movie') ? 'resume' : 'next-episode');
+    await tv.eventually(async () => await tv.focused() === (id.startsWith('movie') ? 'resume' : 'next-episode'), 'focus on the primary action once it loads');
     assert.equal((await measure()).scroll, 0);
     assert.equal((await measure()).hero, 0);
 });
@@ -892,8 +917,11 @@ detailTest('Series More keeps series and season watched writes separate and reco
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
     await tv.page.locator('[data-view="person:7"]').waitFor();
     await tv.remote(10009);
+    await answersPainted(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await panel.getByRole('button', { name: 'Mark Season Watched', exact: true }).click();
+    await tv.eventually(async () => catalog.mutations.length === 2 && tv.pendingReplies === 0, 'season write answered');
+    await answersPainted(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await panel.getByRole('button', { name: 'Mark Season Unwatched', exact: true }).waitFor();
     await panel.getByRole('button', { name: 'Mark Series Unwatched', exact: true }).waitFor();
@@ -910,16 +938,19 @@ detailTest('Series More restores fresh season watch state after changing it on t
     const seasons = catalog.route('GET', '/catalog/series/series%3As1/seasons', 'p-owner')?.body as { items: Record<string, unknown>[] };
     await tv.page.route('**/api/v2/catalog/series/series%3As1/seasons?**', route => route.fulfill({ json: { items: seasons.items.map(season => ({ ...season, user_data: { played: catalog.watchedEpisodes.has('episode:s1e11'), in_progress_count: 0 } })) } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+    await answersPainted(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.getByRole('button', { name: 'Mark Season Watched', exact: true }).waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-focus="series:s1-S1"]').click();
     await tv.page.locator('[data-view="season:series:s1:1"]').waitFor();
+    await answersPainted(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.getByRole('button', { name: 'Mark Season Watched', exact: true }).click();
     await tv.eventually(async () => catalog.watchedEpisodes.has('episode:s1e11'), 'season write committed');
     await tv.remote(10009);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();
+    await answersPainted(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.getByRole('button', { name: 'Mark Season Unwatched', exact: true }).waitFor();
 });
@@ -966,7 +997,7 @@ detailTest("episode boundary failure shows Apple's text-only error and retries w
     });
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     const card = (season: number, index: number) => tv.page.locator(`[data-focus="episode:rail:${season}:${index}"]`);
-    await card(3, 13).waitFor(); await card(1, 0).waitFor();
+    await painted(tv, card(3, 13), "season 3 edge"); await painted(tv, card(1, 0), "season 1 start");
     assert.deepEqual([...reads].sort(), [1, 2, 3]);
     for (const [season, index] of [[2, 13], [3, 0], [3, 12], [2, 13], [3, 12]] as const) {
         await card(season, index).focus(); await tv.jump(100);
@@ -980,20 +1011,20 @@ detailTest("episode boundary failure shows Apple's text-only error and retries w
     assert.equal(reads.length, 3, "leaving the rail cancels boundary dwell");
     await card(3, 13).focus(); await tv.jump(100);
     const notice = tv.page.getByText("Couldn't load more episodes. Move away and back to retry.", { exact: true });
-    await notice.waitFor();
+    await painted(tv, notice, "boundary failure notice");
     assert.deepEqual(await notice.evaluate(node => { const style = getComputedStyle(node); return { size: style.fontSize, color: style.color, margin: style.margin }; }), { size: "17.433px", color: "rgba(237, 237, 237, 0.6)", margin: "14px 0px 0px" }, "TVSeriesDetailView.swift:590-592: 18pt times --silo-sf-cap-scale, siloSecondaryText below the rail at the stack's spacing 14");
     assert.equal(await tv.page.getByRole("button", { name: /Retry more episodes/ }).count(), 0, "Apple shows text only, with no Retry button");
     assert.deepEqual(reads.slice(3), [4]);
     await card(3, 12).focus(); await card(3, 13).focus(); await tv.jump(100);
     await tv.eventually(async () => reads.length === 5, "reaching the failed boundary again retries it, as Apple TV does");
-    await notice.waitFor();
+    await painted(tv, notice, "boundary failure notice");
     await card(3, 12).focus(); await card(3, 13).focus(); await tv.jump(100);
     await tv.eventually(async () => reads.length === 6, "a second failed revisit retries again");
-    await notice.waitFor();
+    await painted(tv, notice, "boundary failure notice");
     assert.equal(await tv.focused(), "episode:rail:3:13", "the error is text, so focus stays on the edge card");
     failBoundary = false;
     await card(3, 12).focus(); await card(3, 13).focus(); await tv.jump(100);
-    await tv.eventually(async () => await card(4, 13).count() === 1, "a successful revisit paints season 4");
+    await jumpUntil(tv, 16, async () => await card(4, 13).count() === 1, "a successful revisit paints season 4");
     assert.deepEqual(reads.slice(3), [4, 4, 4, 4], "each revisit reads only the failed season");
     assert.equal(await notice.count(), 0);
 });
@@ -1013,15 +1044,15 @@ detailTest("selecting a season clears the rail edge failure without a read when 
     });
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     const card = (season: number, index: number) => tv.page.locator(`[data-focus="episode:rail:${season}:${index}"]`);
-    await card(3, 13).waitFor();
+    await painted(tv, card(3, 13), "season 3 edge");
     await card(3, 13).focus(); await tv.jump(100);
     const notice = tv.page.getByText("Couldn't load more episodes. Move away and back to retry.", { exact: true });
-    await notice.waitFor();
+    await painted(tv, notice, "boundary failure notice");
     assert.deepEqual(reads.slice(3), [4]);
     failBoundary = false;
     // Focus on the season 3 card made season 3 current, so Select on season 2 is a real season change.
     await tv.page.locator('[data-focus="season:2"]').click();
-    await notice.waitFor({ state: "detached" });
+    await jumpUntil(tv, 16, async () => await notice.count() === 0, "boundary failure notice cleared");
     await tv.jump(100);
     assert.deepEqual(reads.slice(3), [4], "seasons 1 and 3 already hold more than eight cards beside season 2, so Apple's prefetch reads nothing");
     assert.equal(await card(4, 13).count(), 0, "the failed season stays out of the rail until focus reaches its edge");
@@ -1321,6 +1352,7 @@ for (const art of [
 detailTest('Hero uses measured series colours and genres only at rest', async tv => {
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="audio"]').waitFor();
+    await answersPainted(tv);
     assert.equal(await readLive(tv, () => {
         const nodes = [...document.querySelectorAll(".details-editorial .browse-meta")];
         if (nodes.length !== 1 || nodes[0] === undefined || !nodes[0].isConnected) return null;
@@ -1332,7 +1364,10 @@ detailTest('Hero uses measured series colours and genres only at rest', async tv
         if (overview === null || !overview.isConnected) return null;
         return getComputedStyle(overview).color;
     }, null, value => value === "rgba(255, 255, 255, 0.92)", "series overview colour"), "rgba(255, 255, 255, 0.92)");
-    await tv.page.locator('[data-focus="audio"]').focus();
+    // The page's one Play claim runs until the viewer moves by key, so a script `.focus()` can lose to a late repaint; Right is what a viewer presses.
+    await tv.eventually(async () => await tv.focused() === "next-episode", "Play focused");
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === "version", "Version focused by remote");
     assert.equal(await readLive(tv, () => {
         const node = document.querySelector(".details-play");
         if (node === null || !node.isConnected) return null;
@@ -1737,6 +1772,63 @@ detailTest('Movie uses rounded runtime, rating artwork, comma genres and compact
     }, null, value => value === 116, "title retains the y116 anchor after optional-data repaint"), 116);
 });
 
+detailTest('Auto subtitle readout with no subtitle language names the default track playback starts on', async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: 'auto', effective_show_forced_subtitles: true,
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'pt-BR', codec: 'eac3' }, { default: false, language: 'en', codec: 'eac3' }],
+            subtitle_tracks: [{ language: 'pt-BR', title: 'Brazilian', codec: 'subrip', external: false, forced: false }, { language: 'pt-BR', title: 'Brazilian (Forced)', codec: 'subrip', external: false, forced: true, default: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · Portuguese \(Forced\) · SRT$/);
+});
+
+detailTest('Auto subtitle readout with a subtitle language the file lacks names the first forced track, as Apple TV does', async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: 'auto', effective_subtitle_language: 'fi', effective_show_forced_subtitles: true,
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'ja', codec: 'aac' }],
+            subtitle_tracks: [{ language: 'de', title: 'German', codec: 'subrip', external: false, forced: false }, { language: 'en', title: 'Signs', codec: 'subrip', external: false, forced: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · English \(Forced\) · SRT$/);
+});
+
+detailTest("Auto subtitle readout with only the profile's subtitle language set names the forced track, as Apple TV does", async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    // The server sets an effective field only when a stored setting supplies it: a profile language alone leaves mode and show-forced out.
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: undefined, effective_show_forced_subtitles: undefined, effective_subtitle_language: 'ar',
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'en', codec: 'aac' }],
+            subtitle_tracks: [{ language: 'de', title: 'German', codec: 'subrip', external: false, forced: false }, { language: 'pt-BR', title: 'Brazilian (Forced)', codec: 'subrip', external: false, forced: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.equal(await tv.page.locator('[data-track-summary="subtitles"] span').textContent(), 'Auto · Portuguese (Forced) · SRT');
+});
+
+detailTest('Auto subtitle readout with forced tracks in two sources names the external one, as Apple TV does', async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: {
+        ...body, effective_subtitle_mode: 'auto', effective_subtitle_language: 'fi', effective_show_forced_subtitles: true,
+        versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0,
+            audio_tracks: [{ default: true, language: 'ja', codec: 'aac' }],
+            subtitle_tracks: [{ language: 'en', title: 'Signs', codec: 'subrip', external: false, forced: true }, { language: 'fr', title: 'Panneaux', codec: 'subrip', external: true, forced: true }],
+        })),
+    } }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    assert.match(await tv.page.locator('[data-track-summary="subtitles"] span').textContent() ?? '', /^Auto · French \(Forced\) · SRT$/);
+});
+
 detailTest('Auto subtitle readout resolves forced tracks using effective and explicitly selected audio', async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
     const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as { versions: Record<string, unknown>[] };
@@ -1752,7 +1844,7 @@ detailTest('Auto subtitle readout resolves forced tracks using effective and exp
     assert.match(await summary.textContent() ?? '', /Auto · English.*Forced/);
     await tv.page.locator('[data-focus="audio"]').click();
     await tv.page.locator('[data-focus="audio:1"]').click();
-    assert.match(await summary.textContent() ?? '', /Auto · English.*Dialogue/);
+    assert.equal(await summary.textContent(), 'Auto · English · SRT');
     assert.doesNotMatch(await summary.textContent() ?? '', /Forced/);
 });
 
@@ -1821,6 +1913,8 @@ for (const [kind, id] of [['Movie', 'movie:m0001'], ['Episode', 'episode:s1e11']
         return { heroBottom: hero.getBoundingClientRect().bottom, actionBottom: actions.getBoundingClientRect().bottom };
     }, null, value => value.actionBottom <= value.heroBottom, "playback actions stay inside the hero");
     assert.ok(geometry.actionBottom <= geometry.heroBottom, JSON.stringify(geometry));
+    // Programmatic focus does not end the opening Play claim the way a remote key does; let the last answers paint first.
+    await answersPainted(tv);
     for (const key of [kind === 'Season' ? 'next-episode' : 'play', 'audio', 'subtitles', 'more']) {
         await tv.page.locator(`[data-focus="${key}"]`).focus();
         const revealed = await readLive(tv, focusKey => {
@@ -1855,9 +1949,9 @@ detailTest("episode focus swaps cached hero and selectors without starting a rea
     await pauseTvClock(tv);
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();
     await tv.jump(120);
-    await tv.page.getByRole('button', { name: /Play S1:E2|Resume S1:E2/ }).waitFor();
+    await painted(tv, tv.page.getByRole('button', { name: /Play S1:E2|Resume S1:E2/ }), 'episode 2 hero');
     assert.match(await tv.page.locator('.details-editorial .browse-overview').textContent() ?? '', /Harbor Lights chapter 1\.2/);
-    await tv.page.locator('[data-track-summary="version"] span:not(:empty)').waitFor();
+    await painted(tv, tv.page.locator('[data-track-summary="version"] span:not(:empty)'), 'episode 2 version');
     await settledEpisodePrefetch(tv);
     const before = tv.fake.requests.length;
     await tv.page.locator('[data-focus="episode:s1e11"]').focus();
@@ -2216,6 +2310,8 @@ detailTest("a failed episode read disables its selectors, never retries on focus
     await tv.page.route('**/api/v2/catalog/items/episode%3As1e12?**', route => route.fulfill(failed ? { status: 500 } : { status: 200, json: reply.body }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.getByRole('button', { name: /Play S1:E1|Resume S1:E1/ }).waitFor();
+    await tv.page.locator('[data-focus="episode:s1e12"]').waitFor();
+    await answersPainted(tv);
     await pauseTvClock(tv);
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();
     await tv.page.clock.resume();
@@ -2409,6 +2505,7 @@ for (const check of ['cast', 'caption', 'season', 'description', 'menu', 'metada
         assert.equal(rail.right, 1920);
     } else if (check === 'caption') {
         const caption = tv.page.locator('.details-episodes .browse-card-title').first();
+        await answersPainted(tv);
         await caption.evaluate(node => { node.textContent = "S02E01 · Electro's Gotta Glow"; });
         const metrics = await caption.evaluate(node => ({ width: node.clientWidth, content: node.scrollWidth, padding: getComputedStyle(node).paddingLeft, weight: getComputedStyle(node).fontWeight }));
         assert.equal(metrics.padding, '0px');
@@ -2425,7 +2522,11 @@ for (const check of ['cast', 'caption', 'season', 'description', 'menu', 'metada
         assert.equal(color.color, 'rgba(255, 255, 255, 0.92)');
     } else if (check === 'menu') {
         await tv.page.locator('[data-focus="more"]').click();
-        assert.equal(await tv.page.locator('.details-more-popover').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0.45)');
+        const popover = await readLive(tv, () => {
+            const node = document.querySelector('.details-more-popover');
+            return node === null || !node.isConnected ? null : { background: getComputedStyle(node).backgroundColor };
+        }, null, value => value.background !== '', 'live More menu');
+        assert.equal(popover.background, 'rgba(0, 0, 0, 0.45)');
     } else if (check === 'sparse metadata') {
         await tv.page.locator('[data-focus="episode:s1e11"]').focus();
         await tv.eventually(async () => {
@@ -2603,6 +2704,9 @@ function detailTest(name: string, body: (tv: Tv, context: { details: FakeDetails
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.mount());
+        // Home's answers repaint its rows; start once they have, so a click does not land on a node about to be replaced.
+        await tv.page.locator('[data-section="recently_added"] .browse-card').first().waitFor();
+        await answersPainted(tv);
         await body(tv, { details, settings });
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
@@ -2757,7 +2861,7 @@ detailTest('A Resolution change in Settings ranks the next Details', async (tv, 
     await tv.page.locator('[data-view="home"]').waitFor();
     await tv.eventually(async () => qualityReads(tv) === 2, 'cap reread after Settings');
     await openMovie(tv);
-    assert.equal(await versionSummary(tv), 'Auto · 720p');
+    await tv.eventually(async () => await versionSummary(tv) === 'Auto · 720p', "versions ranked with the new cap");
     assert.equal(qualityReads(tv), 2, 'only Settings triggers a reread');
 }, undefined, settings => settings.profile().set(QUALITY_KEY, '1080p'));
 
@@ -2812,6 +2916,16 @@ detailTest("subtitle choices retain their language when stream titles repeat the
     assert.equal(await tv.page.locator('[data-focus="subtitle:0"]').textContent(), "EnglishSRT");
     assert.equal(await tv.page.locator('[data-focus="subtitle:1"]').textContent(), "FrenchSRT");
     assert.equal(await tv.page.locator('[data-focus="subtitle:2"] .details-option-subtext').textContent(), "Commentary · SRT");
+});
+
+detailTest("a chosen subtitle titled Auto is not mistaken for the Auto choice", async tv => {
+    const catalog = tv.fake.catalog;
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.subtitleFiles.set("42", [{ title: "Auto", external: true, index: 5 }, { language: "eng", codec: "subrip", title: "English", external: false }]);
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await tv.page.locator('[data-focus="subtitle:0"]').click();
+    await tv.eventually(async () => await tv.page.locator('[data-track-summary="subtitles"] span').textContent() === 'Auto', 'the chosen track, not the Auto readout');
 });
 
 detailTest("More lists Favorites with no loading text while personal state loads, and owns failure announcements", async tv => {
@@ -3022,6 +3136,10 @@ detailTest("series shares the full detail hero and next-episode track selectors"
     await tv.page.locator('[data-focus="subtitle:off"]').click();
     assert.equal(await tv.focused(), "subtitles");
     await tv.page.getByText("Off", { exact: true }).waitFor();
+    // Down from next-episode needs the season chips and episode rail. A read still in flight (the
+    // subtitle preference) repaints Details when it lands and hands focus back to Subtitles mid-move.
+    await tv.page.locator('[data-focus^="season:"]').first().waitFor();
+    await settledEpisodePrefetch(tv);
     await tv.page.locator('[data-focus="next-episode"]').focus();
     await tv.remote(40);
     assert.match(await tv.focused() ?? "", /^season:/);
@@ -3124,6 +3242,7 @@ detailTest("series detail rows match Apple's 100px inset, episode mask and still
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();
     await tv.page.locator(".details-extras").waitFor();
     await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
+    await answersPainted(tv);
     await tv.jump(400);
     await tv.page.evaluate(() => { for (const animation of document.getAnimations()) animation.finish(); });
     const edge = await readLive(tv, readDetailEdges, null, value => value.artScale > 1.02 && value.probeY > 0 && value.probeY < 1080 && !value.sliver && value.previousRight < 100, "settled detail edges");

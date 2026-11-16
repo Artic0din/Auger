@@ -19,6 +19,7 @@
 // overlay draws the VTT, so the plan does not need a new AVPlay open. A renewed `st` on that
 // path is the same media. A different path, an audio change, a native embedded selection, or
 // a burn-in still reopens. A refused change leaves the current plan playing.
+// On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
@@ -52,9 +53,9 @@ import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts"
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
 import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleCue } from "../contracts/v2/subtitles.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
-import { initialSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
+import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
-import { audioRow, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
+import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
 import { planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
@@ -128,7 +129,8 @@ export const UNSUPPORTED_FORMAT = "Unsupported format";
 
 /** An inventory row the plan lists, minus the ones its `unplayable` flag says the server cannot show. */
 const CAPTION_LOADING = "Loading subtitles…";
-const CAPTION_FAILED = "Could not load these subtitles. Choose another track or turn subtitles off.";
+/** Apple's `player.subtitles.dataLoadFailed`. Turning the track off and on fetches it again. */
+export const CAPTION_FAILED = "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry.";
 
 function selectableSubtitle(plan: PlaybackPlan, trackId: string): boolean {
     return plan.subtitle.inventory.some((entry) => entry.trackId === trackId && entry.unplayable !== true);
@@ -139,6 +141,31 @@ function aiView(attempt: Attempt, plan: PlaybackPlan): SubtitleAIView | undefine
     const view = attempt.ai?.view;
     if (view === undefined || !plan.subtitle.inventory.some(entry => entry.unplayable === true)) return view;
     return { ...view, results: view.results.map(result => plan.subtitle.inventory.some(entry => entry.syncKey === `stored-${result.id}` && entry.unplayable === true) ? { ...result, unavailable: true } : result) };
+}
+
+const orderedInventories = new WeakMap<readonly SubtitleTrack[], { readonly language: string | undefined; readonly ordered: readonly SubtitleTrack[] }>();
+
+/** The plan's subtitle rows in display order, sorted once per inventory and language: the view is rebuilt on every playback tick. The inventory carries no default flag. */
+export function orderedInventory(inventory: readonly SubtitleTrack[], language: string | undefined): readonly SubtitleTrack[] {
+    const cached = orderedInventories.get(inventory);
+    if (cached !== undefined && cached.language === language) return cached.ordered;
+    const ordered = orderSubtitles(inventory, language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false }));
+    orderedInventories.set(inventory, { language, ordered });
+    return ordered;
+}
+
+/**
+ * The plan row of the file's default (else forced) subtitle that Apple's start freezes; the plan inventory carries no default flag.
+ * The catalog rows describe the requested file only, so another version keeps its plan's selection. Rows the plan flags unplayable
+ * are skipped, as Apple skips rows the server cannot deliver.
+ */
+function startingDefault(request: PlayRequest, plan: PlaybackPlan): string | undefined {
+    if (plan.effectiveMediaFileId !== request.fileId) return undefined;
+    const unplayable = plan.subtitle.inventory.filter(entry => entry.unplayable === true);
+    const catalog = request.subtitleTracks === undefined ? undefined : defaultSubtitle(request.subtitleTracks.filter(track => !unplayable.some(entry => matchesSubtitle(entry, track))));
+    if (catalog === undefined) return undefined;
+    const rows = plan.subtitle.inventory.filter(entry => matchesSubtitle(entry, catalog));
+    return rows.length === 1 ? rows[0]?.trackId : undefined;
 }
 
 function subtitleChoice(entry: SubtitleTrack, generated: string | undefined): TrackChoice {
@@ -290,6 +317,8 @@ const PROGRESS_INTERVAL_MS = 10000;
 const STARTUP_TIMEOUT_MS = 60000;
 /** Failed routes this client replans before giving up; the protocol allows up to 8. */
 const MAX_RECOVERY_REPLANS = 3;
+/** Apple's typed failure for a track its engine could not select (AetherEngine PlaybackErrorKind). */
+const AUDIO_TRACK_SWITCH_FAILED = "audioTrackSwitchFailed";
 /** Waits before resending an identical start, replan or stop that got no usable answer. */
 const RESEND_DELAYS_MS = [1000, 2000];
 /** AVPlay's display coordinates are in the app's 1920x1080 space. */
@@ -401,6 +430,8 @@ interface Attempt {
     nativeSubtitleUnavailable: boolean;
     /** A subtitle applied on the open stream ahead of the plan. `id` undefined is Off. */
     subtitleOverride: { readonly id: string | undefined } | undefined;
+    /** `effective_subtitle_language` from the watch read: the language the track list floats to the top. */
+    orderingLanguage: string | undefined;
     /** What was showing before the in-stream report, restored if the server refuses it. */
     subtitleRestore: { readonly id: string | undefined } | undefined;
     /** A subtitle report is out and the current transport keeps playing. */
@@ -569,6 +600,7 @@ export class PlaybackController implements PlayerControls {
             renditionsAll: false,
             nativeSubtitleUnavailable: false,
             subtitleOverride: undefined,
+            orderingLanguage: undefined,
             subtitleRestore: undefined,
             reporting: false,
             pendingSubtitle: undefined,
@@ -1418,23 +1450,44 @@ export class PlaybackController implements PlayerControls {
         await this.startSubtitles(attempt, decision.plan, decision.serverFeatures);
     }
 
+    /** The watch read Apple takes its subtitle policy and display-order language from; the language is kept for the track list. */
+    private async readSubtitlePreferences(attempt: Attempt, plan: PlaybackPlan): Promise<SubtitlePreferences> {
+        const preferences = await this.deps.session.call({ ...operations.preplaySubtitlePreferences(attempt.request.contentId, plan.effectiveMediaFileId, plan.selectedTracks.audio?.id), profileScoped: true, signal: attempt.signal });
+        if (attempt.live && attempt.orderingLanguage !== preferences.language) {
+            attempt.orderingLanguage = preferences.language;
+            this.showPlayback(attempt);
+        }
+        return preferences;
+    }
+
     private async startSubtitles(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[]): Promise<void> {
         attempt.sourceSeconds = plan.timeline.sourceStartSeconds;
         if (attempt.request.allowAlternateVersions === false && plan.effectiveMediaFileId !== attempt.request.fileId) {
             this.fail(attempt, { kind: "terminal", reason: "version_unavailable", message: "The selected version is no longer available. Choose another version in Details.", retryable: false }, true);
             return;
         }
-        const requested = attempt.request.subtitle;
-        const intent = requested === undefined ? undefined : playableIntent(requested, plan.subtitle.inventory);
+        // Apple resolves Auto at every start, so a start with no choice (Home, next episode, Up Next) follows the profile too.
+        const implicit = attempt.request.subtitle === undefined;
+        const intent = playableIntent(attempt.request.subtitle ?? { kind: "auto" }, plan.subtitle.inventory);
         try {
-            if (intent === undefined) { this.adopt(attempt, plan, serverFeatures); return; }
-            const preferences = intent.kind === "auto" ? await this.deps.session.call({ ...operations.preplaySubtitlePreferences(attempt.request.contentId, plan.effectiveMediaFileId, plan.selectedTracks.audio?.id), profileScoped: true, signal: attempt.signal }) : undefined;
+            if (intent.kind !== "auto") void this.readSubtitlePreferences(attempt, plan).catch(() => undefined);
+            let preferences: SubtitlePreferences | undefined;
+            if (intent.kind === "auto") {
+                try {
+                    preferences = await this.readSubtitlePreferences(attempt, plan);
+                } catch (error) {
+                    if (!implicit) throw error;
+                    // No policy to apply: the plan's own default stands, as before this client resolved implicit starts.
+                    if (attempt.live) this.adopt(attempt, plan, serverFeatures);
+                    return;
+                }
+            }
             if (!attempt.live) return;
-            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences);
+            const subtitle = initialSubtitle(intent, plan.subtitle.inventory, preferences, startingDefault(attempt.request, plan) ?? plan.subtitle.trackId);
             if (subtitle === plan.subtitle.trackId) this.adopt(attempt, plan, serverFeatures);
             else this.changeTracks(attempt, plan, { ...(plan.selectedTracks.audio === undefined ? {} : { audio: plan.selectedTracks.audio }), ...(subtitle === undefined ? {} : { subtitle: { id: subtitle } }) });
         } catch {
-            const message = intent?.kind === "track" ? "The selected subtitles are unavailable on this version. Choose another track in Details." : "Could not read subtitle preferences. Return to Details to retry or choose Off.";
+            const message = intent.kind === "track" ? "The selected subtitles are unavailable on this version. Choose another track in Details." : "Could not read subtitle preferences. Return to Details to retry or choose Off.";
             if (attempt.live) this.fail(attempt, { kind: "terminal", reason: "subtitle_selection_unavailable", message, retryable: false }, true);
         }
     }
@@ -1788,6 +1841,29 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
+    /**
+     * client_selected_audio_track_v1: the plan's audio index is an ordinal in the server's audio_tracks,
+     * the source's probed order, so it is the nth AUDIO row of the original file. Call right after play():
+     * AVPlay switches AUDIO only in PLAYING. False, a failed route, whenever the stream cannot show
+     * or play that row: the claim promises the ordinal, so the server must be told to package instead.
+     */
+    private selectPlanAudio(plan: PlaybackPlan): boolean {
+        const ordinal = plan.selectedTracks.audio?.index;
+        const avplay = this.deps.avplay;
+        if (plan.delivery !== "original_http" || plan.selectedTracks.audio === undefined) return true;
+        // The id alone is opaque: without the ordinal this client cannot honor the selection.
+        if (ordinal === undefined || avplay.getTotalTrackInfo === undefined || avplay.setSelectTrack === undefined) return false;
+        try {
+            const target = avplay.getTotalTrackInfo().filter((track) => track.type === "AUDIO")[ordinal];
+            if (target === undefined) return false;
+            const playing = avplay.getCurrentStreamInfo?.().find((track) => track.type === "AUDIO");
+            if (playing?.index !== target.index) avplay.setSelectTrack("AUDIO", target.index);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     private alignOpenStream(attempt: Attempt, plan: PlaybackPlan): boolean {
         if (plan.subtitle.mode === "off" || plan.subtitle.mode === "burn_in" || plan.subtitle.mode === "unknown" || plan.subtitle.artifact !== undefined) return true;
         const id = shownSubtitle(attempt, plan);
@@ -2079,14 +2155,20 @@ export class PlaybackController implements PlayerControls {
                 }
                 return;
             }
+            let audioSelected: boolean;
             try {
                 this.deps.avplay.play();
+                audioSelected = this.selectPlanAudio(plan);
                 attempt.hud.restore(this.deps.avplay, plan);
                 if (attempt.paused) {
                     this.deps.avplay.pause();
                 }
             } catch {
                 this.routeFailed(attempt, "avplay_play_failed");
+                return;
+            }
+            if (!audioSelected) {
+                this.routeFailed(attempt, AUDIO_TRACK_SWITCH_FAILED);
                 return;
             }
             attempt.started = true;
@@ -3066,6 +3148,10 @@ export class PlaybackController implements PlayerControls {
             attempt.suspendedReady = false;
             try {
                 this.deps.avplay.play();
+                if (attempt.plan !== undefined && !this.selectPlanAudio(attempt.plan)) {
+                    this.routeFailed(attempt, AUDIO_TRACK_SWITCH_FAILED);
+                    return;
+                }
                 if (attempt.plan !== undefined) attempt.hud.restore(this.deps.avplay, attempt.plan);
                 if (attempt.paused) {
                     this.deps.avplay.pause();
@@ -3642,7 +3728,8 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         },
         audio: tracks === undefined || tracks.state !== "ready" ? { state: tracks?.state ?? "loading" } : { state: "ready", choices: audioChoices(attempt, plan) },
         selectedAudioId: plan.selectedTracks.audio?.id,
-        subtitles: plan.subtitle.inventory.map((entry) => {
+        // SubtitleDisplayOrder: display position only; every row keeps the id it selects.
+        subtitles: orderedInventory(plan.subtitle.inventory, attempt.orderingLanguage).map((entry) => {
             const generated = attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label;
             return subtitleChoice(entry, generated);
         }),
@@ -3660,6 +3747,8 @@ function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
     const id = shownSubtitle(attempt, plan);
     if (id === undefined) return true;
     if (plan.subtitle.mode === "burn_in") return false;
+    // The app draws the plan's artifact even for an embedded row: `readCaptions` keys it, and every AVPlay TEXT switch clears the key.
+    if (id === plan.subtitle.trackId && (attempt.captionKey !== undefined || attempt.captionNotice === CAPTION_FAILED)) return true;
     const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
     return row === undefined || !inStreamCandidate(plan, row);
 }

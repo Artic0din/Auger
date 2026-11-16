@@ -12,6 +12,7 @@ import { FakeSilo } from "../../native/support/fakeSilo.ts";
 
 const ORIGIN = "https://silo.example.test";
 const EVENTUALLY_TIMEOUT_MS = 10000;
+const jitterMs = Number(process.env.SILO_REPLY_JITTER_MS ?? 0);
 /** Which screens the page mounts: the sign-in harness or the browse harness. */
 export type TvApp = "signIn" | "browse" | "application";
 const ENTRY: Record<TvApp, string> = { signIn: "../harness.ts", browse: "../browseHarness.ts", application: "../appHarness.ts" };
@@ -234,6 +235,9 @@ export async function openTv(
             response.headers.forEach((value, key) => {
                 headers[key] = value;
             });
+            // Flake hunting: SILO_REPLY_JITTER_MS=150 delays each answer by up to that long, so a test
+            // that acts before an in-flight read lands fails every time instead of on a slow runner.
+            if (jitterMs > 0) await new Promise<void>(done => setTimeout(done, Math.random() * jitterMs));
             // The page may have abandoned the request while the fake held its answer.
             await route.fulfill({ status: response.status, headers, body: await response.text() }).catch(() => undefined);
         } finally {
@@ -277,12 +281,19 @@ export async function readLive<T, Arg>(tv: Pick<Tv, "page" | "eventually">, read
  * (because its request had not failed yet on a slow runner) never fires on a paused clock.
  * Stepping re-fires whatever was scheduled meanwhile.
  */
-export async function jumpUntil(tv: Pick<Tv, "jump" | "eventually">, stepMs: number, check: () => Promise<boolean>, what: string): Promise<void> {
+export async function jumpUntil(tv: Pick<Tv, "jump" | "eventually" | "pendingReplies" | "fake">, stepMs: number, check: () => Promise<boolean>, what: string): Promise<void> {
     await tv.eventually(async () => {
         if (await check()) return true;
+        // A reply still on its way would see the page's clock run ahead of it, and its request would time out; only a held one waits on purpose.
+        if (tv.pendingReplies > tv.fake.heldReplies) return false;
         await tv.jump(stepMs);
         return check();
     }, what);
+}
+
+/** Resolves after the page has painted what an answer that has just landed changed; Details repaints a frame later. */
+export async function afterPaint(tv: Pick<Tv, "page">): Promise<void> {
+    await tv.page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 }
 
 /** Call before starting a deadline or intermediate animation under test. */

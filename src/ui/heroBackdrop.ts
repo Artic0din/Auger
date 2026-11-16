@@ -8,7 +8,7 @@
 //   way, else the card's backdrop ThumbHash, else the page stays black (Apple's fallback when sampling fails).
 
 import { decodeThumbhash } from "./thumbhash.ts";
-import { el } from "./screen.ts";
+import { el, onDecoded } from "./screen.ts";
 import { artworkMark } from "./defaultArtwork.ts";
 
 export interface RGB { readonly r: number; readonly g: number; readonly b: number }
@@ -187,7 +187,7 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
         const preview = thumbhashCanvas(thumbhash, "hero-art-thumbhash");
         if (preview !== undefined) frame.appendChild(preview);
         frame.dataset.art = "loading";
-        image.addEventListener("load", () => { frame.dataset.art = "loaded"; });
+        onDecoded(image, () => { frame.dataset.art = "loaded"; });
         image.addEventListener("error", () => { frame.dataset.art = "failed"; image.remove(); const missing = el("div", "hero-art-missing"); missing.appendChild(artworkMark("film", "hero-art-glyph")); frame.appendChild(missing); });
     } else image.addEventListener("error", () => { image.remove(); frame.remove(); root.querySelector(".skyline-top-scrim")?.remove(); });
     image.src = url;

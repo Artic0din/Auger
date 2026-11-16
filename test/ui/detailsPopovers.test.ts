@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
+import { orderSubtitles } from "../../src/player/trackLabels.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
@@ -146,6 +147,55 @@ detailTest("Subtitles Apple can't deliver stay listed, dimmed and unfocusable, a
     assert.equal(await tv.page.locator(".details-track-popover").count(), 1, "a disabled track cannot be chosen");
 });
 
+/** #524: Details lists subtitles through the player's shared order (silo-apple SubtitleDisplayOrder); each row keeps its own index. */
+type WireSubtitle = { readonly index: number; readonly language?: string; readonly codec: string; readonly title?: string; readonly forced?: boolean; readonly hearing_impaired?: boolean; readonly default?: boolean };
+const MIXED_SUBTITLES: readonly WireSubtitle[] = [
+    { index: 2, language: "de", codec: "subrip" },
+    { index: 3, language: "eng", codec: "subrip" },
+    { index: 4, language: "eng", codec: "subrip", title: "Closed Caption" },
+    { index: 5, language: "en", codec: "ass" },
+    { index: 6, codec: "ass" },
+    { index: 7, codec: "subrip" },
+    { index: 8, language: "fr", codec: "hdmv_pgs_subtitle" },
+    { index: 9, language: "fr", codec: "subrip", forced: true },
+];
+
+async function subtitleRowOrder(tv: Tv, details: FakeDetails, subtitles: readonly WireSubtitle[]): Promise<string[]> {
+    await movieTracks(tv, details, { subtitles: [...subtitles] });
+    await openMovie(tv);
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await settled(tv);
+    const keys = await tv.page.locator('.details-audio-options [data-focus^="subtitle:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus") ?? ""));
+    return keys.filter(key => key !== "subtitle:auto" && key !== "subtitle:off");
+}
+
+detailTest("Details lists a mixed-language, mixed-format set in the player's order", async (tv, details) => {
+    const player = orderSubtitles(MIXED_SUBTITLES.map((track, position) => ({ position, ...track })), undefined, track => ({ language: track.language, codec: track.codec, forced: track.forced === true, hearingImpaired: track.title !== undefined, isDefault: false })).map(track => `subtitle:${track.position}`);
+    const expected = ["subtitle:1", "subtitle:2", "subtitle:3", "subtitle:7", "subtitle:6", "subtitle:0", "subtitle:5", "subtitle:4"];
+    assert.deepEqual(player, expected, "English by format then full before SDH, French forced before bitmap, German, then no language by format");
+    assert.deepEqual(await subtitleRowOrder(tv, details, MIXED_SUBTITLES), expected);
+});
+
+/** Aladdin (2019) as in test/native/preplaySubtitles.test.ts: 24 embedded SubRip rows, regional variants and Default forced rows. */
+const ALADDIN_SUBTITLES: readonly WireSubtitle[] = ([
+    ["zh-HK", "Hong Kong"], ["zh-Hans", "Simplified"], ["zh-Hant", "Traditional"], ["cs"], ["da"], ["nl"],
+    ["fr-CA", "Canadian"], ["fr-FR", "European (SDH)", { hearing_impaired: true }], ["de"], ["el"], ["it"], ["ja"],
+    ["ko"], ["nb"], ["pt-BR", "Brazilian"], ["pt-BR", "Brazilian (SDH)", { hearing_impaired: true }], ["pt-PT", "European"],
+    ["pt-BR", "Brazilian (Forced)", { forced: true, default: true }], ["pt-PT", "European (Forced)", { forced: true, default: true }],
+    ["es-419", "Latin American"], ["es-419", "Latin American (SDH)", { hearing_impaired: true }], ["es-ES", "European"], ["sv"], ["tr"],
+] as const).map(([language, title, flags], index) => ({ index: index + 3, language, codec: "subrip", ...(title === undefined ? {} : { title }), ...flags }));
+
+detailTest("Details lists Aladdin's subtitles in the player's order", async (tv, details) => {
+    const player = orderSubtitles(ALADDIN_SUBTITLES.map((track, position) => ({ position, ...track })), undefined, track => ({ language: track.language, codec: track.codec, forced: track.forced === true, hearingImpaired: track.hearing_impaired === true, isDefault: false })).map(track => `subtitle:${track.position}`);
+    const listed = await subtitleRowOrder(tv, details, ALADDIN_SUBTITLES);
+    assert.deepEqual(listed, player);
+});
+
+detailTest("Details puts a default-flagged track ahead of an otherwise equal one, as Apple's Details does", async (tv, details) => {
+    const order = await subtitleRowOrder(tv, details, [{ index: 2, language: "en", codec: "subrip" }, { index: 3, language: "en", codec: "subrip", default: true }]);
+    assert.deepEqual(order, ["subtitle:1", "subtitle:0"]);
+});
+
 detailTest("Audio rows lead with the language and move the track's own title to the detail line", async (tv, details) => {
     await movieTracks(tv, details, { audio: [
         { default: true, language: "en", codec: "eac3", channels: 6, title: "Director Commentary" },
@@ -176,6 +226,30 @@ detailTest("More than seven tracks scroll inside Apple's 504pt cap, opened with 
     assert.deepEqual(list, { maxHeight: "504px", height: 504, overflow: "auto", centre: 0 });
     const heights = await tv.page.locator(".details-track-popover").evaluate(node => ({ panel: node.getBoundingClientRect().height, header: node.querySelector(".browse-section-title")!.getBoundingClientRect().height }));
     assert.equal(heights.panel, 14 + heights.header + 504 + 14, "the header stays fixed; only the list scrolls");
+});
+
+// #542: Apple's tvOS list keeps the focused row in the middle of the 504pt window once it moves (Aladdin, 31 tracks,
+// silo-apple 9b8b3528); the TV used to reveal it at the bottom edge.
+detailTest("Moving focus down a long subtitle list keeps the focused row centred in the window", async (tv, details) => {
+    const subtitles = Array.from({ length: 31 }, (_value, index) => ({ index: index + 2, language: ["en", "ja", "fr", "de", "es", "it", "ko", "pt", "ru", "sv", "pl", "nl"][index % 12], codec: "subrip" }));
+    await movieTracks(tv, details, { subtitles });
+    await openMovie(tv);
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await settled(tv);
+    // Reads the focused row against the window's middle; waits for the scroll animation to land.
+    const offset = (accept: (value: { centre: number; top: number; max: number }) => boolean, what: string) => readLive(tv, () => {
+        const list = document.querySelector<HTMLElement>(".details-popover-scroll")!;
+        const box = list.getBoundingClientRect(), r = document.activeElement!.getBoundingClientRect();
+        return { centre: Math.round((r.top + r.height / 2) - (box.top + box.height / 2)), top: list.scrollTop, max: list.scrollHeight - list.clientHeight };
+    }, null, accept, what);
+    assert.equal(await tv.page.locator('.details-audio-options [data-focus^="subtitle:"]').count(), 33);
+    for (let step = 0; step < 14; step++) await tv.remote(DOWN);
+    const early = await offset(value => value.centre === 0, "row 14 centred");
+    assert.ok(early.top > 0 && early.top < early.max, "mid-list, not clamped");
+    for (let step = 0; step < 12; step++) await tv.remote(DOWN);
+    await offset(value => value.centre === 0, "row 26 centred");
+    for (let step = 0; step < 7; step++) await tv.remote(DOWN);
+    await offset(value => value.top === value.max, "the last row rests on the end of the list");
 });
 
 detailTest("Find Trailers' status pill sits 24 under a movie's action row", async (tv) => {

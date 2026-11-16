@@ -167,3 +167,80 @@ test("a request that outlives its timeout fails as timeout; a caller abort fails
     controller.abort();
     await assert.rejects(aborted, (error: unknown) => error instanceof ApiError && error.aborted);
 });
+
+/** A sidecar whose body the test writes chunk by chunk, erroring like a real fetch when its request aborts. */
+function streamedSubtitle(): { fetch: (url: string, init: RequestInit) => Promise<Response>; push: (text: string) => void; end: () => void; cancelled: () => boolean } {
+    let sink: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({ start(controller) { sink = controller; }, cancel() { cancelled = true; } });
+    return {
+        fetch: async (_url, init) => {
+            init.signal?.addEventListener("abort", () => { cancelled = true; sink?.error(new DOMException("aborted", "AbortError")); }, { once: true });
+            return new Response(body, { status: 200 });
+        },
+        push: text => sink?.enqueue(new TextEncoder().encode(text)),
+        end: () => sink?.close(),
+        cancelled: () => cancelled,
+    };
+}
+
+test("an embedded-track extract that keeps streaming past the old 15 s cap still loads", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    let text: string | undefined;
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(value => { text = value; });
+    extract.push("WEBVTT\n\n");
+    for (let cue = 1; cue <= 6; cue++) {
+        await clock.advance(50000);
+        extract.push(`00:0${cue}.000 --> 00:0${cue}.500\nCue ${cue}\n\n`);
+    }
+    extract.end();
+    await pending;
+    assert.equal(text?.split("Cue ").length, 7, "every cue that arrived over five minutes is kept");
+});
+
+test("a subtitle download fails only after 60 s with no bytes", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    let settled = false;
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error).finally(() => { settled = true; });
+    extract.push("WEBVTT\n\n");
+    await clock.advance(59999);
+    assert.equal(settled, false, "a quiet stretch under a minute is still waiting");
+    assert.equal(extract.cancelled(), false);
+    await clock.advance(1);
+    assert.ok(await pending instanceof Error);
+    assert.equal(extract.cancelled(), true);
+});
+
+test("leaving the subtitle cancels its download at once", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    const leave = new AbortController();
+    let failure: unknown;
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, leave.signal).catch((error: unknown) => { failure = error; });
+    extract.push("WEBVTT\n\n");
+    await clock.advance(1000);
+    leave.abort();
+    await pending;
+    assert.ok(failure instanceof Error);
+    assert.equal(extract.cancelled(), true);
+});
+
+test("a streamed subtitle stops at 4 MiB", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    let settled = false;
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error).finally(() => { settled = true; });
+    extract.push("x".repeat(4 * 1024 * 1024));
+    await clock.advance(0);
+    assert.equal(settled, false, "exactly 4 MiB is allowed");
+    extract.push("x");
+    const failure = await pending;
+    assert.ok(failure instanceof Error && /too large/.test(failure.message));
+    assert.equal(extract.cancelled(), true);
+});

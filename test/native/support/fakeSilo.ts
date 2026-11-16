@@ -77,6 +77,8 @@ export class FakeSilo {
     private readonly pinRevision = new Map<string, number>([["p-kid", 1]]);
     private readonly profileTokens = new Map<string, { profileId: string; revision: number }>();
     private readonly holds: Hold[] = [];
+    /** Requests waiting on a hold right now: a test delays these on purpose. */
+    heldReplies = 0;
     /** Paths whose next request is processed but whose answer is lost on the way back. */
     private readonly dropped: string[] = [];
     /** Further operations, e.g. playback; answered before the 404 fallback. */
@@ -205,7 +207,12 @@ export class FakeSilo {
         const holdIndex = this.holds.findIndex((candidate) => candidate.path === path || candidate.path === path.split("?")[0]);
         const hold = holdIndex === -1 ? undefined : this.holds.splice(holdIndex, 1)[0];
         if (hold !== undefined) {
-            await waitOrAbort(hold.released, hold.ignoreAbort ? undefined : signal);
+            this.heldReplies++;
+            try {
+                await waitOrAbort(hold.released, hold.ignoreAbort ? undefined : signal);
+            } finally {
+                this.heldReplies--;
+            }
         }
         const responseHeaders = new Headers(reply.headers);
         if (reply.body !== undefined && !responseHeaders.has("Content-Type")) {

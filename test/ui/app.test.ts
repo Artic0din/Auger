@@ -8,7 +8,7 @@ import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
 import { pressPin } from "./support/pin.ts";
 import { selectLibraryMode } from "./support/library.ts";
-import { homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -1436,9 +1436,13 @@ appTest("profile selection expiry refreshes an open picker and retires its old B
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Switch Profile", exact: true }).click();
     await tv.page.locator('[data-screen="profiles"]').waitFor();
+    const readsBefore = tv.fake.requests.length;
     await visibility(tv, true);
     await visibility(tv, false);
     await tv.jump(0);
+    // Back is retired by the refreshed picker, so press it only after the foreground reads have answered.
+    await tv.eventually(async () => tv.fake.requests.length > readsBefore && tv.pendingReplies === 0, "foreground reads answered");
+    await afterPaint(tv);
     await tv.remote(10009);
     await tv.jump(0);
     assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 1);
@@ -1452,12 +1456,15 @@ for (const reduced of [false, true]) {
         await startMovie(tv);
         await tv.page.evaluate(() => window.appHarness.avplay.tick(32000));
         await tv.remote(19);
+        // The start's own reads (markers, versions) are still answering on a slow runner.
+        await tv.eventually(async () => tv.pendingReplies === 0, "playback start reads answered");
         await visibility(tv, true);
+        await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.includes("suspend")), "AVPlay suspended on hide");
         const gate = tv.fake.hold("/playback/capabilities");
         const reads = tv.fake.requests.filter(r => r.path === "/playback/capabilities").length;
         await visibility(tv, false);
         await tv.eventually(async () => tv.fake.requests.filter(r => r.path === "/playback/capabilities").length === reads + 1, "foreground validation");
-        assert.equal(await tv.page.getByText("Restoring", { exact: true }).count(), 1, "foreground validation has a loading state");
+        await tv.eventually(async () => await tv.page.getByText("Restoring", { exact: true }).count() === 1, "foreground validation has a loading state");
         await visibility(tv, true);
         gate.release();
         for (let i = 0; i < 5; i++) await tv.jump(0);
@@ -2228,6 +2235,9 @@ appTest("root Back opens an isolated exit dialog; Cancel restores focus and Exit
     assert.equal(await tv.page.getByRole("dialog").count(), 0);
     assert.equal(await tv.focused(), "address");
     await signIn(tv);
+    // Late Home answers repaint the page and add reads; start once they have landed.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Home answers delivered");
+    await afterPaint(tv);
     const focused = await tv.focused();
     const requests = tv.fake.requests.length;
     await tv.remote(10009);

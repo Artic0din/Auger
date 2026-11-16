@@ -1,4 +1,4 @@
-import type { PlaybackView } from "./controller.ts";
+import { CAPTION_FAILED, type PlaybackView } from "./controller.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 
 export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => void {
@@ -11,6 +11,11 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     const text = document.createElement("span");
     layer.appendChild(text);
     viewport.appendChild(layer);
+    // ASSSubtitleLayer.status: the failure stays over the video until the track loads or changes.
+    const status = document.createElement("div");
+    status.className = "player-caption-status";
+    status.textContent = CAPTION_FAILED;
+    viewport.appendChild(status);
     return view => {
         viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? "translate(180px, 112px) scale(0.3958333333333333)" : "none";
         const captions = view.phase === "playing" || view.phase === "paused" ? view.captions : undefined;
@@ -20,6 +25,7 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
         layer.dataset.state = captions === undefined ? "suppressed" : captions.status ?? "none";
         layer.dataset.cues = String(captions?.cueCount ?? 0);
         layer.dataset.at = captions?.instant === undefined ? "" : captions.instant.toFixed(1);
+        status.hidden = captions?.status !== "failed";
         if (captions === undefined) return;
         applySubtitleAppearance(layer, text, captions.appearance);
     };

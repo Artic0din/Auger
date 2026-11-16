@@ -1,8 +1,8 @@
 # Watch Party
 
 Apple's Watch Party is an experimental feature.
-This client has the opt-in, the capability check, the hub and the lobby over HTTP.
-The room socket and synchronized playback are not built (issue #54).
+This client has the opt-in, the capability check, the hub, the lobby, the room socket that keeps the lobby live, and the vote room.
+Synchronized playback is not built (issue #54).
 
 ## Reference
 
@@ -19,6 +19,8 @@ This is not the installed Apple TV build.
 | Error text, busy state, ending a party | `WatchParty/WatchPartySession.swift` (`enter`, `endParty`), `Networking/APIv2/APIv2Client.swift` (`APIv2Error.localizedDescription`) |
 | Lobby layout, copy and focus | `Screens/WatchParty/WatchPartyHubView.swift` (`WatchPartyLobbyView.tvLobby`, `WatchPartyHostControlsOverlay`, `WatchPartyEndConfirmation`), `WatchPartyComponents.swift` (`WatchPartyMetrics`, `WatchPartySeatsRow`, `WatchPartyCodePill`) |
 | Lobby rules | `WatchParty/WatchPartyLobbyState.swift` (`WatchPartyLobbyPolicy`), `WatchPartySession.swift` (`canStartPlayback`, `select`, `startPlayback`, `stopPlayback`, `setMode`, `setPolicy`, `mutate`) |
+| Room socket | `WatchPartySocket`, `WatchPartySession.startConnection`, `WatchPartyRoomState`, `WatchPartyClock` (named in `src/ui/watchPartySocket.ts`; no revision recorded) |
+| Ballot | `WatchPartyVotes`, `WatchPartyLobbyPolicy.voteWinner`, `WatchPartyBallot` (named in `src/ui/watchPartyVotes.ts` and `watchPartyBallot.ts`; no revision recorded) |
 | Invitation | `Screens/WatchParty/WatchPartyInviteView.swift`, `WatchPartyLobbyPolicy.inviteURL` |
 | Picker | `Screens/WatchParty/WatchPartyMediaPicker.swift` (`WatchPartyMediaPicker`, `WatchPartyEpisodePicker`, `WatchPartyMediaChoiceView`) |
 
@@ -62,14 +64,22 @@ The backdrop is the chosen title's backdrop, else its poster blurred; an episode
 
 Apple's session never polls the room: it takes the room from each host change and, after that, from the socket.
 There is no manual refresh in Apple, so this client has none.
-Until the socket exists the lobby shows the room as the last answer left it, so presence, readiness and the host's picks made on another device do not update on their own.
-A guest therefore sees the room as it was when they joined.
-The presence dot reads the room: "Host away" for a guest when the host is not connected, "Open" for one member here and "N here" otherwise.
+Opening a room starts a `silo.room.v2` socket (`src/ui/watchPartySocket.ts`).
+Each attempt reads the room, asks for a socket ticket and connects.
+A snapshot, the host's pick and controls, readiness, who is here and the party ending reach every TV in the room as they happen.
+An older snapshot never replaces a newer one, and an HTTP answer never replaces a snapshot that arrived after its request was sent.
+A dropped socket reconnects after 1, 2, 4, 8 and then 15 seconds, and at once when it had stayed open for 30 seconds.
+Pings on the open socket measure the offset to the server's clock (`RoomClock`); nothing uses it yet.
+The presence dot reads the socket: "Connecting", "Reconnecting", or once connected "Host away" for a guest when the host is not connected, "Open" for one member here and "N here" otherwise.
+While reconnecting the lobby shows "Reconnecting to the party…", and a guest whose host is away sees that the party holds for two minutes.
+Ready and votes are sent only while the socket is open; a frame sent while it is not is dropped, as in Apple.
+The party ends for this viewer, with the reason on the hub, when the server closes the room ("This party has ended."), when the room is gone or refuses this profile ("The party connection expired or is no longer available. Join again to continue."), or when the same profile joins from another device ("This profile joined the party on another device. Rejoin here to take over playback.").
 
 ### Host
 
 The primary button follows `WatchPartyLobbyPolicy.primaryAction`: Choose a title, Change title, Start for everyone, Return to playback, or Return everyone to lobby. A guest whose profile cannot see the playing title gets no button, as in Apple.
-Change title sits beside Start for everyone.
+Change title sits beside Start for everyone, and Choose something else beside Return to playback in a host-pick room.
+Under the buttons an advisory hint says who has not marked ready ("You can still start.") or "Everyone's ready.".
 Focus opens on the primary button, and on the code pill when there is none.
 One change runs at a time and a second is ignored while it runs, so the controls stay enabled and focus is not thrown out.
 A refused change shows the server's text in the warning banner and keeps the room.
@@ -79,12 +89,26 @@ A start or live selection whose answer is lost reads the room again (`GET /rooms
 - Start for everyone needs a staged title and `staged_selection`, as Apple's `canStartPlayback` does. It calls `POST /playback/start` and, when the room answers `playing` with a file, opens the existing player on that file from the room's anchor, pinned to that file so an alternate version cannot play. Choosing a title for a party that is already playing does the same. There is no synchronization: the player plays on its own. Return to playback opens it again.
 - Party options (Back closes it; it opens on Close): Who chooses (needs `selection_mode_switch` and a lobby), Playback controls (Host only or Guests can play and pause), Return everyone to lobby (needs `stop_playback` and a playing party), End party for everyone and Leave party. Rows stay enabled while a change runs.
 - End party for everyone asks "End this party for everyone?" first, then closes the room with `DELETE` and returns to the hub with "This party has ended.". A refused close keeps the room and shows the reason.
-- Back from the lobby ends the host's room, as before, so a started party is not left open. Apple's Leave party only drops the local connection and asks nothing; with no room socket the host's Leave party would end the room, so it opens the End party confirmation instead.
+- Leave party, and Back from the lobby, leave this TV only, as in Apple: the socket closes and nothing else is called. A host who leaves is away, and the server holds the party for them. End party for everyone is what closes the room.
+
+### Vote room
+
+A host who chooses Start a party and let everyone vote, or Who chooses set to Everyone votes, opens a vote lobby (`src/ui/watchPartyBallot.ts`, `watchPartyVotes.ts`).
+The hero asks "What are we watching?", with "Everyone votes. You start the leader." for the host and "Tap a title to vote. {host} starts the winner." for a guest.
+Each suggestion is a poster card with its live vote count, an outline on the leader and a tick on the ones this profile voted for.
+Select votes or takes the vote back.
+The cards, the tick and the leader come from the socket's `suggestions_update`; this profile's own votes come from a read over HTTP after each connection, and a card reads "Loading your vote" until then.
+A suggestion's poster is drawn only when it is on this server.
+The dashed Suggest a title card, and the Suggest button, open the picker, and choosing a title there adds it to the ballot.
+The leader is the most votes, a tie going to the earlier suggestion; nobody voted is no leader.
+The host's primary button is Start {leader}, disabled until the ballot has been read on this connection, and Suggest a title while nobody has voted.
 
 ### Guest
 
-A guest sees the hero, the seats, the code and Options with Leave party and Close only; there is no Ready button and no action.
-Leave party and Back exit the room screen and call nothing: a guest has no HTTP leave, and the socket close that leaves is not built.
+A guest sees the hero, the seats, the code and Options with Leave party and Close only.
+When the server takes lobby readiness (`lobby_ready`), a guest in the lobby has I'm ready, which becomes You're ready with "tap to undo", and every seat shows it.
+Ready is sent over the socket and does nothing while the socket is not connected.
+A guest has no HTTP leave: Leave party and Back close the socket and return to the hub.
 
 ### Picker
 
@@ -92,7 +116,7 @@ Choose a title opens the picker, which reads `GET /rooms/{id}/picker` with the r
 A server without the `picker` flag shows the viewer's own watchlist instead.
 Focus opens on the first title once the shelves arrive.
 A series the group is part-way through goes to its next episode; any other series opens its seasons as tabs over the chosen season's episodes, with the first season that is not specials selected.
-A confirmation page then shows the title and stages it with Choose for the party, or Play for everyone when the party is already playing.
+A confirmation page then shows the title and stages it with Choose for the party, or Play for everyone when the party is already playing; in a vote room it puts the title on the ballot instead.
 A failed read shows the reason with Try Again, under any shelves an earlier read left.
 
 ### Invitation
@@ -103,8 +127,8 @@ Joining by pasted link is still refused, as the native contract joins by code.
 
 ## Not built
 
-- The room socket: live presence, readiness, other members' changes, synchronized playback, and the socket close that is a guest's leave.
-- Ready for guests, voting, suggestions and the host's Everyone votes ballot. A vote room shows a banner that voting is not available on this TV, and Who chooses can switch it back to Host chooses.
+- Synchronized playback: the socket's play, pause and seek commands, playback reports, and the buffering and syncing seat states they drive. The player plays on its own.
+- The ballot cards' long-press menu (Start this one, Remove suggestion).
 - The picker's search, Home's discovery rows, Recently Added shelves and each member's viewing history ("Who's seen it").
 - Episode spoiler protection in the lobby and picker.
 - Invitation links pasted into the code field.

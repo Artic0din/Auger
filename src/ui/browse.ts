@@ -33,7 +33,7 @@ import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { TizenKeyManager } from "../session/secretStore.ts";
 import { Skyline } from "./skyline.ts";
-import { decodeImageCapabilities, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
+import { decodeImageCapabilities, detailArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
@@ -115,6 +115,13 @@ export interface Browse {
 }
 
 /** SearchViewModel.onQueryChanged and RequestSearchSectionViewModel.onQueryChanged both wait 300 ms. */
+/** app/index.html lays the page out at 1920 x 1080. */
+const PAGE_HEIGHT = 1080;
+/**
+ * The S95C keyboard leaves 568 px; while it closes the page reads 1079 for about 0.75 s (#536). Halfway between the
+ * open and closed heights (824 px) counts as up, so the closing frames keep the normal layout.
+ */
+const KEYBOARD_UP_HEIGHT = (568 + PAGE_HEIGHT) / 2;
 const SEARCH_DELAY_MS = 300;
 const SLOW_MS = 5000;
 /** SectionRowLimit.cards (silo-apple SectionRowLimit.swift:6). */
@@ -263,6 +270,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     searchIcon.setAttribute("aria-hidden", "true");
     searchIcon.innerHTML = '<svg viewBox="0 0 48 48" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="5"/><path d="m31 31 12 12" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>';
     searchField.append(searchIcon, input);
+    // The Samsung keyboard shrinks only the visual viewport (to 568 px on the S95C); the layout viewport and media queries keep 1080.
+    // The visual viewport is never taller than the layout one, so this also catches a keyboard that shrinks both.
+    const keyboardUp = (): void => {
+        container.classList.toggle("search-keyboard-up", (window.visualViewport?.height ?? window.innerHeight) <= KEYBOARD_UP_HEIGHT);
+    };
+    window.visualViewport?.addEventListener("resize", keyboardUp);
+    window.addEventListener("resize", keyboardUp);
+    keyboardUp();
     // Apple hides Search's navigation bar (SearchView.swift:65-69); the title stays only as the page's hidden heading.
     const searchHead = [el("h1", "browse-title", "Search"), searchLabel, searchField];
 
@@ -389,9 +404,26 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         return pending;
     };
     let inputRevision = 0;
-    const recordInput = (): void => { inputRevision++; };
-    document.addEventListener("keydown", recordInput, true);
+    /** Keys, pointer presses and focus moves; a Details change with none since the last render is an async answer. */
+    let interactions = 0;
+    let renderedInteractions = 0;
+    /** One Details repaint per frame for answers that arrive together; SwiftUI likewise commits once per frame. */
+    let detailsPaint: { current: Route; frame: number } | undefined;
+    const flushDetailsPaint = (): void => {
+        if (detailsPaint === undefined) return;
+        const { current, frame } = detailsPaint;
+        cancelAnimationFrame(frame);
+        detailsPaint = undefined;
+        paintDetails(current);
+    };
+    const recordInput = (): void => { inputRevision++; interactions++; };
+    // A key acts on the screen the last answers drew, as it did when each answer repainted at once.
+    // A pointer press does not: repainting between its down and up would drop the click.
+    const recordKey = (): void => { flushDetailsPaint(); recordInput(); };
+    const recordFocus = (): void => { interactions++; };
+    document.addEventListener("keydown", recordKey, true);
     document.addEventListener("pointerdown", recordInput, true);
+    document.addEventListener("focus", recordFocus, true);
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
@@ -777,6 +809,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         resolutionCap.stop();
         episodeSpoilers?.stop();
         document.removeEventListener("visibilitychange", themeVisibility);
+        window.visualViewport?.removeEventListener("resize", keyboardUp);
+        window.removeEventListener("resize", keyboardUp);
         themePrefs.stop();
         themeCenter.reset();
         activeSection?.stop();
@@ -801,8 +835,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSlow();
         cancelSearch();
         cancelCalendarDay();
-        document.removeEventListener("keydown", recordInput, true);
+        document.removeEventListener("keydown", recordKey, true);
         document.removeEventListener("pointerdown", recordInput, true);
+        document.removeEventListener("focus", recordFocus, true);
         stack = [];
         roots.clear();
         seriesSeasons.clear();
@@ -1056,20 +1091,26 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if ((current.kind === "item" || current.kind === "season") && current.data?.details?.changes.get("watched")?.pending) {
             invalidateWatched(current, current.data.details.detail);
         }
-        if (top() === current) {
-            // The card menu redraws its own rows; the screen under it rerenders when it closes.
-            if (cardActions.active) cardActions.refresh();
-            else {
-                const focus = host.focused();
-                const series = (current.kind === "item" || current.kind === "season") ? current.data?.details?.series : undefined;
-                const retry = focus?.key === "retry-episodes" && series?.failed;
-                render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
-            }
-            if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
-        }
+        if (top() !== current) return;
+        if (returnKey !== undefined || interactions !== renderedInteractions) { paintDetails(current, returnKey); return; }
+        if (detailsPaint !== undefined) cancelAnimationFrame(detailsPaint.frame);
+        detailsPaint = { current, frame: requestAnimationFrame(flushDetailsPaint) };
     };
 
-    const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail): DetailsState => {
+    const paintDetails = (current: Route, returnKey?: string): void => {
+        if (top() !== current) return;
+        // The card menu redraws its own rows; the screen under it rerenders when it closes.
+        if (cardActions.active) cardActions.refresh();
+        else {
+            const focus = host.focused();
+            const series = (current.kind === "item" || current.kind === "season") ? current.data?.details?.series : undefined;
+            const retry = focus?.key === "retry-episodes" && series?.failed;
+            render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
+        }
+        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
+    };
+
+    const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail, artwork: Readonly<Record<string, string>>): DetailsState => {
         let seasonFocus: { season: number | undefined; revision: number } | undefined;
         const details = new DetailsState(detail, session, (audioClosed) => {
             if (details.series?.focusSelectedEpisode && seasonFocus?.season !== details.series.seasonNumber) {
@@ -1083,7 +1124,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (top() === current && enter && episode !== undefined) { render({ zone: "seasons", key: `season:${details.series.seasonNumber}` }); return; }
             }
             detailsChanged(current, audioClosed);
-        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal));
+        }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
         resolutionCap.ensure();
         return details;
@@ -1500,12 +1541,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (current.data?.details === undefined) stopDetails();
                 load(current, async (signal) => {
                     // Slots follow response fields: backdrop_width also sizes a still returned in backdrop_url.
-                    const detail = await read(operations.getCatalogItem(current.id, imageCapability?.state === "available" ? homeArtworkQuery(imageCapability, window.devicePixelRatio) : {}), signal);
+                    const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
+                    const detail = await read(operations.getCatalogItem(current.id, artwork), signal);
                     const seasons = detail.type === "series" ? await read(operations.listSeriesSeasons(detail.id), signal) : [];
                     const episodeId = current.seriesContext?.episodeId;
                     const episode = detail.type === "series" && current.seriesContext?.seasonNumber === undefined && episodeId !== undefined
                         ? await read(operations.getCatalogItem(episodeId), signal).catch((error: unknown) => { if (error instanceof ApiError && error.status === 404) return undefined; throw error; }) : undefined;
-                    return { detail, seasons, contextSeason: current.seriesContext?.seasonNumber ?? (episode?.seriesId === detail.id ? episode.seasonNumber : undefined) };
+                    return { detail, seasons, artwork, contextSeason: current.seriesContext?.seasonNumber ?? (episode?.seriesId === detail.id ? episode.seasonNumber : undefined) };
                 }, (data) => {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
@@ -1527,16 +1569,17 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         }
                         current.data = { ...data, detail, details: previous };
                         startBoxSetRow();
-                        if (!previous.series?.selectionChanged && current.focus === undefined && data.contextSeason !== undefined && data.seasons.some(item => item.seasonNumber === data.contextSeason)) return { zone: "seasons", key: `season:${data.contextSeason}` };
+                        if (!previous.series?.selectionChanged && current.seriesContext?.episodeId === undefined && current.focus === undefined && data.contextSeason !== undefined && data.seasons.some(item => item.seasonNumber === data.contextSeason)) return { zone: "seasons", key: `season:${data.contextSeason}` };
                         return;
                     }
-                    const details = createItemDetails(current, data.detail);
+                    const details = createItemDetails(current, data.detail, data.artwork);
                     details.restore(previous);
                     const repick = repickSeasons.delete(data.detail.id);
                     if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId);
                     details.series?.restore(repick ? undefined : previous?.series, true);
                     details.restoreSeasonStates(previous);
                     details.focusedEpisodeId ??= current.seriesContext?.episodeId;
+                    details.entryEpisodeId = current.seriesContext?.episodeId;
                     details.related = quiet ? previous?.related : undefined;
                     stopDetails();
                     current.data = { ...data, details };
@@ -1861,8 +1904,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         current.error = undefined;
     };
     /** Titles, People, box sets and Requests each stay on screen until their own replacement answers. */
-    const search = (current: Extract<Route, { kind: "search" }>, quiet = false): void => {
-        searchReturnFocus = undefined;
+    const search = (current: Extract<Route, { kind: "search" }>, quiet = false, focus?: FocusTarget): void => {
         cancelSearch();
         stopSearchSupplement();
         current.failure = undefined;
@@ -1874,7 +1916,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         searchRequests(current);
         current.pages ??= newPages();
         loadSearch(current, false, quiet);
-        render();
+        render(focus);
     };
     const moreSearch = (current: Extract<Route, { kind: "search" }>): void => {
         if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.query !== current.resultsFor || current.filter !== current.resultsFilter || current.pages?.page?.nextCursor === undefined) return;
@@ -1906,8 +1948,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         // The TV keyboard's Done key, or Enter on a desktop keyboard: search now.
         if (current?.kind === "search" && (event.keyCode === 65376 || event.key === "Enter") && input.value !== "") {
+            // Only a viewer's search drops the result Back is returning to; the reread of an answer an earlier push interrupted keeps it.
+            searchReturnFocus = undefined;
             current.query = input.value;
-            search(current);
+            // Done closes the Samsung keyboard; leaving Apple's keyboard lands on the selected filter.
+            search(current, false, event.keyCode === 65376 ? { zone: "search-filters", key: `search-filter:${current.filter ?? "all"}` } : undefined);
         }
     });
 
@@ -2009,11 +2054,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const detail = cached === undefined ? undefined : previous?.detail ?? cached;
             if (detail !== undefined) {
                 const seasons = cache.peek(operations.listSeriesSeasons(current.id)) ?? [];
-                const details = createItemDetails(current, detail);
+                const details = createItemDetails(current, detail, detailArtworkQuery(imageCapability, window.devicePixelRatio));
                 details.restore(previous);
                 if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId);
                 details.series?.restore(previous?.series, false, true);
-                if (detail.type === "series") details.focusedEpisodeId = current.seriesContext?.episodeId;
+                if (detail.type === "series") { details.focusedEpisodeId = current.seriesContext?.episodeId; details.entryEpisodeId = current.seriesContext?.episodeId; }
                 current.data = { detail, seasons, details };
                 cachedDetailOwners.add(details);
                 current.stale = true;
@@ -2152,6 +2197,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const render = (focus?: FocusTarget): void => {
+        // Focus that a render moves itself is not a viewer's move.
+        try { draw(focus); } finally { renderedInteractions = interactions; }
+    };
+
+    const draw = (focus?: FocusTarget): void => {
         syncThemeMusic();
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);

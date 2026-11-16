@@ -181,6 +181,14 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: str
     return node;
 }
 
+/**
+ * Runs `ready` once `image` has loaded and decoded. The TV otherwise decodes on the frame that first shows the
+ * image, holding that frame and the timers behind it (#515). A refused decode still reveals the loaded image.
+ */
+export function onDecoded(image: HTMLImageElement, ready: () => void): void {
+    image.addEventListener("load", () => { image.decode().then(ready, ready); });
+}
+
 export function button(key: string, label: string, onPress: () => void): Control {
     const element = el("button", "signin-button", label);
     element.type = "button";
