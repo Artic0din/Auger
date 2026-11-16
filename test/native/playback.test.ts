@@ -3146,3 +3146,113 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
     }
     r.controller.destroy();
 });
+
+// SECONDARY (silo-apple main, TVPlayerInfoHUD SubtitlesPane): a second text track under the primary, where the app draws subtitles itself.
+const SECONDARY_PATH = "/stream/11111111-1111-4111-8111-111111111111/subtitles/4.vtt?file_id=42&token=synthetic";
+async function secondaryRig(): Promise<Rig> {
+    const r = await rig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: `${String(track.url)}&token=synthetic` } : track) });
+    r.server.next.push({ subtitle: 0, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    return r;
+}
+
+test("Secondary lists the file's other text sidecars while an app-drawn subtitle is shown, the primary dimmed", async () => {
+    const r = await secondaryRig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:0");
+    assert.deepEqual(view.tracks.secondary?.choices.map(choice => [choice.id, choice.unavailable === true]), [["file:42:subtitle:0", true], ["file:42:subtitle:1", false], ["file:42:subtitle:4", false]], "bitmap and burn-in-only rows are not offered");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("Secondary reads the chosen sidecar, draws it under the primary and clears on Off", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Primary line");
+    assert.equal(view.captions?.secondaryText, "Secondary line");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4");
+    r.controller.selectSecondarySubtitle(undefined);
+    r.avplay.tick(12600);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("Secondary refuses the primary's own track and a track the app cannot draw", async () => {
+    const r = await secondaryRig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const reads = r.h.fake.requests.length;
+    for (const id of ["file:42:subtitle:0", "file:42:subtitle:2", "file:42:subtitle:3", "file:42:subtitle:99"]) r.controller.selectSecondarySubtitle(id);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.length, reads);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("turning the primary off, or choosing it as secondary's track, drops the secondary", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.selectSubtitle(undefined);
+    for (let step = 0; step < 5; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary, undefined, "no list without a primary");
+    r.controller.destroy();
+});
+
+test("no Secondary list shows when the shown subtitle is not drawn by the app", async () => {
+    const r = await rig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary, undefined);
+    r.controller.destroy();
+});
+
+test("a replan that moves the primary's timing origin reads the secondary track again at the new origin", async () => {
+    const r = await secondaryRig();
+    const artifact = (origin: number) => ({ url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: origin });
+    r.server.next.length = 0;
+    r.server.next.push({ subtitle: 0, subtitleArtifact: artifact(0) }, { subtitle: 0, subtitleArtifact: artifact(5) });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" }, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" }, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.selectAudio("file:42:audio:1");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length, 2, "read again for the new origin");
+    r.avplay.tick(17500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "Secondary line", "placed 5 s later, with the primary");
+    r.controller.destroy();
+});
