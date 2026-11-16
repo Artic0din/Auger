@@ -975,6 +975,27 @@ test("a failed AI job says so with Dismiss, and a held request adds Discard held
     } finally { await page.close(); }
 });
 
+test("Cancel, Dismiss and Discard act while a track change is pending, as Apple's job panel is not disabled by one", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        const changing = (ai: Partial<NonNullable<TrackView["ai"]>>): TrackView => ({ ...aiTracks(ai), change: { state: "changing" } });
+        await show(page, playing(changing({ busy: true, phase: "busy", kind: "translate", progress: { percent: 10, message: "" } })));
+        assert.equal(await focused(page), "ai-cancel");
+        await remote(page, ENTER);
+        await show(page, playing(changing({ phase: "failed", message: "Provider could not decode the source track.", held: true })));
+        assert.equal(await focused(page), "ai-dismiss");
+        await remote(page, ENTER);
+        await page.locator('[data-focus="ai-discard"]').focus();
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction cancel", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+    } finally { await page.close(); }
+});
+
 test("Back leaves the AI menu for the AI Subtitles… row, and no AI row shows without anything to run", async () => {
     const { page } = await open();
     try {

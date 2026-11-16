@@ -82,6 +82,8 @@ function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
 const OFF = "subtitles-off";
 const SERIES_SUBTITLE = "series-subtitles";
 const RETRY = "audio-retry";
+/** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
+const AI_JOB_ACTIONS: readonly string[] = ["ai-cancel", "ai-dismiss", "ai-discard"];
 
 function changeText(tracks: TrackView): string {
     switch (tracks.change.state) {
@@ -633,7 +635,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const id = button.getAttribute("data-focus") ?? "";
                     const aiAction = id.startsWith("ai-language:");
                     // Cancel, Dismiss and Discard act on the job itself, so a running job or a track change never locks them.
-                    const aiPanel = id === "ai-cancel" || id === "ai-dismiss" || id === "ai-discard";
+                    const aiPanel = AI_JOB_ACTIONS.includes(id);
                     const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
                     const downloading = tracks.subtitleTools?.search.downloadingKey;
                     const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
@@ -652,7 +654,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const same = (returnFocus === undefined ? undefined : choices.find(button => button.getAttribute("data-focus") === returnFocus))
                 ?? (keep === null ? undefined : choices.find(button => button.getAttribute("data-focus") === keep))
                 // The AI menu swaps its languages for a job's Cancel or a failure's Dismiss, and back.
-                ?? (aiLanguages ? ["ai-cancel", "ai-dismiss", "ai-discard"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) ?? choices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu)) : undefined);
+                ?? (aiLanguages ? AI_JOB_ACTIONS.map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) ?? choices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu)) : undefined);
             if (heldTab !== undefined && lists[tabs.indexOf(heldTab)]?.style.display !== "none") {
                 heldTab.focus();
             } else if (same !== undefined) {
@@ -1310,10 +1312,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             crossColumn(key === "left" ? -1 : 1);
         } else if (key === "enter") {
             if (document.activeElement?.getAttribute("aria-disabled") === "true") return;
-            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing") {
+            const id = focusedId();
+            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing" && !AI_JOB_ACTIONS.includes(id ?? "")) {
                 return;
             }
-            const id = focusedId();
             const picker = openPicker();
             if (id?.startsWith("chapter:") && (view.phase === "playing" || view.phase === "paused")) {
                 const chapter = view.hud?.chapters[Number(id.slice(8))];
