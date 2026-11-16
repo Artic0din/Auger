@@ -113,6 +113,7 @@ test("a regional English tag counts as shipped", async () => {
         h.settings.profile().set(APP_LANGUAGE_KEY, "en-GB");
         await h.store.refresh();
         assert.equal(h.store.footer.startsWith("The language of Silo"), true);
+        assert.deepEqual(h.store.options.map(option => option.tag), [null, "en", "en-GB"], "kept as stored, as Apple lists it");
     } finally { h.store.stop(); }
 });
 
