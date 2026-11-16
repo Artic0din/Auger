@@ -76,6 +76,22 @@ test("Settings › General lists Play and Loop Theme Music with Apple's copy, of
     });
 });
 
+test("Settings › General draws the disabled Loop row as bright as the enabled Play row, as Apple TV does", async () => {
+    await withTv({}, async tv => {
+        await openGeneral(tv);
+        const play = tv.page.locator('[data-focus="theme-music"]');
+        const loop = tv.page.locator('[data-focus="theme-music-loop"]');
+        await loop.waitFor();
+        assert.equal(await loop.getAttribute("aria-disabled"), "true");
+        const look = (row: typeof loop) => row.evaluate(node => ({
+            opacity: getComputedStyle(node).opacity,
+            title: getComputedStyle(node.querySelector(".settings-row-title") ?? node).color,
+            value: getComputedStyle(node.querySelector(".settings-row-value") ?? node).opacity,
+        }));
+        assert.deepEqual(await look(loop), await look(play), "Play is enabled and Off, Loop is disabled and Off: same look");
+    });
+});
+
 test("opening Details plays the title's first theme; Back fades it out and releases the audio", async () => {
     await withTv({ enabled: true }, async (tv, { themes }) => {
         await openMovie(tv);
