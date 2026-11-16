@@ -888,6 +888,39 @@ journey("Home's backdrop shows its ThumbHash until the image decodes, and keeps 
     void tv.page.route("**/art/held-backdrop.svg", async route => { await gate; await route.abort(); });
 } });
 
+type HeldDecodes = { siloHeldDecodes: { src: string; release(): void }[] };
+journey("Home reveals the marquee backdrop, title logo and card art only once each image has decoded, not on load", async tv => {
+    const held = (): Promise<string[]> => tv.page.evaluate(() => (window as unknown as HeldDecodes).siloHeldDecodes.map(entry => new URL(entry.src).pathname));
+    const poster = tv.page.locator(`${POSTER} .browse-art-image`);
+    await tv.eventually(async () => (await held()).includes("/art/decode-poster.svg"), "poster decode requested");
+    assert.equal(await poster.evaluate(node => node.classList.contains("is-loaded")), false, "loaded, not yet decoded");
+    await tv.page.locator('[data-section="recent/12"] [data-focus="movie:m0003"]').focus();
+    await settleMarquee(tv);
+    const frame = tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame");
+    await tv.eventually(async () => (await held()).includes("/art/decode-backdrop.svg"), "backdrop decode requested");
+    assert.equal(await frame.getAttribute("data-art"), "loading", "the ThumbHash stays until the decode finishes");
+    assert.equal(await frame.locator(".skyline-backdrop").evaluate(node => getComputedStyle(node).opacity), "0");
+    const logo = tv.page.locator(".skyline-marquee-layer:not(.skyline-outgoing) img.skyline-logo");
+    await tv.eventually(async () => (await held()).includes("/art/decode-logo.svg"), "logo decode requested");
+    assert.equal(await logo.count(), 0, "the text title stays until the logo decodes");
+    await tv.page.evaluate(() => { for (const entry of (window as unknown as HeldDecodes).siloHeldDecodes) entry.release(); });
+    await tv.eventually(async () => await frame.getAttribute("data-art") === "loaded", "decoded backdrop");
+    await tv.eventually(async () => await poster.evaluate(node => node.classList.contains("is-loaded")), "decoded poster");
+    await logo.waitFor();
+}, catalog => enrichHome(catalog, { "movie:m0003": { backdrop_url: "/art/decode-backdrop.svg", backdrop_thumbhash: ART_HASH, logo_url: "/art/decode-logo.svg" }, "movie:m0006": { poster_url: "/art/decode-poster.svg" } }), undefined, { beforeMount: async tv => {
+    await tv.page.route("**/art/decode-*.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>' }));
+    await tv.page.evaluate(() => {
+        const entries: HeldDecodes["siloHeldDecodes"] = [];
+        const decode = HTMLImageElement.prototype.decode;
+        HTMLImageElement.prototype.decode = function (this: HTMLImageElement): Promise<void> {
+            const decoded = decode.call(this), src = this.src;
+            if (!src.includes("/art/decode-")) return decoded;
+            return new Promise<void>((resolve, reject) => { entries.push({ src, release: () => { decoded.then(resolve, reject); } }); });
+        };
+        (window as unknown as HeldDecodes).siloHeldDecodes = entries;
+    });
+} });
+
 let backdropAttempts = 0;
 journey("a backdrop that failed loads again when its card previews again", async tv => {
     const card = tv.page.locator('[data-section="recent/12"] [data-focus="movie:m0003"]');
