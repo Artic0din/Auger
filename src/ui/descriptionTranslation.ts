@@ -317,6 +317,8 @@ export interface DetailSurface {
     season(): { readonly id: string; readonly number: number } | undefined;
     episodes(): readonly Episode[] | undefined;
     seriesId(): string | undefined;
+    /** The artwork query Details read this item with, so a readback keeps its image URLs. */
+    artwork(): Readonly<Record<string, string>>;
     /** Returns whether the pending language has cleared. True also means the page moved on and the run can stop. */
     replaceDetail(detail: ItemDetail): boolean;
     replaceEpisodes(seasonNumber: number, episodes: readonly Episode[]): boolean;
@@ -443,7 +445,7 @@ export class ItemDescriptionTranslation {
 
     private async readItem(contentId: string): Promise<ItemDetail | undefined> {
         try {
-            return await this.session.call({ ...operations.getCatalogItem(contentId), profileScoped: true, signal: this.signal });
+            return await this.session.call({ ...operations.getCatalogItem(contentId, this.surface.artwork()), profileScoped: true, signal: this.signal });
         } catch (error) {
             if (error instanceof ApiError && error.aborted) throw error;
             return undefined;
