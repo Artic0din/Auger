@@ -112,7 +112,13 @@ export async function assertPressedLook(tv: Tv, control: Locator, expected: Pres
         // getAnimations() then flushes style and returns the transition that change started.
         const freeze = (): void => { for (const animation of node.getAnimations({ subtree: true })) animation.pause(); };
         window.addEventListener("keydown", freeze, { once: true });
-        window.addEventListener("focusout", freeze, { once: true });
+        // Only this control's focusout counts: focusing it moves focus off another control first, and that event must not use the listener up.
+        const freezeOnBlur = (event: FocusEvent): void => {
+            if (event.target !== node) return;
+            window.removeEventListener("focusout", freezeOnBlur);
+            freeze();
+        };
+        window.addEventListener("focusout", freezeOnBlur);
         node.focus();
     });
     await settle();
