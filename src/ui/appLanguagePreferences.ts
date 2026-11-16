@@ -2,19 +2,19 @@
 // and tvOS/Screens/Settings/TVGeneralSettingsView.swift. Null means Match Device. The choice is stored on the
 // server for the profile; picking one also clears this TV's own value so the choice takes effect here.
 // Nothing is cached: the row shows only an answer read from the server for the active profile.
-// Tizen has no localised text and no per-app system language (Apple also writes `AppleLanguages`), so the
-// only shipped language is English and the choice changes no on-screen text yet (see docs/settings.md).
+// The stored choice sets the language the app shows (src/i18n/language.ts), which every request names in
+// Accept-Language. Tizen has no per-app system language (Apple also writes `AppleLanguages`), and the only
+// shipped language is English, so the choice changes no on-screen text yet (see docs/settings.md).
 import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
+import { matchShipped, SHIPPED_LANGUAGES, setAppLanguage } from "../i18n/language.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
 
 /** Settings manifest revision that introduced the key (SettingKeyRevisions.swift). */
 export const APP_LANGUAGE_INTRODUCED_IN = 28;
-/** The languages this build shows text in. Apple's list is the bundle's localizations. */
-const SHIPPED_LANGUAGES: readonly string[] = ["en"];
 const MATCH_DEVICE = "Match Device";
 const FOOTER = "The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.";
 export const APP_LANGUAGE_SAVING = "Saving the app language…";
@@ -49,10 +49,8 @@ export function languageEndonym(tag: string): string {
     }
 }
 
-// shortcut: matches on the language code only; upgrade when a shipped language needs a script or region (zh-Hans).
 function isShipped(tag: string): boolean {
-    const code = tag.split("-")[0]?.toLowerCase();
-    return SHIPPED_LANGUAGES.some(shipped => shipped === code);
+    return matchShipped(tag) !== undefined;
 }
 
 function writeFailure(error: unknown): string {
@@ -63,6 +61,7 @@ function writeFailure(error: unknown): string {
 
 export class AppLanguagePreferences {
     private readonly session: NativeSession;
+    private readonly show: (tag: string | null) => void;
     private readonly listeners = new Set<() => void>();
     private readonly controller = new AbortController();
     private choice: AppLanguageChoice | undefined;
@@ -73,8 +72,10 @@ export class AppLanguagePreferences {
     private published = "";
     private refreshSequence = 0;
 
-    constructor(session: NativeSession) {
+    /** `show` applies the language the app shows; null is Match Device. */
+    constructor(session: NativeSession, show: (tag: string | null) => void = setAppLanguage) {
         this.session = session;
+        this.show = show;
     }
 
     /** The stored choice for the active profile; undefined hides the row. */
@@ -196,6 +197,8 @@ export class AppLanguagePreferences {
     }
 
     private publish(): void {
+        // No answer for this profile (another profile, an older server) shows the device's language.
+        this.show(this.currentChoice?.tag ?? null);
         const snapshot = JSON.stringify({ choice: this.currentChoice, saving: this.saving, error: this.errorMessage });
         if (snapshot === this.published) return;
         this.published = snapshot;

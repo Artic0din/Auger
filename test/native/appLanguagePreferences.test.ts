@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../../src/contracts/v2/settings.ts";
+import { setAppLanguage, shownLanguage } from "../../src/i18n/language.ts";
 import { APP_LANGUAGE_INTRODUCED_IN, AppLanguagePreferences, appLanguageSettingsSupported } from "../../src/ui/appLanguagePreferences.ts";
 import { settle } from "./support/clock.ts";
 import { FakeSettings } from "./support/fakeSettings.ts";
@@ -184,4 +185,64 @@ test("subscribers hear every change, and none after stop", async () => {
     const before = heard;
     await h.store.refresh();
     assert.equal(heard, before);
+});
+
+async function shownBy(shown: (tag: string | null) => void) {
+    const h = await connected();
+    await signIn(h);
+    const profile = (await h.core.profiles.list())[0];
+    assert.ok(profile);
+    h.core.profiles.select(profile);
+    const settings = new FakeSettings(h.fake);
+    settings.revision = 28;
+    const store = new AppLanguagePreferences(h.core.session, shown);
+    return { ...h, settings, store };
+}
+
+test("the stored choice sets the language the app shows; Match Device and an unsupported server show the device's", async () => {
+    const shown: (string | null)[] = [];
+    const h = await shownBy(tag => shown.push(tag));
+    try {
+        h.settings.profile().set(APP_LANGUAGE_KEY, "en");
+        await h.store.refresh();
+        assert.equal(shown.at(-1), "en");
+        h.settings.profile().set(APP_LANGUAGE_KEY, null);
+        await h.store.refresh();
+        assert.equal(shown.at(-1), null);
+        h.settings.profile().set(APP_LANGUAGE_KEY, "en");
+        await h.store.refresh();
+        h.settings.revision = 27;
+        await h.store.refresh();
+        assert.equal(shown.at(-1), null, "a server that cannot store it has no choice to show");
+    } finally { h.store.stop(); }
+});
+
+test("picking a language shows it at once, and a failed save puts the previous one back", async () => {
+    const shown: (string | null)[] = [];
+    const h = await shownBy(tag => shown.push(tag));
+    try {
+        await h.store.refresh();
+        assert.equal(shown.at(-1), null);
+        const write = h.fake.hold(profilePath);
+        const saving = h.store.select("en");
+        await settle();
+        assert.equal(shown.at(-1), "en");
+        write.release();
+        await saving;
+        assert.equal(shown.at(-1), "en");
+        h.fake.script(profilePath, problem(500, "internal", "Unavailable"));
+        await h.store.select(null);
+        assert.equal(shown.at(-1), "en", "the failed save leaves the stored language showing");
+    } finally { h.store.stop(); }
+});
+
+test("with the real setter, the stored English choice is what every later request names", async () => {
+    setAppLanguage(null);
+    const h = await shownBy(setAppLanguage);
+    try {
+        h.settings.profile().set(APP_LANGUAGE_KEY, "en");
+        await h.store.refresh();
+        assert.equal(shownLanguage(), "en");
+        assert.equal(h.fake.requests.at(-1)?.headers["accept-language"], "en");
+    } finally { h.store.stop(); setAppLanguage(null); }
 });
