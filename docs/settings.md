@@ -55,6 +55,8 @@ This covers every row that can be disabled here: the Loop and Play Theme Music, 
 Up and Down pass over a disabled row, as tvOS focus passes a disabled `Button`: Apple's own comments say "Skipped by focus while HDR is off" and "unfocusable when this server cannot store them" (`TVPlaybackSettingsView.swift`, silo-apple `dce56e3c`).
 The zone's `skipDisabled` flag does this once for every row (`docs/tv-focus.md`); when nothing enabled is left in that direction, focus stays where it is.
 A row that is focused when it becomes disabled keeps focus, and a key press then moves off it.
+Each pane is a focus section on Apple TV (`.focusSection()` in `TVSettingsView.swift`, silo-apple `dce56e3c`): vertical movement stays in the pane and Left/Right bridges panes.
+The rows zone names itself as its own `up` and `down` target, so Up at the first row and Down at the last stay put in every pane and only Left leaves for the rail.
 While a save is in flight every row ignores presses but stays reachable, because Apple's view models ignore presses while saving and its rows stay in the focus graph.
 Apple's one dimmed Settings group is `TVSettingsNestedGroup` (0.42 opacity while Use Device Settings is on), which this client has no counterpart for: Samsung has no system caption appearance to follow.
 
