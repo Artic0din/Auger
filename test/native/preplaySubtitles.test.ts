@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeCatalogSubtitles, decodeSubtitlePreferences, type CatalogSubtitleTrack, type SubtitlePreferences } from "../../src/contracts/v2/preplaySubtitles.ts";
 import { initialSubtitle, startSubtitleTrackId } from "../../src/player/preplaySubtitles.ts";
+import { subtitlePillSummary } from "../../src/player/trackLabels.ts";
 import type { AudioTrackInfo, SubtitleTrack } from "../../src/contracts/v2/playback.ts";
 import type { PlayableFile } from "../../src/contracts/v2/catalog.ts";
 import { withStartAudioLanguage } from "../../src/ui/browseModel.ts";
@@ -183,4 +184,42 @@ test("Auto with no subtitle language starts on the file's default track, else a 
 
 test("an empty subtitle language still starts Aladdin with subtitles off", () => {
     assert.equal(startSubtitleTrackId("7", { kind: "auto" }, aladdin, { ...aladdinDefaults, language: "" }), undefined);
+});
+
+test("Auto with a subtitle language the file lacks starts on the first forced track when forced subtitles are on, else the file's default (Apple's last resolver branch)", () => {
+    const signs: SubtitleTrack = { ...track, trackId: "file:42:subtitle:1", combinedIndex: 1, label: "Signs", forced: true };
+    const secondForced: SubtitleTrack = { ...signs, trackId: "file:42:subtitle:2", combinedIndex: 2, language: "fr" };
+    const german: SubtitleTrack = { ...track, trackId: "file:42:subtitle:0", combinedIndex: 0, language: "de", label: "German" };
+    const finnish: SubtitlePreferences = { mode: "auto", language: "fi", audioLanguage: "ja", showForced: true, signature: undefined };
+    const rows = [german, signs, secondForced];
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, finnish, "file:42:subtitle:0"), signs.trackId, "forced beats the file's default, in list order, in any language");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, mode: "always" }, undefined), signs.trackId, "always takes the same branch");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, showForced: false }, "file:42:subtitle:0"), "file:42:subtitle:0", "without forced subtitles the file's default stays");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, showForced: false }, undefined), undefined, "no default leaves subtitles off");
+    assert.equal(initialSubtitle({ kind: "auto" }, [german], finnish, undefined), undefined, "no forced row leaves subtitles off");
+    assert.equal(initialSubtitle({ kind: "auto" }, [german, { ...signs, unplayable: true }], finnish, undefined), undefined, "a forced row the server cannot deliver is never picked");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, language: "" }, "file:42:subtitle:0"), undefined, "an empty language is still an explicit no");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, mode: "off" }, "file:42:subtitle:0"), undefined, "Off keeps its own audio-language forced rule");
+    assert.equal(initialSubtitle({ kind: "auto" }, rows, { ...finnish, mode: "always", language: "" }, "file:42:subtitle:0"), undefined, "always with an empty language is an explicit no, forced row or default notwithstanding");
+});
+
+test("a start request for a title lacking the subtitle language names the forced track", () => {
+    const rows = [
+        { selectionIndex: 0, externalPath: "", source: "embedded" as const, language: "de", codec: "srt", label: "German", forced: false, hearingImpaired: false },
+        { selectionIndex: 1, externalPath: "", source: "embedded" as const, language: "en", codec: "ass", label: "Signs", forced: true, hearingImpaired: false },
+    ];
+    const finnish: SubtitlePreferences = { mode: "auto", language: "fi", audioLanguage: "ja", showForced: true, signature: undefined };
+    assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows, finnish), "file:42:subtitle:1");
+    assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows, { ...finnish, showForced: false }), "file:42:subtitle:1", "forced subtitles off still falls to `.noChange`, which takes the default, else a forced row");
+    assert.equal(startSubtitleTrackId("42", { kind: "auto" }, rows.slice(0, 1), finnish), undefined, "no default or forced row leaves subtitles off");
+});
+
+test("the Details subtitle line reads as Apple's pill: language, SDH and Forced in parentheses, then the format", () => {
+    const entry = { label: undefined, language: "pt-BR", codec: "subrip", forced: false, hearingImpaired: false };
+    assert.equal(subtitlePillSummary(entry, "Unknown language"), "Portuguese · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, forced: true }, "Unknown language"), "Portuguese (Forced) · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, hearingImpaired: true, forced: true }, "Unknown language"), "Portuguese (SDH) (Forced) · SRT");
+    assert.equal(subtitlePillSummary({ ...entry, label: "Brazilian (Forced)", forced: true }, "Unknown language"), "Portuguese (Forced) · SRT", "a title never repeats the flag or leads the name");
+    assert.equal(subtitlePillSummary({ ...entry, language: undefined, label: "Signs & Songs", codec: undefined }, "Unknown language"), "Signs & Songs");
+    assert.equal(subtitlePillSummary({ ...entry, language: undefined, label: undefined }, "Unknown language"), "Unknown language · SRT");
 });

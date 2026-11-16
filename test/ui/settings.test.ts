@@ -6,6 +6,7 @@ import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
+import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
@@ -690,6 +691,29 @@ test("Use Synced TV Settings removes only the older poster device override", asy
         await tv.page.getByRole("button", { name: "Use Profile Default", exact: true }).click();
         await tv.eventually(async () => !settings.device("p-owner", "client:tv").has("ui.card_presentation"), "TV-family override cleared");
     } finally { await tv.page.context().close(); }
+});
+
+test("a poster size overridden on this TV is disabled and drawn at full brightness, as on Apple TV", async () => {
+    const { tv, settings } = await setup();
+    settings.remainingRows = true;
+    const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+    assert.ok(deviceId);
+    settings.device("p-owner", deviceId).set("ui.card_presentation", { poster_size: "compact", caption: "title_metadata" });
+    try {
+        await openSettings(tv);
+        await assertDisabledRowsFullBrightness(tv, ["poster-size"]);
+    } finally { await tv.page.context().close(); }
+});
+
+test("rows disabled while a save is in flight are drawn at full brightness, as on Apple TV", async () => {
+    const { tv } = await setup();
+    const held = tv.fake.hold("/settings/values/ui.title_art", true);
+    try {
+        await openSettings(tv);
+        await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).click();
+        await tv.eventually(async () => tv.fake.requests.some(request => request.method === "PUT" && request.path.includes("ui.title_art")), "title art save waiting");
+        await assertDisabledRowsFullBrightness(tv, ["title-art", "title-art-all"]);
+    } finally { held.release(); await tv.page.context().close(); }
 });
 
 test("profile subtitle editors read and compare profile values while narrower overrides remain active", async () => {
