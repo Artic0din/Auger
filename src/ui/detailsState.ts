@@ -212,6 +212,8 @@ export class DetailsState {
     get pending(): boolean { return [...this.changes.values()].some(change => change.pending) || [...this.seasonStates.values()].some(state => state.pending); }
     readonly seasonStates = new Map<number, DetailsState>();
     private aggregateWatched: boolean | undefined;
+    /** Counts watched readbacks, so a Details read sent before one lands cannot put the older state back. */
+    watchedRevision = 0;
     get busy(): boolean { return this.pending || this.pendingElsewhere() || this.episodePreferencesBlocked; }
 
     acceptDetail(detail: ItemDetail): void {
@@ -659,6 +661,7 @@ export class DetailsState {
         this.invalidateEpisodes();
         this.detail = this.mergeDiscoveredTrailers(series);
         this.values.set("watched", series.played);
+        this.watchedRevision++;
         this.aggregateWatched = undefined;
         if (this.series !== undefined) this.series.seasons = seasons;
         this.warmSeriesEpisodes();
@@ -950,6 +953,7 @@ export class DetailsState {
                 // in flight; keep the richer extras/videos rather than wiping them.
                 this.detail = this.mergeDiscoveredTrailers(detail);
                 this.values.set(kind, detail.played);
+                this.watchedRevision++;
                 if (detail.type === "series" && detail.played === requested && (detail.played === true || writeAccepted)) {
                     this.aggregateWatched = detail.played;
                     for (const owner of this.seasonStates.values()) {

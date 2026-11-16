@@ -1539,6 +1539,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     row.start();
                 };
                 if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, async (signal) => {
                     // Slots follow response fields: backdrop_width also sizes a still returned in backdrop_url.
                     const detail = await read(operations.getCatalogItem(current.id, detailArtworkQuery(imageCapability, window.devicePixelRatio)), signal);
@@ -1551,6 +1552,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
+                    // ItemDetailViewModel.adoptDetail: a watched readback published after this read was sent supersedes it.
+                    if (previous?.watchedRevision !== watchedRevision) return;
                     if (previous !== undefined && ((quiet && detailWork === previous && previous.changes.size > 0) || cachedDetailOwners.has(previous))) {
                         const offline = cache.isOffline(operations.getCatalogItem(current.id));
                         const detail = offline ? previous.detail : data.detail;

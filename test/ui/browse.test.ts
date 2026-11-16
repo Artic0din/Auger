@@ -2722,6 +2722,34 @@ for (const aggregate of ["series", "season"]) {
     }
 }
 
+browseTest("S-D2 a series read sent before Mark Series Watched cannot undo the refreshed state", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    await tv.page.route("**/api/v2/recommendations/similar/episode%3As1e12?**", async (route) => {
+        await route.fulfill({ status: 200, json: { ...fixture("list_catalog_items_ok"), items: [{ content_id: "series:s1", type: "series", title: "Harbor Lights" }] } });
+    });
+    await activateDetails(tv, "episode:s1e12", true);
+    await showing(tv, "item:episode:s1e12");
+    const related = tv.page.locator('[data-detail-section="related"] [data-focus="series:s1"]');
+    await related.waitFor();
+    await settled(tv);
+    // Reopening the series shows the visited page and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1", true);
+    await related.focus();
+    await press(tv, "Enter");
+    await showing(tv, "item:series:s1");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older series read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Watched", exact: true }).click();
+    await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Unwatched", exact: true }).waitFor();
+    assert.equal(catalog.mutations.length, 1);
+}, { catalog: new FakeDetails() });
+
 browseTest("S-D2 series aggregate invalidates a cached season before returning", async (tv, catalog) => {
     assert.ok(catalog instanceof FakeDetails);
     for (const title of catalog.titles.values()) if (title.type === "episode" && title.seriesId === "series:s1") catalog.watchedEpisodes.add(title.id);
