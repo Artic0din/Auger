@@ -74,6 +74,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
 - Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
 - A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
 - Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
