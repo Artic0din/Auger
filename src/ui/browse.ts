@@ -57,6 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
 import { getCalendar } from "../api/calendarOperations.ts";
@@ -427,6 +428,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
+    const languagePrefs = new AppLanguagePreferences(session);
+    void languagePrefs.refresh();
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
         const grant = await session.call({ ...operations.themePlayback(ownerId, themeId, themeAudioFormats(probe)), profileScoped: true });
@@ -812,6 +815,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         window.visualViewport?.removeEventListener("resize", keyboardUp);
         window.removeEventListener("resize", keyboardUp);
         themePrefs.stop();
+        languagePrefs.stop();
         themeCenter.reset();
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);
@@ -2853,7 +2857,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
                 ...(options.onSwitchServer === undefined ? {} : { switchServer: options.onSwitchServer }),
-            }, options.onAccounts, episodeSpoilers, experimental, themePrefs);
+            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs);
             syncThemeMusic();
         },
         personal: (source, anchor = "profiles") => {

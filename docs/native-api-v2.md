@@ -600,6 +600,7 @@ All are Bearer plus Profile.
 | explicit values | `GET /settings/values?scope=&keys=` | safe |
 | effective values | `GET /settings/values/effective?keys=` | safe |
 | hidden libraries | `GET /settings/values/effective?keys=ui.disabled_library_ids` (`hiddenLibraries`, `src/api/operations.ts`, called from `src/ui/browse.ts`) | safe |
+| app language | `GET /settings/values/effective?keys=ui.app_language`, `PUT /settings/values/ui.app_language?scope=profile`, `DELETE /settings/values/ui.app_language?scope=profile_device` (`src/ui/appLanguagePreferences.ts`; see [App language](settings.md#app-language)) | safe, never, never |
 | overlay config | `GET /settings/overlay-config`; its `images` list names the uploaded badge images, drawn with plain `<img>` from their public `/api/v2/overlay-images/{ref}` URLs | safe |
 | set | `PUT /settings/values/{key}?scope=` with `{ "value": ... }` | never |
 | reset | `DELETE /settings/values/{key}?scope=` | never |
