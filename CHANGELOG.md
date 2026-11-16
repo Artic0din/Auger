@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
 - Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
 - Sent the language the app shows in `Accept-Language` on every Silo request, as Apple TV does, and added the English string catalog and the lookup that screens will use to show text in that language. Nothing on screen changes yet: English is the only language this build ships.
 - Settings now shows in the language you pick under App Language, in Apple TV's 22 languages. The picker lists them by their own names, sorted by name as Apple TV's is, and Match Device follows the TV. Other screens stay English until they move over (#571).
