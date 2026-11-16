@@ -962,6 +962,8 @@ export class DetailsState {
                 this.watchedRevision++;
                 if (detail.type === "series" && detail.played === requested && (detail.played === true || writeAccepted)) {
                     this.aggregateWatched = detail.played;
+                    // A page owner that replaces this one rebuilds its season owners from these rollups.
+                    if (this.series !== undefined) this.series.seasons = this.series.seasons.map(season => season.userData === undefined ? season : { ...season, userData: { ...season.userData, played: requested } });
                     for (const owner of this.seasonStates.values()) {
                         owner.values.set("watched", detail.played);
                         owner.detail = { ...owner.detail, played: detail.played };

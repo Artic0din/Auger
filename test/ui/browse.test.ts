@@ -2805,6 +2805,30 @@ browseTest("S-D2 a movie read sent before Mark as Watched still starts the cache
     await tv.page.getByRole("button", { name: "Mark as Unwatched", exact: true }).waitFor();
 }, { catalog: new BoxSetCatalog() });
 
+browseTest("S-D2 a movie read sent before Mark as Watched cannot bring back its resume point", async (tv, catalog) => {
+    catalog.progress.set("movie:m0001", 1200);
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:movie:m0001");
+    await tv.page.getByRole("button", { name: /^Resume/ }).waitFor();
+    await tv.remote(BACK); await showing(tv, "boxSet:12:1241");
+    await settled(tv);
+    const older = tv.fake.hold("/catalog/items/movie%3Am0001", true);
+    await tv.page.locator('.box-set-grid [data-focus="movie:m0001"]').click();
+    await showing(tv, "item:movie:m0001");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older movie read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await afterPaint(tv);
+    assert.equal(await tv.page.getByRole("button", { name: /^Resume/ }).count(), 0, "the older answer's resume point stays cleared");
+}, { catalog: new BoxSetCatalog() });
+
 browseTest("S-D2 a series read sent before Mark Series Watched still brings the seasons a cached series lacked", async (tv, catalog) => {
     assert.ok(catalog instanceof FakeDetails);
     catalog.watchedEpisodes.clear();

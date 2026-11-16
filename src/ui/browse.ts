@@ -1553,11 +1553,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
-                    // ItemDetailViewModel.loadDetail: "A Watched tap made while this request was in flight wins." Only the older
-                    // played value and the season rollups the page already refreshed are kept; the rest of the answer applies.
+                    // ItemDetailViewModel.loadDetail: "A Watched tap made while this request was in flight wins." The page keeps its
+                    // played and watch state (the resume point) and the season rollups it already refreshed; the rest of the answer applies.
                     if (previous !== undefined && previous.watchedRevision !== watchedRevision) {
                         const seasons = previous.series?.seasons ?? [];
-                        data = { ...data, detail: { ...data.detail, played: previous.detail.played }, seasons: seasons.length > 0 ? [...seasons] : data.seasons };
+                        data = { ...data, detail: { ...data.detail, played: previous.detail.played, watch: previous.detail.watch }, seasons: seasons.length > 0 ? [...seasons] : data.seasons };
                     }
                     if (previous !== undefined && ((quiet && detailWork === previous && previous.changes.size > 0) || cachedDetailOwners.has(previous))) {
                         const offline = cache.isOffline(operations.getCatalogItem(current.id));
