@@ -362,3 +362,17 @@ test("a cancelled create that answers after Discard, while a newer job runs, lea
     assert.equal(creates(h), 2);
     ai.destroy();
 });
+
+test("a cancelled create whose hold was discarded cannot take the hold back when it later fails, whatever the newer job does", async () => {
+    const { h, ai, hold, first } = await cancelledPendingCreate(new Set(), problem(503, "unavailable", "Try later"), { status: 202, body: job("running", { id: "newer-job" }) });
+    h.fake.script("/subtitles/ai/jobs/newer-job", { status: 200, body: job("completed", { id: "newer-job" }) });
+    ai.discardHeld();
+    await ai.start(request);
+    hold.release();
+    await first;
+    assert.equal(ai.view?.held, false, "the discarded request's late failure does not hold the file");
+    await h.clock.advance(2000);
+    assert.deepEqual(ai.view && { phase: ai.view.phase, held: ai.view.held }, { phase: "completed", held: false });
+    assert.equal(ai.view?.results.length, 1);
+    ai.destroy();
+});

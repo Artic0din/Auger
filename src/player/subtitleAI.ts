@@ -49,6 +49,8 @@ export class SubtitleAI {
     private jobId: string | undefined;
     /** Grows with each start and each cancel: an answer from an earlier generation belongs to a job the viewer let go. */
     private generation = 0;
+    /** The generation of the cancelled create that holds the file; a discard clears it, so that create's late answer cannot touch the file again. */
+    private holdingGeneration: number | undefined;
     private kind: string | undefined;
     private progress: SubtitleAIView["progress"];
     /** Files whose server job outcome is unknown; owned by the caller so it outlives this instance. */
@@ -134,16 +136,16 @@ export class SubtitleAI {
             const job = await this.call(operations.createSubtitleAI(request));
             if (this.abort.signal.aborted) return;
             // Cancelled while the request was in flight: the job exists now, so stop it by the id the server just gave.
-            if (generation !== this.generation) { this.settleHold(""); void this.stop(job.id); return; }
+            if (generation !== this.generation) { this.settleCreate(generation, false); void this.stop(job.id); return; }
             if (job.fileId !== this.fileId || job.kind !== request.kind || job.sourceIndex !== request.source_index || job.id === "" || job.language !== request.target_language) throw new Error("AI job identity mismatch");
             await this.update(job, generation);
         } catch (error) {
             if (this.abort.signal.aborted) return;
             // A problem body is the server's answer; 429 (e.g. quota_exceeded) refuses, unlike 408/5xx whose outcome is unknown.
             const unknown = !(error instanceof ApiError && error.problemId !== undefined && (!error.transient || error.status === 429));
-            if (unknown) this.blockedFiles.add(this.fileId);
             // The viewer already let this request go; a later job's panel is not its to change.
-            if (generation !== this.generation) { this.settleHold(unknown ? UNCONFIRMED : ""); return; }
+            if (generation !== this.generation) { this.settleCreate(generation, unknown); return; }
+            if (unknown) this.blockedFiles.add(this.fileId);
             this.busy = false;
             this.failed = true;
             this.notice(error instanceof ApiError && error.problemId ? `AI subtitles could not start: ${error.problemId}. Playback continues.` : UNCONFIRMED);
@@ -163,6 +165,7 @@ export class SubtitleAI {
 
     /** Lets a request go out again after one whose outcome is unknown. */
     discardHeld(): void {
+        this.holdingGeneration = undefined;
         if (this.blockedFiles.delete(this.fileId)) {
             this.failed = false;
             this.message = "";
@@ -174,24 +177,29 @@ export class SubtitleAI {
     async cancel(): Promise<void> {
         if (!this.busy || this.abort.signal.aborted) return;
         const id = this.jobId;
-        this.generation++;
+        const cancelled = this.generation++;
         this.cancelPoll?.();
         this.busy = false;
         this.progress = undefined;
         // Before the server has named the job there is nothing to stop yet: start() stops it when its id arrives.
         // Until it answers the request may have started a billable job, so the file is held as Apple's SiloAI holds
         // an unresolved creation: nothing else is sent until the create settles or the viewer discards it.
-        if (id === undefined) this.blockedFiles.add(this.fileId);
+        if (id === undefined) { this.blockedFiles.add(this.fileId); this.holdingGeneration = cancelled; }
         this.message = id === undefined ? "Waiting for the AI request to finish. Nothing new is sent until it does." : "";
         this.changed();
         if (id !== undefined) await this.stop(id);
     }
 
-    /** A cancelled create has answered. Its hold lifts unless the viewer already discarded it (a newer start may own the panel). */
-    private settleHold(message: string): void {
-        if (this.busy || !this.blockedFiles.has(this.fileId)) { this.changed(); return; }
-        if (message === "") this.blockedFiles.delete(this.fileId);
-        this.message = message;
+    /**
+     * A cancelled create has answered. Only the create that holds the file settles it: after a discard the file
+     * belongs to whatever the viewer started since, and this late answer changes nothing.
+     */
+    private settleCreate(generation: number, unknown: boolean): void {
+        if (this.holdingGeneration === generation) {
+            this.holdingGeneration = undefined;
+            if (!unknown) this.blockedFiles.delete(this.fileId);
+            this.message = unknown ? UNCONFIRMED : "";
+        }
         this.changed();
     }
 
