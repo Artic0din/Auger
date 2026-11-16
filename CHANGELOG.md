@@ -37,6 +37,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
+- A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
 - The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
@@ -44,6 +45,7 @@ All notable changes to this project are documented in this file.
 - Playback started without a subtitle choice, such as from Home, the next episode or Up Next, now follows the profile's subtitle settings as on Apple TV. With no subtitle language set, playback and the Details Auto summary start on the title's default subtitle, else a forced one, as on Apple TV: Aladdin starts with Portuguese Brazilian (Forced) instead of Off.
 - With a film's embedded subtitle selected, such as Aladdin's Portuguese Brazilian (Forced), the Subtitles tab again shows Delay, Appearance and Only on this TV, and the Video tab its Subtitle delay row, as on Apple TV. The TV draws that subtitle itself, so both settings apply to it.
 - Documented why Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay hidden on Samsung TVs, with the AVPlay limit for each.
+- Corrected the Watch Party page again: it now lists what is built, including the Details action, and what is still missing and waits on #13, and it no longer says Apple's Back leaves the party, that a vote is a socket frame, or that Return everyone to lobby is a primary button. The feature list no longer says the Samsung app has no Watch Party.
 - Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
@@ -75,6 +77,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Settings now keeps Down on Sign Out, the last item of the left rail, as Apple TV does: it no longer jumps into the Server pane's Accounts row. Up still moves up the rail.
 - Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.
 - Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
 - A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
