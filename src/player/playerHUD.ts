@@ -110,8 +110,9 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const outputRange = rangeLabel(to, undefined);
     const range = !picture ? undefined : from !== to && sourceRange !== undefined && outputRange !== undefined ? `${sourceRange} → ${outputRange}` : sourceRange;
     const audioInfo = live.audio === undefined ? undefined : audioInfoLine(live.audio.track, live.audio.ordinal);
-    // Apple reads the decoded stream's track: the selected track's language with the format the recipe delivers.
-    const audioStats = live.audio === undefined ? undefined : audioStatsLine({ ...live.audio.track, codec: recipe?.audioCodec ?? live.audio.track.codec, channels: recipe?.audioChannels ?? live.audio.track.channels });
+    // Apple reads the decoded stream's track: the selected track's language with the format the recipe delivers. A recipe
+    // without a channel count leaves the layout out rather than borrow the source's.
+    const audioStats = live.audio === undefined ? undefined : audioStatsLine(recipe === undefined ? live.audio.track : { ...live.audio.track, codec: recipe.audioCodec, channels: recipe.audioChannels });
     const subtitleInfo = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleSingleLine(live.subtitle.entry, live.subtitle.entry.combinedIndex);
     const subtitleStats = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleStatsLine(live.subtitle.entry);
     const container = source.container === undefined ? undefined : CONTAINERS[source.container.toLowerCase()] ?? source.container;

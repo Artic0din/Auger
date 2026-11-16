@@ -145,3 +145,14 @@ test("a remux reads as remuxed by the server, and an AI track keeps its own name
     assert.equal(stats.playback.find(row => row.label === "Subtitles")?.value, "English (AI)");
     assert.equal(stats.engine[0]?.value, "Server Remux HLS");
 });
+
+test("a recipe with no channel count names its codec alone, never the source track's layout", () => {
+    const plan = planWith(plan => {
+        const recipe = { ...(plan.effective_recipe as Record<string, unknown>) };
+        delete recipe.audio_channels;
+        plan.effective_recipe = recipe;
+    });
+    const stats = planStats(plan, { audio: { track: { isDefault: true, language: "eng", codec: "dts", channels: 6, title: undefined }, ordinal: 0 }, subtitle: undefined, speed: 1, status: "Playing", host: undefined });
+    assert.equal(stats.playback.find(row => row.label === "Audio")?.value, "English · AAC");
+    assert.equal(stats.nowPlaying.find(row => row.label === "Audio")?.value, "English · DTS 5.1");
+});
