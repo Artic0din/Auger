@@ -32,7 +32,11 @@ Each `Zone` has:
 - `layout`: `"row"` (Left/Right move), `"column"` (Up/Down move) or `"grid"` (both, `columns` items per row).
 - `items`: `FocusItem[]`, each with a `key` that is stable within the zone (a content id, not an index) and an `element`.
 - Optional `up`, `down`, `left`, `right`: the id of the zone to jump to when a key runs past the zone's edge.
+  Naming the zone itself holds the key at the edge; without a link, Up and Down fall through to the neighbouring zone in order. Settings rows hold Up and Down this way.
 - Optional `entry`: the item key to land on when another zone is entered by Up/Down (the nav zone uses the selected root).
+- Optional `skipDisabled`: Up and Down pass over `aria-disabled` items, as tvOS focus passes a disabled `Button`; with none enabled left that way the key reaches the zone's edge.
+  A focused item that becomes disabled keeps focus.
+  Settings rows use it, except while a save is in flight.
 - Optional `onLeft`: replaces Left entirely for that zone (used for panels that close on Left).
 - Optional `reading`: a single reading stop taller than the page (audiobook About).
   Entering it shows its leading edge; Up and Down scroll the page 360 px at a time until that edge is visible, and only then leave the zone.
@@ -188,7 +192,7 @@ Other layers:
 - Enter is delivered on every remote without registration, as `keydown` and `keyup`.
 - Select acts on release, as on tvOS: the focused control runs when Enter is released.
   `selectRelease.ts` marks the held control `data-pressed`.
-  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons, Settings rail and pane rows, server management rows, Acknowledgements Done, and Watch Party's Party options rows.
+  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons, Settings rail and pane rows, server management rows, Acknowledgements Done, Watch Party's Party options rows, Request detail and Watch Party pill buttons, Series season pills, anchored episode cards and Details popover rows.
   Settings-style rows grow to `1.012` on focus with `120ms ease-out`, then snap to `0.98` while Select is held and snap back when the press ends; only focus changes animate.
   These values match [TVSettingsComponents.swift:208,214,272,279](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L208) and [Theme/SiloTheme.swift:164](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Theme/SiloTheme.swift#L164) at silo-apple `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`.
   Reduced motion removes the focus animation.
@@ -296,6 +300,26 @@ Change Account animates a registered focus-scale property separately from its tr
 Create Profile's extra bottom Cancel uses the same ghost style as its header Cancel.
 Reduced motion removes transitions and the tile, footer and primary focus growth; the Change Account and ghost-chip scales remain, as in their Apple styles.
 `test/ui/accountsParity.test.ts` and `test/ui/profiles.test.ts` render each control focused and held, sample transition timing, and verify one activation on release in both motion modes.
+Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
+
+## Pill buttons and Details extras pressed looks
+
+Checked against upstream `Silo-Server/silo-apple` main at `dce56e3c5f0ad137ee8208fb79c7ffd0e9210135`.
+Each source file is inside `#if os(tvOS)`, or reaches this control through a tvOS branch.
+
+| Controls | Focus | Held Select | Apple source |
+| --- | --- | --- | --- |
+| Request detail actions (Request, status, Follow, Cancel) | Scale 1.025 (compact pill) | 0.98 of the focus scale, easeOut 0.12 s | [TVDetailActions.swift:737,745,771,775](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L737), [RequestDetailView.swift:398](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/Requests/Detail/RequestDetailView.swift#L398) |
+| Watch Party buttons | No scale (`stabilizesFocusMotion`) | 0.98, easeOut 0.12 s | [WatchPartyComponents.swift:389](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyComponents.swift#L389) |
+| Series season pills and the Watch Party picker's | No scale | 0.98, snapped | [TVSeriesDetailView.swift:1291](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L1291), [WatchPartyMediaPicker.swift:891](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyMediaPicker.swift#L891) |
+| Series episode cards (anchored rail) | Card lift 1.05 | Opacity 0.96, easeOut 0.12 s; the lift stays and the 0.97 art scale of plain cards does not apply | [TVEpisodeRail.swift:477-481,506](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVEpisodeRail.swift#L477-L481), [TVCardFocusStyle.swift:153,158](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Components/TVCardFocusStyle.swift#L153) |
+| Details popover rows | Row highlight | Opacity 0.94, snapped | [TVActionPopoverMenu.swift:128](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVActionPopoverMenu.swift#L128) |
+
+The press scale on pills is the individual CSS `scale` property, so it multiplies the focus `transform` and leaves the focus rules alone.
+`SiloTheme.fastDuration` is 0.12 s ([SiloTheme.swift:178](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Theme/SiloTheme.swift#L178)), which is `--silo-fast`, so Reduce Motion drops the animation and keeps the look.
+Request detail's Follow and Cancel pills now grow to 1.025 on focus like the main action, as the same style does on Apple TV.
+The Details Play and circle actions already had a press look; player controls, the end-of-playback deck and the Info HUD are still unmatched.
+`test/ui/support/pressed.ts` (`assertPressedLook`) renders each control focused and held, in both motion modes, and checks the look, its timing and that a cancelled press runs nothing.
 Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
 
 ## Reduced Motion
