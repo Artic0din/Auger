@@ -27,6 +27,7 @@ export interface SubtitleAIView {
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_ATTEMPTS = 3;
+const UNCONFIRMED = "Could not confirm the AI request. It may still finish on the server; it was not sent again.";
 
 export class SubtitleAI {
     private readonly session: NativeSession;
@@ -133,7 +134,7 @@ export class SubtitleAI {
             const job = await this.call(operations.createSubtitleAI(request));
             if (this.abort.signal.aborted) return;
             // Cancelled while the request was in flight: the job exists now, so stop it by the id the server just gave.
-            if (generation !== this.generation) { void this.stop(job.id); return; }
+            if (generation !== this.generation) { this.settleHold(""); void this.stop(job.id); return; }
             if (job.fileId !== this.fileId || job.kind !== request.kind || job.sourceIndex !== request.source_index || job.id === "" || job.language !== request.target_language) throw new Error("AI job identity mismatch");
             await this.update(job, generation);
         } catch (error) {
@@ -142,10 +143,10 @@ export class SubtitleAI {
             const unknown = !(error instanceof ApiError && error.problemId !== undefined && (!error.transient || error.status === 429));
             if (unknown) this.blockedFiles.add(this.fileId);
             // The viewer already let this request go; a later job's panel is not its to change.
-            if (generation !== this.generation) { this.changed(); return; }
+            if (generation !== this.generation) { this.settleHold(unknown ? UNCONFIRMED : ""); return; }
             this.busy = false;
             this.failed = true;
-            this.notice(error instanceof ApiError && error.problemId ? `AI subtitles could not start: ${error.problemId}. Playback continues.` : "Could not confirm the AI request. It may still finish on the server; it was not sent again.");
+            this.notice(error instanceof ApiError && error.problemId ? `AI subtitles could not start: ${error.problemId}. Playback continues.` : UNCONFIRMED);
             void this.refreshQuota();
         }
     }
@@ -177,10 +178,21 @@ export class SubtitleAI {
         this.cancelPoll?.();
         this.busy = false;
         this.progress = undefined;
-        this.message = "";
-        this.changed();
         // Before the server has named the job there is nothing to stop yet: start() stops it when its id arrives.
+        // Until it answers the request may have started a billable job, so the file is held as Apple's SiloAI holds
+        // an unresolved creation: nothing else is sent until the create settles or the viewer discards it.
+        if (id === undefined) this.blockedFiles.add(this.fileId);
+        this.message = id === undefined ? "Waiting for the AI request to finish. Nothing new is sent until it does." : "";
+        this.changed();
         if (id !== undefined) await this.stop(id);
+    }
+
+    /** A cancelled create has answered. Its hold lifts unless the viewer already discarded it (a newer start may own the panel). */
+    private settleHold(message: string): void {
+        if (this.busy || !this.blockedFiles.has(this.fileId)) { this.changed(); return; }
+        if (message === "") this.blockedFiles.delete(this.fileId);
+        this.message = message;
+        this.changed();
     }
 
     private async stop(id: string): Promise<void> {

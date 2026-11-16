@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { SubtitleAI } from "../../src/player/subtitleAI.ts";
 import { decodeAIStatus } from "../../src/contracts/v2/subtitleAI.ts";
 import { connected, signIn } from "./support/harness.ts";
-import { problem } from "./support/fakeSilo.ts";
+import { problem, type Reply } from "./support/fakeSilo.ts";
 
 const request = { media_file_id: "42", kind: "translate", source_index: 2, source_language: "en", target_language: "fr", start_position: 12 } as const;
 const job = (status: string, extra: Record<string, unknown> = {}) => ({ job: { id: "opaque-job", media_file_id: "42", kind: "translate", source_index: 2, target_language: "fr", status, result_subtitle_id: status === "completed" ? "opaque-result" : null, ...extra } });
@@ -247,11 +247,11 @@ test("Cancel while the create request is pending stops that job once the server 
     const second = ai.start(request);
     await h.clock.advance(0);
     await ai.cancel();
-    assert.equal(ai.view?.phase, "idle", "the panel returns at once");
-    assert.equal(ai.view?.busy, false);
+    assert.deepEqual(ai.view && { phase: ai.view.phase, held: ai.view.held }, { phase: "failed", held: true }, "the request may still start a job, so the file is held until it answers");
     hold.release();
     await second;
     await h.clock.advance(10000);
+    assert.equal(ai.view?.held, false, "the answer settles the hold");
     assert.deepEqual(h.fake.requests.filter(row => row.path.endsWith("/cancel")).map(row => row.path), ["/subtitles/ai/jobs/second-job/cancel"]);
     assert.equal(h.fake.requests.some(row => row.path === "/subtitles/ai/jobs/second-job"), false, "a cancelled job is never polled");
     assert.equal(ai.view?.phase, "idle");
@@ -282,4 +282,83 @@ test("a poll that was in flight when the job was cancelled cannot change the nex
         assert.equal(ai.view?.phase, "completed");
         ai.destroy();
     }
+});
+
+async function cancelledPendingCreate(blocked = new Set<string>(), ...creates: Reply[]) {
+    const { h, ai } = await setup(3, true, blocked);
+    h.fake.script("/subtitles/ai/translate", ...creates);
+    const hold = h.fake.hold("/subtitles/ai/translate");
+    const first = ai.start(request);
+    await h.clock.advance(0);
+    await ai.cancel();
+    return { h, ai, hold, first };
+}
+const creates = (h: Awaited<ReturnType<typeof setup>>["h"]): number => h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length;
+
+test("while a cancelled create is still pending, no second request goes out; once it answers, the next start does", async () => {
+    const { h, ai, hold, first } = await cancelledPendingCreate(new Set(), { status: 202, body: job("running", { id: "first-job" }) }, { status: 202, body: job("running", { id: "next-job" }) });
+    h.fake.script("/subtitles/ai/jobs/first-job/cancel", { status: 200, body: job("cancelled", { id: "first-job" }) });
+    await ai.start(request);
+    assert.equal(creates(h), 1, "held until the first create answers");
+    assert.equal(ai.view?.held, true);
+    hold.release();
+    await first;
+    assert.equal(ai.view?.held, false);
+    assert.equal(ai.view?.phase, "idle");
+    await ai.start(request);
+    assert.equal(creates(h), 2);
+    ai.destroy();
+});
+
+test("a cancelled create that fails with an unknown outcome stays held until the viewer discards it", async () => {
+    const { h, ai, hold, first } = await cancelledPendingCreate(new Set(), problem(503, "unavailable", "Try later"));
+    hold.release();
+    await first;
+    assert.equal(ai.view?.held, true);
+    assert.match(ai.view?.message ?? "", /Could not confirm/);
+    await ai.start(request);
+    assert.equal(creates(h), 1);
+    ai.discardHeld();
+    assert.equal(ai.view?.held, false);
+    ai.destroy();
+});
+
+test("a cancelled create the server refuses outright releases the file", async () => {
+    const { h, ai, hold, first } = await cancelledPendingCreate(new Set(), problem(429, "quota_exceeded", "Quota exhausted"));
+    hold.release();
+    await first;
+    assert.deepEqual(ai.view && { phase: ai.view.phase, held: ai.view.held, message: ai.view.message }, { phase: "idle", held: false, message: "" });
+    assert.equal(creates(h), 1);
+    ai.destroy();
+});
+
+test("a menu closed while a cancelled create is pending leaves its file held for the next one", async () => {
+    const blocked = new Set<string>();
+    const { h, ai, hold, first } = await cancelledPendingCreate(blocked, { status: 202, body: job("running", { id: "first-job" }) });
+    ai.destroy();
+    hold.release();
+    await first;
+    assert.equal(blocked.has("42"), true);
+    h.fake.script("/subtitles/ai/status", { status: 200, body: { enabled: true, transcribe_enabled: true, allowed: true, state: "available", revision: "opaque" } });
+    h.fake.script("/subtitles/ai/quota", { status: 200, body: { limited: true, limit: 5, used: 2, remaining: 3, period: "month" } });
+    h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }, { value: "en" }] } } } });
+    const reopened = new SubtitleAI(h.core.session, h.clock, "42", () => undefined, blocked);
+    await h.clock.advance(0);
+    await reopened.start(request);
+    assert.equal(creates(h), 1);
+    assert.equal(reopened.view?.held, true);
+    reopened.destroy();
+});
+
+test("a cancelled create that answers after Discard, while a newer job runs, leaves that job's panel alone", async () => {
+    const { h, ai, hold, first } = await cancelledPendingCreate(new Set(), problem(503, "unavailable", "Try later"), { status: 202, body: job("running", { id: "newer-job" }) });
+    ai.discardHeld();
+    await ai.start(request);
+    assert.equal(ai.view?.phase, "busy");
+    hold.release();
+    await first;
+    assert.equal(ai.view?.phase, "busy", "the newer job still owns the panel");
+    assert.equal(ai.view?.message, "Generating AI subtitles…");
+    assert.equal(creates(h), 2);
+    ai.destroy();
 });
