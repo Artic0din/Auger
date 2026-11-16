@@ -132,6 +132,7 @@ The server sends original audio (mp3, aac, flac, ogg, wav) or, for a format this
 Tearing down pauses, drops `src` and calls `load()` so the element releases the TV's audio decoder before AVPlay opens.
 If the platform refuses `play()` for lack of a user gesture, the next remote key starts it.
 Desktop Chromium proves the state machine and the hand-off order, not that a TV's `<audio>` plays these formats or that it frees the decoder in time; that needs a Samsung TV.
+An S95C check on 16 Nov 2026 (#529) found the `<audio>` element plays an mp3 theme, loops, fades and is released before AVPlay opens. Sound and the other formats were not checked: the TV stayed muted and the title's theme was an mp3.
 
 ## Show Audiobooks
 
