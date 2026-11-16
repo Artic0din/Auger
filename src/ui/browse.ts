@@ -1640,8 +1640,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 }, quiet || had);
                 return;
             }
-            case "season":
+            case "season": {
                 if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, async (signal) => {
                     const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
                     const [episodes, detail] = await Promise.all([
@@ -1656,6 +1657,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
+                    // As the item route: a watched readback after this read was sent wins, and the episodes it refreshed are newer than these.
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision && current.data !== undefined) {
+                        data = { ...data, episodes: current.data.episodes, detail: data.detail && { ...data.detail, played: previous.detail.played, watch: previous.detail.watch } };
+                    }
                     if (previous !== undefined && data.detail !== undefined) {
                         previous.acceptDetail(data.detail);
                         if (data.detail.played !== undefined) previous.values.set("watched", data.detail.played);
@@ -1677,6 +1682,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     }
                     if (current.focus === undefined && current.episodeId !== undefined && data.episodes.some(episode => episode.id === current.episodeId)) return { zone: "episodes", key: current.episodeId };
                 }, quiet);
+                return;
+            }
         }
     };
 
