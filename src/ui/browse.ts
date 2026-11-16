@@ -2938,9 +2938,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const press = heldSelect();
         if (!relabelBar()) return;
         render(focus);
-        // The press ended with the old button; the replacement takes it, so its release still runs it.
+        // The press ended with the old button; the same control, drawn again, takes it so its release still runs it.
+        // Focus that fell to another control leaves the press ended.
         const replacement = document.activeElement;
-        if (press !== undefined && !press.element.isConnected && replacement instanceof HTMLElement) moveSelect(press, replacement);
+        if (press !== undefined && !press.element.isConnected && replacement instanceof HTMLElement && replacement.getAttribute("data-focus") === press.element.getAttribute("data-focus")) moveSelect(press, replacement);
     });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
