@@ -13,7 +13,7 @@ import type { Reply } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
-import { detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
@@ -1188,6 +1188,7 @@ browseTest("a Search box set poster that fails draws DefaultArtwork's film mark 
     const art = '[data-focus="box-set:12:1241"] .browse-art';
     await tv.page.locator(`${art} img`).waitFor();
     assert.equal(await tv.page.locator(`${art} .default-artwork`).count(), 0, "a loaded poster builds no DefaultArtwork");
+    await settled(tv);
     await tv.page.locator(`${art} img`).evaluate(image => image.dispatchEvent(new Event("error")));
     await tv.page.locator(`${art}.browse-art-missing .default-artwork[data-symbol="film"]`).waitFor();
     assert.equal(await tv.page.locator(`${art} .browse-art-fallback`).count(), 0, "no title text placeholder");
@@ -2407,7 +2408,12 @@ function browseTest(name: string, body: (tv: Tv, catalog: FakeCatalog) => Promis
                 household.hidden = [];
             }
             await signedInBrowse(tv, catalog, start.profile ?? "p-owner", start.pin, start.beforeConnect);
-            if (await tv.page.locator('[data-view="home"]').count() === 1) await homeDetailsRead(tv);
+            if (await tv.page.locator('[data-view="home"]').count() === 1) {
+                await homeDetailsRead(tv);
+                // Late Home answers repaint the rows and the bar; start once they have, so a press or a read finds the nodes the test means.
+                await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+                await afterPaint(tv);
+            }
             await body(tv, catalog);
             assert.deepEqual(tv.console, [], "the page logs nothing");
         } finally {
@@ -2471,7 +2477,15 @@ function cardIds(tv: Tv, selector = ".browse-card:not(.discovery-collection)"): 
     return tv.page.evaluate((query) => Array.from(document.querySelector(".browse")?.querySelectorAll(query) ?? []).map((node) => node.getAttribute("data-focus") ?? ""), selector);
 }
 
+/** Waits until every answer a test did not hold has been delivered and painted, so a press or a read finds the nodes it means. */
+async function settled(tv: Tv): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+    await afterPaint(tv);
+}
+
 async function detailsMore(tv: Tv): Promise<void> {
+    // Details' answers repaint the page, and a repaint replaces the menu button or closes the menu; open it once they have landed.
+    await settled(tv);
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.getByRole("dialog", { name: "More", exact: true }).waitFor();
 }
@@ -2646,6 +2660,8 @@ for (const aggregate of ["series", "season"]) {
             await tv.page.getByRole("button", { name: played ? "Mark as Watched" : "Mark as Unwatched", exact: true }).waitFor();
             await tv.remote(BACK);
             const related = tv.page.locator(`[data-detail-section="related"] [data-focus="${aggregateId}"]`);
+            await related.waitFor();
+            await settled(tv);
             await related.focus();
             await press(tv, "Enter");
             await detailsMore(tv);
@@ -3055,6 +3071,7 @@ browseTest("personal failure never repeats a write automatically and explicit re
     await activateDetails(tv);
     await showing(tv, "item:movie:m0001");
     await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).waitFor();
+    await settled(tv);
     catalog.mutationFailure = problem(503, "unavailable", "Unavailable");
     await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click();
     await failureAlert(tv, "Couldn't Update Item");
@@ -3926,6 +3943,8 @@ browseTest("many libraries stay bounded; dwell and Back never commit; scope surv
     assert.equal(await tv.page.locator(".skyline-selector").first().isVisible(), false, "Back keeps the menu dismissed until focus leaves its anchor");
     await press(tv, "ArrowLeft", "ArrowRight");
     await tv.jump(250);
+    // The clock is paused here, so no frame runs; only the answers can be awaited.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
     await press(tv, "ArrowDown", "ArrowDown", "Enter");
     await showing(tv, "library:15");
     assert.equal(await tv.page.evaluate(() => window.retainedNavigation === document.querySelector(".browse-nav")), true);
@@ -4109,6 +4128,7 @@ browseTest("Continue context menu offers Resume without activating Select", asyn
     // The menu reads the row, as Apple's does; reload Home so the row carries the new position.
     await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
     await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').waitFor();
+    await settled(tv);
     await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').click({ button: "right" });
     await tv.page.locator('[data-focus="card-play"]').waitFor();
     assert.equal(await tv.page.locator('[data-focus="card-play"]').innerText(), "Resume");
@@ -4454,6 +4474,7 @@ browseTest("loading, slow, offline, removed, empty and missing-artwork states al
         window.browseHarness.mount();
     });
     await showing(tv, "home");
+    await settled(tv);
     await press(tv, "ArrowUp", "ArrowRight");
     await tv.jump(250);
     await press(tv, "ArrowDown", "ArrowDown", "Enter");
