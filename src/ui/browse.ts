@@ -58,7 +58,7 @@ import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
 import { textLanguage } from "../i18n/translate.ts";
-import { heldSelect, moveSelect } from "./selectRelease.ts";
+import { cancelSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
@@ -433,16 +433,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
-    const languagePrefs = new AppLanguagePreferences(session);
+    // The language the last answer left for this server and profile is shown from the first draw; the server's answer then confirms it.
+    const languagePrefs = new AppLanguagePreferences(session, undefined, options.publicStorage === undefined ? undefined : { storage: options.publicStorage, scope: server.server.serverId });
+    languagePrefs.applyCached();
     void languagePrefs.refresh();
-    // The profile's language, and then its text file, arrive after Home first draws, and Settings changes it; the bar and the page read it again.
     let paintedLanguage = textLanguage();
-    /** Rebuilds the bar when the language its text is read in changed since the bar was drawn (the shown language once its file has landed); true when it did. */
-    const relabelBar = (): boolean => {
-        if (textLanguage() === paintedLanguage) return false;
+    /**
+     * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
+     * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
+     * return does. A Select held on a replaced control ends with it. `redraw` is false where the screen is about to be shown anyway.
+     */
+    const reconcileLanguage = (redraw: boolean): void => {
+        if (textLanguage() === paintedLanguage) return;
         paintedLanguage = textLanguage();
+        const focus = host.focused();
+        cancelSelect();
         shell.relabel();
-        return true;
+        if (redraw) render(focus);
     };
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
@@ -2234,7 +2241,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             root.appendChild(container);
             container.hidden = false;
             host.listen();
-            relabelBar();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) showRoute(current, focus ?? tabFocus(current));
         });
@@ -2864,7 +2871,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
-                relabelBar();
+                reconcileLanguage(false);
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2931,16 +2938,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
     languagePrefs.subscribe(() => {
-        if (torn || playing || settingsScreen !== undefined) return;
-        // The rebuilt bar replaces the focused button, so its focus target and any Select held on it are read before.
-        const focus = host.focused();
-        const press = heldSelect();
-        if (!relabelBar()) return;
-        render(focus);
-        // The press ended with the old button; the same control, drawn again, takes it so its release still runs it.
-        // Focus that fell to another control leaves the press ended.
-        const replacement = document.activeElement;
-        if (press !== undefined && !press.element.isConnected && replacement instanceof HTMLElement && replacement.getAttribute("data-focus") === press.element.getAttribute("data-focus")) moveSelect(press, replacement);
+        if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true);
     });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
@@ -2991,7 +2989,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             invalidateCalendar();
             host.listen();
-            relabelBar();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) {
                 showRoute(current, current.focus);
