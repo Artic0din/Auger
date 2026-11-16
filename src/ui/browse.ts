@@ -771,6 +771,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }, true);
     }
     const episodeArtwork = (): Record<string, string> => episodeArtworkQuery(imageCapability, window.devicePixelRatio);
+    // Apple's episode read waits for the probe when no capability is known yet (`requestQueryForImageRequest`); a settled probe, even a failed one, never waits again. Details itself does not wait.
+    const episodeArtworkWhenKnown = async (): Promise<Record<string, string>> => {
+        if (imageCapability === undefined) await probeImages();
+        return episodeArtwork();
+    };
     const probeImages = (): Promise<ImageCapabilities | undefined> => imageProbe ??= session.call({ ...operations.imageCapabilities(), profileScoped: true, signal: requestsController.signal }).then(found => {
         if (torn) return undefined;
         imageCapability = found;
@@ -1152,7 +1157,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const refreshWatched = async (current: Route, detail: ItemDetail, signal: AbortSignal): Promise<void> => {
         invalidateWatched(current, detail);
         if (current.kind === "season") {
-            const episodes = await read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork()), signal);
+            const episodes = await read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, await episodeArtworkWhenKnown()), signal);
             if (signal.aborted || top() !== current || current.data === undefined) return;
             current.data.episodes = episodes;
         }
@@ -1161,7 +1166,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const series = current.data.details.series;
             const season = series.seasonNumber;
             if (season !== undefined) {
-                const episodes = await read(operations.listSeasonEpisodes(current.id, season, episodeArtwork()), signal);
+                const episodes = await read(operations.listSeasonEpisodes(current.id, season, await episodeArtworkWhenKnown()), signal);
                 if (signal.aborted || top() !== current) return;
                 series.replace(season, episodes);
             }
@@ -1563,7 +1568,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                             series?.stop();
                             const repick = !offline && repickSeasons.delete(detail.id);
                             const season = repick ? undefined : series?.selectionChanged ? series.seasonNumber : data.contextSeason ?? series?.seasonNumber;
-                            previous.series = new SeriesEpisodes(session, detail.id, data.seasons, reason => previous.warmSeriesEpisodes(reason === "load"), season, current.seriesContext?.episodeId, episodeArtwork);
+                            previous.series = new SeriesEpisodes(session, detail.id, data.seasons, reason => previous.warmSeriesEpisodes(reason === "load"), season, current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                             previous.series.restore(repick ? undefined : series, true);
                             previous.series.start();
                         }
@@ -1575,7 +1580,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const details = createItemDetails(current, data.detail);
                     details.restore(previous);
                     const repick = repickSeasons.delete(data.detail.id);
-                    if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId, episodeArtwork);
+                    if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                     details.series?.restore(repick ? undefined : previous?.series, true);
                     details.restoreSeasonStates(previous);
                     details.focusedEpisodeId ??= current.seriesContext?.episodeId;
@@ -1622,7 +1627,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (current.data?.details === undefined) stopDetails();
                 load(current, async (signal) => {
                     const [episodes, detail] = await Promise.all([
-                        read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork()), signal),
+                        episodeArtworkWhenKnown().then(artwork => read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, artwork), signal)),
                         current.id === undefined ? undefined : read(operations.getCatalogItem(current.id), signal).catch((error: unknown) => {
                             if (error instanceof ApiError && error.status === 404) return undefined;
                             throw error;
@@ -2055,7 +2060,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 const seasons = cache.peek(operations.listSeriesSeasons(current.id)) ?? [];
                 const details = createItemDetails(current, detail);
                 details.restore(previous);
-                if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId, episodeArtwork);
+                if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                 details.series?.restore(previous?.series, false, true);
                 if (detail.type === "series") { details.focusedEpisodeId = current.seriesContext?.episodeId; details.entryEpisodeId = current.seriesContext?.episodeId; }
                 current.data = { detail, seasons, details };
