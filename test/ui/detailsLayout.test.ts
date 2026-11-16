@@ -282,7 +282,10 @@ detailTest('hero Up falls back from vanished Start Over and disabled selectors t
     await tv.page.route('**/api/v2/catalog/items/episode%3As1e11?**', route => route.fulfill({ json: { ...body, user_data: { played: false, position_seconds: 120 } } }));
     await tv.page.route('**/api/v2/catalog/series/series%3As1/seasons/2/episodes?**', route => route.fulfill({ json: { items: [] } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-    await tv.page.locator('[data-focus="start-over-episode"]').focus();
+    // Play's focus claim holds until a direction key, so reach Start Over by key rather than by a script focus a late repaint could undo.
+    await tv.eventually(async () => await tv.focused() === 'next-episode', 'Play focused');
+    await tv.remote(39);
+    await tv.eventually(async () => await tv.focused() === 'start-over-episode', 'Start Over focused by remote');
     await tv.remote(40);
     await tv.remote(38);
     assert.equal(await tv.focused(), 'start-over-episode');
