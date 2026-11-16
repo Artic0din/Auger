@@ -3189,3 +3189,52 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
     }
     r.controller.destroy();
 });
+
+test("an empty language catalog still offers the Spoken language row when translation is off and the spoken language is unknown", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, audio: file.audio.map((track, index) => index === 0 ? { ...track, language: "und" } : track) });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.aiMenu?.menu.detected && [view.tracks.aiMenu.menu.detected.code, view.tracks.aiMenu.menu.detected.disabled], ["ai-detected-spoken-language", false]);
+    assert.deepEqual(view.tracks.aiMenu?.menu.other, []);
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.deepEqual(only(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate")).body, { media_file_id: "42", kind: "transcribe", source_index: 0, source_language: "", target_language: "", start_position: 12.5 });
+    r.controller.destroy();
+});
+
+test("an empty language catalog with nothing else to offer shows no AI Subtitles… row", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: false, remaining: 0, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.aiMenu, undefined, "no language row could run, so the row would open an empty menu");
+    r.controller.destroy();
+});
+
+test("with the transcription quota unreadable, rows that rely on transcription are dimmed and the menu says why", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 6 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "en" }, { value: "fr" }] } } } });
+    await playMovie(r);
+    await r.h.clock.advance(5000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.aiMenu?.menu.suggested.concat(view.tracks.aiMenu.menu.other).map(row => [row.code, row.disabled]), [["en", true], ["fr", true]], "SubtitleAI refuses transcription without a known balance, so the rows say so");
+    assert.equal(view.tracks.aiMenu?.quota, "Transcription quota unavailable.");
+    assert.equal(view.tracks.aiMenu?.quotaExhausted, false, "not the used-up warning");
+    r.controller.destroy();
+});

@@ -8,6 +8,7 @@ const base: AIInputs = {
     transcribeEnabled: true,
     sources: [],
     audio: [{ index: 0, language: "ja", selected: true, isDefault: true }],
+    quotaKnown: true,
     quotaExhausted: false,
 };
 const source = (index: number, language: string | undefined, extra: Partial<AIInputs["sources"][number]> = {}) => ({ index, language, selected: false, isDefault: false, ...extra });
@@ -89,4 +90,12 @@ test("the quota line reads as Apple's", () => {
     assert.equal(quotaText({ limited: true, remaining: 2, period: "month", used: undefined, limit: undefined }), "2 remaining");
     assert.equal(quotaText({ limited: false, remaining: 0, period: "month", used: undefined, limit: undefined }), undefined);
     assert.equal(quotaText(undefined), undefined);
+});
+
+test("a quota that cannot be read blocks transcription like an exhausted one, and text translation still goes", () => {
+    const unknown = { ...base, quotaKnown: false };
+    assert.equal(aiRoute(unknown, "en"), undefined);
+    assert.equal(aiRoute(unknown, "ja"), undefined);
+    assert.equal(aiRoute({ ...unknown, sources: [source(1, "fr")] }, "en")?.kind, "translate");
+    assert.equal(aiMenu(unknown, ["en"], undefined).other[0]?.disabled, true);
 });

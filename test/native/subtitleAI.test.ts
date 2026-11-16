@@ -237,18 +237,49 @@ test("a held request shows as failed with Discard, which lets the next start go 
     ai.destroy();
 });
 
-test("Cancel before the server has named the new job never cancels the previous one", async () => {
+test("Cancel while the create request is pending stops that job once the server names it, and never the previous one", async () => {
     const { h, ai } = await setup();
     h.fake.script("/subtitles/ai/translate", { status: 202, body: job("completed") });
     await ai.start(request);
     const hold = h.fake.hold("/subtitles/ai/translate");
     h.fake.script("/subtitles/ai/translate", { status: 202, body: job("running", { id: "second-job" }) });
+    h.fake.script("/subtitles/ai/jobs/second-job/cancel", { status: 200, body: job("cancelled", { id: "second-job" }) });
     const second = ai.start(request);
     await h.clock.advance(0);
     await ai.cancel();
-    assert.equal(h.fake.requests.some(row => row.path.endsWith("/cancel")), false);
-    assert.equal(ai.view?.busy, true, "the new job is still being created");
+    assert.equal(ai.view?.phase, "idle", "the panel returns at once");
+    assert.equal(ai.view?.busy, false);
     hold.release();
     await second;
+    await h.clock.advance(10000);
+    assert.deepEqual(h.fake.requests.filter(row => row.path.endsWith("/cancel")).map(row => row.path), ["/subtitles/ai/jobs/second-job/cancel"]);
+    assert.equal(h.fake.requests.some(row => row.path === "/subtitles/ai/jobs/second-job"), false, "a cancelled job is never polled");
+    assert.equal(ai.view?.phase, "idle");
+    assert.equal(ai.view?.results.length, 1, "no result from the cancelled job");
     ai.destroy();
+});
+
+test("a poll that was in flight when the job was cancelled cannot change the next job, whether it answers or fails", async () => {
+    for (const late of ["completed", "failed", "error"] as const) {
+        const { h, ai } = await setup();
+        h.fake.script("/subtitles/ai/translate", { status: 202, body: job("running") }, { status: 202, body: job("running", { id: "second-job" }) });
+        h.fake.script("/subtitles/ai/jobs/opaque-job/cancel", { status: 200, body: job("cancelled") });
+        await ai.start(request);
+        const hold = h.fake.hold("/subtitles/ai/jobs/opaque-job");
+        h.fake.script("/subtitles/ai/jobs/opaque-job", late === "error" ? problem(400, "unavailable", "Job state unavailable") : { status: 200, body: job(late, late === "completed" ? { result_subtitle_id: "old-result" } : { error_message: "old failure" }) });
+        await h.clock.advance(2000);
+        await ai.cancel();
+        await ai.start({ ...request, target_language: "fr" });
+        assert.equal(ai.view?.phase, "busy");
+        hold.release();
+        await h.clock.advance(0);
+        assert.equal(ai.view?.phase, "busy", `${late}: the first job's answer is dropped`);
+        assert.equal(ai.view?.results.length, 0);
+        assert.equal(ai.view?.held, false, `${late}: the file is not held because a cancelled job's poll failed`);
+        h.fake.script("/subtitles/ai/jobs/second-job", { status: 200, body: job("completed", { id: "second-job", result_subtitle_id: "new-result" }) });
+        await h.clock.advance(2000);
+        assert.deepEqual(ai.view?.results.map(result => result.id), ["new-result"], `${late}: the second job's own polling continues`);
+        assert.equal(ai.view?.phase, "completed");
+        ai.destroy();
+    }
 });

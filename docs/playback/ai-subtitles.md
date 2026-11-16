@@ -22,8 +22,9 @@ The viewer picks a language and the player picks the method, as Apple's `route(t
 The row shows only when the server offers the capability and the file has something to run: a text track with translation on, or audio with transcription on.
 Languages come from the settings contract's `playback_subtitle_languages` option set; the profile's preferred language and the spoken language lead as Suggested.
 A language the server cannot serve now (no quota, or translation off for a language that is not the spoken one) is dimmed and does nothing.
-The quota line shows only while some language relies on transcription, as Apple's does.
-A running job replaces the languages with its title, progress, the server's message and Cancel (`cancelSubtitleAIJob`, best effort). A failure shows its message with Dismiss, and a held request adds Discard held request. A finished job returns to the tracks.
+The quota line shows only while some language relies on transcription, as Apple's does. When the balance cannot be read, SubtitleAI sends no transcription, so those rows are dimmed and the line reads Transcription quota unavailable.
+The menu shows when at least one row is left: a catalog that is empty or failed to load leaves the Spoken language row (translation off, spoken language unknown), else no AI Subtitles… row.
+A running job replaces the languages with its title, progress, the server's message and Cancel (`cancelSubtitleAIJob`, best effort). Each start and cancel opens a new generation, and an answer from an earlier one (a poll or a create that was in flight) is dropped; a cancel pressed before the server names the job stops it by the id the server then gives. A failure shows its message with Dismiss, and a held request adds Discard held request. A finished job returns to the tracks.
 Text translation does not spend the ASR quota; transcription requires a known balance.
 No live delivery is requested: a completed stored track becomes selectable when ready.
 An unknown create outcome is not resent, including on repeated presses in the same playback attempt.

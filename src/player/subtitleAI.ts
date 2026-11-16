@@ -46,6 +46,8 @@ export class SubtitleAI {
     private failed = false;
     private completed = false;
     private jobId: string | undefined;
+    /** Grows with each start and each cancel: an answer from an earlier generation belongs to a job the viewer let go. */
+    private generation = 0;
     private kind: string | undefined;
     private progress: SubtitleAIView["progress"];
     /** Files whose server job outcome is unknown; owned by the caller so it outlives this instance. */
@@ -122,21 +124,27 @@ export class SubtitleAI {
         this.completed = false;
         this.kind = request.kind;
         this.progress = undefined;
-        // The last job's id must not stand in for this one: Cancel before the server answers has nothing to cancel.
+        // The last job's id must not stand in for this one: until the server names it, Cancel only marks this generation as let go.
         this.jobId = undefined;
         this.busy = true;
+        const generation = ++this.generation;
         this.notice("Starting AI subtitles…");
         try {
             const job = await this.call(operations.createSubtitleAI(request));
             if (this.abort.signal.aborted) return;
+            // Cancelled while the request was in flight: the job exists now, so stop it by the id the server just gave.
+            if (generation !== this.generation) { void this.stop(job.id); return; }
             if (job.fileId !== this.fileId || job.kind !== request.kind || job.sourceIndex !== request.source_index || job.id === "" || job.language !== request.target_language) throw new Error("AI job identity mismatch");
-            await this.update(job);
+            await this.update(job, generation);
         } catch (error) {
             if (this.abort.signal.aborted) return;
+            // A problem body is the server's answer; 429 (e.g. quota_exceeded) refuses, unlike 408/5xx whose outcome is unknown.
+            const unknown = !(error instanceof ApiError && error.problemId !== undefined && (!error.transient || error.status === 429));
+            if (unknown) this.blockedFiles.add(this.fileId);
+            // The viewer already let this request go; a later job's panel is not its to change.
+            if (generation !== this.generation) { this.changed(); return; }
             this.busy = false;
             this.failed = true;
-            // A problem body is the server's answer; 429 (e.g. quota_exceeded) refuses, unlike 408/5xx whose outcome is unknown.
-            if (!(error instanceof ApiError && error.problemId !== undefined && (!error.transient || error.status === 429))) this.blockedFiles.add(this.fileId);
             this.notice(error instanceof ApiError && error.problemId ? `AI subtitles could not start: ${error.problemId}. Playback continues.` : "Could not confirm the AI request. It may still finish on the server; it was not sent again.");
             void this.refreshQuota();
         }
@@ -163,20 +171,26 @@ export class SubtitleAI {
 
     /** Best effort: stops polling and asks the server to stop the job. Quota already spent stays spent. */
     async cancel(): Promise<void> {
+        if (!this.busy || this.abort.signal.aborted) return;
         const id = this.jobId;
-        if (!this.busy || id === undefined || this.abort.signal.aborted) return;
+        this.generation++;
         this.cancelPoll?.();
         this.busy = false;
         this.progress = undefined;
         this.message = "";
         this.changed();
+        // Before the server has named the job there is nothing to stop yet: start() stops it when its id arrives.
+        if (id !== undefined) await this.stop(id);
+    }
+
+    private async stop(id: string): Promise<void> {
         try { await this.call(operations.cancelSubtitleAIJob(id)); } catch { /* The job may still finish; its result is not listed. */ }
         void this.refreshQuota();
     }
 
-    private async update(job: SubtitleAIJob): Promise<void> {
-        // A poll that was in flight when the viewer cancelled must not restart the job's panel.
-        if (this.abort.signal.aborted || !this.busy) return;
+    private async update(job: SubtitleAIJob, generation: number): Promise<void> {
+        // An answer for a job the viewer cancelled must not touch the panel, nor a job started since.
+        if (this.abort.signal.aborted || generation !== this.generation) return;
         this.jobId = job.id;
         if (job.status === "completed") {
             this.busy = false;
@@ -194,7 +208,7 @@ export class SubtitleAI {
         } else if (job.status === "pending" || job.status === "running") {
             this.progress = { percent: Math.round(Math.min(1, Math.max(0, job.progress ?? 0)) * 100), message: job.progressMessage ?? "" };
             this.notice("Generating AI subtitles…");
-            this.poll(job, 0);
+            this.poll(job, 0, generation);
         } else {
             this.busy = false;
             this.failed = true;
@@ -203,14 +217,14 @@ export class SubtitleAI {
         }
     }
 
-    private poll(job: SubtitleAIJob, failures: number): void {
+    private poll(job: SubtitleAIJob, failures: number, generation: number): void {
         this.cancelPoll = this.clock.schedule(() => {
             void this.call(operations.subtitleAIJob(job.id)).then(next => {
                 if (next.id !== job.id || next.fileId !== this.fileId || next.kind !== job.kind || next.sourceIndex !== job.sourceIndex || next.language !== job.language) throw new Error("AI job identity changed");
-                return this.update(next);
+                return this.update(next, generation);
             }).catch(() => {
-                if (this.abort.signal.aborted) return;
-                if (failures + 1 < POLL_ATTEMPTS) { this.poll(job, failures + 1); return; }
+                if (this.abort.signal.aborted || generation !== this.generation) return;
+                if (failures + 1 < POLL_ATTEMPTS) { this.poll(job, failures + 1, generation); return; }
                 this.busy = false;
                 this.failed = true;
                 this.blockedFiles.add(this.fileId);

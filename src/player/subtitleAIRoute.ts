@@ -15,6 +15,8 @@ export interface AIInputs {
     readonly sources: readonly AISource[];
     /** Every audio track, by server index. */
     readonly audio: readonly AISource[];
+    /** The balance was read. SubtitleAI sends no transcription without it. */
+    readonly quotaKnown: boolean;
     /** Transcription quota is known to be used up. */
     readonly quotaExhausted: boolean;
 }
@@ -71,7 +73,7 @@ function bestSource(inputs: AIInputs, target: string): AISource | undefined {
 export function aiRoute(inputs: AIInputs, target: string): AIRoute | undefined {
     const source = target === DETECTED_LANGUAGE ? undefined : bestSource(inputs, target);
     if (source !== undefined) return { kind: "translate", sourceIndex: source.index, sourceLanguage: source.language ?? "", targetLanguage: target };
-    if (!inputs.transcribeEnabled || inputs.audio.length === 0 || inputs.quotaExhausted) return undefined;
+    if (!inputs.transcribeEnabled || inputs.audio.length === 0 || inputs.quotaExhausted || !inputs.quotaKnown) return undefined;
     if (target === DETECTED_LANGUAGE ? !offersDetected(inputs) : !inputs.translateEnabled && !isSpoken(inputs, target)) return undefined;
     const translated = isSpoken(inputs, target) ? undefined : target;
     // -1 is the server's default audio track, for a spoken track with no known ordinal.

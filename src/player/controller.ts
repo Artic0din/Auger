@@ -151,6 +151,7 @@ function aiInputs(attempt: Attempt, plan: PlaybackPlan): AIInputs | undefined {
         // The inventory carries no default flag.
         sources: plan.subtitle.inventory.filter(track => textSubtitle(track.codec) && track.combinedIndex >= 0).map(track => ({ index: track.combinedIndex, language: track.language, selected: track.trackId === shown, isDefault: false })),
         audio: (version?.audio ?? []).map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
+        quotaKnown: view.quota !== undefined,
         quotaExhausted: view.quota?.limited === true && view.quota.remaining <= 0,
     };
 }
@@ -160,11 +161,16 @@ let cachedAIMenu: { readonly key: string; readonly menu: AIMenu } | undefined;
 function aiMenuView(attempt: Attempt, plan: PlaybackPlan): TrackView["aiMenu"] {
     const inputs = aiInputs(attempt, plan);
     const view = attempt.ai?.view;
-    if (inputs === undefined || view === undefined || view.languages.length === 0 || !hasActionableSource(inputs)) return undefined;
+    if (inputs === undefined || view === undefined || !hasActionableSource(inputs)) return undefined;
     // The view is rebuilt on every playback tick and every language label is an Intl lookup: build the menu once per input.
     const key = JSON.stringify([inputs, view.languages, view.preferred]);
     if (cachedAIMenu?.key !== key) cachedAIMenu = { key, menu: aiMenu(inputs, view.languages, view.preferred) };
-    return { menu: cachedAIMenu.menu, quota: relyOnTranscription(inputs, view.languages) ? quotaText(view.quota) : undefined, quotaExhausted: inputs.quotaExhausted };
+    const menu = cachedAIMenu.menu;
+    // The Spoken language row needs no catalog, so an empty or failed one hides the menu only when no row is left.
+    if (menu.detected === undefined && menu.suggested.length === 0 && menu.other.length === 0) return undefined;
+    // An unreadable balance blocks transcription, so the menu says that instead of showing nothing.
+    const relies = relyOnTranscription(inputs, view.languages);
+    return { menu, quota: relies ? quotaText(view.quota) ?? (inputs.quotaKnown ? undefined : "Transcription quota unavailable.") : undefined, quotaExhausted: inputs.quotaExhausted };
 }
 
 /** Marks an AI result whose stored track the plan cannot show, so its row says why instead of doing nothing. */
