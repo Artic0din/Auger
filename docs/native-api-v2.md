@@ -28,6 +28,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
 - **Timeout.** The default is 15 s (`DEFAULT_TIMEOUT_MS`). Callers may override it per request.
   Subtitle files (`NativeHttp.subtitleText`) have no total limit and fail after 60 s with no bytes, Apple's `sidecarIdleTimeout`: the server streams an embedded-track extract as it demuxes, which takes minutes on a large remux.
   They stop at 4 MiB.
+  A body the origin breaks off, or leaves quiet for 60 s, after the answer began is `SubtitleTruncated` and carries the text that arrived. `downloadSubtitle` (`src/player/subtitleRefetch.ts`) shows those cues and fetches again after 2, 5, 10, 10 and 10 s, Apple's `sidecarTruncationRetryDelaysSeconds`, keeping the largest partial; a refetch that fails outright is retried too, but a first fetch that never got going fails as before.
 - **Headers on every request.**
   - `Accept: application/json, application/problem+json`
   - `X-Silo-Device-Id`

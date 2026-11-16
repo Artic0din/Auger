@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A subtitle download that ends early now keeps the cues that arrived and is fetched again after 2, 5, 10, 10 and 10 seconds, as on Apple TV, instead of showing "Subtitle data couldn’t be loaded". The largest partial stays if every refetch ends early.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
 - Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
