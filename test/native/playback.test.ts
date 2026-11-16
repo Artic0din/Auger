@@ -345,6 +345,10 @@ test("completed AI subtitles resolve through fresh sync identities before select
     r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, remaining: 2, period: "month" } })));
     r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }] } } } });
     r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "completed", result_subtitle_id: "opaque-result" } } });
+    // Sync is available: the first listing has the sidecar's key, the one after the replan also the AI result's.
+    r.h.fake.script("/subtitles/sync/status", { status: 200, body: { revision: "r", state: "available", allowed: true, auto_sync: true, external: true } });
+    const aiState = { key: "stored-opaque-result", media_file_id: "42", source: "downloaded", language: "en", format: "srt", label: "AI", timing: { offset_ms: 0, scale: 1 } };
+    r.h.fake.script("/subtitles/42/sync", { status: 200, body: { subtitles: [{ ...aiState, key: "external-f903db1c5624c46c4a2c20f2fd8cd247fc0d46e6471c91d4ddb651ae4e039448", source: "external" }] } }, { status: 200, body: { subtitles: [aiState] } });
     await playMovie(r);
     r.controller.startSubtitleAI("transcribe");
     await r.h.clock.advance(0);
@@ -374,6 +378,8 @@ test("completed AI subtitles resolve through fresh sync identities before select
     assert.ok(view.phase === "playing");
     assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:4");
     assert.equal(view.tracks.subtitles.find(track => track.id === "file:42:subtitle:4")?.label, "AI-transcribed");
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/42/sync").length, 2, "the kept stream's new subtitle is listed for sync");
+    assert.equal(view.tracks.syncTiming?.key, "stored-opaque-result");
     r.controller.destroy();
 });
 

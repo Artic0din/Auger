@@ -1795,6 +1795,8 @@ export class PlaybackController implements PlayerControls {
         const presented = attempt.presented;
         this.readCaptions(attempt, plan);
         attempt.plan = plan;
+        // A subtitle the kept stream gained (a download, an AI result) needs its sync state too.
+        this.adoptSync(attempt, plan);
         attempt.hud.read(this.deps.session, attempt.request.contentId, plan.effectiveMediaFileId, attempt.signal, () => this.showPlayback(attempt));
         attempt.serverFeatures = serverFeatures;
         attempt.planAttemptId = this.newId();

@@ -156,6 +156,8 @@ export class SubtitleSync {
     private external = false;
     private readonly entries = new Map<string, Entry>();
     private readonly pollStarted = new Map<string, number>();
+    /** Counts the answers recorded for a subtitle, so a list read that left before one arrived cannot overwrite it. */
+    private readonly versions = new Map<string, number>();
 
     constructor(session: NativeSession, clock: Clock, fileId: string, changed: () => void, onTimingChanged: (key: string) => void) {
         this.session = session;
@@ -241,9 +243,10 @@ export class SubtitleSync {
     }
 
     private async list(): Promise<void> {
+        const before = new Map(this.versions);
         const states = await this.call(operations.subtitleSyncList(this.fileId));
         if (this.abort.signal.aborted) return;
-        for (const state of states) this.observe(state);
+        for (const state of states) if (this.versions.get(state.key) === before.get(state.key) && !this.entries.get(state.key)?.busy) this.observe(state);
         this.schedulePoll();
         this.changed();
     }
@@ -261,6 +264,7 @@ export class SubtitleSync {
     private observe(state: SubtitleSyncState, key?: string): void {
         if (state.mediaFileId !== this.fileId || (key !== undefined && state.key !== key)) throw new Error("The server answered for a different subtitle");
         const entry = this.entries.get(state.key);
+        this.versions.set(state.key, (this.versions.get(state.key) ?? 0) + 1);
         const previous = entry?.state.timing;
         if (entry === undefined) this.entries.set(state.key, { state, busy: false, forbidden: false, unsupported: false, error: undefined, pollExpired: false });
         else entry.state = state;
@@ -279,6 +283,7 @@ export class SubtitleSync {
     async request(key: string): Promise<void> {
         const entry = this.entry(key);
         if (entry === undefined || entry.busy || this.active(entry)) return;
+        const expired = entry.pollExpired;
         entry.busy = true;
         entry.error = undefined;
         entry.pollExpired = false;
@@ -292,6 +297,8 @@ export class SubtitleSync {
             this.schedulePoll();
         } catch (error) {
             if (this.abort.signal.aborted) return;
+            // A refused re-arm leaves the old job unfollowed: keep it expired so the next press can try again.
+            entry.pollExpired = expired;
             this.fail(entry, error, SYNC_FAILED_RETRY);
         }
         this.changed();

@@ -263,3 +263,34 @@ test("an answer for another file or another subtitle is refused, not recorded", 
     assert.equal(sync.view.timing[KEY]?.inProgress, false);
     sync.destroy();
 });
+
+test("a refused re-arm after the poll limit leaves the job re-armable instead of stuck on Syncing", async () => {
+    const { h, sync } = await setup(available, [state({ sync: job("running", { phase: "matching", progress: 0.5 }) })]);
+    h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, ...Array.from({ length: 200 }, () => ({ status: 200, body: { subtitle: state({ sync: job("running", { phase: "matching", progress: 0.5 }) }) } })));
+    await h.clock.advance(5 * 60000 + 6000);
+    assert.equal(sync.view.timing[KEY]?.inProgress, false, "the limit frees the row");
+    h.fake.scripted.delete(`/subtitles/${FILE}/sync/${KEY}`);
+    h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, problem(500, "internal", "Internal"));
+    await sync.request(KEY);
+    assert.deepEqual(sync.view.timing[KEY]?.note, { text: "Couldn't sync this subtitle. Try again.", tone: "error" });
+    assert.equal(sync.view.timing[KEY]?.inProgress, false, "the refused press does not make the old job active again");
+    h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, { status: 202, body: { subtitle: state({ sync: job("running", { progress: 0.6 }) }) } });
+    await sync.request(KEY);
+    assert.equal(h.fake.requests.filter(row => row.method === "POST" && row.path === `/subtitles/${FILE}/sync/${KEY}`).length, 2, "the next press goes out");
+    assert.equal(sync.view.timing[KEY]?.inProgress, true);
+    sync.destroy();
+});
+
+test("a list read that left before a newer answer arrived does not overwrite it", async () => {
+    const { h, sync } = await setup();
+    h.fake.script(`/subtitles/${FILE}/sync`, { status: 200, body: { subtitles: [state()] } });
+    const hold = h.fake.hold(`/subtitles/${FILE}/sync`);
+    sync.reload();
+    await h.clock.advance(0);
+    h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, { status: 202, body: { subtitle: state({ sync: job("running", { phase: "queued", progress: 0 }) }) } });
+    await sync.request(KEY);
+    hold.release();
+    await h.clock.advance(0);
+    assert.equal(sync.view.timing[KEY]?.inProgress, true, "the late idle listing is dropped");
+    sync.destroy();
+});

@@ -1105,8 +1105,8 @@
 /*
  * timingRows (TVPlayerInfoHUD.swift): the running job's bar is SubtitleSyncProgressBar, an HStack(spacing: 14) of a linear
  * ProgressView tinted white at 85% and a 20pt monospaced-digit percent in a 60pt trailing slot, padded 14 by 8, with the
- * phase under it at 17pt and 55%. tvOS draws the ProgressView itself, so the bar's thickness and track tint are measured
- * from Apple's capture, not read from source.
+ * phase under it at 17pt and 55%. tvOS draws the ProgressView itself, so the bar's 8 px thickness and 20% white track are
+ * estimates until they are measured on an Apple TV capture (PR #574); source gives only the tint.
  */
 .player-sync-progress {
     padding: 8px 14px;
