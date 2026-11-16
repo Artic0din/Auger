@@ -400,8 +400,9 @@ interface Attempt {
     /** SECONDARY: the inventory row drawn under the primary, and its cues. */
     secondaryId: string | undefined;
     secondaryCues: readonly SubtitleCue[];
-    /** The primary artifact's timing origin the cues were placed with. */
+    /** The primary artifact's timing origin, and the sidecar URL, the cues were read with. */
     secondaryOrigin: number;
+    secondaryUrl: string | undefined;
     secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
@@ -583,7 +584,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -2021,8 +2022,8 @@ export class PlaybackController implements PlayerControls {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
         const row = secondaryRows(plan).find(candidate => candidate.trackId === attempt.secondaryId && candidate.trackId !== plan.subtitle.trackId);
         if (artifact === undefined || row === undefined) this.clearSecondary(attempt);
-        // A replan that moved the primary's timing origin moves where the second track's cues belong.
-        else if (artifact.origin !== attempt.secondaryOrigin) this.startSecondary(attempt, row, artifact.origin);
+        // A replan that moved the primary's timing origin moves where the second track's cues belong, and one that gave the row a new session URL leaves the old read against a dead session.
+        else if (artifact.origin !== attempt.secondaryOrigin || row.url !== attempt.secondaryUrl) this.startSecondary(attempt, row, artifact.origin);
     }
 
     private clearSecondary(attempt: Attempt): void {
@@ -2051,6 +2052,7 @@ export class PlaybackController implements PlayerControls {
         this.clearSecondary(attempt);
         attempt.secondaryId = row.trackId;
         attempt.secondaryOrigin = origin;
+        attempt.secondaryUrl = row.url;
         const abort = new AbortController();
         attempt.secondaryAbort = abort;
         const cancel = (): void => abort.abort();
@@ -2108,6 +2110,8 @@ export class PlaybackController implements PlayerControls {
             } catch {
                 if (!current()) return;
                 attempt.captionKey = undefined;
+                // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
+                this.clearSecondary(attempt);
                 attempt.captionNotice = CAPTION_FAILED;
             }
             if (current()) this.showPlayback(attempt);
@@ -3860,8 +3864,13 @@ function selectedSubtitle(plan: PlaybackPlan): string | undefined {
 /** The format a sidecar's URL names, when the app can draw it. */
 function secondaryFormat(row: SubtitleTrack): string | undefined {
     if (row.url === undefined) return undefined;
-    const extension = new URL(row.url, "https://sidecar.invalid").pathname.split(".").pop()?.toLowerCase();
-    return extension === "vtt" || extension === "srt" || extension === "ass" || extension === "ssa" ? extension : undefined;
+    try {
+        const extension = new URL(row.url, "https://sidecar.invalid").pathname.split(".").pop()?.toLowerCase();
+        return extension === "vtt" || extension === "srt" || extension === "ass" || extension === "ssa" ? extension : undefined;
+    } catch {
+        // The inventory is the server's; a URL that cannot be parsed is not a track the app can draw.
+        return undefined;
+    }
 }
 
 /** Text sidecars the app can draw as the second line, primary included (it is listed dimmed, as Apple lists it). */

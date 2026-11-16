@@ -3256,3 +3256,66 @@ test("a replan that moves the primary's timing origin reads the secondary track 
     assert.equal(view.captions?.secondaryText, "Secondary line", "placed 5 s later, with the primary");
     r.controller.destroy();
 });
+
+test("a primary subtitle load that fails takes the chosen secondary with it, so no caption is left without its control", async () => {
+    const r = await secondaryRig();
+    r.h.fake.scripted.delete("/captions?token=synthetic");
+    const hold = r.h.fake.hold("/captions?token=synthetic");
+    r.h.fake.script("/captions?token=synthetic", { status: 404 });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    hold.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.status, "failed");
+    assert.equal(view.tracks.secondary, undefined, "no list without a drawn primary");
+    assert.equal(view.captions?.secondaryText, "", "and no second line drawn without its control");
+    r.controller.destroy();
+});
+
+test("a replan that gives the secondary track a new session URL reads it again from that URL", async () => {
+    const r = await secondaryRig();
+    const artifact = { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 };
+    r.server.next.length = 0;
+    r.server.next.push({ subtitle: 0, subtitleArtifact: artifact }, { subtitle: 0, subtitleArtifact: artifact });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld session" });
+    const moved = SECONDARY_PATH.replace("token=synthetic", "token=synthetic2");
+    r.h.fake.script(moved, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNew session" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: String(track.url).replace("token=synthetic", "token=synthetic2") } : track) });
+    r.controller.selectAudio("file:42:audio:1");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === moved).length, 1, "read from the new session's URL");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "New session");
+    r.controller.destroy();
+});
+
+test("an inventory URL that cannot be parsed is not offered as a secondary track and never breaks playback updates", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: "http://[bad" } : track) });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.secondary?.choices.map(choice => choice.id), ["file:42:subtitle:0", "file:42:subtitle:1"]);
+    r.controller.destroy();
+});
