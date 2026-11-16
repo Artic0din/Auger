@@ -152,3 +152,17 @@ test("opening Settings reads again, so a launch read that missed does not hide t
         assert.match(await tv.page.locator('[data-focus="app-language"]').innerText(), /^App Language\s*Match Device$/);
     }, settings => { settings.allowed = false; });
 });
+
+// Apple's General pane refreshes the language in its own task (TVGeneralSettingsView.swift:136-142), whatever else loads.
+test("opening Settings reads the language again even when another settings read fails", async () => {
+    await withTv(28, async (tv, settings) => {
+        settings.allowed = true;
+        tv.fake.script("/user/libraries?include_hidden=true", problem(403, "forbidden", "Forbidden"));
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/user/libraries?include_hidden=true"), "Settings reads the libraries");
+        await tv.page.locator('[data-focus="app-language"]').waitFor();
+        assert.match(await tv.page.locator('[data-focus="app-language"]').innerText(), /^App Language\s*Match Device$/);
+    }, settings => { settings.allowed = false; });
+});
