@@ -234,9 +234,12 @@ export class SkylineScroll {
             }
             return;
         }
-        // TVActionPopoverMenu.onAppear: a long list opens with its initial row in the centre; later moves reveal normally.
-        if (viewport.matches(".details-popover-scroll") && (previous === undefined || previous === null || !viewport.contains(previous))) {
-            viewport.scrollTop = Math.max(0, element.offsetTop - (viewport.clientHeight - element.offsetHeight) / 2);
+        // TVActionPopoverMenu.onAppear: a long list opens with its initial row in the centre. Apple draws no other anchor;
+        // its native focus scroll then keeps the moving row in the middle of the window (#542, S95C 4c319416 vs Apple 9b8b3528).
+        if (viewport.matches(".details-popover-scroll")) {
+            const top = Math.min(viewport.scrollHeight - viewport.clientHeight, Math.max(0, element.offsetTop - (viewport.clientHeight - element.offsetHeight) / 2));
+            if (previous === undefined || previous === null || !viewport.contains(previous)) viewport.scrollTop = top;
+            else this.move(viewport, 0, top);
             return;
         }
         if (element.closest("[data-scroll-top]") !== null) {

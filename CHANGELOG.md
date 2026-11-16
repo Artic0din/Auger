@@ -74,6 +74,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
+- A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
 - Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.
 - Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
 - Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
