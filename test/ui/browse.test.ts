@@ -2421,6 +2421,28 @@ browseTest("Details keeps the open read's query when the capability probe lands 
     assert.equal(await heroSource(tv), before);
 }, { catalog: lateProbeCatalog, beforeConnect: tv => { lateDetailProbe = tv.fake.hold("/images/capabilities", true); } });
 
+const seasonRereadCatalog = new FakeDetails();
+seasonRereadCatalog.failNext("/images/capabilities", detailImageCapabilities);
+browseTest("The season page reads its title at Apple TV's detail widths, and Mark Season Watched and its undo re-read with the same query", async tv => {
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/images/capabilities"), "capability probe");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:series:s1");
+    await seasonDetails(tv);
+    const seasonItem = "/catalog/items/series%3As1-S1";
+    const query = (): string[] => browseReads(tv, seasonItem).map(request => request.path.slice(seasonItem.length));
+    const opened = query();
+    assert.deepEqual(opened, ["?image_size=medium&logo_width=880&backdrop_width=1344&poster_width=460&photo_width=200"]);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length, "the watched readback");
+    await quiet(tv);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length + 1, "the undo readback");
+    await quiet(tv);
+    assert.deepEqual([...new Set(query())], opened);
+}, { catalog: seasonRereadCatalog });
+
 const failedCollectionsCatalog = new FakeCatalog();
 failedCollectionsCatalog.failNext("/library/12/collections", problem(422, "validation_failed", "Collections unavailable"));
 browseTest("Recommended defers collections reads and a refused Collections read shows no collections", async tv => {
@@ -4360,6 +4382,41 @@ browseTest("series open seasons, episode Select plays directly, and playback ret
     await showing(tv, "home");
     assert.equal(await tv.focused(), "series:s1");
 }, { catalog: new FakeDetails() });
+
+for (const order of ["series first", "episodes first"] as const) {
+    browseTest(`Back from a season page to its series focuses the primary action whichever read answers first (${order})`, async (tv) => {
+        const episodesPath = "/catalog/series/series%3As1/seasons/2/episodes";
+        // Series has not received season 2's episodes when the viewer opens the season page, so it returns without them.
+        const unanswered = [tv.fake.hold(episodesPath, true), tv.fake.hold(episodesPath, true)];
+        await press(tv, "ArrowDown", "Enter");
+        await showing(tv, "item:series:s1");
+        await tv.eventually(async () => await tv.focused() === "next-episode", "Play receives initial Series focus");
+        await press(tv, "ArrowDown", "ArrowRight", "Enter");
+        await tv.eventually(async () => tv.fake.heldReplies === 2, "season 2 episodes in flight");
+        await tv.page.locator('[data-focus="series:s1-S2"]').click();
+        await showing(tv, "season:series:s1:2");
+        await press(tv, "ArrowDown", "Enter");
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.plays.length === 1), "season episode handoff");
+        await settled(tv);
+        // Playback empties the response cache; the season page's rereads are still out when the viewer goes Back.
+        const seasonPage = [tv.fake.hold(episodesPath, true), tv.fake.hold("/catalog/items/series%3As1-S2", true)];
+        await tv.page.evaluate(() => window.browseHarness.resume());
+        await showing(tv, "season:series:s1:2");
+        await tv.eventually(async () => tv.fake.heldReplies === 4, "season page rereads held");
+        const series = [tv.fake.hold("/catalog/items/series%3As1", true), tv.fake.hold(episodesPath, true)];
+        await tv.remote(BACK);
+        await showing(tv, "item:series:s1");
+        await tv.eventually(async () => tv.fake.heldReplies > 4, "series rereads held");
+        // TVSeriesDetailView .defaultFocus($playFocused, true, priority: .userInitiated): focus entering the series goes to its primary action.
+        assert.notEqual(await tv.focused(), "series:s1-S2", "the season card the viewer came from does not take focus");
+        for (const hold of order === "series first" ? [...series, ...seasonPage, ...unanswered] : [...unanswered, ...seasonPage, ...series.reverse()]) {
+            hold.release();
+            await settled(tv);
+            assert.notEqual(await tv.focused(), "series:s1-S2", "a late answer does not hand focus to the season card");
+        }
+        await tv.eventually(async () => await tv.focused() === "next-episode", "focus returns to the primary action");
+    }, { catalog: new FakeDetails() });
+}
 
 for (const mediaKey of [415, 10252]) {
     browseTest(`Continue episode Select opens context and media key ${mediaKey} plays once`, async (tv, catalog) => {
