@@ -191,6 +191,7 @@ export class DetailsState {
                 return !episodes.some((episode) => episode.pendingTranslationLanguage !== undefined);
             },
             artwork: () => this.artwork,
+            episodeArtwork: async () => await this.series?.episodeArtwork() ?? {},
             changed: () => this.changed(),
         });
         this.changed = changed;

@@ -262,7 +262,7 @@ Defined in `src/api/operations.ts` unless noted.
 | getCatalogItem | `GET /catalog/items/{id}?image_size=large` (Details overrides with the negotiated detail slots when known: hero, logo, poster and cast photo widths) | safe |
 | listCatalogItemVersions | `GET /catalog/items/{id}/versions` | safe |
 | listSeriesSeasons | `GET /catalog/series/{id}/seasons` | safe |
-| listSeasonEpisodes | `GET /catalog/series/{id}/seasons/{n}/episodes` | safe |
+| listSeasonEpisodes | `GET /catalog/series/{id}/seasons/{n}/episodes?image_size=small` (`still_width` = 360 × device pixel ratio instead when the server takes per-slot widths) | safe |
 | getWatch (detail) | `GET /watch/{id}` | safe |
 | resume position | `GET /watch/{id}?file_id=` (`src/api/detailOperations.ts`) | safe |
 | person | `GET /catalog/people/{id}` (`src/api/detailOperations.ts`) | safe |
