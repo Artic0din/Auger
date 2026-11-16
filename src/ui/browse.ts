@@ -58,7 +58,7 @@ import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
 import { textLanguage } from "../i18n/translate.ts";
-import { cancelSelect } from "./selectRelease.ts";
+import { heldSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
@@ -441,16 +441,20 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     /**
      * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
      * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
-     * return does. A Select held on a replaced control ends with it. `redraw` is false where the screen is about to be shown anyway.
+     * return does. `redraw` is false where the screen is about to be shown anyway. A redraw waits, as it does while browse is covered, while
+     * a Select is held or a card or request menu is open, so no press or menu is replaced under the viewer; the next key release runs it.
      */
     const reconcileLanguage = (redraw: boolean): void => {
         if (textLanguage() === paintedLanguage) return;
+        if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
         paintedLanguage = textLanguage();
         const focus = host.focused();
-        cancelSelect();
         shell.relabel();
         if (redraw) render(focus);
     };
+    // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
+    const reconcileAfterKey = (): void => { if (textLanguage() === paintedLanguage) return; window.setTimeout(() => { if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true); }, 0); };
+    document.addEventListener("keyup", reconcileAfterKey);
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
         const grant = await session.call({ ...operations.themePlayback(ownerId, themeId, themeAudioFormats(probe)), profileScoped: true });
@@ -873,6 +877,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSearch();
         cancelCalendarDay();
         document.removeEventListener("keydown", recordKey, true);
+        document.removeEventListener("keyup", reconcileAfterKey);
         document.removeEventListener("pointerdown", recordInput, true);
         document.removeEventListener("focus", recordFocus, true);
         stack = [];

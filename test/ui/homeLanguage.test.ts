@@ -216,7 +216,7 @@ test("a language that arrives during playback shows on the top bar when browse r
     }, { stored: "de", holdLanguage: true });
 });
 
-test("a Select held on a top-bar button while the language arrives is cancelled, so its release activates nothing", async () => {
+test("a Select held on a top-bar button while the language arrives still runs on release, and the bar relabels after it", async () => {
     await withHome(async (tv, _settings, _catalog, _releaseLanguage, holds) => {
         // Release every held read but the language's, so the bar is complete and only the language is late.
         const reads = tv.fake.paths().filter(path => path.startsWith("GET /settings/values/effective"));
@@ -227,13 +227,35 @@ test("a Select held on a top-bar button while the language arrives is cancelled,
         await tv.page.locator('[data-focus="calendar"]').focus();
         await tv.page.keyboard.down("Enter");
         holds[language]?.release();
-        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar while Select is down");
-        assert.equal(await tv.focused(), "calendar");
-        assert.equal(await tv.page.locator("[data-pressed]").count(), 0, "the redrawn bar shows no pressed button");
-        await tv.page.keyboard.up("Enter");
+        // The answer waits for the release: nothing under the finger is replaced.
         await tv.jump(500);
-        assert.equal(await tv.page.locator('.browse[data-view="calendar"]').count(), 0, "the press ended with the redraw: releasing it opens nothing");
-        assert.equal(await tv.focused(), "calendar");
+        assert.ok((await rootTitles(tv)).includes("Calendar"), "the bar is still English while Select is held");
+        assert.equal(await tv.page.locator('[data-focus="calendar"][data-pressed]').count(), 1, "the held button stays pressed");
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator('.browse[data-view="calendar"]').waitFor({ state: "visible" });
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar after the release");
+    }, { stored: "de", holdLanguage: true });
+});
+
+test("a language that arrives while a card menu is open leaves the menu working and relabels when it closes", async () => {
+    await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
+        const card = tv.page.locator('[data-section="resume/opaque"] [data-focus="movie:m0001"]');
+        await card.focus();
+        await tv.down(13);
+        await tv.jump(650);
+        await tv.up(13);
+        const menu = tv.page.getByRole("menu");
+        await menu.waitFor();
+        const first = await tv.focused();
+        releaseLanguage();
+        await tv.jump(500);
+        assert.ok((await rootTitles(tv)).includes("Calendar"), "the bar waits while the menu is open");
+        await menu.waitFor();
+        await tv.page.keyboard.press("ArrowDown");
+        assert.notEqual(await tv.focused(), first, "the menu still takes the remote");
+        await tv.remote(10009);
+        await menu.waitFor({ state: "detached" });
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar after the menu closes");
     }, { stored: "de", holdLanguage: true });
 });
 
