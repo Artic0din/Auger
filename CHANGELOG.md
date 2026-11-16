@@ -76,6 +76,7 @@ All notable changes to this project are documented in this file.
 
 - Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
 - A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
+- After Mark Season Watched or Unwatched, More on the season page now offers the opposite action, and the episode rows keep their new state, even when a slower season read sent before the change answers last. Before, that older answer could put the season back to its old state on screen.
 - After Mark Series Watched, More on the series page now offers Mark Series Unwatched even when a slower series read sent before the change answers last, as on Apple TV. Before, that older answer could put the series back to unwatched on screen.
 - The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
 - Back from a season page to its series now always puts focus on the series' Play or Resume, as on Apple TV, however slowly the series page reloads. Before, focus could stay on the season card you came from when the season's episodes were still loading.

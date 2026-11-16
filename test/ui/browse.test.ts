@@ -2960,6 +2960,31 @@ browseTest("S-D2 a series read sent before Mark Series Watched cannot undo the r
     assert.equal(catalog.mutations.length, 1);
 }, { catalog: new FakeDetails() });
 
+browseTest("S-D2 a season read sent before Mark Season Watched cannot undo the refreshed state", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:series:s1");
+    await seasonDetails(tv);
+    await settled(tv);
+    // An episode change marks the season stale and reads it again; that read is answered only after the next write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1-S1", true);
+    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
+    await tv.page.locator('[data-focus="watched"]').click();
+    await tv.eventually(async () => catalog.mutations.length === 1, "episode write sent");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older season read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).click();
+    await tv.eventually(async () => catalog.mutations.length === 2, "aggregate write sent");
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await detailsMore(tv);
+    assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 3, "the older answer's episode rows stay replaced");
+    await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).waitFor();
+    assert.equal(catalog.mutations.length, 2);
+}, { catalog: new FakeDetails() });
+
 browseTest("S-D2 series aggregate invalidates a cached season before returning", async (tv, catalog) => {
     assert.ok(catalog instanceof FakeDetails);
     for (const title of catalog.titles.values()) if (title.type === "episode" && title.seriesId === "series:s1") catalog.watchedEpisodes.add(title.id);
