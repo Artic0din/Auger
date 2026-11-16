@@ -107,6 +107,10 @@ export async function assertPressedLook(tv: Tv, control: Locator, expected: Pres
         node.getBoundingClientRect();
         node.dataset.testActivations = "0";
         node.addEventListener("click", () => { node.dataset.testActivations = String(Number(node.dataset.testActivations) + 1); });
+        // Freeze each transition in the event's own task, before a slow protocol round trip can finish it.
+        const freeze = (): void => { for (const animation of node.getAnimations({ subtree: true })) animation.pause(); };
+        node.addEventListener("keydown", freeze, { once: true });
+        node.addEventListener("focusout", freeze, { once: true });
         node.focus();
     });
     await settle();
