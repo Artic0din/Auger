@@ -405,6 +405,8 @@ test("Left through a loaded previous season after a fast chip walk sends no seas
         await tv.page.locator('[data-focus="episode:s1e25x1"]').waitFor();
         await tv.remote(40); await tv.jump(500);
         assert.equal(await tv.focused(), "episode:s1e25x1");
+        // Left reaches season 24 only once its re-read, started by season 25's selection, has been answered.
+        await tv.eventually(() => tv.page.evaluate(() => window.seasonAnswers.includes("24")), "season 24's episodes loaded");
         const beforeLeft = seasonReads().length;
         await tv.remote(37); await tv.jump(1500);
         // The season read answers over the routed network, after the fake clock has passed the dwell.
