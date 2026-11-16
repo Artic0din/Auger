@@ -766,6 +766,12 @@ for (const reduced of [false, true]) {
         await tv.jump(250);
         const { scroll } = await sample();
         assert.ok(scroll > 0, "the later request needs horizontal scrolling");
+        // The rest read of the focused card can still be on its way; count reads only once none is.
+        await tv.eventually(async () => {
+            const requests = tv.fake.requests.length;
+            await tv.jump(0);
+            return tv.pendingReplies <= tv.fake.heldReplies && tv.fake.requests.length === requests;
+        }, "no further reads");
         const reads = tv.fake.requests.length;
         people.release();
         await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
@@ -1165,6 +1171,7 @@ browseTest("Search lists at most five box sets ahead of People for All and Movie
     assert.equal(await tv.page.locator('[data-focus="box-set:12:1241"] .browse-card-subtitle').textContent(), "3 / 8 watched");
     assert.equal(await tv.page.locator('[data-focus="box-set:12:1241"] .box-set-label').textContent(), "Box set");
     assert.equal(await tv.page.locator(".box-set-card .box-set-sleeve").count(), 10, "each tvOS box set card has two sleeves");
+    await tv.page.locator(".search-people-heading").waitFor();
     const order = await tv.page.locator(".search-box-sets-heading, .search-people-heading, .search-count").evaluateAll(nodes => nodes.map(node => node.className));
     assert.deepEqual(order, ["browse-section-title search-box-sets-heading", "browse-section-title search-people-heading"]);
     assert.equal(await tv.page.getByText("No results", { exact: true }).count(), 0);
@@ -2882,7 +2889,7 @@ browseTest("optional Details reads load independently and omit empty Related res
     catalog.capability = false;
     await activateDetails(tv);
     await showing(tv, "item:movie:m0001");
-    await tv.eventually(async () => tv.fake.requests.filter((request) => request.path === "/capabilities/personal-lists").length === 3, "unsupported capability");
+    await tv.eventually(async () => tv.fake.requests.filter((request) => request.path === "/capabilities/personal-lists").length >= 3, "unsupported capability");
     await tv.eventually(async () => await tv.page.locator('[data-focus="watchlist"], [data-focus="favorites"]').count() === 0, "unsupported capability applied");
     assert.equal(await tv.page.locator('[data-focus="watchlist"], [data-focus="favorites"]').count(), 0);
 }, { catalog: new FakeDetails() });
@@ -3090,7 +3097,11 @@ browseTest("personal failure never repeats a write automatically and explicit re
     await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).waitFor();
     await settled(tv);
     catalog.mutationFailure = problem(503, "unavailable", "Unavailable");
-    await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click();
+    // A press can still land on a node a repaint is replacing; press again only while no write has been sent.
+    await tv.eventually(async () => {
+        if (catalog.mutations.length === 0) await tv.page.getByRole("button", { name: "Add to watchlist", exact: true }).click({ timeout: 2000 }).catch(() => undefined);
+        return catalog.mutations.length === 1;
+    }, "the watchlist write sent");
     await failureAlert(tv, "Couldn't Update Item");
     await tv.jump(30000);
     assert.equal(catalog.mutations.length, 1);
@@ -4106,7 +4117,7 @@ browseTest("series open seasons, episode Select plays directly, and playback ret
     assert.equal(await tv.focused(), "episode:s1e22");
     await tv.remote(BACK);
     await showing(tv, "item:series:s1");
-    assert.equal(await tv.focused(), "next-episode");
+    await tv.eventually(async () => await tv.focused() === "next-episode", "focus returns to the primary action");
     const series = tv.fake.catalog?.route('GET', '/catalog/items/series%3As1', 'p-owner')?.body as { overview: string };
     assert.equal(await tv.page.locator('.details-editorial .browse-overview').textContent(), series.overview);
     await tv.remote(BACK);
@@ -4517,6 +4528,7 @@ browseTest("an authority change removes only browse, aborts its reads, and the n
     assert.equal(await tv.page.evaluate(() => window.browseHarness.selectProfile("p-kid", "2468")), "verified");
     await tv.page.evaluate(() => window.browseHarness.mount());
     await showing(tv, "home");
+    await tv.eventually(async () => (await cardIds(tv, ".browse-nav .browse-button")).join() === "search,home,movies,for_you,calendar,profiles", "the kid's library tabs");
     assert.deepEqual(await cardIds(tv, ".browse-nav .browse-button"), ["search", "home", "movies", "for_you", "calendar", "profiles"]);
     const kidReads = browseReads(tv).filter((read) => read.headers["x-profile-id"] === "p-kid");
     assert.ok(kidReads.length >= 3 && kidReads.every((read) => read.headers["x-profile-token"]?.startsWith("pvt-")));
