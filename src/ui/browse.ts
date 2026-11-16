@@ -1997,7 +1997,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 details.focusedEpisodeId = undefined;
                 if (series !== undefined) { series.selectionOwnsHero = false; series.focusSelectedEpisode = false; }
                 current.focus = { zone: "actions", key: "next-episode" };
-                host.forgetVisit(`item:${current.id}`);
+                // Details visits are keyed per presentation; a remembered season card would otherwise beat a Play that is not ready yet.
+                const visit = detailVisits.get(current);
+                if (visit !== undefined) host.forgetPresentation(visit);
             }
             showRoute(current, fromProfileMenu ? tabFocus(current) : current.focus);
             if (current.kind === "person") {
