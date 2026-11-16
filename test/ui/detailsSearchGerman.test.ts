@@ -16,9 +16,10 @@ after(async () => { await browser.close(); });
 const IME_DONE = 65376;
 const german = (key: Parameters<typeof translate>[0], args?: Parameters<typeof translate>[1]): string => translate(key, args, "de");
 
-async function inGerman(body: (tv: Tv) => Promise<void>): Promise<void> {
+async function inGerman(body: (tv: Tv, details: FakeDetails) => Promise<void>): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
-    tv.fake.catalog = new FakeDetails();
+    const details = new FakeDetails();
+    tv.fake.catalog = details;
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
     settings.profile().set(APP_LANGUAGE_KEY, "de");
@@ -31,7 +32,7 @@ async function inGerman(body: (tv: Tv) => Promise<void>): Promise<void> {
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
-        await body(tv);
+        await body(tv, details);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 }
@@ -67,5 +68,21 @@ test("Search reads in German: field, filters, result count and the empty state",
         assert.equal(await tv.page.locator(".search-count").innerText(), german("search.resultCount", { count: 1, count_text: "1" }));
         await tv.page.locator('[data-focus="search-filter:series"]').focus();
         await tv.page.getByText(german("search.emptyBody"), { exact: true }).waitFor();
+    });
+});
+
+test("a movie's runtime and its audio track's language read as Apple TV writes them in German", async () => {
+    await inGerman(async (tv, details) => {
+        assert.equal(german("detail.more.addFavorite"), "Zu Favoriten hinzufügen", "the catalog holds German");
+        const body = details.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body as { versions: Record<string, unknown>[] };
+        await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: {
+            ...body, versions: body.versions.map(version => ({ ...version, effective_audio_track_index: 0, audio_tracks: [{ default: true, language: "pt", codec: "eac3", channels: 6 }] })),
+        } }));
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await tv.page.locator('[data-focus="watchlist"][aria-pressed]').waitFor();
+        assert.ok((await tv.page.locator(".browse-meta .details-fact").allInnerTexts()).includes("1h 30min"), "the 90-minute file reads 1h 30min");
+        const audio = tv.page.locator('[data-track-summary="audio"] span');
+        await tv.eventually(async () => (await audio.innerText()).includes("Portugiesisch"), "the audio readout names the track's language in German");
+        assert.match(await audio.innerText(), /^Auto · Portugiesisch · EAC3/, "German's own Auto · {value}, then the track");
     });
 });

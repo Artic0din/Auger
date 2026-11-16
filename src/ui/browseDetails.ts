@@ -16,13 +16,13 @@ import { personMetadataBadges, personPortrait } from "./personHero.ts";
 import { el, onDecoded } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
-import { audioTitle as trackAudioTitle, orderSubtitles, subtitlePillSummary, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
+import { audioTitle as trackAudioTitle, languageName, orderSubtitles, subtitlePillSummary, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
 import type { SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
 import { seasonName, seriesEpisodesView } from "./seriesEpisodesView.ts";
 import { shownLanguage } from "../i18n/language.ts";
+import { durationText } from "../i18n/duration.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
-import { languageName } from "./cardOverlays.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
@@ -44,10 +44,6 @@ function advisoryAgeBadgeLabel(age: number | undefined, source: string | undefin
     return [named, `${age}+`].filter(part => part !== undefined).join(" ");
 }
 
-function runtimeToken(minutes: number): string {
-    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
-}
-
 /** TVHeroMetadata fact tokens. Series omits runtime; an episode uses its air date. */
 function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode: Episode | undefined): string[] {
     if (episode !== undefined) {
@@ -64,7 +60,7 @@ function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode
     if (detail.type !== "series" && detail.runtimeMinutes !== undefined && detail.runtimeMinutes > 0) {
         const file = detail.versions.find(version => version.fileId === playChoices(detail, state?.selectedFileId, state?.preferredQuality)?.fromStart.fileId);
         const minutes = file?.durationSeconds ? Math.round(file.durationSeconds / 60) : detail.runtimeMinutes;
-        tokens.push(runtimeToken(minutes));
+        tokens.push(durationText(minutes, true));
     }
     const count = state?.series?.seasons.filter(season => !season.isSpecials && season.seasonNumber !== 0).length;
     if (detail.type === "series" && count) tokens.push(translate("catalog.seasons", { count }));
