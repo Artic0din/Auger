@@ -2421,6 +2421,28 @@ browseTest("Details keeps the open read's query when the capability probe lands 
     assert.equal(await heroSource(tv), before);
 }, { catalog: lateProbeCatalog, beforeConnect: tv => { lateDetailProbe = tv.fake.hold("/images/capabilities", true); } });
 
+const seasonRereadCatalog = new FakeDetails();
+seasonRereadCatalog.failNext("/images/capabilities", detailImageCapabilities);
+browseTest("The season page reads its title at Apple TV's detail widths, and Mark Season Watched and its undo re-read with the same query", async tv => {
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/images/capabilities"), "capability probe");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:series:s1");
+    await seasonDetails(tv);
+    const seasonItem = "/catalog/items/series%3As1-S1";
+    const query = (): string[] => browseReads(tv, seasonItem).map(request => request.path.slice(seasonItem.length));
+    const opened = query();
+    assert.deepEqual(opened, ["?image_size=medium&logo_width=880&backdrop_width=1344&poster_width=460&photo_width=200"]);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length, "the watched readback");
+    await quiet(tv);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length + 1, "the undo readback");
+    await quiet(tv);
+    assert.deepEqual([...new Set(query())], opened);
+}, { catalog: seasonRereadCatalog });
+
 const failedCollectionsCatalog = new FakeCatalog();
 failedCollectionsCatalog.failNext("/library/12/collections", problem(422, "validation_failed", "Collections unavailable"));
 browseTest("Recommended defers collections reads and a refused Collections read shows no collections", async tv => {

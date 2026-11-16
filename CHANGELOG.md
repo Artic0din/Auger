@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
 - The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
 - Back from a season page to its series now always puts focus on the series' Play or Resume, as on Apple TV, however slowly the series page reloads. Before, focus could stay on the season card you came from when the season's episodes were still loading.
 - Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
