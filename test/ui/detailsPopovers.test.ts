@@ -9,6 +9,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 import { start } from "./support/watchParty.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -470,3 +471,15 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
         } finally { await tv.page.context().close(); }
     }
 });
+
+// TVActionPopoverButtonStyle (silo-apple dce56e3c, tvOS TVActionPopoverMenu.swift:125-130): opacity 0.94, snapped, no scale.
+for (const reduced of [false, true]) {
+    detailTest(`Popover rows dim to 0.94 on held Select and snap (reduced motion: ${reduced})`, async (tv, details) => {
+        await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await movieTracks(tv, details, { audio: [{ default: true, language: "en", codec: "eac3", channels: 6 }] });
+        await openMovie(tv);
+        await tv.page.locator('[data-focus="audio"]').click();
+        await settled(tv);
+        await assertPressedLook(tv, tv.page.locator('[data-focus="audio:auto"]'), { focusScale: 1, heldScale: 1, heldOpacity: 0.94 }, reduced);
+    });
+}
