@@ -74,6 +74,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
+- Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
 - Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.

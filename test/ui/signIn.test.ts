@@ -5,7 +5,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { encode } from "uqr";
 import { FAKE_PASSWORD, fixture, problem, type Reply } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { jumpUntil, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
@@ -55,13 +55,7 @@ async function codeScreen(tv: Tv): Promise<string> {
 
 /** Lets a failing connect run its one transport retry, a second later, until the address screen returns. */
 async function connectFails(tv: Tv, text: string): Promise<void> {
-    await tv.eventually(async () => {
-        if ((await tv.screen()) === "entry") {
-            return true;
-        }
-        await tv.jump(1000);
-        return false;
-    }, "the connect to fail");
+    await jumpUntil(tv, 1000, async () => (await tv.screen()) === "entry", "the connect to fail");
     await shows(tv, text);
 }
 
@@ -75,13 +69,7 @@ async function signIn(tv: Tv): Promise<void> {
     const code = await codeScreen(tv);
     tv.fake.approve(code);
     await tv.jump(5000);
-    await tv.eventually(async () => {
-        if ((await handoffs(tv)) === before + 1) {
-            return true;
-        }
-        await tv.jump(1000);
-        return false;
-    }, "the handoff");
+    await jumpUntil(tv, 1000, async () => (await handoffs(tv)) === before + 1, "the handoff");
 }
 
 async function currentCode(tv: Tv): Promise<string> {
@@ -400,16 +388,12 @@ for (const path of ["/system/info", "/system/setup"]) tvTest(`explicit setup ret
     tv.fake.dropNextAnswer(path);
     tv.fake.dropNextAnswer(path);
     await tv.page.keyboard.press("Enter");
-    await tv.eventually(async () => {
-        if (await handoffs(tv) > 1 || await tv.page.getByText("Couldn't reach the server. Check it's running and try again.", { exact: true }).count() === 1) return true;
-        await tv.jump(1000);
-        return false;
-    }, "explicit setup retry completed");
+    await jumpUntil(tv, 1000, async () => await handoffs(tv) > 1 || await tv.page.getByText("Couldn't reach the server. Check it's running and try again.", { exact: true }).count() === 1, "explicit setup retry completed");
     assert.equal(await tv.screen(), "needs-setup");
     assert.equal(await handoffs(tv), 1, "a failed explicit retry cannot hand off the cached account");
     assert.equal(tv.fake.devices.size, devices);
     await tv.page.keyboard.press("Enter");
-    await tv.eventually(async () => await handoffs(tv) === 2, "saved account resumes after a successful retry");
+    await jumpUntil(tv, 1000, async () => await handoffs(tv) === 2, "saved account resumes after a successful retry");
     assert.equal(await tv.page.evaluate(() => window.harness.handoffs[1]?.restore), "signed_in");
     assert.equal(tv.fake.devices.size, devices, "the network failure did not discard the saved vault");
 });
@@ -692,12 +676,16 @@ tvTest("a failing start retries with backoff and says the server can't be reache
     await tv.page.locator('[data-screen="starting"]').waitFor();
     const starts = (): number => tv.fake.paths().filter((path) => path === "POST /auth/device/start").length;
     await tv.eventually(async () => starts() === 1, "the first start");
+    // The retry timer is set when a failure lands, so each failure must have landed before the clock moves.
+    const answered = (): Promise<void> => tv.eventually(async () => tv.pendingReplies === 0, "the start answered");
     for (const [wait, count] of [[1000, 2], [2000, 3], [4000, 4]] as const) {
+        await answered();
         await tv.jump(wait);
         await tv.eventually(async () => starts() === count, `start ${count}`);
         await shows(tv, "Getting a sign-in code…");
         assert.equal(await tv.page.getByText("Can't reach", { exact: false }).count(), 0);
     }
+    await answered();
     await tv.jump(8000);
     await tv.eventually(async () => starts() === 5, "start 5");
     await shows(tv, "Can't reach silo.example.test. Check this TV's connection.");
@@ -1181,6 +1169,8 @@ for (const sessionOnly of [false, true]) {
             tv.fake.approve(code);
             await tv.jump(5000);
             await tv.eventually(async () => tv.fake.devices.get(code)?.status === "consumed", "the phone approval");
+            // Back or the phone button pressed before the poll's answer reaches the page finds the code screen. The clock must not move: the pause is timed from that answer.
+            await tv.eventually(async () => tv.pendingReplies === 0, "the approval answer delivered");
             const starts = tv.fake.paths().filter(path => path === "POST /auth/device/start").length;
             if (action === "Back") {
                 await tv.remote(BACK);
