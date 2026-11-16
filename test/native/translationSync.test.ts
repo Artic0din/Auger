@@ -2,7 +2,8 @@
 // because tvOS is the parity target and Apple's keys use the shared ICU subset.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
+import { SHIPPED_LANGUAGES } from "../../src/i18n/language.ts";
+import { languagesToSync, scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
 
 const arb = {
     "@@locale": "en",
@@ -38,4 +39,11 @@ test("a translation keeps only the keys source files name as strings, so one scr
     assert.deepEqual([...used].sort(), ["common.cancel", "settings.title", "settingsManifest.ui.app_language.label"]);
     const scoped = scopeCatalog({ "common.cancel": "Abbrechen", "settings.title": "Einstellungen", "never.used": "x" }, used);
     assert.deepEqual(scoped, { "common.cancel": "Abbrechen", "settings.title": "Einstellungen" });
+});
+
+test("a refresh with no --languages keeps every shipped language, so the imports the build needs stay", () => {
+    assert.deepEqual(languagesToSync([]), [...SHIPPED_LANGUAGES]);
+    assert.deepEqual(languagesToSync(["--languages", "en,de"]), ["en", "de"]);
+    assert.throws(() => languagesToSync(["--languages", "de"]), /usage/);
+    assert.throws(() => languagesToSync(["--nope"]), /usage/);
 });

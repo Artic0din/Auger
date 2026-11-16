@@ -11,7 +11,7 @@
 // one script until the catalogs load on demand, and a key a screen does not show is dead weight there.
 //
 // Usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]
-//   --languages   the language files to vendor (default: en). Each must be in locales.json.
+//   --languages   the language files to vendor (default: every shipped language). Each must be in locales.json.
 //
 // Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts) and CATALOGS
 // (src/i18n/translate.ts), then run npm test: a test holds the shipped list to the files.
@@ -19,6 +19,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseMessage } from "../src/i18n/icu.ts";
+import { SHIPPED_LANGUAGES } from "../src/i18n/language.ts";
 
 const REPOSITORY = "Silo-Server/silo-translations";
 const SCOPE_PLATFORM = "apple";
@@ -80,12 +81,19 @@ async function resolveCommit(ref: string): Promise<string> {
     return sha;
 }
 
+const USAGE = "usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]";
+
+/** The language files to vendor. With no option, every shipped language: a file the build imports must survive a refresh. */
+export function languagesToSync(options: readonly string[]): string[] {
+    const languages = options[0] === "--languages" ? (options[1] ?? "").split(",") : options.length === 0 ? [...SHIPPED_LANGUAGES] : [];
+    if (languages[0] !== "en") throw new Error(USAGE);
+    return languages;
+}
+
 async function main(): Promise<void> {
     const [ref, ...options] = process.argv.slice(2);
-    const languages = options[0] === "--languages" ? (options[1] ?? "").split(",") : options.length === 0 ? ["en"] : [];
-    if (ref === undefined || ref.startsWith("--") || languages[0] !== "en") {
-        throw new Error("usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]");
-    }
+    if (ref === undefined || ref.startsWith("--")) throw new Error(USAGE);
+    const languages = languagesToSync(options);
     const commit = await resolveCommit(ref);
     const english = scopeCatalog(await download("catalog/en.arb", commit));
     const englishKeys = new Set(Object.keys(english));
