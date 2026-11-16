@@ -140,9 +140,11 @@ Joining by pasted link is still refused with "This Watch Party invitation is inv
 
 With the switch on and the server able to host a party, More on a movie, episode or series page ends with Watch Party (`src/ui/browseDetails.ts`).
 A series offers the episode its hero shows.
-It pushes the Watch Party page over the title, creates a host-pick room and stages that title (`openWatchParty` in `src/ui/browse.ts`).
+It pushes the Watch Party page over the title, creates a host-pick room and chooses that title (`openWatchParty` in `src/ui/browse.ts`).
+When the server has `staged_selection` the title is staged in the lobby.
+Otherwise it is sent as a live selection, and if the room answers `playing` the existing player opens on its file (`WatchPartyHub.stage`).
 Back from the lobby leaves the room and shows the entry page, and Back again returns to Details.
-The title is staged by content id alone: a version the viewer picked is not passed.
+The title is chosen by content id alone: a version the viewer picked is not passed.
 
 ## Not built
 
