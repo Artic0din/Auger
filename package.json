@@ -12,6 +12,7 @@
     "build": "npm run typecheck && node scripts/build.mjs",
     "test:native": "node --test --test-timeout=15000 \"test/native/*.test.ts\"",
     "test": "npm run build && npm run test:native && npm run test:ui",
+    "sync:translations": "node scripts/sync-translations.ts",
     "test:ui": "node --test --test-concurrency=2 --test-timeout=60000 \"test/ui/*.test.ts\""
   },
   "devDependencies": {

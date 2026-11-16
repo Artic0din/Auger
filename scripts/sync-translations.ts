@@ -1,0 +1,88 @@
+// Vendor the silo-translations strings a TV can show into src/i18n/catalog/, at an explicit commit,
+// and record that commit in src/i18n/catalog/SOURCE:
+//
+//   src/i18n/catalog/<tag>.json   <- catalog/<tag>.arb, as key -> ICU message
+//
+// Scope: the keys Apple ships (no `x-platforms`, or one naming `apple`), because tvOS is the parity target
+// and Apple's keys use the ICU subset src/i18n/icu.ts reads. Metadata (`@key`) and Info.plist prompts
+// (`apple.infoPlist.*`) are left out. Every byte comes from the repository at <ref>, never a moving branch.
+//
+// Usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]
+//   --languages   the language files to vendor (default: en). Each must be in locales.json.
+//
+// Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts) and CATALOGS
+// (src/i18n/translate.ts), then run npm test: a test holds the shipped list to the files.
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseMessage } from "../src/i18n/icu.ts";
+
+const REPOSITORY = "Silo-Server/silo-translations";
+const SCOPE_PLATFORM = "apple";
+const EXCLUDED_PREFIX = "apple.infoPlist.";
+
+type ArbEntry = string | { readonly description?: string; readonly "x-platforms"?: readonly string[] };
+
+/**
+ * An `.arb` file's messages in scope, sorted by key. English carries the metadata that scopes keys, so a
+ * translation file is scoped by the English key set instead.
+ */
+export function scopeCatalog(arb: Readonly<Record<string, ArbEntry>>, englishKeys?: ReadonlySet<string>): Record<string, string> {
+    const scoped: Record<string, string> = {};
+    for (const key of Object.keys(arb).sort()) {
+        const message = arb[key];
+        if (key.startsWith("@") || typeof message !== "string" || key.startsWith(EXCLUDED_PREFIX)) continue;
+        if (englishKeys === undefined) {
+            const meta = arb[`@${key}`];
+            const platforms = typeof meta === "object" ? meta["x-platforms"] : undefined;
+            if (platforms !== undefined && !platforms.includes(SCOPE_PLATFORM)) continue;
+        } else if (!englishKeys.has(key)) {
+            continue;
+        }
+        try {
+            parseMessage(message);
+        } catch (error) {
+            throw new Error(`${key}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        scoped[key] = message;
+    }
+    return scoped;
+}
+
+async function download(path: string, commit: string): Promise<Record<string, ArbEntry>> {
+    const response = await fetch(`https://raw.githubusercontent.com/${REPOSITORY}/${commit}/${path}`);
+    if (!response.ok) throw new Error(`${path} at ${commit}: HTTP ${response.status}`);
+    return await response.json() as Record<string, ArbEntry>;
+}
+
+async function resolveCommit(ref: string): Promise<string> {
+    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/commits/${encodeURIComponent(ref)}`, { headers: { Accept: "application/vnd.github+json" } });
+    if (!response.ok) throw new Error(`${ref}: HTTP ${response.status}`);
+    const { sha } = await response.json() as { sha: string };
+    return sha;
+}
+
+async function main(): Promise<void> {
+    const [ref, ...options] = process.argv.slice(2);
+    const languages = options[0] === "--languages" ? (options[1] ?? "").split(",") : options.length === 0 ? ["en"] : [];
+    if (ref === undefined || ref.startsWith("--") || languages[0] !== "en") {
+        throw new Error("usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]");
+    }
+    const commit = await resolveCommit(ref);
+    const english = scopeCatalog(await download("catalog/en.arb", commit));
+    const englishKeys = new Set(Object.keys(english));
+    // Everything is downloaded and checked before any vendored file changes.
+    const catalogs = new Map<string, Record<string, string>>();
+    for (const tag of languages) catalogs.set(tag, tag === "en" ? english : scopeCatalog(await download(`catalog/${tag}.arb`, commit), englishKeys));
+    const destination = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "i18n", "catalog");
+    mkdirSync(destination, { recursive: true });
+    for (const stale of readdirSync(destination)) if (stale.endsWith(".json")) rmSync(join(destination, stale));
+    for (const [tag, messages] of catalogs) {
+        writeFileSync(join(destination, `${tag}.json`), `${JSON.stringify(messages, null, 1)}\n`);
+        console.log(`${tag}: ${Object.keys(messages).length} messages`);
+    }
+    writeFileSync(join(destination, "SOURCE"), `${commit}\n`);
+    console.log(`silo-translations ${commit}`);
+}
+
+if (import.meta.main) await main();

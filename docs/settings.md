@@ -129,7 +129,7 @@ Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/d
 
 Platform limits, which Apple does not have:
 
-- Tizen has no localised text: every string is English. Apple's picker switches a generated catalog of 3,566 strings in 22 languages, so English is the only language this build ships and picking it changes nothing on screen. The translation work, including sending `Accept-Language` with the shown language and right-to-left layout, is #571.
+- Tizen has no localised text yet: every string is English. Apple's picker switches a generated catalog of 3,566 strings in 22 languages, so English is the only language this build ships and picking it changes nothing on screen. The foundation is in: `src/i18n` holds the vendored catalog and the lookup, the stored choice sets the language the app shows, and every Silo request names it in `Accept-Language` (see [`src/i18n/catalog/README.md`](../src/i18n/catalog/README.md)). Moving screen text onto the catalog, right-to-left layout and the language list are the rest of #571.
 - Apple also writes the choice as the app's system language (`AppleLanguages`) and reads a change made in system settings back as this device's value. Tizen has no per-app system language, so neither direction exists here.
 
 ## Theme music

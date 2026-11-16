@@ -2,6 +2,7 @@
 // Session code decides which credentials to attach; this module only transports them.
 
 import { decodeProblem, type Problem, WireError } from "../contracts/v2/wire.ts";
+import { shownLanguage } from "../i18n/language.ts";
 import { type Clock, sleep } from "./clock.ts";
 import { ApiError } from "./errors.ts";
 import { isPermittedUrl, type ServerBase } from "./serverUrl.ts";
@@ -81,7 +82,7 @@ export class NativeHttp {
             timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
         };
         try {
-            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", ...(fresh ? { cache: "no-store" as const } : {}) });
+            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", headers: { "Accept-Language": shownLanguage() }, ...(fresh ? { cache: "no-store" as const } : {}) });
             if (!response.ok || Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle download failed");
             if (response.body === null) return "";
             const reader = response.body.getReader();
@@ -260,6 +261,8 @@ export class NativeHttp {
             "X-Silo-Device-Id": this.device.id,
             "X-Silo-Device-Name": this.device.name,
             "X-Silo-Device-Platform": this.device.platform,
+            // The bare tag of the language on screen, as silo-apple's AppLanguage.applyHeader sends it.
+            "Accept-Language": shownLanguage(),
         };
         if (spec.clientFamily !== undefined) headers["X-Silo-Client-Family"] = spec.clientFamily;
         if (spec.body !== undefined) {
