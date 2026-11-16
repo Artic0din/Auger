@@ -830,7 +830,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         paneSnapshot = panes;
         host.show({ name: "settings", content: [panes], zones: [
             { id: "settings-categories", layout: "column", right: "settings-rows", items: categories },
-            { id: "settings-rows", layout: "column", left: "settings-categories", items: rows },
+            // A save in flight blocks every row's press, so only then do the rows stay reachable (Apple's view models ignore presses while saving).
+            { id: "settings-rows", layout: "column", left: "settings-categories", skipDisabled: !state.busy, items: rows },
         ], focus: { zone: "settings-categories", key: category }, back }, focus);
     }
     connection.start();
