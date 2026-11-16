@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
 - Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
 - The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.
@@ -74,7 +75,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.
+- Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
 - A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
+- After Mark Season Watched or Unwatched, More on the season page now offers the opposite action, and the episode rows keep their new state, even when a slower season read sent before the change answers last. Before, that older answer could put the season back to its old state on screen.
 - After Mark Series Watched, More on the series page now offers Mark Series Unwatched even when a slower series read sent before the change answers last, as on Apple TV. Before, that older answer could put the series back to unwatched on screen.
 - The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
 - Back from a season page to its series now always puts focus on the series' Play or Resume, as on Apple TV, however slowly the series page reloads. Before, focus could stay on the season card you came from when the season's episodes were still loading.
