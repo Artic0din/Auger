@@ -9,7 +9,10 @@ import { APP_LANGUAGE_INTRODUCED_IN, AppLanguagePreferences, appLanguageSettings
 import { settle } from "./support/clock.ts";
 import { FakeSettings } from "./support/fakeSettings.ts";
 import { problem } from "./support/fakeSilo.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
 import { connected, signIn } from "./support/harness.ts";
+
+registerSourceCatalogs();
 
 /**
  * The picker's order: silo-apple `AppLanguagePreferences.options` sorts `shipped` by `AppLanguage.endonym` with

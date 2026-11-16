@@ -4,10 +4,11 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import english from "../../src/i18n/catalog/en.json" with { type: "json" };
 import { localizeNumerals, percentText } from "../../src/i18n/format.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
-import { translate, translateTv, type MessageKey } from "../../src/i18n/translate.ts";
+import { registerCatalog, translate, translateTv, type MessageKey } from "../../src/i18n/translate.ts";
 import { usedKeys } from "../../scripts/sync-translations.ts";
 import { autoBudgetText, connectionAgeText, connectionRateText, connectionSpeedText, learnedLimitText, tryAgainMessage } from "../../src/ui/connectionSpeed.ts";
 import { pairedProfileDescription, pairedProfileLabel, profileSelectionCaption } from "../../src/ui/pairedProfile.ts";
@@ -17,7 +18,15 @@ const SOURCE = new URL("../../src/", import.meta.url).pathname;
 const sources = readdirSync(SOURCE, { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".ts")).map(name => readFileSync(join(SOURCE, name), "utf8"));
 const catalogKeys = new Set(Object.keys(english));
 const used = usedKeys(sources, catalogKeys);
-const file = (tag: string): Record<string, string> => JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
+/** A language's text as the packaged file hands it to the page (npm test builds dist/wgt first). */
+function file(tag: string): Record<string, string> {
+    const page: { siloCatalogs?: Record<string, Record<string, string>> } = {};
+    runInNewContext(readFileSync(new URL(`../../dist/wgt/catalog/${tag}.js`, import.meta.url), "utf8"), page);
+    const catalog = page.siloCatalogs === undefined ? undefined : (JSON.parse(JSON.stringify(page.siloCatalogs)) as Record<string, Record<string, string>>)[tag];
+    if (catalog === undefined) throw new Error(`${tag} is not packaged`);
+    return catalog;
+}
+for (const tag of SHIPPED_LANGUAGES.filter(language => language !== "en")) registerCatalog(tag, file(tag));
 const NOW = Date.UTC(2026, 10, 17, 3, 0, 0);
 
 function inLanguage<T>(tag: string | null, body: () => T): T {
