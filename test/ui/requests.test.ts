@@ -690,6 +690,28 @@ for (const order of SEARCH_READ_ORDERS) {
         } finally { await tv.page.context().close(); }
     });
 }
+test("Back from a Search request result does not pull focus back once the viewer moves to another filter", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = await start(tv);
+        await button(tv, "search").click();
+        const input = tv.page.getByRole("searchbox");
+        await input.fill("Heat"); await input.press("Enter");
+        await button(tv, "movie:949").click(); await view(tv, "media");
+        await button(tv, "create").click();
+        await tv.eventually(async () => fake.created && await button(tv, "create").count() === 0, "created");
+        const held = tv.fake.hold("/requests/search", true);
+        const heldBefore = tv.fake.heldReplies;
+        await tv.remote(10009);
+        await tv.eventually(async () => tv.fake.heldReplies === heldBefore + 1, "Back's request refresh is held");
+        await button(tv, "search-filter:movie").focus();
+        await tv.eventually(async () => await tv.focused() === "search-filter:movie", "the viewer's move reached the Movies filter");
+        held.release(); await tv.jump(1);
+        await tv.eventually(async () => await button(tv, "movie:949").count() > 0 || tv.fake.heldReplies === 0, "answers settled");
+        await tv.jump(500);
+        assert.equal(await tv.focused(), "search-filter:movie", "the earlier return target does not override the viewer's move");
+    } finally { await tv.page.context().close(); }
+});
 test("cancel lost response is read back without replay and writes refuse refresh replay", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
