@@ -6,6 +6,7 @@ import { problem } from "../native/support/fakeSilo.ts";
 import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 import { button, menuTitles, openHub, start } from "./support/watchParty.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -842,3 +843,26 @@ test("removing suggestions before the focused card keeps that card on screen", a
         assert.ok(box.left >= 0 && box.right <= 1920, `the focused card is on screen (${JSON.stringify(box)})`);
     } finally { await tv.page.context().close(); }
 });
+
+// WatchPartyButtonStyle on tvOS is TVPillButtonStyle(.compact, stabilizesFocusMotion) at silo-apple dce56e3c (WatchPartyComponents.swift:389): no focus scale, Select presses to 0.98, easeOut 0.12 s.
+// TVSeriesModeTabStyle (TVSeriesDetailView.swift:1291): the Season tab shares the Series detail's 0.98, snapped.
+for (const reduced of [false, true]) {
+    test(`Watch Party buttons press to 0.98 on held Select and animate it (reduced motion: ${reduced})`, async () => {
+        const { tv } = await inLobby();
+        try {
+            await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+            await assertPressedLook(tv, button(tv, "choose"), { focusScale: 1, heldScale: 0.98, heldOpacity: 1, animates: "scale" }, reduced);
+        } finally { await tv.page.context().close(); }
+    });
+    test(`the picker's season tab snaps to 0.98 on held Select (reduced motion: ${reduced})`, async () => {
+        const { tv } = await inLobby();
+        try {
+            await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+            await button(tv, "choose").click();
+            await view(tv, "watchParty:picker:shelves").waitFor();
+            await button(tv, "series:s2").click();
+            await view(tv, "watchParty:episodes").waitFor();
+            await assertPressedLook(tv, button(tv, "season:2"), { focusScale: 1, heldScale: 0.98, heldOpacity: 1 }, reduced);
+        } finally { await tv.page.context().close(); }
+    });
+}

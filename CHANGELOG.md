@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
 - Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
 - Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
@@ -37,6 +38,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
+- Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
@@ -47,6 +49,7 @@ All notable changes to this project are documented in this file.
 - Documented why Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay hidden on Samsung TVs, with the AVPlay limit for each.
 - Corrected the Watch Party page again: it now lists what is built, including the Details action, and what is still missing and waits on #13, and it no longer says Apple's Back leaves the party, that a vote is a socket frame, or that Return everyone to lobby is a primary button. The feature list no longer says the Samsung app has no Watch Party.
 - Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
+- Corrected the feature list: the Samsung app shows trailers, and the player has Chapters, Info and Stats tabs, an Aspect row, and a Speed row of 1× and 2× on direct-file plans. It no longer says the app has no audiobooks or player extras.
 - Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
 - Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
 - Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
