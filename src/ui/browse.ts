@@ -1554,6 +1554,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     row.start();
                 };
                 if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, async (signal) => {
                     // Slots follow response fields: backdrop_width also sizes a still returned in backdrop_url.
                     const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
@@ -1567,6 +1568,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
+                    // ItemDetailViewModel.loadDetail: "A Watched tap made while this request was in flight wins." The page keeps its
+                    // played and watch state (the resume point) and the season rollups it already refreshed; the rest of the answer applies.
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision) {
+                        const seasons = previous.series?.seasons ?? [];
+                        data = { ...data, detail: { ...data.detail, played: previous.detail.played, watch: previous.detail.watch }, seasons: seasons.length > 0 ? [...seasons] : data.seasons };
+                    }
                     if (previous !== undefined && ((quiet && detailWork === previous && previous.changes.size > 0) || cachedDetailOwners.has(previous))) {
                         const offline = cache.isOffline(operations.getCatalogItem(current.id));
                         const detail = offline ? previous.detail : data.detail;
