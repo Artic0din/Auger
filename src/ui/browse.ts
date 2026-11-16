@@ -2938,6 +2938,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const press = heldSelect();
         if (!relabelBar()) return;
         render(focus);
+        // The retained marquee reads in the old language until its card is previewed again, and draw() replays it only when the view changes.
+        const shown = top();
+        if (shown !== undefined) previews.get(shown)?.();
         // The press ended with the old button; the same control, drawn again, takes it so its release still runs it.
         // Focus that fell to another control leaves the press ended.
         const replacement = document.activeElement;
