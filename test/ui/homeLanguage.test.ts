@@ -8,7 +8,11 @@ import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+
+// The expected German text is read here, in the test process; the page loads the same file the way the app does.
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -235,8 +239,9 @@ test("a Select held on a top-bar button while the language arrives is cancelled,
 
 test("a language kept from the last answer shows on the first draw, before the server answers", async () => {
     await withHome(async tv => {
-        // The language read is still held: only the kept choice can have made this German.
+        // The language read is still held: only the kept choice can have made this German, once its file has landed.
         // The libraries wait on the same held reads, so the bar has only its fixed tabs.
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German from the kept choice");
         assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
         const titles = await sectionTitles(tv);
         assert.ok(titles.includes(de("home.section.continueWatching")) && titles.includes(de("home.section.recentlyAddedIn", { library: "Movies" })), titles.join(" | "));

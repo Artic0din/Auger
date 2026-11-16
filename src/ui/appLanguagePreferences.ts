@@ -96,6 +96,8 @@ export class AppLanguagePreferences {
         // This profile is the one shown, so the first read does not reset the language to the device's while it waits for the answer.
         this.profileId = profileId;
         this.show(kept === "" ? null : kept);
+        // Its text is a packaged file: the screens read English until it lands, then draw again.
+        void loadShownLanguage();
         return true;
     }
 
