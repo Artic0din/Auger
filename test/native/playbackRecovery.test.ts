@@ -657,6 +657,44 @@ for (const stage of ["foreground validation", "AVPlay restore"] as const) test(`
     r.controller.destroy();
 });
 
+test("a reconnect that replaces the transport of a pending restore plays without waiting for the obsolete restore", async () => {
+    const r = await rig();
+    await play(r);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 1, "restore is waiting on AVPlay");
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(1000);
+    await resumePlan(r);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(last(r.views).phase, "playing", "the replacement transport is not held behind the Restoring overlay");
+    r.avplay.tick(13000);
+    assert.equal(last(r.views).phase, "playing");
+    r.controller.destroy();
+});
+
+test("an obsolete restore answering does not lift the Restoring overlay of the newer restore", async () => {
+    const r = await rig();
+    await play(r);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 2);
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    r.avplay.tick(13000);
+    await r.h.clock.advance(0);
+    assert.deepEqual([last(r.views).phase, (last(r.views) as { detail?: string }).detail], ["loading", "restoring"], "the newer restore is still pending");
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
+    r.controller.destroy();
+});
+
 test("an obsolete restore cannot resume through a newer held authority check", async () => {
     const r = await rig();
     await play(r);
