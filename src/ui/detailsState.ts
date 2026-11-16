@@ -97,12 +97,23 @@ export class DetailsState {
         return [...this.episodeStates.values(), ...this.previousEpisodeStates.values()].find(state => state.audioPreference.pending || state.audioPreference.failed || state.subtitlePreference.pending || state.subtitlePreference.failed);
     }
     get episodePreferencesBlocked(): boolean { return this.unsettledEpisode !== undefined; }
-    get playbackTargetId(): string | undefined {
+    /** The episode the visit opened with, from a Calendar episode. */
+    entryEpisodeId: string | undefined;
+    private get suggestedEpisodeId(): string | undefined {
         const episodes = this.series?.episodes;
-        if (this.series?.selectionOwnsHero) return episodes?.[0]?.id;
-        return this.focusedEpisodeId ?? (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id ?? this.detail.playContentId;
+        return (episodes?.find(episode => episode.inProgress) ?? episodes?.find(episode => !episode.played) ?? episodes?.[0])?.id;
     }
-    get heroEpisodeId(): string | undefined { return this.series?.selectionOwnsHero ? this.series.episodes?.[0]?.id : this.focusedEpisodeId; }
+    /** TVSeriesDetailView.displayedEpisode: a visit's episode the loaded season does not list shows the suggested episode instead. */
+    private get entryUnlisted(): boolean {
+        const rail = this.series?.railEpisodes;
+        return this.focusedEpisodeId !== undefined && this.focusedEpisodeId === this.entryEpisodeId && rail !== undefined && !rail.some(episode => episode.id === this.focusedEpisodeId);
+    }
+    private get shownEpisodeId(): string | undefined { return this.entryUnlisted ? this.suggestedEpisodeId : this.focusedEpisodeId; }
+    get playbackTargetId(): string | undefined {
+        if (this.series?.selectionOwnsHero) return this.series.episodes?.[0]?.id;
+        return this.shownEpisodeId ?? this.suggestedEpisodeId ?? this.detail.playContentId;
+    }
+    get heroEpisodeId(): string | undefined { return this.series?.selectionOwnsHero ? this.series.episodes?.[0]?.id : this.shownEpisodeId; }
     nextEpisodeLoading = false;
     nextEpisodeFailed = false;
     extraPending: string | undefined;
@@ -583,10 +594,10 @@ export class DetailsState {
         if (this.series?.focusSelectedEpisode && this.series.selectionOwnsHero) {
             this.focusedEpisodeId = this.series.episodes?.[0]?.id;
         }
-        if (this.series?.railEpisodes !== undefined && this.focusedEpisodeId !== undefined && !this.series.railEpisodes.some(episode => episode.id === this.focusedEpisodeId)) this.focusedEpisodeId = undefined;
+        if (this.series?.railEpisodes !== undefined && this.focusedEpisodeId !== undefined && this.focusedEpisodeId !== this.entryEpisodeId && !this.series.railEpisodes.some(episode => episode.id === this.focusedEpisodeId)) this.focusedEpisodeId = undefined;
         const target = this.playbackTargetId;
         if (this.queuedFocusEpisode !== undefined && this.queuedFocusEpisode !== target) this.cancelEpisodeFocus();
-        if (target !== undefined && !this.series?.selectionOwnsHero && this.focusedEpisodeId === undefined) this.queueEpisode(target);
+        if (target !== undefined && !this.series?.selectionOwnsHero && (this.focusedEpisodeId === undefined || this.entryUnlisted)) this.queueEpisode(target);
         this.syncEpisode();
         this.changed();
         this.descriptions?.consider(translate);
