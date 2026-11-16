@@ -6,6 +6,7 @@ import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
+import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
@@ -690,6 +691,29 @@ test("Use Synced TV Settings removes only the older poster device override", asy
         await tv.page.getByRole("button", { name: "Use Profile Default", exact: true }).click();
         await tv.eventually(async () => !settings.device("p-owner", "client:tv").has("ui.card_presentation"), "TV-family override cleared");
     } finally { await tv.page.context().close(); }
+});
+
+test("a poster size overridden on this TV is disabled and drawn at full brightness, as on Apple TV", async () => {
+    const { tv, settings } = await setup();
+    settings.remainingRows = true;
+    const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+    assert.ok(deviceId);
+    settings.device("p-owner", deviceId).set("ui.card_presentation", { poster_size: "compact", caption: "title_metadata" });
+    try {
+        await openSettings(tv);
+        await assertDisabledRowsFullBrightness(tv, ["poster-size"]);
+    } finally { await tv.page.context().close(); }
+});
+
+test("rows disabled while a save is in flight are drawn at full brightness, as on Apple TV", async () => {
+    const { tv } = await setup();
+    const held = tv.fake.hold("/settings/values/ui.title_art", true);
+    try {
+        await openSettings(tv);
+        await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).click();
+        await tv.eventually(async () => tv.fake.requests.some(request => request.method === "PUT" && request.path.includes("ui.title_art")), "title art save waiting");
+        await assertDisabledRowsFullBrightness(tv, ["title-art", "title-art-all"]);
+    } finally { held.release(); await tv.page.context().close(); }
 });
 
 test("profile subtitle editors read and compare profile values while narrower overrides remain active", async () => {
@@ -1540,5 +1564,67 @@ test("Server settings open Acknowledgements with TMDB's logo and required notice
         await tv.page.getByRole("button", { name: "Acknowledgements", exact: true }).waitFor();
         assert.equal(await tv.focused(), "acknowledgements", "Back returns to the row that opened it");
         assert.equal(tv.fake.requests.length, count, "credits are local and read nothing");
+    } finally { await tv.page.context().close(); }
+});
+
+// Apple's TVSettingsView makes each pane a `.focusSection()`: "vertical movement stays in-pane and Left/Right bridges panes natively"
+// (silo-apple dce56e3c). Up from a pane's first row and Down from its last row do nothing; Left reaches the rail.
+test("Up from a pane's first row and Down from its last row stay in the pane, and Left still reaches the rail", async () => {
+    const { tv, settings } = await setup();
+    settings.remainingRows = true;
+    try {
+        await openSettings(tv);
+        for (const category of ["general", "playback", "subtitles", "server"]) {
+            await tv.page.locator(`[data-focus="${category}"]`).focus();
+            await tv.page.keyboard.press("ArrowRight");
+            const first = await tv.focused();
+            assert.notEqual(first, category, `${category}: Right enters the pane`);
+            await tv.page.keyboard.press("ArrowUp");
+            assert.equal(await tv.focused(), first, `${category}: Up at the first row stays put`);
+            let last = first;
+            for (let step = 0; step < 60; step += 1) {
+                await tv.page.keyboard.press("ArrowDown");
+                const now = await tv.focused();
+                if (now === last) break;
+                last = now;
+            }
+            await tv.page.keyboard.press("ArrowDown");
+            assert.equal(await tv.focused(), last, `${category}: Down at the last row stays put`);
+            await tv.page.keyboard.press("ArrowUp");
+            assert.notEqual(await tv.focused(), last, `${category}: Up still moves inside the pane`);
+            await tv.page.keyboard.press("ArrowLeft");
+            assert.equal(await tv.focused(), category, `${category}: Left reaches the rail`);
+        }
+    } finally { await tv.page.context().close(); }
+});
+
+test("Up from Paired Silo Profile, the first General row, stays on it", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="general"]').focus();
+        await tv.page.keyboard.press("ArrowRight");
+        assert.equal(await tv.focused(), "paired-profile");
+        await tv.page.keyboard.press("ArrowUp");
+        assert.equal(await tv.focused(), "paired-profile");
+    } finally { await tv.page.context().close(); }
+});
+
+test("the rail's own Up and Down are unchanged", async () => {
+    const { tv } = await setup();
+    try {
+        await openSettings(tv);
+        const keys = await tv.page.locator(".settings-categories [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        await tv.page.locator(`[data-focus="${keys[0]}"]`).focus();
+        for (const key of keys.slice(1)) {
+            await tv.page.keyboard.press("ArrowDown");
+            assert.equal(await tv.focused(), key, "Down walks the rail in order");
+        }
+        for (const key of keys.slice(0, -1).reverse()) {
+            await tv.page.keyboard.press("ArrowUp");
+            assert.equal(await tv.focused(), key, "Up walks the rail back");
+        }
+        await tv.page.keyboard.press("ArrowUp");
+        assert.equal(await tv.focused(), keys[0], "Up at the first rail item stays");
     } finally { await tv.page.context().close(); }
 });

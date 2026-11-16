@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
 - Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
 - The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.
@@ -35,6 +36,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
 - The player's Video, Info and Stats tabs now follow Apple TV's regrouped layout. Video has Picture (Quality, Aspect) beside Playback (Speed, Auto-play next); Subtitle delay is set in the Subtitles tab only. Info has Title beside Now playing, a row each for Video (such as 4K · HDR10), Audio, Subtitles, Playback (Direct play, Remuxed or Transcoded by the server) and Chapter. Stats lists each fact once in Playback, Stream and Engine sections, and scrolls as one pane like Info.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
@@ -74,9 +76,26 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.
+- Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
+- A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
+- After Mark Season Watched or Unwatched, More on the season page now offers the opposite action, and the episode rows keep their new state, even when a slower season read sent before the change answers last. Before, that older answer could put the season back to its old state on screen.
+- After Mark Series Watched, More on the series page now offers Mark Series Unwatched even when a slower series read sent before the change answers last, as on Apple TV. Before, that older answer could put the series back to unwatched on screen.
+- The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
+- Back from a season page to its series now always puts focus on the series' Play or Resume, as on Apple TV, however slowly the series page reloads. Before, focus could stay on the season card you came from when the season's episodes were still loading.
+- Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
+- A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
+- Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
+- A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
+- Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.
+- Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
+- Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
+- Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
+- Made the detailsHeroStates, detailsFocus and titleArt UI tests wait for the answers they depend on (Home painted before a card click, season 24 re-read before Left, the title-art setting answered before Details opens), so they pass when the test server answers up to 150 ms late.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
 - Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
+- Made the series Hero colours UI test move to a control with the Right key, as a viewer does, instead of a script focus call. The page keeps handing focus back to Play until the viewer presses a direction key, so the script call sometimes lost to a late repaint and the test timed out waiting for an unfocused Play button. The Start Over fallback test now presses Right before it moves focus by script, for the same reason.
 - Made the watchParty, topBar, requests and preplay UI tests wait for the reads, sockets and menu rows they depend on instead of acting while an answer is still on its way, so they pass when the test server answers up to 150 ms late.
 - Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
 - Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.

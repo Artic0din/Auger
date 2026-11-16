@@ -742,6 +742,79 @@ calendarTest("Calendar premiere, episode context fallback, badges and distinct e
     assert.equal(await tv.focused(), "episode:s1e21", "explicit season Select resets resolved Calendar entry to the first episode");
 });
 
+async function openEpisodeFromCalendar(tv: Tv, contentId: string): Promise<void> {
+    await activate(tv, "calendar"); await ready(tv, 3);
+    await tv.page.locator(`.calendar-event[data-content-id="${contentId}"]`).first().focus(); await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await tv.focused() === "next-episode", "episode context focuses Apple's primary action");
+}
+
+async function header(tv: Tv): Promise<{ readonly meta: string; readonly overview: string }> {
+    return await tv.page.evaluate(() => ({ meta: document.querySelector(".browse-meta")?.textContent ?? "", overview: document.querySelector(".browse-overview")?.textContent ?? "" }));
+}
+
+// TVSeriesDetailView: an episode in the visit's context turns the hero to episode mode, and the season's suggested episode stands in when the season does not list it.
+function replaceEpisodeEvent(catalog: FakeCalendar, withSeason: boolean): void {
+    const base = catalog.events.find(event => event.content_id === "episode:s1e22"); assert.ok(base);
+    const { season_number, ...bare } = base;
+    catalog.events = catalog.events.filter(event => event !== base);
+    catalog.events.push({ ...(withSeason ? base : bare), content_id: "episode:s1e99", episode_number: 9 });
+}
+
+calendarTest("a Calendar episode the season does not list opens Details with the suggested episode in the header", async (tv, catalog) => {
+    replaceEpisodeEvent(catalog, true);
+    await openEpisodeFromCalendar(tv, "episode:s1e99");
+    await tv.eventually(async () => /Season 2.*Episode 1/.test((await header(tv)).meta) && /^Harbor Lights chapter 2\.1/.test((await header(tv)).overview), "episode header");
+    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S2:E1");
+    assert.equal(await tv.focused(), "next-episode");
+});
+
+calendarTest("a Calendar episode with no season number the season does not list opens Details with the suggested episode in the header", async (tv, catalog) => {
+    replaceEpisodeEvent(catalog, false);
+    await openEpisodeFromCalendar(tv, "episode:s1e99");
+    await tv.eventually(async () => /Season 1.*Episode 1/.test((await header(tv)).meta) && /^Harbor Lights chapter 1\.1/.test((await header(tv)).overview), "episode header");
+    assert.equal(await tv.focused(), "next-episode");
+});
+
+calendarTest("a Calendar episode only a neighbouring season lists opens Details with the suggested episode in the header", async (tv, catalog) => {
+    catalog.events = catalog.events.map(event => event.content_id === "episode:s1e22" ? { ...event, season_number: 1 } : event);
+    await openEpisodeFromCalendar(tv, "episode:s1e22");
+    await tv.eventually(async () => /Season 1.*Episode 1/.test((await header(tv)).meta) && /^Harbor Lights chapter 1\.1/.test((await header(tv)).overview), "episode header");
+    // The neighbouring season is read in the background; the header must not fall back to the series once it lands.
+    await tv.eventually(async () => await tv.page.locator('.details-episodes [data-focus="episode:s1e22"]').count() === 1, "neighbouring season prefetched");
+    await tv.jump(2000);
+    assert.match((await header(tv)).meta, /Season 1.*Episode 1/);
+    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S1:E1");
+});
+
+class EmptySeasonOneCalendar extends FakeCalendar {
+    override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): ReturnType<FakeCalendar["route"]> {
+        const reply = super.route(method, path, profileId, body);
+        if (reply?.status === 200 && new URL(path, "https://fake.invalid").pathname === "/catalog/series/series%3As1/seasons/1/episodes") return { ...reply, body: { ...(reply.body as Record<string, unknown>), items: [] } };
+        return reply;
+    }
+}
+
+calendarTest("an empty selected season keeps Play on the Calendar episode a neighbouring season lists", async (tv, catalog) => {
+    catalog.events = catalog.events.map(event => event.content_id === "episode:s1e22" ? { ...event, season_number: 1 } : event);
+    await openEpisodeFromCalendar(tv, "episode:s1e22");
+    await tv.eventually(async () => await tv.page.locator('.details-episodes [data-focus="episode:s1e22"]').count() === 1, "neighbouring season prefetched");
+    await tv.jump(2000);
+    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S2:E2");
+}, undefined, new EmptySeasonOneCalendar());
+
+calendarTest("an empty selected season does not keep a Calendar episode nothing lists as the Play target", async (tv, catalog) => {
+    replaceEpisodeEvent(catalog, true);
+    catalog.events = catalog.events.map(event => event.content_id === "episode:s1e99" ? { ...event, season_number: 1 } : event);
+    await openEpisodeFromCalendar(tv, "episode:s1e99");
+    await tv.jump(2000);
+    assert.equal(await tv.page.locator('[data-focus="next-episode"]').textContent(), "Play S1:E1", "Play falls back to the series' own next episode");
+}, undefined, new EmptySeasonOneCalendar());
+
+calendarTest("a Calendar episode the season lists opens Details with its own header", async (tv) => {
+    await openEpisodeFromCalendar(tv, "episode:s1e22");
+    await tv.eventually(async () => /Season 2.*Episode 2/.test((await header(tv)).meta) && /^Harbor Lights chapter 2\.2/.test((await header(tv)).overview), "episode header");
+});
+
 calendarTest("Calendar-origin series refresh preserves a subsequently selected season and episode", async (tv, catalog) => {
     await activate(tv, "calendar"); await ready(tv, 3);
     await tv.page.locator('.calendar-event[data-content-id="season:s1:2"]').focus();
