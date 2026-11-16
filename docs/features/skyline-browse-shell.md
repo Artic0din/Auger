@@ -267,6 +267,8 @@ An open selector keeps the top bar lit and its anchor selected while the page be
 These dimensions follow `TVTopMenuBar` and `SiloTheme.Skyline` at Apple revision `1a7ccee`.
 With one visible library, Down enters its modes directly in a single-level panel.
 With multiple libraries, Down enters the scoped library list, Right enters its modes flyout, and Left returns to the library row.
+A list of more than six libraries shows six rows (`cascadeMaxVisibleRows`, 360 px) and scrolls under its fixed title, keeping the focused row in the middle (`TVCascadeSelector.swift` `libraryRows`, `scrollFocusedLibrary`).
+Home reads the library list once; nothing is read per library, and the bar has one root per type however many libraries exist.
 Back closes either panel without committing.
 Explicit activation commits one library, never a merged scope.
 Search precedes the centered roots and the profile avatar stays fixed at the right.
