@@ -249,6 +249,8 @@ export class SeriesEpisodes {
         this.warmNeighbors();
     }
 
+    episodeArtwork(): Promise<Readonly<Record<string, string>>> { return this.artwork(); }
+
     publishTranslatedEpisodes(season: number, episodes: readonly Episode[]): void {
         if (!this.active || this.seasonNumber !== season) return;
         this.cancelledSeasons.delete(season);

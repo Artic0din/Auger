@@ -374,7 +374,7 @@ Details uses the same hero and logo widths when the capability is known, so it r
 Hero backdrops, card artwork and title logos appear only after `HTMLImageElement.decode()` resolves, not on `load`, so the TV decodes them on its raster threads instead of on the frame that shows them (#515).
 An unknown image API or a server without per-slot widths gets the Apple TV `large` fallback, including on the first Home request; it never starts with a 300 px backdrop.
 At scale 1 the server resolves the 1344 px fill request to a 1920 px backdrop; scale 2 requests 2688 px and may resolve to the original, capped at 3840 px.
-Episode rails and season pages ask for `still_width` at Apple's 360 pt card width times the device pixel ratio (`ArtworkSurface.episodes`) and no `image_size`; without per-slot widths they keep `small`.
+Episode rails, season pages and the rail's description-translation refresh ask for `still_width` at Apple's 360 pt card width times the device pixel ratio (`ArtworkSurface.episodes`) and no `image_size`; without per-slot widths they keep `small`.
 An episode read made before the first capability probe has answered waits for it, as Apple does, so the rail's first request is already sized; it waits at most 2 s, then asks for `small`, as it does without per-slot widths. A failed probe is not waited for again, and Details itself does not wait.
 The one-size fallback resolves backdrops to 2560 px and episode stills to 1280 px.
 The probe runs once per Home session, and its last answer for the server is remembered so Home does not wait for it.
