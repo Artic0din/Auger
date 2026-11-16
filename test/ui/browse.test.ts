@@ -1445,7 +1445,13 @@ for (const lost of [false, true]) {
         if (lost) await tv.page.route("**/api/v2/requests", async route => {
             const request = route.request();
             // Lose the answer after the held write, so settlement really occurs after Back.
-            await tv.fake.fetch(request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+            // This route bypasses the harness, so count the request as pending or the held write would hide another reply from `settled`.
+            tv.pendingReplies++;
+            try {
+                await tv.fake.fetch(request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+            } finally {
+                tv.pendingReplies--;
+            }
             await route.abort("connectionreset");
         });
         await tv.page.locator('[data-focus="create"]').click();
