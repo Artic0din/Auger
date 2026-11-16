@@ -3,7 +3,8 @@
 // unreachable server. Time is Playwright's fake clock, moved together with the fake's clock.
 // Desktop Chromium is not the TV's Chromium 108: this proves behavior, not TV rendering.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { catalogScript } from "../../../scripts/catalog-files.ts";
 import { build } from "esbuild";
 import { type Browser, chromium, type Page } from "playwright";
 import { MARQUEE_REST_MILLISECONDS } from "../../../src/ui/homeEnrichment.ts";
@@ -196,6 +197,14 @@ export async function openTv(
         if (font !== undefined) {
             // The stylesheet's ../fonts/ URLs from /tv/app.css: the same files the WGT packages.
             await route.fulfill({ status: 200, contentType: font, body: readFileSync(new URL(`../../../app${url.pathname}`, import.meta.url)) });
+            return;
+        }
+        const language = /^\/tv\/catalog\/([A-Za-z-]+)\.js$/.exec(url.pathname)?.[1];
+        if (language !== undefined) {
+            // The packaged language files: the same script the build writes into the WGT's catalog/.
+            const file = new URL(`../../../src/i18n/catalog/${language}.json`, import.meta.url);
+            if (!existsSync(file)) { await route.fulfill({ status: 404 }); return; }
+            await route.fulfill({ status: 200, contentType: "application/javascript", body: catalogScript(language, JSON.parse(readFileSync(file, "utf8")) as Record<string, string>) });
             return;
         }
         if (url.pathname.startsWith("/tv/img/")) {

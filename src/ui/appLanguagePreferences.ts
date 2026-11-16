@@ -12,7 +12,8 @@ import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
 import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shippedByName } from "../i18n/language.ts";
-import { translate } from "../i18n/translate.ts";
+import { loadShownLanguage } from "../i18n/load.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
@@ -70,6 +71,7 @@ export class AppLanguagePreferences {
     private choice: AppLanguageChoice | undefined;
     /** The profile the answer belongs to; another profile's answer is never shown. */
     private profileId: string | undefined;
+    private readonly stopCatalog: () => void;
     private saving = false;
     private errorMessage: string | undefined;
     private published = "";
@@ -79,6 +81,8 @@ export class AppLanguagePreferences {
     constructor(session: NativeSession, show: (tag: string | null) => void = setAppLanguage, cache?: AppLanguageCache) {
         this.session = session;
         this.show = show;
+        // The shown language's file lands after the first draw: whoever listens draws again, now in its text.
+        this.stopCatalog = onCatalogLoaded(() => { for (const listener of this.listeners) listener(); });
         this.cache = cache;
     }
 
@@ -92,6 +96,8 @@ export class AppLanguagePreferences {
         // This profile is the one shown, so the first read does not reset the language to the device's while it waits for the answer.
         this.profileId = profileId;
         this.show(kept === "" ? null : kept);
+        // Its text is a packaged file: the screens read English until it lands, then draw again.
+        void loadShownLanguage();
         return true;
     }
 
@@ -135,6 +141,7 @@ export class AppLanguagePreferences {
     }
 
     stop(): void {
+        this.stopCatalog();
         this.controller.abort();
         this.listeners.clear();
     }
@@ -227,6 +234,7 @@ export class AppLanguagePreferences {
     private publish(): void {
         // No answer for this profile (another profile, an older server) shows the device's language.
         this.show(this.currentChoice?.tag ?? null);
+        void loadShownLanguage();
         const snapshot = JSON.stringify({ choice: this.currentChoice, saving: this.saving, error: this.errorMessage });
         if (snapshot === this.published) return;
         this.published = snapshot;

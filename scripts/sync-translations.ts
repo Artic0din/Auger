@@ -15,8 +15,8 @@
 // Usage: node scripts/sync-translations.ts <silo-translations-commit-or-tag> [--languages en,es,...]
 //   --languages   the language files to vendor (default: every shipped language). Each must be in locales.json.
 //
-// Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts) and CATALOGS
-// (src/i18n/translate.ts), then run npm test: a test holds the shipped list to the files.
+// Afterwards add each new language to SHIPPED_LANGUAGES (src/i18n/language.ts), then run npm test: the build
+// packages its file as catalog/<tag>.js, and a test holds the shipped list to the files.
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

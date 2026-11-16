@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import type { Browser, Request } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const OPAQUE = "1QcSHQRnh493V4dIh4eXh1h4kJUI";
@@ -38,6 +38,9 @@ async function person(tv: Tv, body: Record<string, unknown>): Promise<void> {
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('.browse[data-view="person:7"] .person-portrait').waitFor();
     await tv.eventually(async () => await tv.page.getByText("Loading metadata", { exact: true }).count() === 0, "person metadata ready");
+    // A late answer repaints the page and replaces the portrait; read it only once the answers have landed and painted.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "person answers delivered");
+    await afterPaint(tv);
 }
 
 async function shot(tv: Tv, name: string): Promise<void> {
@@ -228,6 +231,8 @@ test("a photo that fails keeps the thumbhash and does not replace it with initia
         assert.equal(await portrait.locator("canvas").count(), 1);
         assert.equal(await portrait.locator("img").count(), 0);
         assert.equal(await portrait.locator(".person-portrait-initials").count(), 0);
+        // A late answer can repaint the portrait; the mark follows the error state by a frame, so wait for it.
+        await portrait.locator(".person-portrait-missing").waitFor();
         assert.equal(await portrait.locator(".person-portrait-missing").count(), 1);
         await shot(tv, "photo-error");
         assert.deepEqual(tv.console, []);
@@ -246,6 +251,8 @@ test("a photo without a thumbhash uses the surface until it loads or fails", asy
         held.release(404);
         await tv.eventually(async () => await portrait.getAttribute("data-person-portrait") === "error", "missing preview error");
         assert.equal(await portrait.locator(".person-portrait-initials").count(), 0);
+        // A late answer can repaint the portrait; the mark follows the error state by a frame, so wait for it.
+        await portrait.locator(".person-portrait-missing").waitFor();
         assert.equal(await portrait.locator(".person-portrait-missing").count(), 1);
         await shot(tv, "no-hash-error");
         assert.deepEqual(tv.console, []);

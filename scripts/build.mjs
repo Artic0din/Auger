@@ -4,6 +4,7 @@ import { build } from "esbuild";
 import { cpSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeCatalogFiles } from "./catalog-files.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const stageDir = join(root, "dist", "wgt");
@@ -27,3 +28,6 @@ await build({
     define: { APP_VERSION: JSON.stringify(version) },
     logLevel: "info"
 });
+
+// English is in main.js; every other language is its own file, loaded when it is the language shown.
+writeCatalogFiles(join(stageDir, "catalog"));
