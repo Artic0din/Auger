@@ -641,8 +641,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const quotaText = tracks.ai?.available.transcribe !== true ? "" : quota === undefined ? "Transcription quota unavailable." : quota.limited ? `Transcription quota: ${Math.max(0, quota.remaining)} remaining (${quota.period}).${quota.remaining <= 0 ? " Quota exhausted." : ""}` : "Transcription quota: unlimited.";
             menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, quotaText, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
             const choices = buttons(column);
+            // SubtitlesPane hands a vanished Sync or Reset row's focus to a neighbour: the other timing row, then Delay.
+            const timingNeighbour = keep === "subtitle-sync" || keep === "subtitle-reset-timing" ? ["subtitle-sync", "subtitle-reset-timing", "subtitle-delay"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) : undefined;
             const same = (returnFocus === undefined ? undefined : choices.find(button => button.getAttribute("data-focus") === returnFocus))
-                ?? (keep === null ? undefined : choices.find(button => button.getAttribute("data-focus") === keep));
+                ?? (keep === null ? undefined : choices.find(button => button.getAttribute("data-focus") === keep))
+                ?? timingNeighbour;
             if (heldTab !== undefined && lists[tabs.indexOf(heldTab)]?.style.display !== "none") {
                 heldTab.focus();
             } else if (same !== undefined) {
@@ -1351,6 +1354,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, "delay") : undefined;
                 if (next !== undefined && id === "subtitle-video-delay") videoPicker = { ...next, origin: { pane: "video", focusId: id } };
                 else if (next !== undefined) subtitlePane = { ...next, origin: { pane: "tracks", focusId: id } };
+            } else if (id === "subtitle-sync" || id === "subtitle-reset-timing") {
+                const timing = view.phase === "playing" || view.phase === "paused" ? view.tracks.syncTiming : undefined;
+                // A press while a request or job runs does nothing: the row stays enabled so focus never lands on an inert one.
+                if (timing !== undefined && !timing.busy && !timing.inProgress) {
+                    if (id === "subtitle-sync") controls.syncSubtitle(timing.key);
+                    else controls.resetSubtitleTiming(timing.key);
+                }
             } else if (id === "subtitle-appearance") {
                 subtitlePane = { kind: "appearance" };
             } else if (id === "subtitle-appearance-back") {

@@ -48,6 +48,7 @@ import { NEXT_UP_KEY } from "../contracts/v2/settings.ts";
 import { BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { nextShuffle, nextShufflePart } from "./nextShuffle.ts";
 import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
+import { SubtitleSync, type SyncTimingView } from "./subtitleSync.ts";
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
@@ -199,6 +200,8 @@ export interface TrackView {
     readonly reporting?: boolean;
     readonly notices: readonly string[];
     readonly subtitleTools?: { readonly search: SubtitleSearchView; readonly display?: SubtitleDisplayView; readonly overlay: boolean };
+    /** The selected subtitle's Sync to Audio and Reset Timing state, when the server can retime it. */
+    readonly syncTiming?: SyncTimingView | undefined;
 }
 
 export type SubtitleToolAction =
@@ -285,6 +288,10 @@ export interface PlayerControls {
     startSubtitleAI(kind: "translate" | "transcribe", language?: string): void;
     selectAIResult(id: string): void;
     subtitleTool(action: SubtitleToolAction): void;
+    /** Sync to Audio for the subtitle with this sync key. */
+    syncSubtitle(key: string): void;
+    /** Reset Timing for the subtitle with this sync key. */
+    resetSubtitleTiming(key: string): void;
     seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined>;
     /** Select on the buffering pill: Lower quality on the prompt, Restore quality on the undo. */
     selectBufferingPrimary(): void;
@@ -385,6 +392,7 @@ interface Attempt {
     pendingSkipUndo: number | undefined;
     ai: SubtitleAI | undefined;
     search: SubtitleSearch | undefined;
+    sync: SubtitleSync | undefined;
     display: SubtitleDisplay | undefined;
     readonly aiBlockedFiles: Set<string>;
     pendingAIResult: string | undefined;
@@ -571,7 +579,7 @@ export class PlaybackController implements PlayerControls {
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
-            ai: undefined, search: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
+            ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
             appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
@@ -1051,6 +1059,14 @@ export class PlaybackController implements PlayerControls {
         if (kind === "transcribe" && sourceIndex === undefined) { attempt.ai?.notice("Could not identify the audio track to transcribe. Playback continues."); return; }
         if (sourceIndex === undefined || sourceIndex < 0 || (kind === "translate" && !textSubtitle(subtitle?.codec))) return;
         void attempt.ai?.start({ media_file_id: plan.effectiveMediaFileId, kind, source_index: sourceIndex, source_language: kind === "translate" ? subtitle?.language ?? "" : "", target_language: language, start_position: attempt.sourceSeconds });
+    }
+
+    syncSubtitle(key: string): void {
+        void this.active()?.sync?.request(key);
+    }
+
+    resetSubtitleTiming(key: string): void {
+        void this.active()?.sync?.reset(key);
     }
 
     selectAIResult(id: string): void {
@@ -1965,6 +1981,7 @@ export class PlaybackController implements PlayerControls {
             attempt.search = new SubtitleSearch(this.deps.session, plan.effectiveMediaFileId, id => this.attachDownloaded(attempt, id), () => this.showPlayback(attempt));
             void attempt.search.refresh();
         }
+        this.adoptSync(attempt, plan);
         if (attempt.display === undefined && attempt.profileId !== undefined) {
             const profileId = attempt.profileId;
             attempt.display = new SubtitleDisplay(this.deps.session, profileId, (appearance, sync) => {
@@ -2003,7 +2020,28 @@ export class PlaybackController implements PlayerControls {
         void this.open(attempt, plan);
     }
 
-    private readCaptions(attempt: Attempt, plan: PlaybackPlan): void {
+    /** Sync waits for a plan whose inventory names a syncable subtitle. A replan that adds one (a download, an AI result) lists them again. */
+    private adoptSync(attempt: Attempt, plan: PlaybackPlan): void {
+        const keys = plan.subtitle.inventory.flatMap(track => track.syncKey === undefined || track.syncKey === "" ? [] : [track.syncKey]);
+        if (attempt.sync !== undefined && attempt.sync.fileId !== plan.effectiveMediaFileId) {
+            attempt.sync.destroy();
+            attempt.sync = undefined;
+        }
+        if (keys.length === 0) return;
+        if (attempt.sync === undefined) attempt.sync = new SubtitleSync(this.deps.session, this.deps.clock, plan.effectiveMediaFileId, () => this.showPlayback(attempt), key => this.refetchCaptions(attempt, key));
+        else if (keys.some(key => !attempt.sync?.knows(key))) attempt.sync.reload();
+    }
+
+    /** The server retimed a subtitle: the track's URL serves the new timing, but the cues already read are the old ones. */
+    private refetchCaptions(attempt: Attempt, key: string): void {
+        const plan = attempt.plan;
+        if (plan === undefined || attempt.captionKey === undefined || plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey !== key) return;
+        attempt.captionKey = undefined;
+        this.readCaptions(attempt, plan, true);
+        this.showPlayback(attempt);
+    }
+
+    private readCaptions(attempt: Attempt, plan: PlaybackPlan, fresh = false): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
         const key = artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
         if (key !== undefined && key === attempt.captionKey) return;
@@ -2025,7 +2063,7 @@ export class PlaybackController implements PlayerControls {
                 const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
                 if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
                 if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                const text = await this.deps.session.http.subtitleText(url.href, abort.signal);
+                const text = await this.deps.session.http.subtitleText(url.href, abort.signal, fresh);
                 if (!current()) return;
                 attempt.cues = decodeCues(text, artifact.format, artifact.origin);
                 attempt.captionNotice = "";
@@ -2656,6 +2694,7 @@ export class PlaybackController implements PlayerControls {
     private leave(attempt: Attempt, how: "stop" | "abandon"): void {
         attempt.ai?.destroy();
         attempt.search?.destroy();
+        attempt.sync?.destroy();
         attempt.display?.destroy();
         attempt.captionAbort?.abort();
         if (!attempt.live) {
@@ -3716,6 +3755,8 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         if (attempt.captionNotice) notices.push(attempt.captionNotice);
         if (attempt.captionPreferenceNotice) notices.push(attempt.captionPreferenceNotice);
     }
+    const sync = attempt.sync?.view;
+    const shownKey = plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan))?.syncKey;
     return {
         ai: aiView(attempt, plan),
         aiTranslate: textSubtitle(plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan))?.codec),
@@ -3731,13 +3772,17 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         // SubtitleDisplayOrder: display position only; every row keeps the id it selects.
         subtitles: orderedInventory(plan.subtitle.inventory, attempt.orderingLanguage).map((entry) => {
             const generated = attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label;
-            return subtitleChoice(entry, generated);
+            const choice = subtitleChoice(entry, generated);
+            // HUDTrackRow's attributes, then the track's sync status ("Syncing… 40%", "Synced −3.0 s"); an unsupported format says so instead.
+            const status = entry.unplayable === true || entry.syncKey === undefined ? undefined : sync?.status[entry.syncKey];
+            return status === undefined ? choice : { ...choice, detail: choice.detail === undefined || choice.detail === "" ? status : `${choice.detail} · ${status}` };
         }),
         selectedSubtitleId: shownSubtitle(attempt, plan),
         subtitleMode: shownSubtitle(attempt, plan) === undefined ? "off" : plan.subtitle.mode === "off" ? "render" : plan.subtitle.mode,
         change: attempt.change,
         reporting: attempt.reporting,
         notices,
+        ...(shownKey === undefined || sync?.timing[shownKey] === undefined ? {} : { syncTiming: sync.timing[shownKey] }),
         ...(attempt.search === undefined ? {} : { subtitleTools: { search: attempt.search.view, ...(attempt.display?.view === undefined ? {} : { display: attempt.display.view }), overlay: subtitleOverlay(attempt, plan) } }),
     };
 }

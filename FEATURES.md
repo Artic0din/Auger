@@ -168,6 +168,7 @@ File pointers are repository-relative.
 | Embedded subtitle burn-in | ✅ | ✅ | ✅ | Server burns in when transcoding is allowed. Android: server plans render, convert or burn-in. Apple: server burn-in (`needsBurnIn`) |
 | ASS styling, bitmap subtitles | ➖ | ✅ | ✅ | Apple: ASS renderer ([`docs/tvos-player/ass-subtitles.md`](https://github.com/Silo-Server/silo-apple/blob/main/docs/tvos-player/ass-subtitles.md)). Android: libass in the TV player (`AndroidTvModule`) and PGS bitmap cues (`PgsSupExtractor`) |
 | Profile subtitle appearance and sync offset applied | ✅ | ✅ | ✅ | Appearance has a profile/device editor in Settings; sync offset remains in the player |
+| Subtitle Sync to Audio and Reset Timing | ✅ | ✅ | ? | #522. Per track, gated on `getSubtitleSyncStatus`. Progress follows by polling every 3 s for 5 min; Apple also follows realtime updates and shows a sync card over the video, which are not built. Not run against a live server. Apple: `SubtitleSyncModel`, `SubtitlesPane`. Android not checked |
 | Series subtitle choice (keep or Off) | ✅ | ✅ | ✅ | Apple: `TrackSelectionPersistence` saves per-series picks, including Off. Android: `SeriesTrackChoiceWriter` saves manual picks automatically; Tizen saves from a menu action |
 | Subtitle labels by language | 🟡 | ✅ | ✅ | #77. Android: `subtitleChoiceLabel`. Apple: `TrackLabels`, used by `TVPlaybackSelectorRow` |
 | AI subtitle translate / transcribe (quota-aware) | ✅ | ✅ | ✅ | Retry and duplicate-job fixes open (#83). Android: `TvAiTranslateDialog` |

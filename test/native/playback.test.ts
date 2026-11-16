@@ -3146,3 +3146,74 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
     }
     r.controller.destroy();
 });
+
+const SYNC_KEY = "external-f903db1c5624c46c4a2c20f2fd8cd247fc0d46e6471c91d4ddb651ae4e039448";
+const syncState = (extra: Record<string, unknown> = {}) => ({ key: SYNC_KEY, media_file_id: "42", source: "external", language: "eng", format: "srt", label: "Movie.srt", timing: { offset_ms: 0, scale: 1 }, ...extra });
+const syncJob = (status: string, extra: Record<string, unknown> = {}) => ({ id: "job-1", status, trigger: "manual", confidence: null, created_at: "2026-11-17T01:00:00.000Z", finished_at: null, ...extra });
+function scriptSync(r: Rig, listed: Record<string, unknown>): void {
+    r.h.fake.script("/subtitles/sync/status", { status: 200, body: { revision: "r", state: "available", allowed: true, auto_sync: true, external: true } });
+    r.h.fake.script("/subtitles/42/sync", { status: 200, body: { subtitles: [listed] } });
+}
+const syncArtifact = (r: Rig) => ({ url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 });
+
+test("a syncable subtitle shows its sync status after its attributes and its timing rows when selected", async () => {
+    const r = await rig();
+    scriptSync(r, syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }));
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nHello" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    const syncable = view.tracks.subtitles.find(track => track.id === "file:42:subtitle:0");
+    assert.match(syncable?.detail ?? "", /^.* · Synced −3\.0 s$/);
+    assert.doesNotMatch(view.tracks.subtitles.find(track => track.id === "file:42:subtitle:1")?.detail ?? "", /Sync/, "a track the server cannot retime has no status");
+    assert.equal(view.tracks.syncTiming?.key, SYNC_KEY);
+    assert.equal(view.tracks.syncTiming?.canReset, true);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/sync/status").length, 1);
+    r.controller.selectSubtitle(undefined);
+    r.controller.destroy();
+});
+
+test("a plan whose inventory names no sync key never asks the server about sync", async () => {
+    const r = await rig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }) => track) });
+    await playMovie(r);
+    assert.equal(r.h.fake.requests.some(request => request.path.startsWith("/subtitles/sync") || /^\/subtitles\/\d+\/sync/.test(request.path)), false);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.syncTiming, undefined);
+    r.controller.destroy();
+});
+
+test("Sync to Audio reads the new timing and fetches the shown track's cues again", async () => {
+    const r = await rig();
+    scriptSync(r, syncState());
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+        { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Old timing");
+    r.controller.syncSubtitle(SYNC_KEY);
+    await r.h.clock.advance(0);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.syncTiming?.inProgress, true);
+    await r.h.clock.advance(3000);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").length, 2, "the cues are read again once the timing changed");
+    r.avplay.tick(10000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "New timing");
+    assert.equal(view.tracks.syncTiming?.inProgress, false);
+    r.controller.destroy();
+});

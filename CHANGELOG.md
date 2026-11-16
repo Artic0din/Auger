@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The player's Subtitles tab now has Sync to Audio and Reset Timing under Timing, as on Apple TV, when the server offers subtitle sync: a running sync shows its progress and phase and the row reads Syncing…, a note under the rows says what Sync to Audio does or how the last one went, and each track shows its sync status (Syncing… 40%, Synced −3.0 s) after its details. The subtitle on screen reloads its lines when the timing changes.
 - Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
 - The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.

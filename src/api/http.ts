@@ -39,6 +39,10 @@ export interface RequestSpec<T> {
     readonly retry: RetryPolicy;
     readonly decode: (body: unknown) => T;
     readonly body?: JsonBody;
+    /** Extra request headers, e.g. If-Match. */
+    readonly headers?: { readonly [name: string]: string };
+    /** Receives a success response's ETag header (undefined when absent), for a write guarded by it. */
+    readonly onEtag?: (etag: string | undefined) => void;
     readonly bearer?: string;
     readonly profile?: ProfileHeaders | undefined;
     readonly signal?: AbortSignal | undefined;
@@ -63,7 +67,8 @@ const SUBTITLE_IDLE_TIMEOUT_MS = 60000;
 const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
 
 export class NativeHttp {
-    async subtitleText(url: string, signal: AbortSignal): Promise<string> {
+    /** `fresh` skips the HTTP cache: the same URL serves new cues after the server retimed the subtitle. */
+    async subtitleText(url: string, signal: AbortSignal, fresh = false): Promise<string> {
         const address = new URL(url);
         if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid subtitle URL");
         const abort = new AbortController();
@@ -76,7 +81,7 @@ export class NativeHttp {
             timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
         };
         try {
-            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error" });
+            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", ...(fresh ? { cache: "no-store" as const } : {}) });
             if (!response.ok || Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle download failed");
             if (response.body === null) return "";
             const reader = response.body.getReader();
@@ -240,7 +245,9 @@ export class NativeHttp {
             }
             // A complete answer is returned even if the caller aborted meanwhile: callers check
             // whether it is still current, and an orphaned approval must be seen to be revoked.
-            return decodeResponse(response, text, spec.decode);
+            const decoded = decodeResponse(response, text, spec.decode);
+            if (response.ok) spec.onEtag?.(response.headers.get("ETag") ?? undefined);
+            return decoded;
         } finally {
             cancelTimeout();
             callerSignal?.removeEventListener("abort", onCallerAbort);
@@ -262,6 +269,7 @@ export class NativeHttp {
             headers.Authorization = `Bearer ${spec.bearer}`;
         }
         if (spec.roomToken !== undefined) headers["X-Room-Token"] = spec.roomToken;
+        Object.assign(headers, spec.headers);
         if (spec.profile !== undefined) {
             headers["X-Profile-Id"] = spec.profile.id;
             if (spec.profile.token !== undefined) {
