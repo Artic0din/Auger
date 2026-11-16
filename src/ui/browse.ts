@@ -437,10 +437,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     void languagePrefs.refresh();
     // The profile's language arrives after Home first draws, and Settings changes it; the bar and the page read it again.
     let paintedLanguage = shownLanguage();
-    const languageChanged = (): boolean => {
-        const changed = shownLanguage() !== paintedLanguage;
+    /** Rebuilds the bar in the shown language when it changed since the bar was drawn; true when it did. */
+    const relabelBar = (): boolean => {
+        if (shownLanguage() === paintedLanguage) return false;
         paintedLanguage = shownLanguage();
-        return changed;
+        shell.relabel();
+        return true;
     };
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
@@ -2232,6 +2234,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             root.appendChild(container);
             container.hidden = false;
             host.listen();
+            relabelBar();
             const current = top();
             if (current !== undefined) showRoute(current, focus ?? tabFocus(current));
         });
@@ -2861,7 +2864,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
-                if (languageChanged()) shell.relabel();
+                relabelBar();
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2928,9 +2931,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
     languagePrefs.subscribe(() => {
-        if (torn || playing || settingsScreen !== undefined || !languageChanged()) return;
-        shell.relabel();
-        render(host.focused());
+        if (torn || playing || settingsScreen !== undefined) return;
+        // The rebuilt bar replaces the focused button, so the target is read before it.
+        const focus = host.focused();
+        if (relabelBar()) render(focus);
     });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
@@ -2981,6 +2985,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             invalidateCalendar();
             host.listen();
+            relabelBar();
             const current = top();
             if (current !== undefined) {
                 showRoute(current, current.focus);

@@ -30,7 +30,7 @@ class KeyedHome extends FakeHome {
     }
 }
 
-async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome) => Promise<void>, options: { readonly stored?: string; readonly empty?: boolean } = {}): Promise<void> {
+async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void) => Promise<void>, options: { readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new KeyedHome();
     if (options.empty === true) {
@@ -39,6 +39,7 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         home.sections = [];
     }
     tv.fake.catalog = catalog;
+    let held: { release(): void }[] = [];
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
     if (options.stored !== undefined) settings.profile().set(APP_LANGUAGE_KEY, options.stored);
@@ -50,9 +51,12 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         await tv.jump(5000);
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        // The profile's language answers late: Home draws in English first.
+        // A hold answers one read, and Browse makes several effective reads at launch; hold the first few.
+        if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
-        await body(tv, settings, catalog);
+        await body(tv, settings, catalog, () => held.forEach(hold => hold.release()));
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 }
@@ -175,4 +179,34 @@ test("picking German in Settings relabels the top bar and Home when Settings clo
         assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
         await tv.eventually(async () => (await sectionTitles(tv)).includes(de("home.section.continueWatching")), "German row titles after Settings");
     });
+});
+
+test("a language that arrives while a top-bar button has focus keeps focus on that button", async () => {
+    await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
+        assert.ok((await rootTitles(tv)).includes("Calendar"), "English until the language answers");
+        await tv.page.locator('[data-focus="calendar"]').focus();
+        assert.equal(await tv.focused(), "calendar");
+        releaseLanguage();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar");
+        assert.equal(await tv.focused(), "calendar", "the viewer's button keeps focus when the bar is rebuilt");
+    }, { stored: "de", holdLanguage: true });
+});
+
+test("a language that arrives during playback shows on the top bar when browse resumes", async () => {
+    await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
+        await tv.page.locator('[data-section="recent/12"] .browse-card:not(.skyline-explore)').first().click();
+        await tv.page.locator('[data-focus="play"][aria-disabled="false"]').click();
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.plays.length === 1), "playback entered");
+        releaseLanguage();
+        await tv.jump(500);
+        await tv.page.evaluate(() => window.browseHarness.resume());
+        // Resuming lands on the title's page; the bar is on Home.
+        await tv.page.locator('[data-focus="play"]').waitFor();
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor({ state: "visible" });
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar after playback");
+        const titles = await rootTitles(tv);
+        for (const key of ["topBar.home", "topBar.forYou", "topBar.calendar"] as const) assert.ok(titles.includes(de(key)), `${de(key)} in ${titles.join(" | ")}`);
+        assert.ok(!titles.includes("Calendar") && !titles.includes("For You"), "no English left on the bar");
+    }, { stored: "de", holdLanguage: true });
 });
