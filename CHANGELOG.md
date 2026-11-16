@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
 - Sent the language the app shows in `Accept-Language` on every Silo request, as Apple TV does, and added the English string catalog and the lookup that screens will use to show text in that language. Nothing on screen changes yet: English is the only language this build ships.
 - Settings now shows in the language you pick under App Language, in Apple TV's 22 languages. The picker lists them in Apple TV's order and by their own names, and Match Device follows the TV. Other screens stay English until they move over (#571).
 - Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
@@ -38,6 +39,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
@@ -95,6 +97,7 @@ All notable changes to this project are documented in this file.
 - Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
 - Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
 - Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
+- Made two more detailsHeroStates tests (the Cast move and the hero return) and the navigationMotion library dropdown test wait for the Details or Home answers they depend on, and the Cast-move test step the paused page clock until Related paints, so they pass when the test server answers up to 150 ms late and the machine is busy.
 - Made the detailsHeroStates, detailsFocus and titleArt UI tests wait for the answers they depend on (Home painted before a card click, season 24 re-read before Left, the title-art setting answered before Details opens), so they pass when the test server answers up to 150 ms late.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
