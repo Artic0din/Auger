@@ -1,7 +1,9 @@
 // The profile's app language (`ui.app_language`), following silo-apple Networking/AppLanguagePreferences.swift
 // and tvOS/Screens/Settings/TVGeneralSettingsView.swift. Null means Match Device. The choice is stored on the
 // server for the profile; picking one also clears this TV's own value so the choice takes effect here.
-// Nothing is cached: the row shows only an answer read from the server for the active profile.
+// The row shows only an answer read from the server for the active profile. Each answer is also kept in public storage,
+// per server and profile, and applied before the first screen draws on the next launch (Apple keeps the shown tag in
+// `AppLanguage.displayedTag` for the same reason), so a screen is drawn once in the language it will keep.
 // The stored choice sets the language the app shows (src/i18n/language.ts), which every request names in
 // Accept-Language and the text of the screens that have moved onto the catalog. Tizen has no per-app system
 // language (Apple also writes `AppleLanguages`) (see docs/settings.md).
@@ -11,11 +13,23 @@ import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
 import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shippedByName } from "../i18n/language.ts";
 import { translate } from "../i18n/translate.ts";
+import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
 
 /** Settings manifest revision that introduced the key (SettingKeyRevisions.swift). */
 export const APP_LANGUAGE_INTRODUCED_IN = 28;
+
+/** Where the last answer is kept: `scope` names the server (its id, never its address). */
+export interface AppLanguageCache {
+    readonly storage: PublicStorage;
+    readonly scope: string;
+}
+
+/** What is kept is one language tag (empty for Match Device) under this key: no address, token or account. */
+export function appLanguageCacheKey(scope: string, profileId: string): string {
+    return `silo.appLanguage.choice:${JSON.stringify([scope, profileId])}`;
+}
 
 export interface AppLanguageChoice {
     /** Null: Match Device. */
@@ -50,6 +64,7 @@ function writeFailure(error: unknown): string {
 export class AppLanguagePreferences {
     private readonly session: NativeSession;
     private readonly show: (tag: string | null) => void;
+    private readonly cache: AppLanguageCache | undefined;
     private readonly listeners = new Set<() => void>();
     private readonly controller = new AbortController();
     private choice: AppLanguageChoice | undefined;
@@ -61,9 +76,33 @@ export class AppLanguagePreferences {
     private refreshSequence = 0;
 
     /** `show` applies the language the app shows; null is Match Device. */
-    constructor(session: NativeSession, show: (tag: string | null) => void = setAppLanguage) {
+    constructor(session: NativeSession, show: (tag: string | null) => void = setAppLanguage, cache?: AppLanguageCache) {
         this.session = session;
         this.show = show;
+        this.cache = cache;
+    }
+
+    /** Shows the language kept from the last answer for this profile, before any request; false when none is kept. */
+    applyCached(): boolean {
+        const profileId = this.session.activeProfile?.id;
+        if (this.cache === undefined || profileId === undefined) return false;
+        let kept: string | null = null;
+        try { kept = this.cache.storage.getItem(appLanguageCacheKey(this.cache.scope, profileId)); } catch { /* Storage refused: the answer arrives as before. */ }
+        if (kept === null) return false;
+        // This profile is the one shown, so the first read does not reset the language to the device's while it waits for the answer.
+        this.profileId = profileId;
+        this.show(kept === "" ? null : kept);
+        return true;
+    }
+
+    private keep(choice: AppLanguageChoice | undefined): void {
+        const profileId = this.profileId;
+        if (this.cache === undefined || profileId === undefined) return;
+        const key = appLanguageCacheKey(this.cache.scope, profileId);
+        try {
+            if (choice === undefined) this.cache.storage.removeItem(key);
+            else this.cache.storage.setItem(key, choice.tag ?? "");
+        } catch { /* The answer still shows; only the next launch loses it. */ }
     }
 
     /** The stored choice for the active profile; undefined hides the row. */
@@ -177,6 +216,7 @@ export class AppLanguagePreferences {
 
     private adopt(choice: AppLanguageChoice | undefined): void {
         this.choice = choice;
+        this.keep(choice);
         this.publish();
     }
 
