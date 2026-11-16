@@ -228,6 +228,30 @@ detailTest("More than seven tracks scroll inside Apple's 504pt cap, opened with 
     assert.equal(heights.panel, 14 + heights.header + 504 + 14, "the header stays fixed; only the list scrolls");
 });
 
+// #542: Apple's tvOS list keeps the focused row in the middle of the 504pt window once it moves (Aladdin, 31 tracks,
+// silo-apple 9b8b3528); the TV used to reveal it at the bottom edge.
+detailTest("Moving focus down a long subtitle list keeps the focused row centred in the window", async (tv, details) => {
+    const subtitles = Array.from({ length: 31 }, (_value, index) => ({ index: index + 2, language: ["en", "ja", "fr", "de", "es", "it", "ko", "pt", "ru", "sv", "pl", "nl"][index % 12], codec: "subrip" }));
+    await movieTracks(tv, details, { subtitles });
+    await openMovie(tv);
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await settled(tv);
+    // Reads the focused row against the window's middle; waits for the scroll animation to land.
+    const offset = (accept: (value: { centre: number; top: number; max: number }) => boolean, what: string) => readLive(tv, () => {
+        const list = document.querySelector<HTMLElement>(".details-popover-scroll")!;
+        const box = list.getBoundingClientRect(), r = document.activeElement!.getBoundingClientRect();
+        return { centre: Math.round((r.top + r.height / 2) - (box.top + box.height / 2)), top: list.scrollTop, max: list.scrollHeight - list.clientHeight };
+    }, null, accept, what);
+    assert.equal(await tv.page.locator('.details-audio-options [data-focus^="subtitle:"]').count(), 33);
+    for (let step = 0; step < 14; step++) await tv.remote(DOWN);
+    const early = await offset(value => value.centre === 0, "row 14 centred");
+    assert.ok(early.top > 0 && early.top < early.max, "mid-list, not clamped");
+    for (let step = 0; step < 12; step++) await tv.remote(DOWN);
+    await offset(value => value.centre === 0, "row 26 centred");
+    for (let step = 0; step < 7; step++) await tv.remote(DOWN);
+    await offset(value => value.top === value.max, "the last row rests on the end of the list");
+});
+
 detailTest("Find Trailers' status pill sits 24 under a movie's action row", async (tv) => {
     await tv.page.route("**/api/v2/catalog/items/movie%3Am0001/trailers/refresh", route => route.fulfill({ status: 202, json: { status: "queued" } }));
     await openMovie(tv);
