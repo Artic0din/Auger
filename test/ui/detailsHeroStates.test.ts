@@ -377,7 +377,8 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
     await tv.remote(move === "down" ? 40 : 38);
     assert.match(await tv.focused() ?? "", /^credit:/);
     late.release();
-    // The answer paints on the page clock, which is paused; step it one frame at a time until Related shows, so the repaint still lands within the move's first frames.
+    // The answer paints on the page clock, which is paused. Wait for the released answer without moving the clock, then step one frame at a time until Related shows, so the repaint still lands within the move's first frames.
+    if (move === "down") await tv.eventually(async () => tv.pendingReplies === 0, "the released answer delivered");
     if (move === "down") await tv.eventually(async () => {
         if (await tv.page.locator('[data-detail-section="related"] [data-focus]').count() > 0) return true;
         await tv.jump(16);
