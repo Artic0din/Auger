@@ -47,6 +47,14 @@ Playback already sends `playback.preferred_quality` and `playback.max_bitrate_kb
 
 Maximum Bitrate uses Apple's spelling: `No limit`, whole Mbps above 1000 kbps (`6 Mbps`), one decimal when the cap is not whole Mbps (`1.5 Mbps`, `2.0 Mbps` for 1999 kbps), and `{n} kbps` below 1000. A stored cap that is not in the preset list stays in descending order and selected, as `SiloQualityPresets.bitrateChoices(including:)` does. The picker has no separate kbps field or Save action.
 
+## Disabled rows
+
+A disabled Settings row is drawn exactly like an enabled one, as on Apple TV.
+Every Settings row uses `TVSettingsPaneRowStyle` ([`TVSettingsComponents.swift`](https://github.com/Silo-Server/silo-apple/blob/e0337595b82fe4a8778b3c9abfb69bc31e8744f7/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift), tvOS), which sets an explicit foreground and fill, so `.disabled(true)` adds no dimming.
+This covers every row that can be disabled here: the Loop and Play Theme Music, Show Title Art, Apply to All Devices, Poster Size, Profile Selection, Connection speed, HDR, spoiler and skip-interval rows, and every row while a save is in flight.
+A disabled row stays focusable and ignores presses (`docs/tv-focus.md`).
+Apple's one dimmed Settings group is `TVSettingsNestedGroup` (0.42 opacity while Use Device Settings is on), which this client has no counterpart for: Samsung has no system caption appearance to follow.
+
 ## Connection speed
 
 Playback shows Connection speed when `GET /api/v2/playback/capabilities` includes `connection_speed_v1` (`TVPlaybackSettingsView.swift:18-20,127-169` and `SettingsViewModel.swift:496-531,572-575` at silo-apple `2ef3a171`). The stored reading is `GET /api/v2/playback/connection` (`APIv2Client+Playback.swift:91-98`). **Test speed** downloads the advertised `bandwidth_probe_url` with `size=1000000000` for up to 10 seconds (`BandwidthProbe.swift:19-24,35-44`) and, when that measures a rate, reports `POST /api/v2/playback/bandwidth-probe/results` with `manual: true` (`APIv2Client+Playback.swift:100-115`). The row stays hidden when that feature is missing or the capabilities read fails. A failed connection read still shows the row as `Not measured yet` (`SettingsViewModel.swift:521-526`).
@@ -178,7 +186,7 @@ AVPlay quotes are from the [AVPlay API](https://developer.samsung.com/smarttv/de
 | TrueHD Atmos and DTS:X (device-local, [`PlayerSettings.swift:535-552`](https://github.com/Silo-Server/silo-apple/blob/e958f58413521087c57f9e1971b244537a1fd890/iosApp/iosApp/Screens/Player/PlayerSettings.swift#L535-L552)) | Aether's `objectAudioRendering`. | Hidden in Apple's Silo build (above). Samsung lists neither codec, so a switch would have nothing to turn on. |
 
 Dolby Vision keeps its row above. The Samsung AvInfo API lists `getVersion`, `getDolbyDigitalCompMode`, `isHdrTvSupport`, `setSubAmpMode`, `getEnergySaving`, `setEnergySaving`, `getEcoSensor` and `setEcoSensor` ([AvInfo API](https://developer.samsung.com/smarttv/develop/api-references/samsung-product-api-references/avinfo-api.html)), and the 2023 and 2024 video specifications do not mention Dolby Vision, HDR10 or HLG at all.
-Apple dims Dolby Vision while HDR is off ([`:195-204`](https://github.com/Silo-Server/silo-apple/blob/e958f58413521087c57f9e1971b244537a1fd890/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift#L195-L204)). Samsung never shows it, so there is nothing to dim.
+Apple disables Dolby Vision while HDR is off, without dimming it ([`:195-204`](https://github.com/Silo-Server/silo-apple/blob/e958f58413521087c57f9e1971b244537a1fd890/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift#L195-L204)). Samsung never shows it, so there is nothing to disable.
 
 Not decided here: whether the capability should claim LPCM so a file's own multichannel LPCM track direct-plays.
 That would be a new capability claim, not Apple's switch, and it needs proof of the channel count over HDMI or eARC on the S95C first.
