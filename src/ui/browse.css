@@ -143,6 +143,8 @@
 .acknowledgements-detail { margin: 0 0 6px; font-size: 20px; line-height: 1.35; color: rgba(237,237,237,.6); }
 .acknowledgements-license { margin: 12px 0 0; font: 20px/1.4 ui-monospace, monospace; color: #ededed; }
 .settings [aria-disabled="true"] { opacity: .7; }
+/* TVSettingsPaneRowStyle sets an explicit foreground, so Apple draws a disabled Loop Theme Music row at full brightness. */
+.settings [data-focus="theme-music-loop"][aria-disabled="true"] { opacity: 1; }
 
 /* Pushed Details pages: editorial hero and remote-reachable rails, no root chrome. */
 .details-hero {
