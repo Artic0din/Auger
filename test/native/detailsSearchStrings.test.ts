@@ -6,7 +6,7 @@ import { test } from "node:test";
 import english from "../../src/i18n/catalog/en.json" with { type: "json" };
 import { parseMessage, type MessageNode } from "../../src/i18n/icu.ts";
 import { formattingLocale } from "../../src/i18n/language.ts";
-import { groupedCountText, integerText } from "../../src/i18n/numbers.ts";
+import { integerText } from "../../src/i18n/numbers.ts";
 import { resolveMessage, type Catalogs } from "../../src/i18n/translate.ts";
 
 /** The tvOS keys the Details and Search screens use, grouped by the file that reads them. */
@@ -98,7 +98,7 @@ test("German replaces the Details and Search text, with its own plural forms", (
     assert.equal(german("detail.more.shuffleSeason", { season: "Staffel 2" }), "Staffel 2 zufällig wiedergeben");
     assert.equal(german("catalog.seasons", { count: 1 }), "1 Staffel");
     assert.equal(german("catalog.seasons", { count: 3 }), "3 Staffeln");
-    assert.equal(german("search.resultCount", { count: 1234, count_text: "1.234" }), "1.234 Ergebnisse");
+    assert.equal(german("search.resultCount", { count: 1234, count_text: integerText(1234, "de-DE") }), "1234 Ergebnisse");
     assert.equal(german("search.fieldPrompt.video"), "Filme und Serien suchen…");
 });
 
@@ -109,10 +109,8 @@ test("a key German lacks shows English, counted by English's rules", () => {
     assert.equal(german("detail.editionVersionCount", { count: 2 }), "2 versions");
 });
 
-test("episode and result counts read in the shown language's digits, grouped only where Apple groups", () => {
+test("episode and result counts read in the shown language's digits and are never grouped", () => {
     assert.equal(integerText(1234, "de-DE"), "1234");
-    assert.equal(groupedCountText(1234, "de-DE"), "1.234");
     assert.equal(integerText(1234, "en-AU"), "1234");
-    assert.equal(groupedCountText(1234, "en-AU"), "1,234");
     assert.equal(integerText(12, formattingLocale("ar", undefined)), "١٢");
 });

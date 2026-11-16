@@ -12,7 +12,7 @@ import { requestProgress } from "./requestProgress.ts";
 import { el } from "./screen.ts";
 import { searchRail } from "./searchRail.ts";
 import { balanceTwoLineText, fitCentredLines } from "./textLayout.ts";
-import { groupedCountText } from "../i18n/numbers.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 
 export interface SearchSupplement {
@@ -100,7 +100,7 @@ export function globalSearchView(view: View, route: Extract<Route, { kind: "sear
     if (route.failure === undefined && page !== undefined && page.items.length > 0) {
         // SearchViewModel.total: the response total, or the loaded count when the server sends none (search.resultCount).
         const total = page.total ?? page.items.length;
-        content.push(el("p", "browse-text search-count", translate("search.resultCount", { count: total, count_text: groupedCountText(total) })));
+        content.push(el("p", "browse-text search-count", translate("search.resultCount", { count: total, count_text: integerText(total) })));
     }
     content.push(...view.content.slice(h.searchHead.length).filter(node => {
         if (node.classList.contains("search-empty") && (people.length > 0 || boxSets.length > 0 || waitingForSupplement)) return false;

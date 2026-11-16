@@ -2099,7 +2099,8 @@ browseTest("Search counts results from the response total without an estimate ma
     catalog.failNext("/catalog", { status: 200, body: { items, total: 1200, total_exact: false, page: { has_more: false } } });
     await tv.page.fill("#browse-search", "Estimate"); await tv.remote(IME_DONE);
     await tv.page.locator('.browse-grid [data-focus="movie:estimate-0"]').waitFor();
-    assert.equal(await tv.page.locator(".search-count").innerText(), "1,200 results");
+    // SearchView.swift:276 passes LocaleFormat.integer, which never groups ("1234" in English).
+    assert.equal(await tv.page.locator(".search-count").innerText(), "1200 results");
 });
 
 /** Apple pt sizes drawn at `--silo-sf-cap-scale`. */

@@ -11,7 +11,7 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 - English must not change: take a key only when its English is the text the screen already shows.
   Where Apple's English differs, the text stays as it is until a parity fix changes it on its own.
 - Server-provided text (titles, overviews, people, genres, studios) is shown as the server sends it.
-- Counts that Apple writes with `LocaleFormat.integer` use `integerText`, and ones it groups use `groupedCountText` (`src/i18n/numbers.ts`).
+- Counts and numbers written into a placeholder use `integerText` (`src/i18n/numbers.ts`), Apple's `LocaleFormat.integer`: the shown language's digits, never grouped.
   A season or episode inside a code (`S1:E2`) stays in ASCII digits.
 
 ## On the catalog
