@@ -62,7 +62,7 @@ const facts = (tv: Tv): Promise<string[]> => tv.page.locator(".person-fact").all
 test("the Person page reads in German: facts, filters, Filmography and its count", async () => {
     await onPersonPage("de", none, async tv => {
         const [born, age, place] = await facts(tv);
-        assert.match(born ?? "", /^Geboren am /);
+        assert.match(born ?? "", /^Geboren am \d{1,2}\/\d{1,2}\/1980$/, "day or month first by the device region, with no leading zeros and a slash");
         assert.match(age ?? "", /^\d+ Jahre alt$/);
         assert.equal(place, "Melbourne", "the birthplace stays as the server sent it");
         assert.equal(await tv.page.locator(".person-filmography-filters [data-focus]").allInnerTexts().then(labels => labels.join("|")), "Alle|Filme|Serien");
@@ -102,7 +102,7 @@ test("in Arabic the Person page is mirrored: the portrait and the grid read from
         const view = tv.page.locator('.browse[data-view="person:7"]');
         assert.equal(await view.getAttribute("dir"), null, "the page follows the page's direction");
         const [born, age] = await facts(tv);
-        assert.match(born ?? "", /^الميلاد: /);
+        assert.match(born ?? "", /^الميلاد: \u2068[٠-٩]{1,2}\/[٠-٩]{1,2}\/١٩٨٠\u2069$/, "Arabic digits, no leading zeros, a slash");
         assert.match(age ?? "", /[٠-٩]/);
         assert.equal(await tv.page.locator(".person-filmography-heading h2").innerText(), "الأعمال");
         const edges = await tv.page.evaluate(() => ({
@@ -111,6 +111,16 @@ test("in Arabic the Person page is mirrored: the portrait and the grid read from
             cards: [...document.querySelectorAll('.browse[data-view="person:7"] .browse-grid .browse-card')].slice(0, 3).map(node => node.getBoundingClientRect().left),
         }));
         assert.ok(edges.portrait > edges.info, `the portrait is right of the facts: ${JSON.stringify(edges)}`);
+        // Only the logical margin spaces the portrait from the facts: no physical margin from the shared art rule is left on its leading side, and it sits on the page's leading edge.
+        const portrait = await tv.page.evaluate(() => {
+            const node = document.querySelector(".details-person-hero .person-portrait") as HTMLElement;
+            const style = getComputedStyle(node);
+            return { left: style.marginLeft, right: style.marginRight, edge: node.getBoundingClientRect().right, filters: document.querySelector(".person-filmography-filters [data-focus]")?.getBoundingClientRect().right ?? Number.NaN };
+        });
+        assert.deepEqual([portrait.left, portrait.right], ["48px", "0px"], `margins: ${JSON.stringify(portrait)}`);
+        assert.ok(Math.abs(portrait.edge - portrait.filters) <= 3, `the portrait ends where the filters do, on the leading edge: ${JSON.stringify(portrait)}`);
+        const gridEdge = await tv.page.evaluate(() => document.querySelector('.browse[data-view="person:7"] .browse-grid .browse-card')?.getBoundingClientRect().right ?? Number.NaN);
+        assert.ok(Math.abs(portrait.edge - gridEdge) <= 3, `the portrait and the grid share the leading edge: ${JSON.stringify({ portrait: portrait.edge, grid: gridEdge })}`);
         assert.ok(edges.cards[0]! > edges.cards[1]! && edges.cards[1]! > edges.cards[2]!, `the first card is rightmost: ${JSON.stringify(edges)}`);
         // The grid starts where the filters start, on the leading edge: the right edge in Arabic, so its first card is not pushed past the page's gutter.
         const lead = await tv.page.evaluate(() => ({
@@ -150,6 +160,8 @@ test("the Person page keeps its English text and left-to-right layout in English
             card: document.querySelector('.browse[data-view="person:7"] .browse-grid .browse-card')?.getBoundingClientRect().left ?? Number.NaN,
         }));
         assert.ok(Math.abs(lead.card - lead.filter) <= 3, `English: the first card starts where the first filter does: ${JSON.stringify(lead)}`);
+        const margins = await tv.page.evaluate(() => { const style = getComputedStyle(document.querySelector(".details-person-hero .person-portrait") as HTMLElement); return { left: style.marginLeft, right: style.marginRight }; });
+        assert.deepEqual(margins, { left: "0px", right: "48px" }, "English: the portrait keeps its right margin only");
         const left = await tv.page.evaluate(() => ({ portrait: document.querySelector(".details-person-hero .person-portrait")?.getBoundingClientRect().left ?? Number.NaN, info: document.querySelector(".details-person-hero .browse-detail-info")?.getBoundingClientRect().left ?? Number.NaN }));
         assert.ok(left.portrait < left.info, `English reads left to right: ${JSON.stringify(left)}`);
     });

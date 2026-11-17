@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
+import { episodeAirDate } from "../../src/ui/episodeCaption.ts";
 import { formatPersonDate, personMetadataBadges } from "../../src/ui/personHero.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
 
@@ -62,4 +63,29 @@ test("in Arabic a date inside a fact is isolated, and the age takes the language
         assert.match(second ?? "", /[٠-٩]/);
         assert.equal(personMetadataBadges({ birthDate: "2025-04-12" }, TODAY)[1], "عام واحد");
     });
+});
+
+test("a person's date reads day first without leading zeros, with the shown language's digits, as Apple TV writes it in German and Arabic", () => {
+    // silo-apple `formattedPersonDate`: the device region's numeric order (a TV set to Australia reads day first), unpadded, in the language's digits.
+    inLanguage("de", () => {
+        assert.equal(formatPersonDate("1943-08-17", "en-AU"), "17/8/1943");
+        assert.equal(formatPersonDate("1980-04-02", "en-AU"), "2/4/1980");
+        assert.equal(formatPersonDate("1943-08-17", "en-US"), "8/17/1943", "a US region reads month first");
+        assert.deepEqual(personMetadataBadges({ birthDate: "1943-08-17" }, TODAY, "en-AU").slice(0, 1), ["Geboren am 17/8/1943"]);
+    });
+    inLanguage("ar", () => {
+        assert.equal(formatPersonDate("1943-08-17", "en-AU"), "١٧/٨/١٩٤٣");
+        assert.equal(formatPersonDate("1980-04-02", "en-AU"), "٢/٤/١٩٨٠");
+        assert.equal(personMetadataBadges({ birthDate: "1943-08-17" }, TODAY, "en-AU")[0], `الميلاد: ${FSI}١٧/٨/١٩٤٣${PDI}`);
+    });
+    // A value that is not an ISO date shows as sent, in every language.
+    inLanguage("de", () => assert.equal(formatPersonDate("c. 1900", "en-AU"), "c. 1900"));
+});
+
+test("English person dates and episode air dates keep their medium form", () => {
+    const air = episodeAirDate("1943-08-17");
+    assert.ok(air !== undefined && /Aug/.test(air), `medium form: ${air}`);
+    assert.equal(formatPersonDate("1943-08-17", "en-AU"), air);
+    // The shared air-date formatter is not the person formatter: a German episode date stays medium.
+    inLanguage("de", () => assert.equal(episodeAirDate("1943-08-17"), new Intl.DateTimeFormat("de", { dateStyle: "medium" }).format(new Date(1943, 7, 17, 12))));
 });
