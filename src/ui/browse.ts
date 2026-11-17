@@ -41,6 +41,7 @@ import { browsableRows, shownRows } from "./recommendationsView.ts";
 import { homeRows, removingDismissed, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
+import { useArtworkBytes } from "./heroBackdrop.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
 import { personalEndCanReenter, personalListCapability, readPersonalPage, type PersonalFilter } from "./personalLists.ts";
 import type { MediaScope } from "../contracts/v2/discovery.ts";
@@ -231,6 +232,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let shownOverlays: CardOverlayPrefs | undefined = presentation.cardOverlays;
     let episodeSpoilers: EpisodeSpoilerPreferences | undefined;
     const previews = new WeakMap<Route, () => void>();
+    // The palette sample decodes the artwork bytes off the main thread; the adapter reads them (#515).
+    useArtworkBytes((url, signal) => server.server.http.artworkBlob(url, signal));
     const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured) => {
         const current = top();
         const preview = (): void => {
@@ -911,6 +914,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         seriesSeasons.clear();
         repickSeasons.clear();
         visitOrder.clear();
+        useArtworkBytes(undefined);
         shell.destroy();
         host.destroy();
         if (container.parentNode === root) {

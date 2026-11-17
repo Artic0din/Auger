@@ -201,6 +201,17 @@ function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void
     });
 }
 
+const artworkReads: string[] = [];
+journey("Home reads the shown backdrop's bytes through the adapter to sample its tint, once", async tv => {
+    await tv.eventually(async () => artworkReads.length > 0, "the backdrop's bytes are read");
+    await tv.jump(500);
+    assert.deepEqual(artworkReads.map(url => new URL(url).pathname), ["/art/bd-movie%3Am0004.svg"], "one read for the one backdrop shown");
+}, catalog => {
+    const title = catalog.titles.get("movie:m0004");
+    assert.ok(title);
+    catalog.titles.set("movie:m0004", { ...title, backdrop: "/art/bd-movie%3Am0004.svg" });
+}, undefined, { beforeMount: tv => { artworkReads.length = 0; tv.page.on("request", request => { if (request.resourceType() === "fetch" && request.url().includes("/art/")) artworkReads.push(request.url()); }); } });
+
 let heldLibraries: { release(): void };
 let heldSections: { release(): void };
 

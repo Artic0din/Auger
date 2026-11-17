@@ -62,8 +62,33 @@ const RETRYABLE_STATUSES = [502, 503, 504];
 const SUBTITLE_IDLE_TIMEOUT_MS = 60000;
 /** Apple's `ExternalSubtitlePreparationPolicy.maximumFileBytes`. */
 const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
+/** A hero backdrop is about 400 KB; this only stops a runaway answer filling memory. */
+const ARTWORK_MAX_BYTES = 16 * 1024 * 1024;
 
 export class NativeHttp {
+    /**
+     * The bytes of one artwork file at an adapter-built URL, read so the palette sample can be decoded off the main
+     * thread (Apple's `PosterImageCache.paletteSampleRequest`). The shown `<img>` fetched the same URL, so this is
+     * served from the HTTP cache. CORS is required: the answer is read, not drawn.
+     */
+    async artworkBlob(url: string, signal: AbortSignal): Promise<Blob> {
+        const address = new URL(url);
+        if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid artwork URL");
+        const abort = new AbortController();
+        const cancel = (): void => abort.abort();
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+        const timeout = this.clock.schedule(cancel, DEFAULT_TIMEOUT_MS);
+        try {
+            const response = await this.fetch(address.href, { signal: abort.signal, mode: "cors", credentials: "omit" });
+            if (!response.ok || Number(response.headers.get("Content-Length")) > ARTWORK_MAX_BYTES) throw new Error("Artwork download failed");
+            return await response.blob();
+        } finally {
+            timeout();
+            signal.removeEventListener("abort", cancel);
+        }
+    }
+
     async subtitleText(url: string, signal: AbortSignal): Promise<string> {
         const address = new URL(url);
         if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid subtitle URL");

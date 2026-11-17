@@ -91,26 +91,62 @@ function rgbaPixels(data: ArrayLike<number>): RGB[] {
     return pixels;
 }
 
+/** The palette of a source redrawn at SAMPLE_EDGE x SAMPLE_EDGE. */
+function edgePalette(source: CanvasImageSource): Tints | undefined {
+    const edge = document.createElement("canvas");
+    edge.width = SAMPLE_EDGE;
+    edge.height = SAMPLE_EDGE;
+    const context = edge.getContext("2d");
+    if (context === null) return undefined;
+    context.drawImage(source, 0, 0, SAMPLE_EDGE, SAMPLE_EDGE);
+    return samplePalette(rgbaPixels(context.getImageData(0, 0, SAMPLE_EDGE, SAMPLE_EDGE).data));
+}
+
+/** The 64 px longest-edge size Apple samples at (`PosterImageCache.paletteSampleMaxPixelSize`). */
+function sampleSize(width: number, height: number): { width: number; height: number } {
+    const scale = Math.min(1, PALETTE_MAX_PIXEL / Math.max(width, height));
+    return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
 /** Samples a loaded image as Apple does (a 64px decode redrawn at 24 x 24); undefined when the canvas is tainted. */
 export function sampleImage(image: HTMLImageElement): Tints | undefined {
     const width = image.naturalWidth, height = image.naturalHeight;
     if (width <= 0 || height <= 0) return undefined;
     try {
-        const scale = Math.min(1, PALETTE_MAX_PIXEL / Math.max(width, height));
+        const size = sampleSize(width, height);
         const thumb = document.createElement("canvas");
-        thumb.width = Math.max(1, Math.round(width * scale));
-        thumb.height = Math.max(1, Math.round(height * scale));
+        thumb.width = size.width;
+        thumb.height = size.height;
         thumb.getContext("2d")?.drawImage(image, 0, 0, thumb.width, thumb.height);
-        const edge = document.createElement("canvas");
-        edge.width = SAMPLE_EDGE;
-        edge.height = SAMPLE_EDGE;
-        const context = edge.getContext("2d");
-        if (context === null) return undefined;
-        context.drawImage(thumb, 0, 0, SAMPLE_EDGE, SAMPLE_EDGE);
-        return samplePalette(rgbaPixels(context.getImageData(0, 0, SAMPLE_EDGE, SAMPLE_EDGE).data));
+        return edgePalette(thumb);
     } catch {
         // A server that sends no CORS headers for artwork leaves the canvas tainted on some runtimes.
         return undefined;
+    }
+}
+
+/** Reads the bytes of one artwork file (`NativeHttp.artworkBlob`); a refusal or failure rejects. */
+export type ArtworkBytes = (url: string, signal: AbortSignal) => Promise<Blob>;
+let artworkBytes: ArtworkBytes | undefined;
+
+/** The session's artwork reader, or none: without one the shown image is sampled directly. */
+export function useArtworkBytes(reader: ArtworkBytes | undefined): void {
+    artworkBytes = reader;
+}
+
+/**
+ * The palette from a 64 px decode of the artwork's bytes, as Apple samples `maxPixelSize 64` off the main thread.
+ * `createImageBitmap` decodes a blob on a worker thread, where drawing the shown 1920 x 1080 image decodes it on the
+ * main thread inside the `load` event (#515). Undefined when the engine ignores the resize options.
+ */
+async function sampleBytes(read: ArtworkBytes, url: string, naturalWidth: number, naturalHeight: number): Promise<Tints | undefined> {
+    if (typeof createImageBitmap !== "function" || naturalWidth <= 0 || naturalHeight <= 0) return undefined;
+    const size = sampleSize(naturalWidth, naturalHeight);
+    const bitmap = await createImageBitmap(await read(url, new AbortController().signal), { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: "medium" });
+    try {
+        return bitmap.width === size.width && bitmap.height === size.height ? edgePalette(bitmap) : undefined;
+    } finally {
+        bitmap.close();
     }
 }
 
@@ -173,14 +209,20 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
             cache.set(url, tints);
             paint(tints);
         };
-        const local = sampleImage(image);
-        if (local !== undefined) { apply(local); return; }
-        // Keep the visible image credential-free and usable when the server refuses CORS sampling.
-        const sample = new Image();
-        sample.crossOrigin = "anonymous";
-        sample.referrerPolicy = "no-referrer";
-        sample.addEventListener("load", () => apply(sampleImage(sample)));
-        sample.src = url;
+        const fromImage = (): void => {
+            const local = sampleImage(image);
+            if (local !== undefined) { apply(local); return; }
+            // Keep the visible image credential-free and usable when the server refuses CORS sampling.
+            const sample = new Image();
+            sample.crossOrigin = "anonymous";
+            sample.referrerPolicy = "no-referrer";
+            sample.addEventListener("load", () => apply(sampleImage(sample)));
+            sample.src = url;
+        };
+        const read = artworkBytes;
+        if (read === undefined) { fromImage(); return; }
+        // Any failure, or an engine that cannot resize, keeps the tint it had: the shown image is sampled instead.
+        sampleBytes(read, url, image.naturalWidth, image.naturalHeight).then(tints => tints === undefined ? fromImage() : apply(tints), fromImage);
     });
     if (surface) {
         frame.classList.add("hero-art-surface");
