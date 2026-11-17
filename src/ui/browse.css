@@ -79,6 +79,8 @@
 .settings-pane .browse-button.settings-learned-limit .settings-row-value { font-weight: 600; opacity: 1; }
 .settings-learned-limit .settings-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[dir="rtl"] .icon-forward { transform: scaleX(-1); }
+/* Apple draws the week arrows as chevron.backward and chevron.forward, which mirror. */
+:root[dir="rtl"] .calendar-chevron svg { transform: scaleX(-1); }
 /* A view that is not mirrored yet keeps its chevrons pointing right. */
 :root[dir="rtl"] [dir="ltr"] .icon-forward { transform: none; }
 :root[dir="rtl"] .library-browse .icon-backward { transform: scaleX(-1); }
@@ -1611,7 +1613,7 @@ svg.library-empty-icon { width: auto; }
    so the shelf ends on the caption, which is what anchor .bottom scrolls. */
 .calendar-shelf .browse-section-title { margin: 0 0 20px; height: 42px; font-size: 36px; font-weight: 600; line-height: 42px; }
 .calendar-shelf .browse-row { box-sizing: border-box; width: 1920px; margin-left: -80px; margin-right: -80px; padding: 24px 80px; }
-.calendar-shelf .browse-card { width: calc(260px * var(--calendar-scale, 1)); margin: 0 40px 0 0; border: 0; border-radius: 0; }
+.calendar-shelf .browse-card { width: calc(260px * var(--calendar-scale, 1)); margin: 0; margin-inline-end: 40px; border: 0; border-radius: 0; }
 .calendar-shelf .browse-art { width: calc(260px * var(--calendar-scale, 1)); height: calc(390px * var(--calendar-scale, 1)); }
 .calendar-event .browse-card-title { padding: 0; margin: 16px 0 2px; line-height: 32.98px; min-height: 65.96px; white-space: normal; font-size: 28px; font-weight: 600; color: rgba(237,237,237,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .calendar-event:focus { transform: none; box-shadow: none; }
@@ -1650,10 +1652,10 @@ svg.library-empty-icon { width: auto; }
 .calendar-empty-links { display: flex; justify-content: center; gap: 48px; margin-top: 28px; }
 .calendar-empty-links .browse-button { width: 300px; margin: 0; }
 .calendar-event .browse-art { position: relative; }
-.calendar-releases { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 24px); }
+.calendar-releases { position: absolute; top: 12px; inset-inline-start: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 24px); }
 .calendar-release { padding: 5px 12px; border-radius: 20px; background: rgba(237,237,237,.92); color: #000; font-size: 18px; font-weight: 700; letter-spacing: .8px; }
-.calendar-watched { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ededed; color: #000; font-size: 20px; font-weight: 700; box-shadow: 0 0 4px rgba(0,0,0,.3); }
-.calendar-time { position: absolute; bottom: 12px; right: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: 20px; font-weight: 600; white-space: normal; }
+.calendar-watched { position: absolute; top: 12px; inset-inline-end: 12px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ededed; color: #000; font-size: 20px; font-weight: 700; box-shadow: 0 0 4px rgba(0,0,0,.3); }
+.calendar-time { position: absolute; bottom: 12px; inset-inline-end: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: 20px; font-weight: 600; white-space: normal; }
 @media (prefers-reduced-motion: reduce) {
     .calendar-event:focus .browse-art, .calendar-week .calendar-day:focus, .calendar-filters .browse-button:focus { transform: none; }
 }

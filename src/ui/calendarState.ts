@@ -2,6 +2,8 @@ import type { CalendarDay, CalendarEvent, CalendarFilter } from "../contracts/v2
 import type { CalendarQuery } from "../api/calendarOperations.ts";
 import type { Destination } from "./browseModel.ts";
 import type { ErrorState } from "./browseRoutes.ts";
+import { shownLanguage, SOURCE_LANGUAGE } from "../i18n/language.ts";
+import { shownLocale } from "../i18n/format.ts";
 
 export interface CalendarState {
     error?: ErrorState;
@@ -69,22 +71,27 @@ export function calendarEventKeys(events: readonly CalendarEvent[]): string[] {
     });
 }
 /**
- * This app ships in English, so air times use "en" rather than the TV's region.
- * Explicit h12 keeps noon and midnight at 12 on Chromium 108.
+ * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's own clock
+ * ("21:00" in German). English keeps "en" rather than the TV's region, and an explicit h12 keeps noon and midnight
+ * at 12 on Chromium 108.
  */
-const VIEWER_CLOCK = { hour: "numeric", minute: "2-digit", hourCycle: "h12" } as const;
+function clock(): { readonly locale: string; readonly options: Intl.DateTimeFormatOptions } {
+    return shownLanguage() === SOURCE_LANGUAGE ? { locale: "en", options: { hour: "numeric", minute: "2-digit", hourCycle: "h12" } } : { locale: shownLocale(), options: { hour: "numeric", minute: "2-digit" } };
+}
 
 export function eventTime(event: CalendarEvent, timezone: string): string | undefined {
     if (event.airAt !== undefined) {
-        try { return new Intl.DateTimeFormat("en", { ...VIEWER_CLOCK, timeZone: timezone }).format(new Date(event.airAt)); }
+        const { locale, options } = clock();
+        try { return new Intl.DateTimeFormat(locale, { ...options, timeZone: timezone }).format(new Date(event.airAt)); }
         catch { throw new CalendarTimezoneError("Could not format this TV’s timezone. Try again."); }
     }
     if (event.airTime === undefined) return undefined;
     const [hour, minute] = event.airTime.split(":").map(Number);
     const local = new Date(2000, 0, 1, hour, minute);
-    return new Intl.DateTimeFormat("en", VIEWER_CLOCK).format(local);
+    const { locale, options } = clock();
+    return new Intl.DateTimeFormat(locale, options).format(local);
 }
 export function calendarDateLabel(date: string, weekday: "short" | "long"): string {
-    try { return new Intl.DateTimeFormat(undefined, { weekday, month: "short", day: "numeric" }).format(dayDate(date)); }
+    try { return new Intl.DateTimeFormat(shownLocale(), { weekday, month: "short", day: "numeric" }).format(dayDate(date)); }
     catch { throw new CalendarTimezoneError("Could not format this TV’s dates. Try again."); }
 }
