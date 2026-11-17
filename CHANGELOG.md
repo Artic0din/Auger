@@ -95,6 +95,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - A multi-part audiobook with no chapters now lists its parts in the Chapters picker by their file names, as on Apple TV, and falls back to Part 1, Part 2 only when a file has no name.
+- The Watch Party hub now opens full screen with no top bar, as on Apple TV, 52 px further in at each edge, and its join field takes Apple TV's text field look: no box at rest, the hint at the start (also in Arabic), and a light grey capsule when focused. Back returns to the tab it opened over. Typing still uses the Samsung TV keyboard.
 - An audiobook library the server types `audiobook` (singular) now shows the Audiobooks tab and opens, as on Apple TV. Only the plural `audiobooks` did before.
 - Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
 - Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.

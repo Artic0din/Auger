@@ -2057,7 +2057,9 @@ svg.library-empty-icon { width: auto; }
 .audiobook-picker-title { margin: 0; font-size: 46px; font-weight: 700; }
 .audiobook-picker-subline { margin: 8px 0 0; font-size: 23px; color: rgba(255, 255, 255, .55); white-space: nowrap; }
 /* Watch Party hub: Apple's WatchPartyEntryView tvLayout and WatchPartyMetrics at 1920x1080. */
-.watch-party-scene .watch-party { box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; min-height: 1080px; padding: 220px 0 0; }
+/* The entry's content runs 140 to 1780 px on Apple TV: tvLayout's 88 pt page inset plus 52 px the pushed route takes from the system safe area (it does not ignore it, as Requests does).
+   The source states only the 88; the 52 is read from Apple TV's accessibility frames, and the lobby, which is not captured, keeps its 88 until a live room can be measured. */
+.watch-party-scene .watch-party { box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; min-height: 1080px; padding: 220px 52px 0; }
 .watch-party-intro { flex: none; display: flex; flex-direction: column; gap: 40px; width: 760px; }
 .watch-party-headline { display: flex; flex-direction: column; gap: 15.6px; }
 .watch-party-eyebrow { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 2.04px; line-height: 21px; text-transform: uppercase; color: var(--silo-secondary); }
@@ -2076,8 +2078,13 @@ svg.library-empty-icon { width: auto; }
 .watch-party-ui .watch-party-button[aria-disabled="true"] { opacity: .45; }
 .watch-party-ui .watch-party-button:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
 .watch-party-icon { flex: none; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; }
-.watch-party-ui .watch-party-input { box-sizing: border-box; width: 100%; height: 76px; margin: 0; padding: 0 30px; border: 0; border-radius: 14px; font-size: 29px; background: rgba(255,255,255,.1); }
-.watch-party-ui .watch-party-input:focus { background: rgba(255,255,255,.22); box-shadow: 0 0 0 4px rgba(255,255,255,.55); }
+/* Apple's tvOS join field is a plain system TextField (the 14 pt fill and border in the source sit inside #if os(iOS)), so its look is the system's, read from Apple TV:
+   a 648 by 73 frame reaching 4 px past the column, nothing drawn at rest, and a light grey capsule with no shadow when focused. The hint sits 30 px in from the left, in
+   Arabic too (physical left), at 0.32 white at rest and rgb(179,179,185) on the capsule. Only the look is Apple's; typing stays on the Samsung keyboard. */
+.watch-party-ui .watch-party-input { box-sizing: border-box; width: 648px; height: 73px; margin: 0 -4px; padding: 0 30px; border: 0; border-radius: 36.5px; font-size: 29px; text-align: left; background: transparent; box-shadow: none; }
+.watch-party-ui .watch-party-input::placeholder { color: rgba(255,255,255,.32); }
+.watch-party-ui .watch-party-input:focus { background: #e7e7e7; color: #000; box-shadow: none; }
+.watch-party-ui .watch-party-input:focus::placeholder { color: rgb(179,179,185); }
 /* Room pages: the lobby and the sheets, picker and invitation it opens. */
 .watch-party-ui .watch-party-code-pill { display: inline-flex; align-items: center; gap: 15px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 40px; border: 0; border-radius: 50px; background: rgba(0,0,0,.52); color: #fff; }
 .watch-party-ui .watch-party-code-pill:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
