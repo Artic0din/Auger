@@ -291,6 +291,45 @@ test("the picker's shelf titles read English while German's file is on its way, 
     }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
 });
 
+test("a chosen episode and a raised notice read English while German's file is on its way, then German with no new press", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await inLanguage("de", async (tv, fake) => {
+        await enterRoom(tv, fake, "create", "en");
+        await button(tv, "choose").click();
+        await view(tv, "watchParty:picker:shelves").waitFor();
+        await button(tv, "series:s1").click();
+        await view(tv, "watchParty:choice").waitFor();
+        assert.ok((await tv.page.locator(".watch-party-choice-facts").textContent() ?? "").startsWith("S1 · E2"), "English while the file is held");
+        await button(tv, "confirm").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-facts").textContent() ?? "").includes("S1:E2"), "the staged episode in English");
+        release();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-facts").textContent() ?? "").includes(text("watchParty.facts.episodeCode", "de", { season: "1", episode: "2" })), "the lobby relabels in German");
+    }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
+    let releaseChoice: () => void = () => undefined;
+    const heldChoice = new Promise<void>(resolve => { releaseChoice = resolve; });
+    await inLanguage("de", async (tv, fake) => {
+        await enterRoom(tv, fake, "create", "en");
+        await button(tv, "choose").click();
+        await view(tv, "watchParty:picker:shelves").waitFor();
+        await button(tv, "series:s1").click();
+        await view(tv, "watchParty:choice").waitFor();
+        releaseChoice();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-choice-facts").textContent() ?? "").startsWith(text("watchParty.episodes.line", "de", { season: "1", episode: "2" })), "the confirmation page relabels in German");
+    }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await heldChoice; await route.fallback(); }); });
+    let releaseNotice: () => void = () => undefined;
+    const heldNotice = new Promise<void>(resolve => { releaseNotice = resolve; });
+    await inLanguage("de", async tv => {
+        await openHub(tv);
+        await tv.page.locator('[data-focus="code"]').fill("https://silo.example.test/rooms/join?token=x");
+        await button(tv, "join").click();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-banner-text").allTextContents()).includes(text("watchParty.error.invalidInvitation", "en")), "the notice in English");
+        releaseNotice();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-banner-text").allTextContents()).includes(text("watchParty.error.invalidInvitation", "de")), "the notice relabels in German");
+    }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await heldNotice; await route.fallback(); }); });
+});
+
 test("the hub mirrors in Arabic: its text is Arabic and its page follows the layout direction", async () => {
     await inLanguage("ar", async tv => {
         await openHub(tv);

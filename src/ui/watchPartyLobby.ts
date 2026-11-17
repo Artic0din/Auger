@@ -15,7 +15,7 @@ import { ballotRow, serverPoster } from "./watchPartyBallot.ts";
 import { inviteUrl } from "./watchPartyInvite.ts";
 import { type PrimaryAction, primaryAction, waitingNames } from "./watchPartyPolicy.ts";
 import { seatsRow } from "./watchPartySeats.ts";
-import type { WatchPartyHub } from "./watchPartyHub.ts";
+import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 import type { LobbyItem } from "./watchPartyChoice.ts";
 
 export interface LobbyContext { readonly hub: WatchPartyHub; readonly baseUrl: string }
@@ -42,7 +42,7 @@ function connection(hub: WatchPartyHub, room: Room): { text: string; tone: "ok" 
 
 function statusBanner(hub: WatchPartyHub, room: Room): HTMLElement | undefined {
     const { error, selectedUnavailable } = hub.state;
-    if (error !== undefined) return banner(error, true);
+    if (error !== undefined) return banner(noticeText(error), true);
     if (selectedUnavailable) {
         return banner(room.selfCanManageRoom
             ? translate("watchParty.banner.unavailable.manager")
@@ -65,10 +65,10 @@ function heroText(room: Room, item: LobbyItem | undefined, hub: WatchPartyHub): 
             el("p", "watch-party-lead", manage ? translate("watchParty.hero.voteCaption.manager") : translate("watchParty.hero.voteCaption.guest", { host: hostName(room) })));
     } else if (item !== undefined) {
         const facts = el("p", "watch-party-facts");
-        const parts = [item.subtitle, ...item.facts].filter((part): part is string => part !== undefined && part !== "");
+        const parts = [item.subtitle(), ...item.facts()].filter((part): part is string => part !== undefined && part !== "");
         facts.append(...parts.flatMap((part, index) => index === 0 ? [part] : [el("span", "watch-party-facts-dot", "·"), part]));
         facts.append(...item.chips.map(chip => el("span", "watch-party-chip", chip)));
-        hero.append(eyebrow(translate(room.phase === "playing" ? "watchParty.eyebrow.nowWatching" : "watchParty.eyebrow.upNext")), el("h1", "watch-party-hero-title", item.title), facts,
+        hero.append(eyebrow(translate(room.phase === "playing" ? "watchParty.eyebrow.nowWatching" : "watchParty.eyebrow.upNext")), el("h1", "watch-party-hero-title", item.title()), facts,
             caption(chose(room)));
     } else if (room.selectedContentId !== undefined) {
         hero.append(eyebrow(translate(room.phase === "playing" ? "watchParty.eyebrow.nowWatching" : "watchParty.eyebrow.upNext")),

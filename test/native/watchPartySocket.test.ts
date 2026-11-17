@@ -6,7 +6,7 @@ import { watchTogetherOperations } from "../../src/api/watchTogetherOperations.t
 import { decodeRoom, type RoomAccess, type RoomSocketTicket, type RoomServerMessage, decodeRoomSocketTicket } from "../../src/contracts/v2/watchTogether.ts";
 import { watchPartyApi } from "../../src/ui/watchPartyApi.ts";
 import { translate } from "../../src/i18n/translate.ts";
-import { WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+import { noticeText, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
 
 const PARTY_ENDED = translate("watchParty.ended.ended");
 const PARTY_EXPIRED = translate("watchParty.ended.expired");
@@ -277,7 +277,7 @@ test("a host call that fails after the socket ended the party keeps the socket's
     r.sockets[0]?.frame({ type: "room_closed", reason: "ended" });
     fail();
     await ending;
-    assert.equal(r.hub.state.error, PARTY_ENDED);
+    assert.equal(noticeText(r.hub.state.error ?? ""), PARTY_ENDED);
     let refuse: () => void = () => undefined;
     const m = hubRig({}, { setGuestControlPolicy: () => new Promise((_resolve, reject) => { refuse = () => reject(problem(404)); }) });
     await m.hub.create("host_pick");
@@ -288,7 +288,7 @@ test("a host call that fails after the socket ended the party keeps the socket's
     m.sockets[0]?.frame({ type: "connection_replaced" });
     refuse();
     await changing;
-    assert.equal(m.hub.state.error, PARTY_REPLACED);
+    assert.equal(noticeText(m.hub.state.error ?? ""), PARTY_REPLACED);
 });
 
 test("a lost start that a snapshot proves while the room is read back still counts as a start", async () => {
@@ -327,7 +327,7 @@ test("a socket error that arrives while a lost write is read back is not cleared
     r.sockets[0]?.frame({ type: "error", code: "rate_limited", message: "Slow down." });
     answer(roomAccess({ ...staged, generation: 2, phase: "playing", selected_file_id: "42" }));
     assert.equal(await starting, true);
-    assert.equal(r.hub.state.error, "Slow down.");
+    assert.equal(noticeText(r.hub.state.error ?? ""), "Slow down.");
     r.hub.leave();
 });
 
@@ -489,7 +489,7 @@ test("the party ending over the socket returns to the entry with Apple's reason"
         r.sockets[0]?.open();
         r.sockets[0]?.frame(frame);
         assert.equal(r.hub.state.room, undefined, frame.type);
-        assert.equal(r.hub.state.error, text);
+        assert.equal(noticeText(r.hub.state.error ?? ""), text);
         assert.equal(r.leaves(), 1);
         assert.equal(r.sockets[0]?.closedWith, 1000, "the socket is closed");
         await r.clock.advance(60_000);
@@ -505,7 +505,7 @@ test("an error frame shows its message, except a bad_request, which the lobby ne
     r.sockets[0]?.frame({ type: "error", code: "bad_request", message: "Report refused." });
     assert.equal(r.hub.state.error, undefined);
     r.sockets[0]?.frame({ type: "error", code: "rate_limited", message: "Slow down." });
-    assert.equal(r.hub.state.error, "Slow down.");
+    assert.equal(noticeText(r.hub.state.error ?? ""), "Slow down.");
     assert.notEqual(r.hub.state.room, undefined, "the party goes on");
     r.hub.leave();
 });
@@ -522,7 +522,7 @@ test("a room the server refuses while reconnecting ends the party: 409 as ended,
         await r.clock.advance(1000);
         await settle();
         assert.equal(r.hub.state.room, undefined);
-        assert.equal(r.hub.state.error, text);
+        assert.equal(noticeText(r.hub.state.error ?? ""), text);
     }
 });
 

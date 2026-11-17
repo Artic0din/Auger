@@ -11,7 +11,7 @@ import { actionButton, artwork, cardItem, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { backdrop, banner, checkIcon, eyebrow, labelled, plusIcon } from "./watchPartyParts.ts";
 import { choiceFromCard, choiceFromEpisode, choiceFromNextUp, type MediaChoice } from "./watchPartyChoice.ts";
-import type { WatchPartyHub } from "./watchPartyHub.ts";
+import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 import { runtimeText } from "./cardPresentation.ts";
 
 export interface PickerContext { readonly hub: WatchPartyHub; readonly baseUrl: string }
@@ -90,7 +90,7 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice)
         : labelled("confirm", translate(staged ? "watchParty.confirm.choose" : "watchParty.confirm.playForEveryone"), "primary", () => { void hub.stage(choice); }, checkIcon());
     const poster = artwork("watch-party-choice-poster", choice.posterUrl, baseUrl, "");
     const text = el("div", "watch-party-choice-text");
-    const facts = [choice.subtitle, ...choice.facts].filter((fact): fact is string => fact !== undefined && fact !== "");
+    const facts = [choice.subtitle(), ...choice.facts()].filter((fact): fact is string => fact !== undefined && fact !== "");
     text.append(eyebrow(translate(suggesting ? "watchParty.picker.suggestToParty" : "watchParty.picker.watchTogether")), el("h1", "watch-party-choice-title", choice.title), ...(facts.length === 0 ? [] : [el("p", "watch-party-choice-facts", facts.join(" · "))]));
     const head = el("div", "watch-party-choice-head");
     head.append(poster, text);
@@ -98,7 +98,7 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice)
     page.append(head);
     if (choice.overview !== undefined && choice.overview !== "") page.appendChild(el("p", "watch-party-choice-overview", choice.overview));
     page.appendChild(confirm.element);
-    if (hub.state.error !== undefined) page.appendChild(banner(hub.state.error, true));
+    if (hub.state.error !== undefined) page.appendChild(banner(noticeText(hub.state.error), true));
     return {
         name: "watchParty:choice",
         content: [backdrop(choice.backdropUrl ?? choice.posterUrl, baseUrl, choice.backdropUrl === undefined), page],

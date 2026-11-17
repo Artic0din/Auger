@@ -6,7 +6,10 @@ import { test } from "node:test";
 import { isolated } from "../../src/i18n/direction.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { registerCatalog, translate } from "../../src/i18n/translate.ts";
+import { choiceFromEpisode, choiceFromNextUp } from "../../src/ui/watchPartyChoice.ts";
+import { noticeText } from "../../src/ui/watchPartyHub.ts";
 import { presenceSummary } from "../../src/ui/watchPartyPolicy.ts";
+import type { Card, Episode } from "../../src/contracts/v2/catalog.ts";
 import { WatchPartyHub } from "../../src/ui/watchPartyHub.ts";
 import type { RoomMember } from "../../src/contracts/v2/watchTogether.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
@@ -73,9 +76,40 @@ test("the hub's own notices read in the shown language", async () => {
     setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
     try {
         await hub.join("   ");
-        assert.equal(hub.state.error, translate("watchParty.error.codeRequired", undefined, "de"));
+        assert.equal(noticeText(hub.state.error ?? ""), translate("watchParty.error.codeRequired", undefined, "de"));
         await hub.join("https://silo.example.test/rooms/join?token=x");
-        assert.equal(hub.state.error, translate("watchParty.error.invalidInvitation", undefined, "de"));
+        assert.equal(noticeText(hub.state.error ?? ""), translate("watchParty.error.invalidInvitation", undefined, "de"));
     } finally { setAppLanguage(null); }
     assert.notEqual(translate("watchParty.error.codeRequired", undefined, "de"), "Enter a party code or invitation link.");
+});
+
+test("a chosen episode's labels are read when they are drawn, in the language shown then", () => {
+    const series = { id: "series:s1", type: "series", title: "Harbor Lights" } as Card;
+    const episode = { id: "episode:s1e2", seasonNumber: 1, episodeNumber: 2, title: "", runtimeMinutes: 90 } as Episode;
+    const next = choiceFromNextUp(series, { contentId: "episode:s1e2", seasonNumber: 1, episodeNumber: 2, title: undefined });
+    const choice = choiceFromEpisode(series, episode);
+    // Chosen while the page still reads English.
+    assert.equal(choice.subtitle(), "S1 · E2 · Episode 2");
+    assert.equal(choice.lobby.title(), "Episode 2");
+    assert.equal(choice.lobby.subtitle(), "Harbor Lights · S1:E2");
+    assert.equal(next.subtitle(), "S1 · E2");
+    // German's file lands: the same choice reads German with nothing rebuilt.
+    inLanguage("de", () => {
+        assert.equal(choice.subtitle(), "S1 · F2 · Folge 2");
+        assert.equal(choice.lobby.title(), "Folge 2");
+        assert.equal(choice.lobby.subtitle(), "Harbor Lights · S1:F2");
+        assert.equal(next.subtitle(), "S1 · F2");
+        assert.deepEqual(choice.facts(), choice.lobby.facts());
+    });
+});
+
+test("a notice is read when it is drawn, in the language shown then", async () => {
+    const unused = async (): Promise<never> => { throw new Error("not read"); };
+    const api: WatchPartyApi = { ...unusedLobbyOperations, capabilities: unused, playbackCapabilities: unused, createRoom: unused, joinByCode: unused, closeRoom: unused };
+    const hub = new WatchPartyHub(api, () => undefined, offline());
+    await hub.join("   ");
+    const raised = hub.state.error;
+    assert.ok(raised !== undefined);
+    assert.equal(noticeText(raised), "Enter a party code or invitation link.");
+    inLanguage("de", () => { assert.equal(noticeText(raised), translate("watchParty.error.codeRequired", undefined, "de")); });
 });

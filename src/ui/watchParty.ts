@@ -8,7 +8,7 @@ import { el } from "./screen.ts";
 import { banner, enabled, eyebrow, pill, plusIcon } from "./watchPartyParts.ts";
 import { endView, inviteView, lobbyView, optionsView } from "./watchPartyLobby.ts";
 import { choiceView, episodesView, pickerView } from "./watchPartyPicker.ts";
-import type { WatchPartyHub } from "./watchPartyHub.ts";
+import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 
 /** What a route keeps across renders: the hub, and the code field so a focused field is never rebuilt. */
 export interface WatchPartyScreen { readonly hub: WatchPartyHub; readonly input: HTMLInputElement }
@@ -51,7 +51,7 @@ function entryView({ hub, input }: WatchPartyScreen, back: () => void): View {
     const unusable = !supported;
     // Apple disables Start a party, vote and Join party while a request runs, and while the server cannot host a party.
     const locked = unusable || busy;
-    const message = error ?? (unusable ? translate(checking ? "watchParty.page.checking" : "watchParty.page.unavailable") : undefined);
+    const message = error !== undefined ? noticeText(error) : (unusable ? translate(checking ? "watchParty.page.checking" : "watchParty.page.unavailable") : undefined);
     const intro = el("div", "watch-party-intro");
     const headline = el("div", "watch-party-headline");
     headline.append(eyebrow(translate("watchParty.title")), el("h1", "watch-party-title", translate("watchParty.page.headline")), el("p", "watch-party-body", translate("watchParty.page.body")));

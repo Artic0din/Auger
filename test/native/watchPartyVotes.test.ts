@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { watchTogetherOperations } from "../../src/api/watchTogetherOperations.ts";
 import { decodeSuggestion, decodeSuggestionPage, decodeSuggestionReceipt, type Suggestion, type SuggestionPage } from "../../src/contracts/v2/watchTogether.ts";
-import { WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+import { noticeText, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
 import { RoomVotes, voteWinner } from "../../src/ui/watchPartyVotes.ts";
 import { serverPoster } from "../../src/ui/watchPartyBallot.ts";
 import type { RoomWebSocket } from "../../src/ui/watchPartySocket.ts";
@@ -245,8 +245,8 @@ test("Add suggestion posts the picked title with a fresh UUID, then reads the ba
     await settle();
     r.hub.state.pickerPurpose = "suggest";
     r.hub.show({ kind: "picker" });
-    const lobby = { contentId: "movie:m1", title: "Dune", subtitle: undefined, posterUrl: "/p.jpg", backdropUrl: undefined, overview: undefined, facts: [], chips: [] };
-    const choice: MediaChoice = { contentId: "movie:m1", type: "movie", title: "Dune", subtitle: undefined, posterUrl: "/p.jpg", backdropUrl: undefined, overview: undefined, facts: [], lobby };
+    const lobby = { contentId: "movie:m1", title: () => "Dune", subtitle: () => undefined, posterUrl: "/p.jpg", backdropUrl: undefined, overview: undefined, facts: () => [], chips: [] };
+    const choice: MediaChoice = { contentId: "movie:m1", type: "movie", title: "Dune", subtitle: () => undefined, posterUrl: "/p.jpg", backdropUrl: undefined, overview: undefined, facts: () => [], lobby };
     assert.equal(await r.hub.suggest(choice), true);
     assert.deepEqual(added, [["room-proof", { suggestionId: SUGGESTION_ID, contentId: "movie:m1", contentType: "movie", title: "Dune", posterUrl: "/p.jpg" }]]);
     assert.deepEqual(r.hub.state.votes.rows.map(item => item.id), ["new"]);
@@ -336,7 +336,7 @@ test("a vote the server took stands when the read after it fails, so the next pr
     await r.clock.advance(200);
     await settle();
     assert.equal(await r.hub.vote("a", true), true);
-    assert.match(r.hub.state.error ?? "", /^Your change was saved/);
+    assert.match(noticeText(r.hub.state.error ?? ""), /^Your change was saved/);
     assert.equal(r.hub.state.votes.voted("a"), true);
     r.hub.leave();
 });
@@ -349,7 +349,7 @@ test("a failed ballot read tries again after 1, 2 and 4 seconds, and a success c
     await r.clock.advance(200);
     await settle();
     assert.equal(reads, 1);
-    assert.match(r.hub.state.error ?? "", /^Could not refresh suggestions\./);
+    assert.match(noticeText(r.hub.state.error ?? ""), /^Could not refresh suggestions\./);
     await r.clock.advance(1000);
     await settle();
     assert.equal(reads, 2);
