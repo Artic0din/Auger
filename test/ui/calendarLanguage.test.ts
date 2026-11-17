@@ -21,8 +21,9 @@ const LEFT = 37;
 const RIGHT = 39;
 const text = (key: Parameters<typeof translate>[0], language: string, args?: Parameters<typeof translate>[1]): string => translate(key, args, language);
 
-async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar(), device?: string): Promise<void> {
-    const tv = await openTv(browser, { app: "browse", ...(device === undefined ? {} : { locale: device }) });
+async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar(), device?: string, tvClock?: string): Promise<void> {
+    const tv = await openTv(browser, { app: "browse", ...(device === undefined ? {} : { locale: device }),
+        ...(tvClock === undefined ? {} : { prepare: async page => { await page.addInitScript(format => { Reflect.set(window, "tizen", { time: { getTimeFormat: () => format } }); }, tvClock); } }) });
     tv.fake.catalog = catalog;
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
@@ -120,5 +121,16 @@ test("German air times follow the device's region: 12-hour for an Australian or 
             await card.waitFor();
             assert.equal(await card.locator(".calendar-time").textContent(), expected, device);
         }, new FakeCalendar(), device);
+    }
+});
+
+test("air times follow the TV's own clock setting over the browser's en-GB region, in German and Arabic", async () => {
+    for (const [language, clock, expected] of [["de", "h:m:s ap", "8:00 AM"], ["de", "h:m:s", "08:00"], ["ar", "h:m:s ap", "٨:٠٠ ص"]] as const) {
+        await inLanguage(language, async tv => {
+            await tv.page.locator('[data-focus="filter:everything"]').click();
+            const card = tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]');
+            await card.waitFor();
+            assert.equal(await card.locator(".calendar-time").textContent(), expected, `${language} on a ${clock} clock`);
+        }, new FakeCalendar(), "en-GB", clock);
     }
 });

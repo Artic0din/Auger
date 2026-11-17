@@ -152,15 +152,21 @@ test("in Arabic a request's detail is mirrored and reads from the catalog", asyn
     });
 });
 
-test("in Arabic the hero line keeps each part whole, in Apple's order from the right: year, Movie, then Requested {date}", async () => {
+test("in Arabic the hero line is one text, laid out as Core Text lays out Apple's: the first strong letter, Movie, sets a left-to-right line", async () => {
     await inLanguage("ar", async tv => {
         await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl", "dir rtl");
-        const parts = await tv.page.locator(".requests-preview .requests-metadata .requests-meta-part").evaluateAll(nodes => nodes.map(node => ({ text: node.textContent ?? "", left: node.getBoundingClientRect().left, bidi: getComputedStyle(node).unicodeBidi })));
-        assert.equal(parts.length, 3, JSON.stringify(parts));
-        assert.equal(parts[0]?.text, "٢٠٢٣");
-        assert.equal(parts[1]?.text, "Movie", "Apple's displayName is a plain English string, not server text");
-        assert.ok((parts[2]?.text ?? "").startsWith(text("requests.requestedOn", "ar", { date: "\u0001" }).split("\u0001")[0] ?? "?"), parts[2]?.text ?? "");
-        assert.ok(parts[0]!.left > parts[1]!.left && parts[1]!.left > parts[2]!.left, `each part is its own run, first on the right: ${JSON.stringify(parts)}`);
-        assert.ok(parts.every(part => part.bidi === "isolate"), JSON.stringify(parts));
+        const line = await tv.page.locator(".requests-preview .requests-metadata").evaluate(row => {
+            const span = row.querySelector("span");
+            const node = span?.firstChild;
+            if (span === null || span === undefined || node === null || node === undefined) return undefined;
+            const text = node.textContent ?? "";
+            const left = (word: string): number => { const at = text.indexOf(word); const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + word.length); return range.getBoundingClientRect().left; };
+            return { text, year: left("٢٠٢٣"), kind: left("Movie"), requested: left(text.split(" · ")[2] ?? "?"), bidi: getComputedStyle(span).unicodeBidi, spans: row.querySelectorAll("span:not(.requests-tmdb span)").length };
+        });
+        assert.ok(line !== undefined);
+        assert.ok(line.text.startsWith("٢٠٢٣ · Movie · "), line.text);
+        assert.ok(line.text.split(" · ")[2]?.startsWith(text("requests.requestedOn", "ar", { date: "\u0001" }).split("\u0001")[0] ?? "?"), line.text);
+        assert.equal(line.bidi, "plaintext", "the base direction comes from the text's first strong letter, as Apple's Text does");
+        assert.ok(line.year < line.kind && line.kind < line.requested, `Apple reads year, Movie, requested from the left: ${JSON.stringify(line)}`);
     });
 });

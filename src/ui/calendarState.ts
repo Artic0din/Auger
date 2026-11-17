@@ -70,20 +70,30 @@ export function calendarEventKeys(events: readonly CalendarEvent[]): string[] {
         return `event:${identity}:${occurrence}`;
     });
 }
+/** The TV's own clock setting: `tizen.time.getTimeFormat()` is "h:m:s ap" for 12 hours and "h:m:s" for 24 (no privilege needed). Undefined where the API is missing or fails. */
+function tvHourCycle(): "h12" | "h23" | undefined {
+    const time: unknown = Reflect.get(Object(Reflect.get(globalThis, "tizen") ?? {}), "time");
+    const read: unknown = Reflect.get(Object(time ?? {}), "getTimeFormat");
+    if (typeof read !== "function") return undefined;
+    try {
+        const format: unknown = read.call(time);
+        return typeof format === "string" && format !== "" ? (format.includes("ap") ? "h12" : "h23") : undefined;
+    } catch { return undefined; }
+}
+
 /**
- * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's words with the
- * device's region, and the region decides 12 or 24 hours ("8:00 AM" in German on an Australian or US TV, "08:00" on a German
- * one), as `Locale(language, region)` does in Foundation. Chromium picks the hour cycle from the language alone, so the
- * device's own is passed in. English keeps "en" rather than the TV's region, and an explicit h12 keeps noon and midnight
- * at 12 on Chromium 108.
+ * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's words and digits,
+ * and the device's clock setting for 12 or 24 hours. Chromium takes the cycle from the language alone, so the TV's
+ * own setting is passed in, else the device region's ("8:00 AM" in German on an Australian or US TV, "08:00" on a German one).
+ * English keeps "en" rather than the TV's region and 12 hours, and an explicit h12 keeps noon and midnight at 12 on Chromium 108.
  */
 function clock(): { readonly locale: string; readonly options: Intl.DateTimeFormatOptions } {
-    if (shownLanguage() === SOURCE_LANGUAGE) return { locale: "en", options: { hour: "numeric", minute: "2-digit", hourCycle: "h12" } };
+    const english = shownLanguage() === SOURCE_LANGUAGE;
     const device = deviceLanguages()[0];
-    const hourCycle = new Intl.DateTimeFormat(device, { hour: "numeric" }).resolvedOptions().hourCycle;
+    const hourCycle = tvHourCycle() ?? (english ? "h12" : new Intl.DateTimeFormat(device, { hour: "numeric" }).resolvedOptions().hourCycle);
     // 12 hours drops the leading zero ("8:00 AM"); 24 hours takes the language's own short pattern ("08:00" in German).
     const twelve = hourCycle === "h11" || hourCycle === "h12";
-    return { locale: shownLocale(), options: { ...(twelve ? { hour: "numeric", minute: "2-digit" } : { timeStyle: "short" }), ...(hourCycle === undefined ? {} : { hourCycle }) } };
+    return { locale: english ? "en" : shownLocale(), options: { ...(twelve ? { hour: "numeric", minute: "2-digit" } : { timeStyle: "short" }), ...(hourCycle === undefined ? {} : { hourCycle }) } };
 }
 
 export function eventTime(event: CalendarEvent, timezone: string): string | undefined {
