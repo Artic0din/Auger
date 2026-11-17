@@ -112,6 +112,12 @@ test("in Arabic the Person page is mirrored: the portrait and the grid read from
         }));
         assert.ok(edges.portrait > edges.info, `the portrait is right of the facts: ${JSON.stringify(edges)}`);
         assert.ok(edges.cards[0]! > edges.cards[1]! && edges.cards[1]! > edges.cards[2]!, `the first card is rightmost: ${JSON.stringify(edges)}`);
+        // The grid starts where the filters start, on the leading edge: the right edge in Arabic, so its first card is not pushed past the page's gutter.
+        const lead = await tv.page.evaluate(() => ({
+            filter: document.querySelector(".person-filmography-filters [data-focus]")?.getBoundingClientRect().right ?? Number.NaN,
+            card: document.querySelector('.browse[data-view="person:7"] .browse-grid .browse-card')?.getBoundingClientRect().right ?? Number.NaN,
+        }));
+        assert.ok(Math.abs(lead.card - lead.filter) <= 3, `the first card ends where the first filter does: ${JSON.stringify(lead)}`);
         const cards = tv.page.locator('.browse[data-view="person:7"] .browse-grid .browse-card');
         // SwiftUI aligns a card's text by the layout, so Latin titles end where their card does on an Arabic page.
         const align = await cards.evaluateAll(nodes => nodes.slice(0, 3).flatMap(node => [...node.querySelectorAll<HTMLElement>(".browse-card-title, .browse-card-subtitle")]).filter(label => (label.textContent ?? "") !== "").map(label => {
@@ -139,6 +145,11 @@ test("the Person page keeps its English text and left-to-right layout in English
         assert.equal(await tv.page.locator(".person-filmography-filters [data-focus]").allInnerTexts().then(labels => labels.join("|")), "All|Movies|Series");
         assert.equal(await tv.page.locator(".person-filmography-heading h2").innerText(), "Filmography");
         assert.match(await tv.page.locator(".person-title-count").innerText(), /^\d+ titles?$/);
+        const lead = await tv.page.evaluate(() => ({
+            filter: document.querySelector(".person-filmography-filters [data-focus]")?.getBoundingClientRect().left ?? Number.NaN,
+            card: document.querySelector('.browse[data-view="person:7"] .browse-grid .browse-card')?.getBoundingClientRect().left ?? Number.NaN,
+        }));
+        assert.ok(Math.abs(lead.card - lead.filter) <= 3, `English: the first card starts where the first filter does: ${JSON.stringify(lead)}`);
         const left = await tv.page.evaluate(() => ({ portrait: document.querySelector(".details-person-hero .person-portrait")?.getBoundingClientRect().left ?? Number.NaN, info: document.querySelector(".details-person-hero .browse-detail-info")?.getBoundingClientRect().left ?? Number.NaN }));
         assert.ok(left.portrait < left.info, `English reads left to right: ${JSON.stringify(left)}`);
     });
