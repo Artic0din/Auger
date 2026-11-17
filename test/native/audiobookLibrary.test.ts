@@ -8,7 +8,7 @@ import { ShowAudiobooks } from "../../src/ui/audiobookPreference.ts";
 import { browseCardDestination, destinationOf, searchScope, visibleLibraries } from "../../src/ui/browseModel.ts";
 import { homeRowLayout } from "../../src/ui/browseViews.ts";
 import { libraryScope } from "../../src/ui/libraryDiscovery.ts";
-import { SORT_KEYS, sortKeysFor } from "../../src/ui/libraryBrowse.ts";
+import { sortKeysFor } from "../../src/ui/libraryBrowse.ts";
 import { navigationRoots } from "../../src/ui/navigation.ts";
 
 const wire = (type: string): Record<string, unknown> => ({ content_id: "audiobook:dune", type, title: "Dune", poster_url: "/art/dune" });
@@ -79,10 +79,10 @@ test("an audiobook library is scoped by its id alone, as Apple omits the type", 
 
 test("audiobook libraries offer Apple's sort keys, in Apple's order", () => {
     assert.deepEqual(sortKeysFor("audiobooks").map(entry => [entry.key, translate(entry.name), entry.order]), [
-        ["title", "Title", "asc"], ["author", "Author", "asc"], ["narrator", "Narrator", "asc"],
-        ["series", "Series", "asc"], ["added_at", "Date Added", "desc"], ["runtime", "Duration", "desc"],
+        ["title", "Title", "asc"], ["added_at", "Date Added", "desc"], ["release_date", "Release Date", "desc"], ["year", "Year", "desc"],
+        ["runtime", "Duration", "desc"], ["bitrate", "Bitrate", "desc"], ["progress", "Progress", "desc"], ["date_viewed", "Date Viewed", "desc"],
+        ["plays", "Plays", "desc"], ["author", "Author", "asc"], ["narrator", "Narrator", "asc"], ["series", "Series", "asc"],
     ]);
-    assert.deepEqual(sortKeysFor("movies"), SORT_KEYS);
 });
 
 test("Show Audiobooks is off until chosen, kept per profile, and survives unusable storage", () => {

@@ -118,6 +118,8 @@ export interface RouteHandlers {
     readonly more: (route: Extract<Route, { kind: "library" }>) => void;
     readonly preserve: (route: Extract<Route, { kind: "library" }>) => boolean;
     readonly gridColumns: number;
+    /** The rating sources the server shows (`GET /capabilities/ratings`); empty until it answers, so a hidden rating sort is never offered early. */
+    readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
     readonly personFilter: (route: Extract<Route, { kind: "person" }>, filter: MediaScope) => void;

@@ -51,6 +51,7 @@ SELECTED=(
   get_device_login_capability_ok
   get_library_collections_ok
   get_library_section_items_ok
+  get_ratings_capability_ok
   get_system_info_ok
   get_watch_state_ok
   get_watch_trickplay_ok

@@ -239,7 +239,7 @@ audiobookTest("the Audiobooks library Browse grid queries by library alone and o
     assert.ok(query !== undefined);
     assert.equal(query.body?.type, undefined, "an audiobook library sends no type");
     await tv.page.locator('[data-focus="sort"]').click();
-    assert.deepEqual(await tv.page.locator('.browse-sort-panel [data-focus^="sort:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["sort:title", "sort:author", "sort:narrator", "sort:series", "sort:added_at", "sort:runtime"]);
+    assert.deepEqual(await tv.page.locator('.browse-sort-panel [data-focus^="sort:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["sort:title", "sort:added_at", "sort:release_date", "sort:year", "sort:runtime", "sort:bitrate", "sort:progress", "sort:date_viewed", "sort:plays", "sort:author", "sort:narrator", "sort:series"]);
 });
 
 audiobookTest("with Show Audiobooks off, Search offers no Audiobooks filter and keeps to a video scope", async tv => {
