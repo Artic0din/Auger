@@ -701,3 +701,23 @@ test("in Arabic Search's People rail still lands Down on the title column at or 
         assert.equal(await tv.focused(), "movie:m0003", "the second person lands on the third poster, as in English");
     });
 });
+
+test("in Arabic on a root route that is not mirrored yet (a library's Recommended page), the top bar still reads right to left and its keys stay swapped", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+        const view = await tv.page.evaluate(() => ({
+            bar: getComputedStyle(document.querySelector(".browse-nav") as Element).direction,
+            content: getComputedStyle(document.querySelector(".skyline-content") as Element).direction,
+            barPinned: document.querySelector(".browse-nav")?.hasAttribute("dir") ?? true,
+        }));
+        assert.deepEqual(view, { bar: "rtl", content: "ltr", barPinned: false }, "the bar mirrors, the page body stays left to right");
+        // Left in the mirrored bar moves to the tab on its left, from a tab that is not the first.
+        await tv.page.locator('[data-focus="home"]').focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), "movies", "Left in the mirrored top bar moves to the tab on its left");
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "home");
+    });
+});
