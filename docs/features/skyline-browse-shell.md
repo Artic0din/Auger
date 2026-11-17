@@ -529,6 +529,10 @@ Root transitions take 200 ms, and reduced motion snaps transitions and scrolling
 Deliberate pill and same-tab scope changes crossfade for 200 ms with a 12 px upward drift of incoming content.
 Focus and remote input take effect synchronously; chrome and pills stay mounted above the outgoing layer.
 The marquee crossfades without translation so its fixed backdrop keeps the viewport as its containing block.
+On Home, For You and library roots the tint wash is one bitmap the marquee keeps (`HeroWash`, silo-apple `TVHeroAmbientWash`, 6eea7cf7): 960 x 540, two screen points per pixel, with the base, accent and shadow stops of `washBackground` drawn into a canvas.
+A new tint fades in over the old bitmap for 240 ms, which stays opaque until it finishes; the tint sampled from the image redraws the newest bitmap in place.
+Each backdrop layer is only the artwork's own 1228.8 x 756 box, and the 190 px top scrim is one shared strip above every layer, so a swap no longer draws a full-screen layer of gradients (the S95C trace on #515 put about 72% of Home Down raster time in the two full-screen layers).
+Details, Requests and box sets keep the CSS wash.
 The shell receives a library/type/mode identity separately from the loading view name.
 Loading, data completion and selector refreshes do not start a second transition.
 Rapid changes replace the outgoing layer, and stopping or destroying the focus host removes that layer, incoming motion classes and its cleanup timer.
