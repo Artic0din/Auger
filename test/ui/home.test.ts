@@ -944,7 +944,8 @@ journey("a backdrop that failed loads again when its card previews again", async
     await tv.eventually(async () => await frame.getAttribute("data-art") === "loaded", "same artwork retried");
     assert.equal(backdropAttempts, 2);
 }, catalog => enrichHome(catalog, { "movie:m0003": { backdrop_url: "/art/flaky-backdrop.svg" } }), undefined, { beforeMount: tv => {
-    void tv.page.route("**/art/flaky-backdrop.svg", route => (++backdropAttempts === 1 ? route.abort() : route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>' })));
+    // The tint's own read of the bytes is a `fetch`; only the shown image's attempts count.
+    void tv.page.route("**/art/flaky-backdrop.svg", route => (route.request().resourceType() !== "image" ? route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>' }) : ++backdropAttempts === 1 ? route.abort() : route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>' })));
 } });
 
 journey("Home cards show their ThumbHash while artwork loads and keep it in place of DefaultArtwork when it fails", async tv => {
