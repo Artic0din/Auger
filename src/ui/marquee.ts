@@ -260,5 +260,12 @@ export function actionRow(controls: readonly Control[]): HTMLElement {
 
 /** The supported keyboard equivalent of TVTypeOnPhoneCard. */
 export function keyboardCard(): HTMLElement {
-    return card([cardSymbol("keyboard"), el("h2", "marquee-card-title", KEYBOARD_TITLE), el("p", "marquee-card-text", KEYBOARD_TEXT)]);
+    // This text has no Apple key, so it is English in every language: its own language and direction keep a right-to-left page from moving its full stop to the front.
+    const title = el("h2", "marquee-card-title", KEYBOARD_TITLE);
+    const body = el("p", "marquee-card-text", KEYBOARD_TEXT);
+    for (const node of [title, body]) {
+        node.setAttribute("lang", "en");
+        node.setAttribute("dir", "ltr");
+    }
+    return card([cardSymbol("keyboard"), title, body]);
 }

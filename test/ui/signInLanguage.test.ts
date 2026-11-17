@@ -166,6 +166,29 @@ test("in Arabic Left and Right step through the code screen's buttons as the mir
     });
 });
 
+test("in Arabic the port hint and protocol read Apple's Arabic text, and the keyboard card's English reads left to right with its full stop at the end", async () => {
+    await withTv("ar-SA", async tv => {
+        await tv.eventually(async () => await tv.page.locator('[data-screen="entry"]').getAttribute("lang") === "ar", "Arabic on the address screen");
+        await tv.page.locator('[data-focus="advanced"]').click();
+        // Apple's tvOS port field reads `setup.port.placeholder`, "منفذ: تلقائي" ("Port: auto"); its protocol button reads `setup.scheme.auto`, "تلقائي".
+        assert.equal(await tv.page.locator("#signin-port").getAttribute("placeholder"), text("setup.port.placeholder", "ar"));
+        assert.equal(await tv.page.locator("#signin-port").getAttribute("placeholder"), "منفذ: تلقائي");
+        assert.equal(await tv.page.locator('[data-focus="scheme-auto"]').innerText(), "تلقائي");
+        // The card's text is English whatever language is shown, so it carries that language and direction, and its full stop stays last.
+        for (const selector of [".marquee-card-title", ".marquee-card-text"]) {
+            assert.equal(await tv.page.locator(`.marquee-card ${selector}`).getAttribute("lang"), "en", selector);
+            assert.equal(await tv.page.locator(`.marquee-card ${selector}`).evaluate(node => getComputedStyle(node).direction), "ltr", selector);
+        }
+        const stop = await tv.page.locator(".marquee-card .marquee-card-text").evaluate(node => {
+            const text = node.firstChild as Text;
+            const at = (offset: number): number => { const range = document.createRange(); range.setStart(text, offset); range.setEnd(text, offset + 1); return range.getBoundingClientRect().left; };
+            const last = (text.textContent ?? "").length - 1;
+            return { stop: at(last), before: at(last - 1) };
+        });
+        assert.ok(stop.stop > stop.before, `the full stop follows the last letter: ${JSON.stringify(stop)}`);
+    });
+});
+
 for (const [locale, name, spacing] of [["de-DE", "German", 4], ["ar-SA", "Arabic", 2.5]] as const) {
     test(`the ${name} password screen shows every action label whole, inside the copy column, and nothing overlaps`, async () => {
         await withTv(locale, async tv => {
