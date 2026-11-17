@@ -1709,6 +1709,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
     // A language file that lands while the player is up redraws its words once no Select is held: the panel, an open picker and the Up Next deck are cached by what they show, so they are drawn afresh.
     const late = lateRedraw(() => false, () => {
+        // The controller's view carries track names and Up Next words built in the old language: it sends them again first, so the picker below is rebuilt from the new view.
+        controls.refreshView();
         labelStatics();
         if (videoPicker !== undefined) videoPicker = rebuiltPicker(videoPicker);
         if (subtitlePane.kind === "picker") subtitlePane = rebuiltPicker(subtitlePane);

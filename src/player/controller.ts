@@ -21,7 +21,7 @@
 // a burn-in still reopens. A refused change leaves the current plan playing.
 // On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
-import { onCatalogLoaded, translate } from "../i18n/translate.ts";
+import { translate } from "../i18n/translate.ts";
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import { abortedError, type RequestSpec } from "../api/http.ts";
@@ -301,6 +301,8 @@ export interface PlayerControls {
     dismissBufferingPill(): boolean;
     /** A skip pill is on screen: a buffering pill waits for it, as Apple's does. */
     setSkipPillShown(shown: boolean): void;
+    /** A language landed: send the current playback view again, so the names built into it read in that language. */
+    refreshView(): void;
 }
 
 export interface PlaybackDeps {
@@ -536,7 +538,6 @@ export class PlaybackController implements PlayerControls {
     private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
-    private readonly stopCatalog: () => void;
 
     constructor(deps: PlaybackDeps) {
         this.deps = deps;
@@ -545,11 +546,6 @@ export class PlaybackController implements PlayerControls {
         this.pending = pending;
         globalThis.addEventListener?.("online", this.onConnectivity);
         globalThis.addEventListener?.("offline", this.onConnectivity);
-        // Track names, flags and Up Next words are built into each view, so a language file that lands while playback is paused has to send the view again.
-        this.stopCatalog = onCatalogLoaded(() => {
-            const attempt = this.attempt;
-            if (attempt !== undefined) this.showPlayback(attempt);
-        });
         this.stopAuthority = deps.session.onAuthorityChange(() => {
             const attempt = this.attempt;
             if (attempt === undefined || (!attempt.live && this.completion === undefined)) {
@@ -561,6 +557,15 @@ export class PlaybackController implements PlayerControls {
             this.show({ phase: "closed" });
             deps.exits.onEnd("authority_changed");
         });
+    }
+
+    /**
+     * Track names, flags and Up Next's words are built into each view, so a language that lands while playback is paused has to send the view again.
+     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is.
+     */
+    refreshView(): void {
+        const attempt = this.attempt;
+        if (attempt !== undefined && (this.current.phase === "playing" || this.current.phase === "paused")) this.showPlayback(attempt);
     }
 
     /** Starts a new attempt; one already running is stopped and never plays. */
@@ -1180,7 +1185,6 @@ export class PlaybackController implements PlayerControls {
         }
         this.attempt = undefined;
         this.stopAuthority();
-        this.stopCatalog();
         globalThis.removeEventListener?.("online", this.onConnectivity);
         globalThis.removeEventListener?.("offline", this.onConnectivity);
         this.listeners.length = 0;

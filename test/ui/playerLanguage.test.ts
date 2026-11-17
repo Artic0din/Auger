@@ -241,10 +241,12 @@ test("a catalog that lands while Select is held on a panel choice waits for the 
         await page.clock.runFor(50);
         assert.equal(await page.locator('[data-mark="held"]').count(), 1, "the pressed choice is still on screen while Select is down");
         assert.equal(await page.locator(".player-menu-audio .player-menu-heading").textContent(), "TRACKS", "still English while Select is held");
+        assert.equal(await page.evaluate(() => window.player.refreshes), 0, "the controller is not asked to send its view again while Select is held");
         await page.keyboard.up("Enter");
         await page.clock.runFor(50);
         assert.equal(await page.locator(".player-menu-audio .player-menu-heading").textContent(), upper(text("player.hud.tracks", "de"), "de"), "German once it is released");
         assert.deepEqual(await page.evaluate(() => window.player.commands.filter(command => command.startsWith("selectAudio"))), ["selectAudio a0"], "the press still acted on release");
+        assert.equal(await page.evaluate(() => window.player.refreshes), 1, "and it is asked once after the release");
     } finally { await page.close(); }
 });
 

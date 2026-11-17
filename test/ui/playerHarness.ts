@@ -11,6 +11,8 @@ export interface PlayerHarness {
     /** What `dismissBufferingPill` answers: true while a buffering pill is up. */
     dismissesBufferingPill: boolean;
     readonly skipPillShown: boolean;
+    /** How many times the screen asked the controller to send its view again for a late language. */
+    readonly refreshes: number;
     show(view: PlaybackView): void;
     /** The shown language; a catalog registers as the packaged file does, so a screen already up redraws. */
     setLanguage(tag: string, catalog?: Readonly<Record<string, string>>): void;
@@ -35,6 +37,7 @@ root.appendChild(sibling);
 const commands: string[] = [];
 let dismissesBufferingPill = false;
 let skipPillShown = false;
+let refreshes = 0;
 let listener: ((view: PlaybackView) => void) | undefined;
 const controls: PlayerControls = {
     setVideo: (kind, value) => commands.push(`setVideo ${kind} ${value}`),
@@ -84,6 +87,8 @@ const controls: PlayerControls = {
     setSkipPillShown: (shown) => {
         skipPillShown = shown;
     },
+    // Not a command either: a late language asks for it, and these stubs have no names built in to send again.
+    refreshView: () => { refreshes++; },
 };
 const screen: PlayerScreen = mountPlayerScreen(root, controls, undefined, "https://media.test");
 
@@ -92,6 +97,7 @@ window.player = {
     get dismissesBufferingPill() { return dismissesBufferingPill; },
     set dismissesBufferingPill(value: boolean) { dismissesBufferingPill = value; },
     get skipPillShown() { return skipPillShown; },
+    get refreshes() { return refreshes; },
     show: (view) => listener?.(view),
     setLanguage(tag, catalog) {
         setAppLanguage(tag);
