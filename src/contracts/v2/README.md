@@ -133,6 +133,7 @@ There is no server capability flag for audiobooks; a server without audiobook li
 `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9); this change only names them.
 
 Parts follow Apple: a version is a part when `presentation_kind` is `audiobook_part` or it carries `codec_audio` or `duration`, ordered by `presentation_part_index` and then numerically by `file_id`.
+A part keeps `file_name`; a book without chapters lists its parts in the picker by that name, or "Part N" when it is empty or absent, as `TVAudiobookChaptersView.partTitle` does.
 Part offsets and chapter starts are summed onto one whole-book timeline; the playback API only knows files.
 The total is the larger of the stitched length and `audiobook.total_duration_seconds`. The resume position never passes a known total (an unknown total of 0 leaves it as the server sent it, where Apple clamps it to 0), and a seek never passes the end of its file.
 One deliberate difference from Apple: a part with no `duration` is sized by its furthest chapter `end_seconds`, never by a chapter start, and a multi-part book with any unknown part length is rejected rather than stitched on a guess.

@@ -343,6 +343,11 @@ test("the hub mirrors in Arabic: its text is Arabic and its page follows the lay
             return { direction: getComputedStyle(page).direction, pinned: page.closest("[dir]")?.getAttribute("dir"), introRight: intro.left > actions.left };
         });
         assert.deepEqual(layout, { direction: "rtl", pinned: "rtl", introRight: true }, "the intro column sits on the right and the actions on the left, as SwiftUI's leading edge does");
+        const arabic = await tv.page.evaluate(() => {
+            const field = document.querySelector<HTMLElement>('[data-focus="code"]')!;
+            return { align: getComputedStyle(field).textAlign, fieldWidth: field.getBoundingClientRect().width, actionsLeft: document.querySelector(".watch-party-actions")!.getBoundingClientRect().left, introRight: document.querySelector(".watch-party-intro")!.getBoundingClientRect().right };
+        });
+        assert.deepEqual(arabic, { align: "left", fieldWidth: 648, actionsLeft: 140, introRight: 1780 }, "Apple TV keeps the hint at the left even in Arabic, and insets the mirrored page 140 px at both edges");
     });
 });
 
