@@ -79,6 +79,8 @@
 .settings-pane .browse-button.settings-learned-limit .settings-row-value { font-weight: 600; opacity: 1; }
 .settings-learned-limit .settings-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[dir="rtl"] .icon-forward { transform: scaleX(-1); }
+/* Apple draws the week arrows as chevron.backward and chevron.forward, which mirror. */
+:root[dir="rtl"] .calendar-chevron svg { transform: scaleX(-1); }
 /* A view that is not mirrored yet keeps its chevrons pointing right. */
 :root[dir="rtl"] [dir="ltr"] .icon-forward { transform: none; }
 :root[dir="rtl"] .library-browse .icon-backward { transform: scaleX(-1); }
@@ -479,7 +481,7 @@
 .requests-scene .requests-rail { display: flex; gap: 40px; height: 403px; margin: 4px 0 0; padding: 26px 88px; overflow-x: auto; }
 .requests-scene .requests-rail .requests-card { flex: 0 0 176px; width: 176px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .requests-card[data-busy="true"] { opacity: .55; }
-.requests-list-notice { position: fixed; left: 88px; bottom: 40px; z-index: 6; margin: 0; padding: 14px 24px; border-radius: 999px; background: rgba(255,255,255,.16); color: #ededed; font-size: 22px; line-height: 28px; font-weight: 600; pointer-events: none; }
+.requests-list-notice { position: fixed; inset-inline-start: 88px; bottom: 40px; z-index: 6; margin: 0; padding: 14px 24px; border-radius: 999px; background: rgba(255,255,255,.16); color: #ededed; font-size: 22px; line-height: 28px; font-weight: 600; pointer-events: none; }
 .requests-scene .requests-rail .requests-card:focus { transform: none; box-shadow: none; }
 .requests-scene .requests-rail .browse-art { width: 176px; height: 264px; border-radius: 16px; transform-origin: center; }
 .requests-scene .requests-rail .browse-card-title { display: block; margin: 22px 0 0; padding: 0; font-size: 27px; line-height: 34px; font-weight: 600; color: #ededed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -524,9 +526,9 @@
 .requests-hub .skyline-content > :not(.requests-preview) { position: relative; z-index: 1; }
 .requests-hero .skyline-hero-backdrop { position: fixed; inset: 0; z-index: -2; pointer-events: none; }
 .requests-hero .skyline-tint-wash { position: absolute; inset: 0; }
-.requests-hero .skyline-art-frame { position: absolute; left: 634px; top: 0; width: 1344px; height: 756px; mask-image: linear-gradient(to bottom, #000 0%, #000 38%, rgba(0,0,0,.88) 52%, rgba(0,0,0,.58) 68%, rgba(0,0,0,.24) 81%, transparent 90%); }
+.requests-hero .skyline-art-frame { position: absolute; inset-inline-start: 634px; top: 0; width: 1344px; height: 756px; mask-image: linear-gradient(to bottom, #000 0%, #000 38%, rgba(0,0,0,.88) 52%, rgba(0,0,0,.58) 68%, rgba(0,0,0,.24) 81%, transparent 90%); }
 .requests-hero .skyline-backdrop { position: absolute; width: 100%; height: 100%; object-fit: cover; mask-image: linear-gradient(to left, #000 0%, #000 32%, transparent 100%); }
-.requests-hero-copy { position: absolute; left: 88px; bottom: 60px; width: 780px; }
+.requests-hero-copy { position: absolute; inset-inline-start: 88px; bottom: 60px; width: 780px; }
 /* marqueeContentWidth: a title may run 100 px past the 780 px synopsis. */
 .requests-hero-title { width: 880px; margin: 0 0 16px; color: #fff; font-size: 84px; line-height: 101px; font-weight: 800; letter-spacing: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .requests-metadata { margin: 0 0 15px; font-size: 20px; line-height: 24px; font-weight: 500; color: var(--silo-secondary); }
@@ -535,7 +537,9 @@
 .requests-preview .requests-synopsis { margin: -2.5px 0; line-height: 32px; }
 .requests-preview .requests-metadata { display: flex; align-items: center; }
 .requests-preview .requests-tmdb { gap: 7px; }
-.requests-preview .requests-tmdb::before { content: "·"; width: 15px; margin-right: -7px; text-align: center; }
+/* One text, as Apple's `Text(lead.joined(separator: " · "))` is: its base direction is the first strong letter's, so "٢٠٢٣ · Movie · طُلب في ٥ نوفمبر" reads left to right in Arabic too. */
+.requests-meta { unicode-bidi: plaintext; }
+.requests-preview .requests-tmdb::before { content: "·"; width: 15px; margin-inline-end: -7px; text-align: center; }
 .requests-preview .requests-tmdb img { width: 107px; height: 14px; }
 .requests-preview .requests-tmdb span { color: inherit; }
 .requests-progress { display: flex; gap: 22px; align-items: center; margin-top: 18px; font-size: 22px; line-height: 27px; }
@@ -555,18 +559,18 @@
 .requests-summary .requests-status-label::before { flex-basis: 11px; width: 11px; height: 11px; }
 .requests-primary-action .requests-status-label { align-items: center; gap: 14px; }
 .requests-primary-action .requests-status-label::before { flex-basis: 14px; width: 14px; height: 14px; }
-.requests-status-badge { position: absolute; right: 14px; bottom: 14px; width: 36px; height: 36px; border-radius: 50%; background: var(--request-tint); box-shadow: 0 0 8px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
+.requests-status-badge { position: absolute; inset-inline-end: 14px; bottom: 14px; width: 36px; height: 36px; border-radius: 50%; background: var(--request-tint); box-shadow: 0 0 8px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
 .requests-status-badge svg { width: 28px; height: 28px; fill: none; stroke: white; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 /* Apple's pageBottomPadding is 140; this rail box runs 26 px deeper than Apple's laid-out rail. */
 .browse[data-view="requests:media"], .browse[data-view="requests:request"] { padding: 0 0 114px; }
 /* TVDetailPageSurface keeps the tint behind the page; the artwork is 64% of the screen, flush right, and scrolls with the hero. */
 .requests-detail-hero .skyline-hero-backdrop { position: absolute; inset: 0; z-index: -1; }
 .requests-detail-hero .skyline-tint-wash { position: fixed; z-index: -1; }
-.requests-detail-hero .skyline-art-frame { left: 691.2px; width: 1228.8px; }
+.requests-detail-hero .skyline-art-frame { inset-inline-start: 691.2px; width: 1228.8px; }
 .requests-detail-hero { position: relative; z-index: 0; height: 690px; }
 .requests-detail-hero[data-has-status="true"] { height: 810px; }
 /* Apple clips the hero at its height, so the copy column ends there. clip-path keeps focus from scrolling it and leaves the pill's focus growth and shadow free on the other sides. */
-.requests-detail-hero .requests-hero-copy { position: relative; top: 116px; bottom: auto; left: 100px; width: 1080px; height: calc(100% - 116px); clip-path: inset(0 -740px 0 -100px); }
+.requests-detail-hero .requests-hero-copy { position: relative; top: 116px; bottom: auto; inset-inline-start: 100px; width: 1080px; height: calc(100% - 116px); clip-path: inset(0 -740px 0 -100px); }
 .requests-eyebrow { display: inline-block; border-radius: 30px; background: rgba(0,0,0,.55); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); padding: 8px 16px; font-size: 18px; font-weight: 600; line-height: 22px; letter-spacing: 1.2px; }
 .requests-detail-title { margin: 16px 0 14px; text-transform: uppercase; color: white; }
 .requests-title-primary { display: block; font-size: 92px; line-height: 110px; font-weight: 900; letter-spacing: -3px; }
@@ -574,9 +578,9 @@
 /* Inter's calibrated horizontal compression substitutes for Apple's licensed compressed title face. */
 .requests-title-primary, .requests-title-secondary { width: 147.0588%; transform: scaleX(.68); transform-origin: left; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .requests-detail-metadata { display: flex; align-items: center; gap: 14px; font-size: 24px; line-height: 29px; color: rgba(255,255,255,.9); margin: 0; white-space: nowrap; }
-.requests-detail-metadata > :not(:first-child)::before { content: "·"; margin-right: 14px; font-size: 22px; font-weight: 600; color: rgba(255,255,255,.45); }
+.requests-detail-metadata > :not(:first-child)::before { content: "·"; margin-inline-end: 14px; font-size: 22px; font-weight: 600; color: rgba(255,255,255,.45); }
 /* The rating row is itself a flex row, so its gap already counts toward Apple's 14 px after the divider. */
-.requests-detail-metadata > .requests-tmdb::before { margin-right: 6px; }
+.requests-detail-metadata > .requests-tmdb::before { margin-inline-end: 6px; }
 .requests-detail-metadata > .requests-rating-chip + span::before { content: none; }
 .requests-rating-chip { outline: 1.5px solid rgba(255,255,255,.78); border-radius: 5px; padding: 4px 10px; font-size: 18px; line-height: 22px; font-weight: 700; }
 .requests-tmdb { display: inline-flex; align-items: center; gap: 8px; }
@@ -624,11 +628,11 @@
 .requests-detail-hero ~ .requests-rail .browse-art { height: calc(330px * var(--poster-scale, 1)); }
 .requests-detail-hero ~ .requests-heading, .requests-detail-hero ~ .requests-rail { position: relative; z-index: 1; }
 .requests-card-culled:not(:focus) { opacity: 0; }
-.requests-scene .browse-actions { margin-left: 88px; }
-.requests-scene:not(.requests-hub) .browse-actions { margin-left: 0; }
+.requests-scene .browse-actions { margin-inline-start: 88px; }
+.requests-scene:not(.requests-hub) .browse-actions { margin-inline-start: 0; }
 /* A detail's recovery controls and notices sit on the page inset, above the fixed page tint. */
 .browse[data-view="requests:media"] > .browse-actions, .browse[data-view="requests:request"] > .browse-actions,
-.browse[data-view="requests:media"] > .browse-text, .browse[data-view="requests:request"] > .browse-text { position: relative; z-index: 1; margin-left: 100px; }
+.browse[data-view="requests:media"] > .browse-text, .browse[data-view="requests:request"] > .browse-text { position: relative; z-index: 1; margin-inline-start: 100px; }
 @media (prefers-reduced-motion: reduce) {
     .requests-rail .browse-art { transition: none; }
 }
@@ -1098,9 +1102,9 @@ svg.library-empty-icon { width: auto; }
 .skyline-home .skyline-backdrop, .details-hero .skyline-backdrop { position: static; display: block; width: 100%; height: 100%; object-fit: cover; mask-image: linear-gradient(to left, #000 0%, #000 32%, transparent 100%); }
 /* Right to left: the hero artwork moves to the screen's left edge and fades toward the text, which moves to the right. */
 :is(.skyline-home, .details-hero) .skyline-art-frame { left: auto; inset-inline-start: 691.2px; }
-:root[dir="rtl"] :is(.skyline-home, .details-hero) .skyline-backdrop { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
+:root[dir="rtl"] :is(.skyline-home, .details-hero, .requests-hero) .skyline-backdrop { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
 /* The placeholder layers (Details, and the hero scene Home, library roots and For You share) fade with the image: the frame's backing, its ThumbHash preview and the missing-art surface. */
-:root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-surface::before, :root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-thumbhash, :root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-missing { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
+:root[dir="rtl"] :is(.details-hero, .skyline-home, .requests-hero) .hero-art-surface::before, :root[dir="rtl"] :is(.details-hero, .skyline-home, .requests-hero) .hero-art-thumbhash, :root[dir="rtl"] :is(.details-hero, .skyline-home, .requests-hero) .hero-art-missing { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
 :root[dir="rtl"] .skyline-scrim { background: linear-gradient(0deg, #000 10%, rgba(0,0,0,.4) 54%, rgba(0,0,0,.42)), linear-gradient(270deg, rgba(0,0,0,.8), transparent); }
 .skyline-home .skyline-top-scrim, .requests-preview .skyline-top-scrim { position: absolute; top: 0; left: 0; width: 100%; height: 190px; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-grid .skyline-content { top: 228px; height: 852px; }
@@ -1453,7 +1457,9 @@ svg.library-empty-icon { width: auto; }
 /* Apple's 1.5 subtitle tracking is outside the compression, so Inter's sits inside the scale at 1.5 / .69. */
 .details-editorial .requests-title-secondary { width: 144.9275%; transform: scaleX(.69); font-size: calc(40px * var(--silo-sf-cap-scale)); letter-spacing: 2.17px; color: rgba(255,255,255,.95); }
 /* The title is compressed about its leading edge, which is the right one when Details is mirrored. */
-:root[dir="rtl"] .details-editorial :is(.requests-title-primary, .requests-title-secondary) { transform-origin: right; }
+:root[dir="rtl"] :is(.details-editorial, .requests-detail-hero) :is(.requests-title-primary, .requests-title-secondary) { transform-origin: right; }
+/* The detail copy overflows its box by 740px toward the artwork and 100px toward the edge; both swap sides. */
+:root[dir="rtl"] .requests-detail-hero .requests-hero-copy { clip-path: inset(0 -100px 0 -740px); }
 /* heroCredit: 23 regular, white .70, one line. */
 .details-editorial .details-director { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(23px * var(--silo-sf-cap-scale)); font-weight: 400; color: rgba(255,255,255,.7); }
 /* TVPlaybackSelectionSummaryView: label 23 bold, tracking 0.9, white .48; value 23 medium, white .82. */
@@ -1609,7 +1615,7 @@ svg.library-empty-icon { width: auto; }
    so the shelf ends on the caption, which is what anchor .bottom scrolls. */
 .calendar-shelf .browse-section-title { margin: 0 0 20px; height: 42px; font-size: 36px; font-weight: 600; line-height: 42px; }
 .calendar-shelf .browse-row { box-sizing: border-box; width: 1920px; margin-left: -80px; margin-right: -80px; padding: 24px 80px; }
-.calendar-shelf .browse-card { width: calc(260px * var(--calendar-scale, 1)); margin: 0 40px 0 0; border: 0; border-radius: 0; }
+.calendar-shelf .browse-card { width: calc(260px * var(--calendar-scale, 1)); margin: 0; margin-inline-end: 40px; border: 0; border-radius: 0; }
 .calendar-shelf .browse-art { width: calc(260px * var(--calendar-scale, 1)); height: calc(390px * var(--calendar-scale, 1)); }
 .calendar-event .browse-card-title { padding: 0; margin: 16px 0 2px; line-height: 32.98px; min-height: 65.96px; white-space: normal; font-size: 28px; font-weight: 600; color: rgba(237,237,237,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .calendar-event:focus { transform: none; box-shadow: none; }
@@ -1648,10 +1654,10 @@ svg.library-empty-icon { width: auto; }
 .calendar-empty-links { display: flex; justify-content: center; gap: 48px; margin-top: 28px; }
 .calendar-empty-links .browse-button { width: 300px; margin: 0; }
 .calendar-event .browse-art { position: relative; }
-.calendar-releases { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 24px); }
+.calendar-releases { position: absolute; top: 12px; inset-inline-start: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 24px); }
 .calendar-release { padding: 5px 12px; border-radius: 20px; background: rgba(237,237,237,.92); color: #000; font-size: 18px; font-weight: 700; letter-spacing: .8px; }
-.calendar-watched { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ededed; color: #000; font-size: 20px; font-weight: 700; box-shadow: 0 0 4px rgba(0,0,0,.3); }
-.calendar-time { position: absolute; bottom: 12px; right: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: 20px; font-weight: 600; white-space: normal; }
+.calendar-watched { position: absolute; top: 12px; inset-inline-end: 12px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ededed; color: #000; font-size: 20px; font-weight: 700; box-shadow: 0 0 4px rgba(0,0,0,.3); }
+.calendar-time { position: absolute; bottom: 12px; inset-inline-end: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: 20px; font-weight: 600; white-space: normal; }
 @media (prefers-reduced-motion: reduce) {
     .calendar-event:focus .browse-art, .calendar-week .calendar-day:focus, .calendar-filters .browse-button:focus { transform: none; }
 }
