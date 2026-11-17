@@ -346,6 +346,14 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
             assert.equal(await tv.page.evaluate(() => document.activeElement?.closest(".browse-grid") !== null), true, "Right walks the row to its last column");
             await tv.remote(RIGHT);
             assert.match(await tv.focused() ?? "", /^letter:/, "one more Right enters the letter rail");
+            // The top bar is part of this view's content but is not the library's: it stays mirrored above the pinned grid.
+            const bar = await tv.page.evaluate(() => getComputedStyle(document.querySelector(".browse-nav") as Element).direction);
+            assert.equal(bar, language === "ar" ? "rtl" : "ltr");
+            if (language === "ar") {
+                await tv.page.locator('[data-focus="home"]').focus();
+                await tv.remote(LEFT);
+                assert.equal(await tv.focused(), "movies", "Left in the mirrored top bar moves to the tab on its left");
+            }
         });
     });
 }

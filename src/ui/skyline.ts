@@ -379,6 +379,8 @@ export class Skyline {
         if (this.confirmation) { this.nav.setAttribute("aria-hidden", "true"); this.body.setAttribute("aria-hidden", "true"); }
         else { this.nav.removeAttribute("aria-hidden"); this.body.removeAttribute("aria-hidden"); }
         if (preview && !this.translationArmed) this.armTranslation();
+        // The bar, its menus and the hero layers are the shell's, not the view's: FocusHost leaves their direction to the page.
+        for (const node of [this.scrim, this.nav, this.selector, this.flyout, this.leaving, this.marquee]) node.setAttribute("data-chrome", "");
         return { ...view, prepare, transition: { key: libraryKey ?? selected, group: selected }, content: [this.scrim, this.nav, this.selector, this.flyout, this.leaving, ...(preview ? [this.marquee] : []), this.body], zones: this.confirmation ? zones.filter(zone => zone.id === "selector") : [...zones, ...view.zones], back: selected === "search" ? view.back : () => this.back() };
     }
 
