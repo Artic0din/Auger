@@ -1,3 +1,11 @@
+/* Server-provided text (titles, names, overviews, captions) takes its base direction from its own first strong letter, as SwiftUI's Text does: in a
+   right-to-left page "10 Cloverfield Lane" would otherwise read "Cloverfield Lane 10". Plaintext also aligns a start-aligned line by that letter (a Latin title would
+   jump to the left), but Apple aligns by the layout (it sits on the right, reading left to right), so the line is aligned right explicitly. :where keeps this at one class
+   of specificity, so the centred captions' own rules (two classes or more) still win; a view pinned left to right is left alone. Only in a right-to-left page, so English
+   and a left-to-right page with an Arabic title are unchanged. This is the one list: add a class when a new element shows server text. */
+:where(:root[dir="rtl"]) :is(.browse-card-title, .browse-card-subtitle, .discovery-collection-name, .browse-overview, .skyline-title, .skyline-synopsis, .skyline-meta,
+.requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview,
+.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
 .section-catalog * { font-family: var(--silo-font); font-weight: inherit; }

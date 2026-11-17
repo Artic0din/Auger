@@ -44,6 +44,8 @@ Arabic reads right to left, as on Apple TV, where the root view sets `\.layoutDi
 - CSS uses logical properties (`margin-inline-start`, `inset-inline-start`, `text-align: start`), which behave as the physical ones in English.
   Where Chromium 108 has no logical form (`float`, gradient and mask directions) a `:root[dir="rtl"]` rule overrides it.
   `chevron.forward` and `arrow.forward` symbols flip (`icon-forward`); card overlays and badges stay left to right.
+- Server-provided text (titles, names, overviews, captions) is isolated in a right-to-left page by one rule at the top of `browse.css`: `unicode-bidi: plaintext` takes the base direction from the text's own first letter, so `10 Cloverfield Lane` is not reordered as `Cloverfield Lane 10`, and `text-align: right` keeps the line aligned by the layout, as SwiftUI's `Text` is.
+  Add a class to that list when a new element shows server text; app text is on the catalog and needs nothing.
 
 Mirrored so far: the top bar and its menus (the profile menu under its button, a library's sections beside it), Home, Settings, Change Account, a library's Browse page (the grid reads right to left and the A–Z rail moves to the left edge, as silo-apple `TVLibraryGridView.swift:100-108` does with its trailing 32 pt), and the hero art on Home and Details.
 Not yet, and listed on [#571](https://github.com/Artic0din/silo-tizen/issues/571):

@@ -573,3 +573,116 @@ test("a Home shelf scrolled in Arabic keeps its card on screen when the server's
         assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `${before} at ${card?.left}..${card?.right}`);
     });
 });
+
+/** True when the words of `text` read in the order written: the leading number is left of the first word, as on Apple TV. */
+const readsAsWritten = (tv: Tv, selector: string, number: string, word: string): Promise<{ text: string; unicodeBidi: string; textAlign: string; asWritten: boolean } | undefined> => tv.page.evaluate(([css, first, second]) => {
+    // Details draws its title in capitals, so the words are matched without case.
+    const has = (node: Node): boolean => node.textContent?.toLowerCase().includes((second as string).toLowerCase()) === true;
+    // The element that holds the words itself, not one of its ancestors in the list.
+    const owner = (node: Element): ChildNode | undefined => Array.from(node.childNodes).find(child => child.nodeType === Node.TEXT_NODE && has(child));
+    const element = Array.from(document.querySelectorAll(css as string)).find(node => owner(node) !== undefined);
+    const text = element === undefined ? undefined : owner(element);
+    if (element === undefined || text === undefined) return undefined;
+    const content = (text.textContent ?? "").toLowerCase();
+    const rect = (from: number, length: number): DOMRect => { const range = document.createRange(); range.setStart(text, from); range.setEnd(text, from + length); return range.getBoundingClientRect(); };
+    const numberAt = content.indexOf(first as string), wordAt = content.indexOf((second as string).toLowerCase());
+    return { text: text.textContent ?? "", unicodeBidi: getComputedStyle(element).unicodeBidi, textAlign: getComputedStyle(element).textAlign, asWritten: rect(numberAt, (first as string).length).left < rect(wordAt, (second as string).length).left };
+}, [selector, number, word] as const);
+
+test("in Arabic a server title that starts with a number keeps its words in the order written, on Home, Details and Search", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const catalog = new FakeHome();
+    const movie = catalog.titles.get("movie:m0004");
+    assert.ok(movie);
+    catalog.titles.set(movie.id, { ...movie, title: "10 Cloverfield Lane" });
+    tv.fake.catalog = catalog;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await waitForDirection(tv, "rtl");
+
+        // Search is not mirrored yet: its content is pinned left to right, where the words read as written without isolation.
+        const check = async (where: string, selector: string, pinned = false): Promise<void> => {
+            let found: Awaited<ReturnType<typeof readsAsWritten>>;
+            await tv.eventually(async () => { found = await readsAsWritten(tv, selector, "10", "Cloverfield"); return found !== undefined; }, `${where}: the title is drawn`);
+            assert.ok(found?.asWritten, `${where}: "${found?.text}" reads reordered`);
+            if (pinned) return;
+            assert.match(found?.unicodeBidi ?? "", /plaintext/, `${where}: the title takes its direction from its own first letter`);
+            // Apple aligns by the layout, not by the letters: a Latin title in Arabic sits on the right or is centred, never pushed to the left.
+            assert.match(found?.textAlign ?? "", /^(right|center)$/, `${where}: the line is aligned by the layout, not by its letters`);
+        };
+        await check("Home card", '[data-section="recent/12"] .browse-card-title');
+        await check("Home hero", ".skyline-title");
+
+        await tv.page.locator('[data-section="recent/12"] [data-focus="movie:m0004"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view^="item:"]').waitFor();
+        await check("Details", ".details-editorial .requests-title-primary, .details-editorial .browse-title");
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+
+        await tv.page.locator('[data-focus="search"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator("#browse-search").waitFor();
+        await tv.page.fill("#browse-search", "Cloverfield");
+        await tv.remote(65376);
+        await check("Search", '[data-view="search"] .browse-card-title', true);
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+        await selectLibraryMode(tv, "Browse");
+        await check("Browse", ".browse-grid .browse-card-title");
+    } finally { await tv.page.context().close(); }
+});
+
+test("in Arabic a library, profile or person name that starts with a number keeps its words in order in the menus and on Settings", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const catalog = new FakeHome();
+    const library = catalog.households.get("p-owner")?.libraries.find(item => item.id === "12");
+    assert.ok(library);
+    library.name = "4K Movies";
+    tv.fake.catalog = catalog;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="movies"]').focus();
+        await tv.remote(DOWN);
+        await tv.eventually(async () => await readsAsWritten(tv, ".skyline-menu-label", "4k", "Movies") !== undefined, "the library menu is drawn");
+        const menu = await readsAsWritten(tv, ".skyline-menu-label", "4k", "Movies");
+        assert.ok(menu?.asWritten, `"${menu?.text}" reads reordered in the library menu`);
+        assert.match(menu?.unicodeBidi ?? "", /plaintext/);
+        // Profile, Settings and person names share the same rule: their classes take the same isolation.
+        const isolated = await tv.page.evaluate(() => [".skyline-profile-title", ".settings-profile-name", ".collection-detail-title", ".details-person-hero .browse-title"].map(selector => {
+            const holder = document.createElement("div");
+            holder.innerHTML = selector.includes("details-person-hero") ? '<div class="details-person-hero"><h1 class="browse-title">2 Fast</h1></div>' : `<span class="${selector.slice(1)}">2 Fast</span>`;
+            document.body.append(holder);
+            const style = getComputedStyle(holder.querySelector(selector) as Element);
+            const result = { selector, bidi: style.unicodeBidi, align: style.textAlign };
+            holder.remove();
+            return result;
+        }));
+        for (const item of isolated) assert.match(item.bidi, /plaintext/, `${item.selector}: ${item.bidi}`);
+    } finally { await tv.page.context().close(); }
+});
