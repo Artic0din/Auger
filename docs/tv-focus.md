@@ -353,7 +353,7 @@ Swept once for #605 (`rg "getBoundingClientRect\(\)\.(left|right)|offsetLeft|scr
 | --- | --- | --- |
 | `browseFocus` `nearestItem`, `overlappingNearest`, `navigationX`, `centreAt` | nearest by centre x, overlap of two boxes | safe: symmetric |
 | `browseFocus` `columnAtOrPastCenter` (Search People to grid) | first column at or past the person's centre | was not safe; now `startsAtOrPast` (`inlineAxis.ts`). Search is pinned left to right today, so it runs the left-to-right branch |
-| `browseFocus` aligned landing (`spatial: "aligned"`, Person filmography filters) | the intersecting item closest to the focused item's left edge | was not safe; now `startOffset` (`inlineAxis.ts`). Person pages are pinned left to right today |
+| `browseFocus` aligned landing (`spatial: "aligned"`, Person filmography filters) | the intersecting item closest to the focused item's start edge (its left edge left to right, its right edge right to left) | was not safe; now `startOffset` (`inlineAxis.ts`). Person pages are pinned left to right today |
 | `browseFocus` `intersects`, `insideRow`, `searchRail` clip test | box overlaps a frame | safe: symmetric |
 | `browseFocus` row `scrollLeft` snapshot (`visits`, `applyVisit`) | saves and restores a row's scroll | not safe across a direction change; `reconcileLanguage` calls `revealFocused` when the direction flips |
 | `skylineScroll` row reveal | physical delta, insets swapped, `Math.min(0, ...)` when rtl | safe |
