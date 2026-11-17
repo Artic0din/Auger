@@ -344,7 +344,7 @@ test("a screen opened over Arabic browse (Add Profile, Switch Server) keeps the 
     });
 });
 
-test("in Arabic the views that are not mirrored yet stay left to right under a mirrored top bar, and read the remote that way", async () => {
+test("in Arabic Search is mirrored under the top bar, as Home is, and reads the remote that way", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
         const directions = (): Promise<{ view: string | null; bar: string; content: string[] }> => tv.page.evaluate(() => ({
@@ -360,15 +360,15 @@ test("in Arabic the views that are not mirrored yet stay left to right under a m
         await tv.page.locator('[data-view="search"]').waitFor();
         const search = await directions();
         assert.equal(search.bar, "rtl", "the top bar stays mirrored");
-        assert.ok(search.content.length > 0 && search.content.every(direction => direction === "ltr"), `Search ${search.content}`);
-        // A key pressed in a pinned view is read left to right: Right on the field is Right.
+        assert.ok(search.content.length > 0 && search.content.every(direction => direction === "rtl"), `Search ${search.content}`);
+        // A key pressed in Search is read right to left: the field's layout is the page's.
         assert.equal(await tv.page.evaluate(() => {
             const field = document.querySelector('[data-view="search"] input') as HTMLElement;
-            return field.closest("[dir]")?.getAttribute("dir");
-        }), "ltr");
+            return field.parentElement?.closest("[dir]")?.getAttribute("dir");
+        }), "rtl");
         await tv.remote(BACK);
         await tv.page.locator('[data-view="home"]').waitFor();
-        assert.ok((await directions()).content.every(direction => direction === "rtl"), "Home is mirrored again");
+        assert.ok((await directions()).content.every(direction => direction === "rtl"), "Home is still mirrored");
     });
 });
 
@@ -611,12 +611,10 @@ test("in Arabic a server title that starts with a number keeps its words in the 
         await tv.page.locator('[data-view="home"]').waitFor();
         await waitForDirection(tv, "rtl");
 
-        // Search is not mirrored yet: its content is pinned left to right, where the words read as written without isolation.
-        const check = async (where: string, selector: string, pinned = false): Promise<void> => {
+        const check = async (where: string, selector: string): Promise<void> => {
             let found: Awaited<ReturnType<typeof readsAsWritten>>;
             await tv.eventually(async () => { found = await readsAsWritten(tv, selector, "10", "Cloverfield"); return found !== undefined; }, `${where}: the title is drawn`);
             assert.ok(found?.asWritten, `${where}: "${found?.text}" reads reordered`);
-            if (pinned) return;
             assert.match(found?.unicodeBidi ?? "", /plaintext/, `${where}: the title takes its direction from its own first letter`);
             // Apple aligns by the layout, not by the letters: a Latin title in Arabic sits on the right or is centred, never pushed to the left.
             assert.match(found?.textAlign ?? "", /^(right|center)$/, `${where}: the line is aligned by the layout, not by its letters`);
@@ -636,7 +634,7 @@ test("in Arabic a server title that starts with a number keeps its words in the 
         await tv.page.locator("#browse-search").waitFor();
         await tv.page.fill("#browse-search", "Cloverfield");
         await tv.remote(65376);
-        await check("Search", '[data-view="search"] .browse-card-title', true);
+        await check("Search", '[data-view="search"] .browse-card-title');
         await tv.remote(BACK);
         await tv.page.locator('[data-view="home"]').waitFor();
         await tv.page.locator('[data-focus="movies"]').click();
@@ -685,6 +683,152 @@ test("in Arabic a library, profile or person name that starts with a number keep
         }));
         for (const item of isolated) assert.match(item.bidi, /plaintext/, `${item.selector}: ${item.bidi}`);
     } finally { await tv.page.context().close(); }
+});
+
+const PEOPLE_ROUTE = "**/api/v2/catalog/people**";
+const peopleFor = (route: { fulfill(options: { json: unknown }): Promise<void> }): Promise<void> => route.fulfill({ json: { items: Array.from({ length: 20 }, (_, index) => ({ id: `edge-${index}`, name: `Person ${index + 1}` })) } });
+
+async function searchFor(tv: Tv, query: string): Promise<void> {
+    await tv.page.route(PEOPLE_ROUTE, peopleFor);
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", query);
+    await tv.remote(65376);
+    await tv.page.locator('.browse-grid [data-focus="movie:m0002"]').waitFor();
+}
+
+for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
+    test(`${language === "ar" ? "in Arabic" : "in English"} Search puts its field, People and results on the ${language === "ar" ? "right and reads them right to left" : "left and reads them left to right"} (SearchView.swift)`, async () => {
+        await withHome(options, async tv => {
+            if (language === "ar") await waitForDirection(tv, "rtl");
+            await searchFor(tv, "Movie 000");
+            const rightward = language === "ar";
+            const centre = async (selector: string): Promise<number> => { const rect = await box(tv, selector); return (rect.left + rect.right) / 2; };
+            const field = await centre(".search-field-icon");
+            assert.equal(field > 960, rightward, `the field's icon is on the ${rightward ? "right" : "left"} (${field})`);
+            const [first, second] = [await centre('.browse-grid [data-focus="movie:m0001"]'), await centre('.browse-grid [data-focus="movie:m0002"]')];
+            assert.equal(first > second, rightward, `the first result is on the ${rightward ? "right" : "left"} of the second (${first}, ${second})`);
+            const [firstPerson, secondPerson] = [await centre('[data-focus="person:edge-0"]'), await centre('[data-focus="person:edge-1"]')];
+            assert.equal(firstPerson > secondPerson, rightward, `the first person is on the ${rightward ? "right" : "left"} (${firstPerson}, ${secondPerson})`);
+            // The count line starts on the layout's start side: the scene's 76 px and the line's 162 px in.
+            const count = await tv.page.locator(".search-count").evaluate(node => { const range = document.createRange(); range.selectNodeContents(node); const rect = range.getBoundingClientRect(); return { left: rect.left, right: rect.right }; });
+            if (rightward) assert.ok(Math.abs(count.right - (1920 - 238)) <= 2, `the count line ends at ${count.right}`);
+            else assert.ok(Math.abs(count.left - 238) <= 2, `the count line starts at ${count.left}`);
+            // Left and Right walk the results toward their end: right to left, Left is the next result.
+            await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').focus();
+            await tv.remote(rightward ? LEFT : RIGHT);
+            assert.equal(await tv.focused(), "movie:m0002", "the next key reaches the next result");
+            await tv.remote(rightward ? RIGHT : LEFT);
+            assert.equal(await tv.focused(), "movie:m0001", "the opposite key returns");
+        });
+    });
+}
+
+for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
+    test(`${language === "ar" ? "in Arabic" : "in English"} Search's box set badges, requests heading mark and full-row offsets sit on the layout's start and end sides (BoxSetCardBadges.swift, RequestSearchSectionView.swift)`, async () => {
+        await withHome(options, async tv => {
+            if (language === "ar") await waitForDirection(tv, "rtl");
+            // The pieces Search builds only for some answers, built bare so the page's own stylesheet places them.
+            const placed = await tv.page.evaluate(() => {
+                const scene = document.createElement("div");
+                scene.className = "browse search-scene";
+                scene.style.cssText = "position:fixed;top:0;left:0;width:1920px;visibility:hidden";
+                scene.innerHTML = '<div class="box-set-card" style="width:220px;height:330px"><span class="box-set-label">Box set</span><span class="box-set-count">3 films</span></div>'
+                    + '<h2 class="search-requests-heading"><span class="search-requests-symbol"></span>Available</h2>'
+                    + '<p class="browse-text search-count">3 results</p>'
+                    + '<div class="browse-grid" data-full-row="true" style="--search-columns:8"><button class="browse-card"></button><button class="browse-card search-last-row"></button></div>';
+                document.body.append(scene);
+                const rect = (selector: string): DOMRect => (scene.querySelector(selector) as HTMLElement).getBoundingClientRect();
+                const style = (selector: string): CSSStyleDeclaration => getComputedStyle(scene.querySelector(selector) as HTMLElement);
+                const card = rect(".box-set-card"), label = rect(".box-set-label"), count = rect(".box-set-count"), heading = rect(".search-requests-heading"), symbol = rect(".search-requests-symbol");
+                const result = {
+                    labelStart: document.dir === "rtl" ? card.right - label.right : label.left - card.left,
+                    countEnd: document.dir === "rtl" ? count.left - card.left : card.right - count.right,
+                    symbolStart: document.dir === "rtl" ? heading.right - symbol.right : symbol.left - heading.left,
+                    textMargins: { left: style(".search-count").marginLeft, right: style(".search-count").marginRight },
+                    gridMargins: { left: style(".browse-grid").marginLeft, right: style(".browse-grid").marginRight },
+                    lastRow: { left: style(".search-last-row").left, right: style(".search-last-row").right },
+                };
+                scene.remove();
+                return result;
+            });
+            const rightToLeft = language === "ar";
+            assert.equal(placed.labelStart, 12, "the BOX SET label is 12 px in from the top-leading corner");
+            assert.equal(placed.countEnd, 12, "the film count is 12 px in from the bottom-trailing corner");
+            assert.equal(placed.symbolStart, -27, "the requests mark sits 27 px before the heading's start");
+            // 8 columns are 298 px wider than the 1444 px column, so a full row starts 298 px sooner than its 153 px edge, and its short last row steps back.
+            assert.deepEqual(placed.gridMargins, rightToLeft ? { left: "153px", right: "-145px" } : { left: "-145px", right: "153px" });
+            assert.deepEqual(placed.lastRow, rightToLeft ? { left: "-298px", right: "298px" } : { left: "298px", right: "-298px" });
+            assert.deepEqual(placed.textMargins, { left: "162px", right: "162px" }, "the count line keeps 162 px on both sides");
+        });
+    });
+}
+
+test("in Arabic the Search field aligns by what is typed, as Apple TV's field does: Latin text such as Aladdin reads left to right, Arabic and an empty field follow the layout", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="search"]').click();
+        const field = tv.page.locator("#browse-search");
+        const read = (): Promise<{ direction: string; textAlign: string }> => field.evaluate(node => { const computed = getComputedStyle(node); return { direction: computed.direction, textAlign: computed.textAlign }; });
+        assert.deepEqual(await read(), { direction: "rtl", textAlign: "start" }, "empty: the layout's direction, so the Arabic prompt sits on the right");
+        // textAlign start resolves against the direction: left for ltr, right for rtl.
+        await field.fill("Aladdin");
+        assert.deepEqual(await read(), { direction: "ltr", textAlign: "start" });
+        await field.fill("10 Cloverfield Lane");
+        assert.equal((await read()).direction, "ltr", "a Latin query that starts with a number is not reordered");
+        await field.fill("علاء الدين");
+        assert.equal((await read()).direction, "rtl");
+        await field.fill("");
+        assert.equal((await read()).direction, "rtl", "emptied again: back to the layout's direction");
+    });
+});
+
+test("in Arabic typed Latin text is drawn at the left end of the Search field and typed Arabic text at the right end (the drawn pixels, not just the computed direction)", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="search"]').click();
+        const field = tv.page.locator("#browse-search");
+        await field.evaluate(node => (node as HTMLInputElement).blur());
+        const clip = await field.evaluate(node => { const rect = node.getBoundingClientRect(); return { x: Math.floor(rect.left), y: Math.floor(rect.top), width: Math.floor(rect.width), height: Math.floor(rect.height) }; });
+        /** The left and right edges of the text drawn in the field, as distances in from the field's own edges. */
+        const inkInset = async (): Promise<{ fromLeft: number; fromRight: number }> => {
+            const png = (await tv.page.screenshot({ clip })).toString("base64");
+            return tv.page.evaluate(async ([data, width]) => {
+                const image = new Image();
+                image.src = `data:image/png;base64,${data}`;
+                await image.decode();
+                const canvas = document.createElement("canvas");
+                canvas.width = image.width; canvas.height = image.height;
+                const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+                context.drawImage(image, 0, 0);
+                const pixels = context.getImageData(0, 0, image.width, image.height).data;
+                let first = image.width, last = -1;
+                for (let x = 0; x < image.width; x++) for (let y = 0; y < image.height; y++) if ((pixels[(y * image.width + x) * 4] ?? 0) > 60) { first = Math.min(first, x); last = Math.max(last, x); }
+                return { fromLeft: first, fromRight: width - 1 - last };
+            }, [png, clip.width] as const);
+        };
+        await field.fill("Aladdin");
+        const latin = await inkInset();
+        assert.ok(latin.fromLeft < 60 && latin.fromRight > clip.width / 2, `Aladdin sits at the left end: ${JSON.stringify(latin)} in a ${clip.width}px field`);
+        await field.fill("علاء الدين");
+        const arabic = await inkInset();
+        assert.ok(arabic.fromRight < 60 && arabic.fromLeft > clip.width / 2, `Arabic sits at the right end: ${JSON.stringify(arabic)} in a ${clip.width}px field`);
+    });
+});
+
+test("in Arabic Left walks Search's People rail to its last person and keeps each person on screen", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await searchFor(tv, "Movie 000");
+        await tv.page.locator('[data-focus="person:edge-0"]').focus();
+        for (let person = 1; person < 20; person++) {
+            await tv.remote(LEFT);
+            assert.equal(await tv.focused(), `person:edge-${person}`);
+            const rect = await box(tv, `[data-focus="person:edge-${person}"]`);
+            assert.ok(rect.left >= 0 && rect.right <= 1920, `person ${person + 1} is on screen (${rect.left}..${rect.right})`);
+        }
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "person:edge-18", "Right steps back toward the first person");
+    });
 });
 
 test("in Arabic Search's People rail still lands Down on the title column at or past that person (the second person on the third poster)", async () => {

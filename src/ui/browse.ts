@@ -266,6 +266,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const input = el("input", "browse-input");
     input.id = "browse-search";
     input.type = "search";
+    // The field aligns by what is typed, as Apple TV's does: Latin text such as a title reads left to right in Arabic, an empty field takes the layout's direction.
+    input.dir = "auto";
     input.spellcheck = false;
     input.autocomplete = "off";
     input.placeholder = translate("search.fieldPrompt.video");
