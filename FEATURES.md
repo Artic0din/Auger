@@ -79,7 +79,7 @@ File pointers are repository-relative.
 | Collections (fan-card grid, personal collections) | ✅ | ✅ | ✅ | Layout parity open (#100). Android: `TvCollectionsScreen` |
 | Library Shuffle | ✅ | ✅ | ✅ | Server-owned; hidden in mixed-library scope. Apple: `ShuffleFeatureStore`. Android: no mixed-library screen on TV |
 | Music | 🚧 | ✅ | 🟡 | Blocked on the server parity contract (#56). Android: Music tab browses the library (`TvLibraryTabType.Music`); no music player found in `androidTvApp` |
-| Audiobooks | 🚧 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has the tab, library, cards and detail; audiobook playback is not built |
+| Audiobooks | 🚧 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has the tab, library, cards, detail and Apple's loading frame; audiobook playback is not built |
 
 ## Search
 

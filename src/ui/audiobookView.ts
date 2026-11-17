@@ -70,10 +70,10 @@ function cover(book: Audiobook, context: ViewContext): HTMLElement {
     return artwork("audiobook-cover", book.posterUrl, context.baseUrl, defaultArtwork(artworkSymbol("audiobook")));
 }
 
-function backdrop(book: Audiobook, context: ViewContext): HTMLElement {
+export function backdrop(posterUrl: string | undefined, baseUrl: string): HTMLElement {
     const wash = el("div", "audiobook-backdrop");
     wash.setAttribute("aria-hidden", "true");
-    const source = artworkUrl(book.posterUrl, context.baseUrl);
+    const source = artworkUrl(posterUrl, baseUrl);
     if (source !== undefined) {
         const image = el("img", "audiobook-backdrop-image");
         image.alt = "";
@@ -177,7 +177,7 @@ function detailView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHan
     const below = sections(page, context);
     const root = el("div", "audiobook-page");
     root.dataset.mediaType = "audiobook";
-    root.append(backdrop(book, context), hero);
+    root.append(backdrop(book.posterUrl, context.baseUrl), hero);
     if (below.content.length > 0) {
         const rest = el("div", "audiobook-sections");
         rest.append(...below.content);
