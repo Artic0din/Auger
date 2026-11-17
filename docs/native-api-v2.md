@@ -33,6 +33,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
   - `X-Silo-Device-Id`
   - `X-Silo-Device-Name`
   - `X-Silo-Device-Platform`
+  - `Accept-Language: <tag>`, the bare tag of the language the app shows (`en`, `pt-BR`), as silo-apple's `AppLanguage.applyHeader` sends it. Resource and subtitle downloads send it too. Images and AVPlay streams are fetched by the browser and the player, which send their own.
 - **Headers when set.**
   - `Content-Type: application/json` when a body is sent.
   - `Authorization: Bearer <token>` when the spec carries a bearer.

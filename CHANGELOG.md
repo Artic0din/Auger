@@ -6,7 +6,14 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
+- Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
+- Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
 - Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
+- Sent the language the app shows in `Accept-Language` on every Silo request, as Apple TV does, and added the English string catalog and the lookup that screens will use to show text in that language. Nothing on screen changes yet: English is the only language this build ships.
+- Settings now shows in the language you pick under App Language, in Apple TV's 22 languages. The picker lists them by their own names, sorted by name as Apple TV's is, and Match Device follows the TV. Other screens stay English until they move over (#571).
+- The top bar and its For You, library and profile menus, the sign-out confirmation, and Home's empty and loading states and `Explore all` card now show in the language you pick under App Language, and Home's row titles follow it when the server names them with a translation key (#571). Home's card captions and menus, library and search stay English until their pull requests. A card's time left, season and episode, episode code and lengths follow it too (`Noch 3h 18min`, `S01F25` in German).
+- Home card captions and the marquee line (season and episode, time left, years, lengths), the Aired line, the card menu's Remove rows and update-failed alert, For You's loading and empty text, For You's row titles (through the key the server sends), and the library tabs (Recommended, Collections, and Browse with its Sort and Filter panels and A–Z rail) now show in the language you pick under App Language (#571). The library's IMDb rating and runtime sorts are now named `IMDb Rating` and `Duration`, and Author, Narrator and Series sort A–Z, as on Apple TV.
 - Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
 - Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
 - Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
@@ -37,6 +44,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
 - Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
@@ -80,6 +88,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
+- Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
+- A library's menu now lists Recommended, Browse, Collections, as Apple TV does; Collections was listed before Browse.
 - Settings now keeps Down on Sign Out, the last item of the left rail, as Apple TV does: it no longer jumps into the Server pane's Accounts row. Up still moves up the rail.
 - Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.
 - Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
@@ -96,6 +107,8 @@ All notable changes to this project are documented in this file.
 - Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
 - Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
 - Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
+- Made the personHero UI tests wait for the person answers to land and paint before they read the portrait, so they pass when the test server answers up to 150 ms late.
+- Made two more detailsHeroStates tests (the Cast move and the hero return) and the navigationMotion library dropdown test wait for the Details or Home answers they depend on, and the Cast-move test step the paused page clock until Related paints, so they pass when the test server answers up to 150 ms late and the machine is busy.
 - Made the detailsHeroStates, detailsFocus and titleArt UI tests wait for the answers they depend on (Home painted before a card click, season 24 re-read before Left, the title-art setting answered before Details opens), so they pass when the test server answers up to 150 ms late.
 - Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
 - Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.

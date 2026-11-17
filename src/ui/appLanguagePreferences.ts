@@ -1,23 +1,36 @@
 // The profile's app language (`ui.app_language`), following silo-apple Networking/AppLanguagePreferences.swift
 // and tvOS/Screens/Settings/TVGeneralSettingsView.swift. Null means Match Device. The choice is stored on the
 // server for the profile; picking one also clears this TV's own value so the choice takes effect here.
-// Nothing is cached: the row shows only an answer read from the server for the active profile.
-// Tizen has no localised text and no per-app system language (Apple also writes `AppleLanguages`), so the
-// only shipped language is English and the choice changes no on-screen text yet (see docs/settings.md).
+// The row shows only an answer read from the server for the active profile. Each answer is also kept in public storage,
+// per server and profile, and applied before the first screen draws on the next launch (Apple keeps the shown tag in
+// `AppLanguage.displayedTag` for the same reason), so a screen is drawn once in the language it will keep.
+// The stored choice sets the language the app shows (src/i18n/language.ts), which every request names in
+// Accept-Language and the text of the screens that have moved onto the catalog. Tizen has no per-app system
+// language (Apple also writes `AppleLanguages`) (see docs/settings.md).
 import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import { APP_LANGUAGE_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
+import { languageEndonym, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shippedByName } from "../i18n/language.ts";
+import { loadShownLanguage } from "../i18n/load.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
+import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
 
 /** Settings manifest revision that introduced the key (SettingKeyRevisions.swift). */
 export const APP_LANGUAGE_INTRODUCED_IN = 28;
-/** The languages this build shows text in. Apple's list is the bundle's localizations. */
-const SHIPPED_LANGUAGES: readonly string[] = ["en"];
-const MATCH_DEVICE = "Match Device";
-const FOOTER = "The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.";
-export const APP_LANGUAGE_SAVING = "Saving the app language…";
+
+/** Where the last answer is kept: `scope` names the server (its id, never its address). */
+export interface AppLanguageCache {
+    readonly storage: PublicStorage;
+    readonly scope: string;
+}
+
+/** What is kept is one language tag (empty for Match Device) under this key: no address, token or account. */
+export function appLanguageCacheKey(scope: string, profileId: string): string {
+    return `silo.appLanguage.choice:${JSON.stringify([scope, profileId])}`;
+}
 
 export interface AppLanguageChoice {
     /** Null: Match Device. */
@@ -39,42 +52,63 @@ export function appLanguageSettingsSupported(capability: SettingsCapabilities | 
         && capability.manifestRevision >= APP_LANGUAGE_INTRODUCED_IN;
 }
 
-/** A language's own name, capitalised for a list ("English", "Español"); the tag itself when it has no name. */
-export function languageEndonym(tag: string): string {
-    try {
-        const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
-        return name === undefined ? tag : name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-    } catch {
-        return tag;
-    }
-}
-
-// shortcut: matches on the language code only; upgrade when a shipped language needs a script or region (zh-Hans).
 function isShipped(tag: string): boolean {
-    const code = tag.split("-")[0]?.toLowerCase();
-    return SHIPPED_LANGUAGES.some(shipped => shipped === code);
+    return matchShipped(tag) !== undefined;
 }
 
 function writeFailure(error: unknown): string {
-    if (error instanceof ApiError && (error.failure.kind === "network" || error.failure.kind === "timeout")) return "Couldn't save the app language. Check the connection and try again.";
-    if (error instanceof ApiError && (error.status === 404 || error.status === 501 || error.problemId === "unknown_setting" || error.problemId === "server_upgrade_required" || error.problemId === "scope_not_allowed")) return "This server can't save the app language.";
-    return "The server didn't save the app language. Try again.";
+    if (error instanceof ApiError && (error.failure.kind === "network" || error.failure.kind === "timeout")) return translate("settings.appLanguage.saveFailedConnection");
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501 || error.problemId === "unknown_setting" || error.problemId === "server_upgrade_required" || error.problemId === "scope_not_allowed")) return translate("settings.appLanguage.saveUnsupported");
+    return translate("settings.appLanguage.saveFailed");
 }
 
 export class AppLanguagePreferences {
     private readonly session: NativeSession;
+    private readonly show: (tag: string | null) => void;
+    private readonly cache: AppLanguageCache | undefined;
     private readonly listeners = new Set<() => void>();
     private readonly controller = new AbortController();
     private choice: AppLanguageChoice | undefined;
     /** The profile the answer belongs to; another profile's answer is never shown. */
     private profileId: string | undefined;
+    private readonly stopCatalog: () => void;
     private saving = false;
     private errorMessage: string | undefined;
     private published = "";
     private refreshSequence = 0;
 
-    constructor(session: NativeSession) {
+    /** `show` applies the language the app shows; null is Match Device. */
+    constructor(session: NativeSession, show: (tag: string | null) => void = setAppLanguage, cache?: AppLanguageCache) {
         this.session = session;
+        this.show = show;
+        // The shown language's file lands after the first draw: whoever listens draws again, now in its text.
+        this.stopCatalog = onCatalogLoaded(() => { for (const listener of this.listeners) listener(); });
+        this.cache = cache;
+    }
+
+    /** Shows the language kept from the last answer for this profile, before any request; false when none is kept. */
+    applyCached(): boolean {
+        const profileId = this.session.activeProfile?.id;
+        if (this.cache === undefined || profileId === undefined) return false;
+        let kept: string | null = null;
+        try { kept = this.cache.storage.getItem(appLanguageCacheKey(this.cache.scope, profileId)); } catch { /* Storage refused: the answer arrives as before. */ }
+        if (kept === null) return false;
+        // This profile is the one shown, so the first read does not reset the language to the device's while it waits for the answer.
+        this.profileId = profileId;
+        this.show(kept === "" ? null : kept);
+        // Its text is a packaged file: the screens read English until it lands, then draw again.
+        void loadShownLanguage();
+        return true;
+    }
+
+    private keep(choice: AppLanguageChoice | undefined): void {
+        const profileId = this.profileId;
+        if (this.cache === undefined || profileId === undefined) return;
+        const key = appLanguageCacheKey(this.cache.scope, profileId);
+        try {
+            if (choice === undefined) this.cache.storage.removeItem(key);
+            else this.cache.storage.setItem(key, choice.tag ?? "");
+        } catch { /* The answer still shows; only the next launch loses it. */ }
     }
 
     /** The stored choice for the active profile; undefined hides the row. */
@@ -86,19 +120,19 @@ export class AppLanguagePreferences {
     get isBusy(): boolean { return this.saving; }
     get error(): string | undefined { return this.errorMessage; }
 
-    /** Match Device, each shipped language by its own name, and a stored tag this build lacks as itself, so re-saving never clears it. */
+    /** Match Device, each shipped language by its own name in name order, and a stored tag this build lacks as itself, so re-saving never clears it. */
     get options(): readonly AppLanguageOption[] {
         const stored = this.currentChoice?.tag;
-        const tags = stored !== undefined && stored !== null && !SHIPPED_LANGUAGES.includes(stored) ? [...SHIPPED_LANGUAGES, stored] : SHIPPED_LANGUAGES;
-        return [{ tag: null, label: MATCH_DEVICE }, ...tags.map(tag => ({ tag, label: languageEndonym(tag) }))];
+        const tags = stored !== undefined && stored !== null && !SHIPPED_LANGUAGES.includes(stored) ? [...shippedByName(), stored] : shippedByName();
+        return [{ tag: null, label: translate("settings.appLanguage.option.matchDevice") }, ...tags.map(tag => ({ tag, label: languageEndonym(tag) }))];
     }
     get selectedLabel(): string {
         const tag = this.currentChoice?.tag;
-        return tag === undefined || tag === null ? MATCH_DEVICE : languageEndonym(tag);
+        return tag === undefined || tag === null ? translate("settings.appLanguage.option.matchDevice") : languageEndonym(tag);
     }
     get footer(): string {
         const tag = this.currentChoice?.tag;
-        return tag !== undefined && tag !== null && !isShipped(tag) ? `Silo isn’t available in ${languageEndonym(tag)} yet, so it uses the device language.` : FOOTER;
+        return tag !== undefined && tag !== null && !isShipped(tag) ? translate("settings.appLanguage.unshippedFooter", { language: languageEndonym(tag) }) : translate("settings.appLanguage.footer");
     }
 
     subscribe(listener: () => void): () => void {
@@ -107,6 +141,7 @@ export class AppLanguagePreferences {
     }
 
     stop(): void {
+        this.stopCatalog();
         this.controller.abort();
         this.listeners.clear();
     }
@@ -188,6 +223,7 @@ export class AppLanguagePreferences {
 
     private adopt(choice: AppLanguageChoice | undefined): void {
         this.choice = choice;
+        this.keep(choice);
         this.publish();
     }
 
@@ -196,6 +232,9 @@ export class AppLanguagePreferences {
     }
 
     private publish(): void {
+        // No answer for this profile (another profile, an older server) shows the device's language.
+        this.show(this.currentChoice?.tag ?? null);
+        void loadShownLanguage();
         const snapshot = JSON.stringify({ choice: this.currentChoice, saving: this.saving, error: this.errorMessage });
         if (snapshot === this.published) return;
         this.published = snapshot;

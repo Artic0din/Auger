@@ -9,6 +9,7 @@ import type { CatalogBoxSetDetail } from "../contracts/v2/boxSets.ts";
 import type { NativeSession } from "../session/session.ts";
 import type { FocusItem, Zone } from "./browseFocus.ts";
 import { cardItem, exploreAllCard, type ViewContext } from "./browseViews.ts";
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 
 /** TVBoxSetRow card width and the gap before the next poster. */
@@ -139,6 +140,6 @@ function markCurrentFilm(item: FocusItem, movie: Card): void {
     if (art === null) return;
     const outline = el("span", "box-set-current-outline");
     outline.setAttribute("aria-hidden", "true");
-    art.append(outline, el("span", "box-set-current-label", "This film"));
-    item.element.setAttribute("aria-label", `${movie.title}, This film`);
+    art.append(outline, el("span", "box-set-current-label", translate("boxSets.thisFilmTag")));
+    item.element.setAttribute("aria-label", `${movie.title}, ${translate("boxSets.thisFilmTag")}`);
 }

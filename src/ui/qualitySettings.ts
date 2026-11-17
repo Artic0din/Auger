@@ -2,6 +2,8 @@
 // SiloQualityPresets.resolutionLabel / normalizeResolution,
 // ApplePlaybackQuality.formatBitrate, and SettingsViewModel.qualityFooterText.
 // The footer describes the resolution and bitrate Playback already sends.
+import { localizeNumerals } from "../i18n/format.ts";
+import { translate } from "../i18n/translate.ts";
 
 const CONCRETE_RESOLUTIONS = ["480p", "720p", "1080p", "2160p"];
 
@@ -26,26 +28,26 @@ export function resolutionLabel(value: string | null | undefined): string {
 
 /** Maximum Bitrate picker and row. Null and non-positive caps are "No limit". */
 export function bitrateLabel(kbps: number | null): string {
-    if (kbps === null || kbps <= 0) return "No limit";
+    if (kbps === null || kbps <= 0) return translate("settings.noLimit");
+    // Apple keeps the unit in English and writes only the number in the language's digits.
     if (kbps >= 1000) {
         const mbps = kbps / 1000;
-        if (Math.trunc(mbps) === mbps) return `${mbps} Mbps`;
-        return `${mbps.toFixed(1)} Mbps`;
+        return localizeNumerals(Math.trunc(mbps) === mbps ? `${mbps} Mbps` : `${mbps.toFixed(1)} Mbps`);
     }
-    return `${kbps} kbps`;
+    return localizeNumerals(`${kbps} kbps`);
 }
 
 /** The manifest's label, description and option labels for `playback.buffering_quality_mode` (BufferingQualityMode.swift:26-32, SettingsViewModel.swift:85-87). */
-export const BUFFERING_QUALITY_TITLE = "Lower quality when buffering";
-export const BUFFERING_QUALITY_DESCRIPTION = "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.";
-export const BUFFERING_QUALITY_MODES = [["never", "Never"], ["ask", "Ask first"], ["always", "Automatically"]] as const;
+export const bufferingQualityTitle = (): string => translate("settings.bufferingQuality.title");
+export const bufferingQualityDescription = (): string => translate("settings.bufferingQuality.description");
+export const bufferingQualityModes = (): readonly (readonly [string, string])[] => [
+    ["never", translate("settings.bufferingQuality.never")], ["ask", translate("settings.bufferingQuality.ask")], ["always", translate("settings.bufferingQuality.always")],
+];
 
 /** The sentence under Resolution and Maximum Bitrate, plus the buffering description when that row is shown (TVPlaybackSettingsView.swift:106-110). */
 export function qualityFooter(resolution: string | null | undefined, bitrateKbps: number | null | undefined, bufferingRow = false): string {
     const normalized = normalizeResolution(resolution);
-    let text = normalized === "auto"
-        ? "Plays the original file whenever your device and connection can handle it."
-        : `Plays the original file up to ${resolutionLabel(normalized)}. Larger files are converted.`;
-    if (bitrateKbps !== null && bitrateKbps !== undefined && bitrateKbps > 0) text += " Files above this bitrate are converted to fit.";
-    return bufferingRow ? `${text} ${BUFFERING_QUALITY_DESCRIPTION}` : text;
+    let text = normalized === "auto" ? translate("settings.quality.footerOriginal") : translate("settings.quality.footerUpTo", { resolution: resolutionLabel(normalized) });
+    if (bitrateKbps !== null && bitrateKbps !== undefined && bitrateKbps > 0) text += ` ${translate("settings.quality.footerBitrate")}`;
+    return bufferingRow ? `${text} ${bufferingQualityDescription()}` : text;
 }
