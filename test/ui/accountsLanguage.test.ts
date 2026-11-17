@@ -7,8 +7,11 @@ import type { Browser } from "playwright";
 import { formattingLocale } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
-import { ACTIVE, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
-import { launchBrowser, type Tv } from "./support/tv.ts";
+import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
+import { FakeCatalog } from "../native/support/fakeCatalog.ts";
+import { FakeSettings } from "../native/support/fakeSettings.ts";
+import { ACTIVE, openChangeAccount, openSettingsAccounts, seedAccounts, signIn, withSignedInTv } from "./support/accounts.ts";
+import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
 
@@ -105,4 +108,43 @@ test("Change Account in English carries the page's language and stays left to ri
         assert.equal(await tv.page.locator(".accounts-title").innerText(), "Change account");
         assert.equal(await tv.page.locator('.accounts-pane [data-focus="second"] .account-count').innerText(), "3 profiles");
     });
+});
+
+test("the expired-session dialog reads in German", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").first().innerText()) !== "Home", "German top bar");
+        await openSettingsAccounts(tv);
+        await tv.page.locator('[data-focus="stale"]').click();
+        await tv.page.locator('[data-view="account-expired"]').waitFor();
+        assert.equal(await tv.page.locator(".accounts-dialog .signin-title").innerText(), text("settings.accounts.expiredTitleAppleTv", "de", { account: "Stale" }));
+        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signin"]').innerText(), text("account.signInAgain", "de"));
+        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signout"]').innerText(), text("settings.accounts.signOut", "de"));
+        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="cancel"]').innerText(), text("common.cancel", "de"));
+    }, "de");
+});
+
+test("a German catalog that lands while Change Account is up redraws it in German", async () => {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const tv = await openTv(browser, { app: "application" });
+    // Registered after the harness's own routes, so it sees the request first and passes it on once released.
+    await tv.page.route("**/catalog/de.js", async route => { await held; await route.fallback(); });
+    const catalog = new FakeCatalog();
+    catalog.fileIds.set("movie:m0001", "42");
+    tv.fake.catalog = catalog;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "de");
+    try {
+        await signIn(tv);
+        await seed(tv);
+        await openChangeAccount(tv);
+        assert.equal(await tv.page.locator(".accounts-title").innerText(), "Change account", "English until the file lands");
+        assert.equal(await tv.page.locator(".accounts-screen").getAttribute("lang"), "en");
+        release?.();
+        await tv.eventually(async () => (await tv.page.locator(".accounts-title").innerText()) === text("accounts.headline", "de"), "German headline");
+        assert.equal(await tv.page.locator(".accounts-screen").getAttribute("lang"), "de");
+        assert.equal(await tv.page.locator('.accounts-pane [data-focus="second"] .account-count').innerText(), text("account.profiles.count", "de", { count: 3 }));
+    } finally { release?.(); await tv.page.context().close(); }
 });
