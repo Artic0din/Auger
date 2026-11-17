@@ -449,7 +449,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
      * a Select is held or a card or request menu is open, so no press or menu is replaced under the viewer; the next key release runs it.
      */
     const reconcileLanguage = (redraw: boolean): void => {
-        if (textLanguage() === paintedLanguage) return;
+        // The same language still needs its direction back after a covering screen left the page left to right.
+        if (textLanguage() === paintedLanguage) { applyLayoutDirection(); return; }
         if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
         paintedLanguage = textLanguage();
         applyLayoutDirection();
@@ -2245,6 +2246,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         shell.hide();
         host.stop();
         container.hidden = true;
+        // Add Profile and Switch Server are English screens: they read left to right until browse returns.
+        clearLayoutDirection();
         playing = true;
         syncThemeMusic();
         open(() => {

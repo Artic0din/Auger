@@ -27,6 +27,8 @@ interface HomeOptions {
     readonly cached?: string;
     /** Holds the profile's language answer, so only the kept language can have set the direction. */
     readonly holdLanguage?: boolean;
+    /** Offers Switch Server in the profile menu. */
+    readonly switchServer?: boolean;
 }
 
 async function withHome(options: HomeOptions, body: (tv: Tv, releaseLanguage: () => void) => Promise<void>): Promise<void> {
@@ -46,6 +48,7 @@ async function withHome(options: HomeOptions, body: (tv: Tv, releaseLanguage: ()
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
         if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        if (options.switchServer === true) await tv.page.evaluate(() => { window.browseHarness.offerSwitchServer = true; });
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
         await body(tv, () => held.forEach(hold => hold.release()));
@@ -283,4 +286,17 @@ test("in Arabic Left walks a Details episode rail past its first screen and keep
             assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode ${step} at ${card?.left}..${card?.right}`);
         }
     } finally { await tv.page.context().close(); }
+});
+
+test("a screen opened over Arabic browse reads left to right, and browse is mirrored again when it returns", async () => {
+    await withHome({ stored: "ar", switchServer: true }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.remote(DOWN);
+        await tv.page.locator('.skyline-selector [data-focus="switch-server"]').click();
+        await waitForDirection(tv, null);
+        await tv.page.evaluate(() => window.browseHarness.coverBack?.());
+        await waitForDirection(tv, "rtl");
+        assert.equal(await tv.focused() !== null, true, "browse has focus again");
+    });
 });
