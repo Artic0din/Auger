@@ -1021,6 +1021,8 @@
 /* The text layer swaps with no animation; the backdrop layer under it crossfades easeInOut(0.24)
    (silo-apple 85679e7 TVRootHeroBackdrop.swift:160, :188-191; SiloTheme.swift:304). */
 .skyline-marquee-layer { position: absolute; bottom: 0; inset-inline-start: 0; width: 880px; }
+/* Always a stacking context at the art's depth: the fade's opacity would otherwise make it one above the shared top scrim until the animation ends. */
+.skyline-marquee-art { position: absolute; z-index: -2; }
 .skyline-art-enter { animation: skyline-appear 240ms ease-in-out; }
 .skyline-art-leave { animation: skyline-leave 240ms ease-in-out forwards; }
 .skyline-backdrop, .skyline-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 1080px; z-index: -2; }

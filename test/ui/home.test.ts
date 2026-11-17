@@ -220,6 +220,8 @@ journey("Home keeps one tint wash while its backdrop changes, and a new tint fad
     await tv.jump(150);
     await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art.skyline-outgoing").count() === 1, "the next backdrop is swapping in");
     assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 2, "the new wash fades in over the old one");
+    // The fading layer's opacity makes it a stacking context, so it must sit at the art's own depth or the shared scrim would fall under it until the fade ends.
+    assert.deepEqual(await tv.page.locator(".skyline-marquee-art.skyline-art-enter").evaluate(node => { const style = getComputedStyle(node); return [style.position, style.zIndex]; }), ["absolute", "-2"]);
     await tv.jump(700);
     assert.equal(await tv.page.locator(".skyline-wash[data-first]").count(), 1, "the same wash element stays");
     assert.equal(await tv.page.locator(".skyline-wash").count(), 1);
