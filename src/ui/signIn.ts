@@ -215,10 +215,30 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     document.addEventListener("visibilitychange", onVisibility);
 
     // A language file that lands while a screen is up redraws it in that language; `destroy` stops listening.
-    // Replacing a field that holds typed text would close the TV keyboard, so that redraw runs once focus leaves it.
-    const typing = (): boolean => document.activeElement instanceof HTMLInputElement && root.contains(document.activeElement) && document.activeElement.value !== "";
-    const late = lateRedraw(typing, () => { if (!destroyed) redraw?.(); });
-    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
+    // Replacing a field the TV keyboard edits would close it, so that redraw waits until focus leaves the field. A field is being edited
+    // once it holds text or was selected (Select or a click opens the keyboard, even on an empty field); a field only focused by the screen is not.
+    let selected: EventTarget | null = null;
+    const onSelect = (event: Event): void => {
+        if (event.target instanceof HTMLInputElement && (event.type === "click" || (event as KeyboardEvent).key === "Enter")) selected = event.target;
+    };
+    const editing = (): boolean => document.activeElement instanceof HTMLInputElement && root.contains(document.activeElement) && (document.activeElement.value !== "" || document.activeElement === selected);
+    let catalogWaiting = false;
+    const late = lateRedraw(editing, () => { catalogWaiting = false; if (!destroyed) redraw?.(); });
+    // Focus can leave a field with no key release (a pointer click), so blur also tries the redraw that waited.
+    const onFocusOut = (event: FocusEvent): void => {
+        if (event.target === selected) selected = null;
+        if (catalogWaiting) window.setTimeout(() => late.arrived(), 0);
+    };
+    root.addEventListener("keydown", onSelect);
+    root.addEventListener("click", onSelect);
+    root.addEventListener("focusout", onFocusOut);
+    const stopCatalog = (): void => {
+        stopCatalogLoaded();
+        root.removeEventListener("keydown", onSelect);
+        root.removeEventListener("click", onSelect);
+        root.removeEventListener("focusout", onFocusOut);
+    };
+    const stopCatalogLoaded = onCatalogLoaded(() => { catalogWaiting = true; late.arrived(); });
 
     const handOff = (server: ConnectedServer): void => {
         leaveSignIn(true);
