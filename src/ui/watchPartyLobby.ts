@@ -4,6 +4,8 @@
 // Metrics are Apple's tvOS values at 1920x1080 (WatchPartyMetrics).
 
 import type { Room } from "../contracts/v2/watchTogether.ts";
+import { isolated } from "../i18n/direction.ts";
+import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton } from "./browseViews.ts";
 import { qrCode } from "./qr.ts";
@@ -13,37 +15,41 @@ import { ballotRow, serverPoster } from "./watchPartyBallot.ts";
 import { inviteUrl } from "./watchPartyInvite.ts";
 import { type PrimaryAction, primaryAction, waitingNames } from "./watchPartyPolicy.ts";
 import { seatsRow } from "./watchPartySeats.ts";
-import type { WatchPartyHub } from "./watchPartyHub.ts";
+import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 import type { LobbyItem } from "./watchPartyChoice.ts";
 
 export interface LobbyContext { readonly hub: WatchPartyHub; readonly baseUrl: string }
 
-const hostName = (room: Room): string => room.members.find(member => member.isHost)?.displayName ?? "The host";
+/** The host's name as the server sent it, isolated inside an Arabic sentence; Apple's "The host" when no member is the host. */
+const hostName = (room: Room): string => {
+    const host = room.members.find(member => member.isHost)?.displayName;
+    return host === undefined ? translate("watchParty.theHost") : isolated(host);
+};
 
 /** WatchPartyLobbyView.connectionDot: the socket's state, and once connected who is here. */
 function connection(hub: WatchPartyHub, room: Room): { text: string; tone: "ok" | "warn" | "wait" | "off" } {
     switch (hub.state.connection) {
         case "connected": {
-            if (!room.hostConnected && room.selfRole !== "host") return { text: "Host away", tone: "warn" };
+            if (!room.hostConnected && room.selfRole !== "host") return { text: translate("watchParty.connection.hostAway"), tone: "warn" };
             const here = room.members.filter(member => member.connected).length;
-            return { text: here <= 1 ? "Open" : `${here} here`, tone: "ok" };
+            return { text: here <= 1 ? translate("watchParty.connection.open") : translate("watchParty.connection.here", { count: here }), tone: "ok" };
         }
-        case "connecting": return { text: "Connecting", tone: "wait" };
-        case "reconnecting": return { text: "Reconnecting", tone: "warn" };
-        case "idle": return { text: "Disconnected", tone: "off" };
+        case "connecting": return { text: translate("watchParty.connection.connecting"), tone: "wait" };
+        case "reconnecting": return { text: translate("watchParty.connection.reconnecting"), tone: "warn" };
+        case "idle": return { text: translate("watchParty.connection.disconnected"), tone: "off" };
     }
 }
 
 function statusBanner(hub: WatchPartyHub, room: Room): HTMLElement | undefined {
     const { error, selectedUnavailable } = hub.state;
-    if (error !== undefined) return banner(error, true);
+    if (error !== undefined) return banner(noticeText(error), true);
     if (selectedUnavailable) {
         return banner(room.selfCanManageRoom
-            ? "This title isn't available to your profile. Choose something else so everyone can watch."
-            : `This title isn't available to your profile. ${hostName(room)} will need to pick something else.`, true);
+            ? translate("watchParty.banner.unavailable.manager")
+            : translate("watchParty.banner.unavailable.guest", { host: hostName(room) }), true);
     }
-    if (!room.hostConnected && room.selfRole !== "host") return banner(`${hostName(room)} lost connection. The party holds for two minutes while they come back.`, true);
-    if (hub.state.connection === "reconnecting") return banner("Reconnecting to the party…", false);
+    if (!room.hostConnected && room.selfRole !== "host") return banner(translate("watchParty.banner.hostAway", { host: hostName(room) }), true);
+    if (hub.state.connection === "reconnecting") return banner(translate("watchParty.banner.reconnecting"), false);
     return undefined;
 }
 
@@ -55,27 +61,27 @@ function heroText(room: Room, item: LobbyItem | undefined, hub: WatchPartyHub): 
     if (voting(room)) {
         const count = hub.state.votes.rows.length;
         hero.classList.add("watch-party-hero-vote");
-        hero.append(eyebrow(`Voting · ${count} ${count === 1 ? "title" : "titles"}`), el("h1", "watch-party-hero-title", "What are we watching?"),
-            el("p", "watch-party-lead", manage ? "Everyone votes. You start the leader." : `Tap a title to vote. ${hostName(room)} starts the winner.`));
+        hero.append(eyebrow(translate("watchParty.eyebrow.voting", { count })), el("h1", "watch-party-hero-title", translate("watchParty.hero.voteTitle")),
+            el("p", "watch-party-lead", manage ? translate("watchParty.hero.voteCaption.manager") : translate("watchParty.hero.voteCaption.guest", { host: hostName(room) })));
     } else if (item !== undefined) {
         const facts = el("p", "watch-party-facts");
-        const parts = [item.subtitle, ...item.facts].filter((part): part is string => part !== undefined && part !== "");
+        const parts = [item.subtitle(), ...item.facts()].filter((part): part is string => part !== undefined && part !== "");
         facts.append(...parts.flatMap((part, index) => index === 0 ? [part] : [el("span", "watch-party-facts-dot", "·"), part]));
         facts.append(...item.chips.map(chip => el("span", "watch-party-chip", chip)));
-        hero.append(eyebrow(room.phase === "playing" ? "Now watching · together" : "Up next · together"), el("h1", "watch-party-hero-title", item.title), facts,
-            caption(room.selfRole === "host" ? "You chose this" : `${hostName(room)} chose this`));
+        hero.append(eyebrow(translate(room.phase === "playing" ? "watchParty.eyebrow.nowWatching" : "watchParty.eyebrow.upNext")), el("h1", "watch-party-hero-title", item.title()), facts,
+            caption(chose(room)));
     } else if (room.selectedContentId !== undefined) {
-        hero.append(eyebrow(room.phase === "playing" ? "Now watching · together" : "Up next · together"),
-            el("h1", "watch-party-hero-title watch-party-hero-dim", hub.state.selectedUnavailable ? "A title you can't see" : "Loading title…"),
-            caption(room.selfRole === "host" ? "You chose this" : `${hostName(room)} chose this`));
+        hero.append(eyebrow(translate(room.phase === "playing" ? "watchParty.eyebrow.nowWatching" : "watchParty.eyebrow.upNext")),
+            el("h1", "watch-party-hero-title watch-party-hero-dim", translate(hub.state.selectedUnavailable ? "watchParty.hero.hidden" : "watchParty.hero.loading")),
+            caption(chose(room)));
     } else {
-        hero.append(eyebrow("Your party is open"), el("h1", "watch-party-hero-title", manage ? "Pick something\nto watch" : `Waiting for\n${hostName(room)}`),
-            el("p", "watch-party-lead", manage
-                ? "Friends can join now with the code. They'll see your pick the moment you choose."
-                : `${hostName(room)} is choosing what to watch. You'll see it here the moment they do.`));
+        hero.append(eyebrow(translate("watchParty.eyebrow.open")), el("h1", "watch-party-hero-title", manage ? translate("watchParty.hero.pick") : translate("watchParty.hero.waiting", { host: hostName(room) })),
+            el("p", "watch-party-lead", manage ? translate("watchParty.hero.pickCaption") : translate("watchParty.hero.waitingCaption", { host: hostName(room) })));
     }
     return hero;
 }
+
+const chose = (room: Room): string => room.selfRole === "host" ? translate("watchParty.hero.youChose") : translate("watchParty.hero.hostChose", { host: hostName(room) });
 
 const voting = (room: Room): boolean => room.selectionMode === "vote" && room.phase === "lobby";
 
@@ -84,23 +90,25 @@ function hint(hub: WatchPartyHub, room: Room): string | undefined {
     if (room.phase !== "lobby") return undefined;
     const winner = room.selectionMode === "vote" ? hub.winner() : undefined;
     if (room.selfCanManageRoom) {
-        if (room.selectionMode === "vote" && winner === undefined) return hub.state.votes.rows.length === 0 ? "Suggest a title to get the vote going." : "Nobody has voted yet.";
+        if (room.selectionMode === "vote" && winner === undefined) return translate(hub.state.votes.rows.length === 0 ? "watchParty.hint.suggestToStart" : "watchParty.hint.noVotes");
         if (room.selectedContentId === undefined && room.selectionMode === "host_pick") return undefined;
         const waiting = waitingNames(room.members);
-        if (waiting.length === 0) return room.members.filter(member => member.connected).length > 1 ? "Everyone's ready." : undefined;
-        return `${waiting.slice(0, 2).join(" and ")}${waiting.length > 2 ? " and others" : ""} ${waiting.length === 1 ? "hasn't" : "haven't"} marked ready. You can still start.`;
+        if (waiting.length === 0) return room.members.filter(member => member.connected).length > 1 ? translate("watchParty.hint.everyoneReady") : undefined;
+        const [first = "", second = ""] = waiting.map(name => isolated(name));
+        if (waiting.length === 1) return translate("watchParty.hint.notReady.oneName", { first });
+        return translate(waiting.length === 2 ? "watchParty.hint.notReady.twoNames" : "watchParty.hint.notReady.moreNames", { first, second });
     }
-    if (room.selectionMode === "vote") return winner === undefined ? `${hostName(room)} starts the winner when voting settles.` : `${hostName(room)} starts ${winner.title} when voting settles.`;
-    return room.selectedContentId === undefined ? undefined : `${hostName(room)} starts the movie when everyone's set.`;
+    if (room.selectionMode === "vote") return winner === undefined ? translate("watchParty.hint.hostStartsTheWinner", { host: hostName(room) }) : translate("watchParty.hint.hostStartsWinner", { host: hostName(room), title: isolated(winner.title) });
+    return room.selectedContentId === undefined ? undefined : translate("watchParty.hint.hostStarts", { host: hostName(room) });
 }
 
 /** Apple's I'm ready, and You're ready with tap to undo once the room says so. Dropped while the socket is not connected. */
 function readyButton(hub: WatchPartyHub, room: Room): FocusItem {
     const ready = room.members.find(member => member.isSelf)?.lobbyReady === true;
     const connected = hub.state.connection === "connected";
-    const button = labelled("ready", ready ? "You're ready" : "I'm ready", ready ? "secondary" : "primary", () => { if (connected) hub.setReady(!ready); }, ready ? checkIcon() : readyIcon());
+    const button = labelled("ready", translate(ready ? "watchParty.button.youreReady" : "watchParty.button.imReady"), ready ? "secondary" : "primary", () => { if (connected) hub.setReady(!ready); }, ready ? checkIcon() : readyIcon());
     // tvOS draws Apple's outlined kind as the secondary pill.
-    if (ready) button.element.append(el("span", "watch-party-undo", "tap to undo"));
+    if (ready) button.element.append(el("span", "watch-party-undo", translate("watchParty.button.tapToUndo")));
     button.element.setAttribute("aria-pressed", String(ready));
     button.element.setAttribute("aria-disabled", String(!connected));
     return button;
@@ -121,27 +129,27 @@ const suggestButton = (hub: WatchPartyHub, label: string, kind: "primary" | "sec
 
 function primaryButton(hub: WatchPartyHub, room: Room, action: PrimaryAction): FocusItem | undefined {
     switch (action) {
-        case "chooseTitle": return labelled("choose", room.selectedContentId === undefined ? "Choose a title" : "Change title", "primary", () => { void hub.openPicker(); });
+        case "chooseTitle": return labelled("choose", translate(room.selectedContentId === undefined ? "watchParty.button.chooseTitle" : "watchParty.button.changeTitle"), "primary", () => { void hub.openPicker(); });
         case "start": {
             const winner = room.selectionMode === "vote" ? hub.winner() : undefined;
-            const start = labelled("start", winner === undefined ? "Start for everyone" : `Start ${winner.title}`, "primary", () => { void hub.start(); }, playIcon());
+            const start = labelled("start", winner === undefined ? translate("watchParty.button.startForEveryone") : translate("watchParty.button.startWinner", { title: isolated(winner.title) }), "primary", () => { void hub.start(); }, playIcon());
             if (winner !== undefined) start.element.setAttribute("aria-disabled", String(!hub.ballotCurrent()));
             return start;
         }
-        case "waitingForVotes": return suggestButton(hub, "Suggest a title", "primary");
+        case "waitingForVotes": return suggestButton(hub, translate("watchParty.button.suggestTitle"), "primary");
         case "ready": return readyButton(hub, room);
-        case "returnToPlayback": return labelled("resume", "Return to playback", "primary", () => { hub.resume(); }, playIcon());
-        case "returnToLobby": return labelled("return-lobby", "Return everyone to lobby", "primary", () => { void hub.stopPlayback(); });
+        case "returnToPlayback": return labelled("resume", translate("watchParty.button.returnToPlayback"), "primary", () => { hub.resume(); }, playIcon());
+        case "returnToLobby": return labelled("return-lobby", translate("watchParty.button.returnToLobby"), "primary", () => { void hub.stopPlayback(); });
         case "none": return undefined;
     }
 }
 
 function secondaryButton(hub: WatchPartyHub, room: Room, action: PrimaryAction): FocusItem | undefined {
-    if (voting(room) && action === "start") return suggestButton(hub, "Suggest", "secondary");
-    if (voting(room) && !room.selfCanManageRoom) return suggestButton(hub, "Suggest a title", "secondary");
+    if (voting(room) && action === "start") return suggestButton(hub, translate("watchParty.button.suggest"), "secondary");
+    if (voting(room) && !room.selfCanManageRoom) return suggestButton(hub, translate("watchParty.button.suggestTitle"), "secondary");
     if (room.selectionMode !== "host_pick" || !room.selfCanManageRoom) return undefined;
-    if (room.phase === "lobby" && room.selectedContentId !== undefined && action === "start") return labelled("change", "Change title", "secondary", () => { void hub.openPicker(); });
-    if (room.phase === "playing") return labelled("change", "Choose something else", "secondary", () => { void hub.openPicker(); });
+    if (room.phase === "lobby" && room.selectedContentId !== undefined && action === "start") return labelled("change", translate("watchParty.button.changeTitle"), "secondary", () => { void hub.openPicker(); });
+    if (room.phase === "playing") return labelled("change", translate("watchParty.button.chooseSomethingElse"), "secondary", () => { void hub.openPicker(); });
     return undefined;
 }
 
@@ -155,14 +163,14 @@ function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { n
     const status = el("span", `watch-party-connection watch-party-connection-${state.tone}`);
     status.append(el("span", "watch-party-connection-dot"), state.text);
     const title = el("div", "watch-party-room-title");
-    title.append(el("span", "watch-party-room-name", "Watch Party"), status);
+    title.append(el("span", "watch-party-room-name", translate("watchParty.title")), status);
 
     const code = actionButton("lobby-code", "", () => { hub.show({ kind: "invite" }); });
     code.element.classList.add("watch-party-button", "watch-party-secondary", "watch-party-code-pill");
-    code.element.setAttribute("aria-label", `Party code ${[...room.code].join(" ")}. Invite friends`);
-    code.element.append(el("span", "watch-party-code-label", "Join with"), codeText(room.code));
-    const more = circleButton("options", "Options", ellipsisIcon(), () => { hub.show({ kind: "options" }); });
-    more.element.setAttribute("aria-label", "Party options");
+    code.element.setAttribute("aria-label", translate("watchParty.codePill.description", { code: [...room.code].join(" ") }));
+    code.element.append(el("span", "watch-party-code-label", translate("watchParty.codePill.label")), codeText(room.code));
+    const more = circleButton("options", translate("watchParty.options.button"), ellipsisIcon(), () => { hub.show({ kind: "options" }); });
+    more.element.setAttribute("aria-label", translate("watchParty.options.title"));
     const header = el("div", "watch-party-room-header");
     const tools = el("div", "watch-party-room-tools");
     tools.append(code.element, more.element);
@@ -243,20 +251,20 @@ export function optionsView(context: LobbyContext, room: Room): View {
     const rows: FocusItem[] = [];
     if (room.selfCanManageRoom) {
         if (room.phase === "lobby" && capabilities?.selectionModeSwitch === true) {
-            rows.push(optionRow("mode", "Who chooses", room.selectionMode === "vote" ? "Everyone votes" : "Host chooses", false, () => { void hub.setMode(room.selectionMode === "vote" ? "host_pick" : "vote"); }));
+            rows.push(optionRow("mode", translate("watchParty.options.whoChooses"), translate(room.selectionMode === "vote" ? "watchParty.options.everyoneVotes" : "watchParty.options.hostChooses"), false, () => { void hub.setMode(room.selectionMode === "vote" ? "host_pick" : "vote"); }));
         }
-        rows.push(optionRow("policy", "Playback controls", room.guestControlPolicy === "guest_play_pause" ? "Guests can play and pause" : "Host only", false,
+        rows.push(optionRow("policy", translate("watchParty.options.playbackControls"), translate(room.guestControlPolicy === "guest_play_pause" ? "watchParty.options.guestsPlayPause" : "watchParty.options.hostOnly"), false,
             () => { void hub.setPolicy(room.guestControlPolicy === "guest_play_pause" ? "host_only" : "guest_play_pause"); }));
         if (room.phase === "playing" && capabilities?.stopPlayback === true) {
-            rows.push(optionRow("stop", "Return everyone to lobby", undefined, false, () => { void hub.stopPlayback(); hub.show({ kind: "lobby" }); }));
+            rows.push(optionRow("stop", translate("watchParty.options.returnToLobby"), undefined, false, () => { void hub.stopPlayback(); hub.show({ kind: "lobby" }); }));
         }
-        rows.push(optionRow("end", "End party for everyone", undefined, true, () => { hub.show({ kind: "end" }); }));
+        rows.push(optionRow("end", translate("watchParty.options.end"), undefined, true, () => { hub.show({ kind: "end" }); }));
     }
-    rows.push(optionRow("leave", "Leave party", undefined, true, () => { hub.leave(); }));
-    const close = optionRow("close", "Close", undefined, false, () => { hub.show({ kind: "lobby" }); });
+    rows.push(optionRow("leave", translate("watchParty.options.leave"), undefined, true, () => { hub.leave(); }));
+    const close = optionRow("close", translate("watchParty.options.close"), undefined, false, () => { hub.show({ kind: "lobby" }); });
     rows.push(close);
     const card = el("div", "watch-party-sheet watch-party-options");
-    card.append(el("h2", "watch-party-sheet-title", "Party options"), ...rows.map(row => row.element));
+    card.append(el("h2", "watch-party-sheet-title", translate("watchParty.options.title")), ...rows.map(row => row.element));
     const scrim = el("div", "watch-party-scrim watch-party-ui");
     scrim.appendChild(card);
     const behind = lobbyPage(context, room, false);
@@ -272,12 +280,12 @@ export function optionsView(context: LobbyContext, room: Room): View {
 /** WatchPartyEndConfirmation. */
 export function endView(context: LobbyContext, room: Room): View {
     const { hub } = context;
-    const cancel = labelled("cancel", "Cancel", "secondary", () => { hub.show({ kind: "lobby" }); });
-    const confirm = labelled("confirm-end", "End Party", "secondary", () => { hub.show({ kind: "lobby" }); void hub.endParty(); });
+    const cancel = labelled("cancel", translate("common.cancel"), "secondary", () => { hub.show({ kind: "lobby" }); });
+    const confirm = labelled("confirm-end", translate("watchParty.end.confirm"), "secondary", () => { hub.show({ kind: "lobby" }); void hub.endParty(); });
     const card = el("div", "watch-party-sheet watch-party-end");
     const row = el("div", "watch-party-end-actions");
     row.append(cancel.element, confirm.element);
-    card.append(el("h2", "watch-party-sheet-title", "End this party for everyone?"), row);
+    card.append(el("h2", "watch-party-sheet-title", translate("watchParty.end.confirmTitle")), row);
     const scrim = el("div", "watch-party-scrim watch-party-ui");
     scrim.appendChild(card);
     const behind = lobbyPage(context, room, false);
@@ -296,18 +304,18 @@ export function endView(context: LobbyContext, room: Room): View {
 export function inviteView(context: LobbyContext, room: Room): View {
     const { hub, baseUrl } = context;
     const link = room.invitePath === undefined ? undefined : inviteUrl(room.invitePath, baseUrl);
-    const done = labelled("done", "Done", "secondary", () => { hub.show({ kind: "lobby" }); });
+    const done = labelled("done", translate("common.done"), "secondary", () => { hub.show({ kind: "lobby" }); });
     const text = el("div", "watch-party-invite-copy");
-    text.append(eyebrow("Invite friends"), el("h1", "watch-party-invite-title", "Join with this code"),
-        el("p", "watch-party-lead", "Anyone with a profile on this Silo server can enter it from Watch Party."));
+    text.append(eyebrow(translate("watchParty.invite.friends")), el("h1", "watch-party-invite-title", translate("watchParty.invite.title")),
+        el("p", "watch-party-lead", translate("watchParty.invite.body")));
     const code = el("p", "watch-party-invite-code", room.code);
-    code.setAttribute("aria-label", `Party code ${[...room.code].join(", ")}`);
+    code.setAttribute("aria-label", translate("watchParty.partyCode", { code: [...room.code].join(", ") }));
     text.appendChild(code);
-    if (link !== undefined) text.appendChild(el("p", "watch-party-caption", "Or scan to open the invitation on a phone."));
+    if (link !== undefined) text.appendChild(el("p", "watch-party-caption", translate("watchParty.invite.scan")));
     text.appendChild(done.element);
     const layout = el("div", "watch-party-invite watch-party-ui");
     layout.appendChild(text);
-    const qr = link === undefined ? undefined : qrCode(link, "Scan to join this party");
+    const qr = link === undefined ? undefined : qrCode(link, translate("watchParty.invite.qrDescription"));
     if (qr !== undefined) {
         const card = el("div", "watch-party-qr");
         card.appendChild(qr);
