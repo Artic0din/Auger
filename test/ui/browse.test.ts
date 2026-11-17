@@ -930,6 +930,8 @@ browseTest("Search Done leaves the field for the selected filter, as Apple TV's 
     const reads = tv.fake.requests.length;
     await tv.page.fill("#browse-search", "Tomas"); await tv.remote(IME_DONE);
     assert.equal(await tv.focused(), "search-filter:movie");
+    // A request leaves the page before the fake records it, so wait for the new query's read before looking at the last one.
+    await tv.eventually(async () => browseReads(tv, "/catalog").some(request => request.path.includes("q=Tomas")), "the new query's catalog read");
     assert.equal(new URL(browseReads(tv, "/catalog").slice(-1)[0]?.path ?? "", "https://fake.invalid").searchParams.get("type"), "movie", "focusing the selected filter reads nothing else");
     assert.ok(tv.fake.requests.length > reads);
 }, { catalog: new SearchEdgeCatalog() });

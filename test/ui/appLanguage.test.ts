@@ -193,8 +193,8 @@ test("picking German shows Settings in German, and Match Device reads back in En
         assert.deepEqual(await panes.locator(".settings-category-title").allInnerTexts(), ["settings.general", "settings.playback", "settings.subtitles", "settings.category.server"].map(key => de(key as Parameters<typeof de>[0])));
         assert.equal(await panes.locator("h2.browse-section-title").innerText(), "Allgemein");
         assert.equal(await panes.locator(".settings-blurb").innerText(), deTv("settings.blurb.generalAppleTv"));
-        const headers = await panes.locator(".settings-section-header").allInnerTexts();
-        for (const header of [deTv("settings.general.appleTvUserHeaderTv"), de("settings.general.profileAtLaunchHeaderTv"), de("settings.appLanguage.headerTv"), de("settings.general.cardsHeaderTv")]) assert.ok(headers.includes(header), `${header} in ${headers.join(" | ")}`);
+        // The cards section is drawn once its settings answer lands, so wait for each header instead of reading the list once.
+        for (const header of [deTv("settings.general.appleTvUserHeaderTv"), de("settings.general.profileAtLaunchHeaderTv"), de("settings.appLanguage.headerTv"), de("settings.general.cardsHeaderTv")]) await tv.eventually(async () => (await panes.locator(".settings-section-header").allInnerTexts()).includes(header), `the ${header} header`);
         assert.match(await tv.page.locator('[data-focus="app-language"]').innerText(), /^App-Sprache\s*Deutsch$/);
         await tv.page.getByText(de("settings.appLanguage.footer"), { exact: true }).waitFor();
         assert.doesNotMatch(await panes.innerText(), /apple tv/i, "Apple's device name is not shown on this TV");
@@ -218,6 +218,8 @@ test("picking German shows Settings in German, and Match Device reads back in En
 test("no Settings pane or picker shows a catalog key as text in German", async () => {
     const keyShaped = /\b(?:settings|settingsManifest|player|common|accounts|servers|detail|shell)\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*/;
     await withTv(28, async tv => {
+        // A language that lands while the profile menu is open only relabels it when it closes, so open it once the bar is German.
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").allInnerTexts()).includes(translate("topBar.forYou", undefined, "de")), "German top bar");
         await openGeneral(tv, undefined, translate("menu.settings", undefined, "de"));
         const panes = tv.page.locator(".settings-panes");
         await tv.eventually(async () => await panes.locator("h1.browse-title").innerText() === "Einstellungen", "German is shown");
@@ -232,8 +234,11 @@ test("no Settings pane or picker shows a catalog key as text in German", async (
         }
         assert.ok(seen.every(text => text.length > 40), "every pane drew its rows");
         await tv.page.locator('[data-focus="playback"]').click();
+        const rows = ["quality", "bitrate", "audio", "buffering-mode", "auto-next", "skip-intros"];
+        // The rows draw as their settings answers land; the loop below skips a row that is not there yet.
+        await tv.eventually(async () => await tv.page.locator(rows.map(row => `[data-focus="${row}"]`).join(", ")).count() >= 3, "Playback rows drawn");
         let opened = 0;
-        for (const row of ["quality", "bitrate", "audio", "buffering-mode", "auto-next", "skip-intros"]) {
+        for (const row of rows) {
             if (await tv.page.locator(`[data-focus="${row}"]`).count() === 0) continue;
             await tv.page.locator(`[data-focus="${row}"]`).click();
             const dialog = tv.page.getByRole("dialog");

@@ -1822,8 +1822,8 @@ svg.library-empty-icon { width: auto; }
 .personal-lists .personal-grid .browse-card:focus { transform: none; border-color: transparent; box-shadow: none; }
 .personal-lists .personal-grid .browse-art { width: 176px; height: 264px; border-radius: 12px; transition: transform 120ms ease-out, box-shadow 120ms ease-out; }
 .personal-lists .personal-grid .browse-card:focus .browse-art { transform: scale(1.05); box-shadow: 0 8px 18px rgba(0,0,0,.45), 0 0 0 4px rgba(255,255,255,.7); }
-.personal-lists .personal-grid .browse-card-title { margin: 22px 0 0; padding: 0; font: 500 24px/29px var(--silo-font); color: rgba(237,237,237,.45); text-align: start; transition: color 120ms ease-out, text-shadow 120ms ease-out; }
-.personal-lists .personal-grid .browse-card-subtitle { margin: 4px 0 0; padding: 0; font: 400 20px/24px var(--silo-font); color: rgba(237,237,237,.32); text-align: start; transition: color 120ms ease-out, text-shadow 120ms ease-out; }
+.personal-lists .personal-grid .browse-card-title { margin: 22px 0 0; padding: 0; font: 500 24px/29px var(--silo-font); color: rgba(237,237,237,.45); transition: color 120ms ease-out, text-shadow 120ms ease-out; }
+.personal-lists .personal-grid .browse-card-subtitle { margin: 4px 0 0; padding: 0; font: 400 20px/24px var(--silo-font); color: rgba(237,237,237,.32); transition: color 120ms ease-out, text-shadow 120ms ease-out; }
 .personal-lists .personal-grid .browse-card:focus .browse-card-title { color: #fff; font-weight: 500; text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
 .personal-lists .personal-grid .browse-card:focus .browse-card-subtitle { color: rgba(255,255,255,.92); font-weight: 400; text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
 .personal-lists .personal-loading,
@@ -1869,7 +1869,8 @@ svg.library-empty-icon { width: auto; }
 .personal-history .catalog-grid { grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; width: 1664px; margin: 0; padding: 0; }
 .personal-history .catalog-grid .browse-card { --card-caption-gap: 22px; }
 .personal-history .catalog-grid .browse-card-title { margin-top: 22px; }
-.personal-history .catalog-grid :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
+/* Left to right the text starts at the left; right to left the shared server-text rule at the top of this file aligns it by the layout, as SwiftUI's Text is. */
+:root:not([dir="rtl"]) :is(.personal-lists .personal-grid, .personal-history .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
 
 /* ErrorView, shared with the Requests hub: 48pt icon, 36 semibold headline, 26 body, Try Again 200 wide. */
 .personal-lists .personal-failure,
@@ -2010,6 +2011,18 @@ svg.library-empty-icon { width: auto; }
 /* Inert until playback lands: the label stays legible, dimmed, focused or not. */
 .audiobook-pill[aria-disabled="true"] { color: rgba(255, 255, 255, .5); }
 .audiobook-pill[aria-disabled="true"]:focus { background: rgba(255, 255, 255, .7); color: rgba(0, 0, 0, .7); }
+/* silo-apple TVItemDetailLoadingView.audiobookLayout: the title sits in a fixed 820x176 slot so nothing below it moves. */
+.audiobook-loading-title { width: 820px; height: 176px; margin-top: 16px; }
+.audiobook-loading-title .audiobook-title { margin: 0; }
+.audiobook-loading .audiobook-cover { background: rgba(255, 255, 255, .1); }
+.audiobook-loading-year-row, .audiobook-loading-state, .audiobook-loading-actions { display: flex; align-items: center; }
+.audiobook-loading-year-row { gap: 12px; }
+.audiobook-loading-year { font-size: 22px; font-weight: 600; color: rgba(255, 255, 255, .64); }
+.audiobook-loading-state { gap: 22px; margin-top: 48px; }
+.audiobook-loading-ring { flex: none; box-sizing: border-box; width: 88px; height: 88px; border: 8px solid rgba(255, 255, 255, .14); border-radius: 50%; }
+.audiobook-loading-lines { display: flex; flex-direction: column; gap: 8px; }
+.audiobook-loading-actions { gap: 14px; margin-top: 48px; }
+.audiobook-loading:focus { outline: none; }
 .audiobook-sections { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; gap: 64px; padding: 64px 100px 80px 112px; background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .88) 280px); }
 .audiobook-section { display: flex; flex-direction: column; gap: 20px; }
 .audiobook-section-title { margin: 0; font-size: 38px; font-weight: 600; }
@@ -2045,7 +2058,9 @@ svg.library-empty-icon { width: auto; }
 .audiobook-picker-title { margin: 0; font-size: 46px; font-weight: 700; }
 .audiobook-picker-subline { margin: 8px 0 0; font-size: 23px; color: rgba(255, 255, 255, .55); white-space: nowrap; }
 /* Watch Party hub: Apple's WatchPartyEntryView tvLayout and WatchPartyMetrics at 1920x1080. */
-.watch-party-scene .watch-party { box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; min-height: 1080px; padding: 220px 0 0; }
+/* The entry's content runs 140 to 1780 px on Apple TV: tvLayout's 88 pt page inset plus 52 px the pushed route takes from the system safe area (it does not ignore it, as Requests does).
+   The source states only the 88; the 52 is read from Apple TV's accessibility frames, and the lobby, which is not captured, keeps its 88 until a live room can be measured. */
+.watch-party-scene .watch-party { box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; min-height: 1080px; padding: 220px 52px 0; }
 .watch-party-intro { flex: none; display: flex; flex-direction: column; gap: 40px; width: 760px; }
 .watch-party-headline { display: flex; flex-direction: column; gap: 15.6px; }
 .watch-party-eyebrow { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 2.04px; line-height: 21px; text-transform: uppercase; color: var(--silo-secondary); }
@@ -2064,8 +2079,13 @@ svg.library-empty-icon { width: auto; }
 .watch-party-ui .watch-party-button[aria-disabled="true"] { opacity: .45; }
 .watch-party-ui .watch-party-button:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
 .watch-party-icon { flex: none; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; }
-.watch-party-ui .watch-party-input { box-sizing: border-box; width: 100%; height: 76px; margin: 0; padding: 0 30px; border: 0; border-radius: 14px; font-size: 29px; background: rgba(255,255,255,.1); }
-.watch-party-ui .watch-party-input:focus { background: rgba(255,255,255,.22); box-shadow: 0 0 0 4px rgba(255,255,255,.55); }
+/* Apple's tvOS join field is a plain system TextField (the 14 pt fill and border in the source sit inside #if os(iOS)), so its look is the system's, read from Apple TV:
+   a 648 by 73 frame reaching 4 px past the column, nothing drawn at rest, and a light grey capsule with no shadow when focused. The hint sits 30 px in from the left, in
+   Arabic too (physical left), at 0.32 white at rest and rgb(179,179,185) on the capsule. Only the look is Apple's; typing stays on the Samsung keyboard. */
+.watch-party-ui .watch-party-input { box-sizing: border-box; width: 648px; height: 73px; margin: 0 -4px; padding: 0 30px; border: 0; border-radius: 36.5px; font-size: 29px; text-align: left; background: transparent; box-shadow: none; }
+.watch-party-ui .watch-party-input::placeholder { color: rgba(255,255,255,.32); }
+.watch-party-ui .watch-party-input:focus { background: #e7e7e7; color: #000; box-shadow: none; }
+.watch-party-ui .watch-party-input:focus::placeholder { color: rgb(179,179,185); }
 /* Room pages: the lobby and the sheets, picker and invitation it opens. */
 .watch-party-ui .watch-party-code-pill { display: inline-flex; align-items: center; gap: 15px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 40px; border: 0; border-radius: 50px; background: rgba(0,0,0,.52); color: #fff; }
 .watch-party-ui .watch-party-code-pill:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }

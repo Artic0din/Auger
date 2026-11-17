@@ -460,12 +460,11 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             assert.equal(fake.createdRooms[0]?.selection_mode, "host_pick");
             await tv.eventually(async () => fake.selectedContentId === "movie:m0001", "the title is the room's selection");
-            // tvOS pushes the lobby over Details: Back leaves the party to its entry, whose Back moves to the bar like the
-            // profile-menu entry, and the next Back returns to the title.
+            // tvOS pushes the lobby over Details: Back leaves the party to its entry, which is full screen with no bar, so
+            // the next Back returns to the title.
             await tv.remote(10009);
             await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
-            await tv.remote(10009);
-            await tv.eventually(async () => (await tv.page.evaluate(() => document.activeElement?.closest(".browse-nav") !== null)), "Back focuses the bar");
+            assert.equal(await tv.page.locator(".browse-nav").count(), 0, "the entry has no top bar");
             await tv.remote(10009);
             await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
         } finally { await tv.page.context().close(); }

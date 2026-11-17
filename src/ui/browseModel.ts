@@ -35,7 +35,7 @@ export type EpisodeSelection = Partial<Pick<PlayRequest, "fileId" | "audioTrackI
 /** A place a card or row opens. Items open their detail page; seasons open their episode list. */
 export type Destination =
     | { readonly kind: "person"; readonly id: string; readonly title: string }
-    | { readonly kind: "audiobook"; readonly id: string; readonly title: string }
+    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean }
     | { readonly kind: "season"; readonly seriesId: string; readonly seasonNumber: number; readonly title: string; readonly id?: string; readonly episodeId?: string };
 
@@ -51,6 +51,9 @@ export interface DetailSeed {
     /** silo-apple 3651342 Navigation/Route.swift:137,155,209: the card's logo for the loading frame. */
     readonly logoUrl?: string | undefined;
     readonly backdropUrl?: string | undefined;
+    /** The audiobook loading frame paints the card's cover (silo-apple TVItemDetailLoadingView.audiobookCover). */
+    readonly posterUrl?: string | undefined;
+    readonly posterThumbhash?: string | undefined;
     readonly backdropThumbhash?: string | undefined;
     readonly backdropIsEpisodeStill?: boolean | undefined;
     /** Set only for episode seeds. */
@@ -65,6 +68,7 @@ export function detailSeed(card: Card): DetailSeed {
         contentRating: card.contentRating, genre: card.genres?.[0], logoUrl: card.logoUrl,
         backdropUrl: series ? card.seriesBackdropUrl : card.backdropUrl, backdropThumbhash: series ? undefined : card.backdropThumbhash,
         backdropIsEpisodeStill: series ? false : card.backdropIsEpisodeStill,
+        ...(card.type === "audiobook" ? { posterUrl: card.posterUrl, posterThumbhash: card.posterThumbhash } : {}),
         ...(card.type === "episode" ? { episodeWatch: { played: card.played === true, isInProgress: card.played !== true && (card.positionSeconds ?? 0) > 0, ...(card.positionSeconds === undefined ? {} : { positionSeconds: card.positionSeconds }) } } : {}),
     };
 }
@@ -93,7 +97,7 @@ export function destinationOf(card: Card): Destination | undefined {
         case "episode":
             return { kind: "item", id: card.id, title: card.title, seed: detailSeed(card) };
         case "audiobook":
-            return { kind: "audiobook", id: card.id, title: card.title };
+            return { kind: "audiobook", id: card.id, title: card.title, seed: detailSeed(card) };
         case "season":
             return card.seriesId === undefined || card.seasonNumber === undefined
                 ? undefined
