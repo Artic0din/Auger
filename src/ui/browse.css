@@ -2010,6 +2010,18 @@ svg.library-empty-icon { width: auto; }
 /* Inert until playback lands: the label stays legible, dimmed, focused or not. */
 .audiobook-pill[aria-disabled="true"] { color: rgba(255, 255, 255, .5); }
 .audiobook-pill[aria-disabled="true"]:focus { background: rgba(255, 255, 255, .7); color: rgba(0, 0, 0, .7); }
+/* silo-apple TVItemDetailLoadingView.audiobookLayout: the title sits in a fixed 820x176 slot so nothing below it moves. */
+.audiobook-loading-title { width: 820px; height: 176px; margin-top: 16px; }
+.audiobook-loading-title .audiobook-title { margin: 0; }
+.audiobook-loading .audiobook-cover { background: rgba(255, 255, 255, .1); }
+.audiobook-loading-year-row, .audiobook-loading-state, .audiobook-loading-actions { display: flex; align-items: center; }
+.audiobook-loading-year-row { gap: 12px; }
+.audiobook-loading-year { font-size: 22px; font-weight: 600; color: rgba(255, 255, 255, .64); }
+.audiobook-loading-state { gap: 22px; margin-top: 48px; }
+.audiobook-loading-ring { flex: none; box-sizing: border-box; width: 88px; height: 88px; border: 8px solid rgba(255, 255, 255, .14); border-radius: 50%; }
+.audiobook-loading-lines { display: flex; flex-direction: column; gap: 8px; }
+.audiobook-loading-actions { gap: 14px; margin-top: 48px; }
+.audiobook-loading:focus { outline: none; }
 .audiobook-sections { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; gap: 64px; padding: 64px 100px 80px 112px; background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .88) 280px); }
 .audiobook-section { display: flex; flex-direction: column; gap: 20px; }
 .audiobook-section-title { margin: 0; font-size: 38px; font-weight: 600; }

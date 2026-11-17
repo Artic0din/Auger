@@ -182,7 +182,7 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     }
 
     const rows: PickerRow[] = chapters.length === 0
-        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: `Part ${partIndex + 1}`, duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
+        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: part.fileName !== undefined && part.fileName !== "" ? part.fileName : `Part ${partIndex + 1}`, duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
         : chapters.map((chapter, chapterIndex) => {
             const duration = chapterDuration(chapters, chapterIndex, total);
             const isCurrent = current === chapterIndex;
