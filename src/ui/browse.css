@@ -1088,6 +1088,8 @@ svg.library-empty-icon { width: auto; }
 /* Right to left: the hero artwork moves to the screen's left edge and fades toward the text, which moves to the right. */
 :is(.skyline-home, .details-hero) .skyline-art-frame { left: auto; inset-inline-start: 691.2px; }
 :root[dir="rtl"] :is(.skyline-home, .details-hero) .skyline-backdrop { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
+/* Details' placeholder layers fade with the image: the frame's backing, its ThumbHash preview and the missing-art surface. */
+:root[dir="rtl"] .details-hero .hero-art-surface::before, :root[dir="rtl"] .details-hero .hero-art-thumbhash, :root[dir="rtl"] .details-hero .hero-art-missing { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
 :root[dir="rtl"] .skyline-scrim { background: linear-gradient(0deg, #000 10%, rgba(0,0,0,.4) 54%, rgba(0,0,0,.42)), linear-gradient(270deg, rgba(0,0,0,.8), transparent); }
 .skyline-home .skyline-top-scrim, .requests-preview .skyline-top-scrim { position: absolute; top: 0; left: 0; width: 100%; height: 190px; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-grid .skyline-content { top: 228px; height: 852px; }

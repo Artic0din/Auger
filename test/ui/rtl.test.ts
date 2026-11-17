@@ -431,3 +431,25 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
         });
     });
 }
+
+test("in Arabic every layer of the hero artwork fades toward the text, which is on the right, and in English toward the left", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        // The artwork layers Details draws (heroBackdrop.ts), built bare so the page's own stylesheet decides their masks.
+        const masks = (): Promise<{ name: string; mask: string }[]> => tv.page.evaluate(() => {
+            const hero = document.createElement("div");
+            hero.className = "details-hero";
+            hero.innerHTML = '<div class="skyline-art-frame hero-art-surface"><canvas class="hero-art-thumbhash"></canvas><img class="skyline-backdrop" alt=""><div class="hero-art-missing"></div></div>';
+            document.body.append(hero);
+            const frame = hero.querySelector(".hero-art-surface") as Element;
+            const layers: [string, CSSStyleDeclaration][] = [["frame backing", getComputedStyle(frame, "::before")]];
+            for (const [name, selector] of [["preview", ".hero-art-thumbhash"], ["image", ".skyline-backdrop"], ["missing", ".hero-art-missing"]] as const) layers.push([name, getComputedStyle(frame.querySelector(selector) as Element)]);
+            const result = layers.map(([name, style]) => ({ name, mask: style.maskImage }));
+            hero.remove();
+            return result;
+        });
+        for (const layer of await masks()) assert.match(layer.mask, /to right/, `${layer.name}: ${layer.mask}`);
+        await tv.page.evaluate(() => document.documentElement.removeAttribute("dir"));
+        for (const layer of await masks()) assert.match(layer.mask, /to left/, `${layer.name}: ${layer.mask}`);
+    });
+});
