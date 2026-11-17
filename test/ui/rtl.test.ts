@@ -721,3 +721,21 @@ test("in Arabic on a root route that is not mirrored yet (a library's Recommende
         assert.equal(await tv.focused(), "home");
     });
 });
+
+for (const cardNumber of [4, 10] as const) {
+    test(`a late Arabic answer after a launch kept in English leaves Home's focused card (number ${cardNumber}) on screen`, async () => {
+        await withHome({ cached: "en", stored: "ar", holdLanguage: true }, async (tv, releaseLanguage) => {
+            assert.equal(await direction(tv), null, "launched left to right from the kept English");
+            const cards = tv.page.locator('[data-section="recent/12"] [data-focus]');
+            await cards.first().focus();
+            for (let step = 1; step < cardNumber; step++) await tv.remote(RIGHT);
+            const before = await tv.focused();
+            assert.equal(before, await cards.nth(cardNumber - 1).getAttribute("data-focus"));
+            releaseLanguage();
+            await waitForDirection(tv, "rtl");
+            await tv.eventually(async () => await tv.focused() === before, "focus stays on the viewer's card");
+            const card = await onScreen(tv);
+            assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `${before} at ${card?.left}..${card?.right}`);
+        });
+    });
+}
