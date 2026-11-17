@@ -88,7 +88,13 @@ export interface Motion {
 export class SkylineScroll {
     /** TVSeriesDetailView.swift:653-674 centers the selected mode. */
     static seasonOffset(row: HTMLElement, element: HTMLElement): number {
-        return Math.max(0, Math.min(row.scrollWidth - row.clientWidth, element.offsetLeft - row.offsetLeft + element.offsetWidth / 2 - row.clientWidth / 2));
+        const range = row.scrollWidth - row.clientWidth;
+        if (getComputedStyle(row).direction === "rtl") {
+            // A right-to-left row scrolls from 0 to -range: move by how far the pill's centre is from the row's.
+            const pill = element.getBoundingClientRect(), bounds = row.getBoundingClientRect();
+            return Math.min(0, Math.max(-range, row.scrollLeft + (pill.left + pill.width / 2) - (bounds.left + bounds.width / 2)));
+        }
+        return Math.max(0, Math.min(range, element.offsetLeft - row.offsetLeft + element.offsetWidth / 2 - row.clientWidth / 2));
     }
     private readonly frames = new Map<HTMLElement, number>();
     private readonly targets = new WeakMap<HTMLElement, { left: number; top: number }>();
@@ -122,7 +128,8 @@ export class SkylineScroll {
         const cards = Array.from(row.children).filter((node): node is HTMLElement => node instanceof HTMLElement);
         const first = cards[0], last = cards.at(-1);
         if (first === undefined || last === undefined) return 0;
-        const style = getComputedStyle(row), inset = parseFloat(style.paddingLeft);
+        // A right-to-left row starts at its right edge: its leading inset is the right padding and its trailing space the left.
+        const style = getComputedStyle(row), rightToLeft = style.direction === "rtl", inset = parseFloat(rightToLeft ? style.paddingRight : style.paddingLeft);
         const cardStyle = getComputedStyle(first);
         // offsetWidth rounds Compact's 309.6px still before multiplying the pitch.
         const width = parseFloat(cardStyle.width), spacing = parseFloat(cardStyle.marginRight);
@@ -135,14 +142,17 @@ export class SkylineScroll {
         // clamp viewport adds it back.
         const viewport = row.clientWidth - paintEnd - inset + width * .025 + 2 + spacing;
         const maximum = episodeRailOffset(cards.length - 1, cards.length, width, spacing, viewport);
-        row.style.paddingRight = `${Math.max(0, row.clientWidth + maximum - inset - contentWidth - spacing)}px`;
+        row.style[rightToLeft ? "paddingLeft" : "paddingRight"] = `${Math.max(0, row.clientWidth + maximum - inset - contentWidth - spacing)}px`;
         return maximum;
     }
 
     static episodeOffset(row: HTMLElement, element: HTMLElement): number {
         const maximum = SkylineScroll.prepareEpisodeRow(row) ?? 0;
         const first = row.firstElementChild as HTMLElement | null;
-        return first === null ? 0 : Math.min(maximum, Math.max(0, element.offsetLeft - first.offsetLeft));
+        if (first === null) return 0;
+        // Right to left: the first card is the rightmost, so the distance runs from its right edge and the offset is negative.
+        if (getComputedStyle(row).direction === "rtl") return -Math.min(maximum, Math.max(0, first.offsetLeft + first.offsetWidth - element.offsetLeft - element.offsetWidth));
+        return Math.min(maximum, Math.max(0, element.offsetLeft - first.offsetLeft));
     }
 
     move(node: HTMLElement, left: number, top: number, duration = 200, ease: (progress: number) => number = easeOutCubic): void {
@@ -264,11 +274,14 @@ export class SkylineScroll {
             const card = element.getBoundingClientRect();
             // Rows padded for a focus lift keep the lifted card inside that padding.
             const style = getComputedStyle(row);
-            const left = Math.max(12, parseFloat(style.paddingLeft));
-            const right = Math.max(12, parseFloat(style.getPropertyValue("--reveal-end")) || parseFloat(style.paddingRight));
+            // --reveal-end is the row's end inset: the right edge, or the left one when the row reads right to left.
+            const rightToLeft = style.direction === "rtl";
+            const reveal = parseFloat(style.getPropertyValue("--reveal-end"));
+            const left = Math.max(12, rightToLeft ? reveal || parseFloat(style.paddingLeft) : parseFloat(style.paddingLeft));
+            const right = Math.max(12, rightToLeft ? parseFloat(style.paddingRight) : reveal || parseFloat(style.paddingRight));
             // Apple keeps a final group of cards; the terminal episode need not occupy the leading slot.
             const delta = card.left < bounds.left + left ? card.left - bounds.left - left : card.right > bounds.right - right ? card.right - bounds.right + right : 0;
-            this.move(row, row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, element) : row.classList.contains("details-season-chips") && element.getAttribute("aria-pressed") === "true" ? SkylineScroll.seasonOffset(row, element) : Math.max(0, row.scrollLeft + delta), 0);
+            this.move(row, row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, element) : row.classList.contains("details-season-chips") && element.getAttribute("aria-pressed") === "true" ? SkylineScroll.seasonOffset(row, element) : rightToLeft ? Math.min(0, row.scrollLeft + delta) : Math.max(0, row.scrollLeft + delta), 0);
         }
         if (container.dataset.view === "search" && element.closest(".search-people-rail") !== null) {
             this.move(viewport, 0, 0);

@@ -1,3 +1,4 @@
+import { SOURCE_LANGUAGE } from "../i18n/language.ts";
 import { AccountDirectory, accountsByRecentUse, profileCountLabel, serversByRecentUse, type SavedAccount } from "../session/accounts.ts";
 import type { ConnectedServer, SessionCoreDeps } from "../session/core.ts";
 import { signOutSavedAccount } from "../session/core.ts";
@@ -16,6 +17,8 @@ export interface AccountsScreen { destroy(): void }
 export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current: ConnectedServer | undefined,
     open: (account: SavedAccount | undefined, address?: string, inPlace?: boolean) => Promise<void> | void, back: () => void, manage = false, onCurrentSignOut?: () => void): AccountsScreen {
     const container = el("section", "accounts-screen");
+    // Change Account and its sibling screens are English until their text is on the catalog: lang=en under a page whose lang is the shown language. Drop this when they translate.
+    container.setAttribute("lang", SOURCE_LANGUAGE);
     const backdrop = new MarqueeBackdrop(core.clock ?? systemClock);
     // TVChangeAccountView does not write MarqueeScene. The stage stays wherever the previous
     // screen left it: 2 after Who's watching, 1 after a sign-in screen, 0 before a server answers.

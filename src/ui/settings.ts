@@ -24,6 +24,7 @@ import { ConnectionSpeed, learnedLimitText } from "./connectionSpeed.ts";
 import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
 import type { ShowAudiobooks } from "./audiobookPreference.ts";
 import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatures } from "../session/experimentalFeatures.ts";
+import { applyLayoutDirection } from "../i18n/direction.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
 
@@ -115,6 +116,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const stopAppLanguage = appLanguage?.subscribe(() => {
         if (torn) return;
         if (heldSelect() !== undefined) { repaintAfterRelease = true; return; }
+        // The layout mirrors, or returns, in the repaint that changes the words.
+        applyLayoutDirection();
         render(host.focused());
     }) ?? (() => undefined);
     // The release clicks the row after this keyup's handlers, so the repaint runs once they have.
@@ -122,6 +125,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (!repaintAfterRelease) return;
         window.setTimeout(() => {
             if (torn || !repaintAfterRelease || heldSelect() !== undefined) return;
+            applyLayoutDirection();
             render(host.focused());
         }, 0);
     };

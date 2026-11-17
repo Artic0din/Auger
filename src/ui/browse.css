@@ -1,3 +1,11 @@
+/* Server-provided text (titles, names, overviews, captions) takes its base direction from its own first strong letter, as SwiftUI's Text does: in a
+   right-to-left page "10 Cloverfield Lane" would otherwise read "Cloverfield Lane 10". Plaintext also aligns a start-aligned line by that letter (a Latin title would
+   jump to the left), but Apple aligns by the layout (it sits on the right, reading left to right), so the line is aligned right explicitly. :where keeps this at one class
+   of specificity, so the centred captions' own rules (two classes or more) still win; a view pinned left to right is left alone. Only in a right-to-left page, so English
+   and a left-to-right page with an Arabic title are unchanged. This is the one list: add a class when a new element shows server text. */
+:where(:root[dir="rtl"]) :is(.browse-card-title, .browse-card-subtitle, .discovery-collection-name, .browse-overview, .skyline-title, .skyline-synopsis, .skyline-meta,
+.requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview,
+.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
 .section-catalog * { font-family: var(--silo-font); font-weight: inherit; }
@@ -62,7 +70,7 @@
 .settings-pane-header .browse-section-title { margin: 0 0 5px; font-size: 42px; font-weight: 700; line-height: 50px; }
 .settings-pane-header .settings-blurb { margin: 0; font-size: 20px; line-height: 25px; }
 .settings-row-title { font-size: 26px; }
-.settings-row-value { margin-left: auto; font-size: 24px; opacity: .68; }
+.settings-row-value { margin-inline-start: auto; font-size: 24px; opacity: .68; }
 .settings-connection-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
 /* Apple's two-line row measures 97 at 2ef3a171. Its stroke is an overlay, so the fixed height carries the border here. */
 .settings-pane .browse-button.settings-connection-speed { height: 97px; flex-shrink: 0; }
@@ -70,6 +78,10 @@
 .settings-pane .browse-button.settings-connection-speed .settings-row-value,
 .settings-pane .browse-button.settings-learned-limit .settings-row-value { font-weight: 600; opacity: 1; }
 .settings-learned-limit .settings-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[dir="rtl"] .icon-forward { transform: scaleX(-1); }
+/* A view that is not mirrored yet keeps its chevrons pointing right. */
+:root[dir="rtl"] [dir="ltr"] .icon-forward { transform: none; }
+:root[dir="rtl"] .library-browse .icon-backward { transform: scaleX(-1); }
 .settings .settings-chevron { width: 12px; height: 18px; margin: 0 0 0 16px; flex-shrink: 0; opacity: .55; }
 .settings .settings-profile .settings-chevron { width: calc(12px * 17 / 18); height: 17px; opacity: .5; }
 .settings-controls .browse-button:has(.settings-row-value) { display: flex; align-items: center; gap: 16px; }
@@ -79,7 +91,7 @@
 .settings-category-detail, .settings-profile-account { display: block; margin-top: 4px; font-size: 20px; line-height: 1.2; color: var(--silo-secondary); }
 .settings-profile-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .settings-controls .browse-button,
-.settings-categories .browse-button { display: block; width: 100%; margin: 0 0 8px; border-radius: 14px; text-align: left; }
+.settings-categories .browse-button { display: block; width: 100%; margin: 0 0 8px; border-radius: 14px; text-align: start; }
 .settings-categories .browse-button { display: flex; align-items: center; gap: 16px; box-sizing: border-box; height: 82px; padding: 15px 20px; margin-bottom: 6px; }
 /* TVSettingsRailRowStyle (TVSettingsComponents.swift:183-220): clear fill and no stroke at rest, selected fill when current, white platter on focus. */
 .settings-categories .browse-button:not(.settings-signout) { border: 0; background: transparent; box-shadow: none; }
@@ -98,9 +110,9 @@
 .settings-info-row svg { width: 22px; height: 22px; margin: 0; }
 .settings-pane .settings-server-action { display: flex; align-items: center; gap: 16px; }
 .settings-server-action svg { width: 22px; height: 22px; margin: 0; }
-.settings-server-action svg:last-child { margin-left: auto; width: 18px; height: 18px; opacity: .55; }
+.settings-server-action svg:last-child { margin-inline-start: auto; width: 18px; height: 18px; opacity: .55; }
 .settings-picker-subtitle { margin: 0 0 18px; font-size: 22px; color: var(--silo-secondary); }
-.settings-picker-hint { position: absolute; right: 30px; top: 30px; font-size: 18px; color: var(--silo-secondary); }
+.settings-picker-hint { position: absolute; inset-inline-end: 30px; top: 30px; font-size: 18px; color: var(--silo-secondary); }
 .settings-modal { position: relative; }
 .settings-categories .settings-profile { display: flex; align-items: center; }
 /* TVSettingsRailRowStyle's destructive foreground, Theme/Colors.swift:53 at fc86b201. */
@@ -156,7 +168,7 @@
 .details-page-wash { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 /* ratingBadge: 18 bold (TVDetailHero.swift:434-441). Untightened, the scaled chip keeps The Rookie's meta line ending where the Apple TV capture does. */
 .details-rating-badge { flex-shrink: 0; margin-right: 14px; padding: 4px 10px; border: 1.5px solid rgba(255,255,255,.78); border-radius: 5px; color: #fff; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: 0; }
-.details-editorial { position: relative; padding-top: 116px; margin-left: 100px; width: 1080px; }
+.details-editorial { position: relative; padding-top: 116px; margin-inline-start: 100px; width: 1080px; }
 .details-editorial .browse-title { max-width: 1080px; margin: 0 0 14px; }
 .details-editorial .browse-meta { font-size: 24px; line-height: 36px; margin: 0 0 14px; }
 .details-logo { display: block; max-width: 650px; max-height: 160px; object-fit: contain; object-position: left center; }
@@ -450,7 +462,7 @@
 }
 
 .requests-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 40px; }
-.requests-grid .browse-button { margin: 0; border-radius: 16px; white-space: normal; min-height: 110px; text-align: left; }
+.requests-grid .browse-button { margin: 0; border-radius: 16px; white-space: normal; min-height: 110px; text-align: start; }
 .requests-grid .requests-card { margin: 0; }
 .requests-card .browse-card-title { white-space: normal; }
 .requests-detail-art { float: right; margin: 0 0 24px 32px; }
@@ -686,7 +698,7 @@
     background: transparent;
     color: var(--silo-text);
     font: inherit;
-    text-align: left;
+    text-align: start;
     white-space: normal;
 }
 
@@ -850,7 +862,7 @@
     background: var(--silo-surface);
     color: var(--silo-text);
     font: inherit;
-    text-align: left;
+    text-align: start;
 }
 
 .browse-still {
@@ -906,16 +918,16 @@
 .skyline-search-balance { width: 58px; height: 58px; flex-shrink: 0; }
 .browse-nav .skyline-tabs .browse-button { margin: 0; }
 .browse-nav .skyline-tabs .skyline-search { flex-shrink: 0; margin: 0; }
-.skyline-tools { margin-left: auto; display: flex; align-items: center; }
+.skyline-tools { margin-inline-start: auto; display: flex; align-items: center; }
 /* Apple's 29 px tab inset includes the capsule edge. Labels are 26 pt semibold, white at 62% resting and white selected
    (SiloTheme.swift:189, TVTopMenuBar.swift:440,508-512). TVTopMenuCapsuleChrome springs on focus,
    spring(response: 0.35, dampingFraction: 0.85), which this curve follows within 1.6%; a selection change alone eases
    over 0.18 s (TVTopMenuBar.swift:762-763, SiloTheme.swift:173). */
-.browse-nav .browse-button { height: 56px; margin: 0 8px 0 0; padding: 0 28px; border: 1px solid transparent; border-radius: 40px; background: transparent; color: rgba(255,255,255,.62); font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; transition: background-color 320ms cubic-bezier(.3,.25,.2,1.02), border-color 320ms cubic-bezier(.3,.25,.2,1.02), color 320ms cubic-bezier(.3,.25,.2,1.02); }
+.browse-nav .browse-button { height: 56px; margin: 0; margin-inline-end: 8px; padding: 0 28px; border: 1px solid transparent; border-radius: 40px; background: transparent; color: rgba(255,255,255,.62); font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; transition: background-color 320ms cubic-bezier(.3,.25,.2,1.02), border-color 320ms cubic-bezier(.3,.25,.2,1.02), color 320ms cubic-bezier(.3,.25,.2,1.02); }
 .browse-nav .browse-button[data-selection-motion] { transition-duration: 180ms; transition-timing-function: ease-in-out; }
 .browse-nav .browse-button[aria-current="page"], .browse-nav .browse-button[aria-expanded="true"] { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.1); color: #fff; }
 .browse .browse-button:focus { background: #fff; color: #000; box-shadow: none; border-color: #fff; }
-.browse-nav .skyline-search, .browse-nav .skyline-profile { position: relative; width: 58px; height: 58px; padding: 0; margin-left: 22px; margin-right: 0; }
+.browse-nav .skyline-search, .browse-nav .skyline-profile { position: relative; width: 58px; height: 58px; padding: 0; margin-inline: 22px 0; }
 /* Measured from Apple's 27 pt semibold magnifyingglass: 22 px ring, 3 px stroke, 4 px rounded handle. */
 .skyline-search::before { content: ""; position: absolute; box-sizing: border-box; width: 22px; height: 22px; border: 3px solid currentColor; border-radius: 50%; top: 15px; left: 16px; }
 .skyline-search::after { content: ""; position: absolute; width: 11.5px; height: 4px; border-radius: 2px; background: currentColor; transform: rotate(45deg); left: 31.75px; top: 34.5px; }
@@ -972,7 +984,7 @@
 .skyline-root > .skyline-selector.skyline-panel[data-confirmation], .skyline-root > .skyline-dropdown-scrim[data-confirmation] { animation-duration: 200ms; }
 :is(.skyline-flyout, .skyline-flyout-leaving) { width: 300px; border-radius: 18px; }
 :is(.skyline-selector, .skyline-selector-leaving) .browse-button[aria-checked="true"]:not(:focus) { background: rgba(255,255,255,.14); }
-:is(.skyline-selector, .skyline-selector-leaving) .browse-button { display: block; width: 100%; margin: 0; padding: 16px 18px; font-size: 22px; border: 0; background: transparent; color: #ededed; white-space: normal; overflow-wrap: break-word; text-align: left; }
+:is(.skyline-selector, .skyline-selector-leaving) .browse-button { display: block; width: 100%; margin: 0; padding: 16px 18px; font-size: 22px; border: 0; background: transparent; color: #ededed; white-space: normal; overflow-wrap: break-word; text-align: start; }
 :is(.skyline-selector, .skyline-selector-leaving) .browse-button.skyline-menu-item { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 14px 16px; line-height: 26px; font-weight: 600; }
 /* .padding(14).frame(width: 460): the padding is inside the 460 (TVTopMenuBar.swift:1040-1041, :1216-1217). */
 :is(.skyline-selector, .skyline-selector-leaving)[data-menu-kind="for_you"], :is(.skyline-selector, .skyline-selector-leaving)[data-menu-kind="profile"] { display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; }
@@ -998,10 +1010,10 @@
 :is(.skyline-selector, .skyline-selector-leaving) .browse-button.skyline-destructive { color: rgba(255,69,58,.9); }
 :is(.skyline-selector, .skyline-selector-leaving)[data-menu-kind] .browse-button:focus, :is(.skyline-selector, .skyline-selector-leaving).skyline-flyout .browse-button:focus { background: #fff; color: #000; }
 :is(.skyline-selector, .skyline-selector-leaving) .browse-button.skyline-destructive:focus { background: #fff; color: #000; }
-.skyline-marquee { position: fixed; top: 218px; left: 88px; width: 880px; height: 280px; pointer-events: none; }
+.skyline-marquee { position: fixed; top: 218px; inset-inline-start: 88px; width: 880px; height: 280px; pointer-events: none; }
 /* The text layer swaps with no animation; the backdrop layer under it crossfades easeInOut(0.24)
    (silo-apple 85679e7 TVRootHeroBackdrop.swift:160, :188-191; SiloTheme.swift:304). */
-.skyline-marquee-layer { position: absolute; bottom: 0; left: 0; width: 880px; }
+.skyline-marquee-layer { position: absolute; bottom: 0; inset-inline-start: 0; width: 880px; }
 .skyline-art-enter { animation: skyline-appear 240ms ease-in-out; }
 .skyline-art-leave { animation: skyline-leave 240ms ease-in-out forwards; }
 .skyline-backdrop, .skyline-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 1080px; z-index: -2; }
@@ -1052,7 +1064,7 @@ svg.library-empty-icon { width: auto; }
 .discovery-collection-art { position: absolute; left: 28px; top: 36px; width: 104px; height: 156px; transform: rotate(-8deg); overflow: hidden; border-radius: 8px; }
 .discovery-collection-art img { width: 100%; height: 100%; object-fit: cover; }
 .discovery-collection[data-collage="true"] .discovery-collection-art { width: 156px; transform: none; }
-.discovery-collection-name, .discovery-collection-count { display: block; margin-left: 170px; text-align: left; }
+.discovery-collection-name, .discovery-collection-count { display: block; margin-left: 170px; text-align: start; }
 .discovery-collection-name { font-size: 25px; font-weight: 700; }
 .discovery-collection-count { margin-top: 12px; font-size: 17px; }
 .browse .discovery-collection:focus { border-color: #fff; background: linear-gradient(#2e3036,#121316); color: #ededed; }
@@ -1074,14 +1086,20 @@ svg.library-empty-icon { width: auto; }
 /* Band top 596 and height 484 match TVSkylineSectionFeed. Bottom padding is the band height minus
    SiloTheme.Skyline.rowBandBottomInset (20), so the last row can top-align. Rows are 10px apart
    (rowBandPreviewSpacing). */
-.skyline-home .skyline-content { top: 596px; height: 484px; left: 0; width: 1920px; padding-left: 80px; padding-bottom: 464px; }
+.skyline-home .skyline-content { top: 596px; height: 484px; left: 0; width: 1920px; padding-inline-start: 80px; padding-bottom: 464px; }
 .skyline-home .home-section + .home-section { margin-top: 10px; }
 .skyline-home .skyline-marquee { top: 256px; }
-.skyline-home .home-section .browse-row { margin-left: -80px; padding-left: 80px; --reveal-end: 80px; }
+.skyline-home .home-section .browse-row { margin-inline-start: -80px; padding-inline-start: 80px; --reveal-end: 80px; }
 .skyline-home .skyline-hero-backdrop { position: fixed; inset: 0; width: 1920px; height: 1080px; z-index: -2; pointer-events: none; }
 .skyline-home .skyline-tint-wash { position: absolute; inset: 0; background: #000; }
 .skyline-home .skyline-art-frame, .details-hero .skyline-art-frame { position: absolute; top: 0; left: 691.2px; width: 1228.8px; height: 756px; overflow: hidden; mask-image: linear-gradient(to bottom, #000 0%, #000 38%, rgba(0,0,0,.88) 52%, rgba(0,0,0,.58) 68%, rgba(0,0,0,.24) 81%, transparent 90%); }
 .skyline-home .skyline-backdrop, .details-hero .skyline-backdrop { position: static; display: block; width: 100%; height: 100%; object-fit: cover; mask-image: linear-gradient(to left, #000 0%, #000 32%, transparent 100%); }
+/* Right to left: the hero artwork moves to the screen's left edge and fades toward the text, which moves to the right. */
+:is(.skyline-home, .details-hero) .skyline-art-frame { left: auto; inset-inline-start: 691.2px; }
+:root[dir="rtl"] :is(.skyline-home, .details-hero) .skyline-backdrop { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
+/* The placeholder layers (Details, and the hero scene Home, library roots and For You share) fade with the image: the frame's backing, its ThumbHash preview and the missing-art surface. */
+:root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-surface::before, :root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-thumbhash, :root[dir="rtl"] :is(.details-hero, .skyline-home) .hero-art-missing { mask-image: linear-gradient(to right, #000 0%, #000 32%, transparent 100%); }
+:root[dir="rtl"] .skyline-scrim { background: linear-gradient(0deg, #000 10%, rgba(0,0,0,.4) 54%, rgba(0,0,0,.42)), linear-gradient(270deg, rgba(0,0,0,.8), transparent); }
 .skyline-home .skyline-top-scrim, .requests-preview .skyline-top-scrim { position: absolute; top: 0; left: 0; width: 100%; height: 190px; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-grid .skyline-content { top: 228px; height: 852px; }
 .skyline-grid .browse-grid { width: 1680px; }
@@ -1129,6 +1147,8 @@ svg.library-empty-icon { width: auto; }
    The 150px library scale applies only when a landing opts into .library. */
 .skyline-title.skyline-title-logo { display: block; width: 880px; height: 200px; max-height: none; overflow: visible; text-shadow: none; line-height: 0; }
 .skyline-logo { display: block; width: 100%; height: 100%; object-fit: contain; object-position: left center; }
+/* The mirrored marquee's text is right-aligned, so an aspect-fitted logo sits against the same edge. */
+:root[dir="rtl"] .skyline-logo { object-position: right center; }
 .skyline-library .skyline-title.skyline-title-logo { height: 150px; }
 /* Apple detailLine: one line at the meta size. The marquee stack's meta and badge rows are framed at 27
    (TVFocusMarquee.swift); a 24px estimate sat the bottom-anchored logo slot 3px too low. The 12px gap below
@@ -1198,12 +1218,15 @@ svg.library-empty-icon { width: auto; }
    the Apple TV capture. The line box stays 43.2px so the cards below do not move. */
 .home-section .browse-section-title { margin: 0; font-size: calc(36px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 43.2px; letter-spacing: .35px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The symbol's 33px circle sits 3px inside its image frame, so its ink starts at x83 and the text 18px after it. */
-.home-row-glyph { position: relative; display: inline-block; vertical-align: -4px; width: 33px; height: 33px; margin: 0 17px 0 3px; border-radius: 50%; background: #ededed; }
+.home-row-glyph { position: relative; display: inline-block; vertical-align: -4px; width: 33px; height: 33px; margin: 0; margin-inline: 3px 17px; border-radius: 50%; background: #ededed; }
 .home-row-glyph::after { content: ""; position: absolute; top: 10px; left: 11px; border-style: solid; border-width: 7px 0 7px 12px; border-color: transparent transparent transparent #000; }
 /* Top is the 20px title gap plus Skyline's 14px card padding. Bottom is that 14px, not MediaRow's 24px default. */
 .home-section .browse-row { margin-left: -40px; padding: 34px 40px 14px; }
 .home-section .browse-card { width: 176px; margin: 0 40px 0 0; border: 0; border-radius: 0; transition: none; scroll-margin-top: 20px; }
 .home-section .browse-card:focus { transform: none; box-shadow: none; }
+/* Home mirrors its card gap and row inset; the Details and library rails that share these row rules keep their own physical spacing. */
+:root[dir="rtl"] [data-view="home"] .home-section .browse-card { margin-right: 0; margin-left: 40px; }
+:root[dir="rtl"] [data-view="home"] .home-section .browse-row { margin-left: 0; }
 .home-section .browse-art { width: 176px; height: 264px; border-radius: 12px; transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
 .home-section .browse-card.skyline-continue { width: 360px; }
 /* EpisodeThumbCard.swift:352-356 rests at radius 8, y 4; CSS blur is twice the SwiftUI radius. Explore all has only the shared lift (SectionExploreAllCard.swift:37). */
@@ -1300,7 +1323,7 @@ svg.library-empty-icon { width: auto; }
 /* Keep the file-bound picker over Details, using Skyline's existing glass and focus grammar. */
 .details-audio-picker { position: fixed; left: 88px; top: 420px; width: 620px; max-height: 560px; overflow-y: auto; z-index: 12; }
 .details-audio-options { display: flex; flex-direction: column; gap: 12px; }
-.details-audio-options .browse-button { width: 100%; text-align: left; }
+.details-audio-options .browse-button { width: 100%; text-align: start; }
 /* TVActionPopoverMenu (silo-apple e792abd): Version, Audio, Subtitles and More share one glass panel, mono header and row.
    Row text is Apple's points times --silo-sf-cap-scale; the monospaced header keeps Apple's points. A 28px title line makes
    Apple's 13pt-padded row 54 tall alone and 76 with its detail line. Liquid Glass has no published blur radius; this reuses
@@ -1427,6 +1450,8 @@ svg.library-empty-icon { width: auto; }
 .details-editorial .requests-title-primary { width: 139.8601%; transform: scaleX(.715); font-size: calc(92px * var(--silo-sf-cap-scale)); }
 /* Apple's 1.5 subtitle tracking is outside the compression, so Inter's sits inside the scale at 1.5 / .69. */
 .details-editorial .requests-title-secondary { width: 144.9275%; transform: scaleX(.69); font-size: calc(40px * var(--silo-sf-cap-scale)); letter-spacing: 2.17px; color: rgba(255,255,255,.95); }
+/* The title is compressed about its leading edge, which is the right one when Details is mirrored. */
+:root[dir="rtl"] .details-editorial :is(.requests-title-primary, .requests-title-secondary) { transform-origin: right; }
 /* heroCredit: 23 regular, white .70, one line. */
 .details-editorial .details-director { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(23px * var(--silo-sf-cap-scale)); font-weight: 400; color: rgba(255,255,255,.7); }
 /* TVPlaybackSelectionSummaryView: label 23 bold, tracking 0.9, white .48; value 23 medium, white .82. */
@@ -1465,7 +1490,7 @@ svg.library-empty-icon { width: auto; }
 .details-hero.details-loading { height: 690px; min-height: 0; }
 .details-loading-art { background: rgba(255,255,255,.035); }
 .details-loading-bar { display: block; flex-shrink: 0; background: rgba(255,255,255,.1); }
-.details-loading-editorial { position: relative; margin-left: 100px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.details-loading-editorial { position: relative; margin-inline-start: 100px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
 .details-loading-title { position: relative; display: flex; align-items: flex-end; width: 700px; height: 132px; }
 /* silo-apple 3651342 TVItemDetailLoadingView.swift:125-129 and TVDetailHero.swift:596-606: 700 by 132, bottom leading. */
 .details-loading-title .details-logo { max-width: 700px; max-height: 132px; object-position: left bottom; }
@@ -1633,16 +1658,16 @@ svg.library-empty-icon { width: auto; }
 .card-actions-panel .browse-section-title { margin-top: 0; }
 .card-actions-panel .browse-text { font-size: 24px; }
 .card-actions-buttons { display: flex; flex-direction: column; }
-.card-actions-buttons .browse-button { margin: 8px 0; text-align: left; }
+.card-actions-buttons .browse-button { margin: 8px 0; text-align: start; }
 .card-actions-buttons [aria-disabled="true"] { opacity: .6; }
 
 .library-browse .skyline-content { top: 216px; left: 0; width: 1920px; height: 864px; }
 /* TVLibraryGridView: a 216pt clear spacer, then 32pt stack spacing above and below the control row. */
-.browse-controls { display: flex; margin: 32px 0 32px 80px; }
+.browse-controls { display: flex; margin: 32px 0; margin-inline-start: 80px; }
 /* TVBrowseControlPillStyle (TVBrowseFilterUI.swift:582-606): 24pt medium (×cap), fill, text and 1.04 scale animate with easeOut(0.12).
    Apple's 22pt padding sits inside a 1pt strokeBorder (:588, :598-603), so the CSS border takes 1 of the 22. The labels keep Inter's
    own spacing: at the capped size it sets "Sort · Title A–Z", "Filter" and "Shuffle" within 1px of SF Pro, where the app's tighter tracking runs 2 to 3px short. */
-.browse .browse-controls .browse-button { display: flex; align-items: center; height: 53px; margin: 0 16px 0 0; padding: 0 21px; border: 1px solid rgba(255,255,255,.09); border-radius: 27px; background: rgba(255,255,255,.07); color: #ededed; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 500; transition: transform 120ms ease-out, background-color 120ms ease-out, color 120ms ease-out; }
+.browse .browse-controls .browse-button { display: flex; align-items: center; height: 53px; margin: 0; margin-inline-end: 16px; padding: 0 21px; border: 1px solid rgba(255,255,255,.09); border-radius: 27px; background: rgba(255,255,255,.07); color: #ededed; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 500; transition: transform 120ms ease-out, background-color 120ms ease-out, color 120ms ease-out; }
 .browse .browse-controls .browse-button > *, .browse .browse-empty-actions .browse-button > * { letter-spacing: 0; }
 /* SF Mono advances 0.618em and Roboto Mono 0.6em, so the count takes the difference as tracking (TVBrowseFilterUI.swift:51). */
 .browse .browse-controls .browse-button > .browse-control-count { letter-spacing: .33px; }
@@ -1652,16 +1677,16 @@ svg.library-empty-icon { width: auto; }
 .browse .browse-controls [data-focus="shuffle"] .browse-panel-text { letter-spacing: .1px; }
 .browse .browse-controls .browse-button[aria-pressed="true"] { background: rgba(255,255,255,.14); }
 .browse .browse-controls .browse-button:focus { background: #ededed; color: #000; border-color: transparent; transform: scale(1.04); }
-.browse-icon { display: inline-block; width: 24px; height: 24px; margin-right: 10px; flex-shrink: 0; }
+.browse-icon { display: inline-block; width: 24px; height: 24px; margin-inline-end: 10px; flex-shrink: 0; }
 .browse-icon svg { display: block; width: 100%; height: 100%; }
 /* TVBrowseControlRow's HStack(spacing: 10) between symbol and text (TVBrowseFilterUI.swift:34, :46, :65); the panel rows' 14 is the Sort panel's. */
-.browse-controls .browse-panel-row .browse-icon, .browse-empty-actions .browse-panel-row .browse-icon { margin-right: 10px; }
+.browse-controls .browse-panel-row .browse-icon, .browse-empty-actions .browse-panel-row .browse-icon { margin-inline-end: 10px; }
 /* TVBrowseControlRow keeps sortDirection in siloSecondaryText (#99EDEDED).
    The focused pill fill is siloOnSurface (#EDEDED), so that direction disappears. */
-.browse-control-detail { margin-left: 10px; color: rgba(237,237,237,.6); }
+.browse-control-detail { margin-inline-start: 10px; color: rgba(237,237,237,.6); }
 /* TVBrowseFilterUI.swift:51: 18pt bold monospaced. Monospaced text keeps Apple's points (see .details-track-popover). */
-.library-browse .browse-control-count { margin-left: 10px; padding: 2px 8px; border-radius: 14px; background: rgba(0,0,0,.25); font-family: var(--silo-mono); font-size: 18px; font-weight: 700; }
-.library-browse .catalog-grid { margin: 0 0 0 80px; }
+.library-browse .browse-control-count { margin-inline-start: 10px; padding: 2px 8px; border-radius: 14px; background: rgba(0,0,0,.25); font-family: var(--silo-mono); font-size: 18px; font-weight: 700; }
+.library-browse .catalog-grid { margin: 0; margin-inline-start: 80px; }
 .library-browse { font-weight: 400; }
 .library-browse * { font-family: var(--silo-font); font-weight: inherit; }
 .library-browse .catalog-grid { grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); justify-items: center; column-gap: 40px; row-gap: 60px; padding: 0 0 48px; }
@@ -1700,6 +1725,11 @@ svg.library-empty-icon { width: auto; }
 .browse-letters .browse-button[data-pressed] { transform: scale(.96); }
 @media (prefers-reduced-motion: reduce) { .browse-letters, .browse-letters .browse-button { transition-duration: 0s; } .browse-letters .browse-button[data-pressed] { transform: none; } }
 /* Open, the rail moves out with the overflow and, like Apple's ScrollView, draws on through the 60pt bottom safe area. */
+/* TVLibraryGridView.swift:100-108 puts the rail at the HStack's trailing edge with no direction override, so it sits on the left when the page is mirrored. */
+:root[dir="rtl"] .library-browse .browse-letters { right: auto; left: calc(32px - var(--browse-shift, 0px)); transition-property: width, left; }
+:root[dir="rtl"] .library-browse .skyline-content > :not(.browse-letters, .browse-panel-scrim, .browse-panel) { translate: var(--browse-shift, 0px) 0; }
+:root[dir="rtl"] .library-browse .skyline-content:has(> .browse-letters:focus-within) > :not(.browse-letters, .browse-panel-scrim, .browse-panel) { translate: var(--browse-shift-open, 0px) 0; }
+:root[dir="rtl"] .library-browse .browse-letters[data-open], :root[dir="rtl"] .library-browse .browse-letters:focus-within { right: auto; left: calc(32px - var(--browse-shift-open, 0px)); }
 .browse-letters[data-open], .browse-letters:focus-within { right: calc(32px - var(--browse-shift-open, 0px)); width: 96px; padding-bottom: 60px; justify-content: flex-start; }
 .browse-letters:focus-within .browse-button { width: 38px; height: 38px; margin: 4px 0 0; border-radius: 8px; font-size: 15px; line-height: 38px; opacity: 1; }
 /* Collapsed selected chip is a plain siloOnSurface circle. The 10px box clips the glyph, and transparent ink keeps "All" from painting inside it. */
@@ -1738,7 +1768,7 @@ svg.library-empty-icon { width: auto; }
 .library-browse .browse-panel-section { margin: 0; padding: 20px 16px 6px; font-family: ui-monospace, monospace; font-size: 15px; font-weight: 600; letter-spacing: 2px; color: rgba(237,237,237,.6); }
 .browse-panel-note { margin: 0; padding: 18px 16px; font-size: calc(24px * var(--silo-sf-cap-scale)); color: rgba(237,237,237,.6); }
 /* TVBrowsePanelRowStyle (TVBrowseFilterUI.swift:614-630): the white fill animates with easeOut(0.12). */
-.browse .browse-panel .browse-panel-row { display: flex; align-items: center; width: 100%; margin: 0 0 4px; padding: 13px 16px; border: 0; border-radius: 12px; background: transparent; color: #ededed; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 400; text-align: left; white-space: nowrap; transition: background-color 120ms ease-out, color 120ms ease-out; }
+.browse .browse-panel .browse-panel-row { display: flex; align-items: center; width: 100%; margin: 0 0 4px; padding: 13px 16px; border: 0; border-radius: 12px; background: transparent; color: #ededed; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 400; text-align: start; white-space: nowrap; transition: background-color 120ms ease-out, color 120ms ease-out; }
 /* Row type per TVBrowseFilterUI: sort 26, facets 25, Match and Options rows 23, Done 25 semibold, values 24. */
 /* TVBrowseSortPanel (TVBrowseFilterUI.swift:125-155): a VStack(spacing: 4) puts 4 above each row and none below the last; rows are 13 + 32 + 13, a 62 pitch on the Apple TV. */
 .browse .browse-sort-panel .browse-panel-row { margin: 4px 0 0; font-size: calc(26px * var(--silo-sf-cap-scale)); line-height: 32px; }
@@ -1748,12 +1778,12 @@ svg.library-empty-icon { width: auto; }
 .browse .browse-panel .browse-panel-row:focus { background: #ededed; color: #000; }
 .browse .browse-panel .browse-panel-row[aria-disabled="true"] { opacity: .45; }
 .browse-panel-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.browse-panel-detail { margin-left: 16px; opacity: .68; }
-.browse-panel-row .browse-icon { margin-right: 14px; }
+.browse-panel-detail { margin-inline-start: 16px; opacity: .68; }
+.browse-panel-row .browse-icon { margin-inline-end: 14px; }
 /* Filter panel glyphs at Apple's symbol sizes: 22 semibold, the back chevron 20, a facet's chevron 18 at 55%. */
 .browse-filter-panel .browse-panel-row .browse-icon { width: 22px; height: 22px; }
 .browse-filter-panel [data-focus="facet-back"] .browse-icon { width: 20px; height: 20px; }
-.browse-panel-row .browse-panel-detail + .browse-icon { width: 18px; height: 18px; margin: 0 0 0 14px; opacity: .55; }
+.browse-panel-row .browse-panel-detail + .browse-icon { width: 18px; height: 18px; margin: 0; margin-inline-start: 14px; opacity: .55; }
 .browse-panel-row:focus { --icon-ink: #ededed; }
 /* TVBrowseFilterUI.swift:139-143: the current sort's direction is always siloSecondaryText, and its arrow is full strength at the row's 26pt. */
 .browse-sort-panel .browse-panel-detail { opacity: 1; color: rgba(237,237,237,.6); }
@@ -1890,11 +1920,13 @@ svg.library-empty-icon { width: auto; }
 .settings-modal .browse-title { font-size: 42px; margin: 0 0 18px; }
 .settings-modal-options { overflow-y: auto; min-height: 0; padding: 8px; }
 .settings-option-detail { display: block; margin-top: 6px; font-size: 20px; line-height: 1.35; }
-.settings-checkmark { float: right; margin-left: 16px; display: inline-grid; place-items: center; width: 26px; height: 26px; background: currentColor; border-radius: 50%; }
+.settings-checkmark { float: right; margin-inline-start: 16px; display: inline-grid; place-items: center; width: 26px; height: 26px; background: currentColor; border-radius: 50%; }
+/* float: inline-end needs Chromium 118; the checkmark moves to the leading side by hand. */
+:root[dir="rtl"] .settings-checkmark { float: left; }
 .settings-checkmark::after { content: "✓"; color: #202020; font-size: 18px; }
 .settings .browse-button:focus .settings-checkmark::after { color: #fff; }
 .settings-picker-hint { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #ffffff14; border-radius: 20px; }
-.settings-nested-group { margin-left: 24px; padding: 8px; border: 1px solid #ffffff12; border-radius: 14px; background: #ffffff06; }
+.settings-nested-group { margin-inline-start: 24px; padding: 8px; border: 1px solid #ffffff12; border-radius: 14px; background: #ffffff06; }
 /* SubtitleAppearancePreview.swift: tvOS height 150, grey gradient from the top-leading to the bottom-trailing corner, text padded 12 and 16. SwiftUI's gradient axis runs along the diagonal of the 958 x 150 box, which is 98.9deg; CSS "to bottom right" would slant the colour bands.
    overflow:hidden would otherwise let this flex child shrink in a constrained pane. */
 .settings-subtitle-preview { display: flex; justify-content: center; align-items: flex-end; box-sizing: border-box; height: 150px; min-height: 150px; flex-shrink: 0; margin: 0 24px 8px; padding: 12px 16px; border-radius: 18px; background: linear-gradient(98.9deg, #525252, #0f0f0f); overflow: hidden; }
@@ -1969,12 +2001,12 @@ svg.library-empty-icon { width: auto; }
 .audiobook-section { display: flex; flex-direction: column; gap: 20px; }
 .audiobook-section-title { margin: 0; font-size: 38px; font-weight: 600; }
 .audiobook-about { margin: 0; max-width: 1280px; font-size: 25px; line-height: 1.4; color: rgba(255, 255, 255, .72); }
-.audiobook-about-stop { display: flex; flex-direction: column; gap: 20px; align-items: flex-start; padding: 0; border: 0; border-radius: 12px; font: inherit; text-align: left; color: inherit; background: transparent; outline: none; }
+.audiobook-about-stop { display: flex; flex-direction: column; gap: 20px; align-items: flex-start; padding: 0; border: 0; border-radius: 12px; font: inherit; text-align: start; color: inherit; background: transparent; outline: none; }
 /* The shared .browse .browse-button:focus fills white; this text keeps its own colours and shows focus as a ring. */
 .browse .browse-button.audiobook-about-stop:focus { background: transparent; color: inherit; border-color: transparent; box-shadow: 0 0 0 4px rgba(255, 255, 255, .7); }
 .audiobook-static-credits { margin: 0; font-size: 22px; color: rgba(255, 255, 255, .55); }
 .audiobook-rows { display: flex; flex-direction: column; gap: 10px; max-width: 1380px; }
-.audiobook-row { position: relative; display: flex; align-items: center; gap: 20px; box-sizing: border-box; padding: 22px 30px; border: 0; border-radius: 12px; overflow: hidden; font: inherit; text-align: left; color: #fff; background: rgba(255, 255, 255, .06); outline: none; transition: transform var(--silo-fast), background var(--silo-fast); }
+.audiobook-row { position: relative; display: flex; align-items: center; gap: 20px; box-sizing: border-box; padding: 22px 30px; border: 0; border-radius: 12px; overflow: hidden; font: inherit; text-align: start; color: #fff; background: rgba(255, 255, 255, .06); outline: none; transition: transform var(--silo-fast), background var(--silo-fast); }
 .audiobook-row:focus { background: #fff; color: #000; transform: scale(1.015); box-shadow: 0 8px 18px rgba(0, 0, 0, .4); }
 .audiobook-row-title { flex: 1 1 auto; min-width: 0; font-size: 27px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .audiobook-row-detail { flex: none; margin-left: auto; font-size: 22px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, .55); }
@@ -2086,7 +2118,7 @@ svg.library-empty-icon { width: auto; }
 .watch-party-room-body-vote .watch-party-room-copy { width: auto; gap: 20px; }
 .watch-party-hero-vote .watch-party-hero-title { font-size: 60px; letter-spacing: -1.2px; line-height: 66px; }
 .watch-party-room .watch-party-ballot { display: flex; align-items: flex-start; gap: 28px; margin: 0 -88px; padding: 28px 88px; overflow: hidden; white-space: normal; }
-.watch-party-ui .watch-party-candidate { flex: none; border-radius: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 220px; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; }
+.watch-party-ui .watch-party-candidate { flex: none; border-radius: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 220px; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: start; }
 .watch-party-candidate-poster { position: relative; display: block; box-sizing: border-box; width: 220px; height: 330px; margin-bottom: 14px; overflow: visible; border-radius: 12px; background: #222; outline: 1px solid rgba(255,255,255,.12); transition: transform .15s ease-out; }
 .watch-party-candidate-art, .watch-party-candidate-art .browse-art-image { display: block; width: 100%; height: 100%; border-radius: 12px; object-fit: cover; }
 .watch-party-candidate-leader .watch-party-candidate-poster { outline-color: rgba(237,237,237,.35); }
@@ -2117,7 +2149,7 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-scrim { position: absolute; left: 0; top: 0; z-index: 3; display: flex; align-items: center; justify-content: center; width: 1920px; height: 1080px; background: rgba(0,0,0,.62); }
 .watch-party-sheet { box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; width: 900px; padding: 48px; border: 1px solid rgba(255,255,255,.12); border-radius: 30px; background: #232326; }
 .watch-party-sheet-title { margin: 0 0 6px; font-size: 38px; font-weight: 600; color: #fff; }
-.watch-party-sheet .watch-party-option { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; height: auto; margin: 0; padding: 17px 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.06); font-size: 26px; font-weight: 500; line-height: 32px; text-align: left; color: #fff; }
+.watch-party-sheet .watch-party-option { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; height: auto; margin: 0; padding: 17px 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.06); font-size: 26px; font-weight: 500; line-height: 32px; text-align: start; color: #fff; }
 .watch-party-option-value { font-size: 24px; opacity: .7; }
 .watch-party-sheet .watch-party-option-destructive { color: #ff6b61; }
 .watch-party-sheet .watch-party-option:focus { border-color: transparent; background: #fff; color: #000; box-shadow: 0 8px 18px rgba(0,0,0,.5); }
@@ -2150,7 +2182,7 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-season-tab[aria-pressed="true"] { background: rgba(255,255,255,.28); }
 .watch-party-season-tab:focus { background: #fff; color: #000; }
 .watch-party-episode-rail { align-self: stretch; padding-bottom: 24px; }
-.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 6px; box-sizing: border-box; width: 400px; margin-right: 36px; padding: 0; border: 0; background: none; text-align: left; color: #fff; }
+.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 6px; box-sizing: border-box; width: 400px; margin-right: 36px; padding: 0; border: 0; background: none; text-align: start; color: #fff; }
 .watch-party-episode-number { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 400px; height: 225px; border-radius: 12px; background: rgba(255,255,255,.1); font-size: 64px; font-weight: 700; color: var(--silo-secondary); }
 .watch-party-episode:focus .watch-party-episode-number { background: #fff; color: #000; }
 .watch-party-episode-title { max-width: 400px; overflow: hidden; font-size: 24px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -2168,7 +2200,7 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
    focused row is a white 74 px capsule, 18 px in from each side; Remove is the system red. The screen behind is not dimmed. */
 .card-menu-scrim { display: block; background: transparent; }
 .card-menu { position: fixed; display: flex; flex-direction: column; box-sizing: border-box; width: 451px; padding: 20px 16px; border: 2px solid rgba(255,255,255,.16); border-radius: 44px; background: rgba(255,255,255,.05); backdrop-filter: blur(40px); box-shadow: 0 24px 60px rgba(0,0,0,.35); animation: skyline-appear 150ms ease-out; }
-.card-menu-row { position: relative; isolation: isolate; display: flex; align-items: center; gap: 19px; box-sizing: border-box; min-height: 66px; margin: 0; padding: 17px 17px 17px 21px; border: 0; outline: none; background: transparent; color: #ededed; font: inherit; font-size: calc(25.7px * var(--silo-sf-cap-scale)); line-height: 32px; font-weight: 500; text-align: left; }
+.card-menu-row { position: relative; isolation: isolate; display: flex; align-items: center; gap: 19px; box-sizing: border-box; min-height: 66px; margin: 0; padding: 17px 17px 17px 21px; border: 0; outline: none; background: transparent; color: #ededed; font: inherit; font-size: calc(25.7px * var(--silo-sf-cap-scale)); line-height: 32px; font-weight: 500; text-align: start; }
 /* The focus capsule is 74 px tall on the 66 px pitch, so it overhangs the row by 4 px above and below. */
 .card-menu-row:focus::before { content: ""; position: absolute; z-index: -1; top: -4px; right: 0; bottom: -4px; left: 0; border-radius: 37px; background: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.35); }
 .card-menu-row:focus { color: #000; }
