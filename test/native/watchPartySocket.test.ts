@@ -5,7 +5,12 @@ import { SessionError } from "../../src/session/session.ts";
 import { watchTogetherOperations } from "../../src/api/watchTogetherOperations.ts";
 import { decodeRoom, type RoomAccess, type RoomSocketTicket, type RoomServerMessage, decodeRoomSocketTicket } from "../../src/contracts/v2/watchTogether.ts";
 import { watchPartyApi } from "../../src/ui/watchPartyApi.ts";
-import { PARTY_ENDED, PARTY_EXPIRED, PARTY_REPLACED, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+
+const PARTY_ENDED = translate("watchParty.ended.ended");
+const PARTY_EXPIRED = translate("watchParty.ended.expired");
+const PARTY_REPLACED = translate("watchParty.ended.replaced");
 import {
     type ConnectionStatus, reconnectDelayMs, RoomClock, RoomConnection, type RoomEnd, type RoomHandlers, type RoomSocketApi, RoomState, type RoomWebSocket,
 } from "../../src/ui/watchPartySocket.ts";

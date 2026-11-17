@@ -15,6 +15,7 @@ import { supportsSynchronizedParty, uuidV4, type WatchPartyApi, watchPartyFailur
 import { browserSocket, type ConnectionStatus, RoomConnection, type RoomEnd, type RoomSocketFactory, RoomState } from "./watchPartySocket.ts";
 import type { RoomServerMessage, Suggestion } from "../contracts/v2/watchTogether.ts";
 import { RoomVotes, voteWinner } from "./watchPartyVotes.ts";
+import { translate, type MessageKey } from "../i18n/translate.ts";
 
 export { supportsSynchronizedParty, uuidV4, watchPartyApi, watchPartyFailureText, type WatchPartyApi } from "./watchPartyApi.ts";
 
@@ -83,11 +84,6 @@ export interface WatchPartyHubOptions {
     readonly clock?: Clock;
 }
 
-export const UNSUPPORTED_SERVER = "This server needs an update to support synchronized Watch Party playback safely on this profile.";
-export const PARTY_ENDED = "This party has ended.";
-export const PARTY_EXPIRED = "The party connection expired or is no longer available. Join again to continue.";
-export const PARTY_REPLACED = "This profile joined the party on another device. Rejoin here to take over playback.";
-
 /** Apple waits this long after a socket update before reading the ballot, so a burst of votes reads once. */
 const SUGGESTIONS_REFRESH_MS = 200;
 /** Reads the ballot this many times while socket updates keep overtaking it. */
@@ -96,7 +92,7 @@ const SUGGESTIONS_READ_ATTEMPTS = 3;
 const SUGGESTIONS_REFRESH_RETRIES = 3;
 const SUGGESTIONS_STALE = "The suggestions kept changing while they were read.";
 
-const END_TEXT: Record<RoomEnd, string> = { ended: PARTY_ENDED, expired: PARTY_EXPIRED, replaced: PARTY_REPLACED };
+const END_KEY: Record<RoomEnd, MessageKey> = { ended: "watchParty.ended.ended", expired: "watchParty.ended.expired", replaced: "watchParty.ended.replaced" };
 
 const LOBBY: LobbyPage = { kind: "lobby" };
 
@@ -129,6 +125,8 @@ export class WatchPartyHub {
     private mutation: Promise<void> | undefined;
     /** Counts ballot reads; a vote, a suggestion or leaving the room drops the one that is running. */
     private suggestionsEpoch = 0;
+    /** The notice the last failed ballot read raised, so the read that succeeds clears that notice and no other. */
+    private refreshFailure: string | undefined;
     private suggestionsRefreshing = false;
     /** A ballot read was due while a change ran; it runs once that change finishes. */
     private refreshPending = false;
@@ -162,9 +160,9 @@ export class WatchPartyHub {
 
     async join(invitation: string): Promise<void> {
         const value = invitation.trim();
-        if (value === "") { this.fail("Enter a party code or invitation link."); return; }
+        if (value === "") { this.fail(translate("watchParty.error.codeRequired")); return; }
         // The native contract joins by code only; invitation links come with the lobby work.
-        if (value.includes("://")) { this.fail("This Watch Party invitation is invalid."); return; }
+        if (value.includes("://")) { this.fail(translate("watchParty.error.invalidInvitation")); return; }
         await this.enter(signal => this.api.joinByCode(value, signal));
     }
 
@@ -280,7 +278,7 @@ export class WatchPartyHub {
     resume(): void {
         const room = this.state.room;
         if (room?.phase !== "playing" || room.selectedContentId === undefined || room.selectedFileId === undefined) return;
-        this.options.onPlay?.({ contentId: room.selectedContentId, fileId: room.selectedFileId, title: this.state.selected?.title ?? "Watch Party", startSeconds: room.anchorPositionSeconds, allowAlternateVersions: false });
+        this.options.onPlay?.({ contentId: room.selectedContentId, fileId: room.selectedFileId, title: this.state.selected?.title ?? translate("watchParty.title"), startSeconds: room.anchorPositionSeconds, allowAlternateVersions: false });
     }
 
     async stopPlayback(): Promise<boolean> {
@@ -434,7 +432,7 @@ export class WatchPartyHub {
     /** WatchPartySession.terminate: the room is over for this viewer, who returns to the entry with the reason. */
     private terminate(reason: RoomEnd): void {
         this.reset();
-        this.state.error = END_TEXT[reason];
+        this.state.error = translate(END_KEY[reason]);
         this.options.onLeave?.();
         this.notify();
     }
@@ -568,7 +566,7 @@ export class WatchPartyHub {
             try {
                 await this.loadSuggestions(room.roomId, epoch);
             } catch (error) {
-                if (current()) this.state.error = `Your change was saved, but the suggestions could not be refreshed. ${this.describe(error)}`;
+                if (current()) this.state.error = translate("watchParty.error.suggestionsSaved", { error: this.describe(error) });
             }
             return !this.stopped && this.state.room?.roomId === room.roomId;
         } finally {
@@ -594,17 +592,17 @@ export class WatchPartyHub {
         if (this.state.busy) { this.refreshPending = true; return; }
         const epoch = ++this.suggestionsEpoch;
         this.suggestionsRefreshing = true;
-        const failure = `Could not refresh suggestions. `;
         void (async () => {
             let retry = false;
             try {
                 await sleep(this.options.clock ?? systemClock, failures === 0 ? SUGGESTIONS_REFRESH_MS : 1000 * 2 ** (failures - 1), this.controller.signal, () => new Error("stopped"));
                 if (epoch !== this.suggestionsEpoch) return;
                 await this.loadSuggestions(room.roomId, epoch);
-                if (this.state.error?.startsWith(failure) === true && epoch === this.suggestionsEpoch) { this.state.error = undefined; this.notify(); }
+                if (this.state.error === this.refreshFailure && epoch === this.suggestionsEpoch) { this.state.error = undefined; this.notify(); }
             } catch (error) {
                 if (this.stopped || epoch !== this.suggestionsEpoch || this.state.room?.roomId !== room.roomId) return;
-                this.state.error = `${failure}${this.describe(error)}`;
+                this.refreshFailure = translate("watchParty.error.suggestionsRefresh", { error: this.describe(error) });
+                this.state.error = this.refreshFailure;
                 this.notify();
                 retry = failures < SUGGESTIONS_REFRESH_RETRIES;
             } finally {
@@ -660,10 +658,10 @@ export class WatchPartyHub {
         };
         if (this.state.capabilities?.picker === true) {
             const picker = await this.api.picker(room.roomId, this.roomToken, this.controller.signal);
-            return [...shelf("together", "Continue Together", picker.continueTogether), ...shelf("watchlist", "On Your Watchlists", picker.watchlistUnion)];
+            return [...shelf("together", translate("watchParty.picker.continueTogether"), picker.continueTogether), ...shelf("watchlist", translate("watchParty.picker.watchlists"), picker.watchlistUnion)];
         }
         const page = await this.api.watchlist(this.controller.signal);
-        return shelf("watchlist", "On Your Watchlists", page.items.map(card => ({ card, members: [], nextUp: undefined })));
+        return shelf("watchlist", translate("watchParty.picker.watchlists"), page.items.map(card => ({ card, members: [], nextUp: undefined })));
     }
 
     private async browse(epoch: number, load: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -695,7 +693,7 @@ export class WatchPartyHub {
             return true;
         } catch (error) {
             if (this.stopped) return false;
-            this.state.error = `Could not check Watch Party support. ${this.describe(error)}`;
+            this.state.error = translate("watchParty.error.supportCheck", { error: this.describe(error) });
             return false;
         }
     }
@@ -708,7 +706,7 @@ export class WatchPartyHub {
         this.notify();
         try {
             if (!await this.load()) return;
-            if (!this.state.supported) { this.state.error = UNSUPPORTED_SERVER; return; }
+            if (!this.state.supported) { this.state.error = translate("watchParty.error.unavailable"); return; }
             try {
                 const entered = await operation(this.controller.signal);
                 if (!this.stopped) {

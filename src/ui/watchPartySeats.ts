@@ -2,13 +2,14 @@
 // Dashed grey is here but not ready, solid white with a tick is ready, dotted and dimmed is disconnected.
 
 import type { Room, RoomMember } from "../contracts/v2/watchTogether.ts";
+import { translate, type MessageKey } from "../i18n/translate.ts";
 import type { FocusItem } from "./browseFocus.ts";
 import { actionButton } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { eyebrow, icon, SVG } from "./watchPartyParts.ts";
 import { presenceSummary, seatState, type SeatState } from "./watchPartyPolicy.ts";
 
-const STATUS_TEXT: Partial<Record<SeatState, string>> = { notReady: "not ready", away: "reconnecting", syncing: "syncing", buffering: "buffering", joining: "joining" };
+const STATUS_KEY: Partial<Record<SeatState, MessageKey>> = { notReady: "watchParty.seat.notReady", away: "watchParty.seat.reconnecting", syncing: "watchParty.seat.syncing", buffering: "watchParty.seat.buffering", joining: "watchParty.seat.joining" };
 
 /** Host first, then this viewer, then by name. */
 function ordered(members: readonly RoomMember[]): RoomMember[] {
@@ -49,9 +50,13 @@ function seat(member: RoomMember, phase: Room["phase"]): HTMLElement {
         tick.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>';
         avatar.appendChild(tick);
     }
-    const detail = [member.isHost ? "Host" : undefined, member.isSelf ? "You" : undefined, STATUS_TEXT[state]].filter((part): part is string => part !== undefined).join(" · ");
+    const status = STATUS_KEY[state];
+    const statusText = status === undefined ? undefined : translate(status);
+    const detail = [member.isHost ? translate("watchParty.seat.host") : undefined, member.isSelf ? translate("watchParty.seat.you") : undefined, statusText].filter((part): part is string => part !== undefined).join(" · ");
     node.append(avatar, el("span", "watch-party-seat-name", member.displayName), ...(detail === "" ? [] : [el("span", "watch-party-seat-detail", detail)]));
-    node.setAttribute("aria-label", [member.displayName, member.isSelf ? "you" : "", member.isHost ? "host" : "", STATUS_TEXT[state] ?? "ready"].filter(part => part !== "").join(", "));
+    // WatchPartySeat.accessibilityText: the name, then you, host and the state, in the order Apple joins them.
+    const stateText = statusText ?? translate(state === "watching" ? "watchParty.seat.a11yWatching" : "watchParty.seat.a11yReady");
+    node.setAttribute("aria-label", [member.displayName, member.isSelf ? translate("watchParty.seat.youLower") : "", member.isHost ? translate("watchParty.seat.a11yHost") : "", stateText].filter(part => part !== "").join(", "));
     return node;
 }
 
@@ -59,23 +64,23 @@ function seat(member: RoomMember, phase: Room["phase"]): HTMLElement {
 function inviteSeat(onInvite: () => void): FocusItem {
     const item = actionButton("invite", "", onInvite);
     item.element.classList.add("watch-party-seat", "watch-party-seat-invite");
-    item.element.setAttribute("aria-label", "Invite friends");
+    item.element.setAttribute("aria-label", translate("watchParty.invite.friends"));
     const avatar = el("span", "watch-party-seat-avatar");
     avatar.append(icon("M12 4v16M4 12h16"));
-    item.element.append(avatar, el("span", "watch-party-seat-name", "Invite"));
+    item.element.append(avatar, el("span", "watch-party-seat-name", translate("watchParty.seat.invite")));
     return item;
 }
 
 /** "Here now" and the room's presence summary over a seat for every member, then the Invite seat. */
 export function seatsRow(members: readonly RoomMember[], phase: Room["phase"], onInvite: () => void): { readonly node: HTMLElement; readonly invite: FocusItem } {
     const heading = el("div", "watch-party-here-heading");
-    heading.append(eyebrow("Here now"), el("span", "watch-party-presence", presenceSummary(members, phase)));
+    heading.append(eyebrow(translate("watchParty.seats.hereNow")), el("span", "watch-party-presence", presenceSummary(members, phase)));
     const invite = inviteSeat(onInvite);
     const seats = el("div", "watch-party-seats");
     seats.append(...ordered(members).map(member => seat(member, phase)), invite.element);
     const node = el("div", "watch-party-here");
     node.setAttribute("role", "group");
-    node.setAttribute("aria-label", "Members");
+    node.setAttribute("aria-label", translate("watchParty.seats.members"));
     node.append(heading, seats);
     return { node, invite };
 }
