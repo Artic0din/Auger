@@ -782,6 +782,39 @@ test("in Arabic the Search field aligns by what is typed, as Apple TV's field do
     });
 });
 
+test("in Arabic typed Latin text is drawn at the left end of the Search field and typed Arabic text at the right end (the drawn pixels, not just the computed direction)", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="search"]').click();
+        const field = tv.page.locator("#browse-search");
+        await field.evaluate(node => (node as HTMLInputElement).blur());
+        const clip = await field.evaluate(node => { const rect = node.getBoundingClientRect(); return { x: Math.floor(rect.left), y: Math.floor(rect.top), width: Math.floor(rect.width), height: Math.floor(rect.height) }; });
+        /** The left and right edges of the text drawn in the field, as distances in from the field's own edges. */
+        const inkInset = async (): Promise<{ fromLeft: number; fromRight: number }> => {
+            const png = (await tv.page.screenshot({ clip })).toString("base64");
+            return tv.page.evaluate(async ([data, width]) => {
+                const image = new Image();
+                image.src = `data:image/png;base64,${data}`;
+                await image.decode();
+                const canvas = document.createElement("canvas");
+                canvas.width = image.width; canvas.height = image.height;
+                const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+                context.drawImage(image, 0, 0);
+                const pixels = context.getImageData(0, 0, image.width, image.height).data;
+                let first = image.width, last = -1;
+                for (let x = 0; x < image.width; x++) for (let y = 0; y < image.height; y++) if ((pixels[(y * image.width + x) * 4] ?? 0) > 60) { first = Math.min(first, x); last = Math.max(last, x); }
+                return { fromLeft: first, fromRight: width - 1 - last };
+            }, [png, clip.width] as const);
+        };
+        await field.fill("Aladdin");
+        const latin = await inkInset();
+        assert.ok(latin.fromLeft < 60 && latin.fromRight > clip.width / 2, `Aladdin sits at the left end: ${JSON.stringify(latin)} in a ${clip.width}px field`);
+        await field.fill("علاء الدين");
+        const arabic = await inkInset();
+        assert.ok(arabic.fromRight < 60 && arabic.fromLeft > clip.width / 2, `Arabic sits at the right end: ${JSON.stringify(arabic)} in a ${clip.width}px field`);
+    });
+});
+
 test("in Arabic Left walks Search's People rail to its last person and keeps each person on screen", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
