@@ -1,4 +1,4 @@
-import { decodeCard, type HomeSection } from "./catalog.ts";
+import { decodeCard, titleArguments, type HomeSection } from "./catalog.ts";
 import { object, string, optionalString, WireError } from "./wire.ts";
 
 export const RECOMMENDATION_KINDS = ["for-you-main", "cluster", "similar-users", "popular", "recently-added", "top-rated", "genre"] as const;
@@ -19,6 +19,9 @@ export function decodeRecommendationRow(value: unknown): RecommendationRow {
     return {
         id: `recommendation:${JSON.stringify([type, kind ?? null, key ?? null, ...(locator === undefined ? [items.map(card => card.id)] : [])])}`,
         sectionType: type, title, items, ...(locator === undefined ? {} : { locator }),
+        // APIv2DiscoverRow: the key and arguments of a title the server wrote, as on home sections; a malformed extra shows `title`.
+        titleKey: typeof row.title_key === "string" ? row.title_key : undefined,
+        titleArgs: titleArguments(row.title_args),
     };
 }
 

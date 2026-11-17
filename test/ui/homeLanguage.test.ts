@@ -119,7 +119,7 @@ test("the For You, library and profile menus read in German", async () => {
         await tv.page.locator('[data-focus="series"]').focus();
         await tv.remote(40);
         assert.equal(await panel.getAttribute("aria-label"), de("menu.cascade.sectionsSpoken", { library: "Shows" }));
-        assert.deepEqual(await panel.locator(".skyline-menu-label").allInnerTexts(), [de("library.recommended"), de("library.collections"), de("library.browse")]);
+        assert.deepEqual(await panel.locator(".skyline-menu-label").allInnerTexts(), [de("library.recommended"), de("library.browse"), de("library.collections")]);
         await tv.remote(BACK);
 
         await tv.page.locator('[data-focus="profiles"]').focus();

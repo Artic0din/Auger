@@ -599,7 +599,7 @@ test("a mixed library appears under Movies and keeps its video category when a m
         await start(tv, { items: [{ type: "builtin", destination: "home" }, { type: "library", library_id: 12, label: "Mixed" }] }, catalog);
         assert.equal(await tv.page.locator('[data-focus="library:12"]').count(), 0);
         await tv.page.locator('[data-focus="movies"]').focus();
-        await tv.remote(40); await tv.remote(40); await tv.remote(40);
+        await tv.remote(40); await tv.remote(40);
         assert.equal(await tv.focused(), "section:browse");
         await tv.page.keyboard.press("Enter");
         await tv.page.locator('.library-browse .catalog-grid .browse-card').first().waitFor();
