@@ -50,6 +50,15 @@ export function applyLayoutDirection(root: DirectionRoot | undefined = globalThi
     else root.removeAttribute("dir");
 }
 
+/**
+ * Gives a screen that draws its own text the language and direction of that text, whatever the page says: Change Account and the
+ * profile screens can open with no browse page under them (which sets the document's), and over one they follow it.
+ */
+export function applyScreenDirection(screen: Element, language: string = textLanguage()): void {
+    screen.setAttribute("lang", language);
+    screen.setAttribute("dir", language !== SOURCE_LANGUAGE && isRightToLeft(language) ? "rtl" : "ltr");
+}
+
 /** Leaves the screens that are still English, sign-in among them, with the default `lang` and reading left to right. */
 export function clearLayoutDirection(): void {
     applyLayoutDirection(undefined, SOURCE_LANGUAGE);

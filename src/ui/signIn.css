@@ -1003,7 +1003,7 @@
 .profile-preset .navigation-avatar-fallback { font-size: 48px; }
 .profile-preset:focus, .profile-preset[aria-pressed="true"] { border-color: white; outline: none; }
 .profile-preset:focus { transform: scale(1.08); box-shadow: 0 0 16px rgba(255,255,255,.18); }
-.profile-library-options .signin-button, .profile-create-controls > .signin-button { display: block; width: 100%; margin: 14px 0; text-align: left; }
+.profile-library-options .signin-button, .profile-create-controls > .signin-button { display: block; width: 100%; margin: 14px 0; text-align: start; }
 /* PINEntryView and NumberPadButton on tvOS (silo-apple 97ecec1), in points as CSS pixels. The scrim is
    the shared .profiles-flow::after (MarqueeScrim .ambient); the section adds the view's black 35%. */
 .profile-pin.signin { padding: 0; overflow: hidden; }

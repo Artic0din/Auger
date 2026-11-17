@@ -155,3 +155,36 @@ export function listenSelectRelease(): void {
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("visibilitychange", loseRelease);
 }
+
+export interface LateRedraw {
+    /** A language file landed: redraw now, or once the screen is idle. */
+    arrived(): void;
+    /** The screen drew itself afresh (a dialog closed, an operation ended): nothing is waiting any more. */
+    clear(): void;
+}
+
+/**
+ * A language file can land while a press or a dialog is under the viewer's hands. As Browse's `reconcileLanguage` does, the redraw
+ * waits while Select is held or `busy` says a dialog or an operation is open, and the next key release runs it.
+ */
+export function lateRedraw(busy: () => boolean, redraw: () => void): LateRedraw {
+    let waiting = false;
+    const run = (): void => {
+        if (!waiting || busy() || heldSelect() !== undefined) return;
+        waiting = false;
+        document.removeEventListener("keyup", afterKey);
+        redraw();
+    };
+    // A Select is released by a key, so the press has ended by the time this timer fires.
+    const afterKey = (): void => { window.setTimeout(run, 0); };
+    return {
+        arrived() {
+            if (!waiting) { waiting = true; document.addEventListener("keyup", afterKey); }
+            run();
+        },
+        clear() {
+            waiting = false;
+            document.removeEventListener("keyup", afterKey);
+        },
+    };
+}

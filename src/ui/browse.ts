@@ -15,7 +15,7 @@ import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
 import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
 import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, REMOVE_CONFLICT_MESSAGE, REMOVED_NOTICE, RequestActionGate, REQUEST_NOTICE_MS, UNCONFIRMED_CANCEL_MESSAGE, UNCONFIRMED_REMOVE_MESSAGE, visibleMineRequests } from "./requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations, type TextSearchScope } from "../api/operations.ts";
@@ -266,6 +266,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const input = el("input", "browse-input");
     input.id = "browse-search";
     input.type = "search";
+    // The field aligns by what is typed, as Apple TV's does: Latin text such as a title reads left to right in Arabic, an empty field takes the layout's direction.
+    input.dir = "auto";
     input.spellcheck = false;
     input.autocomplete = "off";
     input.placeholder = translate("search.fieldPrompt.video");
@@ -456,11 +458,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
-        if (!redraw) return;
-        render(focus);
-        // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
-        if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        if (redraw) {
+            render(focus);
+            // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+            if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        }
         // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        // A caller that shows the screen itself afterwards (Settings closing) still needs it, so it runs on this path too.
         shell.repaintShown();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
@@ -618,6 +622,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         if ((current?.kind === "library" && current.discovery?.mode === "Browse" || current?.kind === "libraryResults") && !playing) render(host.focused());
     }, () => undefined);
+    // RatingSourcesStore: probed with the first Browse load, dropped with the app's session, and a failed probe leaves the answer empty and asks again.
+    let shownRatingSources: ReadonlySet<string> = new Set();
+    let ratingSourcesProbe: Promise<void> | undefined;
+    const probeRatingSources = (): Promise<void> => ratingSourcesProbe ??= session.call({ ...operations.ratingSources(), profileScoped: true, signal: requestsController.signal }).then(sources => {
+        if (torn) return;
+        shownRatingSources = sources;
+        const current = top();
+        if (current?.kind === "library" && current.discovery?.mode === "Browse" && !playing) render(host.focused());
+    }, () => { ratingSourcesProbe = undefined; });
     const startShuffle = (current: Extract<Route, { kind: "library" | "libraryResults" }>): void => {
         if (torn || playing || top() !== current || shuffleStarting || !canShuffle(current)) return;
         const discovery = current.kind === "library" ? current.discovery : undefined, generation = shuffleGeneration;
@@ -1248,6 +1261,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const state = current.discovery;
         if (state === undefined || state.mode !== "Browse") return;
         void probeShuffles();
+        if (!append) void probeRatingSources();
         if (!state.facetsRequested) {
             state.filter = browsePrefs.saved(current.library) ?? state.filter;
             state.facetsRequested = true;
@@ -2303,7 +2317,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2509,7 +2523,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Neighbor focus must be taken from the pre-removal list (AGENTS.md restore by id).
         const focus = listFocusAfter(route, id, fallback);
         dropRemovedRequest(id);
-        publishRequestNotice(REMOVED_NOTICE);
+        publishRequestNotice(removedNotice());
         await settleVisibleRequests(route, focus, revision);
     };
     const runListRemove = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
@@ -2534,11 +2548,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_REMOVE_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("remove");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
-            const message = error instanceof ApiError && error.problemId === "conflict" ? REMOVE_CONFLICT_MESSAGE : writeFailureMessage(error);
+            const message = error instanceof ApiError && error.problemId === "conflict" ? removeConflictMessage() : writeFailureMessage(error);
             if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
             await settleVisibleRequests(route, origin, revision);
             requestGate.listMessage = message;
@@ -2572,7 +2586,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 requestGate.release(token);
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("cancel");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2704,7 +2718,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (unconfirmed && cancelId !== undefined) {
                     requestGate.hold(cancelId);
                     releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                    if (requestGate.held.has(cancelId)) requestGate.holdMessage("cancel");
                 } else {
                     releaseGate();
                 }
@@ -2894,7 +2908,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
-                reconcileLanguage(false);
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2916,6 +2929,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // lands on Home.
                 for (const covered of stack) retireRoute(covered);
                 stack = [home];
+                // Home is the top route from here, so the marquee's repaint reads Home's enrichment, not the page that opened Settings.
+                reconcileLanguage(false);
                 host.listen();
                 showRoute(home, { zone: "nav", key: "home" });
                 const spoilersAfterSettings = episodeSpoilers?.settings;

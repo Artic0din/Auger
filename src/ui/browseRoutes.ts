@@ -118,6 +118,8 @@ export interface RouteHandlers {
     readonly more: (route: Extract<Route, { kind: "library" }>) => void;
     readonly preserve: (route: Extract<Route, { kind: "library" }>) => boolean;
     readonly gridColumns: number;
+    /** The rating sources the server shows (`GET /capabilities/ratings`); empty until it answers, so a hidden rating sort is never offered early. */
+    readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
     readonly personFilter: (route: Extract<Route, { kind: "person" }>, filter: MediaScope) => void;
@@ -352,8 +354,8 @@ export function writeMayHaveApplied(error: unknown): boolean {
 export function writeFailureMessage(error: unknown): string {
     if (error instanceof ApiError && error.failure.kind === "problem") {
         const { id, detail } = error.failure.problem;
-        if (id === "validation_failed") return "That request couldn't be submitted";
-        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return "Requests are turned off";
+        if (id === "validation_failed") return translate("requests.reason.validation_failed");
+        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return translate("requests.reason.requests_disabled");
         if (detail?.trim()) return detail;
     }
     return errorState(error).message;
@@ -361,8 +363,8 @@ export function writeFailureMessage(error: unknown): string {
 
 /** Apple RequestErrorCopy.unconfirmed*Message; Apple TV has no Follow, so it keeps this client's wording. */
 export function unconfirmedWriteMessage(action: RequestWrite): string {
-    if (action === "create") return "We couldn't confirm the request. Check My Requests before trying again.";
-    return action === "cancel" ? "We couldn't confirm the cancellation. Reopen My Requests to check it." : "Could not confirm the change. Refresh before trying again.";
+    if (action === "create") return translate("requests.notice.unconfirmedCreate");
+    return action === "cancel" ? translate("requests.notice.unconfirmedCancel") : "Could not confirm the change. Refresh before trying again.";
 }
 
 /** What to tell the person; undefined for an error that is not a server or session answer (a defect). */

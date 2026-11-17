@@ -293,7 +293,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const entering = shownPanel !== panel.kind ? " browse-panel-enter" : "";
     const scrim = el("div", `browse-panel-scrim${entering}`);
     if (panel.kind === "sort") {
-        const items = sortKeysFor(route.library.type).map(entry => {
+        const items = sortKeysFor(route.library.type, handlers.ratingSources, filter.sort).map(entry => {
             const current = entry.key === filter.sort;
             const name = translate(entry.name);
             const parts: (HTMLElement | string)[] = [symbol("checkmark", current), name];
@@ -305,7 +305,11 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         });
         const box = el("div", `browse-panel browse-sort-panel${entering}`);
         box.setAttribute("role", "menu");
-        box.append(el("p", "browse-panel-eyebrow", upper(translate("library.sortBy"))), ...items.map(item => item.element));
+        // TVBrowseSortPanel: a long list scrolls as focus moves through it and a short one keeps its own height.
+        const list = el("div", "browse-panel-list");
+        list.setAttribute("data-scroll-key", "sort");
+        list.append(...items.map(item => item.element));
+        box.append(el("p", "browse-panel-eyebrow", upper(translate("library.sortBy"))), list);
         return { content: [...content, scrim, box], zones: [...zones.map(zone => ({ ...zone, items: [] })), { id: "panel", layout: "column", up: "panel", down: "panel", items }], back: () => handlers.browse(route, { panel: undefined, focus: { zone: "controls", key: "sort" } }) };
     }
     const draft = panel.draft;

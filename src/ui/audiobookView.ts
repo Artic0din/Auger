@@ -9,6 +9,7 @@ import { artworkUrl } from "./browseModel.ts";
 import { actionButton, artwork, cardItem, type ViewContext, zoneNode } from "./browseViews.ts";
 import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { el } from "./screen.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const ICONS = { play: "M8 4 21 12 8 20Z", restart: "M5 4V20M19 4 7 12 19 20Z", chapters: "M8 6H21M8 12H21M8 18H21M3 6H4M3 12H4M3 18H4" } as const;
@@ -107,7 +108,7 @@ function sections(page: AudiobookPage, context: ViewContext): { content: HTMLEle
             const row = actionButton(`narration:${narration.id}`, "", () => context.open({ kind: "audiobook", id: narration.id, title: narration.label }));
             row.element.classList.add("audiobook-row");
             row.element.append(el("span", "audiobook-row-title", narration.label));
-            if (narration.year !== undefined) row.element.append(el("span", "audiobook-row-detail", String(narration.year)));
+            if (narration.year !== undefined) row.element.append(el("span", "audiobook-row-detail", integerText(narration.year)));
             return row;
         });
         const block = el("section", "audiobook-section");

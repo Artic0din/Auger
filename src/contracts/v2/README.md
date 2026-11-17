@@ -16,6 +16,9 @@ response enum values decode to `"unknown"`, so additive server changes keep work
 
 ## Operations used
 
+`ratings.ts` consumes `getRatingsCapability` at `SOURCE`, including its unchanged `get_ratings_capability_ok.json` fixture.
+The profile-scoped read lists the rating sources the server shows; only `state: "available"` counts, as silo-apple's `shownRatingSources` decides it.
+
 `trailers.ts` consumes `refreshCatalogItemTrailers` at `SOURCE`, including its unchanged `refresh_catalog_item_trailers_ok.json` fixture.
 The profile-scoped POST is non-retryable and never replayed after refresh; completion is observed through catalog item reads.
 Apple behavior is pinned separately to `b3d08d444b75dc078d3047730db72e0c4456e79b`; see [Details actions](../../../docs/features/details-actions.md).

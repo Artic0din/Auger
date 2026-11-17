@@ -2,7 +2,9 @@
 
 import assert from "node:assert/strict";
 import type { Browser } from "playwright";
+import { APP_LANGUAGE_KEY } from "../../../src/contracts/v2/settings.ts";
 import { FakeCatalog } from "../../native/support/fakeCatalog.ts";
+import { FakeSettings } from "../../native/support/fakeSettings.ts";
 import { homeDetailsRead, openTv, type Tv } from "./tv.ts";
 
 export interface SeedRow { id: string; baseUrl: string; username: string; profileCount: number; needsSignIn: boolean; lastUsedAt?: number }
@@ -10,11 +12,17 @@ export interface SeedRow { id: string; baseUrl: string; username: string; profil
 /** Stands for the signed-in account's server, which is only known once the app has signed in. */
 export const ACTIVE = "@active";
 
-export async function withSignedInTv(browser: Browser, body: (tv: Tv) => Promise<void>): Promise<void> {
+/** `language` is the App Language the signed-in profile has stored, so the screens read in it from the first read. */
+export async function withSignedInTv(browser: Browser, body: (tv: Tv) => Promise<void>, language?: string): Promise<void> {
     const tv = await openTv(browser, { app: "application" });
     const catalog = new FakeCatalog();
     catalog.fileIds.set("movie:m0001", "42");
     tv.fake.catalog = catalog;
+    if (language !== undefined) {
+        const settings = new FakeSettings(tv.fake);
+        settings.revision = 28;
+        settings.profile().set(APP_LANGUAGE_KEY, language);
+    }
     try {
         await signIn(tv);
         await body(tv);
@@ -39,15 +47,15 @@ export async function seedAccounts(tv: Tv, ownerLastUsedAt: number, extra: reado
 
 export async function openChangeAccount(tv: Tv): Promise<void> {
     await tv.page.locator('[data-focus="profiles"]').click();
-    await tv.page.getByRole("menuitem", { name: "Change Account", exact: true }).click();
+    await tv.page.locator('.skyline-selector [data-focus="switch-server"]').click();
     await tv.page.locator('[data-view="change-account"]').waitFor();
 }
 
 export async function openSettingsAccounts(tv: Tv): Promise<void> {
     await tv.page.locator('[data-focus="profiles"]').click();
-    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('.skyline-selector [data-focus="settings"]').click();
     await tv.page.locator('[data-focus="server"]').click();
-    await tv.page.getByRole("button", { name: "Accounts", exact: true }).click();
+    await tv.page.locator('[data-focus="accounts"]').click();
     await tv.page.locator('[data-view="accounts-settings"]').waitFor();
 }
 

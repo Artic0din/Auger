@@ -633,7 +633,7 @@ calendarTest("Calendar timezone discovery and formatting failures are recoverabl
         const original = Intl.DateTimeFormat;
         Object.defineProperty(window, "restoreCalendarIntl", { configurable: true, value: () => { Intl.DateTimeFormat = original; } });
         Object.defineProperty(Intl, "DateTimeFormat", { configurable: true, value: function (locale?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
-            if (locale === undefined && options?.weekday !== undefined) throw new RangeError("format unavailable");
+            if (locale !== "en" && options?.weekday !== undefined) throw new RangeError("format unavailable");
             return new original(locale, options);
         } });
     });
