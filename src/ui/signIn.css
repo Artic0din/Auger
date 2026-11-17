@@ -633,6 +633,18 @@
 }
 
 /* One row when the labels fit the 900-wide copy column, else one button per line. */
+/* The row keeps its buttons in the copy column: each shrinks, and its label is cut with an ellipsis rather than drawn over the next button. */
+.marquee-actions-tight > .marquee-button {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.marquee-actions-tight > .marquee-button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .marquee-actions-stack {
     flex-direction: column;
     align-items: flex-start;

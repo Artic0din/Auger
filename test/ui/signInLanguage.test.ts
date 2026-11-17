@@ -165,6 +165,40 @@ test("in Arabic Left and Right step through the code screen's buttons as the mir
     });
 });
 
+for (const [locale, name] of [["de-DE", "German"], ["ar-SA", "Arabic"]] as const) {
+    test(`the ${name} password screen's actions fit the copy column and never overlap`, async () => {
+        await withTv(locale, async tv => {
+            await tv.eventually(async () => await tv.page.locator('[data-screen="entry"]').getAttribute("lang") === locale.slice(0, 2), `${name} on the address screen`);
+            // The TV's own font is wider than the test browser's; letter spacing stands in for it so the longest labels outgrow the column.
+            await tv.page.addStyleTag({ content: ".signin-auth .marquee-button { letter-spacing: 2.5px; }" });
+            // Started from Change Account: the longest leave label, "Zurück zu den Konten" in German.
+            await tv.page.evaluate(() => window.harness.mount(undefined, false, true));
+            await codeScreen(tv);
+            await tv.page.locator('[data-focus="password"]').click();
+            await section(tv, "credentials");
+            const boxes = await tv.page.evaluate(() => {
+                const column = document.querySelector(".marquee-copy")?.getBoundingClientRect();
+                const buttons = [...document.querySelectorAll(".marquee-actions .marquee-button")];
+                // A label that outgrows its button is drawn over the next one, though the boxes themselves never overlap.
+                const drawn = buttons.map(node => {
+                    const label = node.querySelector("span:not(.marquee-spinner)");
+                    const range = document.createRange();
+                    if (label !== null) range.selectNodeContents(label);
+                    const box = node.getBoundingClientRect();
+                    const text = label === null ? box : range.getBoundingClientRect();
+                    const clipped = label instanceof HTMLElement && label.scrollWidth > label.clientWidth + 1;
+                    return { left: Math.min(box.left, clipped ? box.left : text.left), right: Math.max(box.right, clipped ? box.right : text.right) };
+                });
+                return { column: column === undefined ? undefined : { left: column.left, right: column.right }, buttons: drawn };
+            });
+            assert.ok(boxes.column !== undefined && boxes.buttons.length === 3, JSON.stringify(boxes));
+            const ordered = [...boxes.buttons].sort((a, b) => a.left - b.left);
+            for (let index = 1; index < ordered.length; index++) assert.ok(ordered[index]!.left >= ordered[index - 1]!.right, `buttons overlap: ${JSON.stringify(ordered)}`);
+            for (const box of ordered) assert.ok(box.left >= boxes.column.left - 1 && box.right <= boxes.column.right + 1, `a button leaves the column: ${JSON.stringify({ column: boxes.column, box })}`);
+        });
+    });
+}
+
 test("the address screen reads English and left to right when English is shown", async () => {
     await withTv(undefined, async tv => {
         const entry = await section(tv, "entry");

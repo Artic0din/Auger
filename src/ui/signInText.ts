@@ -151,7 +151,8 @@ export function codeLead(status: CodeStatus, typed: string | undefined): string 
         return translate("tvSignIn.declinedLead");
     }
     // Apple's text says "this Apple TV"; this TV is a TV.
-    return typed === undefined ? translateTv("tvSignIn.appleTv.leadNoPage") : translateTv("tvSignIn.appleTv.lead", { page: isolated(typed) });
+    // Without a typed address the catalog text names the page's path itself; a right-to-left sentence would move its slash behind it ("activate/").
+    return typed === undefined ? translateTv("tvSignIn.appleTv.leadNoPage").replace("/activate", isolated("/activate")) : translateTv("tvSignIn.appleTv.lead", { page: isolated(typed) });
 }
 
 /**

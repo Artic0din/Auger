@@ -184,7 +184,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         backdrop.setStage(marqueeScene.stage);
         backdrop.setAccent(choosing ? undefined : active?.accent);
         host.show(screen, typeof focus === "function" ? focus(screen) : focus);
-        fitCodeActions(root);
+        fitActions(root);
     };
 
     /**
@@ -1190,29 +1190,51 @@ function readServer(core: SessionCoreDeps): string | undefined {
     }
 }
 
-/** One row when the code actions fit the 900-wide copy column, else one button per line. */
-function fitCodeActions(root: HTMLElement): void {
+const ACTION_GAP = 22;
+/** MarqueeButtonBody: the label is one line that shrinks to 0.8 of its size before it truncates (`minimumScaleFactor(0.8)`). */
+const MIN_LABEL_SCALE = 0.8;
+
+/**
+ * The code screens' actions are one row when they fit the 900-wide copy column, else one button per line. Every other screen's row stays a
+ * row, as Apple's `HStack` does: when a language's labels do not fit, each label shrinks together to 0.8 of its size, then truncates.
+ */
+function fitActions(root: HTMLElement): void {
     const section = root.querySelector(".signin-screen");
     const name = section?.getAttribute("data-screen");
-    if (section === null || (name !== "code" && name !== "starting" && name !== "ended" && name !== "approved")) {
-        return;
-    }
-    const row = section.querySelector(".marquee-actions");
-    if (!(row instanceof HTMLElement) || row.childElementCount < 2) {
+    const row = section?.querySelector(".marquee-actions");
+    if (section === null || !(row instanceof HTMLElement) || row.childElementCount < 2) {
         return;
     }
     const buttons = [...row.children].filter((node): node is HTMLElement => node instanceof HTMLElement);
-    // A flex row shrinks the buttons to the column, so the laid-out widths always fit. Measure each label at its own width.
+    const labels = buttons.map(button => button.querySelector("span:not(.marquee-spinner)")).filter((node): node is HTMLElement => node instanceof HTMLElement);
+    // A flex row shrinks the buttons to the column, so the laid-out widths always fit. Measure each label at its own width, at its full size.
+    for (const label of labels) label.style.fontSize = "";
+    row.classList.remove("marquee-actions-tight");
     for (const button of buttons) {
         button.style.flex = "none";
         button.style.width = "max-content";
     }
-    const width = buttons.reduce((sum, button) => sum + button.offsetWidth, 0) + 22 * (buttons.length - 1);
+    const widths = buttons.map(button => button.offsetWidth);
+    const labelWidths = labels.map(label => label.offsetWidth);
     for (const button of buttons) {
         button.style.flex = "";
         button.style.width = "";
     }
-    row.classList.toggle("marquee-actions-stack", width > 900);
+    const gaps = ACTION_GAP * (buttons.length - 1);
+    const width = widths.reduce((sum, value) => sum + value, 0) + gaps;
+    if (name === "code" || name === "starting" || name === "ended" || name === "approved") {
+        row.classList.toggle("marquee-actions-stack", width > 900);
+        return;
+    }
+    const room = row.clientWidth;
+    if (width <= room) {
+        return;
+    }
+    const labelSum = labelWidths.reduce((sum, value) => sum + value, 0);
+    const scale = Math.max(MIN_LABEL_SCALE, Math.min(1, (room - gaps - (width - gaps - labelSum)) / labelSum));
+    for (const label of labels) label.style.fontSize = `${scale}em`;
+    // Past 0.8 the label is cut at the button's edge, never over its neighbour.
+    row.classList.add("marquee-actions-tight");
 }
 
 export function rememberServer(core: SessionCoreDeps, baseUrl: string): void {

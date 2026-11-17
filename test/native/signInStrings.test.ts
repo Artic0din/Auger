@@ -159,6 +159,16 @@ test("in Arabic a server, host, account or page inside a sentence is isolated, a
     });
 });
 
+test("in Arabic the page path in the lead is isolated, so \"/activate\" does not read \"activate/\"", () => {
+    inLanguage("ar", () => {
+        const lead = codeLead({ kind: "waiting", renewed: false }, undefined);
+        assert.ok(lead.includes(`${FSI}/activate${PDI}`), `the path is isolated: ${lead}`);
+        assert.equal(lead.replaceAll(FSI, "").replaceAll(PDI, ""), translate("tvSignIn.appleTv.leadNoPage", undefined, "ar").replace(/Apple TV/gi, "TV"));
+    });
+    // English keeps its text byte for byte.
+    assert.ok(!codeLead({ kind: "waiting", renewed: false }, undefined).includes(FSI));
+});
+
 test("a sentence Apple has no key for stays English in every language", () => {
     for (const tag of ["de", "ar"]) {
         inLanguage(tag, () => {
