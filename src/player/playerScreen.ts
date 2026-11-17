@@ -10,16 +10,17 @@
 // switch, say) is never erased.
 
 import type { Clock } from "../api/clock.ts";
+import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import { blurEpisodeStill, type EpisodeSpoilerSettings } from "../ui/episodeSpoilers.ts";
 import { physicalKey } from "../ui/keys.ts";
-import { isFreshSelect, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
+import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
 import type { AVPlay } from "./avplay.ts";
-import { type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, UNSUPPORTED_FORMAT } from "./controller.ts";
+import { type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
@@ -29,6 +30,10 @@ import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
 import { currentChapter } from "./playerHUD.ts";
+import { heading } from "./headings.ts";
+
+/** The options panel's tabs: the id the screen keys on, and the catalog key Apple's `HUDTab.title` reads. */
+const TAB_KEYS = { Info: "options.tabInfo", Stats: "options.tabStats", Video: "options.tabVideo", Audio: "options.tabAudio", Subtitles: "options.tabSubtitles", Chapters: "options.tabChapters" } as const satisfies Readonly<Record<string, MessageKey>>;
 
 /** While playing, the overlay hides this long after the last key. */
 const OVERLAY_MS = 5000;
@@ -66,7 +71,7 @@ export function errorText(error: PlaybackError): string {
 function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
     switch (detail) {
         case undefined:
-            return "Loading";
+            return translate("common.loading");
         case "reconnecting":
             return "Reconnecting";
         case "restoring":
@@ -128,13 +133,13 @@ function choice(id: string, label: string, current: boolean, detail?: string): H
 }
 
 function fillAudio(list: HTMLElement, tracks: TrackView): void {
-    list.appendChild(el("h2", "player-menu-heading", "TRACKS"));
+    list.appendChild(el("h2", "player-menu-heading", heading("player.hud.tracks")));
     const audio = tracks.audio;
     if (audio.state === "loading") {
         list.appendChild(el("p", "player-menu-note", "Loading audio tracks"));
     } else if (audio.state === "failed") {
         list.appendChild(el("p", "player-menu-note", "Couldn't load audio tracks."));
-        list.appendChild(choice(RETRY, "Retry", false));
+        list.appendChild(choice(RETRY, translate("common.retry"), false));
     } else if (audio.choices.length === 0) {
         const note = el("p", "player-menu-note", "No audio tracks listed");
         note.tabIndex = -1;
@@ -179,7 +184,7 @@ function pickerAction(field: string, id: string): SubtitleToolAction | undefined
 function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, pane: SubtitlePane = { kind: "tracks" }): void {
     const ai = tracks.ai;
     if (languages && ai !== undefined) {
-        list.appendChild(el("h2", "player-menu-heading", "TRACKS"));
+        list.appendChild(el("h2", "player-menu-heading", heading("player.hud.tracks")));
         list.appendChild(choice("ai-language-back", "Back to subtitles", false));
         for (const language of ai.languages) list.appendChild(choice(`ai-language:${language}`, `Translate to ${language.toUpperCase()}`, false));
         return;
@@ -191,9 +196,9 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
     }
     // SubtitlesPane (TVPlayerInfoHUD.swift, silo-apple main e958f58): TRACKS beside the OPTIONS, TIMING and STYLE groups. Choices that pick a track stay in TRACKS.
     const columns = el("div", "player-menu-columns player-menu-columns-subtitles");
-    const trackColumn = paneColumn("TRACKS", "player-menu-column-tracks");
+    const trackColumn = paneColumn(heading("player.hud.tracks"), "player-menu-column-tracks");
     const source: HTMLElement[] = [];
-    trackColumn.rows.appendChild(choice(OFF, "Off", tracks.selectedSubtitleId === undefined));
+    trackColumn.rows.appendChild(choice(OFF, translate("player.tracks.subtitlesOff"), tracks.selectedSubtitleId === undefined));
     for (const track of tracks.subtitles) {
         const row = choice(track.id, track.label, track.id === tracks.selectedSubtitleId, track.detail);
         if (track.unavailable === true) row.setAttribute("data-unavailable", "true");
@@ -206,7 +211,7 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
     }
     if (ai !== undefined) {
         for (const result of ai.results) {
-            const row = choice(`ai-result:${result.id}`, result.label, false, result.unavailable === true ? UNSUPPORTED_FORMAT : undefined);
+            const row = choice(`ai-result:${result.id}`, result.label, false, result.unavailable === true ? unsupportedFormat() : undefined);
             if (result.unavailable === true) row.setAttribute("data-unavailable", "true");
             trackColumn.rows.appendChild(row);
         }
@@ -349,14 +354,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     status.hidden = true;
     const spinner = el("div", "player-spinner");
     spinner.setAttribute("role", "progressbar");
-    spinner.setAttribute("aria-label", "Loading");
     const spinnerMark = el("span", "player-spinner-mark");
     spinnerMark.innerHTML = spinnerIcon();
     spinner.appendChild(spinnerMark);
     spinner.hidden = true;
     const bar = el("div", "player-bar");
     bar.setAttribute("role", "slider");
-    bar.setAttribute("aria-label", "Scrubber");
     bar.setAttribute("aria-valuemin", "0");
     bar.setAttribute("data-focus", "position");
     bar.tabIndex = -1;
@@ -379,7 +382,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     tracksButton.type = "button";
     tracksButton.tabIndex = -1;
     tracksButton.setAttribute("data-focus", "tracks");
-    tracksButton.setAttribute("aria-label", "Info and options");
     tracksButton.appendChild(el("span", "player-glyph"));
     tracksButton.firstElementChild?.setAttribute("aria-hidden", "true");
     tracksButton.addEventListener("click", () => openMenu("remembered"));
@@ -387,7 +389,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     closeButton.type = "button";
     closeButton.tabIndex = -1;
     closeButton.setAttribute("data-focus", "close");
-    closeButton.setAttribute("aria-label", "Close player");
     closeButton.appendChild(el("span", "player-glyph"));
     closeButton.firstElementChild?.setAttribute("aria-hidden", "true");
     closeButton.addEventListener("click", () => controls.back());
@@ -420,7 +421,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     tablist.setAttribute("aria-label", "Player options");
     const tabNames = ["Info", "Stats", "Video", "Audio", "Subtitles", "Chapters"] as const;
     const tabs = tabNames.map((name) => {
-        const tab = el("button", "player-tab", name);
+        const tab = el("button", "player-tab");
         tab.type = "button";
         tab.tabIndex = -1;
         tab.setAttribute("role", "tab");
@@ -443,7 +444,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const eyebrow = el("p", "player-next-eyebrow");
     const synopsis = el("p", "player-next-synopsis");
     const deck = el("div", "player-next-deck");
-    const keep = el("button", "player-button", "Keep Watching");
+    const keep = el("button", "player-button");
     keep.type = "button";
     keep.setAttribute("data-focus", "keep-watching");
     keep.addEventListener("click", () => controls.keepWatching());
@@ -451,11 +452,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const mark = warningMark();
     mark.hidden = true;
     const actions = el("div", "player-error-actions");
-    const back = el("button", "player-button", "Back");
+    const back = el("button", "player-button");
     back.type = "button";
     back.setAttribute("data-focus", "back");
     back.addEventListener("click", () => view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined) ? controls.keepWatching() : controls.dismissError());
-    const retry = el("button", "player-button", "Retry");
+    const retry = el("button", "player-button");
     retry.type = "button";
     retry.setAttribute("data-focus", "settings-retry");
     retry.addEventListener("click", () => view.phase === "completion" || (view.phase === "error" && view.retryable) ? controls.retryCompletion() : controls.retrySettings());
@@ -470,6 +471,17 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     actions.append(next, keep, cancelAutoplay, retry, back);
     failure.append(eyebrow, failureTitle, mark, failureText, synopsis, actions, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
+    /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
+    const labelStatics = (): void => {
+        spinner.setAttribute("aria-label", translate("common.loading"));
+        bar.setAttribute("aria-label", translate("player.controls.scrubber"));
+        tracksButton.setAttribute("aria-label", translate("player.audio.options"));
+        closeButton.setAttribute("aria-label", translate("player.audio.close"));
+        for (const [index, tab] of tabs.entries()) tab.textContent = translate(TAB_KEYS[tabNames[index] ?? "Info"]);
+        keep.textContent = translate("upNext.keepWatching");
+        retry.textContent = translate("common.retry");
+    };
+    labelStatics();
     const covered = Array.from(root.children).flatMap((child) => child instanceof HTMLElement ? [{ element: child, display: child.style.display }] : []);
     for (const item of covered) item.element.style.display = "none";
     root.appendChild(section);
@@ -550,7 +562,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         body.tabIndex = -1;
         body.setAttribute("data-focus", "info");
         const titleColumn = el("div", "player-info-column");
-        titleColumn.appendChild(el("h2", "player-menu-heading", "TITLE"));
+        titleColumn.appendChild(el("h2", "player-menu-heading", heading("player.hud.title")));
         titleColumn.appendChild(el("p", "player-info-title", view.title));
         const metadata = view.hud?.metadata;
         if (metadata?.seriesTitle) titleColumn.appendChild(infoRow("Series", metadata.seriesTitle));
@@ -561,18 +573,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (runtime !== undefined) titleColumn.appendChild(el("p", "player-info-meta", runtime));
         if (view.hud?.overview) titleColumn.appendChild(el("p", "player-info-meta", view.hud.overview));
         const stream = el("div", "player-info-column");
-        stream.appendChild(el("h2", "player-menu-heading", "STREAM"));
+        stream.appendChild(el("h2", "player-menu-heading", heading("player.hud.stream")));
         const selectedAudio = tracks.audio.state === "ready" ? tracks.audio.choices.find((choice) => choice.id === tracks.selectedAudioId) : undefined;
         if (selectedAudio !== undefined) {
-            stream.appendChild(infoRow("Audio", selectedAudio.detail === undefined ? selectedAudio.label : `${selectedAudio.label} · ${selectedAudio.detail}`));
+            stream.appendChild(infoRow(translate("player.hud.audio"), selectedAudio.detail === undefined ? selectedAudio.label : `${selectedAudio.label} · ${selectedAudio.detail}`));
         }
         const selectedSubtitle = tracks.subtitles.find((choice) => choice.id === tracks.selectedSubtitleId);
-        const subtitleText = selectedSubtitle === undefined ? "Off" : selectedSubtitle.detail === undefined ? selectedSubtitle.label : `${selectedSubtitle.label} · ${selectedSubtitle.detail}`;
-        stream.appendChild(infoRow("Subtitles", subtitleText));
+        const subtitleText = selectedSubtitle === undefined ? translate("player.tracks.subtitlesOff") : selectedSubtitle.detail === undefined ? selectedSubtitle.label : `${selectedSubtitle.label} · ${selectedSubtitle.detail}`;
+        stream.appendChild(infoRow(translate("player.hud.subtitles"), subtitleText));
         const hud = view.hud;
         if (hud !== undefined) {
             const chapter = hud.chapters[currentChapter(hud.chapters, view.positionSeconds)];
-            if (chapter !== undefined) stream.appendChild(infoRow("Chapter", chapter.title));
+            if (chapter !== undefined) stream.appendChild(infoRow(translate("player.hud.chapter"), chapter.title));
             if (hud.chapterState === "loading") stream.appendChild(el("p", "player-menu-note", "Loading chapters"));
             if (hud.chapterState === "failed") {
                 stream.appendChild(el("p", "player-menu-note", "Couldn't load chapters."));
@@ -722,10 +734,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             drawnFill = -1;
             return;
         }
-        const label = skipKind === "undo" ? "Watch Intro" : skipKind === "intro" ? "Skip Intro" : skipKind === "recap" ? "Skip Recap" : "Skip Credits";
+        const label = skipKind === "undo" ? translate("introSkip.pill.undo") : skipKind === "intro" ? translate("introSkip.pill.skip") : skipKind === "recap" ? translate("marker.skipRecap") : translate("marker.skipCredits");
         skipLabel.textContent = label;
-        skipCaption.textContent = skipKind === "undo" ? "Intro skipped" : "";
-        skip.setAttribute("aria-label", skipKind === "undo" ? `Intro skipped. ${label}` : label);
+        skipCaption.textContent = skipKind === "undo" ? translate("introSkip.pill.undoCaption") : "";
+        skip.setAttribute("aria-label", skipKind === "undo" ? translate("player.introSkip.undoAccessibility") : label);
         skipGlyph.hidden = skipKind === "intro" || skipKind === "undo";
         skipTrack.hidden = skipKind === "recap" || skipKind === "credits";
         if (skipKind === "intro" || skipKind === "undo") {
@@ -840,7 +852,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         mark.hidden = view.phase !== "error";
-        back.textContent = view.phase === "error" ? "Go Back" : "Back";
+        back.textContent = view.phase === "error" ? translate("player.goBack") : translate("common.back");
         if (view.phase === "completion" || prompt !== undefined) {
             cancelScrub();
             closeMenu();
@@ -849,7 +861,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const candidate = view.phase === "completion" ? view.next : prompt?.next;
             const cards = view.phase === "completion" ? view.deck ?? [] : prompt?.deck ?? [];
             const seconds = view.phase === "completion" ? view.countdown : prompt?.countdown;
-            const nextStatus = view.phase === "completion" ? view.title : prompt?.status ?? "Up Next";
+            const nextStatus = view.phase === "completion" ? view.title : prompt?.status ?? translate("upNext.heading");
             failure.classList.add("player-next-up");
             eyebrow.textContent = nextStatus;
             synopsis.textContent = candidate?.overview ?? "";
@@ -858,7 +870,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const focusedCard = deck.contains(document.activeElement) ? document.activeElement?.getAttribute("data-focus") : undefined;
                 deck.dataset.items = identity;
                 deck.replaceChildren();
-                if (cards.length > 0) deck.appendChild(el("h2", "player-menu-heading", "On Deck"));
+                if (cards.length > 0) deck.appendChild(el("h2", "player-menu-heading", translate("upNext.onDeck")));
                 for (const card of cards) {
                     const button = el("button", "player-choice player-next-card", card.title);
                     button.type = "button";
@@ -894,20 +906,20 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const loading = prompt?.loading === true;
                 const failed = prompt?.failed === true;
                 next.hidden = loading || failed || candidate === undefined;
-                next.textContent = "Play Now";
+                next.textContent = translate("upNext.playNow");
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
-                failureTitle.textContent = loading ? "Finding the next episode" : candidate?.title ?? "Almost finished";
-                failureText.textContent = loading ? "" : failed ? "Couldn't load the next episode. Pick something from On Deck, or go back." : candidate === undefined ? "No next episode is available." : seconds === undefined ? "" : `Playing in ${seconds}s`;
+                failureTitle.textContent = loading ? translate("upNext.finding") : candidate?.title ?? translate("upNext.almostFinished");
+                failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : seconds === undefined ? "" : `Playing in ${seconds}s`;
                 if (!failure.contains(document.activeElement)) (next.hidden ? keep : next).focus();
                 spinner.hidden = true;
                 status.hidden = true;
                 return;
             }
             next.hidden = view.state !== "ready" || view.next === undefined;
-            next.textContent = "Play Now";
+            next.textContent = translate("upNext.playNow");
             retry.hidden = view.state !== "failed" || !view.retryable;
-            failureTitle.textContent = candidate?.title ?? (view.state === "ready" ? "End of playback" : view.title);
+            failureTitle.textContent = candidate?.title ?? (view.state === "ready" ? translate("upNext.endOfPlayback") : view.title);
             failureText.textContent = view.state === "finalizing" ? "Ending playback…" : view.state === "resolving" ? "Finding the next episode…" : view.state === "failed" ? "Could not confirm playback or load the next episode." : view.next?.title ?? "No more playable episodes.";
             if (view.countdown !== undefined) failureText.textContent = `Playing in ${view.countdown}s`;
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
@@ -960,14 +972,14 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         } else {
             const backwardSeconds = view.seekIntervals.backward;
             const forwardSeconds = view.seekIntervals.forward;
-            setIcon(backward, backwardSeconds === 1 ? "Back 1 second" : `Back ${backwardSeconds} seconds`, skipIcon("backward", backwardSeconds));
-            setIcon(forward, forwardSeconds === 1 ? "Forward 1 second" : `Forward ${forwardSeconds} seconds`, skipIcon("forward", forwardSeconds));
+            setIcon(backward, translate("player.skip.back", { seconds: backwardSeconds }), skipIcon("backward", backwardSeconds));
+            setIcon(forward, translate("player.skip.forward", { seconds: forwardSeconds }), skipIcon("forward", forwardSeconds));
             episodesButton.hidden = view.episodes !== true;
             tracksButton.hidden = false;
-            if (!episodesButton.hidden) setIcon(episodesButton, "Show Up Next", episodesIcon());
-            setIcon(tracksButton, "Info and options", optionsIcon());
-            setIcon(closeButton, "Close player", closeIcon());
-            setIcon(pause, view.phase === "paused" ? "Play" : "Pause", view.phase === "paused" ? playIcon() : pauseIcon());
+            if (!episodesButton.hidden) setIcon(episodesButton, translate("player.controls.showUpNext"), episodesIcon());
+            setIcon(tracksButton, translate("player.audio.options"), optionsIcon());
+            setIcon(closeButton, translate("player.audio.close"), closeIcon());
+            setIcon(pause, view.phase === "paused" ? translate("player.audio.play") : translate("player.audio.pause"), view.phase === "paused" ? playIcon() : pauseIcon());
             const duration = view.durationSeconds;
             const position = seekPreview ?? pendingSkipTarget ?? view.positionSeconds;
             elapsed.textContent = clockText(position);
@@ -1418,7 +1430,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         menuOpen = true;
         render();
         if (entry === "video") {
-            const video = tabs.findIndex((tab) => tab.textContent === "Video");
+            const video = tabNames.indexOf("Video");
             if (video >= 0 && tabs[video]?.hidden !== true) column = video;
         }
         if (!focusList(column)) {
@@ -1688,12 +1700,23 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         render();
     });
 
+    // A language file that lands while the player is up redraws its words once no Select is held: the panel and the Up Next deck are cached by what they show, so they are drawn afresh.
+    const late = lateRedraw(() => false, () => {
+        labelStatics();
+        drawn = undefined;
+        delete deck.dataset.items;
+        render();
+    });
+    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
+
     return {
         destroy() {
             cancelScrub();
             thumbnail.clear();
             skipPrompt.reset();
             unsubscribe();
+            stopCatalog();
+            late.clear();
             cancelHide?.();
             // A Select still down when the player closes must not reach the screen underneath.
             swallowSelect();

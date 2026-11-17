@@ -19,7 +19,7 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 - Counts and numbers written into a placeholder use `integerText` (`src/i18n/numbers.ts`), Apple's `LocaleFormat.integer`: the shown language's digits, never grouped.
   A season or episode inside a code (`S1:E2`) stays in ASCII digits.
   A year is one of these: Details' facts line and loading line, a card's year badge, audiobook narrations, Requests and Watch Party facts all print it with `integerText`, as Apple's `TVDetailHero`, `OverlayRegistry`, `TVRequestsPage` and `WatchPartyLobbyState` do.
-  The player's info panel still writes its Year row in ASCII with the rest of the player's English text.
+  The player's info panel still writes its Year row in ASCII: Apple's tvOS Info has no such row, so it keeps its English with the other Tizen-only rows.
 
 ## On the catalog
 
@@ -35,6 +35,7 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 | Requests (hub, My Requests, detail) | status labels and stage tracks, headings, the record menu and its remove confirmation, write notices, facts (seasons, runtime, dates in the shown language), request cards |
 | Calendar | filters, week arrows, Today and Jump to today, badges, season and episode captions, day headings, empty states, air times and dates in the shown language |
 | Accounts | Change Account (headline, badges, add cards), Settings › Accounts and its sign-out and remove-server confirmations, profile counts |
+| Player | the transport's button and scrubber labels, the Info, Stats, Video, Audio, Subtitles and Chapters tabs and their headings, rows and pickers (Appearance names, Search and Delay, On and Off), Up Next, On Deck and Keep Watching, the skip pill, the buffering prompt, a track's Forced, SDH, External, Default, Mono, Stereo and channel count, and the exit dialog's Cancel (silo-apple `Screens/Player/tvOS`, `PlayerTrack.swift`, `TrackLabels.swift` at 6eea7cf7) |
 | PIN and Add Profile | the PIN screen's prompt, progress, wrong-PIN and lockout lines, Cancel; Add Profile's title, labels, avatar styles, Child Profile and Restrict libraries toggles, Create Profile |
 
 ## Right to left
@@ -61,6 +62,9 @@ Mirrored so far: the top bar and its menus (the profile menu under its button, a
 Not yet, and listed on [#571](https://github.com/Artic0din/silo-tizen/issues/571):
 Details rails (episodes, season pills, cast) mirror, and the episode and season rows scroll with right-to-left (negative) offsets; their CSS spacing is still the left-to-right one.
 Collections, For You (library roots and For You share Home's hero scene, so their hero is mirrored above their left-to-right rows), History and Watchlist, Watch Party and audiobooks stay left to right under the mirrored top bar, and so does the player.
+The player reads its Arabic text but keeps its layout and physical keys.
+Apple pins only the transport, the scrubber and its time row left to right (`.mediaLayoutDirection()`, `TVPlayerControls.swift:325,555,557,575`) and mirrors the rest: the options panel's tabs and panes, Up Next, the buffering card and the error page.
+That mirroring is not built yet, and a title, track or chapter name takes its own direction (`unicode-bidi: plaintext` at the top of `player.css`).
 Requests, Calendar, Change Account, the PIN screen and Add Profile are mirrored: their art, copy, rails, badges and corners follow the layout's leading and trailing edges as silo-apple's `.leading`, `.topTrailing` and `.bottomTrailing` alignments do, the week strip and number pad read from the right, and Left and Right step through them that way.
 The sign-in screens, the profile picker and Switch Server's entry screens (`signIn.css`: `.marquee-chip` `right`, `.marquee-card` `margin-left`, several `margin-right`) keep their English text and left-to-right layout.
 
@@ -75,4 +79,5 @@ Apple has no key for these, or they belong to a later row of the plan.
 - Requests text with no Apple key, or whose English differs: the `Movie` and `Series` facts (Apple's `displayName` is a plain string), `Not requested` on a card, `Search requests`, the Search button, `Previous page`, `Next page`, `No titles found.`, `No requests yet.`, `Loading requests…`, `Follow`, `Unfollow`, `Cancel request` on the detail (Apple's key reads `Cancel Request`), `Refresh`, `Could not load title information…`, `Could not confirm the change…`.
 - Calendar text with no Apple key: `Details unavailable for this event type`, `Loading Calendar`, `Could not load Calendar. Try again.` and the time-zone errors.
 - Accounts, PIN and Add Profile text with no Apple key: `Could not open the account. Try again.`, `Removing…`, `Signing out…`, the sign-out failure messages, `Checking the PIN.`, the server-busy and unreachable PIN lines, `Delete` on the pad, Add Profile's `Content rating`, library and error lines, `Creating profile`, `Choose profile`.
-- Subtitle track names from `src/player/trackLabels.ts` (`(Forced)`, `(SDH)`, `External`): the player row.
+- Player text with no Apple key, or whose English differs: the error messages (`errorText`), `Restoring` and `Reconnecting` (Apple's `player.notice.reconnectingTitle` is `Reconnecting…`), `Changing quality`, `Changing track` and the track-change failures, `Loading audio tracks`, `No audio tracks listed`, the Info rows `Series`, `Year`, `Rating` and `Genres` and the chapter and title-detail notes, the `Player options` tab list label, `Play next`, `Cancel autoplay`, `Playing in Ns`, `S1 · E2`, `Back to subtitles` (Apple's key capitalises Subtitles), the Appearance rows `Text color`, `Text opacity`, `Outline color`, `Background color` and `Background opacity` (Apple's rows read differently), `Translate current subtitles`, `Transcribe current audio`, the series-subtitle rows, the subtitle search, AI and display messages, the Stats rows `Protocol`, `Video codec`, `Audio codec`, `Output resolution` and `Configured bitrate`, `Track N` and `Subtitles N`, and the exit dialog's `Exit Silo?`, `Exit` and `Could not exit Silo.`.
+- Up Next's status words and the buffering notices are drawn from the view the controller last sent, so a language that lands while a notice or the end-of-playback page is already up shows them in English until the next view.

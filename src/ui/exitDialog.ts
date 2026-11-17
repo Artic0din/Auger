@@ -1,3 +1,4 @@
+import { translate } from "../i18n/translate.ts";
 import { remoteKey } from "./keys.ts";
 import { listenSelectRelease, releasedSelect, swallowSelect } from "./selectRelease.ts";
 import { actions, button, el } from "./screen.ts";
@@ -43,7 +44,7 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
         }
     };
     const yes = button("exit", "Exit", confirm);
-    const no = button("cancel-exit", "Cancel", cancel);
+    const no = button("cancel-exit", translate("common.cancel"), cancel);
     let focused = no.element;
     const onFocus = (event: FocusEvent): void => {
         if (event.target instanceof HTMLElement) {

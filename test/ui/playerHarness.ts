@@ -1,6 +1,8 @@
 // Browser entry for the player screen tests: mounts the real screen over stub controls, so the
 // test sets each playback view and sees which commands the remote keys send. No AVPlay or server.
 
+import { setAppLanguage } from "../../src/i18n/language.ts";
+import { registerCatalog } from "../../src/i18n/translate.ts";
 import type { PlaybackView, PlayerControls } from "../../src/player/controller.ts";
 import { mountPlayerScreen, type PlayerScreen } from "../../src/player/playerScreen.ts";
 
@@ -10,6 +12,8 @@ export interface PlayerHarness {
     dismissesBufferingPill: boolean;
     readonly skipPillShown: boolean;
     show(view: PlaybackView): void;
+    /** The shown language; a catalog registers as the packaged file does, so a screen already up redraws. */
+    setLanguage(tag: string, catalog?: Readonly<Record<string, string>>): void;
     destroy(): void;
 }
 
@@ -89,5 +93,9 @@ window.player = {
     set dismissesBufferingPill(value: boolean) { dismissesBufferingPill = value; },
     get skipPillShown() { return skipPillShown; },
     show: (view) => listener?.(view),
+    setLanguage(tag, catalog) {
+        setAppLanguage(tag);
+        if (catalog !== undefined) registerCatalog(tag, catalog);
+    },
     destroy: () => screen.destroy(),
 };

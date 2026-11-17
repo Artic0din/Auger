@@ -1,6 +1,7 @@
 import type { PlayerChapter } from "../contracts/v2/chapters.ts";
 import type { PlaybackPlan } from "../contracts/v2/playback.ts";
 import type { ItemDetail } from "../contracts/v2/catalog.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 
 export function currentChapter(chapters: readonly PlayerChapter[], seconds: number): number {
     for (let index = chapters.length - 1; index >= 0; index--) if (chapters[index]!.seconds <= seconds) return index;
@@ -9,6 +10,19 @@ export function currentChapter(chapters: readonly PlayerChapter[], seconds: numb
 
 export const DISPLAY_MODES = { Fit: "PLAYER_DISPLAY_MODE_LETTER_BOX", Stretch: "PLAYER_DISPLAY_MODE_FULL_SCREEN" } as const;
 export type PlayerAspect = keyof typeof DISPLAY_MODES;
+
+const ASPECT_KEYS = { Fit: "player.aspect.fit", Stretch: "player.aspect.stretch" } as const satisfies Readonly<Record<PlayerAspect, MessageKey>>;
+/** The aspect's name in the shown language; `Fit` and `Stretch` stay the ids the screen and AVPlay use. */
+export function aspectLabel(aspect: PlayerAspect): string {
+    return translate(ASPECT_KEYS[aspect]);
+}
+
+const STAT_KEYS: Readonly<Record<string, MessageKey>> = { Engine: "player.stats.sectionEngine", Delivery: "player.stats.delivery", Container: "player.stats.container" };
+/** A stats row's label in the shown language where Apple has the same text; the rest of the rows keep their English. */
+export function statLabel(label: string): string {
+    const key = STAT_KEYS[label];
+    return key === undefined ? label : translate(key);
+}
 
 export function videoOptions(speed: boolean, aspect: boolean, protocol: string | undefined): { speeds: readonly number[]; aspects: readonly PlayerAspect[] } {
     return { speeds: speed && protocol === "http_progressive" ? [1, 2] : [], aspects: aspect ? ["Fit", "Stretch"] : [] };

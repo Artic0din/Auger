@@ -5,6 +5,7 @@
 // Settings page; this player writes the same key and the same profile / profile_device scope.
 
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 import { decodeSettingsCapabilities } from "../contracts/v2/settings.ts";
 import { integer, object, string, WireError } from "../contracts/v2/wire.ts";
 
@@ -16,12 +17,14 @@ export const DELAY_MIN = -2000;
 export const DELAY_MAX = 2000;
 export const DELAY_STEP = 100;
 
-export const FONT_SIZES = [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["xlarge", "X-Large"], ["xxlarge", "XX-Large"]] as const;
-export const POSITIONS = [["bottom", "Bottom"], ["lower-third", "Lower Third"], ["top", "Top"]] as const;
-export const STYLES = [["box", "Box"], ["shadow", "Drop Shadow"], ["none", "None"]] as const;
-export const FONT_FAMILIES = [["sans-serif", "Sans-serif"], ["serif", "Serif"], ["monospace", "Monospace"]] as const;
-export const FONT_COLORS = [["#ffffff", "White"], ["#facc15", "Yellow"], ["#22c55e", "Green"], ["#06b6d4", "Cyan"], ["#d946ef", "Magenta"], ["#ef4444", "Red"], ["#3b82f6", "Blue"], ["#9ca3af", "Gray"], ["#000000", "Black"]] as const;
-export const BACKGROUND_COLORS = [["#000000", "Black"], ["#374151", "Dark Gray"], ["#1e3a5f", "Navy"], ["#7f1d1d", "Dark Red"], ["#14532d", "Dark Green"]] as const;
+/** Each choice is its stored value and the catalog key of its name (Apple's `SubtitleAppearance` option labels), read when a row or picker is drawn. */
+type NamedChoices = readonly (readonly [string, MessageKey])[];
+export const FONT_SIZES = [["small", "player.subtitles.size.small"], ["medium", "player.subtitles.size.medium"], ["large", "player.subtitles.size.large"], ["xlarge", "player.subtitles.size.xLarge"], ["xxlarge", "player.subtitles.size.xxLarge"]] as const satisfies NamedChoices;
+export const POSITIONS = [["bottom", "player.subtitles.position.bottom"], ["lower-third", "player.subtitles.position.lowerThirdTitleCase"], ["top", "player.subtitles.position.top"]] as const satisfies NamedChoices;
+export const STYLES = [["box", "player.subtitles.background.box"], ["shadow", "player.subtitles.background.dropShadow"], ["none", "player.subtitles.background.none"]] as const satisfies NamedChoices;
+export const FONT_FAMILIES = [["sans-serif", "player.subtitles.font.sansSerif"], ["serif", "player.subtitles.font.serif"], ["monospace", "player.subtitles.font.monospace"]] as const satisfies NamedChoices;
+export const FONT_COLORS = [["#ffffff", "player.subtitles.color.white"], ["#facc15", "player.subtitles.color.yellow"], ["#22c55e", "player.subtitles.color.green"], ["#06b6d4", "player.subtitles.color.cyan"], ["#d946ef", "player.subtitles.color.magenta"], ["#ef4444", "player.subtitles.color.red"], ["#3b82f6", "player.subtitles.color.blue"], ["#9ca3af", "player.subtitles.color.gray"], ["#000000", "player.subtitles.color.black"]] as const satisfies NamedChoices;
+export const BACKGROUND_COLORS = [["#000000", "player.subtitles.color.black"], ["#374151", "player.subtitles.color.darkGrayTitleCase"], ["#1e3a5f", "player.subtitles.color.navy"], ["#7f1d1d", "player.subtitles.color.darkRedTitleCase"], ["#14532d", "player.subtitles.color.darkGreenTitleCase"]] as const satisfies NamedChoices;
 
 export interface LabeledChoice { readonly id: string; readonly label: string }
 export interface SubtitleControlSupport {
@@ -50,13 +53,20 @@ export function clampDelay(milliseconds: number): number {
     return Math.max(-10000, Math.min(10000, milliseconds));
 }
 
-function label(table: readonly (readonly [string, string])[], id: string): string {
-    return table.find(row => row[0] === id)?.[1] ?? id;
+/** The choice's name in the shown language, or the stored value when the table has no such choice. */
+export function choiceLabel(table: NamedChoices, id: string): string {
+    const key = table.find(row => row[0] === id)?.[1];
+    return key === undefined ? id : translate(key);
+}
+
+/** A table as picker options. */
+export function choiceOptions(table: NamedChoices): readonly LabeledChoice[] {
+    return table.map(([id, key]) => ({ id, label: translate(key) }));
 }
 
 export function appearanceSummary(appearance: SubtitleAppearance): string {
-    const style = appearance.backgroundStyle === "outline" ? "Outline" : label(STYLES, appearance.backgroundStyle);
-    return [label(FONT_SIZES, appearance.fontSize), style, label(POSITIONS, appearance.position)].join(" · ");
+    const style = appearance.backgroundStyle === "outline" ? translate("player.subtitles.background.outline") : choiceLabel(STYLES, appearance.backgroundStyle);
+    return [choiceLabel(FONT_SIZES, appearance.fontSize), style, choiceLabel(POSITIONS, appearance.position)].join(" · ");
 }
 
 export function editAppearance(appearance: SubtitleAppearance, member: AppearanceMember, value: string | number | boolean): SubtitleAppearance {
@@ -129,7 +139,7 @@ export function opacityOptions(current: number, lowest: number): readonly Labele
     const values = new Set<number>();
     for (let value = lowest; value <= 100; value += 25) values.add(value);
     values.add(current);
-    return [...values].sort((left, right) => left - right).map(value => ({ id: String(value), label: value === 0 ? "Off" : `${value}%` }));
+    return [...values].sort((left, right) => left - right).map(value => ({ id: String(value), label: value === 0 ? translate("options.off") : `${value}%` }));
 }
 
 export function allowedScopes(contract: unknown, key: string): readonly string[] {

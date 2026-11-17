@@ -1,4 +1,5 @@
-import { CAPTION_FAILED, type PlaybackView } from "./controller.ts";
+import { translate } from "../i18n/translate.ts";
+import type { PlaybackView } from "./controller.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 
 export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => void {
@@ -14,9 +15,10 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     // ASSSubtitleLayer.status: the failure stays over the video until the track loads or changes.
     const status = document.createElement("div");
     status.className = "player-caption-status";
-    status.textContent = CAPTION_FAILED;
     viewport.appendChild(status);
     return view => {
+        // Apple's `player.subtitles.dataLoadFailed`, read on every draw so a language that lands later shows.
+        status.textContent = translate("player.subtitles.dataLoadFailed");
         viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? "translate(180px, 112px) scale(0.3958333333333333)" : "none";
         const captions = view.phase === "playing" || view.phase === "paused" ? view.captions : undefined;
         text.textContent = captions?.text ?? "";

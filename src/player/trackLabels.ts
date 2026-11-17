@@ -6,6 +6,8 @@
 // (`Locale.localizedString(forLanguageCode:)`, then `LocaleFormat.capitalizedName`).
 
 import { SOURCE_LANGUAGE, shownLanguage } from "../i18n/language.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 
 export interface TrackRow {
     readonly label: string;
@@ -116,12 +118,12 @@ export function subtitleCodec(codec: string | undefined): string | undefined {
 /** "Atmos", "7.1", "5.1", "Stereo", "Mono", else a channel count. */
 export function audioLayout(channels: number | undefined): string | undefined {
     switch (channels) {
-        case 1: return "Mono";
-        case 2: return "Stereo";
+        case 1: return translate("detail.mono");
+        case 2: return translate("detail.stereo");
         case 6: return "5.1";
         case 8: return "7.1";
         case undefined: return undefined;
-        default: return channels > 0 ? `${channels}ch` : undefined;
+        default: return channels > 0 ? translate("detail.channels", { count: integerText(channels) }) : undefined;
     }
 }
 
@@ -210,7 +212,7 @@ export function audioRow(track: { readonly language: string | undefined; readonl
     const title = audioTitle(track.title, track.language);
     const name = languageName(track.language) ?? title ?? `Track ${ordinal + 1}`;
     const qualifier = title !== undefined && title.localeCompare(name, undefined, { sensitivity: "accent" }) !== 0 ? title : undefined;
-    return row(name, [qualifier, audioCodec(track.codec), audioLayout(track.channels), track.isDefault ? "Default" : undefined]);
+    return row(name, [qualifier, audioCodec(track.codec), audioLayout(track.channels), track.isDefault ? translate("detail.trackDefault") : undefined]);
 }
 
 export function subtitleRow(entry: { readonly label: string | undefined; readonly language: string | undefined; readonly codec?: string | undefined; readonly forced: boolean; readonly hearingImpaired: boolean; readonly source: string }, ordinal: number): TrackRow {
@@ -221,16 +223,16 @@ export function subtitleRow(entry: { readonly label: string | undefined; readonl
     const name = languageName(entry.language) ?? title ?? format ?? `Subtitles ${ordinal + 1}`;
     const qualifier = title !== undefined && title.localeCompare(name, undefined, { sensitivity: "accent" }) !== 0 ? title : undefined;
     const formatPill = format !== undefined && format !== name ? format : undefined;
-    const external = entry.source === "external" || entry.source === "downloaded" ? "External" : undefined;
-    return row(name, [qualifier, formatPill, showsForced ? "Forced" : undefined, showsHearingImpaired ? "SDH" : undefined, external]);
+    const external = entry.source === "external" || entry.source === "downloaded" ? translate("detail.trackExternal") : undefined;
+    return row(name, [qualifier, formatPill, showsForced ? translate("detail.trackForced") : undefined, showsHearingImpaired ? translate("detail.trackSdh") : undefined, external]);
 }
 
 /** Apple's `subtitlePillSummary`: the language leads, SDH and Forced follow in parentheses, then the format. */
 export function subtitlePillSummary(entry: { readonly label: string | undefined; readonly language: string | undefined; readonly codec?: string | undefined; readonly forced: boolean; readonly hearingImpaired: boolean }, fallback: string): string {
     const showsHearingImpaired = entry.hearingImpaired || titleIndicatesHearingImpaired(entry.label);
     let name = languageName(entry.language) ?? subtitleTitle(entry.label, entry.language, entry.codec, showsHearingImpaired) ?? fallback;
-    if (showsHearingImpaired && !/\b(?:sdh|cc|hi)\b|hearing impaired/i.test(name)) name += " (SDH)";
-    if ((entry.forced || (entry.label?.toLowerCase().includes("forced") ?? false)) && !name.toLowerCase().includes("forced")) name += " (Forced)";
+    if (showsHearingImpaired && !/\b(?:sdh|cc|hi)\b|hearing impaired/i.test(name)) name = translate("detail.trackWithFlag", { name, flag: translate("detail.trackSdh") });
+    if ((entry.forced || (entry.label?.toLowerCase().includes("forced") ?? false)) && !name.toLowerCase().includes("forced")) name = translate("detail.trackWithFlag", { name, flag: translate("detail.trackForced") });
     const format = subtitleCodec(entry.codec);
     return format === undefined ? name : `${name} · ${format}`;
 }
