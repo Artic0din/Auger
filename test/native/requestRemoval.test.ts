@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { requestOperations } from "../../src/api/requestOperations.ts";
 import { decodeMediaRequest, decodeRequestsCapability, decodeRequestTitle, type MediaRequest, type RequestsHub } from "../../src/contracts/v2/requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, isRemovable, neighborKey, REMOVE_CONFLICT_MESSAGE, REMOVED_NOTICE, RequestActionGate, REQUEST_NOTICE_MS, UNCONFIRMED_CANCEL_MESSAGE, UNCONFIRMED_REMOVE_MESSAGE, visibleMineRequests } from "../../src/ui/requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, isRemovable, neighborKey, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, unconfirmedCancelMessage, unconfirmedRemoveMessage, visibleMineRequests } from "../../src/ui/requestRemoval.ts";
 import { FakeRequests } from "./support/fakeRequests.ts";
 import { fixture } from "./support/fakeSilo.ts";
 
@@ -52,10 +52,10 @@ test("a failed request with nothing delivered can be removed", () => {
 });
 
 test("removal copy and the neighbor that receives focus match Apple TV", () => {
-    assert.equal(REMOVED_NOTICE, "Request removed");
-    assert.equal(UNCONFIRMED_REMOVE_MESSAGE, "We couldn't confirm the removal. Reopen My Requests to check it.");
-    assert.equal(REMOVE_CONFLICT_MESSAGE, "This request changed since the list loaded, so it wasn't removed.");
-    assert.equal(UNCONFIRMED_CANCEL_MESSAGE, "We couldn't confirm the cancellation. Reopen My Requests to check it.");
+    assert.equal(removedNotice(), "Request removed");
+    assert.equal(unconfirmedRemoveMessage(), "We couldn't confirm the removal. Reopen My Requests to check it.");
+    assert.equal(removeConflictMessage(), "This request changed since the list loaded, so it wasn't removed.");
+    assert.equal(unconfirmedCancelMessage(), "We couldn't confirm the cancellation. Reopen My Requests to check it.");
     assert.equal(REQUEST_NOTICE_MS, 3000);
     assert.equal(neighborKey(["a", "b", "c"], "a"), "b");
     assert.equal(neighborKey(["a", "b", "c"], "c"), "b");
@@ -94,10 +94,10 @@ test("one list action runs at a time, and a later read settles only the holds it
     gate.hold("a");
     const covered = gate.cover();
     gate.hold("b");
-    gate.listMessage = UNCONFIRMED_REMOVE_MESSAGE;
+    gate.listMessage = unconfirmedRemoveMessage();
     gate.releaseHolds(covered);
     assert.deepEqual(gate.heldIds(), ["b"]);
-    assert.equal(gate.listMessage, UNCONFIRMED_REMOVE_MESSAGE);
+    assert.equal(gate.listMessage, unconfirmedRemoveMessage());
     gate.releaseHolds(gate.cover());
     assert.deepEqual(gate.heldIds(), []);
     assert.equal(gate.listMessage, undefined);
@@ -110,10 +110,10 @@ test("one list action runs at a time, and a later read settles only the holds it
     assert.equal(gate.epoch, 1);
     gate.hold("held-a");
     gate.hold("held-b");
-    gate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+    gate.listMessage = unconfirmedCancelMessage();
     gate.releaseHold("held-a");
     assert.deepEqual(gate.heldIds(), ["held-b"]);
-    assert.equal(gate.listMessage, UNCONFIRMED_CANCEL_MESSAGE);
+    assert.equal(gate.listMessage, unconfirmedCancelMessage());
     gate.releaseHold("held-b");
     assert.deepEqual(gate.heldIds(), []);
     assert.equal(gate.listMessage, undefined);

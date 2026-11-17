@@ -15,7 +15,7 @@ import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
 import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
 import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, REMOVE_CONFLICT_MESSAGE, REMOVED_NOTICE, RequestActionGate, REQUEST_NOTICE_MS, UNCONFIRMED_CANCEL_MESSAGE, UNCONFIRMED_REMOVE_MESSAGE, visibleMineRequests } from "./requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, unconfirmedCancelMessage, unconfirmedRemoveMessage, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations, type TextSearchScope } from "../api/operations.ts";
@@ -2523,7 +2523,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Neighbor focus must be taken from the pre-removal list (AGENTS.md restore by id).
         const focus = listFocusAfter(route, id, fallback);
         dropRemovedRequest(id);
-        publishRequestNotice(REMOVED_NOTICE);
+        publishRequestNotice(removedNotice());
         await settleVisibleRequests(route, focus, revision);
     };
     const runListRemove = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
@@ -2548,11 +2548,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_REMOVE_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.listMessage = unconfirmedRemoveMessage();
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
-            const message = error instanceof ApiError && error.problemId === "conflict" ? REMOVE_CONFLICT_MESSAGE : writeFailureMessage(error);
+            const message = error instanceof ApiError && error.problemId === "conflict" ? removeConflictMessage() : writeFailureMessage(error);
             if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
             await settleVisibleRequests(route, origin, revision);
             requestGate.listMessage = message;
@@ -2586,7 +2586,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 requestGate.release(token);
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.listMessage = unconfirmedCancelMessage();
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2718,7 +2718,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (unconfirmed && cancelId !== undefined) {
                     requestGate.hold(cancelId);
                     releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                    if (requestGate.held.has(cancelId)) requestGate.listMessage = unconfirmedCancelMessage();
                 } else {
                     releaseGate();
                 }

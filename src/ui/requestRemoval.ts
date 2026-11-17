@@ -1,15 +1,16 @@
 import type { MediaRequest, MyRequests, RequestsHub } from "../contracts/v2/requests.ts";
 import type { FocusTarget } from "./browseFocus.ts";
+import { translate } from "../i18n/translate.ts";
 import { orderRequests, requestProgress } from "./requestProgress.ts";
 
 /** Apple RequestErrorCopy.removedNotice. */
-export const REMOVED_NOTICE = "Request removed";
+export const removedNotice = (): string => translate("requests.notice.removed");
 /** Apple RequestErrorCopy.unconfirmedRemoveMessage. */
-export const UNCONFIRMED_REMOVE_MESSAGE = "We couldn't confirm the removal. Reopen My Requests to check it.";
+export const unconfirmedRemoveMessage = (): string => translate("requests.notice.unconfirmedRemove");
 /** Apple RequestErrorCopy.removeConflictMessage. */
-export const REMOVE_CONFLICT_MESSAGE = "This request changed since the list loaded, so it wasn't removed.";
+export const removeConflictMessage = (): string => translate("requests.notice.removeConflict");
 /** Apple RequestErrorCopy.unconfirmedCancelMessage. */
-export const UNCONFIRMED_CANCEL_MESSAGE = "We couldn't confirm the cancellation. Reopen My Requests to check it.";
+export const unconfirmedCancelMessage = (): string => translate("requests.notice.unconfirmedCancel");
 /** Apple MyRequestsViewModel clears a notice after three seconds. */
 export const REQUEST_NOTICE_MS = 3000;
 
@@ -146,7 +147,7 @@ export class RequestActionGate {
     }
 
     private clearListMessageIfIdle(): void {
-        if (this.held.size === 0 && (this.listMessage === UNCONFIRMED_REMOVE_MESSAGE || this.listMessage === UNCONFIRMED_CANCEL_MESSAGE)) this.listMessage = undefined;
+        if (this.held.size === 0 && (this.listMessage === unconfirmedRemoveMessage() || this.listMessage === unconfirmedCancelMessage())) this.listMessage = undefined;
     }
 
     filter<T extends { readonly id: string }>(items: readonly T[]): T[] {
