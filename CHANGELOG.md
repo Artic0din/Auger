@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Search now mirrors in Arabic, as on Apple TV: the field sits on the right, People, box sets, requests and results read from the right, and Left and Right on the remote step through them in that order.
 - Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
 - Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
 - Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
