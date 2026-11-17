@@ -6,6 +6,7 @@ import { el } from "./screen.ts";
 import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { shownLocale } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
+import { abbreviatedWeekday } from "../i18n/weekdays.ts";
 import { translate } from "../i18n/translate.ts";
 
 export interface CalendarHandlers {
@@ -105,7 +106,7 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         item.element.classList.add("calendar-day");
         item.element.setAttribute("aria-label", label);
         item.element.textContent = "";
-        item.element.append(el("span", "calendar-weekday", new Intl.DateTimeFormat(shownLocale(), { weekday: "short" }).format(dayDate(date))), el("span", "calendar-day-number", new Intl.DateTimeFormat(shownLocale(), { day: "numeric" }).format(dayDate(date))));
+        item.element.append(el("span", "calendar-weekday", abbreviatedWeekday(dayDate(date))), el("span", "calendar-day-number", new Intl.DateTimeFormat(shownLocale(), { day: "numeric" }).format(dayDate(date))));
         if (state.data !== undefined) {
             const hasEvents = shelves.some(shelf => shelf.date === date && shelf.items.length > 0);
             item.element.setAttribute("data-has-events", String(hasEvents));

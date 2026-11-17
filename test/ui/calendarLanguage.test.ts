@@ -21,8 +21,8 @@ const LEFT = 37;
 const RIGHT = 39;
 const text = (key: Parameters<typeof translate>[0], language: string, args?: Parameters<typeof translate>[1]): string => translate(key, args, language);
 
-async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar()): Promise<void> {
-    const tv = await openTv(browser, { app: "browse" });
+async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar(), device?: string): Promise<void> {
+    const tv = await openTv(browser, { app: "browse", ...(device === undefined ? {} : { locale: device }) });
     tv.fake.catalog = catalog;
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
@@ -49,24 +49,19 @@ async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar
     } finally { await tv.page.context().close(); }
 }
 
-/** The finale's 21:00 UTC air time on the Melbourne clock, as the shown language prints it. */
-async function airTime(tv: Tv, language: string): Promise<string> {
-    const device = await tv.page.evaluate(() => navigator.languages[0]);
-    return new Intl.DateTimeFormat(formattingLocale(language, device), { hour: "numeric", minute: "2-digit", timeZone: "Australia/Melbourne" }).format(new Date("2026-01-01T21:00:00Z"));
-}
-
 test("Calendar's filters, week strip and finale card read in German", async () => {
     await inLanguage("de", async tv => {
         assert.deepEqual(await tv.page.locator('.calendar-filters [data-focus^="filter:"]').allInnerTexts(), [text("calendar.filter.following", "de"), text("calendar.filter.trending", "de"), text("calendar.filter.all", "de")]);
         assert.equal(await tv.page.locator('[data-focus="previous-week"]').getAttribute("aria-label"), text("calendar.previousWeek", "de"));
         assert.equal(await tv.page.locator('[data-focus="next-week"]').getAttribute("aria-label"), text("calendar.nextWeek", "de"));
+        assert.deepEqual(await tv.page.locator(".calendar-weekday").allInnerTexts(), ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"], "Apple's stand-alone abbreviations, without the period");
         const month = await tv.page.locator(".calendar-month").innerText();
         assert.match(month, /^Januar 2026$/, "the month is German");
         await tv.page.locator('[data-focus="filter:everything"]').click();
         const card = tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]');
         await card.waitFor();
-        assert.equal(await card.locator(".calendar-time").textContent(), await airTime(tv, "de"));
-        assert.notEqual(await card.locator(".calendar-time").textContent(), "8:00 AM", "German keeps its own clock");
+        // Apple's clock follows the device's region (en_AU or en_US here: 12-hour), not the language: German reads "8:00 AM", not "08:00".
+        assert.equal(await card.locator(".calendar-time").textContent(), "8:00 AM");
         assert.equal(await card.locator(".calendar-release").textContent(), text("calendar.badge.finale", "de"));
         assert.equal(await card.locator(".browse-card-subtitle").textContent(), `${text("catalog.episodeCaption", "de", { season: "2", episode: "2" })} · The Crossing`);
     });
@@ -96,10 +91,11 @@ test("in Arabic the week strip, shelves and card corners are mirrored", async ()
         assert.equal(strip.direction, "rtl");
         assert.ok(strip.previous > strip.next, `Previous week leads on the right: ${JSON.stringify(strip)}`);
         assert.ok(strip.days[0]! > strip.days[6]!, `Monday is the rightmost day: ${JSON.stringify(strip)}`);
+        assert.deepEqual((await tv.page.locator(".calendar-weekday").allInnerTexts()).slice(0, 2), ["اثنين", "ثلاثاء"], "without the article Chromium adds");
         await tv.page.locator('[data-focus="filter:everything"]').click();
         const card = tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]');
         await card.waitFor();
-        assert.equal(await card.locator(".calendar-time").textContent(), await airTime(tv, "ar"));
+        assert.equal(await card.locator(".calendar-time").textContent(), "٨:٠٠ ص");
         const corners = await card.evaluate(node => {
             const art = node.querySelector(".browse-art")!.getBoundingClientRect();
             const near = (selector: string): { start: number; end: number } => { const box = node.querySelector(selector)!.getBoundingClientRect(); return { start: box.left - art.left, end: art.right - box.right }; };
@@ -114,4 +110,15 @@ test("in Arabic the week strip, shelves and card corners are mirrored", async ()
         await tv.remote(RIGHT);
         assert.equal(await tv.focused(), "day:2026-01-02");
     }, catalog);
+});
+
+test("German air times follow the device's region: 12-hour for an Australian or US TV, 24-hour for a German one", async () => {
+    for (const [device, expected] of [["en-AU", "8:00 AM"], ["de-DE", "08:00"]] as const) {
+        await inLanguage("de", async tv => {
+            await tv.page.locator('[data-focus="filter:everything"]').click();
+            const card = tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]');
+            await card.waitFor();
+            assert.equal(await card.locator(".calendar-time").textContent(), expected, device);
+        }, new FakeCalendar(), device);
+    }
 });

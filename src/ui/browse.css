@@ -537,6 +537,9 @@
 .requests-preview .requests-synopsis { margin: -2.5px 0; line-height: 32px; }
 .requests-preview .requests-metadata { display: flex; align-items: center; }
 .requests-preview .requests-tmdb { gap: 7px; }
+/* Each part is its own run, as Apple's separate Texts are, so a right-to-left line cannot interleave an English word with an Arabic date; the dot sits at each later part's start. */
+.requests-meta-part { unicode-bidi: isolate; }
+.requests-meta-part + .requests-meta-part::before { content: "·"; display: inline-block; width: 15px; text-align: center; }
 .requests-preview .requests-tmdb::before { content: "·"; width: 15px; margin-inline-end: -7px; text-align: center; }
 .requests-preview .requests-tmdb img { width: 107px; height: 14px; }
 .requests-preview .requests-tmdb span { color: inherit; }

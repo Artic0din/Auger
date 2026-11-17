@@ -27,7 +27,7 @@ const text = (key: Parameters<typeof translate>[0], language: string, args?: Par
 class ThreeTitles extends FakeRequests {
     constructor() {
         super();
-        Object.assign(this.record, { backdrop_path: "https://silo.example.test/art/heat.svg" });
+        Object.assign(this.record, { backdrop_path: "https://silo.example.test/art/heat.svg", year: 2023, created_at: "2025-11-05T12:00:00Z" });
     }
     override title(): Record<string, unknown> { return { ...super.title(), backdrop_path: "https://silo.example.test/art/heat.svg" }; }
     override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): Reply | undefined {
@@ -82,7 +82,7 @@ test("the Requests hub and a request's detail read in German", async () => {
         await button(tv, "request-one").click();
         await tv.page.locator('.browse[data-view="requests:request"]').waitFor();
         assert.equal(await tv.page.locator(".requests-eyebrow").innerText(), text("requests.detail.eyebrowRequested", "de"));
-        assert.deepEqual(await tv.page.locator(".requests-summary-label").allInnerTexts(), [text("requests.strip.status", "de")]);
+        assert.deepEqual(await tv.page.locator(".requests-summary-label").allInnerTexts(), [text("requests.strip.status", "de"), text("requests.strip.requested", "de")]);
         assert.deepEqual(await tv.page.locator(".requests-track-labels .requests-step").allInnerTexts(),
             [text("requests.stage.requested", "de"), text("requests.stage.approved", "de"), text("requests.stage.downloading", "de"), text("requests.stage.library", "de")]);
         assert.equal(await button(tv, "status").innerText(), text("requests.long.pending", "de"));
@@ -149,5 +149,18 @@ test("in Arabic a request's detail is mirrored and reads from the catalog", asyn
         assert.ok(frame.left <= 1 && frame.right < 1920 - 100, `the artwork sits at the left edge: ${JSON.stringify(frame)}`);
         await tv.remote(BACK);
         await tv.page.locator('.browse[data-view="requests:hub"]').waitFor();
+    });
+});
+
+test("in Arabic the hero line keeps each part whole, in Apple's order from the right: year, Movie, then Requested {date}", async () => {
+    await inLanguage("ar", async tv => {
+        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl", "dir rtl");
+        const parts = await tv.page.locator(".requests-preview .requests-metadata .requests-meta-part").evaluateAll(nodes => nodes.map(node => ({ text: node.textContent ?? "", left: node.getBoundingClientRect().left, bidi: getComputedStyle(node).unicodeBidi })));
+        assert.equal(parts.length, 3, JSON.stringify(parts));
+        assert.equal(parts[0]?.text, "٢٠٢٣");
+        assert.equal(parts[1]?.text, "Movie", "Apple's displayName is a plain English string, not server text");
+        assert.ok((parts[2]?.text ?? "").startsWith(text("requests.requestedOn", "ar", { date: "\u0001" }).split("\u0001")[0] ?? "?"), parts[2]?.text ?? "");
+        assert.ok(parts[0]!.left > parts[1]!.left && parts[1]!.left > parts[2]!.left, `each part is its own run, first on the right: ${JSON.stringify(parts)}`);
+        assert.ok(parts.every(part => part.bidi === "isolate"), JSON.stringify(parts));
     });
 });

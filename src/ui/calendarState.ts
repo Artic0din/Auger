@@ -2,7 +2,7 @@ import type { CalendarDay, CalendarEvent, CalendarFilter } from "../contracts/v2
 import type { CalendarQuery } from "../api/calendarOperations.ts";
 import type { Destination } from "./browseModel.ts";
 import type { ErrorState } from "./browseRoutes.ts";
-import { shownLanguage, SOURCE_LANGUAGE } from "../i18n/language.ts";
+import { deviceLanguages, shownLanguage, SOURCE_LANGUAGE } from "../i18n/language.ts";
 import { shownLocale } from "../i18n/format.ts";
 
 export interface CalendarState {
@@ -71,12 +71,19 @@ export function calendarEventKeys(events: readonly CalendarEvent[]): string[] {
     });
 }
 /**
- * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's own clock
- * ("21:00" in German). English keeps "en" rather than the TV's region, and an explicit h12 keeps noon and midnight
+ * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's words with the
+ * device's region, and the region decides 12 or 24 hours ("8:00 AM" in German on an Australian or US TV, "08:00" on a German
+ * one), as `Locale(language, region)` does in Foundation. Chromium picks the hour cycle from the language alone, so the
+ * device's own is passed in. English keeps "en" rather than the TV's region, and an explicit h12 keeps noon and midnight
  * at 12 on Chromium 108.
  */
 function clock(): { readonly locale: string; readonly options: Intl.DateTimeFormatOptions } {
-    return shownLanguage() === SOURCE_LANGUAGE ? { locale: "en", options: { hour: "numeric", minute: "2-digit", hourCycle: "h12" } } : { locale: shownLocale(), options: { hour: "numeric", minute: "2-digit" } };
+    if (shownLanguage() === SOURCE_LANGUAGE) return { locale: "en", options: { hour: "numeric", minute: "2-digit", hourCycle: "h12" } };
+    const device = deviceLanguages()[0];
+    const hourCycle = new Intl.DateTimeFormat(device, { hour: "numeric" }).resolvedOptions().hourCycle;
+    // 12 hours drops the leading zero ("8:00 AM"); 24 hours takes the language's own short pattern ("08:00" in German).
+    const twelve = hourCycle === "h11" || hourCycle === "h12";
+    return { locale: shownLocale(), options: { ...(twelve ? { hour: "numeric", minute: "2-digit" } : { timeStyle: "short" }), ...(hourCycle === undefined ? {} : { hourCycle }) } };
 }
 
 export function eventTime(event: CalendarEvent, timezone: string): string | undefined {

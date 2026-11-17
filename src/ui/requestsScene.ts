@@ -22,10 +22,12 @@ export function requestTrack(progress: RequestProgress, labels = false): HTMLEle
     }
     return track;
 }
-export function requestMetadata(title: RequestTitle | MediaRequest): string {
+/** Apple's `marqueeContent` meta parts: each is its own text, so none is reordered against its neighbours in a right-to-left line. */
+export function requestMetadataParts(title: RequestTitle | MediaRequest): string[] {
     const requested = "createdAt" in title && title.createdAt !== undefined ? translate("requests.requestedOn", { date: requestDate(title.createdAt) }) : undefined;
-    return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter(value => value !== undefined && value !== "").join(" · ");
+    return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter((value): value is string => value !== undefined && value !== "");
 }
+export function requestMetadata(title: RequestTitle | MediaRequest): string { return requestMetadataParts(title).join(" · "); }
 
 /** Apple's `.dateTime.month(.abbreviated).day().locale(AppLanguage.formattingLocale)`. */
 export function requestDate(instant: number): string { return new Intl.DateTimeFormat(shownLocale(), { month: "short", day: "numeric" }).format(new Date(instant)); }
@@ -120,7 +122,7 @@ export function requestHero(title: RequestTitle | MediaRequest, baseUrl: string,
         if (progress?.display !== "inLibrary") copy.appendChild(el("div", "requests-eyebrow", translate(progress === undefined ? "requests.detail.eyebrowNotInLibrary" : "requests.detail.eyebrowRequested")));
         copy.append(detailTitle(title.title), detailMetadata(metadata ?? title));
     } else {
-        const metadata = el("p", "requests-metadata"); metadata.appendChild(el("span", "", requestMetadata(title)));
+        const metadata = el("p", "requests-metadata"); for (const part of requestMetadataParts(title)) metadata.appendChild(el("span", "requests-meta-part", part));
         const rating = requestRating(title); if (rating !== undefined) metadata.appendChild(rating);
         copy.append(el("h1", "requests-hero-title", title.title), metadata);
     }
