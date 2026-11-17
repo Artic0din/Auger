@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Years now show in the language you pick, as on Apple TV: in Arabic, Details' facts line, a card's year badge, audiobook narrations, Requests and Watch Party read 2023 as ٢٠٢٣. English reads exactly as before.
 - Search now mirrors in Arabic, as on Apple TV: the field sits on the right, People, box sets, requests and results read from the right, and Left and Right on the remote step through them in that order.
 - Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
 - Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
@@ -88,6 +89,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
 - Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
 - Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
 - A library's menu now lists Recommended, Browse, Collections, as Apple TV does; Collections was listed before Browse.

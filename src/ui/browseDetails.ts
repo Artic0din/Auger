@@ -56,7 +56,7 @@ function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode
     if (detail.type === "episode") {
         const aired = episodeAirDate(detail.airDate);
         if (aired !== undefined) tokens.push(aired);
-    } else if (detail.year !== undefined && detail.year > 0) tokens.push(String(detail.year));
+    } else if (detail.year !== undefined && detail.year > 0) tokens.push(integerText(detail.year));
     if (detail.type !== "series" && detail.runtimeMinutes !== undefined && detail.runtimeMinutes > 0) {
         const file = detail.versions.find(version => version.fileId === playChoices(detail, state?.selectedFileId, state?.preferredQuality)?.fromStart.fileId);
         const minutes = file?.durationSeconds ? Math.round(file.durationSeconds / 60) : detail.runtimeMinutes;
