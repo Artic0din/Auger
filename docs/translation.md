@@ -29,7 +29,7 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 
 Arabic reads right to left, as on Apple TV, where the root view sets `\.layoutDirection` from the language ([silo-apple `docs/i18n.md`, Right to left](https://github.com/Silo-Server/silo-apple/blob/main/docs/i18n.md)).
 
-- `applyLayoutDirection` (`src/i18n/direction.ts`) sets `dir="rtl"` on the document root when the text on screen is right to left and removes it otherwise.
+- `applyLayoutDirection` (`src/i18n/direction.ts`) sets `lang` on the document root to the text language on screen (`en`, the page's default, for English) and `dir="rtl"` when it is right to left, removing `dir` otherwise.
   The direction is the language's CLDR direction from `Intl.Locale` (Apple's `characterDirection`; Chromium 108 offers it as `textInfo`, newer engines as `getTextInfo()`), with a short list of the shipped right-to-left languages for an engine that has neither, and it follows `textLanguage()`, so the layout mirrors in the same redraw as the words.
 - Browse sets it at launch from the kept language and in `reconcileLanguage`; Settings sets it in the repaint that follows a language change.
   Browse clears it when it is torn down, because the sign-in and profile screens are still English. A screen opened over browse (Add Profile, Switch Server) keeps it, as on Apple TV, where the root view sets the direction app-wide (silo-apple `iOSApp.swift:75`, `AddProfileFromMenu.swift:8-17`, `TVMainTabView.swift:1767-1768`); Add Profile's sign-in-style layout (`signIn.css`) still has physical offsets and is listed on #571.

@@ -1,4 +1,4 @@
-// The layout direction of the language on screen, following silo-apple `AppLanguage.isRightToLeft`
+// The layout direction and `lang` of the language on screen, following silo-apple `AppLanguage.isRightToLeft`
 // (`Locale.Language.characterDirection == .rightToLeft`): the CLDR direction of the language from the engine, with a short list for an engine that has none.
 import { SOURCE_LANGUAGE } from "./language.ts";
 import { textLanguage } from "./translate.ts";
@@ -35,20 +35,22 @@ export interface DirectionRoot {
 }
 
 /**
- * Sets `dir="rtl"` on the document root when the text on screen reads right to left, and removes it otherwise.
- * It follows `textLanguage`, the language whose text is drawn, so the layout mirrors in the same redraw as the
- * words: a language whose file has not landed yet is still English, and stays left to right.
+ * Sets the document root's `lang` to the text language on screen and `dir="rtl"` when it reads right to left (removing
+ * `dir` otherwise). It follows `textLanguage`, the language whose text is drawn, so the layout mirrors and the
+ * language tag changes in the same redraw as the words: a language whose file has not landed yet is still English,
+ * which is also the page's default `lang`.
  */
 export function applyLayoutDirection(root: DirectionRoot | undefined = globalThis.document?.documentElement, language: string = textLanguage()): void {
     if (root === undefined) return;
+    // Settings and Browse both call this on every repaint; an unchanged value must not restyle the page.
+    if (root.getAttribute("lang") !== language) root.setAttribute("lang", language);
     const rightToLeft = language !== SOURCE_LANGUAGE && isRightToLeft(language);
-    // Settings and Browse both call this on every repaint; an unchanged direction must not restyle the page.
     if (rightToLeft === (root.getAttribute("dir") === "rtl")) return;
     if (rightToLeft) root.setAttribute("dir", "rtl");
     else root.removeAttribute("dir");
 }
 
-/** Leaves the screens that are still English, sign-in among them, reading left to right. */
+/** Leaves the screens that are still English, sign-in among them, with the default `lang` and reading left to right. */
 export function clearLayoutDirection(): void {
     applyLayoutDirection(undefined, SOURCE_LANGUAGE);
 }

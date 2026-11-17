@@ -62,6 +62,19 @@ test("the fallback agrees with the engine for every shipped language", () => {
     for (const tag of SHIPPED_LANGUAGES) assert.equal(isRightToLeft(tag, bare), isRightToLeft(tag), tag);
 });
 
+test("lang follows the language on screen, and a language that reads left to right sets only lang", () => {
+    const root = fakeRoot();
+    root.setAttribute("lang", "en");
+    applyLayoutDirection(root, "ar");
+    assert.equal(root.attributes.get("lang"), "ar");
+    assert.equal(root.attributes.get("dir"), "rtl");
+    applyLayoutDirection(root, "de");
+    assert.equal(root.attributes.get("lang"), "de");
+    assert.equal(root.attributes.has("dir"), false);
+    applyLayoutDirection(root, "en");
+    assert.equal(root.attributes.get("lang"), "en");
+});
+
 test("English never sets dir, whatever the text language machinery says", () => {
     const root = fakeRoot();
     applyLayoutDirection(root, "en");

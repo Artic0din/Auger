@@ -87,8 +87,10 @@ test("English and German leave the page left to right", async () => {
 test("Arabic loses its direction when browse is torn down, so the English sign-in screens read left to right", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
+        assert.equal(await tv.page.evaluate(() => document.documentElement.getAttribute("lang")), "ar");
         await tv.page.evaluate(() => window.browseHarness.destroy());
         assert.equal(await direction(tv), null);
+        assert.equal(await tv.page.evaluate(() => document.documentElement.getAttribute("lang")), "en", "torn down: the default lang");
     });
 });
 
@@ -451,5 +453,22 @@ test("in Arabic every layer of the hero artwork fades toward the text, which is 
         for (const layer of await masks()) assert.match(layer.mask, /to right/, `${layer.name}: ${layer.mask}`);
         await tv.page.evaluate(() => document.documentElement.removeAttribute("dir"));
         for (const layer of await masks()) assert.match(layer.mask, /to left/, `${layer.name}: ${layer.mask}`);
+    });
+});
+
+test("the document's lang follows the shown language: ar for Arabic, and the default again for Match Device", async () => {
+    await withHome({}, async tv => {
+        const lang = (): Promise<string | null> => tv.page.evaluate(() => document.documentElement.getAttribute("lang"));
+        assert.equal(await lang(), "en");
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio", { name: "العربية", exact: true }).click();
+        await tv.eventually(async () => await lang() === "ar", "lang ar");
+        await waitForDirection(tv, "rtl");
+        // Match Device is the picker's first row; the TV's language here is English.
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio").first().click();
+        await tv.eventually(async () => await lang() === "en", "lang back to en");
+        await waitForDirection(tv, null);
     });
 });
