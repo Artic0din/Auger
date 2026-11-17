@@ -35,9 +35,19 @@ function parsePersonDate(value: string | undefined): CalendarDate | undefined {
 }
 
 /**
+ * A date-only value as the pages show it outside the Person page (the marquee's aired date): the shared medium air-date form in every language.
+ * Blank is no date, and a value that is not an ISO date shows as sent.
+ */
+export function airDateText(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    if (trimmed === undefined || trimmed === "") return undefined;
+    return parsePersonDate(trimmed) === undefined ? trimmed : episodeAirDate(trimmed);
+}
+
+/**
  * silo-apple `formattedPersonDate` (PersonDetailView.swift:903-906): `LocaleFormat.dateFormatter(dateStyle: .medium, calendar: Calendar(identifier: .gregorian))`
  * in `AppLanguage.formattingLocale`, the device's locale with its language replaced (AppLanguage.swift:50-61; LocaleFormat.swift:168-184).
- * English reads that medium date, the one the air dates use.
+ * English reads that medium date, the one the air dates use. Only a person's Born and Died use this function; every other date goes through `airDateText`.
  *
  * shortcut: outside English the source does not explain what Apple TV draws. `.medium` in `de` is "17.08.1943", yet the S95C-paired Apple TV
  * captures show "17/8/1943" and "١٧/٨/١٩٤٣": the region's numeric order, no leading zeros, the language's digits. The one unusual step in the source is
@@ -52,8 +62,10 @@ export function formatPersonDate(value: string | undefined, deviceLocale: string
     if (parsed === undefined) return trimmed;
     const language = shownLanguage();
     if (new Intl.Locale(language).language === "en") return episodeAirDate(trimmed);
-    const digits = new Intl.Locale(formattingLocale(language, deviceLocale)).numberingSystem;
-    const region = new Intl.Locale(deviceLocale ?? language, { calendar: "gregory", ...(digits === undefined ? {} : { numberingSystem: digits }) });
+    // The shown language's digits: a system the device chose itself (`-u-nu-`) or Arabic's Arabic-Indic (`formattingLocale`), else the language's own default.
+    // `Intl.Locale.numberingSystem` is only an explicit setting, so the default is read from a formatter; without it the region's own digits would leak in.
+    const digits = new Intl.Locale(formattingLocale(language, deviceLocale)).numberingSystem ?? new Intl.NumberFormat(language).resolvedOptions().numberingSystem;
+    const region = new Intl.Locale(deviceLocale ?? language, { calendar: "gregory", numberingSystem: digits });
     const date = new Date(0);
     date.setFullYear(parsed.year, parsed.month - 1, parsed.day);
     date.setHours(12, 0, 0, 0);

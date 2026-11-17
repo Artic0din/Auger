@@ -82,6 +82,19 @@ test("a person's date reads day first without leading zeros, with the shown lang
     inLanguage("de", () => assert.equal(formatPersonDate("c. 1900", "en-AU"), "c. 1900"));
 });
 
+test("a person's date takes the digits of the shown language, not the device's: German on an Arabic-region TV writes Latin digits", () => {
+    for (const tag of ["de", "fr"]) {
+        inLanguage(tag, () => {
+            const written = formatPersonDate("1943-08-17", "ar-EG");
+            assert.ok(written !== undefined && !/[\u0660-\u0669\u06F0-\u06F9]/.test(written), `${tag}: Latin digits: ${written}`);
+            assert.match(written ?? "", /17.*8.*1943|1943.*8.*17/);
+        });
+    }
+    // Arabic shown on a US-region TV still writes Arabic-Indic digits, and a digit system the device chose itself is kept.
+    inLanguage("ar", () => assert.match(formatPersonDate("1943-08-17", "en-US") ?? "", /^[\u0660-\u0669]+.*[\u0660-\u0669]+.*[\u0660-\u0669]+$/));
+    inLanguage("de", () => assert.match(formatPersonDate("1943-08-17", "ar-EG-u-nu-arab") ?? "", /[\u0660-\u0669]/));
+});
+
 test("English person dates and episode air dates keep their medium form", () => {
     const air = episodeAirDate("1943-08-17");
     assert.ok(air !== undefined && /Aug/.test(air), `medium form: ${air}`);
