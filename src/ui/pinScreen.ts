@@ -5,12 +5,13 @@
 import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import type { PinResult } from "../session/profiles.ts";
 import { profileAvatar } from "./profilePicker.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import { button, type Control, el, type Note, type Screen } from "./screen.ts";
 import { waitText } from "./signInText.ts";
 
 const PIN_LENGTH = 4;
 const AVATAR_SIZE = 160;
-const DEFAULT_STATUS = "Enter your PIN";
 const CHECKING = "Checking the PIN.";
 const LETTERS: Readonly<Record<number, string>> = { 2: "ABC", 3: "DEF", 4: "GHI", 5: "JKL", 6: "MNO", 7: "PQRS", 8: "TUV", 9: "WXYZ" };
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -29,7 +30,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
     let digits = "";
     let verifying = false;
     let error: string | undefined;
-    const intro = notes.map((note) => note.text).join(" ") || DEFAULT_STATUS;
+    const intro = notes.map((note) => note.text).join(" ") || translate("pin.prompt");
 
     const avatar = profileAvatar(profile, baseUrl, AVATAR_SIZE);
     // PINEntryView draws a flat surface circle, not the picker tile's tinted gradient.
@@ -49,7 +50,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
         const failed = error !== undefined && digits === "";
         dotRow.classList.toggle("pin-dots-error", failed);
         dots.forEach((dot, index) => dot.classList.toggle("pin-dot-filled", failed || index < filled));
-        dotRow.setAttribute("aria-label", `${filled} of ${PIN_LENGTH} digits entered`);
+        dotRow.setAttribute("aria-label", translate("pin.progress.digits", { filled: integerText(filled), total: PIN_LENGTH }));
         status.classList.toggle("pin-status-error", error !== undefined);
         if (error !== undefined) {
             status.textContent = error;
@@ -121,7 +122,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
     digitKey(0, 3, 1);
     addKey("delete", 3, 2, "Delete", [deleteIcon()], remove);
 
-    const cancelButton = button("cancel", "Cancel", cancel);
+    const cancelButton = button("cancel", translate("common.cancel"), cancel);
     cancelButton.element.classList.add("pin-cancel");
     controls.push({ ...cancelButton, row: 4, column: 1 });
 
@@ -136,6 +137,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
             controls,
             // Apple focuses the centre key so the pad's four neighbours are one move away.
             focus: "5",
+            translated: true,
             // onExitCommand: Back deletes a digit, and leaves only when none is left.
             back: () => (digits === "" ? cancel() : remove()),
         },
@@ -168,7 +170,7 @@ function deleteIcon(): SVGSVGElement {
 export function pinProblem(result: Exclude<PinResult, { readonly status: "verified" }>): string {
     switch (result.status) {
         case "wrong_pin":
-            return "Wrong PIN. Try again.";
+            return translate("pin.wrong");
         case "locked":
             return lockoutText(result.retryAfterSeconds);
         case "busy":
@@ -191,8 +193,8 @@ export function pinProblem(result: Exclude<PinResult, { readonly status: "verifi
 /** ProfileTransitionError.pinLockedOut: whole minutes, rounded up, and "later" with no wait or past a day. */
 function lockoutText(seconds: number | undefined): string {
     if (seconds === undefined || !(seconds > 0 && seconds <= 86_400)) {
-        return "Too many incorrect PINs. Try again later.";
+        return translate("pin.lockout.later");
     }
     const minutes = Math.ceil(seconds / 60);
-    return `Too many incorrect PINs. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`;
+    return translate("pin.lockout.minutes", { count: minutes, count_text: integerText(minutes) });
 }

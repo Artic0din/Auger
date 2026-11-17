@@ -3,6 +3,7 @@
 // `#session-only` starts without KeyManager, as a TV whose protected storage is missing.
 // `?flow=profiles` continues into the profile screens and a stand-in for the browse screens.
 
+import { loadShownLanguage } from "../../src/i18n/load.ts";
 import type { ConnectedServer } from "../../src/session/core.ts";
 import type { LogoutResult, Persistence, RestoreResult } from "../../src/session/session.ts";
 import { mountProfiles, type ProfileHandoff, type ProfileScreens } from "../../src/ui/profiles.ts";
@@ -10,6 +11,9 @@ import { mountSignIn, type SignInScreens } from "../../src/ui/signIn.ts";
 import { CredentialVault } from "../../src/session/credentialVault.ts";
 import { keyManagerStore } from "../../src/session/secretStore.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
+
+// As boot() does: a TV set to Match Device starts fetching its own language before a profile says so.
+void loadShownLanguage();
 
 export interface Handoff {
     readonly restore: RestoreResult;
