@@ -160,6 +160,12 @@ test("without chapters the picker lists the parts at their offsets", () => {
     assert.equal(picker.subline, "2 parts · 3h");
 });
 
+test("a chapterless part is named by its file, as Apple TV names it, else by its place", () => {
+    const parts = [{ fileId: "1", duration: 5400, offset: 0, fileName: "Dune - Part 1.m4b" }, { fileId: "2", duration: 5400, offset: 5400, fileName: "" }, { fileId: "3", duration: 60, offset: 10800 }];
+    const rows = audiobookPage(book({ chapters: [], parts })).picker.rows;
+    assert.deepEqual(rows.map(row => [row.number, row.title]), [[1, "Dune - Part 1.m4b"], [2, "Part 2"], [3, "Part 3"]]);
+});
+
 test("about, narrations and rails appear only when the book has them", () => {
     assert.equal(audiobookPage(book()).sections.hasContent, false);
     const detail: AudiobookDetail = {
