@@ -42,7 +42,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     /** A confirmation, the expired-session dialog or an error is on screen in place of the list. */
     let dialogOpen = false;
     // A language file that lands after the screen drew (a cold start) redraws it in that language, once no dialog, press or operation is in the way.
-    const late = lateRedraw(() => dialogOpen || removalPending || opening !== undefined, () => { applyScreenDirection(container); refresh(); });
+    const late = lateRedraw(() => dialogOpen || removalPending || opening !== undefined, () => { applyScreenDirection(container); render(); });
     const stopCatalog = onCatalogLoaded(() => { if (!destroyed) late.arrived(); });
     const destroy = (): void => { if (destroyed) return; destroyed = true; stopCatalog(); late.clear(); for (const column of overflow) column.disconnect(); host.destroy(); backdrop.destroy(); container.remove(); };
     const go = (account: SavedAccount | undefined, address?: string): void => { if (opening !== undefined) return; destroy(); void open(account, address); };

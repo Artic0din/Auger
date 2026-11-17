@@ -197,3 +197,14 @@ test("a catalog that lands while Select is held waits for the release", async ()
         await tv.eventually(async () => (await tv.page.locator(".accounts-title").innerText()) === text("accounts.headline", "de"), "German headline after release");
     });
 });
+
+test("a catalog that lands while Add server has focus keeps focus on it", async () => {
+    await withHeldGerman(async (tv, land) => {
+        await openChangeAccount(tv);
+        await tv.page.locator('[data-focus="add-server"]').first().focus();
+        assert.equal(await tv.focused(), "add-server");
+        await land();
+        await tv.eventually(async () => (await tv.page.locator(".accounts-title").innerText()) === text("accounts.headline", "de"), "German headline");
+        assert.equal(await tv.focused(), "add-server", "focus stays on Add server, not on the selected server");
+    });
+});

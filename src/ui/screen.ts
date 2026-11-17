@@ -34,6 +34,8 @@ export interface Screen {
     readonly back: (() => void) | undefined;
     /** True once the screen's text is on the catalog: it then follows the shown language and direction instead of carrying `lang="en"`. */
     readonly translated?: boolean;
+    /** Runs once when another screen replaces this one, or the host is destroyed: stop listening for anything the screen subscribed to. */
+    readonly dispose?: () => void;
 }
 
 export class ScreenHost {
@@ -56,6 +58,7 @@ export class ScreenHost {
     }
 
     show(screen: Screen, focus?: string): void {
+        if (this.current !== undefined && this.current !== screen) this.current.dispose?.();
         const changed = this.current?.name !== screen.name;
         const kept = this.current?.name === screen.name ? this.focusedKey() : undefined;
         this.current = screen;
@@ -84,6 +87,7 @@ export class ScreenHost {
 
     destroy(): void {
         document.removeEventListener("keydown", this.onKey);
+        this.current?.dispose?.();
         this.current = undefined;
         while (this.root.firstChild !== null) {
             this.root.removeChild(this.root.firstChild);

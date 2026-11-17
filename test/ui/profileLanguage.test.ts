@@ -186,3 +186,15 @@ test("a catalog that lands while Select is held on the PIN pad waits for the rel
         await tv.eventually(async () => (await tv.page.locator(".pin-status").innerText()) === text("pin.prompt", "de"), "German prompt after release");
     });
 });
+
+test("a PIN screen that has been left stops listening for catalogs", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        // Keep the left screen's Cancel button: a screen still subscribed would rewrite its text when the catalog lands.
+        await tv.page.evaluate(() => { Reflect.set(window, "leftCancel", document.querySelector(".pin-cancel")); });
+        await tv.page.locator(".pin-cancel").click();
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+        await land();
+        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("lang")) !== null, "page settled");
+        assert.equal(await tv.page.evaluate(() => (Reflect.get(window, "leftCancel") as HTMLElement).textContent), "Cancel", "the left screen was not redrawn");
+    });
+});

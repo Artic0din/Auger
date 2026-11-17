@@ -132,19 +132,14 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
     root.append(header, dotRow, status, pad, cancelButton.element);
     render();
 
-    // A language file that lands while the screen is up redraws its words once no Select is held. The screen has no teardown, so it stops listening when it leaves the page.
-    let shown = false;
+    // A language file that lands while the screen is up redraws its words once no Select is held; `dispose` stops listening when the host replaces the screen.
     const late = lateRedraw(() => false, () => {
         cancelButton.element.textContent = translate("common.cancel");
         const section = root.closest("section");
         if (section !== null) applyScreenDirection(section);
         render();
     });
-    const stopCatalog = onCatalogLoaded(() => {
-        shown ||= root.isConnected;
-        if (shown && !root.isConnected) { stopCatalog(); late.clear(); return; }
-        late.arrived();
-    });
+    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
 
     return {
         screen: {
@@ -154,6 +149,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
             // Apple focuses the centre key so the pad's four neighbours are one move away.
             focus: "5",
             translated: true,
+            dispose: () => { stopCatalog(); late.clear(); },
             // onExitCommand: Back deletes a digit, and leaves only when none is left.
             back: () => (digits === "" ? cancel() : remove()),
         },
