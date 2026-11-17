@@ -4,6 +4,7 @@
 
 import type { Card, Episode, ItemDetail } from "../contracts/v2/catalog.ts";
 import { runtimeText } from "./cardPresentation.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 /** The title as the lobby hero draws it. */
 export interface LobbyItem {
@@ -36,7 +37,7 @@ const episodeCode = (season: number | undefined, episode: number | undefined, se
     season === undefined || episode === undefined ? undefined : `S${season}${separator}E${episode}`;
 
 function yearAndRuntime(year: number | undefined, minutes: number | undefined): string[] {
-    return [year !== undefined && year > 0 ? String(year) : undefined, runtimeText(minutes)].filter((fact): fact is string => fact !== undefined);
+    return [year !== undefined && year > 0 ? integerText(year) : undefined, runtimeText(minutes)].filter((fact): fact is string => fact !== undefined);
 }
 
 /** Apple's WatchPartyMediaChoice(item:), or an episode card as a resume row gives it. */

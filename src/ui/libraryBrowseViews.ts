@@ -91,7 +91,8 @@ const ICONS = {
 } as const;
 
 export function icon(name: keyof typeof ICONS): HTMLElement {
-    const node = el("span", "browse-icon");
+    // chevron.backward points the other way in a right-to-left layout (the CSS flips it).
+    const node = el("span", name === "chevronLeft" ? "browse-icon icon-backward" : "browse-icon");
     node.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
     return node;
 }
@@ -292,7 +293,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const entering = shownPanel !== panel.kind ? " browse-panel-enter" : "";
     const scrim = el("div", `browse-panel-scrim${entering}`);
     if (panel.kind === "sort") {
-        const items = sortKeysFor(route.library.type).map(entry => {
+        const items = sortKeysFor(route.library.type, handlers.ratingSources, filter.sort).map(entry => {
             const current = entry.key === filter.sort;
             const name = translate(entry.name);
             const parts: (HTMLElement | string)[] = [symbol("checkmark", current), name];
@@ -304,7 +305,11 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         });
         const box = el("div", `browse-panel browse-sort-panel${entering}`);
         box.setAttribute("role", "menu");
-        box.append(el("p", "browse-panel-eyebrow", upper(translate("library.sortBy"))), ...items.map(item => item.element));
+        // TVBrowseSortPanel: a long list scrolls as focus moves through it and a short one keeps its own height.
+        const list = el("div", "browse-panel-list");
+        list.setAttribute("data-scroll-key", "sort");
+        list.append(...items.map(item => item.element));
+        box.append(el("p", "browse-panel-eyebrow", upper(translate("library.sortBy"))), list);
         return { content: [...content, scrim, box], zones: [...zones.map(zone => ({ ...zone, items: [] })), { id: "panel", layout: "column", up: "panel", down: "panel", items }], back: () => handlers.browse(route, { panel: undefined, focus: { zone: "controls", key: "sort" } }) };
     }
     const draft = panel.draft;

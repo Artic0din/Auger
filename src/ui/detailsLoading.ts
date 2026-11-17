@@ -12,6 +12,7 @@ import { heroBackdrop } from "./heroBackdrop.ts";
 import { decodedLogoTitle, detailPalette } from "./browseDetails.ts";
 import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 export interface LoadingRoute {
     readonly id: string;
@@ -37,7 +38,7 @@ function placeholder(width: number, height: number, radius: number): HTMLElement
 function metadataTokens(seed: DetailSeed | undefined): string[] {
     if (seed === undefined) return [];
     const tokens: string[] = [];
-    if (seed.year !== undefined && seed.year > 0) tokens.push(String(seed.year));
+    if (seed.year !== undefined && seed.year > 0) tokens.push(integerText(seed.year));
     const genre = nonEmpty(seed.genre);
     if (genre !== undefined) tokens.push(genre);
     const runtime = runtimeText(seed.runtimeMinutes);

@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Library Browse's Sort panel now lists Apple TV's full set of sorts for the library: Content Rating, TMDB Rating, Bitrate, Progress, Date Viewed and Plays (reading Fewest and Most) for every video library, Latest Episode Air Date and Latest Episode Added for a series library, and RT Critic and RT Audience Rating while the server shows those sources. A long list scrolls inside a panel 720 tall, and a saved sort stays listed. Movies and series offered seven sorts and audiobooks six before; audiobook libraries now list Apple's twelve.
+- Years now show in the language you pick, as on Apple TV: in Arabic, Details' facts line, a card's year badge, audiobook narrations, Requests and Watch Party read 2023 as ٢٠٢٣. English reads exactly as before.
+- Search now mirrors in Arabic, as on Apple TV: the field sits on the right, People, box sets, requests and results read from the right, and Left and Right on the remote step through them in that order.
+- Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
 - Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
 - Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
 - Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
@@ -45,8 +49,10 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
+- Corrected `FEATURES.md`: the Up Next panel, the Auto-Play Next Episode, Show Next Up, Skip Intros and Skip Credits switches, and Poster Size and Show Advisory Age are marked as built, as they are on main; the Android advisory-age gap stays recorded.
 - Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
 - The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
 - The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
@@ -87,6 +93,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
+- Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
 - Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
 - A library's menu now lists Recommended, Browse, Collections, as Apple TV does; Collections was listed before Browse.
 - Settings now keeps Down on Sign Out, the last item of the left rail, as Apple TV does: it no longer jumps into the Server pane's Accounts row. Up still moves up the rail.

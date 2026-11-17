@@ -5,6 +5,7 @@ import { requestProgress, type RequestProgress } from "./requestProgress.ts";
 import { el } from "./screen.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { balanceTwoLineText } from "./textLayout.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 const palette = new Map<string, Tints>();
 export function requestTrack(progress: RequestProgress, labels = false): HTMLElement {
@@ -20,7 +21,7 @@ export function requestTrack(progress: RequestProgress, labels = false): HTMLEle
 }
 export function requestMetadata(title: RequestTitle | MediaRequest): string {
     const requested = "createdAt" in title && title.createdAt !== undefined ? `Requested ${requestDate(title.createdAt)}` : undefined;
-    return [title.year, title.mediaType === "series" ? "Series" : "Movie", requested].filter(value => value !== undefined && value !== "").join(" · ");
+    return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter(value => value !== undefined && value !== "").join(" · ");
 }
 
 export function requestDate(instant: number): string { return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(instant)); }
@@ -73,7 +74,7 @@ function detailTitle(title: string): HTMLElement {
 function detailMetadata(title: RequestTitle | MediaRequest): HTMLElement {
     const row = el("div", "requests-metadata requests-detail-metadata");
     if ("contentRating" in title && title.contentRating) row.appendChild(el("span", "requests-rating-chip", title.contentRating));
-    if (title.year) row.appendChild(el("span", "", String(title.year)));
+    if (title.year) row.appendChild(el("span", "", integerText(title.year)));
     if (title.mediaType === "series") {
         if ("numberOfSeasons" in title && title.numberOfSeasons !== undefined && title.numberOfSeasons > 0) row.appendChild(el("span", "", `${title.numberOfSeasons} season${title.numberOfSeasons === 1 ? "" : "s"}`));
     } else if ("runtime" in title && title.runtime !== undefined) row.appendChild(el("span", "", `${Math.floor(title.runtime / 60)}h ${title.runtime % 60}m`));

@@ -57,6 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { applyLayoutDirection, clearLayoutDirection, documentIsRightToLeft } from "../i18n/direction.ts";
 import { textLanguage } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
@@ -265,6 +266,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const input = el("input", "browse-input");
     input.id = "browse-search";
     input.type = "search";
+    // The field aligns by what is typed, as Apple TV's does: Latin text such as a title reads left to right in Arabic, an empty field takes the layout's direction.
+    input.dir = "auto";
     input.spellcheck = false;
     input.autocomplete = "off";
     input.placeholder = translate("search.fieldPrompt.video");
@@ -440,6 +443,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     languagePrefs.applyCached();
     void languagePrefs.refresh();
     let paintedLanguage = textLanguage();
+    applyLayoutDirection();
     /**
      * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
      * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
@@ -450,11 +454,17 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (textLanguage() === paintedLanguage) return;
         if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
         paintedLanguage = textLanguage();
+        const mirroredBefore = documentIsRightToLeft();
+        applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
-        if (!redraw) return;
-        render(focus);
+        if (redraw) {
+            render(focus);
+            // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+            if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        }
         // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        // A caller that shows the screen itself afterwards (Settings closing) still needs it, so it runs on this path too.
         shell.repaintShown();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
@@ -612,6 +622,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         if ((current?.kind === "library" && current.discovery?.mode === "Browse" || current?.kind === "libraryResults") && !playing) render(host.focused());
     }, () => undefined);
+    // RatingSourcesStore: probed with the first Browse load, dropped with the app's session, and a failed probe leaves the answer empty and asks again.
+    let shownRatingSources: ReadonlySet<string> = new Set();
+    let ratingSourcesProbe: Promise<void> | undefined;
+    const probeRatingSources = (): Promise<void> => ratingSourcesProbe ??= session.call({ ...operations.ratingSources(), profileScoped: true, signal: requestsController.signal }).then(sources => {
+        if (torn) return;
+        shownRatingSources = sources;
+        const current = top();
+        if (current?.kind === "library" && current.discovery?.mode === "Browse" && !playing) render(host.focused());
+    }, () => { ratingSourcesProbe = undefined; });
     const startShuffle = (current: Extract<Route, { kind: "library" | "libraryResults" }>): void => {
         if (torn || playing || top() !== current || shuffleStarting || !canShuffle(current)) return;
         const discovery = current.kind === "library" ? current.discovery : undefined, generation = shuffleGeneration;
@@ -875,6 +894,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopDetails();
         settingsScreen?.destroy();
         settingsScreen = undefined;
+        // Sign-in and profile screens still read English, so they stay left to right.
+        clearLayoutDirection();
         stopAuthority();
         loading?.abort();
         homeLibraries?.abort();
@@ -1240,6 +1261,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const state = current.discovery;
         if (state === undefined || state.mode !== "Browse") return;
         void probeShuffles();
+        if (!append) void probeRatingSources();
         if (!state.facetsRequested) {
             state.filter = browsePrefs.saved(current.library) ?? state.filter;
             state.facetsRequested = true;
@@ -2295,7 +2317,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2886,7 +2908,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
-                reconcileLanguage(false);
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2908,6 +2929,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // lands on Home.
                 for (const covered of stack) retireRoute(covered);
                 stack = [home];
+                // Home is the top route from here, so the marquee's repaint reads Home's enrichment, not the page that opened Settings.
+                reconcileLanguage(false);
                 host.listen();
                 showRoute(home, { zone: "nav", key: "home" });
                 const spoilersAfterSettings = episodeSpoilers?.settings;

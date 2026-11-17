@@ -14,7 +14,7 @@ import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import { blurEpisodeStill, type EpisodeSpoilerSettings } from "../ui/episodeSpoilers.ts";
-import { remoteKey } from "../ui/keys.ts";
+import { physicalKey } from "../ui/keys.ts";
 import { isFreshSelect, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
@@ -267,6 +267,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const section = el("section", "player");
     const renderSubtitles = mountSubtitles(section);
     section.setAttribute("data-screen", "player");
+    // Media transport reads left to right in every language, and the player's menus are not mirrored yet (#571): the screen keeps its layout and physical keys.
+    section.setAttribute("dir", "ltr");
     const surface = document.createElement("object");
     surface.type = "application/avplayer";
     surface.className = "player-video";
@@ -1442,7 +1444,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** What Select would act on beyond the focused control: a prompt or mode that appears mid-press replaces the press's action. */
     const selectContext = (): string => [skipKind, skipTarget, view.phase, view.phase === "playing" || view.phase === "paused" ? view.upNext !== undefined : false, menuOpen, timeline, seekPreview !== undefined, autoRate, overlay.classList.contains("player-overlay-hidden"), skipUsable(), bufferingButtons().length, bufferingTarget].join("|");
     const onKey = (event: KeyboardEvent, released = false): void => {
-        const key = remoteKey(event);
+        const key = physicalKey(event);
         // Any other key, remote or not, ends a held Select.
         if (key !== "enter") selectHeld = undefined;
         if (key === undefined || view.phase === "closed") {
@@ -1625,7 +1627,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
 
     const onKeyUp = (event: KeyboardEvent): void => {
-        const key = remoteKey(event);
+        const key = physicalKey(event);
         if (key === "enter") {
             const held = selectHeld;
             selectHeld = undefined;

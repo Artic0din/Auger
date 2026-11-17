@@ -21,6 +21,10 @@ export interface BrowseHarness {
     /** Whether browse's container was still in the root when onChooseProfile ran. */
     readonly chooseProfileCalls: boolean[];
     signOutCalls: number;
+    /** Returns from the screen Switch Server opened over browse, once `onSwitchServer` has run. */
+    coverBack: (() => void) | undefined;
+    /** Offers Switch Server in the profile menu on the next mount. */
+    offerSwitchServer: boolean;
     lastKeyPrevented: boolean | undefined;
     connect(): Promise<void>;
     selectProfile(id: string, pin?: string): Promise<string>;
@@ -92,6 +96,8 @@ const harness: BrowseHarness = {
     themeEvents,
     chooseProfileCalls: [],
     signOutCalls: 0,
+    coverBack: undefined,
+    offerSwitchServer: false,
     lastKeyPrevented: undefined,
     async connect() {
         const result = await connect("https://silo.example.test", {
@@ -151,6 +157,7 @@ const harness: BrowseHarness = {
                 harness.chooseProfileCalls.push(root.querySelector(".browse") !== null);
             },
             ...(offerSignOut ? { onSignOut: () => { harness.signOutCalls++; } } : {}),
+            ...(harness.offerSwitchServer ? { onSwitchServer: (back: () => void) => { harness.coverBack = back; } } : {}),
         });
     },
     resume() {
