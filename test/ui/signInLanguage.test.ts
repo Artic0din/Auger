@@ -219,21 +219,23 @@ test("a language file landing while an address is typed waits for the typing to 
     });
 });
 
-test("a language file landing while an empty field is selected waits, since the TV keyboard may be open, and redraws when focus leaves it", async () => {
-    await withHeldGerman(async (tv, release) => {
-        const input = await tv.page.locator("#signin-address").elementHandle();
-        assert.ok(input);
-        // Select opens the TV keyboard on the field before a first character is typed.
-        await tv.page.locator("#signin-address").focus();
-        await tv.page.keyboard.press("Enter");
-        release();
-        await tv.page.waitForTimeout(300);
-        assert.equal(await headlineText(tv), "Enter your\nserver address", "still English while the keyboard may be open");
-        assert.equal(await input.evaluate(node => node.isConnected), true, "the field the TV keyboard edits is not replaced");
-        await tv.remote(40);
-        await tv.eventually(async () => await headlineText(tv) === text("setup.headline", "de"), "the screen redraws once focus leaves the field");
+for (const [name, select] of [["a key event", (tv: Tv) => tv.page.keyboard.press("Enter")], ["the remote's keyCode-only Select", (tv: Tv) => tv.remote(13)]] as const) {
+    test(`a language file landing while an empty field is selected with ${name} waits, since the TV keyboard may be open, and redraws when focus leaves it`, async () => {
+        await withHeldGerman(async (tv, release) => {
+            const input = await tv.page.locator("#signin-address").elementHandle();
+            assert.ok(input);
+            // Select opens the TV keyboard on the field before a first character is typed.
+            await tv.page.locator("#signin-address").focus();
+            await select(tv);
+            release();
+            await tv.page.waitForTimeout(300);
+            assert.equal(await headlineText(tv), "Enter your\nserver address", "still English while the keyboard may be open");
+            assert.equal(await input.evaluate(node => node.isConnected), true, "the field the TV keyboard edits is not replaced");
+            await tv.remote(40);
+            await tv.eventually(async () => await headlineText(tv) === text("setup.headline", "de"), "the screen redraws once focus leaves the field");
+        });
     });
-});
+}
 
 test("a redraw that waited for a field redraws when focus leaves it without a key release", async () => {
     await withHeldGerman(async (tv, release) => {

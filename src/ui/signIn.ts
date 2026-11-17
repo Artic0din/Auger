@@ -18,6 +18,7 @@ import { codeScreen, type CodeScreen } from "./codeScreen.ts";
 import { credentialsScreen, type CredentialsScreen } from "./credentialsScreen.ts";
 import { actionRow, chip, errorText, field, headline, keyboardCard, lead, marqueeButton, marqueeScreen, noteChips, setServerMark, setupNeededCard, textInput } from "./marquee.ts";
 import { MarqueeBackdrop, marqueeScene } from "./marqueeBackdrop.ts";
+import { physicalKey } from "./keys.ts";
 import { type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
 import { lateRedraw } from "./selectRelease.ts";
 import * as text from "./signInText.ts";
@@ -219,7 +220,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     // once it holds text or was selected (Select or a click opens the keyboard, even on an empty field); a field only focused by the screen is not.
     let selected: EventTarget | null = null;
     const onSelect = (event: Event): void => {
-        if (event.target instanceof HTMLInputElement && (event.type === "click" || (event as KeyboardEvent).key === "Enter")) selected = event.target;
+        if (event.target instanceof HTMLInputElement && (event.type === "click" || physicalKey(event as KeyboardEvent) === "enter")) selected = event.target;
     };
     const editing = (): boolean => document.activeElement instanceof HTMLInputElement && root.contains(document.activeElement) && (document.activeElement.value !== "" || document.activeElement === selected);
     let catalogWaiting = false;
