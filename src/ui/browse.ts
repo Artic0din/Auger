@@ -456,11 +456,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
-        if (!redraw) return;
-        render(focus);
-        // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
-        if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        if (redraw) {
+            render(focus);
+            // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+            if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        }
         // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        // A caller that shows the screen itself afterwards (Settings closing) still needs it, so it runs on this path too.
         shell.repaintShown();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
@@ -2894,7 +2896,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (titleArt !== undefined) presentation.acceptTitleArt(titleArt);
                 container.hidden = false;
                 shell.setShowAudiobooks(showAudiobooks.value);
-                reconcileLanguage(false);
                 presentation.reload();
                 resolutionCap.reload();
                 void navigation.reload();
@@ -2916,6 +2917,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // lands on Home.
                 for (const covered of stack) retireRoute(covered);
                 stack = [home];
+                // Home is the top route from here, so the marquee's repaint reads Home's enrichment, not the page that opened Settings.
+                reconcileLanguage(false);
                 host.listen();
                 showRoute(home, { zone: "nav", key: "home" });
                 const spoilersAfterSettings = episodeSpoilers?.settings;
