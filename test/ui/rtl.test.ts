@@ -472,3 +472,44 @@ test("the document's lang follows the shown language: ar for Arabic, and the def
         await waitForDirection(tv, null);
     });
 });
+
+test("in Arabic Left from season 1's first episode to season 2's last (Big Mood's S02E06) keeps every card on screen and shows season 2", async () => {
+    await withArabicSeries(2, 6, async tv => {
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').focus();
+        const trail: string[] = [];
+        for (let step = 1; step < 12; step++) {
+            await tv.remote(LEFT);
+            await tv.eventually(async () => (await tv.focused())?.startsWith("episode:rail:") === true, "an episode has focus");
+            const card = await onScreen(tv);
+            trail.push(`${await tv.focused()} ${Math.round(card?.left ?? NaN)}..${Math.round(card?.right ?? NaN)}`);
+            assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, trail.join(" | "));
+        }
+        assert.equal(await tv.focused(), "episode:rail:2:5", "the last episode, S02E06");
+        const pressed = await tv.page.locator('.details-season-chips .browse-button[aria-pressed="true"]').innerText();
+        assert.equal(pressed, "Season 2", "the season pills follow the focused episode");
+    });
+});
+
+test("Change Account, over Arabic browse, is marked lang=en on its own root while the document says ar", async () => {
+    await withSignedInTv(browser, async tv => {
+        // The document's language is set by hand: the cover screen is what is under test, not the language.
+        await tv.page.evaluate(() => { document.documentElement.setAttribute("lang", "ar"); document.documentElement.setAttribute("dir", "rtl"); });
+        await openChangeAccount(tv);
+        const langs = await tv.page.evaluate(() => ({
+            document: document.documentElement.getAttribute("lang"),
+            screen: document.querySelector('[data-view="change-account"]')?.getAttribute("lang") ?? null,
+            direction: getComputedStyle(document.querySelector('[data-view="change-account"]') as Element).direction,
+        }));
+        assert.deepEqual(langs, { document: "ar", screen: "en", direction: "rtl" }, "English text, mirrored layout");
+    });
+});
+
+test("the sign-in and profile screens (Add Profile among them) are marked lang=en while the document says ar", async () => {
+    const tv = await openTv(browser);
+    try {
+        await tv.page.evaluate(() => { document.documentElement.setAttribute("lang", "ar"); document.documentElement.setAttribute("dir", "rtl"); });
+        await tv.page.locator("section.signin-screen").first().waitFor();
+        const langs = await tv.page.evaluate(() => Array.from(document.querySelectorAll("section.signin-screen")).map(node => node.getAttribute("lang")));
+        assert.ok(langs.length > 0 && langs.every(lang => lang === "en"), JSON.stringify(langs));
+    } finally { await tv.page.context().close(); }
+});
