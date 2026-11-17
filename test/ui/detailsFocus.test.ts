@@ -315,7 +315,8 @@ test("an empty episode response keeps series entry passive until playback detail
         await tv.page.locator('[data-view="home"] [data-focus="series:s1"]').first().focus();
         for (const hold of prefetch) hold.release();
         // The recorder below must see only the entry into Details, so let that repaint and its focus restore finish first.
-        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home prefetch answers delivered");
+        // Nothing else is held yet (the playback read is made on entry), and a just-released hold still counts as held until its promise settles.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home prefetch answers delivered");
         await afterPaint(tv);
         await tv.eventually(async () => await tv.focused() === "series:s1", "Home card focused after the repaint");
         await tv.page.evaluate(() => {
