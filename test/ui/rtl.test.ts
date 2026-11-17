@@ -98,6 +98,9 @@ const categoriesLead = (tv: Tv, side: "left" | "right"): Promise<void> => tv.eve
     return side === "left" ? categories < rows : categories > rows;
 }, `the categories lead on the ${side}`);
 
+/** The first forward chevron's transform once the repaint has drawn it (a node read mid-repaint has none). */
+const chevronTransform = (tv: Tv, expected: string): Promise<void> => tv.eventually(async () => await tv.page.locator(".settings .settings-chevron").first().evaluate(node => getComputedStyle(node).transform) === expected, `chevron transform ${expected}`);
+
 async function openSettings(tv: Tv): Promise<void> {
     await tv.page.locator('[data-focus="profiles"]').focus();
     await tv.page.keyboard.press("Enter");
@@ -116,14 +119,14 @@ test("picking Arabic in Settings mirrors the page in the repaint that changes it
         await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() !== "Settings", "Settings in Arabic");
         await categoriesLead(tv, "right");
         // The row's forward chevron points the way a forward chevron does in Arabic.
-        assert.equal(await tv.page.locator(".settings .settings-chevron").first().evaluate(node => getComputedStyle(node).transform), "matrix(-1, 0, 0, 1, 0, 0)");
+        await chevronTransform(tv, "matrix(-1, 0, 0, 1, 0, 0)");
 
         await tv.page.locator('[data-focus="app-language"]').click();
         await tv.page.getByRole("radio", { name: "English", exact: true }).click();
         await waitForDirection(tv, null);
         await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === "Settings", "Settings in English");
         await categoriesLead(tv, "left");
-        assert.equal(await tv.page.locator(".settings .settings-chevron").first().evaluate(node => getComputedStyle(node).transform), "none");
+        await chevronTransform(tv, "none");
     });
 });
 
@@ -409,3 +412,22 @@ test("Change Account, opened from the profile menu in a right-to-left page, is m
         assert.ok(screen.rail > screen.pane, `the server rail leads on the right (${screen.rail} vs ${screen.pane})`);
     });
 });
+
+for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
+    test(`${language === "ar" ? "in Arabic" : "in English"} Details' compressed text title keeps its edge on the column's leading side`, async () => {
+        await withHome(options, async tv => {
+            if (language === "ar") await waitForDirection(tv, "rtl");
+            await tv.page.locator('[data-section="recent/12"] [data-focus]').nth(1).focus();
+            await tv.page.keyboard.press("Enter");
+            await tv.page.locator(".details-editorial .requests-title-primary").waitFor();
+            const edges = await tv.page.evaluate(() => {
+                const title = document.querySelector(".details-editorial .requests-title-primary")?.getBoundingClientRect();
+                const column = document.querySelector(".details-editorial")?.getBoundingClientRect();
+                return title === undefined || column === undefined ? undefined : { title: { left: title.left, right: title.right }, column: { left: column.left, right: column.right } };
+            });
+            assert.ok(edges !== undefined);
+            if (language === "ar") assert.ok(Math.abs(edges.title.right - edges.column.right) <= 2, `title right ${edges.title.right}, column right ${edges.column.right}`);
+            else assert.ok(Math.abs(edges.title.left - edges.column.left) <= 2, `title left ${edges.title.left}, column left ${edges.column.left}`);
+        });
+    });
+}

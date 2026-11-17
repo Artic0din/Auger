@@ -1437,6 +1437,8 @@ svg.library-empty-icon { width: auto; }
 .details-editorial .requests-title-primary { width: 139.8601%; transform: scaleX(.715); font-size: calc(92px * var(--silo-sf-cap-scale)); }
 /* Apple's 1.5 subtitle tracking is outside the compression, so Inter's sits inside the scale at 1.5 / .69. */
 .details-editorial .requests-title-secondary { width: 144.9275%; transform: scaleX(.69); font-size: calc(40px * var(--silo-sf-cap-scale)); letter-spacing: 2.17px; color: rgba(255,255,255,.95); }
+/* The title is compressed about its leading edge, which is the right one when Details is mirrored. */
+:root[dir="rtl"] .details-editorial :is(.requests-title-primary, .requests-title-secondary) { transform-origin: right; }
 /* heroCredit: 23 regular, white .70, one line. */
 .details-editorial .details-director { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(23px * var(--silo-sf-cap-scale)); font-weight: 400; color: rgba(255,255,255,.7); }
 /* TVPlaybackSelectionSummaryView: label 23 bold, tracking 0.9, white .48; value 23 medium, white .82. */
