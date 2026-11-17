@@ -2064,8 +2064,12 @@ svg.library-empty-icon { width: auto; }
 .watch-party-ui .watch-party-button[aria-disabled="true"] { opacity: .45; }
 .watch-party-ui .watch-party-button:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
 .watch-party-icon { flex: none; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; }
-.watch-party-ui .watch-party-input { box-sizing: border-box; width: 100%; height: 76px; margin: 0; padding: 0 30px; border: 0; border-radius: 14px; font-size: 29px; background: rgba(255,255,255,.1); }
-.watch-party-ui .watch-party-input:focus { background: rgba(255,255,255,.22); box-shadow: 0 0 0 4px rgba(255,255,255,.55); }
+/* Apple's tvOS join field is a plain system TextField (its 14 pt fill and border sit inside #if os(iOS)): no box at rest, hint and text centred,
+   hint at 0.32 white and 29 px regular as read off the Apple TV capture, and lit like the pills when focused. Only the look is Apple's; typing stays on the Samsung keyboard. */
+.watch-party-ui .watch-party-input { box-sizing: border-box; width: 100%; height: 76px; margin: 0; padding: 0 30px; border: 0; border-radius: 14px; font-size: 29px; text-align: center; background: transparent; box-shadow: none; }
+.watch-party-ui .watch-party-input::placeholder { color: rgba(255,255,255,.32); }
+.watch-party-ui .watch-party-input:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
+.watch-party-ui .watch-party-input:focus::placeholder { color: rgba(0,0,0,.4); }
 /* Room pages: the lobby and the sheets, picker and invitation it opens. */
 .watch-party-ui .watch-party-code-pill { display: inline-flex; align-items: center; gap: 15px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 40px; border: 0; border-radius: 50px; background: rgba(0,0,0,.52); color: #fff; }
 .watch-party-ui .watch-party-code-pill:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }

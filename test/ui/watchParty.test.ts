@@ -113,14 +113,14 @@ test("turning the toggle off removes the entry again", async () => {
     } finally { await tv.page.context().close(); }
 });
 
-test("the hub is a root page under the bar with Apple's copy, Host and Join sections, and focus on Start a party", async () => {
+test("the hub is a full-screen page with no top bar, Apple's copy, Host and Join sections, and focus on Start a party", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
         await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
         await openHub(tv);
-        assert.equal(await tv.page.locator(".browse-nav").count(), 1, "the top bar stays");
-        assert.equal(await button(tv, "home").getAttribute("aria-current"), "page", "the tab underneath stays selected");
+        // Apple pushes the hub (navigateFromBar(.watchParty)), and TVMainTabView draws its bar only while the stack is empty.
+        assert.equal(await tv.page.locator(".browse-nav").count(), 0, "no top bar over the hub");
         assert.equal(await tv.page.locator(".watch-party-title").textContent(), "Watch something\ntogether");
         assert.equal(await tv.page.locator(".watch-party-body").textContent(), "Pick a title, share the code, and everyone's playback stays in step.");
         assert.deepEqual(await tv.page.locator(".watch-party-eyebrow").allTextContents(), ["Watch Party", "Host", "Join"]);
@@ -134,7 +134,7 @@ test("the hub is a root page under the bar with Apple's copy, Host and Join sect
     } finally { await tv.page.context().close(); }
 });
 
-test("remote order walks Start a party, vote and the code field, reaches Join party once a code is typed, and Up from the first row reaches the bar", async () => {
+test("remote order walks Start a party, vote and the code field, reaches Join party once a code is typed, and Up from the first row stays put", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
@@ -149,10 +149,55 @@ test("remote order walks Start a party, vote and the code field, reaches Join pa
         await tv.remote(38); await tv.remote(38); await tv.remote(38);
         assert.equal(await tv.focused(), "create");
         await tv.remote(38);
-        assert.equal(await tv.focused(), "home", "Up from the first row reaches the bar");
+        assert.equal(await tv.focused(), "create", "with no bar above, Up from the first row keeps focus on it");
         await tv.remote(10009);
         await tv.page.locator('.browse[data-view="home"]').waitFor();
-        assert.equal(await tv.focused(), "home", "Back from the bar returns to the tab underneath");
+        assert.equal(await tv.focused(), "home", "Back returns to the tab it opened over, with focus on the bar (barOwnsFocusOnPopToRoot)");
+    } finally { await tv.page.context().close(); }
+});
+
+test("Back on the code field leaves the hub for the tab it opened over", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        await tv.remote(40); await tv.remote(40);
+        assert.equal(await tv.focused(), "code");
+        await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        assert.equal(await tv.focused(), "home");
+    } finally { await tv.page.context().close(); }
+});
+
+test("the code field keeps the Samsung keyboard and takes Apple's tvOS text field look: no box at rest, hint centred, a lit pill when focused", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        const look = () => tv.page.evaluate(() => {
+            const field = document.querySelector<HTMLInputElement>('[data-focus="code"]');
+            if (field === null) throw new Error("no code field");
+            const own = getComputedStyle(field), hint = getComputedStyle(field, "::placeholder");
+            return { focused: document.activeElement === field, type: field.type, tag: field.tagName, align: own.textAlign, background: own.backgroundColor, shadow: own.boxShadow, border: own.borderTopWidth, color: own.color, hint: hint.color, width: field.getBoundingClientRect().width };
+        });
+        const rest = await look();
+        assert.equal(rest.tag, "INPUT", "text entry stays the platform input, so the Samsung keyboard opens");
+        assert.equal(rest.type, "text");
+        assert.equal(rest.align, "center", "the hint is centred");
+        assert.equal(rest.background, "rgba(0, 0, 0, 0)", "no filled box at rest");
+        assert.equal(rest.shadow, "none");
+        assert.equal(rest.border, "0px");
+        assert.equal(rest.hint, "rgba(255, 255, 255, 0.32)", "dim hint, measured from the Apple TV capture");
+        assert.equal(rest.width, 640, "the field spans the join column");
+        await tv.remote(40); await tv.remote(40);
+        assert.equal(await tv.focused(), "code");
+        const lit = await look();
+        assert.equal(lit.focused, true);
+        assert.equal(lit.background, "rgb(255, 255, 255)", "focus lights the field like the pill buttons");
+        assert.equal(lit.color, "rgb(0, 0, 0)");
+        assert.equal(lit.align, "center");
     } finally { await tv.page.context().close(); }
 });
 
