@@ -170,7 +170,7 @@ test("Back on the code field leaves the hub for the tab it opened over", async (
     } finally { await tv.page.context().close(); }
 });
 
-test("the code field keeps the Samsung keyboard and takes Apple's tvOS text field look: no box at rest, hint centred, a lit pill when focused", async () => {
+test("the code field keeps the Samsung keyboard and takes Apple's tvOS text field look: no box at rest, a light capsule when focused, the hint at the start", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
@@ -179,25 +179,44 @@ test("the code field keeps the Samsung keyboard and takes Apple's tvOS text fiel
         const look = () => tv.page.evaluate(() => {
             const field = document.querySelector<HTMLInputElement>('[data-focus="code"]');
             if (field === null) throw new Error("no code field");
-            const own = getComputedStyle(field), hint = getComputedStyle(field, "::placeholder");
-            return { focused: document.activeElement === field, type: field.type, tag: field.tagName, align: own.textAlign, background: own.backgroundColor, shadow: own.boxShadow, border: own.borderTopWidth, color: own.color, hint: hint.color, width: field.getBoundingClientRect().width };
+            const own = getComputedStyle(field), hint = getComputedStyle(field, "::placeholder"), box = field.getBoundingClientRect();
+            return { focused: document.activeElement === field, type: field.type, tag: field.tagName, align: own.textAlign, background: own.backgroundColor, shadow: own.boxShadow, border: own.borderTopWidth, radius: own.borderTopLeftRadius, padding: own.paddingLeft, color: own.color, hint: hint.color, left: box.left, width: box.width, height: box.height };
         });
         const rest = await look();
         assert.equal(rest.tag, "INPUT", "text entry stays the platform input, so the Samsung keyboard opens");
         assert.equal(rest.type, "text");
-        assert.equal(rest.align, "center", "the hint is centred");
+        assert.equal(rest.align, "left", "the hint sits at the start, 30 px in, as Apple TV shows it");
+        assert.equal(rest.padding, "30px");
         assert.equal(rest.background, "rgba(0, 0, 0, 0)", "no filled box at rest");
         assert.equal(rest.shadow, "none");
         assert.equal(rest.border, "0px");
         assert.equal(rest.hint, "rgba(255, 255, 255, 0.32)", "dim hint, measured from the Apple TV capture");
-        assert.equal(rest.width, 640, "the field spans the join column");
+        // Apple TV's field frame, from its accessibility hierarchy: 648 by 73, reaching 4 px past the 640 column on each side.
+        assert.deepEqual([rest.left, rest.width, rest.height], [1136, 648, 73]);
         await tv.remote(40); await tv.remote(40);
         assert.equal(await tv.focused(), "code");
         const lit = await look();
         assert.equal(lit.focused, true);
-        assert.equal(lit.background, "rgb(255, 255, 255)", "focus lights the field like the pill buttons");
+        assert.equal(lit.background, "rgb(231, 231, 231)", "Apple TV's focused field is a light grey capsule");
+        assert.equal(lit.radius, "36.5px", "a capsule, half the 73 px height");
+        assert.equal(lit.shadow, "none", "no shadow on Apple TV");
         assert.equal(lit.color, "rgb(0, 0, 0)");
-        assert.equal(lit.align, "center");
+        assert.equal(lit.hint, "rgb(179, 179, 185)");
+        assert.equal(lit.align, "left");
+    } finally { await tv.page.context().close(); }
+});
+
+test("the hub's content runs 140 to 1780 px, as on Apple TV: the 88 pt page inset plus the 52 px of a pushed route's safe area", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        const edges = await tv.page.evaluate(() => {
+            const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+            return { intro: box(".watch-party-intro")?.left, actions: box(".watch-party-actions")?.left, actionsRight: box(".watch-party-actions")?.right, actionsWidth: box(".watch-party-actions")?.width };
+        });
+        assert.deepEqual(edges, { intro: 140, actions: 1140, actionsRight: 1780, actionsWidth: 640 });
     } finally { await tv.page.context().close(); }
 });
 
