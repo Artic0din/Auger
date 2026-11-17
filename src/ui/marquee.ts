@@ -2,6 +2,8 @@
 // and MarqueeFields) for the sign-in screens: copy on the left, a glass card on the right. Icons are
 // drawn here as plain SVG strokes; the app ships no system symbol font.
 
+import { markEnglishOnly } from "../i18n/direction.ts";
+import { translate } from "../i18n/translate.ts";
 import { button, type Control, el, type Note } from "./screen.ts";
 import { KEYBOARD_TEXT, KEYBOARD_TITLE } from "./signInText.ts";
 
@@ -74,7 +76,9 @@ export function headline(text: string): HTMLHeadingElement {
 
 /** MarqueeTVBody: 28, secondary ink. */
 export function lead(text: string): HTMLParagraphElement {
-    return el("p", "marquee-lead", text);
+    const node = el("p", "marquee-lead", text);
+    markEnglishOnly(node, text);
+    return node;
 }
 
 /** MarqueeErrorText: inline under its control, never a banner. */
@@ -82,7 +86,9 @@ export function errorText(text: string): HTMLParagraphElement {
     const node = el("p", "marquee-error");
     node.setAttribute("role", "alert");
     node.appendChild(icon("alert"));
-    node.appendChild(el("span", "", text));
+    const message = el("span", "", text);
+    markEnglishOnly(message, text);
+    node.appendChild(message);
     return node;
 }
 
@@ -92,7 +98,9 @@ export function chip(text: string, glyph: IconName | undefined, role?: "status" 
     if (glyph !== undefined) {
         node.appendChild(icon(glyph));
     }
-    node.appendChild(el("span", "", text));
+    const label = el("span", "", text);
+    markEnglishOnly(label, text);
+    node.appendChild(label);
     if (role !== undefined) {
         node.setAttribute("role", role);
     }
@@ -139,7 +147,7 @@ export function serverCard(name: string, address: string, secure: boolean, markU
     names.appendChild(el("div", "marquee-server-address", address));
     const badge = el("div", secure ? "marquee-badge" : "marquee-badge marquee-badge-warning");
     badge.appendChild(icon(secure ? "lock" : "lockOpen"));
-    badge.appendChild(el("span", "", secure ? "Secure" : "HTTP"));
+    badge.appendChild(el("span", "", translate(secure ? "firstRun.badge.secure" : "firstRun.badge.http")));
     for (const child of [mark, names, badge]) {
         node.appendChild(child);
     }
@@ -259,5 +267,12 @@ export function actionRow(controls: readonly Control[]): HTMLElement {
 
 /** The supported keyboard equivalent of TVTypeOnPhoneCard. */
 export function keyboardCard(): HTMLElement {
-    return card([cardSymbol("keyboard"), el("h2", "marquee-card-title", KEYBOARD_TITLE), el("p", "marquee-card-text", KEYBOARD_TEXT)]);
+    // This text has no Apple key, so it is English in every language: its own language and direction keep a right-to-left page from moving its full stop to the front.
+    const title = el("h2", "marquee-card-title", KEYBOARD_TITLE);
+    const body = el("p", "marquee-card-text", KEYBOARD_TEXT);
+    for (const node of [title, body]) {
+        node.setAttribute("lang", "en");
+        node.setAttribute("dir", "ltr");
+    }
+    return card([cardSymbol("keyboard"), title, body]);
 }

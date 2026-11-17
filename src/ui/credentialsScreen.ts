@@ -4,6 +4,7 @@
 // a field reaches the next row, Right from the password reaches show/hide, and the TV keyboard's
 // Done moves on as Down does.
 
+import { translate } from "../i18n/translate.ts";
 import { actionRow, errorText, field, headline, keyboardCard, lead, marqueeButton, marqueeScreen, noteChips, serverCard, textInput } from "./marquee.ts";
 import { type Control, el, type Note, type Screen } from "./screen.ts";
 import * as text from "./signInText.ts";
@@ -43,9 +44,9 @@ export interface CredentialsScreen extends Screen {
 }
 
 export function credentialsScreen(view: CredentialsView): CredentialsScreen {
-    const username = textInput("signin-username", "username", "Username", "Username", view.username);
+    const username = textInput("signin-username", "username", translate("tvSignIn.form.usernamePlaceholder"), translate("tvSignIn.form.usernamePlaceholder"), view.username);
     username.autocomplete = "username";
-    const password = textInput("signin-password", "secret", "Password", "Password", view.password);
+    const password = textInput("signin-password", "secret", translate("tvSignIn.form.passwordPlaceholder"), translate("tvSignIn.form.passwordPlaceholder"), view.password);
     password.type = view.shown ? "text" : "password";
     password.autocomplete = "current-password";
     const usernameError = view.errorField === "username";
@@ -62,7 +63,7 @@ export function credentialsScreen(view: CredentialsView): CredentialsScreen {
 
     const toggle = marqueeButton("toggle", "", "glass", view.toggle, { glyph: view.shown ? "eyeSlash" : "eye" });
     toggle.element.classList.add("signin-toggle");
-    toggle.element.setAttribute("aria-label", view.shown ? "Hide password" : "Show password");
+    toggle.element.setAttribute("aria-label", translate(view.shown ? "signIn.hidePassword" : "signIn.showPassword"));
 
     const passwordRow = el("div", "signin-password-row");
     passwordRow.appendChild(field(password, "lock", passwordError));
@@ -80,12 +81,12 @@ export function credentialsScreen(view: CredentialsView): CredentialsScreen {
     hint.hidden = view.hint === undefined || view.error?.includes(view.hint) === true;
     lines.push(hint);
 
-    const signIn = marqueeButton("signin", view.submitting ? "Signing in…" : "Sign in", "primary", view.submit, { loading: view.submitting });
+    const signIn = marqueeButton("signin", translate(view.submitting ? "tvSignIn.form.submitting" : "tvSignIn.form.submit"), "primary", view.submit, { loading: view.submitting });
     const row: Control[] = [signIn];
     if (view.phone !== undefined) {
-        row.push(marqueeButton("phone", "Use your phone instead", "plain", view.phone, { glyph: "qrcode" }));
+        row.push(marqueeButton("phone", translate("tvSignIn.form.usePhone"), "plain", view.phone, { glyph: "qrcode" }));
     }
-    row.push(marqueeButton("change", view.changeLabel ?? "Change server", "plain", view.change));
+    row.push(marqueeButton("change", view.changeLabel ?? translate("common.changeServer"), "plain", view.change));
     // Nothing else may start, or leave, while a sign-in is in flight.
     for (const control of row.slice(1)) {
         control.element.toggleAttribute("disabled", view.submitting);
@@ -101,14 +102,14 @@ export function credentialsScreen(view: CredentialsView): CredentialsScreen {
     const copy = [
         ...noteChips(view.notes),
         serverCard(view.serverName, view.host, view.secure, view.markUrl),
-        headline(text.PASSWORD_TITLE),
+        headline(text.passwordTitle()),
         body,
         fields,
         ...lines,
         actionRow(row),
     ];
     return {
-        name: "credentials", content: marqueeScreen(copy, keyboardCard()), controls, focus: "username", back: () => back(),
+        name: "credentials", content: marqueeScreen(copy, keyboardCard()), controls, focus: "username", back: () => back(), translated: true,
         usePasswordOnly: () => {
             body.textContent = text.passwordLead(view.serverName, true);
             hint.textContent = "";

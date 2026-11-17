@@ -3,6 +3,7 @@
 // more only once the cards near the end are on screen. Focus moves never read; scrolling does.
 
 import type { Card, CatalogPage } from "../contracts/v2/catalog.ts";
+import { textLanguage } from "../i18n/translate.ts";
 import type { FocusItem, Zone } from "./browseFocus.ts";
 import { cardItem, type ViewContext } from "./browseViews.ts";
 import { SPINNER_ICON } from "./requestsScene.ts";
@@ -23,6 +24,8 @@ interface FeedNode {
     more: () => void;
     readonly scale: number;
     readonly hidesImages: boolean;
+    /** The language the cards' text was written in: a card keeps its captions and ribbons, so a language that lands later needs new cards. */
+    readonly language: string;
     readonly overlays: ReturnType<NonNullable<ViewContext["cardOverlays"]>>;
 }
 
@@ -52,10 +55,11 @@ export function feedGrid(owner: object, page: CatalogPage, context: ViewContext,
     const scale = context.posterScale?.() ?? 1;
     const overlays = context.cardOverlays?.();
     const hidesImages = context.spoilers?.().hidesImages ?? false;
+    const language = textLanguage();
     const extends_ = feed !== undefined && feed.cards.length <= page.items.length && feed.cards.every((card, index) => page.items[index] === card);
-    if (feed === undefined || !extends_ || feed.scale !== scale || feed.overlays !== overlays || feed.hidesImages !== hidesImages) {
+    if (feed === undefined || !extends_ || feed.scale !== scale || feed.overlays !== overlays || feed.hidesImages !== hidesImages || feed.language !== language) {
         feed?.observer?.disconnect();
-        feed = { node: el("div", "browse-grid catalog-grid"), cards: [], items: [], observer: undefined, watched: 0, failedTop: undefined, more, scale, overlays, hidesImages };
+        feed = { node: el("div", "browse-grid catalog-grid"), cards: [], items: [], observer: undefined, watched: 0, failedTop: undefined, more, scale, overlays, hidesImages, language };
         feeds.set(owner, feed);
     }
     feed.node.style.setProperty("--grid-columns", String(columns));

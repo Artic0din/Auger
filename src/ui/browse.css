@@ -274,7 +274,7 @@
 .details-facts .browse-text { padding: 12px; font-size: 24px; border: 2px solid transparent; border-radius: 12px; }
 .details-facts .browse-text:focus { outline: none; border-color: #fff; }
 /* tvOS person portrait is 300×450, not the 260×390 poster. siloSmall capsules, 12px radius. */
-.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
+.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 0; margin-inline-end: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
 /* PersonDetailView.swift:466 pads the name column 10pt. The name at line 451 is
    .system(size: 72, weight: .bold). That face's line height is 84.796875
    (ascender 69.609375, descender -15.1875, leading 0) and SwiftUI lays the
@@ -1021,6 +1021,8 @@
 /* The text layer swaps with no animation; the backdrop layer under it crossfades easeInOut(0.24)
    (silo-apple 85679e7 TVRootHeroBackdrop.swift:160, :188-191; SiloTheme.swift:304). */
 .skyline-marquee-layer { position: absolute; bottom: 0; inset-inline-start: 0; width: 880px; }
+/* Always a stacking context at the art's depth: the fade's opacity would otherwise make it one above the shared top scrim until the animation ends. */
+.skyline-marquee-art { position: absolute; z-index: -2; }
 .skyline-art-enter { animation: skyline-appear 240ms ease-in-out; }
 .skyline-art-leave { animation: skyline-leave 240ms ease-in-out forwards; }
 .skyline-backdrop, .skyline-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 1080px; z-index: -2; }
@@ -1097,8 +1099,12 @@ svg.library-empty-icon { width: auto; }
 .skyline-home .home-section + .home-section { margin-top: 10px; }
 .skyline-home .skyline-marquee { top: 256px; }
 .skyline-home .home-section .browse-row { margin-inline-start: -80px; padding-inline-start: 80px; --reveal-end: 80px; }
-.skyline-home .skyline-hero-backdrop { position: fixed; inset: 0; width: 1920px; height: 1080px; z-index: -2; pointer-events: none; }
+/* The layer is the artwork's own box: the wash and the top scrim are shared, so it is not a full-screen layer. */
+.skyline-home .skyline-hero-backdrop { position: fixed; top: 0; inset-inline-start: 691.2px; width: 1228.8px; height: 756px; z-index: -2; pointer-events: none; }
+.skyline-hero-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 190px; z-index: -1; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent); }
+.skyline-home .skyline-hero-backdrop .skyline-art-frame { inset-inline-start: 0; }
 .skyline-home .skyline-tint-wash { position: absolute; inset: 0; background: #000; }
+.skyline-wash { position: fixed; top: 0; left: 0; width: 1920px; height: 1080px; z-index: -3; pointer-events: none; }
 .skyline-home .skyline-art-frame, .details-hero .skyline-art-frame { position: absolute; top: 0; left: 691.2px; width: 1228.8px; height: 756px; overflow: hidden; mask-image: linear-gradient(to bottom, #000 0%, #000 38%, rgba(0,0,0,.88) 52%, rgba(0,0,0,.58) 68%, rgba(0,0,0,.24) 81%, transparent 90%); }
 .skyline-home .skyline-backdrop, .details-hero .skyline-backdrop { position: static; display: block; width: 100%; height: 100%; object-fit: cover; mask-image: linear-gradient(to left, #000 0%, #000 32%, transparent 100%); }
 /* Right to left: the hero artwork moves to the screen's left edge and fades toward the text, which moves to the right. */
@@ -1822,8 +1828,8 @@ svg.library-empty-icon { width: auto; }
 .personal-lists .personal-grid .browse-card:focus { transform: none; border-color: transparent; box-shadow: none; }
 .personal-lists .personal-grid .browse-art { width: 176px; height: 264px; border-radius: 12px; transition: transform 120ms ease-out, box-shadow 120ms ease-out; }
 .personal-lists .personal-grid .browse-card:focus .browse-art { transform: scale(1.05); box-shadow: 0 8px 18px rgba(0,0,0,.45), 0 0 0 4px rgba(255,255,255,.7); }
-.personal-lists .personal-grid .browse-card-title { margin: 22px 0 0; padding: 0; font: 500 24px/29px var(--silo-font); color: rgba(237,237,237,.45); text-align: start; transition: color 120ms ease-out, text-shadow 120ms ease-out; }
-.personal-lists .personal-grid .browse-card-subtitle { margin: 4px 0 0; padding: 0; font: 400 20px/24px var(--silo-font); color: rgba(237,237,237,.32); text-align: start; transition: color 120ms ease-out, text-shadow 120ms ease-out; }
+.personal-lists .personal-grid .browse-card-title { margin: 22px 0 0; padding: 0; font: 500 24px/29px var(--silo-font); color: rgba(237,237,237,.45); transition: color 120ms ease-out, text-shadow 120ms ease-out; }
+.personal-lists .personal-grid .browse-card-subtitle { margin: 4px 0 0; padding: 0; font: 400 20px/24px var(--silo-font); color: rgba(237,237,237,.32); transition: color 120ms ease-out, text-shadow 120ms ease-out; }
 .personal-lists .personal-grid .browse-card:focus .browse-card-title { color: #fff; font-weight: 500; text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
 .personal-lists .personal-grid .browse-card:focus .browse-card-subtitle { color: rgba(255,255,255,.92); font-weight: 400; text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
 .personal-lists .personal-loading,
@@ -1869,7 +1875,8 @@ svg.library-empty-icon { width: auto; }
 .personal-history .catalog-grid { grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; width: 1664px; margin: 0; padding: 0; }
 .personal-history .catalog-grid .browse-card { --card-caption-gap: 22px; }
 .personal-history .catalog-grid .browse-card-title { margin-top: 22px; }
-.personal-history .catalog-grid :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
+/* Left to right the text starts at the left; right to left the shared server-text rule at the top of this file aligns it by the layout, as SwiftUI's Text is. */
+:root:not([dir="rtl"]) :is(.personal-lists .personal-grid, .personal-history .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
 
 /* ErrorView, shared with the Requests hub: 48pt icon, 36 semibold headline, 26 body, Try Again 200 wide. */
 .personal-lists .personal-failure,
@@ -1910,7 +1917,7 @@ svg.library-empty-icon { width: auto; }
 .browse[data-view^="person:"] .person-filmography-filters .browse-button:focus { outline: none; background: rgba(14, 15, 18, 0.8); color: var(--silo-text); border-color: rgba(237, 237, 237, 0.85); box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.85); transform: scale(1.06); }
 .browse[data-view^="person:"] .person-filmography-filters .browse-button[aria-pressed="true"]:focus { background: #0e0f12; }
 /* Six 260px cards 40px apart run 160px past the content box to the screen edge, as on Apple TV; the negative right margin keeps that inside the scroll width. */
-.browse[data-view^="person:"] .browse-grid { width: auto; margin: 0 -160px 0 0; padding: 0; grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; }
+.browse[data-view^="person:"] .browse-grid { width: auto; margin: 0; margin-inline-end: -160px; padding: 0; grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; }
 /* PersonDetailView.swift:440 pads the scroll content 72pt at the bottom. The focus
    viewport also excludes tvOS's 60px vertical safe area, so the shared scroll owner
    keeps the focused card 132px above the screen. The generic 32px margin (92px with

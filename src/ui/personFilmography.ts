@@ -1,9 +1,12 @@
+import type { CatalogPage } from "../contracts/v2/catalog.ts";
 import type { CatalogQueryRequest, MediaScope } from "../contracts/v2/discovery.ts";
 import type { View, Zone } from "./browseFocus.ts";
 import { type Route, type RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, errorView, FAILURE_ICON, failureError, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
 import { feedGrid } from "./catalogFeed.ts";
 import { personHero } from "./browseDetails.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 
 const PERSON_PAGE_SIZE = 60;
@@ -16,6 +19,12 @@ export function personQuery(id: string, filter: MediaScope, cursor?: string): Ca
     return { source: "person", person_id: id, type: filter, sort: "year", order: "desc", limit: PERSON_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) };
 }
 
+/** Apple's `library.titleCount` for an exact total. An estimate keeps "About N titles": Apple writes "N+ titles" there, which is not the text shown today. */
+function titleCount(page: CatalogPage): string {
+    const total = page.total ?? page.items.length;
+    return page.totalExact ? translate("library.titleCount", { count: total, count_text: integerText(total) }) : `About ${total} ${total === 1 ? "title" : "titles"}`;
+}
+
 export function personFilmographyView(route: Extract<Route, { kind: "person" }>, handlers: RouteHandlers): View {
     // Apple rootContent (PersonDetailView.swift:358-359): with no person, the failed read is the whole page's ErrorView.
     if (route.data === undefined && route.metadataFailure !== undefined) {
@@ -23,14 +32,14 @@ export function personFilmographyView(route: Extract<Route, { kind: "person" }>,
     }
     const empty = (route.pages.page?.items.length ?? 0) === 0;
     const filters = (route.availableFilters ?? ["video", "movie", "series"] as const).map(filter => {
-        const item = actionButton(`filter:${filter}`, filter === "video" ? "All" : filter === "movie" ? "Movies" : "Series", () => handlers.personFilter(route, filter));
+        const item = actionButton(`filter:${filter}`, translate(filter === "video" ? "person.filter.all" : filter === "movie" ? "person.filter.movies" : "person.filter.series"), () => handlers.personFilter(route, filter));
         item.element.setAttribute("aria-pressed", String(route.filter === filter));
         return item;
     });
     const title = el("div", "person-filmography-heading");
-    title.appendChild(el("h2", "browse-section-title", "Filmography"));
+    title.appendChild(el("h2", "browse-section-title", translate("person.filmography")));
     const page = route.pages.page;
-    if (page !== undefined) title.appendChild(el("span", "person-title-count", `${page.totalExact ? "" : "About "}${page.total} ${page.total === 1 ? "title" : "titles"}`));
+    if (page !== undefined) title.appendChild(el("span", "person-title-count", titleCount(page)));
     const person = route.data?.person ?? { id: route.id, name: route.title, bio: undefined, photoUrl: undefined, photoThumbhash: undefined, birthDate: undefined, deathDate: undefined, birthplace: undefined };
     const content = [personHero(person, handlers.context.baseUrl, route.metadataLoading === true || route.metadataRefresh?.refreshing === true || route.data === undefined), title, zoneNode("skyline-pills person-filmography-filters", filters)];
     const zones: Zone[] = [{ id: "filters", layout: "row", spatial: "aligned", items: filters }];
@@ -50,7 +59,7 @@ export function personFilmographyView(route: Extract<Route, { kind: "person" }>,
         const columns = handlers.gridColumns;
         if (page.items.length === 0 && route.failure === undefined) {
             // Apple EmptyStateView(icon: "film.stack"), at least 420pt tall (PersonDetailView.swift:417-423).
-            const state = searchState("No titles found", "There are no movies or series linked to this person yet.", "person-filmography-empty", FILM_STACK_ICON);
+            const state = searchState(translate("person.empty"), translate("person.emptyBody"), "person-filmography-empty", FILM_STACK_ICON);
             state.style.minHeight = `${MIN_FILMOGRAPHY_HEIGHT_PX}px`;
             content.push(state);
         }
