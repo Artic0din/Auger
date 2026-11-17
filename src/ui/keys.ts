@@ -1,5 +1,6 @@
 // Remote keys as Samsung TVs deliver them: plain keydown events with these key codes
 // (Remote Control guide). Escape stands in for Back on a desktop keyboard.
+import { readsRightToLeft } from "../i18n/direction.ts";
 
 export type RemoteKey = "up" | "down" | "left" | "right" | "enter" | "back" | "play_pause" | "play" | "pause" | "stop" | "rewind" | "fast_forward" | "ime_done" | "ime_cancel";
 
@@ -37,6 +38,19 @@ const BY_NAME: Readonly<Record<string, RemoteKey>> = {
     MediaFastForward: "fast_forward",
 };
 
-export function remoteKey(event: KeyboardEvent): RemoteKey | undefined {
+/** The key the remote sent, whatever the layout: what media transport reads (a rewind is on the left in every language). */
+export function physicalKey(event: KeyboardEvent): RemoteKey | undefined {
     return BY_CODE[event.keyCode] ?? BY_NAME[event.key];
+}
+
+const MIRRORED: Readonly<Partial<Record<RemoteKey, RemoteKey>>> = { left: "right", right: "left" };
+
+/**
+ * The key as the screen's layout reads it. Remote presses are physical; in a right-to-left layout the next item
+ * lies to the left, so Left and Right swap, as silo-apple's `MoveCommandDirection.inLayout` does, and every
+ * handler that steps "left" toward the start of a row or a column keeps doing so on the mirrored screen.
+ */
+export function remoteKey(event: KeyboardEvent): RemoteKey | undefined {
+    const key = physicalKey(event);
+    return key === undefined || !readsRightToLeft(event.target) ? key : MIRRORED[key] ?? key;
 }

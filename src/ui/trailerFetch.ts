@@ -2,6 +2,7 @@ import { sleep, systemClock, type Clock } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import type { ItemDetail } from "../contracts/v2/catalog.ts";
 import type { decodeTrailerRefresh } from "../contracts/v2/trailers.ts";
+import { translate } from "../i18n/translate.ts";
 import { trailerCards } from "./trailerRail.ts";
 
 const POLL_MS = 3000;
@@ -71,10 +72,10 @@ export class TrailerFetch {
     private launch(post: boolean): void {
         this.dismiss?.();
         const controller = new AbortController(); this.controller = controller;
-        this.fetching = true; this.message = "Finding trailers…"; this.changed();
+        this.fetching = true; this.message = translate("detail.trailerFetch.finding"); this.changed();
         void this.run(post, controller).catch(error => {
             if (controller.signal.aborted) return;
-            this.finish(error instanceof ApiError && error.status === 429 ? "Please wait a moment and try again" : "Couldn't reach the server — try again", controller);
+            this.finish(error instanceof ApiError && error.status === 429 ? translate("detail.trailerFetch.rateLimited") : translate("detail.trailerFetch.failed"), controller);
         });
     }
 
@@ -94,7 +95,7 @@ export class TrailerFetch {
             const response = await this.request(controller.signal);
             if (controller.signal.aborted) return;
             if (response.status !== "queued") {
-                this.finish(response.status === "cooldown" ? "Trailers were checked recently" : response.status === "disabled" ? "Trailers are disabled for this library" : "No trailers found", controller);
+                this.finish(response.status === "cooldown" ? translate("detail.trailerFetch.cooldown") : response.status === "disabled" ? translate("detail.trailerFetch.disabled") : translate("detail.trailerFetch.notFound"), controller);
                 return;
             }
         }
@@ -117,7 +118,7 @@ export class TrailerFetch {
             signature = current;
             if (settled >= SETTLED_POLLS && this.clock.now() - started >= MINIMUM_OBSERVATION_MS) break;
         }
-        this.finish("No trailers found", controller);
+        this.finish(translate("detail.trailerFetch.notFound"), controller);
     }
 }
 

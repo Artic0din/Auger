@@ -192,7 +192,7 @@ Other layers:
 - Enter is delivered on every remote without registration, as `keydown` and `keyup`.
 - Select acts on release, as on tvOS: the focused control runs when Enter is released.
   `selectRelease.ts` marks the held control `data-pressed`.
-  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons, Settings rail and pane rows, server management rows, Acknowledgements Done, and Watch Party's Party options rows.
+  Controls with an Apple pressed look are cards, For You and profile menu rows, rail letters, Details pill and circle actions, PIN keys, Change Account rail rows and account cards, profile tiles (including Add), profile picker footer actions, Create Profile's Create, Cancel, Shuffle avatars and library Retry buttons, Settings rail and pane rows, server management rows, Acknowledgements Done, Watch Party's Party options rows, Request detail and Watch Party pill buttons, Series season pills, anchored episode cards and Details popover rows.
   Settings-style rows grow to `1.012` on focus with `120ms ease-out`, then snap to `0.98` while Select is held and snap back when the press ends; only focus changes animate.
   These values match [TVSettingsComponents.swift:208,214,272,279](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L208) and [Theme/SiloTheme.swift:164](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Theme/SiloTheme.swift#L164) at silo-apple `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`.
   Reduced motion removes the focus animation.
@@ -302,6 +302,26 @@ Reduced motion removes transitions and the tile, footer and primary focus growth
 `test/ui/accountsParity.test.ts` and `test/ui/profiles.test.ts` render each control focused and held, sample transition timing, and verify one activation on release in both motion modes.
 Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
 
+## Pill buttons and Details extras pressed looks
+
+Checked against upstream `Silo-Server/silo-apple` main at `dce56e3c5f0ad137ee8208fb79c7ffd0e9210135`.
+Each source file is inside `#if os(tvOS)`, or reaches this control through a tvOS branch.
+
+| Controls | Focus | Held Select | Apple source |
+| --- | --- | --- | --- |
+| Request detail actions (Request, status, Follow, Cancel) | Scale 1.025 (compact pill) | 0.98 of the focus scale, easeOut 0.12 s | [TVDetailActions.swift:737,745,771,775](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L737), [RequestDetailView.swift:398](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/Requests/Detail/RequestDetailView.swift#L398) |
+| Watch Party buttons | No scale (`stabilizesFocusMotion`) | 0.98, easeOut 0.12 s | [WatchPartyComponents.swift:389](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyComponents.swift#L389) |
+| Series season pills and the Watch Party picker's | No scale | 0.98, snapped | [TVSeriesDetailView.swift:1291](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L1291), [WatchPartyMediaPicker.swift:891](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyMediaPicker.swift#L891) |
+| Series episode cards (anchored rail) | Card lift 1.05 | Opacity 0.96, easeOut 0.12 s; the lift stays and the 0.97 art scale of plain cards does not apply | [TVEpisodeRail.swift:477-481,506](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVEpisodeRail.swift#L477-L481), [TVCardFocusStyle.swift:153,158](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Components/TVCardFocusStyle.swift#L153) |
+| Details popover rows | Row highlight | Opacity 0.94, snapped | [TVActionPopoverMenu.swift:128](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVActionPopoverMenu.swift#L128) |
+
+The press scale on pills is the individual CSS `scale` property, so it multiplies the focus `transform` and leaves the focus rules alone.
+`SiloTheme.fastDuration` is 0.12 s ([SiloTheme.swift:178](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Theme/SiloTheme.swift#L178)), which is `--silo-fast`, so Reduce Motion drops the animation and keeps the look.
+Request detail's Follow and Cancel pills now grow to 1.025 on focus like the main action, as the same style does on Apple TV.
+The Details Play and circle actions already had a press look; player controls, the end-of-playback deck and the Info HUD are still unmatched.
+`test/ui/support/pressed.ts` (`assertPressedLook`) renders each control focused and held, in both motion modes, and checks the look, its timing and that a cancelled press runs nothing.
+Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
+
 ## Reduced Motion
 
 The app honours `prefers-reduced-motion: reduce`.
@@ -316,6 +336,35 @@ Reduced motion changes how things move, never where focus lands or when.
 Focus moves use `focus({ preventScroll: true })` and the host scrolls via `SkylineScroll.reveal`, so the browser never scrolls on its own.
 Account chooser columns and the Accounts settings list use the same reveal owner to keep focused rows and Add actions visible.
 (`ScreenHost` uses a plain `focus()`.)
+
+## Right to Left
+
+Remote keys are physical.
+In Arabic the document is `dir="rtl"` ([translation.md](translation.md#right-to-left)) and `remoteKey` (`src/ui/keys.ts`) swaps Left and Right when the element that received the key is in an rtl layout (a view pinned `dir="ltr"` is not), as silo-apple's `MoveCommandDirection.inLayout` does, so `moveWithin`, `onLeft`, the menu flyout and Settings' panes keep their meaning on the mirrored screen: "left" is toward the start of the row, and "right" is past its end.
+Write new handlers in layout terms and never swap a key yourself.
+Code that must follow the remote's physical side, as the player's transport does, reads `physicalKey`.
+A horizontal scroll that sets `scrollLeft` handles a negative `scrollLeft` in a right-to-left row (`SkylineScroll.reveal`, `seasonOffset` and `episodeOffset` do: they return 0 to -range in an rtl row).
+
+### Physical-x geometry audit
+
+Swept once for #605 (`rg "getBoundingClientRect\(\)\.(left|right)|offsetLeft|scrollLeft"` over `src`). A focus or scroll calculation is safe when it compares centres or overlaps (symmetric), writes a physical coordinate it also reads, or branches on `getComputedStyle(row).direction`. Anything that asks "which is past this one" or "how far along" goes through `src/ui/inlineAxis.ts`.
+
+| Where | What it does | Right to left |
+| --- | --- | --- |
+| `browseFocus` `nearestItem`, `overlappingNearest`, `navigationX`, `centreAt` | nearest by centre x, overlap of two boxes | safe: symmetric |
+| `browseFocus` `columnAtOrPastCenter` (Search People to grid) | first column at or past the person's centre | was not safe; now `startsAtOrPast` (`inlineAxis.ts`). Search is pinned left to right today, so it runs the left-to-right branch |
+| `browseFocus` aligned landing (`spatial: "aligned"`, Person filmography filters) | the intersecting item closest to the focused item's start edge (its left edge left to right, its right edge right to left) | was not safe; now `startOffset` (`inlineAxis.ts`). Person pages are pinned left to right today |
+| `browseFocus` `intersects`, `insideRow`, `searchRail` clip test | box overlaps a frame | safe: symmetric |
+| `browseFocus` row `scrollLeft` snapshot (`visits`, `applyVisit`) | saves and restores a row's scroll | not safe across a direction change; `reconcileLanguage` calls `revealFocused` when the direction flips |
+| `skylineScroll` row reveal | physical delta, insets swapped, `Math.min(0, ...)` when rtl | safe |
+| `skylineScroll` `seasonOffset`, `episodeOffset`, `prepareEpisodeRow` | stepped Details offsets | safe: rtl branches return 0 to negative range |
+| `skylineScroll` `move` | animates `scrollLeft` to a target | safe: takes the target as given |
+| `skyline` top-bar `roots` scroll, `panelOrigin`, profile panel and flyout placement | physical delta, transform origin, left or right anchor | safe: physical both ways; the panel and flyout branch on `documentIsRightToLeft` |
+| `keys` `remoteKey`, zone `left`/`right` neighbours, `onLeft`, `moveWithin` | Left and Right in layout terms | safe: `remoteKey` swaps by the target's direction |
+| Library letter rail (`.browse-letters` and its slide translates) | rail beside the grid | mirrored: on the left in rtl, as Apple does |
+| `cardActions` `menuPosition`, `detailsActions` popover `left` | place a menu or popover beside or under its anchor | not focus calculations; physical placement, left unchanged |
+
+One Arabic test per zone in `test/ui/rtl.test.ts`: rows (a row steps and scrolls, and keeps Apple's 80 px end inset), rails (episodes to S02E06, the picked season pill), the letter rail (Browse grid and rail), Search landing, and Settings (Left from the categories enters the rows).
 
 ## Player Keys
 

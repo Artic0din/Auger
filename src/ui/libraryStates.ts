@@ -1,6 +1,7 @@
 // The library tab's loading and empty pages, after silo-apple 5780c84: EmptyStateView, tvPageFocusOwner and
 // TVLibraryBrowseLoadingView. Nothing here reads.
 
+import { translate } from "../i18n/translate.ts";
 import type { FocusItem } from "./browseFocus.ts";
 import { artworkMark } from "./defaultArtwork.ts";
 import { group, skeleton, SPINNER_ICON } from "./requestsScene.ts";
@@ -50,7 +51,7 @@ export function recommendedLoading(libraryName: string): HTMLElement {
     const marquee = group("requests-loading-marquee", skeleton(520, 72, .14, 12),
         group("requests-loading-meta", skeleton(118, 22, .12), skeleton(82, 22, .12), skeleton(150, 22, .12)),
         group("requests-loading-copy", skeleton(720, 18, .12), skeleton(610, 18, .12)),
-        group("requests-loading-status", spinner, el("span", "library-loading-label", `Loading ${libraryName}`)));
+        group("requests-loading-status", spinner, el("span", "library-loading-label", translate("library.loadingNamed", { name: libraryName }))));
     const cards = Array.from({ length: 5 }, () => group("library-loading-card", skeleton(330, 186, .11, 16), skeleton(210, 16, .12)));
     const page = group("library-loading", marquee, group("requests-loading-rail", skeleton(300, 28, .12), group("library-loading-cards", ...cards)));
     page.setAttribute("role", "status");

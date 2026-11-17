@@ -407,7 +407,7 @@ journey("while Home sections are out, the page is an empty Loading home and the 
     beforeReady: async tv => {
         await tv.eventually(async () => await tv.page.locator('[aria-label="Loading home"]').count() === 1, "empty Loading home page");
         assert.equal(await tv.page.locator(".skyline-content").getByRole("heading", { name: "Loading", exact: true }).count(), 0);
-        assert.equal(await tv.page.locator(".skyline-content").getByRole("button", { name: "Profiles", exact: true }).count(), 0);
+        assert.equal(await tv.page.locator(".skyline-content").getByRole("button", { name: "Profile", exact: true }).count(), 0);
         assert.equal(await tv.page.getByText("Still waiting for the server.", { exact: true }).count(), 0);
         await tv.eventually(async () => await tv.page.locator('[data-focus="movies"]').count() === 1, "library tabs while Home is still loading");
         heldHomeLoading.release();

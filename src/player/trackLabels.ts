@@ -2,7 +2,10 @@
 // Ported (AGPL-3.0-or-later) from silo-apple 9723df007baa8e933f5615cc14b13e99a6ee1ea1:
 // Screens/Player/TrackLabels.swift, PlayerTrack.swift, SubtitleDisplayOrder.swift,
 // PlaybackPrefsResolver.titleIndicatesHearingImpaired, ApplePlaybackQuality.formatBitrate
-// and labelWithBitrate. Display names use Intl where Apple uses Locale.en_US_POSIX.
+// and labelWithBitrate. Language names are in the shown language, as silo-apple dce56e3c names them
+// (`Locale.localizedString(forLanguageCode:)`, then `LocaleFormat.capitalizedName`).
+
+import { SOURCE_LANGUAGE, shownLanguage } from "../i18n/language.ts";
 
 export interface TrackRow {
     readonly label: string;
@@ -50,8 +53,8 @@ export function canonicalLanguageKey(code: string | undefined): string | undefin
     return ISO639[primary] ?? primary;
 }
 
-/** English name for a language tag, or undefined when it is missing or undetermined. */
-export function languageName(value: string | undefined): string | undefined {
+/** The name of a language tag in `language` (the shown one), or undefined when it is missing or undetermined. */
+export function languageName(value: string | undefined, language: string = shownLanguage()): string | undefined {
     const text = nonEmpty(value);
     if (text === undefined) return undefined;
     const primary = text.toLowerCase().replaceAll("_", "-").split("-")[0] ?? "";
@@ -60,10 +63,24 @@ export function languageName(value: string | undefined): string | undefined {
     const key = canonicalLanguageKey(text);
     if (key === undefined) return text.toUpperCase();
     try {
-        const name = new Intl.DisplayNames(["en"], { type: "language" }).of(key);
-        if (name !== undefined && name.toLowerCase() !== key) return capitalize(name);
+        const name = displayNames(language).of(key);
+        if (name !== undefined && name.toLowerCase() !== key) return language === SOURCE_LANGUAGE ? capitalize(name) : name.charAt(0).toLocaleUpperCase(language) + name.slice(1);
     } catch { /* an unknown tag keeps its code */ }
     return key.toUpperCase();
+}
+
+const displayNameLists = new Map<string, Intl.DisplayNames>();
+function displayNames(language: string): Intl.DisplayNames {
+    let names = displayNameLists.get(language);
+    if (names === undefined) displayNameLists.set(language, names = new Intl.DisplayNames([language], { type: "language" }));
+    return names;
+}
+
+/** The name as shown, then in English when that differs: a track's title repeats the English name in any language (Apple's `languageNames`). */
+function languageNames(value: string | undefined): string[] {
+    const shown = languageName(value);
+    const english = languageName(value, SOURCE_LANGUAGE);
+    return shown === undefined ? [] : english === undefined || english === shown ? [shown] : [shown, english];
 }
 
 function capitalize(value: string): string {
@@ -147,9 +164,9 @@ export function audioTitle(title: string | undefined, language: string | undefin
     let remainder = replacePattern(AUDIO_TECHNICAL, text);
     const saysAtmos = /atmos/i.test(remainder);
     remainder = replacePattern(JOINT_OBJECT, remainder, saysAtmos ? " " : "Atmos");
-    const languageLabel = languageName(language);
-    if (languageLabel !== undefined) {
-        remainder = removingWords(remainder, (word) => word.localeCompare(languageLabel, undefined, { sensitivity: "accent" }) === 0 || ((word.length === 2 || word.length === 3) && word === word.toUpperCase() && languageName(word) === languageLabel));
+    const languageLabels = languageNames(language);
+    if (languageLabels.length > 0) {
+        remainder = removingWords(remainder, (word) => languageLabels.some(label => word.localeCompare(label, undefined, { sensitivity: "accent" }) === 0) || ((word.length === 2 || word.length === 3) && word === word.toUpperCase() && languageName(word) === languageLabels[0]));
     }
     remainder = replacePattern(EMPTY_BRACKETS, remainder);
     remainder = replacePattern(WHITESPACE, remainder).replace(TRIM_EDGES, "");
@@ -176,8 +193,7 @@ function subtitleTitle(title: string | undefined, language: string | undefined, 
     const flags = new Set(["forced", "sdh", "cc", "hearing impaired"]);
     if (showsHearingImpaired) flags.add("hi");
     if (formats.has(lowered) || flags.has(lowered) || lowered === "subtitle" || lowered === "subtitles") return undefined;
-    const name = languageName(language)?.toLowerCase();
-    if (name !== undefined && lowered === name) return undefined;
+    if (languageNames(language).some(name => lowered === name.toLowerCase())) return undefined;
     const code = nonEmpty(language)?.toLowerCase();
     if (code !== undefined && lowered === code) return undefined;
     const rawCodec = nonEmpty(codec)?.toLowerCase();

@@ -3,6 +3,7 @@
 // call the handlers passed in. Item and season pages are in browseDetails.ts.
 
 import type { Card, CardOverlay, CatalogPage, HomeSection, UserLibrary } from "../contracts/v2/catalog.ts";
+import { serverText, translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { artworkUrl, type Destination, type EpisodeSelection, type SeriesLine, browseCardDestination, destinationOf } from "./browseModel.ts";
 import { type CardOverlayPrefs, overlayLayer, watchStatus } from "./cardOverlays.ts";
@@ -123,12 +124,13 @@ export function exploreAllCard(rowTitle: string, key: string, wide: boolean, onP
     const element = el("button", "browse-card skyline-explore");
     element.type = "button";
     element.setAttribute("data-focus", key);
-    element.setAttribute("aria-label", `Explore all, ${rowTitle}`);
+    const exploreAll = translate("rows.exploreAll");
+    element.setAttribute("aria-label", `${exploreAll}, ${rowTitle}`);
     if (wide) element.classList.add("skyline-continue");
     const tile = el("span", "browse-art skyline-explore-tile");
     const icon = el("span", "skyline-explore-icon");
     icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const label = el("span", "skyline-explore-label", "Explore all");
+    const label = el("span", "skyline-explore-label", exploreAll);
     tile.append(icon, label);
     element.appendChild(tile);
     // minimumScaleFactor(0.8) (SectionExploreAllCard.swift:61): a label wider than the tile shrinks to fit, down to 80%.
@@ -395,23 +397,29 @@ export function homeRows(sections: readonly HomeSection[]): { section: HomeSecti
     });
 }
 
+/** A Home row's title in the shown language: the catalog's translation of the key the server sent, else its own text (`ResolvedSection.displayTitle`). */
+export function sectionTitle(section: HomeSection): string {
+    return serverText(section.title, section.titleKey, section.titleArgs);
+}
+
 export function homeView(libraries: readonly UserLibrary[], sections: readonly HomeSection[], context: ViewContext, handlers: HomeHandlers): View {
     const zones: Zone[] = [];
     const content: HTMLElement[] = [];
     // Server order is the profile's order; featured rows render as ordinary rows (Apple HomeViewModel).
     for (const { section, continuing, layout, cards: titles } of homeRows(sections)) {
-        const cards = cardItems(titles, { ...context, continueWatching: continuing, homeRow: section.sectionType, homeDismissals: handlers.dismisses === true, cardLayout: layout, homeCaptions: true, seriesYears: true, overlays: context.cardOverlays?.(), preview: (card) => context.preview?.(card, section.title, continuing, section.featured === true) });
+        const rowTitle = sectionTitle(section);
+        const cards = cardItems(titles, { ...context, continueWatching: continuing, homeRow: section.sectionType, homeDismissals: handlers.dismisses === true, cardLayout: layout, homeCaptions: true, seriesYears: true, overlays: context.cardOverlays?.(), preview: (card) => context.preview?.(card, rowTitle, continuing, section.featured === true) });
         // A row of only books, podcasts or other media this client does not browse is left out.
         if (cards.length === 0) {
             continue;
         }
         const id = `section:${section.id}`;
-        if (handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(section.title, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
+        if (handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(rowTitle, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
         // Apple `focusSection`: Up and Down between these rows stay geometric, including a row already visited.
         zones.push({ id, layout: "row", spatial: true, items: cards });
         const block = el("section", "browse-section home-section");
         block.setAttribute("data-section", section.id);
-        const title = el("h2", "browse-section-title", section.title);
+        const title = el("h2", "browse-section-title", rowTitle);
         if (continuing) {
             const glyph = el("span", "home-row-glyph");
             glyph.setAttribute("aria-hidden", "true");
@@ -423,7 +431,7 @@ export function homeView(libraries: readonly UserLibrary[], sections: readonly H
     }
     if (zones.length === 0 && handlers.dismisses === true) {
         // Apple HomeView: EmptyStateView under a page focus owner whose Up goes to the top bar.
-        const empty = emptyStateOwner("Nothing to watch yet", "Add media to your libraries or start watching to see it here.", "home-empty", PLAY_RECTANGLES_ICON);
+        const empty = emptyStateOwner(translate("home.empty"), translate("home.emptyBody"), "home-empty", PLAY_RECTANGLES_ICON);
         content.push(empty.element);
         zones.push({ id: "empty", layout: "row", items: [empty] });
     } else if (zones.length === 0) {
@@ -497,7 +505,7 @@ export function searchView(head: readonly HTMLElement[], input: HTMLInputElement
     const zones: Zone[] = [{ id: "field", layout: "row", items: [field] }];
     switch (results.status) {
         case "idle":
-            content.push(searchState("Search Silo", "Find movies, series, and people", "search-prompt"));
+            content.push(searchState(translate("search.initial"), translate("search.initialBodyPeople"), "search-prompt"));
             break;
         case "searching":
             content.push(searchLoading());
@@ -519,7 +527,7 @@ export function searchView(head: readonly HTMLElement[], input: HTMLInputElement
         }
         case "ready":
             if (results.grid.zones[0]?.items.length === 0) {
-                content.push(searchState("No results", "Try a different search term", "search-empty"));
+                content.push(searchState(translate("search.empty"), translate("search.emptyBody"), "search-empty"));
             }
             content.push(...results.grid.content);
             zones.push(...results.grid.zones);
@@ -532,7 +540,7 @@ export const FAILURE_ICON = '<svg viewBox="0 0 48 48"><path fill="currentColor" 
 export function searchLoading(): HTMLElement {
     const progress = el("div", "search-progress");
     progress.setAttribute("role", "status");
-    progress.setAttribute("aria-label", "Searching");
+    progress.setAttribute("aria-label", translate("search.searchingAccessibility"));
     progress.appendChild(el("span", "search-progress-icon"));
     return progress;
 }

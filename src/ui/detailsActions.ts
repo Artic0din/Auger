@@ -4,6 +4,8 @@ import { zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { remoteKey } from "./keys.ts";
 import { icon as libraryIcon } from "./libraryBrowseViews.ts";
+import { shownLanguage } from "../i18n/language.ts";
+import { translate } from "../i18n/translate.ts";
 
 const ICONS: Readonly<Record<string, string>> = {
     play: "M8 4 21 12 8 20Z",
@@ -20,12 +22,12 @@ const ICONS: Readonly<Record<string, string>> = {
 const POPOVER_MAX_ROWS = 7;
 
 export function detailAction(item: FocusItem): FocusItem {
-    const startOver = item.key === "start-over-episode" || item.key === "play" && item.element.textContent === "Start Over";
+    const startOver = item.key === "start-over-episode" || item.key === "play" && item.element.textContent === translate("detail.startOver");
     const path = startOver ? "M5 4V20M19 4 7 12 19 20Z" : ICONS[item.key];
     if (path === undefined) return item;
     const button = item.element;
-    const accessibleLabel = startOver ? "Start Over" : button.textContent ?? "";
-    const label = item.key === "version" ? "Versions" : item.key === "audio" ? "Audio Tracks" : item.key === "subtitles" ? "Subtitles" : item.key === "watchlist" ? "Watchlist" : accessibleLabel;
+    const accessibleLabel = startOver ? translate("detail.startOver") : button.textContent ?? "";
+    const label = item.key === "version" ? "Versions" : item.key === "audio" ? "Audio Tracks" : item.key === "subtitles" ? translate("detail.subtitles") : item.key === "watchlist" ? translate("detail.watchlist") : accessibleLabel;
     button.textContent = "";
     button.setAttribute("aria-label", accessibleLabel);
     button.classList.add("details-action", !startOver && (item.key === "play" || item.key === "resume" || item.key === "next-episode") ? "details-play" : "details-circle");
@@ -71,7 +73,7 @@ export function detailPanel(view: View, state: DetailsState, title: string, item
     panel.setAttribute("aria-label", title);
     const popover = ["audio", "subtitles", "version", "more"].includes(name);
     const options = zoneNode("details-audio-options", items);
-    panel.append(el("h2", "browse-section-title", popover ? title.toUpperCase() : title), ...notes, options);
+    panel.append(el("h2", "browse-section-title", popover ? title.toLocaleUpperCase(shownLanguage()) : title), ...notes, options);
     // TVActionPopoverMenu.initialOptionId: the selected row when it is enabled, otherwise the first enabled row.
     // A disabled row stays drawn but is left out of the zone, so it never takes focus.
     // A popover whose rows are all disabled (every personal row busy) keeps them focusable so focus is never lost.
@@ -151,7 +153,7 @@ export function detailPanel(view: View, state: DetailsState, title: string, item
             });
         }
         const auto = items[0];
-        if (auto !== undefined && name !== "more") auto.element.append(el("small", "details-option-subtext", name === "audio" ? "Use your Playback audio preference" : name === "subtitles" ? "Use your subtitle preferences" : "Best match for this device"));
+        if (auto !== undefined && name !== "more") auto.element.append(el("small", "details-option-subtext", translate(name === "audio" ? "detail.autoAudio" : name === "subtitles" ? "detail.autoSubtitles" : "detail.autoVersion")));
     }
     const scrim = el("div", "skyline-dropdown-scrim");
     if (popover) {

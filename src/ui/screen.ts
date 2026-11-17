@@ -3,6 +3,7 @@
 // restored by control key, never by position, and never left on nothing. Controls placed in rows
 // move Left/Right within a row and Up/Down between rows.
 
+import { SOURCE_LANGUAGE } from "../i18n/language.ts";
 import { remoteKey } from "./keys.ts";
 import { listenSelectRelease } from "./selectRelease.ts";
 
@@ -60,6 +61,9 @@ export class ScreenHost {
             section.classList.add("signin-screen-enter");
         }
         section.setAttribute("data-screen", screen.name);
+        // Sign-in, profile and PIN screens (Add Profile among them) are English until their text is on the catalog: they keep lang=en
+        // under a page whose lang is the shown language, so assistive technology reads them by English rules. Drop this when they translate.
+        section.setAttribute("lang", SOURCE_LANGUAGE);
         section.appendChild(this.wordmark());
         for (const node of screen.content) {
             section.appendChild(node);
