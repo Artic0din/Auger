@@ -57,6 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { applyLayoutDirection, clearLayoutDirection } from "../i18n/direction.ts";
 import { textLanguage } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
@@ -440,6 +441,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     languagePrefs.applyCached();
     void languagePrefs.refresh();
     let paintedLanguage = textLanguage();
+    applyLayoutDirection();
     /**
      * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
      * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
@@ -450,6 +452,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (textLanguage() === paintedLanguage) return;
         if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
         paintedLanguage = textLanguage();
+        applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
         if (redraw) render(focus);
@@ -872,6 +875,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopDetails();
         settingsScreen?.destroy();
         settingsScreen = undefined;
+        // Sign-in and profile screens still read English, so they stay left to right.
+        clearLayoutDirection();
         stopAuthority();
         loading?.abort();
         homeLibraries?.abort();

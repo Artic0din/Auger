@@ -264,11 +264,14 @@ export class SkylineScroll {
             const card = element.getBoundingClientRect();
             // Rows padded for a focus lift keep the lifted card inside that padding.
             const style = getComputedStyle(row);
-            const left = Math.max(12, parseFloat(style.paddingLeft));
-            const right = Math.max(12, parseFloat(style.getPropertyValue("--reveal-end")) || parseFloat(style.paddingRight));
+            // --reveal-end is the row's end inset: the right edge, or the left one when the row reads right to left.
+            const rightToLeft = style.direction === "rtl";
+            const reveal = parseFloat(style.getPropertyValue("--reveal-end"));
+            const left = Math.max(12, rightToLeft ? reveal || parseFloat(style.paddingLeft) : parseFloat(style.paddingLeft));
+            const right = Math.max(12, rightToLeft ? parseFloat(style.paddingRight) : reveal || parseFloat(style.paddingRight));
             // Apple keeps a final group of cards; the terminal episode need not occupy the leading slot.
             const delta = card.left < bounds.left + left ? card.left - bounds.left - left : card.right > bounds.right - right ? card.right - bounds.right + right : 0;
-            this.move(row, row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, element) : row.classList.contains("details-season-chips") && element.getAttribute("aria-pressed") === "true" ? SkylineScroll.seasonOffset(row, element) : Math.max(0, row.scrollLeft + delta), 0);
+            this.move(row, row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, element) : row.classList.contains("details-season-chips") && element.getAttribute("aria-pressed") === "true" ? SkylineScroll.seasonOffset(row, element) : rightToLeft ? Math.min(0, row.scrollLeft + delta) : Math.max(0, row.scrollLeft + delta), 0);
         }
         if (container.dataset.view === "search" && element.closest(".search-people-rail") !== null) {
             this.move(viewport, 0, 0);

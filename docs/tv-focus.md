@@ -337,6 +337,14 @@ Focus moves use `focus({ preventScroll: true })` and the host scrolls via `Skyli
 Account chooser columns and the Accounts settings list use the same reveal owner to keep focused rows and Add actions visible.
 (`ScreenHost` uses a plain `focus()`.)
 
+## Right to Left
+
+Remote keys are physical.
+In Arabic the document is `dir="rtl"` ([translation.md](translation.md#right-to-left)) and `remoteKey` (`src/ui/keys.ts`) swaps Left and Right, as silo-apple's `MoveCommandDirection.inLayout` does, so `moveWithin`, `onLeft`, the menu flyout and Settings' panes keep their meaning on the mirrored screen: "left" is toward the start of the row, and "right" is past its end.
+Write new handlers in layout terms and never swap a key yourself.
+Code that must follow the remote's physical side, as the player's transport does, reads `physicalKey`.
+A horizontal scroll that sets `scrollLeft` handles a negative `scrollLeft` in a right-to-left row (`SkylineScroll.reveal` does; the Details episode and season offsets do not yet).
+
 ## Player Keys
 
 `src/player/playerScreen.ts` registers its own `document` `keydown` handler and calls `preventDefault` on every remote key, including Back.

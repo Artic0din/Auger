@@ -102,11 +102,14 @@ export function menuIcon(name: string): SVGSVGElement {
     return icon;
 }
 
+/** Apple's `chevron.forward` and `...arrow.forward` symbols point the other way in a right-to-left language; the CSS flips these. */
+const FORWARD_ICONS: ReadonlySet<string> = new Set(["chevron-right", "signout"]);
+
 /** Original line drawings substitute for platform-owned SF Symbols. */
 export function navigationIcon(name: string): SVGSVGElement {
     const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     icon.setAttribute("viewBox", "0 0 24 24");
-    icon.setAttribute("class", "skyline-menu-icon");
+    icon.setAttribute("class", FORWARD_ICONS.has(name) ? "skyline-menu-icon icon-forward" : "skyline-menu-icon");
     icon.setAttribute("aria-hidden", "true");
     icon.setAttribute("fill", "none");
     icon.setAttribute("stroke", "currentColor");

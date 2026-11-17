@@ -18,6 +18,7 @@ import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { hidesCardOverview, hidesMarqueeBackdrop, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
 import type { LibraryMode } from "./libraryDiscovery.ts";
+import { documentIsRightToLeft } from "../i18n/direction.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { PersonalSource } from "./personalLists.ts";
 import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
@@ -1025,8 +1026,10 @@ export class Skyline {
         labels.append(el("div", "skyline-profile-title", this.profiles.name), el("div", "skyline-profile-server", (this.profiles.serverName?.() ?? new URL(this.baseUrl).host).toUpperCase()));
         header.append(profileMenuAvatar(this.profiles.name, this.avatarReference, this.avatarText, this.baseUrl, 44), labels);
         replaceNodes(this.selector, [header, ...above.map(item => item.element), el("div", "skyline-menu-divider"), ...below.map(item => item.element)]);
-        this.selector.style.left = "auto";
-        this.selector.style.right = "88px";
+        // The profile button ends the bar, which is the left edge in a right-to-left layout.
+        const rightToLeft = documentIsRightToLeft();
+        this.selector.style.left = rightToLeft ? "88px" : "auto";
+        this.selector.style.right = rightToLeft ? "auto" : "88px";
         this.selector.hidden = false;
         this.anchorOrigin(this.items.find(item => item.key === "profiles")?.element ?? this.selector);
         this.scrim.hidden = true;
@@ -1081,9 +1084,11 @@ export class Skyline {
         this.flyoutItems = this.modeItems(library, this.panelTab);
         this.flyoutItem = this.flyoutItems[0];
         replaceNodes(this.flyout, this.flyoutItems.map(item => item.element));
-        this.flyout.style.left = `${Math.min(1532, this.selector.getBoundingClientRect().right + 18)}px`;
         this.flyout.style.top = `${Math.min(900, row.element.getBoundingClientRect().top)}px`;
         this.flyout.hidden = false;
+        // The sections open beside the library on its trailing side: the left, when the layout is mirrored.
+        const panel = this.selector.getBoundingClientRect();
+        this.flyout.style.left = `${documentIsRightToLeft() ? Math.max(88, panel.left - 18 - this.flyout.offsetWidth) : Math.min(1532, panel.right + 18)}px`;
         this.refresh();
     }
 }

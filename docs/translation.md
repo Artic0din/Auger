@@ -25,6 +25,25 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 | Home | `Loading home`, the empty state, `Explore all`, row titles the server keys |
 | Search | field prompt, filters, empty and first-visit states, result count, People and Box Sets headings, the Requests section heading and caption |
 
+## Right to left
+
+Arabic reads right to left, as on Apple TV, where the root view sets `\.layoutDirection` from the language ([silo-apple `docs/i18n.md`, Right to left](https://github.com/Silo-Server/silo-apple/blob/main/docs/i18n.md)).
+
+- `applyLayoutDirection` (`src/i18n/direction.ts`) sets `dir="rtl"` on the document root when the text on screen is right to left and removes it otherwise.
+  The direction is the language's CLDR direction from `Intl.Locale` (Apple's `characterDirection`; Chromium 108 offers it as `textInfo`, newer engines as `getTextInfo()`), with a short list of the shipped right-to-left languages for an engine that has neither, and it follows `textLanguage()`, so the layout mirrors in the same redraw as the words.
+- Browse sets it at launch from the kept language and in `reconcileLanguage`; Settings sets it in the repaint that follows a language change.
+  Browse clears it when it is torn down, because the sign-in and profile screens are still English.
+- `remoteKey` swaps Left and Right while the root is `rtl`, as Apple's `MoveCommandDirection.inLayout` does, so a handler that steps "left" toward the start of a row, a menu or a pane keeps doing that on the mirrored screen.
+  Zone code says "left" and "right" in layout terms; only `remoteKey` knows the remote is physical.
+  Media transport reads `physicalKey` instead: the player is `dir="ltr"` (a rewind stays on the left in every language).
+- CSS uses logical properties (`margin-inline-start`, `inset-inline-start`, `text-align: start`), which behave as the physical ones in English.
+  Where Chromium 108 has no logical form (`float`, gradient and mask directions) a `:root[dir="rtl"]` rule overrides it.
+  `chevron.forward` and `arrow.forward` symbols flip (`icon-forward`); card overlays and badges stay left to right.
+
+Mirrored so far: the top bar and its menus (the profile menu under its button, a library's sections beside it), Home, Settings, and the hero art on Home and Details.
+Not yet, and listed on [#571](https://github.com/Artic0din/silo-tizen/issues/571):
+Details rails and their scroll offsets (episodes, season pills, cast), Search and library grids, Requests, Calendar, Watch Party, audiobooks, and the player, which stays left to right.
+
 ## Still English
 
 Apple has no key for these, or they belong to a later row of the plan.
