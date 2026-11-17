@@ -45,6 +45,16 @@ async function openSettings(tv: Tv, name: string): Promise<void> {
     await tv.page.locator(".settings-panes h1.browse-title").waitFor();
 }
 
+/** Settings' own reads (playback capability, connection, values) have all been answered, so none of them can repaint the screen under a press. */
+async function settingsSettled(tv: Tv): Promise<void> {
+    await tv.eventually(async () => {
+        const requests = tv.fake.requests.length;
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+        await tv.jump(100);
+        return tv.fake.requests.length === requests;
+    }, "Settings' reads answered");
+}
+
 test("Settings reads English while German's file is on its way, then relabels in German with no new press", async () => {
     let release: () => void = () => undefined;
     const held = new Promise<void>(resolve => { release = resolve; });
@@ -64,6 +74,8 @@ test("a Select held on a Settings row while the language's file lands still runs
         await openSettings(tv, "Settings");
         const row = tv.page.locator('[data-focus="app-language"]');
         await row.waitFor();
+        // A read that lands under the press repaints Settings in the language already shown, so only the language file may land during it.
+        await settingsSettled(tv);
         await row.focus();
         await tv.page.keyboard.down("Enter");
         const landed = tv.page.waitForResponse(response => new URL(response.url()).pathname === "/tv/catalog/de.js");
@@ -79,6 +91,37 @@ test("a Select held on a Settings row while the language's file lands still runs
         await tv.remote(BACK);
         await dialog.waitFor({ state: "detached" });
         await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === "Einstellungen", "Settings relabels in German after the release");
+    });
+});
+
+test("a Select held on a Settings row survives a repaint from a read that lands under it, and runs on release", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let releaseFile: () => void = () => undefined;
+    const fileGate = new Promise<void>(resolve => { releaseFile = resolve; });
+    await withTv("de", async page => {
+        await page.route("**/playback/capabilities", async route => { await gate; await route.fallback(); });
+        await page.route("**/tv/catalog/de.js", async route => { await fileGate; await route.fallback(); });
+    }, async tv => {
+        await openSettings(tv, "Settings");
+        const row = tv.page.locator('[data-focus="app-language"]');
+        await row.waitFor();
+        releaseFile();
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === "Einstellungen", "German has landed");
+        await row.focus();
+        await tv.page.keyboard.down("Enter");
+        const handle = await row.elementHandle();
+        const read = tv.page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/playback/capabilities"));
+        release();
+        await read;
+        await tv.jump(500);
+        assert.equal(await handle?.evaluate(node => node.isConnected), false, "the connection read repainted the row");
+        assert.equal(await tv.page.locator('[data-focus="app-language"][data-pressed]').count(), 1, "the press moved to the repainted row");
+        await tv.page.keyboard.up("Enter");
+        const dialog = tv.page.getByRole("dialog", { name: "App-Sprache" });
+        await dialog.waitFor();
+        await tv.remote(BACK);
+        await dialog.waitFor({ state: "detached" });
     });
 });
 
