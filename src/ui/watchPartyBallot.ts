@@ -4,6 +4,9 @@
 // Not built: the cards' long-press menu (Start this one, Remove suggestion).
 
 import type { Suggestion } from "../contracts/v2/watchTogether.ts";
+import { isolated } from "../i18n/direction.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import type { FocusItem } from "./browseFocus.ts";
 import { actionButton, artwork } from "./browseViews.ts";
 import { artworkUrl } from "./browseModel.ts";
@@ -11,12 +14,10 @@ import { el } from "./screen.ts";
 import { checkIcon, plusIcon } from "./watchPartyParts.ts";
 import type { WatchPartyHub } from "./watchPartyHub.ts";
 
-const votes = (count: number): string => `${count} ${count === 1 ? "vote" : "votes"}`;
-
 /** The card's label, as Apple's accessibility label: what pressing it does. */
 function voteLabel(suggestion: Suggestion, voted: boolean | undefined): string {
-    if (voted === undefined) return "Loading your vote";
-    return voted ? `Remove vote for ${suggestion.title}` : `Vote for ${suggestion.title}`;
+    if (voted === undefined) return translate("watchParty.ballot.loadingVote");
+    return translate(voted ? "watchParty.ballot.removeVote" : "watchParty.ballot.vote", { title: isolated(suggestion.title) });
 }
 
 /**
@@ -37,18 +38,22 @@ function candidate(hub: WatchPartyHub, suggestion: Suggestion, leader: boolean, 
     if (leader) item.element.classList.add("watch-party-candidate-leader");
     item.element.setAttribute("aria-disabled", String(!usable));
     item.element.setAttribute("aria-pressed", String(voted === true));
-    item.element.setAttribute("aria-label", `${voteLabel(suggestion, voted)}, ${votes(suggestion.voteCount)}${leader ? ", leading" : ""}`);
+    item.element.setAttribute("aria-label", voteLabel(suggestion, voted));
     const poster = el("span", "watch-party-candidate-poster");
     poster.appendChild(artwork("watch-party-candidate-art", serverPoster(suggestion.posterUrl, baseUrl), baseUrl, ""));
     const badge = el("span", "watch-party-vote-badge");
-    badge.append(el("span", "watch-party-vote-count", String(suggestion.voteCount)), el("span", "watch-party-vote-label", suggestion.voteCount === 1 ? "VOTE" : "VOTES"));
+    // The button's name is Apple's action; the tally and the leader are its description, as an aria-label on the badge alone would not reach the button.
+    badge.id = `watch-party-vote-${encodeURIComponent(suggestion.id)}`;
+    badge.setAttribute("aria-label", translate(leader ? "watchParty.ballot.candidateLeading" : "watchParty.ballot.candidate", { title: isolated(suggestion.title), count: suggestion.voteCount }));
+    item.element.setAttribute("aria-describedby", badge.id);
+    badge.append(el("span", "watch-party-vote-count", integerText(suggestion.voteCount)), el("span", "watch-party-vote-label", translate("watchParty.ballot.votesLabel", { count: suggestion.voteCount })));
     poster.appendChild(badge);
     if (voted === true) {
         const tick = el("span", "watch-party-candidate-tick");
         tick.appendChild(checkIcon());
         poster.appendChild(tick);
     }
-    const line = suggestion.note !== "" ? `“${suggestion.note}”` : suggestion.subtitle;
+    const line = suggestion.note !== "" ? translate("watchParty.ballot.note", { note: suggestion.note }) : suggestion.subtitle;
     item.element.append(poster, el("span", "watch-party-candidate-title", suggestion.title), el("span", "watch-party-candidate-line", line === "" ? " " : line));
     return item;
 }
@@ -57,10 +62,10 @@ function candidate(hub: WatchPartyHub, suggestion: Suggestion, leader: boolean, 
 function suggestCard(hub: WatchPartyHub): FocusItem {
     const item = actionButton("ballot-suggest", "", () => { if (!hub.state.busy) void hub.openPicker("suggest"); });
     item.element.classList.add("watch-party-candidate", "watch-party-suggest-card");
-    item.element.setAttribute("aria-label", "Suggest a title");
+    item.element.setAttribute("aria-label", translate("watchParty.button.suggestTitle"));
     const poster = el("span", "watch-party-candidate-poster");
     poster.appendChild(plusIcon());
-    item.element.append(poster, el("span", "watch-party-candidate-title", "Suggest a title"), el("span", "watch-party-candidate-line", "Anyone can add one"));
+    item.element.append(poster, el("span", "watch-party-candidate-title", translate("watchParty.button.suggestTitle")), el("span", "watch-party-candidate-line", translate("watchParty.ballot.addCaption")));
     return item;
 }
 

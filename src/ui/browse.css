@@ -4,7 +4,8 @@
    of specificity, so the centred captions' own rules (two classes or more) still win; a view pinned left to right is left alone. Only in a right-to-left page, so English
    and a left-to-right page with an Arabic title are unchanged. This is the one list: add a class when a new element shows server text. */
 :where(:root[dir="rtl"]) :is(.browse-card-title, .browse-card-subtitle, .discovery-collection-name, .browse-overview, .skyline-title, .skyline-synopsis, .skyline-meta,
-.requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview,
+.requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview, .watch-party-hero-title,
+.watch-party-seat-name, .watch-party-candidate-title, .watch-party-candidate-line, .watch-party-choice-title, .watch-party-episodes-title, .watch-party-episode-title,
 .skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
@@ -2093,6 +2094,10 @@ svg.library-empty-icon { width: auto; }
 .watch-party-backdrop-shade { position: absolute; inset: 0; background:
     linear-gradient(to right, rgba(0,0,0,.92) 0, rgba(0,0,0,.78) 34%, rgba(0,0,0,.25) 62%, rgba(0,0,0,.05) 100%),
     linear-gradient(to bottom, rgba(0,0,0,.35) 0, rgba(0,0,0,0) 30%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.95) 100%); }
+/* LinearGradient(.leading to .trailing) flips with the layout; Chromium 108 has no logical gradient direction. */
+:root[dir="rtl"] .watch-party-backdrop-shade { background:
+    linear-gradient(to left, rgba(0,0,0,.92) 0, rgba(0,0,0,.78) 34%, rgba(0,0,0,.25) 62%, rgba(0,0,0,.05) 100%),
+    linear-gradient(to bottom, rgba(0,0,0,.35) 0, rgba(0,0,0,0) 30%, rgba(0,0,0,.4) 70%, rgba(0,0,0,.95) 100%); }
 .watch-party-room { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; width: 1920px; height: 1080px; padding: 0 88px; }
 .watch-party-room-header { display: flex; align-items: center; justify-content: space-between; padding-top: 56px; }
 .watch-party-room-title { display: flex; align-items: center; gap: 18px; }
@@ -2136,11 +2141,11 @@ svg.library-empty-icon { width: auto; }
 .watch-party-candidate-leader .watch-party-candidate-poster { outline-color: rgba(237,237,237,.35); }
 .watch-party-ui .watch-party-candidate:focus { background: none; color: inherit; border-color: transparent; box-shadow: none; outline: none; }
 .watch-party-candidate:focus .watch-party-candidate-poster { transform: scale(1.05); outline: 6px solid var(--silo-text); outline-offset: 10px; }
-.watch-party-vote-badge { position: absolute; left: 16px; top: 16px; display: inline-flex; align-items: baseline; gap: 4px; padding: 6px 12px; border-radius: 999px; background: rgba(0,0,0,.7); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); color: var(--silo-text); }
+.watch-party-vote-badge { position: absolute; inset-inline-start: 16px; top: 16px; display: inline-flex; align-items: baseline; gap: 4px; padding: 6px 12px; border-radius: 999px; background: rgba(0,0,0,.7); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); color: var(--silo-text); }
 .watch-party-candidate-leader .watch-party-vote-badge { background: var(--silo-text); box-shadow: none; color: #000; }
 .watch-party-vote-count { font-family: ui-monospace, Menlo, monospace; font-size: 30px; font-weight: 700; }
 .watch-party-vote-label { font-size: 17px; font-weight: 600; letter-spacing: 1px; opacity: .6; }
-.watch-party-candidate-tick { position: absolute; right: 16px; top: 16px; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--silo-text); }
+.watch-party-candidate-tick { position: absolute; inset-inline-end: 16px; top: 16px; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--silo-text); }
 .watch-party-candidate-tick .watch-party-icon { width: 24px; height: 24px; fill: none; stroke: #000; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .watch-party-candidate-title { max-width: 100%; overflow: hidden; font-size: 26px; font-weight: 600; line-height: 32px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
 .watch-party-candidate-line { max-width: 100%; overflow: hidden; font-size: 20px; line-height: 25px; text-overflow: ellipsis; white-space: pre; color: var(--silo-secondary); }
@@ -2170,7 +2175,7 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-invite { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 96px; width: 1920px; height: 1080px; padding: 0 120px; }
 .watch-party-invite-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; max-width: 900px; }
 .watch-party-invite-title { margin: 0; font-size: 70.4px; font-weight: 700; color: var(--silo-text); }
-.watch-party-invite-code { margin: 0; padding-left: 14.4px; font-family: ui-monospace, Menlo, monospace; font-size: 72px; font-weight: 700; letter-spacing: 14.4px; white-space: nowrap; color: var(--silo-text); }
+.watch-party-invite-code { margin: 0; padding-inline-start: 14.4px; font-family: ui-monospace, Menlo, monospace; font-size: 72px; font-weight: 700; letter-spacing: 14.4px; white-space: nowrap; color: var(--silo-text); }
 .watch-party-qr { flex: none; box-sizing: content-box; width: 560px; height: 560px; padding: 33.6px; border-radius: 16px; background: #fff; }
 .watch-party-qr svg { display: block; width: 100%; height: 100%; }
 .watch-party-picker-chrome { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 0 0 24px; }
@@ -2190,11 +2195,11 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-episodes-head { display: flex; align-items: center; justify-content: space-between; align-self: stretch; margin-bottom: auto; }
 .watch-party-episodes-title { margin: 0 0 24px; font-size: 64px; font-weight: 700; letter-spacing: -1px; color: var(--silo-text); }
 .watch-party-season-tabs { margin-bottom: 24px; }
-.watch-party-season-tab { box-sizing: border-box; height: 64px; margin: 0 16px 0 0; padding: 0 28px; border: 0; border-radius: 32px; background: rgba(255,255,255,.1); font-size: 24px; font-weight: 600; color: #fff; }
+.watch-party-season-tab { box-sizing: border-box; height: 64px; margin: 0; margin-inline-end: 16px; padding: 0 28px; border: 0; border-radius: 32px; background: rgba(255,255,255,.1); font-size: 24px; font-weight: 600; color: #fff; }
 .watch-party-season-tab[aria-pressed="true"] { background: rgba(255,255,255,.28); }
 .watch-party-season-tab:focus { background: #fff; color: #000; }
 .watch-party-episode-rail { align-self: stretch; padding-bottom: 24px; }
-.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 6px; box-sizing: border-box; width: 400px; margin-right: 36px; padding: 0; border: 0; background: none; text-align: start; color: #fff; }
+.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 6px; box-sizing: border-box; width: 400px; margin: 0; margin-inline-end: 36px; padding: 0; border: 0; background: none; text-align: start; color: #fff; }
 .watch-party-episode-number { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 400px; height: 225px; border-radius: 12px; background: rgba(255,255,255,.1); font-size: 64px; font-weight: 700; color: var(--silo-secondary); }
 .watch-party-episode:focus .watch-party-episode-number { background: #fff; color: #000; }
 .watch-party-episode-title { max-width: 400px; overflow: hidden; font-size: 24px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }

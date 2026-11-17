@@ -22,11 +22,11 @@ const detail = decodeItemDetail({ ...fixture("get_catalog_item_ok"), year: 1994 
 
 test("a Watch Party title's year reads in Arabic digits, and English is unchanged", () => {
     inLanguage("ar", () => {
-        assert.equal(choiceFromCard(card).lobby.facts[0], "١٩٩٤");
-        assert.equal(lobbyItemFromDetail(detail).facts[0], "١٩٩٤");
+        assert.equal(choiceFromCard(card).lobby.facts()[0], "١٩٩٤");
+        assert.equal(lobbyItemFromDetail(detail).facts()[0], "١٩٩٤");
     });
-    assert.equal(choiceFromCard(card).lobby.facts[0], "1994");
-    assert.equal(lobbyItemFromDetail(detail).facts[0], "1994");
+    assert.equal(choiceFromCard(card).lobby.facts()[0], "1994");
+    assert.equal(lobbyItemFromDetail(detail).facts()[0], "1994");
 });
 
 test("a request's metadata line reads its year in Arabic digits, and English is unchanged", () => {
