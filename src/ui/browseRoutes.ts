@@ -13,11 +13,13 @@ import type { DetailsState } from "./detailsState.ts";
 import { SessionError, SessionRefreshError } from "../session/session.ts";
 import type { FocusTarget, View } from "./browseFocus.ts";
 import { itemView, seasonView, withDetailsAlert } from "./browseDetails.ts";
+import { audiobookLoadingView } from "./audiobookLoading.ts";
 import { detailsLoadingView } from "./detailsLoading.ts";
 import { browseCardDestination, type SearchFilter, type EpisodeSelection, type PlayRequest, type SeriesContext, type SeriesLine, type DetailSeed } from "./browseModel.ts";
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
-import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
+import { translate } from "../i18n/translate.ts";
+import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
@@ -60,7 +62,7 @@ export type RouteData =
     | { readonly kind: "libraryResults"; readonly library: UserLibrary; readonly title: string; readonly source: LibrarySource; pages: Pages }
     /** `resultsFor`: the query the shown page answers, which typing can move ahead of. */
     | { readonly kind: "search"; query: string; pages: Pages | undefined; resultsFor: string; resultsFilter?: SearchFilter | undefined; appending?: boolean; restarted?: boolean; searchType?: TextSearchScope; filter?: SearchFilter | undefined; peopleSupported?: boolean; boxSetsSupported?: boolean; supplement?: SearchSupplement }
-    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
+    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
     | { readonly kind: "boxSet"; readonly id: string; readonly libraryId: string; readonly title: string; data: CatalogBoxSetDetail | undefined }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean; error?: ErrorState; data: { detail: ItemDetail; seasons: Season[]; details?: DetailsState; boxSet?: BoxSetRowState } | undefined }
     | { readonly kind: "person"; readonly id: string; readonly title: string; data: { person: Person } | undefined; metadataLoading?: boolean; metadataRefresh?: PersonMetadataRefresh; metadataFailure?: string | undefined; metadataError?: ErrorState | undefined; availabilityLoading?: boolean; availableFilters?: MediaScope[]; filter: MediaScope; pages: Pages; pendingIndex: number | undefined }
@@ -117,6 +119,8 @@ export interface RouteHandlers {
     readonly more: (route: Extract<Route, { kind: "library" }>) => void;
     readonly preserve: (route: Extract<Route, { kind: "library" }>) => boolean;
     readonly gridColumns: number;
+    /** The rating sources the server shows (`GET /capabilities/ratings`); empty until it answers, so a hidden rating sort is never offered early. */
+    readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
     readonly personFilter: (route: Extract<Route, { kind: "person" }>, filter: MediaScope) => void;
@@ -171,9 +175,9 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     }
     switch (current.kind) {
         case "home": {
-            if (current.data === undefined) return pageLoadingView("home:loading", "Loading home");
+            if (current.data === undefined) return pageLoadingView("home:loading", translate("home.loading"));
             const view = homeView(current.data.libraries, current.data.sections, context, {
-                expand: section => handlers.push(newRoute({ kind: "homeSection", id: section.id, title: section.title, continuing: section.sectionType === "continue_watching", pages: newPages(), pendingIndex: undefined })),
+                expand: section => handlers.push(newRoute({ kind: "homeSection", id: section.id, title: sectionTitle(section), continuing: section.sectionType === "continue_watching", pages: newPages(), pendingIndex: undefined })),
                 search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
                 library: (library) => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,
@@ -235,6 +239,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
             }
     }
     if (current.kind === "item") return detailsLoadingView(current, context, pop);
+    if (current.kind === "audiobook") return audiobookLoadingView(current, context, pop);
     // Other routes keep the slow note. Home returned above: an empty page labelled "Loading home".
     const waiting = current.slow ? ["Still waiting for the server."] : [];
     return statusView(`${current.kind}:loading`, "Loading", waiting, [escape], back);
@@ -351,8 +356,8 @@ export function writeMayHaveApplied(error: unknown): boolean {
 export function writeFailureMessage(error: unknown): string {
     if (error instanceof ApiError && error.failure.kind === "problem") {
         const { id, detail } = error.failure.problem;
-        if (id === "validation_failed") return "That request couldn't be submitted";
-        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return "Requests are turned off";
+        if (id === "validation_failed") return translate("requests.reason.validation_failed");
+        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return translate("requests.reason.requests_disabled");
         if (detail?.trim()) return detail;
     }
     return errorState(error).message;
@@ -360,8 +365,8 @@ export function writeFailureMessage(error: unknown): string {
 
 /** Apple RequestErrorCopy.unconfirmed*Message; Apple TV has no Follow, so it keeps this client's wording. */
 export function unconfirmedWriteMessage(action: RequestWrite): string {
-    if (action === "create") return "We couldn't confirm the request. Check My Requests before trying again.";
-    return action === "cancel" ? "We couldn't confirm the cancellation. Reopen My Requests to check it." : "Could not confirm the change. Refresh before trying again.";
+    if (action === "create") return translate("requests.notice.unconfirmedCreate");
+    return action === "cancel" ? translate("requests.notice.unconfirmedCancel") : "Could not confirm the change. Refresh before trying again.";
 }
 
 /** What to tell the person; undefined for an error that is not a server or session answer (a defect). */

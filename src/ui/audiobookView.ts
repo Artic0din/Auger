@@ -9,6 +9,7 @@ import { artworkUrl } from "./browseModel.ts";
 import { actionButton, artwork, cardItem, type ViewContext, zoneNode } from "./browseViews.ts";
 import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { el } from "./screen.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const ICONS = { play: "M8 4 21 12 8 20Z", restart: "M5 4V20M19 4 7 12 19 20Z", chapters: "M8 6H21M8 12H21M8 18H21M3 6H4M3 12H4M3 18H4" } as const;
@@ -69,10 +70,10 @@ function cover(book: Audiobook, context: ViewContext): HTMLElement {
     return artwork("audiobook-cover", book.posterUrl, context.baseUrl, defaultArtwork(artworkSymbol("audiobook")));
 }
 
-function backdrop(book: Audiobook, context: ViewContext): HTMLElement {
+export function backdrop(posterUrl: string | undefined, baseUrl: string): HTMLElement {
     const wash = el("div", "audiobook-backdrop");
     wash.setAttribute("aria-hidden", "true");
-    const source = artworkUrl(book.posterUrl, context.baseUrl);
+    const source = artworkUrl(posterUrl, baseUrl);
     if (source !== undefined) {
         const image = el("img", "audiobook-backdrop-image");
         image.alt = "";
@@ -107,7 +108,7 @@ function sections(page: AudiobookPage, context: ViewContext): { content: HTMLEle
             const row = actionButton(`narration:${narration.id}`, "", () => context.open({ kind: "audiobook", id: narration.id, title: narration.label }));
             row.element.classList.add("audiobook-row");
             row.element.append(el("span", "audiobook-row-title", narration.label));
-            if (narration.year !== undefined) row.element.append(el("span", "audiobook-row-detail", String(narration.year)));
+            if (narration.year !== undefined) row.element.append(el("span", "audiobook-row-detail", integerText(narration.year)));
             return row;
         });
         const block = el("section", "audiobook-section");
@@ -176,7 +177,7 @@ function detailView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHan
     const below = sections(page, context);
     const root = el("div", "audiobook-page");
     root.dataset.mediaType = "audiobook";
-    root.append(backdrop(book, context), hero);
+    root.append(backdrop(book.posterUrl, context.baseUrl), hero);
     if (below.content.length > 0) {
         const rest = el("div", "audiobook-sections");
         rest.append(...below.content);

@@ -8,6 +8,7 @@
 // brings lost focus back.
 // The sign-in ScreenHost moves through one list; grids and stacked rows need two dimensions.
 
+import { readsInlineRightToLeft, startOffset, startsAtOrPast } from "./inlineAxis.ts";
 import { remoteKey } from "./keys.ts";
 import { heldSelect, isFreshSelect, listenSelectRelease, moveSelect } from "./selectRelease.ts";
 import { SkylineScroll } from "./skylineScroll.ts";
@@ -59,7 +60,9 @@ export interface Zone {
     /** row: Left/Right move. column: Up/Down move. grid: both, `columns` items per row. */
     readonly layout: "row" | "column" | "grid";
     readonly columns?: number;
-    /** `true`: nearest centre between zones. `"aligned"`: the intersecting item closest to the focused item's left edge; otherwise the move stays. */
+    /** Up/Down pass over aria-disabled items, as tvOS focus passes a disabled Button; a focused one keeps focus until a key moves it. */
+    readonly skipDisabled?: boolean;
+    /** `true`: nearest centre between zones. `"aligned"`: the intersecting item closest to the focused item's start edge (its left edge left to right); otherwise the move stays. */
     readonly spatial?: boolean | "aligned";
     readonly items: readonly FocusItem[];
 }
@@ -234,6 +237,9 @@ export class FocusHost {
             && (focus === undefined || (focus.zone === kept.zone && focus.key === kept.key))
             && view.zones.find(zone => zone.id === kept.zone)?.items.find(candidate => candidate.key === kept.key)?.element === previous?.item.element;
         place(this.container, view.content);
+        // Home, Search, Requests, Calendar, Details, Settings, Change Account, Watch Party, the Watchlist, Favorites and History pages, the Person page and Browse are mirrored in a right-to-left page; the other views are not yet (#571) and keep their left-to-right layout and keys. The shell's own nodes (data-chrome) follow the page.
+        const mirrored = MIRRORED_VIEW.test(view.name) || this.container.classList.contains("library-browse");
+        for (const node of view.content) { if (node.hasAttribute("data-chrome")) continue; if (mirrored) node.removeAttribute("dir"); else node.setAttribute("dir", "ltr"); }
         this.applyVisit(visit);
         const restoring = !sameVisit && visit !== undefined;
         const target = focus ?? (restoring ? this.memoryTarget() : undefined);
@@ -486,12 +492,13 @@ export class FocusHost {
                 // meets the focused item and sits closest to its left edge does; no meeting, no move.
                 if (zone.spatial === "aligned") {
                     const origin = from.element.getBoundingClientRect();
+                    const rightToLeft = readsInlineRightToLeft(from.element);
                     let match: FocusItem | undefined;
                     let best = Number.POSITIVE_INFINITY;
                     for (const item of edgeItems) {
                         const target = item.element.getBoundingClientRect();
                         if (origin.left >= target.right || target.left >= origin.right) continue;
-                        const distance = Math.max(0, target.left - origin.left);
+                        const distance = startOffset(origin, target, rightToLeft);
                         if (distance < best) {
                             best = distance;
                             match = item;
@@ -811,7 +818,8 @@ export class FocusHost {
         }
         if (key === "left" && zone.onLeft !== undefined) { zone.onLeft(); return; }
         if (zone.reading === true && (key === "up" || key === "down") && this.readOn(found.item.element, key)) return;
-        const target = moveWithin(zone, zone.items.length, index, key);
+        const skip = zone.skipDisabled === true ? (at: number): boolean => { const item = zone.items[at]; return item !== undefined && !enabled(item.element); } : undefined;
+        const target = moveWithin(zone, zone.items.length, index, key, skip);
         if (target !== undefined) {
             this.focusItem(zone, zone.items[target]);
         } else {
@@ -883,7 +891,9 @@ function framesMeetRect(origin: DOMRect, target: DOMRect): boolean {
 function columnAtOrPastCenter(items: readonly FocusItem[], from: HTMLElement): FocusItem | undefined {
     const box = from.getBoundingClientRect();
     const center = box.left + box.width / 2;
-    return items.find(item => item.element.getBoundingClientRect().left >= center - 0.5);
+    // Items run in reading order, so "past" is toward the end of the line: the right edge left to right, the left edge right to left.
+    const rightToLeft = readsInlineRightToLeft(from);
+    return items.find(item => startsAtOrPast(item.element.getBoundingClientRect(), center, rightToLeft));
 }
 
 function overlappingNearest(items: readonly FocusItem[], origin: DOMRect): FocusItem | undefined {
@@ -908,8 +918,14 @@ function nearestItem(items: readonly FocusItem[], from: HTMLElement, navigationX
     return items.reduce<FocusItem | undefined>((best, item) => best === undefined || Math.abs(centre(item.element) - x) < Math.abs(centre(best.element) - x) ? item : best, undefined);
 }
 
-/** The index the key moves to inside the zone, or undefined at its edge. */
-export function moveWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index: number, key: "up" | "down" | "left" | "right"): number | undefined {
+/** The index the key moves to inside the zone, or undefined at its edge. Items `skip` names are passed over; none left means the edge. */
+export function moveWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index: number, key: "up" | "down" | "left" | "right", skip?: (index: number) => boolean): number | undefined {
+    let target = stepWithin(zone, count, index, key);
+    while (skip !== undefined && target !== undefined && skip(target)) target = stepWithin(zone, count, target, key);
+    return target;
+}
+
+function stepWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index: number, key: "up" | "down" | "left" | "right"): number | undefined {
     const columns = zone.layout === "grid" ? Math.max(1, zone.columns ?? 1) : zone.layout === "row" ? count : 1;
     const column = index % columns;
     switch (key) {
@@ -934,6 +950,9 @@ export function moveWithin(zone: Pick<Zone, "layout" | "columns">, count: number
 }
 
 /** Makes `nodes` the container's children; a node already in its place is not moved, so it keeps focus. */
+/** The views that follow the page's direction: Home, Search, Requests, Calendar, Settings, Change Account and its sibling screens, Details pages and their seasons (`item:` and `season:`), the Watchlist, Favorites and History pages (`personal:`), the Person page (`person:`), and a library's Browse page (the `library-browse` container class). */
+const MIRRORED_VIEW = /^(home(:|$)|item:|season:|search$|requests:|calendar$|settings(:|$)|watchParty:|personal:|person:|accounts-|change-account$|account-expired$)/;
+
 function place(container: HTMLElement, nodes: readonly HTMLElement[]): void {
     // Remove replaced siblings first so retained focus/press hosts never need a DOM move.
     const retained = new Set(nodes);

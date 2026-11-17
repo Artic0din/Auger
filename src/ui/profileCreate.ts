@@ -4,6 +4,8 @@ import type { UserLibrary } from "../contracts/v2/catalog.ts";
 import type { ProfileCreateBody, ProfileSummary } from "../contracts/v2/wire.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import { ProfileManagement } from "../session/profileManagement.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { profileAvatar } from "./profilePicker.ts";
 import { PROFILE_STYLES, profilePresets } from "./profilePresets.ts";
@@ -34,7 +36,7 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
     const finish = (profileId?: string, uncertain = false): void => {
         try { destroy(); }
         catch {
-            const retry = button("cleanup-retry", "Try again", () => finish(profileId, uncertain));
+            const retry = button("cleanup-retry", translate("common.tryAgain"), () => finish(profileId, uncertain));
             options.show({ name: "profile-cleanup", content: [el("h1", "signin-title", "Could not leave profile management"), actions([retry])], controls: [retry], focus: retry.key, back: undefined });
             return;
         }
@@ -74,20 +76,20 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
             return control;
         };
         const styles = el("div", "profile-style-row");
-        for (const [id, label] of PROFILE_STYLES) {
-            const control = rowButton(`style:${id}`, label, () => { style = id; selected = 0; render(`style:${id}`); });
+        for (const [id, key] of PROFILE_STYLES) {
+            const control = rowButton(`style:${id}`, translate(key), () => { style = id; selected = 0; render(`style:${id}`); });
             control.element.setAttribute("aria-pressed", String(style === id));
             styles.appendChild(control.element);
         }
         row++;
-        section("Style", styles);
+        section(translate("profiles.form.style"), styles);
         const presets = profilePresets(style, batch);
         if (style !== "initials") {
-            const shuffle = rowButton("shuffle-avatars", "Shuffle avatars", () => { batch++; selected = 0; render("shuffle-avatars"); });
+            const shuffle = rowButton("shuffle-avatars", translate("profiles.form.shuffleAvatars"), () => { batch++; selected = 0; render("shuffle-avatars"); });
             const grid = el("div", "profile-preset-grid");
             presets.forEach((reference, index) => {
                 row = 2 + Math.floor(index / 6);
-                const control = rowButton(`preset:${index}`, `Avatar ${index + 1}`, () => { selected = index; render(`preset:${index}`); });
+                const control = rowButton(`preset:${index}`, translate("profiles.avatar.preset", { seed: integerText(index + 1) }), () => { selected = index; render(`preset:${index}`); });
                 control.element.className = "profile-preset";
                 control.element.setAttribute("aria-pressed", String(selected === index));
                 const avatar = profileAvatar({ id: `preset-${index}`, name, hasPin: false, isPrimary: false, isChild: child, avatar: reference, avatarUrl: undefined }, options.server.server.http.base.baseUrl);
@@ -97,31 +99,31 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                 grid.appendChild(control.element);
             });
             row = 5;
-            section("Avatar", grid, shuffle.element);
-        } else section("Avatar", el("p", "signin-text", "Uses your profile name"));
+            section(translate("profiles.form.avatar"), grid, shuffle.element);
+        } else section(translate("profiles.form.avatar"), el("p", "signin-text", translate("profiles.form.initialsTitle")));
         const nameInput = el("input", "signin-input");
         nameInput.id = "create-profile-name";
-        nameInput.setAttribute("aria-label", "Profile name");
+        nameInput.setAttribute("aria-label", translate("newProfile.namePlaceholder"));
         nameInput.value = name; nameInput.maxLength = 64; nameInput.autocomplete = "off";
         nameInput.setAttribute("data-focus", "create-name");
         controls.push({ key: "create-name", element: nameInput, row: row++, done: "create-pin" });
-        section("Name", nameInput);
+        section(translate("newProfile.name"), nameInput);
         const pinInput = el("input", "signin-input");
         pinInput.id = "create-profile-pin";
-        pinInput.setAttribute("aria-label", "4-digit PIN");
+        pinInput.setAttribute("aria-label", translate("newProfile.pinPlaceholder"));
         pinInput.type = "password"; pinInput.inputMode = "numeric"; pinInput.maxLength = 4;
         pinInput.value = pin; pinInput.autocomplete = "off";
         pinInput.setAttribute("data-focus", "create-pin");
         controls.push({ key: "create-pin", element: pinInput, row: row++, done: "create-submit" });
-        section("PIN (optional)", pinInput);
+        section(translate("newProfile.pin"), pinInput);
         if (!bootstrap) {
-            const toggle = rowButton("create-child", `Child Profile: ${child ? "On" : "Off"}`, () => { child = !child; render("create-child"); });
+            const toggle = rowButton("create-child", `${translate("newProfile.child")}: ${translate(child ? "newProfile.on" : "newProfile.off")}`, () => { child = !child; render("create-child"); });
             row++; column.appendChild(toggle.element);
             if (child) {
                 const ratings = ["G", "PG", "PG-13", "R", "NC-17"];
                 const limit = rowButton("create-rating", `Content rating: ${rating}`, () => { rating = ratings[(ratings.indexOf(rating) + 1) % ratings.length] ?? "PG"; render("create-rating"); });
                 row++; column.appendChild(limit.element);
-                const access = rowButton("create-libraries", `Restrict libraries: ${restricted ? "On" : "Off"}`, () => { restricted = !restricted; render("create-libraries"); });
+                const access = rowButton("create-libraries", `${translate("newProfile.restrict")}: ${translate(restricted ? "newProfile.on" : "newProfile.off")}`, () => { restricted = !restricted; render("create-libraries"); });
                 row++; column.appendChild(access.element);
                 if (restricted) {
                     const slot = el("div", "profile-library-options");
@@ -135,7 +137,7 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                         previous = [];
                         if (libraries === undefined) {
                             content.push(el("p", "signin-text", librariesFailed ? "Could not load libraries." : "Loading libraries."));
-                            if (librariesFailed) { const retry = { ...button("libraries-retry", "Try again", loadLibraries), row: firstRow }; previous.push(retry); content.push(retry.element); }
+                            if (librariesFailed) { const retry = { ...button("libraries-retry", translate("common.tryAgain"), loadLibraries), row: firstRow }; previous.push(retry); content.push(retry.element); }
                         } else for (const library of libraries) {
                             const control = { ...button(`library:${library.id}`, `${library.name}: ${allowed.has(library.id) ? "Allowed" : "Blocked"}`, () => {
                                 if (submitting) return;
@@ -166,7 +168,7 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
             field.setAttribute("aria-describedby", status.id);
             field.after(status);
         }
-        const submit = rowButton("create-submit", submitting ? "Creating profile" : "Create Profile", () => {
+        const submit = rowButton("create-submit", submitting ? "Creating profile" : translate("newProfile.create"), () => {
             name = nameInput.value; pin = pinInput.value;
             if (!name.trim()) { render("create-name", "Enter a profile name."); return; }
             if (pin !== "" && !/^\d{4}$/.test(pin)) { render("create-pin", "Enter all four PIN digits or leave the PIN empty."); return; }
@@ -183,7 +185,7 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                 else showProblem("The request may already have created this profile. Check the profile list before trying again.");
             });
         });
-        const cancel = { ...button("create-cancel", "Cancel", () => finish(undefined, submitting)), row };
+        const cancel = { ...button("create-cancel", translate("common.cancel"), () => finish(undefined, submitting)), row };
         controls.push(cancel);
         column.appendChild(actions([submit, cancel]));
         const preview = el("div", "profile-create-preview");
@@ -194,11 +196,11 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
         pinInput.addEventListener("input", () => { pin = pinInput.value.replace(/\D/g, "").slice(0, 4); pinInput.value = pin; });
         updatePreview();
         const header = el("div", "profile-create-header");
-        const headerCancel = { ...button("create-header-cancel", "Cancel", () => finish(undefined, submitting)), row: -1 };
+        const headerCancel = { ...button("create-header-cancel", translate("common.cancel"), () => finish(undefined, submitting)), row: -1 };
         controls.unshift(headerCancel);
-        header.append(el("h1", "profile-create-title", "New Profile"), headerCancel.element);
+        header.append(el("h1", "profile-create-title", translate("newProfile.title")), headerCancel.element);
         const body = el("div", "profile-create-body"); body.append(preview, column);
-        options.show({ name: "profile-create", content: [header, body], controls, focus, back: () => finish(undefined, submitting) }, focus);
+        options.show({ name: "profile-create", content: [header, body], controls, focus, back: () => finish(undefined, submitting), translated: true }, focus);
         if (error !== undefined && status.isConnected) status.scrollIntoView({ block: "nearest" });
         updateLibraries = drawLibraries ?? (() => undefined);
         drawLibraries?.();

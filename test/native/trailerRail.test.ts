@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ItemVideo, LocalExtra } from "../../src/contracts/v2/catalog.ts";
-import { trailerCards, youtubeStillUrl } from "../../src/ui/trailerRail.ts";
+import { extraKindLabel, trailerCards, youtubeStillUrl } from "../../src/ui/trailerRail.ts";
 
 const video = (siteKey: string, site = "youtube", kind = "trailer", name?: string): ItemVideo => ({
     kind, site, siteKey, name, language: undefined, isOfficial: true,
@@ -44,4 +44,11 @@ test("card titles fall back to the kind label and local captions are runtimes", 
     assert.equal(local[1]?.caption, undefined);
     assert.equal(local[2]?.caption, "1:01:01");
     assert.equal(youtubeStillUrl("a-B_c1D2e3F"), "https://i.ytimg.com/vi/a-B_c1D2e3F/hqdefault.jpg");
+});
+
+test("a kind the server sends that is not one of Apple's shows the generic label, even a name on Object's prototype", () => {
+    assert.equal(extraKindLabel("featurette"), "Featurette");
+    for (const kind of ["something_new", "constructor", "__proto__", "toString", "hasOwnProperty"]) assert.equal(extraKindLabel(kind), "Extra", kind);
+    const [card] = trailerCards([extra("extra:1", "constructor")], [], true);
+    assert.equal(card?.title, "Extra");
 });

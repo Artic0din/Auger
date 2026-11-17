@@ -14,7 +14,7 @@ import { type SettingsKey, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY } from "../../
 const CARD_OVERLAYS_KEY = "ui.card_overlays" as SettingsKey;
 const CARD_OVERLAYS_ENABLED_KEY = "ui.card_overlays_enabled" as SettingsKey;
 const CARD_PRESENTATION_KEY = "ui.card_presentation" as SettingsKey;
-import { afterPaint, detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -200,6 +200,62 @@ function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void
         } finally { await tv.page.context().close(); }
     });
 }
+
+journey("Home keeps one tint wash while its backdrop changes, and a new tint fades in over the old one", async tv => {
+    const wash = tv.page.locator(".skyline-wash");
+    const bitmap = (): Promise<string> => tv.page.locator(".skyline-wash canvas").last().evaluate(node => (node as HTMLCanvasElement).toDataURL());
+    await wash.evaluate(node => node.setAttribute("data-first", ""));
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loaded", "first backdrop shown");
+    await tv.jump(300);
+    const before = await bitmap();
+    assert.equal(await tv.page.locator(".skyline-hero-backdrop .skyline-tint-wash").count(), 0, "a backdrop layer carries no wash of its own");
+    // The layer is only as big as its art, so it is not a full-screen layer to draw (#515); the top scrim is one shared strip above every layer.
+    const box = (selector: string): Promise<number[]> => tv.page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); });
+    assert.deepEqual(await box(".skyline-marquee-art:not(.skyline-outgoing) .skyline-hero-backdrop"), [691.2, 0, 1228.8, 756]);
+    assert.deepEqual(await box(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame"), [691.2, 0, 1228.8, 756]);
+    assert.deepEqual(await box(".skyline-hero-scrim"), [0, 0, 1920, 190]);
+    assert.equal(await tv.page.locator(".skyline-hero-backdrop .skyline-top-scrim").count(), 0);
+    assert.equal(await tv.page.evaluate(() => { const z = (selector: string): number => Number(getComputedStyle(document.querySelector(selector) as Element).zIndex); return z(".skyline-hero-scrim") > z(".skyline-hero-backdrop") && z(".skyline-hero-backdrop") > z(".skyline-wash"); }), true, "wash, art, scrim stack in that order");
+    await tv.page.keyboard.press("ArrowRight");
+    await tv.jump(150);
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art.skyline-outgoing").count() === 1, "the next backdrop is swapping in");
+    assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 2, "the new wash fades in over the old one");
+    // The fading layer's opacity makes it a stacking context, so it must sit at the art's own depth or the shared scrim would fall under it until the fade ends.
+    assert.deepEqual(await tv.page.locator(".skyline-marquee-art.skyline-art-enter").evaluate(node => { const style = getComputedStyle(node); return [style.position, style.zIndex]; }), ["absolute", "-2"]);
+    await tv.jump(700);
+    assert.equal(await tv.page.locator(".skyline-wash[data-first]").count(), 1, "the same wash element stays");
+    assert.equal(await tv.page.locator(".skyline-wash").count(), 1);
+    assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 1, "the old bitmap goes once the new one is opaque");
+    assert.notEqual(await bitmap(), before, "its colours changed with the backdrop");
+}, catalog => {
+    const featured = catalog.households.get("p-owner")?.sections.find(row => row.id === "hero/opaque");
+    assert.ok(featured);
+    featured.items.push("movie:m0005");
+    enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" }, "movie:m0005": { backdrop_url: "/art/bd-m5.svg" } });
+});
+
+let heldFirstBackdrop: { release(): void } | undefined;
+journey("a backdrop that loads late does not recolour the wash of the one shown now", async tv => {
+    const bitmap = (): Promise<string> => tv.page.locator(".skyline-wash canvas").last().evaluate(node => (node as HTMLCanvasElement).toDataURL());
+    await tv.page.keyboard.press("ArrowRight");
+    await tv.jump(700);
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loaded", "the second backdrop is shown");
+    const shown = await bitmap();
+    heldFirstBackdrop?.release();
+    await tv.jump(700);
+    await afterPaint(tv);
+    assert.equal(await bitmap(), shown, "the first backdrop's sample is for a layer that is gone");
+}, catalog => {
+    const featured = catalog.households.get("p-owner")?.sections.find(row => row.id === "hero/opaque");
+    assert.ok(featured);
+    featured.items.push("movie:m0005");
+    enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" }, "movie:m0005": { backdrop_url: "/art/bd-m5.svg" } });
+}, undefined, { whileReading: true, beforeMount: tv => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    heldFirstBackdrop = { release };
+    void tv.page.route("**/art/bd-m4.svg", async route => { await held; await route.fallback(); });
+} });
 
 let heldLibraries: { release(): void };
 let heldSections: { release(): void };
@@ -407,7 +463,7 @@ journey("while Home sections are out, the page is an empty Loading home and the 
     beforeReady: async tv => {
         await tv.eventually(async () => await tv.page.locator('[aria-label="Loading home"]').count() === 1, "empty Loading home page");
         assert.equal(await tv.page.locator(".skyline-content").getByRole("heading", { name: "Loading", exact: true }).count(), 0);
-        assert.equal(await tv.page.locator(".skyline-content").getByRole("button", { name: "Profiles", exact: true }).count(), 0);
+        assert.equal(await tv.page.locator(".skyline-content").getByRole("button", { name: "Profile", exact: true }).count(), 0);
         assert.equal(await tv.page.getByText("Still waiting for the server.", { exact: true }).count(), 0);
         await tv.eventually(async () => await tv.page.locator('[data-focus="movies"]').count() === 1, "library tabs while Home is still loading");
         heldHomeLoading.release();
@@ -863,8 +919,15 @@ journey("card artwork fades in over 0.12 s once it loads, and decoded artwork pa
     await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
     const again = tv.page.locator(`${POSTER} .browse-art-image`);
     await again.waitFor({ state: "attached" });
-    assert.equal(await again.evaluate(node => node.classList.contains("is-cached")), true, "AsyncImageView paints a cached decode with no animation");
-    assert.equal(await again.evaluate(node => getComputedStyle(node).opacity), "1");
+    // A late Home answer repaints the section and replaces the poster; a style read of the old node reports "". Read once the answers have landed and painted.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Home answers delivered");
+    await afterPaint(tv);
+    const painted = await readLive(tv, (selector: string) => {
+        const node = document.querySelector(selector);
+        return node === null || !node.isConnected ? null : { cached: node.classList.contains("is-cached"), opacity: getComputedStyle(node).opacity };
+    }, `${POSTER} .browse-art-image`, value => value.opacity !== "", "live cached artwork");
+    assert.equal(painted.cached, true, "AsyncImageView paints a cached decode with no animation");
+    assert.equal(painted.opacity, "1");
 }, catalog => enrichHome(catalog, { "movie:m0006": { poster_url: "/art/gated-poster.svg" } }), undefined, { beforeMount: tv => {
     const gate = new Promise<void>(resolve => { cardArtGate = resolve; });
     void tv.page.route("**/art/gated-poster.svg", async route => { await gate; await route.fulfill({ contentType: "image/svg+xml", headers: { "cache-control": "max-age=3600" }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>' }); });

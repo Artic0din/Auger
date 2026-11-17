@@ -2,6 +2,7 @@
 // TVAudiobookChaptersView and AudiobookDetailFormatting, kept free of the DOM so Node can test them.
 
 import { currentChapterIndex, isFinished, resumePosition, type Audiobook, type AudiobookChapter, type AudiobookRelatedItem } from "../contracts/v2/audiobooks.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 // --- AudiobookDetailFormatting ---
 
@@ -181,7 +182,7 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     }
 
     const rows: PickerRow[] = chapters.length === 0
-        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: `Part ${partIndex + 1}`, duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
+        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: part.fileName !== undefined && part.fileName !== "" ? part.fileName : `Part ${partIndex + 1}`, duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
         : chapters.map((chapter, chapterIndex) => {
             const duration = chapterDuration(chapters, chapterIndex, total);
             const isCurrent = current === chapterIndex;
@@ -209,7 +210,7 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     if (writtenBy !== undefined) credits.push(`Written by ${writtenBy}`);
     if (narratedBy !== undefined) credits.push(`Narrated by ${narratedBy}`);
     if (detail.publisher !== undefined && detail.publisher !== "") credits.push(detail.publisher);
-    if (book.year !== undefined) credits.push(String(book.year));
+    if (book.year !== undefined) credits.push(integerText(book.year));
     const rails: { title: string; items: RailItem[] }[] = [];
     if (detail.series !== undefined && detail.series.entries.length > 0) rails.push({ title: detail.series.name ?? "Series", items: detail.series.entries.map(railItem) });
     if (detail.alsoByAuthor.length > 0) rails.push({ title: "More by Author", items: detail.alsoByAuthor.map(railItem) });

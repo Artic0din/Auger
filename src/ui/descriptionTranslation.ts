@@ -10,6 +10,7 @@ import { operations } from "../api/operations.ts";
 import type { Episode, ItemDetail } from "../contracts/v2/catalog.ts";
 import type { DescriptionJob } from "../contracts/v2/descriptionTranslation.ts";
 import type { OnViewMode } from "../contracts/v2/descriptionTranslation.ts";
+import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 
 export type { DescriptionJob, OnViewMode };
@@ -19,9 +20,6 @@ export { decodeDescriptionTranslationJob, decodeMetadataAICapability } from "../
 export const DESCRIPTION_TRANSLATION_POLL_MS = [1000, 2000, 2000, 3000, 3000, 4000, 5000, 5000, 5000, 5000, 5000, 5000];
 /** How long a featured card must hold the marquee before auto mode starts. TVSkylineMarquee.translationDwell. */
 export const MARQUEE_TRANSLATION_DWELL_MS = 1500;
-export const TRANSLATING_LABEL = "Translating…";
-export const TRANSLATED_BY_AI_LABEL = "Translated by AI";
-export const TRANSLATE_DESCRIPTION_LABEL = "Translate Description";
 
 export interface TranslationKey {
     readonly contentId: string;
@@ -35,8 +33,8 @@ export interface DescriptionTranslationStatus {
 
 /** Translating wins. A tagline-only mark does not label the overview. */
 export function descriptionTranslationStatus(translating: boolean, fields: readonly string[] | undefined): DescriptionTranslationStatus | undefined {
-    if (translating) return { kind: "translating", text: TRANSLATING_LABEL };
-    return fields?.includes("overview") === true ? { kind: "machine-translated", text: TRANSLATED_BY_AI_LABEL } : undefined;
+    if (translating) return { kind: "translating", text: translate("detail.translation.translating") };
+    return fields?.includes("overview") === true ? { kind: "machine-translated", text: translate("detail.translation.translated") } : undefined;
 }
 
 /** Featured cards in auto mode only. Button mode leaves the action to Details. */
@@ -319,6 +317,8 @@ export interface DetailSurface {
     seriesId(): string | undefined;
     /** The artwork query Details read this item with, so a readback keeps its image URLs. */
     artwork(): Readonly<Record<string, string>>;
+    /** The still query the episode rail reads with, so a translated rail keeps its sized stills. */
+    episodeArtwork(): Promise<Readonly<Record<string, string>>>;
     /** Returns whether the pending language has cleared. True also means the page moved on and the run can stop. */
     replaceDetail(detail: ItemDetail): boolean;
     replaceEpisodes(seasonNumber: number, episodes: readonly Episode[]): boolean;
@@ -454,7 +454,7 @@ export class ItemDescriptionTranslation {
 
     private async readEpisodes(seriesId: string, seasonNumber: number): Promise<readonly Episode[] | undefined> {
         try {
-            return await this.session.call({ ...operations.listSeasonEpisodes(seriesId, seasonNumber), profileScoped: true, signal: this.signal });
+            return await this.session.call({ ...operations.listSeasonEpisodes(seriesId, seasonNumber, await this.surface.episodeArtwork()), profileScoped: true, signal: this.signal });
         } catch (error) {
             if (error instanceof ApiError && error.aborted) throw error;
             return undefined;

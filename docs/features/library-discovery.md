@@ -12,7 +12,7 @@ Shared row cards reserve 20px above their buttons during edge reveal, covering t
 The existing scroll owner reads that CSS scroll margin; other controls keep its 12px minimum.
 Browse is a separate whole-library Movies/Series grid, matching the split in Apple's `TVLibraryTypeTabView`.
 It requests 100 cards at a time and prefetches when a card in the last eight rows becomes visible.
-The seven video sorts, typed facet groups and transient A–Z prefix share one query; moving focus alone sends no request.
+Apple's sorts for the library's media type (up to 17 for a series library, listed in [Settings](../settings.md)), typed facet groups and transient A–Z prefix share one query; moving focus alone sends no request.
 Sort applies immediately; Filter edits a draft, applies through Done or Back from its root, and returns from a facet to the facet list on Back.
 Committed sort and filters are remembered per server, profile and library while Preserve sort & filters is enabled; the prefix is never persisted.
 The selected destination is not part of that memory. A new visit opens Recommended, so a saved Browse sort cannot replace the server shelves.
@@ -101,7 +101,7 @@ The signed screen-calibration WGT at `f4096cd` has SHA-256 `81dbbd519e1dfd827443
 All 14 unpacked files matched the installed simulator files; their complete hashes are in [the installed asset manifest](../evidence/screenshots/117-section/installed-calibrated.sha256), SHA-256 `5e910bc2141ad8d298c2acc14be603fb18deaad096d9b3c998fa805f8d2c09a5`.
 The later append-404 correction is covered by native regression tests; it changes error handling without changing this screen geometry.
 
-The library tabs offer only Apple's three destinations, Recommended, Collections and Browse (`TVLibraryPillRow.swift:7-10`); genre, A–Z and date added are Browse's filter, letter rail and sort.
+The library tabs offer only Apple's three destinations, Recommended, Browse and Collections (`TVLibraryPillRow.swift:7-17`); genre, A–Z and date added are Browse's filter, letter rail and sort.
 Browse's 1920 column, the letter rail and its 32 trailing overflow the screen and centre, as Apple's HStack does at silo-apple `5780c84` (`TVLibraryGridView.swift:98-108`, `TVCatalogGrid.swift:102-143`): the pills and grid start at x55 with the rail closed and slide to x16 as it opens, and the open rail draws on through the bottom safe area.
 The rail's letters, the Sort panel's heading and the filter count use the packaged Roboto Mono in place of SF Mono, because the TV has no monospaced system face (`app/fonts/README.md`).
 All requests use the existing operations/session/NativeHttp owners and active profile authority.

@@ -3,22 +3,14 @@
 // The accurate probe runs only from Test speed. Opening Settings reads the stored
 // connection; focusing the row does not.
 
+import { localizeNumerals, shownLocale } from "../i18n/format.ts";
+import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 import { systemClock } from "../api/clock.ts";
 import { operations } from "../api/operations.ts";
 import { runManualSpeedTest, type ManualSpeedTestResult, type ProbeTransportName, type SpeedMeasurement, type SpeedTestClient, type SpeedTestNetwork } from "../api/bandwidthProbe.ts";
 import { bandwidthReadings, readingsKey } from "../player/bandwidthReadings.ts";
 import { BUFFERING_QUALITY_FEATURE, CONNECTION_SPEED_FEATURE, type ConnectionProbe, type ConnectionSample, type LearnedLimit, type PlaybackConnection } from "../contracts/v2/connectionSpeed.ts";
-
-export const CONNECTION_SECTION = "CONNECTION";
-export const CONNECTION_SPEED_TITLE = "Connection speed";
-export const TEST_SPEED_ACTION = "Test speed";
-export const TESTING_SPEED_LABEL = "Testing…";
-export const NOT_MEASURED_TEXT = "Not measured yet";
-export const SPEED_TEST_FAILED = "Couldn't measure the connection speed. Try again.";
-export const SPEED_TEST_NOT_SAVED = "Couldn't save the speed test result. Try again.";
-export const LEARNED_LIMIT_RESET_FAILED = "Couldn't reset the limit. Try again.";
-export const LEARNED_LIMIT_RESET_ACTION = "Reset";
 
 export interface ConnectionSpeedView {
     readonly line: string;
@@ -32,56 +24,50 @@ export interface ConnectionSpeedView {
 /** tvOS `offersCellularQuality` is false, so a metered network uses the shorter sentence. */
 export function connectionSpeedSkippedText(network: SpeedTestNetwork & { readonly cellular: boolean }): string | undefined {
     if (!network.online || !network.metered) return undefined;
-    if (network.cellular) return "Speed tests are skipped on cellular, and the Cellular Quality settings apply.";
-    return "Speed tests are skipped on metered networks.";
+    return translate(network.cellular ? "settings.connection.skippedCellular" : "settings.connection.skippedMetered");
 }
 
-/** SettingsViewModel.connectionRateText. Rounded down, no digit grouping. */
+/** SettingsViewModel.connectionRateText. Rounded down, no digit grouping, the unit in English and the number in the language's digits. */
 export function connectionRateText(kbps: number): string {
     const rate = Math.max(kbps, 0);
-    if (rate < 1_000) return `${rate} kbps`;
-    if (rate >= 10_000) return `${Math.floor(rate / 1_000)} Mbps`;
+    if (rate < 1_000) return localizeNumerals(`${rate} kbps`);
+    if (rate >= 10_000) return localizeNumerals(`${Math.floor(rate / 1_000)} Mbps`);
     const tenths = Math.floor(rate / 100);
-    return tenths % 10 === 0 ? `${Math.floor(tenths / 10)} Mbps` : `${Math.floor(tenths / 10)}.${tenths % 10} Mbps`;
+    return localizeNumerals(tenths % 10 === 0 ? `${Math.floor(tenths / 10)} Mbps` : `${Math.floor(tenths / 10)}.${tenths % 10} Mbps`);
 }
 
 export function connectionAgeText(measuredAt: number, now: number): string {
     const minutes = Math.max(0, Math.floor((now - measuredAt) / 60_000));
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
-    if (minutes < 24 * 60) {
-        const hours = Math.floor(minutes / 60);
-        return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
-    }
-    const days = Math.floor(minutes / (24 * 60));
-    return `${days} ${days === 1 ? "day" : "days"} ago`;
+    if (minutes < 1) return translate("settings.connection.age.justNow");
+    if (minutes < 60) return translate("settings.connection.age.minutes", { count: minutes });
+    if (minutes < 24 * 60) return translate("settings.connection.age.hours", { count: Math.floor(minutes / 60) });
+    return translate("settings.connection.age.days", { count: Math.floor(minutes / (24 * 60)) });
 }
 
 /**
  * "Limited to 44 Mbps after buffering on Oct 17": the rate as Settings shows rates and the day of the most
  * recent lowering in the viewer's locale and time zone (SettingsViewModel.learnedLimitText, 486-495).
  */
-export function learnedLimitText(limit: LearnedLimit, locale?: string, timeZone?: string): string {
-    const day = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", ...(timeZone === undefined ? {} : { timeZone }) }).format(limit.observedAt);
-    return `Limited to ${connectionRateText(limit.kbps)} after buffering on ${day}`;
+export function learnedLimitText(limit: LearnedLimit, locale: string = shownLocale(), timeZone?: string): string {
+    const date = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", ...(timeZone === undefined ? {} : { timeZone }) }).format(limit.observedAt);
+    return translate("settings.learnedLimit", { rate: connectionRateText(limit.kbps), date });
 }
 
 export function tryAgainMessage(seconds: number): string {
-    return `Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+    return translate("settings.connection.retry", { count: seconds });
 }
 
 export function connectionSpeedText(kbps: number, lowerBound: boolean, measuredAt: number, transport: string, now: number): string {
-    const network = transport === "wifi" ? "Wi-Fi" : transport === "ethernet" ? "Ethernet" : transport === "cellular" ? "cellular" : "this connection";
-    const speed = lowerBound ? `Faster than ${connectionRateText(kbps)}` : connectionRateText(kbps);
-    return `${speed} · measured ${connectionAgeText(measuredAt, now)} on ${network}`;
+    const network = translate(transport === "wifi" ? "settings.connection.transport.wifi" : transport === "ethernet" ? "settings.connection.transport.ethernet" : transport === "cellular" ? "settings.connection.transport.cellular" : "settings.connection.transport.otherNetwork");
+    return translate(lowerBound ? "settings.connection.lowerBound" : "settings.connection.measured", { rate: connectionRateText(kbps), age: connectionAgeText(measuredAt, now), network });
 }
 
 export function playbackSampleText(kbps: number, measuredAt: number, now: number): string {
-    return `Faster than ${connectionRateText(kbps)} · seen during playback ${connectionAgeText(measuredAt, now)}`;
+    return translate("settings.connection.duringPlayback", { rate: connectionRateText(kbps), age: connectionAgeText(measuredAt, now) });
 }
 
 export function autoBudgetText(kbps: number): string {
-    return `Auto plays videos up to ${connectionRateText(kbps)} without converting them.`;
+    return translate("settings.connection.budget", { rate: connectionRateText(kbps) });
 }
 
 export function currentNetwork(): SpeedTestNetwork & { readonly cellular: boolean } {
@@ -187,7 +173,7 @@ export class ConnectionSpeed {
         }, () => {
             if (abort.signal.aborted || this.testAbort !== abort) return;
             this.testing = false;
-            this.message = SPEED_TEST_FAILED;
+            this.message = translate("settings.connection.measureFailed");
             this.refresh();
         });
     }
@@ -272,7 +258,7 @@ export class ConnectionSpeed {
             return true;
         } catch {
             if (signal.aborted) return false;
-            this.learnedResetError = LEARNED_LIMIT_RESET_FAILED;
+            this.learnedResetError = translate("settings.learnedLimit.resetFailed");
             this.onChange();
             return false;
         } finally {
@@ -297,7 +283,7 @@ export class ConnectionSpeed {
             case "notSaved":
                 this.unsavedAt = result.measurement.measuredAt;
                 this.own = result.measurement;
-                this.message = SPEED_TEST_NOT_SAVED;
+                this.message = translate("settings.connection.notSaved");
                 this.refresh();
                 void this.load(++this.generation);
                 return;
@@ -315,7 +301,7 @@ export class ConnectionSpeed {
                 this.refresh();
                 return;
             case "failed":
-                this.message = SPEED_TEST_FAILED;
+                this.message = translate("settings.connection.measureFailed");
                 this.refresh();
                 return;
             case "cancelled":
@@ -339,7 +325,7 @@ export class ConnectionSpeed {
         const now = Date.now();
         return {
             line: skipped ?? this.line(now),
-            action: skipped !== undefined ? undefined : this.testing ? TESTING_SPEED_LABEL : TEST_SPEED_ACTION,
+            action: skipped !== undefined ? undefined : translate(this.testing ? "settings.connection.testing" : "settings.connection.test"),
             budget: skipped !== undefined || this.autoBudgetKbps === undefined ? undefined : autoBudgetText(this.autoBudgetKbps),
             message: this.message,
             disabled: skipped !== undefined,
@@ -355,7 +341,7 @@ export class ConnectionSpeed {
         }
         if (server !== undefined) return connectionSpeedText(server.kbps, server.lowerBound, server.measuredAt, server.transport, now);
         if (this.sample !== undefined) return playbackSampleText(this.sample.kbps, this.sample.measuredAt, now);
-        return NOT_MEASURED_TEXT;
+        return translate("settings.connection.notMeasured");
     }
 
     private clearMessageTimer(): void {

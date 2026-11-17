@@ -63,6 +63,13 @@ function oneOf<T extends string>(raw: string, known: readonly T[]): T | "unknown
 
 const LIBRARY_TYPES = ["movies", "series", "mixed", "music", "audiobooks"] as const;
 
+/** silo-apple SiloMediaType.isAudiobookLibrary: the server's library type is free-form, so these spellings all name audiobooks. */
+const AUDIOBOOK_LIBRARY_SPELLINGS = ["audiobook", "audiobooks"];
+
+function libraryType(raw: string): (typeof LIBRARY_TYPES)[number] | "unknown" {
+    return AUDIOBOOK_LIBRARY_SPELLINGS.includes(raw.trim().toLowerCase()) ? "audiobooks" : oneOf(raw, LIBRARY_TYPES);
+}
+
 export interface UserLibrary {
     readonly id: string;
     readonly name: string;
@@ -77,7 +84,7 @@ export function decodeUserLibraries(value: unknown): UserLibrary[] {
         return {
             id: string(obj, "id", path),
             name: string(obj, "name", path),
-            type: oneOf(string(obj, "type", path), LIBRARY_TYPES),
+            type: libraryType(string(obj, "type", path)),
             sortOrder: integer(obj, "sort_order", path),
         };
     });
@@ -297,7 +304,18 @@ export interface HomeSection {
     readonly totalCount?: number | undefined;
     readonly isCustom?: boolean | undefined;
     readonly customized?: boolean | undefined;
+    /** The catalog key (`home.section.*`) of the server's own title, sent only while `title` is the server's text, never an admin's rename. */
+    readonly titleKey?: string | undefined;
+    /** The values that key's placeholders take (`{"library": "Movies"}`). */
+    readonly titleArgs?: Readonly<Record<string, string>> | undefined;
     readonly items: readonly Card[];
+}
+
+/** Optional extras: a malformed key or argument map shows `title` rather than failing the row, as Apple's decoder does. */
+export function titleArguments(value: unknown): Record<string, string> | undefined {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+    const entries = Object.entries(value);
+    return entries.every(([, argument]) => typeof argument === "string") ? Object.fromEntries(entries) as Record<string, string> : undefined;
 }
 
 export function decodeHomeSections(value: unknown): HomeSection[] {
@@ -315,6 +333,8 @@ export function decodeHomeSections(value: unknown): HomeSection[] {
             totalCount: section.total_count == null ? undefined : integer(section, "total_count", sectionPath),
             isCustom: section.is_custom == null ? undefined : boolean(section, "is_custom", sectionPath),
             customized: section.customized == null ? undefined : boolean(section, "customized", sectionPath),
+            titleKey: typeof section.title_key === "string" ? section.title_key : undefined,
+            titleArgs: titleArguments(section.title_args),
             items: array(section, "items", sectionPath).map((card, cardIndex) => decodeCard(card, `${sectionPath}.items[${cardIndex}]`)),
         };
     });

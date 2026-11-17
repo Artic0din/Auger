@@ -8,6 +8,7 @@ import type { RequestSpec } from "../api/http.ts";
 import { settingsOperations } from "../api/settingsOperations.ts";
 import type { Card, Episode, ItemDetail } from "../contracts/v2/catalog.ts";
 import { SPOILER_IMAGE_KEY, SPOILER_OVERVIEW_KEY, type SettingsCapabilities } from "../contracts/v2/settings.ts";
+import { translate } from "../i18n/translate.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import { readSettingsCapability } from "./presentationSettings.ts";
@@ -183,9 +184,9 @@ export class EpisodeSpoilerPreferences {
 
     get footer(): string {
         const parts = [
-            "Blur an episode's thumbnail until you start watching it, so the image does not give away the story.",
-            "Hide an episode's description until you start watching it.",
-            "Applies to episodes you have not started, on every device that uses this profile.",
+            translate("settingsManifest.catalog.hide_unwatched_episode_images.description"),
+            translate("settingsManifest.catalog.hide_unwatched_episode_overviews.description"),
+            translate("settings.spoilers.footer"),
         ];
         const status = this.statusMessage;
         if (status !== undefined) parts.push(status);
@@ -224,8 +225,8 @@ export class EpisodeSpoilerPreferences {
 
     private get statusMessage(): string | undefined {
         if (this.readError !== undefined) return this.readError;
-        if (this.sync === "checking") return "Checking whether this server supports spoiler settings…";
-        if (this.sync === "unavailable") return "Spoiler settings can be changed once this server is reachable.";
+        if (this.sync === "checking") return translate("detail.spoilers.checking");
+        if (this.sync === "unavailable") return translate("detail.spoilers.unavailable");
         return undefined;
     }
 
@@ -266,7 +267,7 @@ export class EpisodeSpoilerPreferences {
                 this.sync = "unavailable";
                 this.readError = undefined;
             } else {
-                this.readError = this.confirmed === undefined ? "Couldn't load spoiler settings from the server." : "Couldn't refresh spoiler settings. Showing the last saved values.";
+                this.readError = translate(this.confirmed === undefined ? "detail.spoilers.loadFailed" : "detail.spoilers.refreshFailed");
             }
             this.publish();
         }

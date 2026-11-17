@@ -5,7 +5,7 @@ import type { Credit, Person } from "../contracts/v2/details.ts";
 import type { Card } from "../contracts/v2/catalog.ts";
 import type { Destination } from "./browseModel.ts";
 import type { DetailsState } from "./detailsState.ts";
-import { TRANSLATE_DESCRIPTION_LABEL, type DescriptionTranslationStatus } from "./descriptionTranslation.ts";
+import { type DescriptionTranslationStatus } from "./descriptionTranslation.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { artworkUrl, clockTime, episodeLabel, playChoices, seriesPlayback, withStartAudioLanguage, type PlayRequest } from "./browseModel.ts";
 import { trailerCards, type TrailerCard } from "./trailerRail.ts";
@@ -16,10 +16,13 @@ import { personMetadataBadges, personPortrait } from "./personHero.ts";
 import { el, onDecoded } from "./screen.ts";
 import { detailAction, detailPanel } from "./detailsActions.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle } from "../player/preplaySubtitles.ts";
-import { audioTitle as trackAudioTitle, orderSubtitles, subtitlePillSummary, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
+import { audioTitle as trackAudioTitle, languageName, orderSubtitles, subtitlePillSummary, titleIndicatesHearingImpaired } from "../player/trackLabels.ts";
 import type { SubtitleSignature } from "../contracts/v2/preplaySubtitles.ts";
-import { seriesEpisodesView } from "./seriesEpisodesView.ts";
-import { languageName } from "./cardOverlays.ts";
+import { seasonName, seriesEpisodesView } from "./seriesEpisodesView.ts";
+import { shownLanguage } from "../i18n/language.ts";
+import { durationText } from "../i18n/duration.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
@@ -41,10 +44,6 @@ function advisoryAgeBadgeLabel(age: number | undefined, source: string | undefin
     return [named, `${age}+`].filter(part => part !== undefined).join(" ");
 }
 
-function runtimeToken(minutes: number): string {
-    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
-}
-
 /** TVHeroMetadata fact tokens. Series omits runtime; an episode uses its air date. */
 function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode: Episode | undefined): string[] {
     if (episode !== undefined) {
@@ -57,27 +56,34 @@ function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode
     if (detail.type === "episode") {
         const aired = episodeAirDate(detail.airDate);
         if (aired !== undefined) tokens.push(aired);
-    } else if (detail.year !== undefined && detail.year > 0) tokens.push(String(detail.year));
+    } else if (detail.year !== undefined && detail.year > 0) tokens.push(integerText(detail.year));
     if (detail.type !== "series" && detail.runtimeMinutes !== undefined && detail.runtimeMinutes > 0) {
         const file = detail.versions.find(version => version.fileId === playChoices(detail, state?.selectedFileId, state?.preferredQuality)?.fromStart.fileId);
         const minutes = file?.durationSeconds ? Math.round(file.durationSeconds / 60) : detail.runtimeMinutes;
-        tokens.push(runtimeToken(minutes));
+        tokens.push(durationText(minutes, true));
     }
     const count = state?.series?.seasons.filter(season => !season.isSpecials && season.seasonNumber !== 0).length;
-    if (detail.type === "series" && count) tokens.push(`${count} Season${count === 1 ? "" : "s"}`);
+    if (detail.type === "series" && count) tokens.push(translate("catalog.seasons", { count }));
     return tokens;
 }
 
 /** Genres are one source token. A focused series episode splits season and episode. */
 function sourceTokens(detail: ItemDetail, episode: Episode | undefined): string[] {
-    if (episode !== undefined) return [episode.seasonNumber === 0 ? "Specials" : `Season ${episode.seasonNumber}`, `Episode ${episode.episodeNumber}`];
+    if (episode !== undefined) return [seasonName(episode.seasonNumber), translate("detail.episode", { number: integerText(episode.episodeNumber) })];
     if (detail.type === "episode") {
-        const season = detail.seasonNumber === undefined ? undefined : detail.seasonNumber === 0 ? "Specials" : `Season ${detail.seasonNumber}`;
-        const number = detail.episodeNumber !== undefined && detail.episodeNumber > 0 ? `Episode ${detail.episodeNumber}` : undefined;
-        if (season !== undefined && number !== undefined) return [`${season} \u00B7 ${number}`];
-        return [season, number].filter((token): token is string => token !== undefined);
+        const season = detail.seasonNumber === undefined ? undefined : seasonName(detail.seasonNumber);
+        const number = detail.episodeNumber !== undefined && detail.episodeNumber > 0 ? integerText(detail.episodeNumber) : undefined;
+        if (season !== undefined && number !== undefined) return [translate("detail.episodeEyebrow", { season, episode: number })];
+        return [season, number === undefined ? undefined : translate("detail.episode", { number })].filter((token): token is string => token !== undefined);
     }
     return detail.genres.length === 0 ? [] : [detail.genres.slice(0, 2).join(", ")];
+}
+
+/** TVSeriesDetailView's Play and Resume titles: "Play S1:E2", or the episode's own title when it has no season and episode number. */
+function episodePlayLabel(resume: boolean, target: { readonly seasonNumber?: number | undefined; readonly episodeNumber?: number | undefined; readonly title: string }): string {
+    const { seasonNumber, episodeNumber } = target;
+    if (seasonNumber !== undefined && seasonNumber !== 0 && episodeNumber !== undefined) return translate(resume ? "detail.resumeEpisode" : "detail.playEpisode", { season: String(seasonNumber), episode: String(episodeNumber) });
+    return `${translate(resume ? "detail.resume" : "common.play")} ${episodeLabel(seasonNumber, episodeNumber) ?? target.title}`;
 }
 
 function metadataRow(detail: ItemDetail, state: DetailsState | undefined, episode: Episode | undefined): HTMLElement | undefined {
@@ -201,7 +207,14 @@ function fitRatings(row: HTMLElement): void {
     }
 }
 
-function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonly FocusItem[], state?: DetailsState, summary?: string, showsSummary = true): HTMLElement[] {
+/** TVPlaybackSelectionSummaryView: what Version, Audio and Subtitles are set to, each already in the shown language. */
+interface PlaybackReadout {
+    readonly version: string;
+    readonly audio: string;
+    readonly subtitles: string;
+}
+
+function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonly FocusItem[], state?: DetailsState, summary?: PlaybackReadout, showsSummary = true): HTMLElement[] {
     const nodes: HTMLElement[] = [];
     const label = episodeLabel(detail.seasonNumber, detail.episodeNumber);
     if (detail.type === "episode" && (detail.seriesTitle !== undefined || label !== undefined)) {
@@ -232,14 +245,13 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
         if (translation !== undefined) nodes.push(translationStatus(translation));
     }
     const directors = detail.extra?.crew.filter(credit => credit.role.toLowerCase() === "director").map(credit => credit.name);
-    const credit = detail.type === "movie" ? directors?.length ? `Directed by ${directors.slice(0, 2).join(", ")}` : undefined : detail.extra?.cast.length ? `Starring ${detail.extra.cast.slice(0, 3).map(person => person.name).join(", ")}` : undefined;
+    const credit = detail.type === "movie" ? directors?.length ? translate("detail.directedBy", { names: directors.slice(0, 2).join(", ") }) : undefined : detail.extra?.cast.length ? translate("detail.starring", { names: detail.extra.cast.slice(0, 3).map(person => person.name).join(", ") }) : undefined;
     if (credit !== undefined) nodes.push(el("p", "details-director", credit));
     // TVPlaybackSelectionSummaryView always keeps its labels; a value it does not know yet is a quiet bar.
     const readout = el("div", "details-playback-summary");
-    const values = new Map((summary?.split(" | ") ?? []).map(part => [part.slice(0, part.indexOf(": ")), part.slice(part.indexOf(": ") + 2)] as const));
-    for (const label of ["Version", "Audio", "Subtitles"]) {
-        const field = el("div", ""); field.dataset.trackSummary = label.toLowerCase();
-        field.append(el("strong", "", label.toUpperCase()), el("span", "", values.get(label) ?? ""));
+    for (const [name, label] of [["version", translate("detail.readout.version")], ["audio", translate("detail.readout.audio")], ["subtitles", translate("detail.readout.subtitles")]] as const) {
+        const field = el("div", ""); field.dataset.trackSummary = name;
+        field.append(el("strong", "", label), el("span", "", summary?.[name] ?? ""));
         readout.appendChild(field);
     }
     if (!showsSummary) { readout.style.opacity = "0"; readout.setAttribute("aria-hidden", "true"); }
@@ -325,13 +337,13 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     };
     if (choices?.resume !== undefined) {
         const resume = choices.resume;
-        actions.push(actionButton("resume", `Resume ${clockTime(resume.startSeconds ?? 0)}`, () => choose(resume)));
-        actions.push(actionButton("play", "Start Over", () => choose(choices.fromStart)));
+        actions.push(actionButton("resume", translate("detail.resumeAt", { time: clockTime(resume.startSeconds ?? 0) }), () => choose(resume)));
+        actions.push(actionButton("play", translate("detail.startOver"), () => choose(choices.fromStart)));
     } else if (choices !== undefined) {
-        actions.push(actionButton("play", "Play", () => choose(choices.fromStart)));
+        actions.push(actionButton("play", translate("common.play"), () => choose(choices.fromStart)));
     } else if (detail.type === "movie" || detail.type === "episode") {
         // Apple keeps Play in the row; with no file to hand AVPlay it stays disabled beside this note.
-        const play = actionButton("play", "Play", () => undefined);
+        const play = actionButton("play", translate("common.play"), () => undefined);
         play.element.setAttribute("aria-disabled", "true");
         actions.push(play);
         notes.push("This title has no file this TV can play.");
@@ -354,14 +366,14 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         const failed = state?.nextEpisodeFailed === true;
         waitingForPlaybackTarget = labelTarget === undefined && !failed;
         // TVDetailActionRow: "Loading episodes…" while the list loads, else "Play" with no episode to name.
-        const label = labelTarget === undefined ? failed ? "Play" : "Loading episodes…" : `${canResume ? "Resume" : "Play"} ${episodeLabel(labelTarget.seasonNumber, labelTarget.episodeNumber) ?? labelTarget.title}`;
+        const label = labelTarget === undefined ? failed ? translate("common.play") : translate("detail.episodes.loading") : episodePlayLabel(canResume, labelTarget);
         // A failed episode read still plays through the episode route, which loads its own detail.
         const primary = actionButton("next-episode", label, () => { if (primary.element.getAttribute("aria-disabled") !== "true") playNext(); });
         // After a failed read, Play still knows the episode id, so it plays through the episode route.
         const unplayable = waitingForPlaybackTarget || targetChoices === undefined && (state?.offline === true || target !== undefined);
         primary.element.setAttribute("aria-disabled", String(savePending || unplayable));
         actions.push(primary);
-        if (canResume) actions.push(actionButton("start-over-episode", "Start Over", () => playNext(true)));
+        if (canResume) actions.push(actionButton("start-over-episode", translate("detail.startOver"), () => playNext(true)));
         if (target !== undefined && targetChoices === undefined) notes.push("This episode has no file this TV can play.");
     }
     const seriesContext: ViewContext = { ...context, playEpisode: (id, title, startOver) => {
@@ -374,8 +386,9 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const seasonItems = series?.zones[0]?.items ?? (detail.type === "series" ? seasons.map((season) => seasonItem(detail.id, detail.title, season, context)) : []);
     const overview = episodeDetailPresentation(detail, context.spoilers?.() ?? { hidesImages: false, hidesOverviews: false }, state?.values.get("watched")).overview;
     const file = playbackDetail.versions.find(file => file.fileId === playbackChoices?.fromStart.fileId);
-    const compactVersion = file?.compactLabel ?? "Auto";
-    const versionValue = tracks?.selectedFileId === undefined && compactVersion !== "Auto" ? `Auto · ${compactVersion}` : compactVersion;
+    const autoLabel = translate("detail.auto");
+    const compactVersion = file?.compactLabel ?? autoLabel;
+    const versionValue = tracks?.selectedFileId === undefined && compactVersion !== autoLabel ? translate("detail.autoValue", { value: compactVersion }) : compactVersion;
     const audio = file?.audio ?? [];
     const selectedAudio = tracks?.audioTrackId(true);
     const explicitAudio = audio.findIndex((_track, index) => selectedAudio === `file:${file?.fileId}:audio:${index}`);
@@ -383,60 +396,60 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const resolvedAudioTrack = audio[effectiveAudio] ?? audio[0];
     const subtitle = tracks?.subtitleIntent();
     const subtitleLabel = (track: SubtitleSignature): string => subtitlePillSummary(track, "Unknown language");
-    const selectedSubtitleLabel = subtitle?.kind === "track" ? subtitleLabel(subtitle.signature) : subtitle?.kind === "off" ? "Off" : "Auto";
+    const selectedSubtitleLabel = subtitle?.kind === "track" ? subtitleLabel(subtitle.signature) : subtitle?.kind === "off" ? translate("detail.off") : autoLabel;
     const startDefault = defaultSubtitle(file?.subtitles ?? []);
     // Apple orders the Details preview as the start request does, externals first, so a forced fallback names the track that plays; ids stay catalog offsets.
     const autoSubtitle = file?.effectiveSubtitle === undefined ? undefined : initialSubtitle({ kind: "auto" }, (file.subtitles ?? []).map((track, index) => ({ ...track, trackId: String(index), combinedIndex: index, delivery: "unknown" as const, url: undefined, streamIndex: undefined, containerTrackId: undefined, nativeSelectable: undefined, hlsRendition: undefined })).sort((a, b) => Number(b.source === "external") - Number(a.source === "external")), { ...file.effectiveSubtitle, audioLanguage: resolvedAudioTrack?.language }, startDefault === undefined ? undefined : String(file.subtitles?.indexOf(startDefault)));
     const autoSubtitleTrack = autoSubtitle === undefined ? undefined : file?.subtitles?.[Number(autoSubtitle)];
-    const subtitleSummary = subtitle?.kind === "track" || subtitle?.kind === "off" ? selectedSubtitleLabel : `Auto · ${autoSubtitleTrack === undefined ? "None" : subtitleLabel(autoSubtitleTrack)}`;
+    const subtitleSummary = subtitle?.kind === "track" || subtitle?.kind === "off" ? selectedSubtitleLabel : translate("detail.autoValue", { value: autoSubtitleTrack === undefined ? translate("detail.none") : subtitleLabel(autoSubtitleTrack) });
     const audioDetails = (index: number): string => {
         const track = audio[index];
         const rawLayout = track?.layout?.replace(/\(.*\)/, '').trim();
-        const layout = /stereo/i.test(rawLayout ?? '') ? 'Stereo' : /mono/i.test(rawLayout ?? '') ? 'Mono' : rawLayout || (track?.channels === 6 ? '5.1' : track?.channels === 8 ? '7.1' : track?.channels === 2 ? 'Stereo' : track?.channels === 1 ? 'Mono' : track?.channels === undefined ? undefined : `${track.channels}ch`);
+        const layout = /stereo/i.test(rawLayout ?? '') ? translate("detail.stereo") : /mono/i.test(rawLayout ?? '') ? translate("detail.mono") : rawLayout || (track?.channels === 6 ? '5.1' : track?.channels === 8 ? '7.1' : track?.channels === 2 ? translate("detail.stereo") : track?.channels === 1 ? translate("detail.mono") : track?.channels === undefined ? undefined : `${track.channels}ch`);
         return [track?.codec?.toUpperCase(), layout].filter(Boolean).join(' · ');
     };
     const audioTitle = (index: number): string => {
         const track = audio[index];
         const embedded = track?.embeddedTitle?.trim();
         const meaningful = embedded && !/^(?:ATSC|AC-?3|E-?AC-?3|AAC|DTS|FLAC|PCM|OPUS|MP3|VORBIS)(?:\b|$)/i.test(embedded) ? embedded : undefined;
-        return meaningful ?? languageName(track?.language) ?? `Track ${index + 1}`;
+        return meaningful ?? languageName(track?.language) ?? translate("detail.track", { number: integerText(index + 1) });
     };
     // TrackLabels.name: the language leads the popover row; a track's own title moves to its detail line.
-    const audioRowTitle = (index: number): string => languageName(audio[index]?.language) ?? trackAudioTitle(audio[index]?.title, audio[index]?.language) ?? `Track ${index + 1}`;
+    const audioRowTitle = (index: number): string => languageName(audio[index]?.language) ?? trackAudioTitle(audio[index]?.title, audio[index]?.language) ?? translate("detail.track", { number: integerText(index + 1) });
     const audioLabel = (index: number): string => [languageName(audio[index]?.language), audioDetails(index)].filter(Boolean).join(' · ') || audioTitle(index);
     // TVPlaybackActionSelectors stay mounted and disable until a version is known.
     if (state !== undefined) {
         const ordinal = audio.findIndex((_track, index) => selectedAudio === `file:${file?.fileId}:audio:${index}`);
-        const version = actionButton("version", `Version: ${versionValue}`, () => state.showPanel("version"));
+        const version = actionButton("version", `${translate("detail.version")}: ${versionValue}`, () => state.showPanel("version"));
         version.element.setAttribute("aria-disabled", String(playbackChoices === undefined || playbackDetail.versions.length === 0));
         version.element.setAttribute("aria-haspopup", "dialog");
         actions.push(version);
-        const trigger = actionButton("audio", `Audio: ${ordinal === -1 ? "Auto" : audioLabel(ordinal)}`, () => state.showPanel("audio"));
+        const trigger = actionButton("audio", `${translate("detail.audio")}: ${ordinal === -1 ? autoLabel : audioLabel(ordinal)}`, () => state.showPanel("audio"));
         trigger.element.setAttribute("aria-disabled", String(playbackChoices === undefined || audio.length === 0));
         trigger.element.setAttribute("aria-haspopup", "dialog");
         trigger.element.setAttribute("aria-expanded", String(state.audioOpen));
         actions.push(trigger);
-        const subtitles = actionButton("subtitles", `Subtitles: ${selectedSubtitleLabel}`, () => state.showPanel("subtitles"));
+        const subtitles = actionButton("subtitles", `${translate("detail.subtitles")}: ${selectedSubtitleLabel}`, () => state.showPanel("subtitles"));
         subtitles.element.setAttribute("aria-disabled", String(playbackChoices === undefined));
         subtitles.element.setAttribute("aria-haspopup", "dialog");
         subtitles.element.setAttribute("aria-expanded", String(state.panel === "subtitles"));
         actions.push(subtitles);
     }
     if (actions.length === 0 && seasonItems.length === 0) {
-        actions.push(actionButton("back", "Back", back));
+        actions.push(actionButton("back", translate("common.back"), back));
     }
     const personal = state === undefined ? undefined : personalControls(state, true);
     if (state !== undefined) {
         // Watchlist shows while membership loads or fails; only a server or item that has no lists drops it.
         if (state.personalSupported !== false) actions.push(watchlistButton(state));
-        const more = actionButton("more", "More", () => state.showPanel("more"));
+        const more = actionButton("more", translate("detail.more"), () => state.showPanel("more"));
         more.element.setAttribute("aria-haspopup", "dialog");
         actions.push(more);
     }
     const ordinal = audio.findIndex((_track, index) => selectedAudio === `file:${file?.fileId}:audio:${index}`);
-    const resolvedAudio = audio[effectiveAudio] === undefined ? audio.length ? audioLabel(0) : "Unknown" : audioLabel(effectiveAudio);
+    const resolvedAudio = audio[effectiveAudio] === undefined ? audio.length ? audioLabel(0) : translate("detail.unknown") : audioLabel(effectiveAudio);
     // Values stay empty until the focused episode's full versions arrive.
-    const summary = playbackChoices === undefined ? undefined : `Version: ${versionValue} | Audio: ${ordinal === -1 ? "Auto · " : ""}${resolvedAudio} | Subtitles: ${subtitleSummary}`;
+    const summary: PlaybackReadout | undefined = playbackChoices === undefined ? undefined : { version: versionValue, audio: ordinal === -1 ? translate("detail.autoValue", { value: resolvedAudio }) : resolvedAudio, subtitles: subtitleSummary };
     // TVSeriesDetailView shows the readout while episodes load or while it has a target episode. Tizen reads a target's
     // playback detail only for the next-up episode, so the readout also hides once nothing is loading and no values came.
     const showsSummary = (detail.type !== "series" && detail.type !== "season") || state?.series === undefined || state.series.loading || state.nextEpisodeLoading || summary !== undefined;
@@ -484,7 +497,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
             item.element.dataset.focus = key;
             return { ...item, key };
         });
-        content.push(el("h2", "browse-section-title", "Cast & Crew"), zoneNode("browse-row details-people", people));
+        content.push(el("h2", "browse-section-title", translate("detail.cast")), zoneNode("browse-row details-people", people));
         // TVDetailCastRail.swift:37-38: tvDefaultFocus lands every entry on the first person.
         zones.push({ id: "people", layout: "row", items: people, entry: people[0]?.key });
     }
@@ -493,7 +506,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         // Select cannot hand off or play them through AVPlay, so it stays on the card.
         const extras = trailerCards(detail.extras, detail.videos, true).map(card => trailerCard(card, context, state, play));
         if (extras.length > 0) {
-            content.push(el("h2", "browse-section-title", "Trailers & More"), zoneNode("browse-row details-extras", extras));
+            content.push(el("h2", "browse-section-title", translate("detail.trailers")), zoneNode("browse-row details-extras", extras));
             // TVTrailersRail is a focus section with user-initiated default focus
             // on the first card, so every entry lands there, as in Cast and Related.
             zones.push({ id: "extras", layout: "row", items: extras, entry: extras[0]?.key });
@@ -515,7 +528,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         if (!(state.offline && state.related === undefined) && !state.relatedFailed && (state.related === undefined || related.length > 0)) {
             const section = zoneNode("browse-row", related);
             section.setAttribute("data-detail-section", "related");
-            content.push(el("h2", "browse-section-title", detail.type === "movie" ? "Related Movies" : "Recommended Series"));
+            content.push(el("h2", "browse-section-title", translate(detail.type === "movie" ? "detail.relatedMovies" : "detail.recommendedSeries")));
             // TVSimilarRail.swift:96-111: four untitled 220x330 cards while it loads; every entry lands on the first card.
             if (state.related === undefined) {
                 for (let index = 0; index < 4; index++) { const placeholder = el("div", "details-related-placeholder"); placeholder.setAttribute("aria-hidden", "true"); section.append(placeholder); }
@@ -526,18 +539,18 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const facts: { label: string; value: string }[] = [];
     const crew = detail.extra?.crew ?? [];
     const directors = creditLine(crew, ["director"]);
-    if (directors !== undefined) facts.push({ label: "Director", value: directors });
+    if (directors !== undefined) facts.push({ label: translate("detail.director"), value: directors });
     const writers = creditLine(crew, ["writer", "screenplay", "story"]);
     if (writers !== undefined) facts.push({ label: writerFactLabel(crew), value: writers });
-    facts.push(...detail.extra?.facts ?? []);
+    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: fact.value })));
     // TVDetailFactsSection: the "Details" header always shows; only the facts grid hides when empty.
     const factsPanel = el("div", "details-facts");
-    factsPanel.setAttribute("aria-label", "Details");
-    factsPanel.appendChild(el("h2", "browse-section-title", "Details"));
+    factsPanel.setAttribute("aria-label", translate("detail.details"));
+    factsPanel.appendChild(el("h2", "browse-section-title", translate("detail.details")));
     content.push(factsPanel);
     if (facts.length > 0) {
         const table = el("dl", "details-facts-table");
-        for (const fact of facts) { const row = el("div", "details-fact-row"); row.append(el("dt", "", fact.label.toUpperCase()), el("dd", "", fact.value)); table.append(row); }
+        for (const fact of facts) { const row = el("div", "details-fact-row"); row.append(el("dt", "", fact.label.toLocaleUpperCase(shownLanguage())), el("dd", "", fact.value)); table.append(row); }
         table.tabIndex = -1; table.dataset.focus = "fact:0"; factsPanel.append(table);
         const items = [{ key: "fact:0", element: table }];
         zones.push({ id: "facts", layout: "column", items });
@@ -562,7 +575,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const view: View = { name: `item:${detail.id}`, content, zones, focus, back };
     if (state?.panel === "audio") {
         const options = [undefined, ...audio.map((_track, index) => index)].map(ordinal => {
-            const item = actionButton(`audio:${ordinal ?? "auto"}`, ordinal === undefined ? "Auto" : audioRowTitle(ordinal), () => { if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectAudio(ordinal); if (tracks !== state) state.closePanel(); });
+            const item = actionButton(`audio:${ordinal ?? "auto"}`, ordinal === undefined ? autoLabel : audioRowTitle(ordinal), () => { if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectAudio(ordinal); if (tracks !== state) state.closePanel(); });
             item.element.setAttribute("role", "radio");
             item.element.setAttribute("aria-checked", String(ordinal === undefined ? selectedAudio === undefined : ordinal === (effectiveAudio >= 0 ? effectiveAudio : 0)));
             if (ordinal !== undefined) {
@@ -570,22 +583,22 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
                 const qualifier = trackAudioTitle(audio[ordinal]?.title, audio[ordinal]?.language);
                 const layout = audioDetails(ordinal).split(" · ").at(-1);
                 const shownTitle = qualifier !== undefined && ![audioRowTitle(ordinal), layout].some(value => value?.toLowerCase() === qualifier.toLowerCase()) ? qualifier : undefined;
-                const flags = [shownTitle, audioDetails(ordinal), audio[ordinal]?.isDefault ? "Default" : undefined, ordinal === file?.effectiveAudioTrackIndex ? "Preferred" : undefined].filter(Boolean).join(" · ");
+                const flags = [shownTitle, audioDetails(ordinal), audio[ordinal]?.isDefault ? translate("detail.trackDefault") : undefined, ordinal === file?.effectiveAudioTrackIndex ? translate("detail.trackPreferred") : undefined].filter(Boolean).join(" · ");
                 if (flags) item.element.append(el("small", "details-option-subtext", flags));
             }
             return item;
         });
-        return detailPanel(view, state, "Audio", options);
+        return detailPanel(view, state, translate("detail.audio"), options);
     }
     if (state?.panel === "version") {
         const options = [undefined, ...playbackDetail.versions].map(version => {
-            const item = actionButton(`version:${version?.fileId ?? "auto"}`, version?.label || "Auto", () => { tracks?.select(version?.fileId); state.closePanel(); });
+            const item = actionButton(`version:${version?.fileId ?? "auto"}`, version?.label || autoLabel, () => { tracks?.select(version?.fileId); state.closePanel(); });
             if (version?.detailLabel) item.element.append(el("small", "details-option-subtext", version.detailLabel));
             item.element.setAttribute("role", "radio");
             item.element.setAttribute("aria-checked", String(version?.fileId === tracks?.selectedFileId));
             return item;
         });
-        return detailPanel(view, state, "Version", options);
+        return detailPanel(view, state, translate("detail.version"), options);
     }
     if (state?.panel === "subtitles") {
         // Rows keep their wire index; only the display position follows the player's shared order.
@@ -597,21 +610,21 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
             // and a sidecar with no stream index cannot be chosen here; both stay listed, dimmed and unfocusable.
             const unsupported = track !== undefined && track.source !== "external" && (track.codec?.trim() ?? "") === "";
             const selectable = track === undefined || track.selectionIndex !== undefined && !unsupported;
-            const item = actionButton(`subtitle:${choice ?? "auto"}`, track === undefined ? choice === "off" ? "Off" : "Auto" : languageName(track.language) ?? track.label ?? `Track ${Number(choice) + 1}`, () => { if (!selectable) return; if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectSubtitle(choice); if (tracks !== state) state.closePanel(); });
+            const item = actionButton(`subtitle:${choice ?? "auto"}`, track === undefined ? choice === "off" ? translate("detail.off") : autoLabel : languageName(track.language) ?? track.label ?? translate("detail.track", { number: integerText(Number(choice) + 1) }), () => { if (!selectable) return; if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectSubtitle(choice); if (tracks !== state) state.closePanel(); });
             if (track !== undefined) {
                 const codec = /subrip|srt/i.test(track.codec ?? '') ? 'SRT' : track.codec?.toUpperCase();
                 const label = track.label && ![track.codec?.toUpperCase(), codec, languageName(track.language)?.toUpperCase(), 'SDH', 'CC'].includes(track.label.toUpperCase()) ? track.label : undefined;
                 const hearingImpaired = track.hearingImpaired || /\b(SDH|CC)\b/i.test(track.label ?? '');
-                const availability = unsupported ? 'Unsupported format' : !selectable ? 'Available in player' : undefined;
-                item.element.append(el('small', 'details-option-subtext', [label, codec, track.forced ? 'Forced' : undefined, hearingImpaired ? 'SDH' : undefined, track.isDefault ? 'Default' : undefined, track.source === 'external' ? 'External' : undefined, availability].filter(Boolean).join(' · ')));
+                const availability = unsupported ? translate("subtitle.trackUnsupportedFormat") : !selectable ? translate("detail.trackAvailableInPlayer") : undefined;
+                item.element.append(el('small', 'details-option-subtext', [label, codec, track.forced ? translate("detail.trackForced") : undefined, hearingImpaired ? translate("detail.trackSdh") : undefined, track.isDefault ? translate("detail.trackDefault") : undefined, track.source === 'external' ? translate("detail.trackExternal") : undefined, availability].filter(Boolean).join(' · ')));
                 if (!selectable) item.element.setAttribute('aria-disabled', 'true');
             }
             item.element.setAttribute("role", "radio");
             item.element.setAttribute("aria-checked", String(track === undefined ? subtitle?.kind === (choice === "off" ? "off" : "auto") : subtitle?.kind === "track" && matchesSubtitle(track, subtitle.signature)));
-            if (choice === "off") item.element.append(el("small", "details-option-subtext", "Start without subtitles"));
+            if (choice === "off") item.element.append(el("small", "details-option-subtext", translate("detail.offDetail")));
             return item;
         });
-        return detailPanel(view, state, "Subtitles", options);
+        return detailPanel(view, state, translate("detail.subtitles"), options);
     }
     if (state?.panel === "more") {
         const menuNotes = [...personal?.notes ?? []];
@@ -621,10 +634,10 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
             const value = state.values.get(item.key as "favorites" | "watched");
             const change = state.changes.get(item.key as "favorites" | "watched");
             if (value !== undefined && !change?.pending) {
-                item.element.textContent = item.key === "favorites" ? value ? "Remove from Favorites" : "Add to Favorites"
-                    : detail.type === "series" ? value ? "Mark Series Unwatched" : "Mark Series Watched"
-                    : detail.type === "season" ? value ? "Mark Season Unwatched" : "Mark Season Watched"
-                    : value ? "Mark as Unwatched" : "Mark as Watched";
+                item.element.textContent = item.key === "favorites" ? value ? translate("detail.more.removeFavorite") : translate("detail.more.addFavorite")
+                    : detail.type === "series" ? value ? translate("detail.more.markSeriesUnwatched") : translate("detail.more.markSeriesWatched")
+                    : detail.type === "season" ? value ? translate("detail.more.markSeasonUnwatched") : translate("detail.more.markSeasonWatched")
+                    : value ? translate("detail.more.markUnwatched") : translate("detail.more.markWatched");
             }
             item.element.addEventListener("click", () => { if (!state.busy && (item.key !== "favorites" || value !== undefined)) state.closePanel(); }, { capture: true });
         }
@@ -633,7 +646,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
             const value = seasonState.values.get("watched");
             const change = seasonState.changes.get("watched");
             if (value !== undefined) {
-                const item = actionButton("season-watched", change?.pending ? "Updating season…" : value ? "Mark Season Unwatched" : "Mark Season Watched", () => {
+                const item = actionButton("season-watched", change?.pending ? "Updating season…" : value ? translate("detail.more.markSeasonUnwatched") : translate("detail.more.markSeasonWatched"), () => {
                     if (state.busy) return;
                     state.closePanel();
                     seasonState.change("watched", change?.failed ? change.target : !value, change?.failed);
@@ -642,30 +655,30 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
                 items.push(item);
             }
         }
-        if (detail.type === "series" && state.focusedEpisodeId !== undefined) items.unshift(actionButton("series-overview", "Show Series Info", () => state.showSeriesOverview()));
+        if (detail.type === "series" && state.focusedEpisodeId !== undefined) items.unshift(actionButton("series-overview", translate("detail.more.showSeriesInfo"), () => state.showSeriesOverview()));
         // TVSeriesDetailView.moreMenu: shuffle leads, the season on screen before the series. Each keeps its label and is only
         // disabled while a shuffle starts.
         if (detail.type === "series" && state.shuffleSupported && seasons.reduce((count, season) => count + season.episodeCount, 0) >= 2) {
-            const shuffle = actionButton("shuffle-series", "Shuffle Series", () => state.startShuffle(play));
+            const shuffle = actionButton("shuffle-series", translate("detail.more.shuffleSeries"), () => state.startShuffle(play));
             shuffle.element.setAttribute("aria-disabled", String(state.shuffleStarting));
             items.unshift(shuffle);
         }
         const shuffleSeason = detail.type === "series" ? seasonToShuffle(state) : undefined;
         if (shuffleSeason !== undefined) {
-            const name = shuffleSeason.isSpecials === true || shuffleSeason.seasonNumber === 0 ? shuffleSeason.title || "Specials" : `Season ${shuffleSeason.seasonNumber}`;
-            const shuffle = actionButton("shuffle-season", `Shuffle ${name}`, () => state.startShuffle(play, shuffleSeason));
+            const name = shuffleSeason.isSpecials === true || shuffleSeason.seasonNumber === 0 ? shuffleSeason.title || translate("detail.specials") : seasonName(shuffleSeason.seasonNumber);
+            const shuffle = actionButton("shuffle-season", translate("detail.more.shuffleSeason", { season: name }), () => state.startShuffle(play, shuffleSeason));
             shuffle.element.setAttribute("aria-disabled", String(state.shuffleStarting));
             items.unshift(shuffle);
         }
-        if (detail.type === "movie" || detail.type === "series") items.push(actionButton("find-trailers", "Find Trailers", () => { state.trailers.start(state.detail); state.closePanel(); }));
-        if (state.descriptions?.offers() === true) items.push(actionButton("translate-description", TRANSLATE_DESCRIPTION_LABEL, () => { state.descriptions?.translate(); state.closePanel(); }));
+        if (detail.type === "movie" || detail.type === "series") items.push(actionButton("find-trailers", translate("detail.more.findTrailers"), () => { state.trailers.start(state.detail); state.closePanel(); }));
+        if (state.descriptions?.offers() === true) items.push(actionButton("translate-description", translate("detail.more.translate"), () => { state.descriptions?.translate(); state.closePanel(); }));
         // WatchPartyEntry.isAvailable: last, and only while the experimental switch is on and the server can host a party.
         // A series offers the episode its hero shows.
         const partyTitle = detail.type === "series" ? state.nextEpisode : detail.type === "movie" || detail.type === "episode" ? state.detail : undefined;
         if (context.watchParty?.offered() === true && partyTitle !== undefined) {
-            items.push(actionButton("watch-party", "Watch Party", () => { state.closePanel(); context.watchParty?.open(choiceFromDetail(partyTitle)); }));
+            items.push(actionButton("watch-party", translate("watchParty.menu.open"), () => { state.closePanel(); context.watchParty?.open(choiceFromDetail(partyTitle)); }));
         }
-        return detailPanel(view, state, "More", items.length ? items : [actionButton("close-more", "Close", () => state.closePanel())], menuNotes);
+        return detailPanel(view, state, translate("detail.more"), items.length ? items : [actionButton("close-more", "Close", () => state.closePanel())], menuNotes);
     }
     return view;
 }
@@ -677,7 +690,7 @@ export function withDetailsAlert(view: View, state: DetailsState | undefined): V
     const alert = state?.alert ?? seasonOwner?.alert;
     if (state === undefined || alert === undefined) return view;
     const dismiss = (): void => { seasonOwner?.dismissAlert(); state.dismissAlert(); };
-    const ok = actionButton("alert-ok", "OK", dismiss);
+    const ok = actionButton("alert-ok", translate("detail.watchedError.ok"), dismiss);
     // PersonalStateNoticeAlert: a held change adds the destructive Discard Held Change before OK.
     const discard = alert.held === undefined ? undefined : actionButton("alert-discard", "Discard Held Change", () => state.discardHeld());
     const buttons = discard === undefined ? [ok] : [discard, ok];
@@ -702,7 +715,7 @@ function trailerCard(card: TrailerCard, context: ViewContext, state: DetailsStat
     let key = card.id;
     switch (card.role) {
         case "local":
-            title = state.extraPending === card.extra.contentId ? "Loading extra…" : state.extraFailed === card.extra.contentId ? `Retry ${card.title}` : card.title;
+            title = state.extraPending === card.extra.contentId ? "Loading extra…" : state.extraFailed === card.extra.contentId ? `${translate("common.retry")} ${card.title}` : card.title;
             key = `extra:${card.extra.contentId}`;
             break;
         case "remote":
@@ -768,7 +781,7 @@ function playMark(): HTMLElement {
 function watchlistButton(state: DetailsState): FocusItem {
     const value = state.values.get("watchlist");
     const change = state.changes.get("watchlist");
-    const item = actionButton("watchlist", value ? "Remove from watchlist" : "Add to watchlist", () => {
+    const item = actionButton("watchlist", value ? translate("detail.watchlistRemove") : translate("detail.watchlistAdd"), () => {
         if (value === undefined) { if (state.personalFailed && !state.busy) state.loadPersonal(); return; }
         state.change("watchlist", change?.failed ? change.target : !value, change?.failed);
     });
@@ -787,11 +800,11 @@ export function personalControls(state: DetailsState, alerts = false): { items: 
         const value = state.values.get(kind);
         if (value === undefined) {
             // TVMovieDetailView.swift:213-236: Apple's More lists Favorite before membership loads. Like Watchlist, the press waits for it.
-            if (kind === "favorites" && state.personalSupported === undefined && !state.personalFailed) items.push(actionButton(kind, "Add to Favorites", () => undefined));
+            if (kind === "favorites" && state.personalSupported === undefined && !state.personalFailed) items.push(actionButton(kind, translate("detail.more.addFavorite"), () => undefined));
             continue;
         }
         const change = state.changes.get(kind);
-        const label = kind === "watched" ? `${state.detail.type === "series" || state.detail.type === "season" ? "Mark all" : "Mark"} ${value ? "unwatched" : "watched"}` : kind === "watchlist" ? value ? "Remove from watchlist" : "Add to watchlist" : value ? "Remove favorite" : "Add favorite";
+        const label = kind === "watched" ? `${state.detail.type === "series" || state.detail.type === "season" ? "Mark all" : "Mark"} ${value ? "unwatched" : "watched"}` : kind === "watchlist" ? value ? translate("detail.watchlistRemove") : translate("detail.watchlistAdd") : value ? "Remove favorite" : "Add favorite";
         const item = actionButton(kind, change?.pending ? `Updating ${kind}…` : change?.failed && !alerts ? `Retry ${kind}` : label, () => state.change(kind, change?.failed ? change.target : !value, change?.failed));
         item.element.setAttribute("aria-pressed", String(value));
         item.element.setAttribute("aria-disabled", String(state.busy));
@@ -843,8 +856,8 @@ export function creditLine(crew: readonly Credit[], jobs: readonly string[]): st
 }
 
 /** A screenplay credit uses "Writer". Every other writing credit uses "Written by". */
-export function writerFactLabel(crew: readonly Credit[]): "Writer" | "Written by" {
-    return crew.some(credit => credit.role.toLowerCase() === "screenplay") ? "Writer" : "Written by";
+export function writerFactLabel(crew: readonly Credit[]): string {
+    return translate(crew.some(credit => credit.role.toLowerCase() === "screenplay") ? "detail.writer" : "detail.writtenBy");
 }
 
 export function personHero(person: Person, baseUrl: string, metadataLoading = false): HTMLElement {
@@ -857,7 +870,7 @@ export function personHero(person: Person, baseUrl: string, metadataLoading = fa
         const row = el("div", "person-facts");
         for (const fact of facts) row.appendChild(el("span", "person-fact", fact));
         if (metadataLoading) {
-            const loading = el("span", "person-fact person-metadata-loading", "Loading metadata");
+            const loading = el("span", "person-fact person-metadata-loading", translate("person.loadingMetadata"));
             loading.setAttribute("role", "status");
             row.appendChild(loading);
         }
@@ -875,7 +888,7 @@ function seasonItem(seriesId: string, seriesTitle: string, season: Season, conte
     element.setAttribute("data-focus", key);
     element.appendChild(artwork("browse-art", season.posterUrl, context.baseUrl, season.title));
     element.appendChild(el("span", "browse-card-title", season.title));
-    element.appendChild(el("span", "browse-card-subtitle", season.episodeCount === 1 ? "1 episode" : `${season.episodeCount} episodes`));
+    element.appendChild(el("span", "browse-card-subtitle", translate("detail.episodeCount", { count: season.episodeCount, count_text: integerText(season.episodeCount) })));
     element.addEventListener("click", () => context.open({ kind: "season", id: season.id, seriesId, seasonNumber: season.seasonNumber, title: `${seriesTitle} · ${season.title}` }));
     return mediaItem({ key, element }, { id: season.id, title: season.title, type: "season" }, context);
 }
@@ -894,7 +907,7 @@ export function seasonView(name: string, title: string, episodes: readonly Episo
         info.appendChild(el("span", "browse-card-subtitle", runtime));
         if (episode.played) {
             const badge = el("span", "browse-watched");
-            badge.appendChild(el("span", "silo-sr-only", "Watched"));
+            badge.appendChild(el("span", "silo-sr-only", translate("detail.watched")));
             element.firstElementChild?.appendChild(badge);
         }
         element.appendChild(info);
@@ -904,7 +917,7 @@ export function seasonView(name: string, title: string, episodes: readonly Episo
     const header = detail === undefined ? undefined : itemView(detail, [], context, play, back, state);
     const heroEnd = (header?.content.findIndex(node => node.classList.contains("details-hero")) ?? -1) + 1;
     const content = [...(header?.content.slice(0, heroEnd) ?? [heading(title)]), ...(items.length === 0 ? lines(["This season has no episodes yet."]) : []), zoneNode("browse-episodes", items), ...header?.content.slice(heroEnd) ?? []];
-    const fallback = items.length === 0 ? [actionButton("back", "Back", back)] : [];
+    const fallback = items.length === 0 ? [actionButton("back", translate("common.back"), back)] : [];
     if (fallback.length > 0) {
         content.push(zoneNode("browse-actions", fallback));
     }

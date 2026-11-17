@@ -14,14 +14,24 @@ import { navigationRoots } from "./navigation.ts";
 import type { PrimaryMenu } from "../contracts/v2/navigation.ts";
 import { menuIcon } from "./navigationIcon.ts";
 import { remoteKey } from "./keys.ts";
-import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
+import { HeroWash, heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { hidesCardOverview, hidesMarqueeBackdrop, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
 import type { LibraryMode } from "./libraryDiscovery.ts";
-import { PERSONAL_TITLES, type PersonalSource } from "./personalLists.ts";
+import { documentIsRightToLeft } from "../i18n/direction.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
+import type { PersonalSource } from "./personalLists.ts";
 import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
 
 type VideoTab = "movies" | "series" | "music" | "audiobooks";
+
+/** TVTopMenuBar.swift: the header and the spoken name of a libraries panel, by library type. */
+const LIBRARIES_HEADER = { movies: "menu.libraries.movies", series: "menu.libraries.series", music: "menu.libraries.music", audiobooks: "menu.libraries.audiobooks" } as const satisfies Record<VideoTab, MessageKey>;
+const LIBRARIES_SPOKEN = { movies: "menu.libraries.moviesSpoken", series: "menu.libraries.seriesSpoken", music: "menu.libraries.musicSpoken", audiobooks: "menu.libraries.audiobooksSpoken" } as const satisfies Record<VideoTab, MessageKey>;
+/** The menu rows that open a personal list (TVTopMenuBar.swift:1212-1214, :1391). */
+const PERSONAL_MENU_TITLES = { watchlist: "menu.watchlist", favorites: "menu.favorites", history: "menu.history" } as const satisfies Record<PersonalSource, MessageKey>;
+/** TVLibraryPillRow: the three destinations a library offers. */
+const MODE_TITLES = { Recommended: "library.recommended", Collections: "library.collections", Browse: "library.browse" } as const satisfies Record<LibraryMode, MessageKey>;
 
 /** `SiloTheme.Skyline.marqueeCrossfadeDuration` (silo-apple 85679e7 `Theme/SiloTheme.swift:304`). */
 const MARQUEE_CROSSFADE_MILLISECONDS = 240;
@@ -29,6 +39,8 @@ const MARQUEE_CROSSFADE_MILLISECONDS = 240;
 const MARQUEE_BACKDROP_HOLD_CAP_MILLISECONDS = 320;
 /** The longest close fade: the sign-out confirmation's easeOut(0.2) (`Components/AccountRemovalConfirmation.swift:34`). */
 const PANEL_LEAVE_MILLISECONDS = 200;
+/** SiloTheme.Skyline.cascadeMaxVisibleRows: a longer library list scrolls inside the panel. */
+const LIBRARY_LIST_MAX_ROWS = 6;
 
 interface ProfileMenu {
     readonly requests?: () => void;
@@ -152,6 +164,10 @@ export class Skyline {
     private rowScrolling = false;
     private cancelHoldCap = (): void => undefined;
     private readonly tints = new Map<string, Tints>();
+    /** TVHeroAmbientWash: one tint wash under every backdrop the marquee shows. */
+    private readonly wash: HeroWash;
+    /** The 190 px top scrim every Home backdrop carries, shared: it sits above all of them, so a crossfade blends the art under one strip. */
+    private readonly topScrim = el("div", "skyline-hero-scrim");
     private selected = "home";
     private sharedScene = false;
     private scopes = new Map<VideoTab, string>();
@@ -214,6 +230,9 @@ export class Skyline {
         this.flyout.setAttribute("role", "menu");
         this.leaving.setAttribute("aria-hidden", "true");
         this.leaving.inert = true;
+        this.wash = new HeroWash(clock);
+        this.topScrim.hidden = true;
+        this.marquee.prepend(this.wash.element, this.topScrim);
         this.marquee.setAttribute("aria-live", "polite");
         this.marquee.setAttribute("aria-atomic", "true");
         container.addEventListener("focusin", this.onFocus);
@@ -239,16 +258,16 @@ export class Skyline {
             item.element.setAttribute("role", "tab");
             if (root.key === "movies" || root.key === "series" || root.key === "audiobooks" || root.key === "for_you") item.element.setAttribute("aria-haspopup", "menu");
             // topBar.hint.forYou (TVTopMenuBar.swift:484, :501-502).
-            if (root.key === "for_you") item.element.setAttribute("aria-description", "Rest to choose Watchlist, Favorites, or Recommendations");
+            if (root.key === "for_you") item.element.setAttribute("aria-description", translate("topBar.hint.forYou"));
             return item;
         });
         const searchItem = actionButton("search", "", () => this.commit("search"));
         this.items = [searchItem, ...rootItems, actionButton("profiles", this.profiles.name.slice(0, 1).toUpperCase(), () => this.openProfile(true))];
         const search = this.items.find((item) => item.key === "search");
-        search?.element.setAttribute("aria-label", "Search");
+        search?.element.setAttribute("aria-label", translate("topBar.search"));
         search?.element.classList.add("skyline-search");
         const profiles = this.items.find((item) => item.key === "profiles");
-        profiles?.element.setAttribute("aria-label", "Profiles");
+        profiles?.element.setAttribute("aria-label", translate("topBar.profileButton"));
         profiles?.element.classList.add("skyline-profile");
         profiles?.element.setAttribute("aria-haspopup", "menu");
         replaceNodes(this.roots, rootItems.map(item => item.element));
@@ -267,6 +286,11 @@ export class Skyline {
     setShowAudiobooks(show: boolean): void {
         if (this.showAudiobooks === show) return;
         this.showAudiobooks = show;
+        this.update(this.libraries);
+    }
+
+    /** The shown language changed: the roots read again in it. */
+    relabel(): void {
         this.update(this.libraries);
     }
 
@@ -362,6 +386,8 @@ export class Skyline {
         if (this.confirmation) { this.nav.setAttribute("aria-hidden", "true"); this.body.setAttribute("aria-hidden", "true"); }
         else { this.nav.removeAttribute("aria-hidden"); this.body.removeAttribute("aria-hidden"); }
         if (preview && !this.translationArmed) this.armTranslation();
+        // The bar, its menus and the hero layers are the shell's, not the view's: FocusHost leaves their direction to the page.
+        for (const node of [this.scrim, this.nav, this.selector, this.flyout, this.leaving, this.marquee]) node.setAttribute("data-chrome", "");
         return { ...view, prepare, transition: { key: libraryKey ?? selected, group: selected }, content: [this.scrim, this.nav, this.selector, this.flyout, this.leaving, ...(preview ? [this.marquee] : []), this.body], zones: this.confirmation ? zones.filter(zone => zone.id === "selector") : [...zones, ...view.zones], back: selected === "search" ? view.back : () => this.back() };
     }
 
@@ -389,6 +415,11 @@ export class Skyline {
         const shown = this.shown;
         const layer = this.marquee.querySelector<HTMLElement>(".skyline-marquee-layer:not(.skyline-outgoing)");
         if (shown !== undefined && shown.card.id === id && layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
+    }
+
+    /** The shown language changed: the marquee's meta, detail line and chips are written again for the title on show. */
+    repaintShown(): void {
+        if (this.shown !== undefined) this.refreshDetails(this.shown.card.id);
     }
 
     private fillDetails(layer: HTMLElement, card: Card, continuing: boolean): void {
@@ -526,9 +557,16 @@ export class Skyline {
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");
         layer.setAttribute("aria-hidden", "true");
+        const outgoing = this.art;
+        const fade = animate && this.artShown && outgoing !== undefined;
+        this.topScrim.hidden = background === undefined || !this.sharedScene;
         if (background !== undefined && this.sharedScene) {
-            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true));
-        } else if (background !== undefined) {
+            // The cached or ThumbHash tint comes with the swap and fades in; the tint sampled from the image replaces it as it lands, if this is still the backdrop shown.
+            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true, (tints, sampled) => { if (!sampled) this.wash.show(tints, fade); else if (this.art === layer) this.wash.update(tints); }));
+        } else {
+            this.wash.show(undefined, fade);
+        }
+        if (background !== undefined && !this.sharedScene) {
             const image = el("img", "skyline-backdrop");
             image.alt = "";
             image.referrerPolicy = "no-referrer";
@@ -537,7 +575,6 @@ export class Skyline {
             layer.append(image, el("div", "skyline-scrim"));
         }
         layer.querySelector("img.skyline-backdrop")?.addEventListener("error", () => { layer.dataset.failed = ""; });
-        const outgoing = this.art;
         for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) old.classList.add("skyline-outgoing");
         if (outgoing === undefined) this.marquee.prepend(layer);
         else outgoing.after(layer);
@@ -545,7 +582,6 @@ export class Skyline {
         this.artKey = key;
         this.cancelFade();
         this.cancelFade = () => undefined;
-        const fade = animate && this.artShown && outgoing !== undefined;
         if (background !== undefined) this.artShown = true;
         const clear = (): void => { for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) if (old !== layer) old.remove(); };
         if (!fade) { clear(); return; }
@@ -675,7 +711,11 @@ export class Skyline {
         });
         this.leaving.append(...ghosts);
         // cloneNode drops scroll state: a scrolled library list fades from the rows on screen.
-        ghosts.forEach((ghost, index) => { ghost.scrollTop = live[index]?.scrollTop ?? 0; });
+        ghosts.forEach((ghost, index) => {
+            ghost.scrollTop = live[index]?.scrollTop ?? 0;
+            const list = ghost.querySelector<HTMLElement>(".skyline-menu-list");
+            if (list !== null) list.scrollTop = live[index]?.querySelector(".skyline-menu-list")?.scrollTop ?? 0;
+        });
         const timer = window.setTimeout(() => { for (const ghost of ghosts) ghost.remove(); }, PANEL_LEAVE_MILLISECONDS);
         this.clearLeaving = () => {
             window.clearTimeout(timer);
@@ -806,18 +846,35 @@ export class Skyline {
         const header = el("div", "skyline-menu-header", this.panelTitle);
         // The For You header is hidden from VoiceOver; the panel is spoken as "For You menu" (TVTopMenuBar.swift:1045, :1050).
         if (this.panelAnchor === "for_you") header.setAttribute("aria-hidden", "true");
-        replaceNodes(this.selector, [header, ...this.panel.map(item => item.element)]);
+        const rows = this.panel.map(item => item.element);
+        if (rows.length <= LIBRARY_LIST_MAX_ROWS || rows[0]?.getAttribute("role") !== "menuitemradio") { replaceNodes(this.selector, [header, ...rows]); return; }
+        const list = el("div", "skyline-menu-list");
+        list.setAttribute("role", "group");
+        list.append(...rows);
+        replaceNodes(this.selector, [header, list]);
+    }
+
+    /** TVCascadeSelector.scrollFocusedLibrary: a scrolling list keeps the focused row in the middle. */
+    private focusPanelRow(row: FocusItem | undefined): void {
+        if (row === undefined) return;
+        row.element.focus({ preventScroll: true });
+        const list = row.element.closest<HTMLElement>(".skyline-menu-list");
+        if (list === null) return;
+        const centred = row.element.offsetTop - (list.clientHeight - row.element.offsetHeight) / 2;
+        this.scroll.move(list, 0, Math.min(list.scrollHeight - list.clientHeight, Math.max(0, centred)));
     }
 
     private openRootPanel(item: FocusItem): void {
         this.close();
         this.panelAnchor = item.key;
         this.selector.setAttribute("data-menu-kind", item.key === "for_you" ? "for_you" : "library");
+        let spoken: string;
         if (item.key === "for_you") {
-            this.panelTitle = "FOR YOU";
+            spoken = translate("menu.forYou.spoken");
+            this.panelTitle = translate("menu.forYou.header");
             const personal = this.profiles.personal;
-            this.panel = personal === undefined ? [] : (["watchlist", "favorites"] as const).map(source => this.menuItem(source, PERSONAL_TITLES[source], () => { this.close(); personal(source, "for_you"); }));
-            this.panel.push(this.menuItem("recommendations", "Recommendations", () => this.commit("for_you"), "Recommended"));
+            this.panel = personal === undefined ? [] : (["watchlist", "favorites"] as const).map(source => this.menuItem(source, translate(PERSONAL_MENU_TITLES[source]), () => { this.close(); personal(source, "for_you"); }));
+            this.panel.push(this.menuItem("recommendations", translate("forYou.recommendations"), () => this.commit("for_you"), "Recommended"));
             // bookmark.fill, heart.fill and sparkles are solid glyphs (TVTopMenuBar.swift:1034-1037).
             for (const row of this.panel) row.element.querySelector("svg")?.setAttribute("fill", "currentColor");
         } else {
@@ -827,7 +884,9 @@ export class Skyline {
             this.panelLibrary = shortcut;
             const libraries = this.forType(type);
             const single = shortcut ?? (libraries.length === 1 ? libraries[0] : undefined);
-            this.panelTitle = single === undefined ? type === "movies" ? "MOVIE LIBRARIES" : type === "audiobooks" ? "AUDIOBOOK LIBRARIES" : "SERIES LIBRARIES" : single.name.toUpperCase();
+            this.panelTitle = single === undefined ? translate(LIBRARIES_HEADER[type]) : single.name.toUpperCase();
+            // TVCascadeSelector: a library list is spoken by its type, a single library's section list by the library.
+            spoken = single === undefined ? translate(LIBRARIES_SPOKEN[type]) : translate("menu.cascade.sectionsSpoken", { library: single.name });
             this.panel = single === undefined ? libraries.map(library => {
                 const row = this.menuItem(`library:${library.id}`, library.name, () => this.commit({ ...library, type }), type);
                 row.element.setAttribute("role", "menuitemradio");
@@ -837,7 +896,7 @@ export class Skyline {
         }
         this.renderPanel();
         this.selector.hidden = false;
-        this.selector.setAttribute("aria-label", item.key === "for_you" ? "For You menu" : `${this.panelTitle} menu`);
+        this.selector.setAttribute("aria-label", spoken);
         const anchor = item.element.getBoundingClientRect();
         this.selector.style.left = `${Math.max(88, Math.min(1372, anchor.left + anchor.width / 2 - 230))}px`;
         this.selector.style.right = "auto";
@@ -863,7 +922,7 @@ export class Skyline {
                 else this.openRootPanel(anchor);
             }
             const current = this.panelTab === undefined ? undefined : this.scope(this.panelTab);
-            (this.panel.find(item => item.key === `library:${current?.id}`) ?? this.panel[0])?.element.focus({ preventScroll: true });
+            this.focusPanelRow(this.panel.find(item => item.key === `library:${current?.id}`) ?? this.panel[0]);
             return;
         }
         if (this.confirmation && (key === "up" || key === "down")) { event.preventDefault(); return; }
@@ -890,14 +949,7 @@ export class Skyline {
         }
         if (index >= 0 && (key === "down" || key === "up")) {
             event.preventDefault();
-            const row = this.panel[Math.max(0, Math.min(this.panel.length - 1, index + (key === "down" ? 1 : -1)))];
-            row?.element.focus({ preventScroll: true });
-            if (row !== undefined) {
-                const rect = row.element.getBoundingClientRect();
-                const bounds = this.selector.getBoundingClientRect();
-                const delta = rect.top < bounds.top + 14 ? rect.top - bounds.top - 14 : rect.bottom > bounds.bottom - 14 ? rect.bottom - bounds.bottom + 14 : 0;
-                this.scroll.move(this.selector, 0, Math.max(0, this.selector.scrollTop + delta));
-            }
+            this.focusPanelRow(this.panel[Math.max(0, Math.min(this.panel.length - 1, index + (key === "down" ? 1 : -1)))]);
             return;
         }
         if (index >= 0 && key === "right" && !this.confirmation) {
@@ -918,7 +970,7 @@ export class Skyline {
         } else if (key === "down" && !this.selector.hidden && this.nav.contains(document.activeElement)) {
             event.preventDefault();
             const current = this.panelTab === undefined ? undefined : this.scope(this.panelTab);
-            (this.panel.find((item) => item.key === `library:${current?.id}`) ?? this.panel[0])?.element.focus({ preventScroll: true });
+            this.focusPanelRow(this.panel.find((item) => item.key === `library:${current?.id}`) ?? this.panel[0]);
         }
     };
 
@@ -959,30 +1011,30 @@ export class Skyline {
         this.profileOpen = true;
         this.panelAnchor = "profiles";
         this.selector.setAttribute("data-menu-kind", "profile");
-        this.selector.setAttribute("aria-label", "Profile menu");
+        this.selector.setAttribute("aria-label", translate("menu.profileMenu.label"));
         // TVProfileDropdown.panel (TVTopMenuBar.swift:1185-1215): History, Requests and Watch Party above the divider;
         // Settings, the profile row, Change Account and Sign Out below it.
         const above: FocusItem[] = [];
         const personal = this.profiles.personal;
-        if (personal !== undefined) above.push(this.menuItem("history", PERSONAL_TITLES.history, () => { this.close(); personal("history"); }));
+        if (personal !== undefined) above.push(this.menuItem("history", translate(PERSONAL_MENU_TITLES.history), () => { this.close(); personal("history"); }));
         const requests = this.profiles.requests;
-        if (this.requestsEnabled && requests !== undefined) above.push(this.menuItem("requests", "Requests", () => { this.close(); requests(); }));
+        if (this.requestsEnabled && requests !== undefined) above.push(this.menuItem("requests", translate("menu.requests"), () => { this.close(); requests(); }));
         const watchParty = this.profiles.watchParty;
-        if (this.watchPartyEnabled && watchParty !== undefined) above.push(this.menuItem("watch-party", "Watch Party", () => { this.close(); watchParty(); }));
+        if (this.watchPartyEnabled && watchParty !== undefined) above.push(this.menuItem("watch-party", translate("watchParty.menu.open"), () => { this.close(); watchParty(); }));
         const below: FocusItem[] = [];
         const settings = this.profiles.settings;
-        if (settings !== undefined) below.push(this.menuItem("settings", "Settings", () => { this.close(); settings(); }));
+        if (settings !== undefined) below.push(this.menuItem("settings", translate("menu.settings"), () => { this.close(); settings(); }));
         // ProfileMenuRow.row (Components/ProfileMenuRow.swift:22-28): one cached profile leaves nothing to switch to.
         // Tizen does not read the account's profile limit yet, so Add Profile shows as Apple's does when the limit is unknown.
         const addProfile = this.profiles.addProfile;
         // shortcut: Add Profile borrows Switch Profile's glyph, until the icon set draws person.fill.badge.plus.
         below.push(addProfile !== undefined && this.profiles.profileCount?.() === 1
-            ? this.menuItem("add-profile", "Add Profile", addProfile, "switch-profile")
-            : this.menuItem("switch-profile", "Switch Profile", this.profiles.switchProfile));
+            ? this.menuItem("add-profile", translate("menu.addProfile"), addProfile, "switch-profile")
+            : this.menuItem("switch-profile", translate("menu.switchProfile"), this.profiles.switchProfile));
         const switchServer = this.profiles.switchServer;
-        if (switchServer !== undefined) below.push(this.menuItem("switch-server", "Change Account", switchServer));
+        if (switchServer !== undefined) below.push(this.menuItem("switch-server", translate("menu.changeAccount"), switchServer));
         if (this.profiles.signOut !== undefined) {
-            const item = this.menuItem("signout", "Sign Out", () => this.confirmSignOut());
+            const item = this.menuItem("signout", translate("menu.signOut"), () => this.confirmSignOut());
             item.element.classList.add("skyline-destructive");
             below.push(item);
         }
@@ -993,8 +1045,10 @@ export class Skyline {
         labels.append(el("div", "skyline-profile-title", this.profiles.name), el("div", "skyline-profile-server", (this.profiles.serverName?.() ?? new URL(this.baseUrl).host).toUpperCase()));
         header.append(profileMenuAvatar(this.profiles.name, this.avatarReference, this.avatarText, this.baseUrl, 44), labels);
         replaceNodes(this.selector, [header, ...above.map(item => item.element), el("div", "skyline-menu-divider"), ...below.map(item => item.element)]);
-        this.selector.style.left = "auto";
-        this.selector.style.right = "88px";
+        // The profile button ends the bar, which is the left edge in a right-to-left layout.
+        const rightToLeft = documentIsRightToLeft();
+        this.selector.style.left = rightToLeft ? "88px" : "auto";
+        this.selector.style.right = rightToLeft ? "auto" : "88px";
         this.selector.hidden = false;
         this.anchorOrigin(this.items.find(item => item.key === "profiles")?.element ?? this.selector);
         this.scrim.hidden = true;
@@ -1011,11 +1065,11 @@ export class Skyline {
         this.panelAnchor = "profiles";
         this.selector.setAttribute("role", "alertdialog");
         this.selector.setAttribute("aria-modal", "true");
-        this.selector.setAttribute("aria-label", "Sign Out");
+        this.selector.setAttribute("aria-label", translate("menu.signOut"));
         this.selector.setAttribute("data-confirmation", "true");
         this.scrim.setAttribute("data-confirmation", "true");
         this.scrim.hidden = false;
-        this.panel = [actionButton("cancel-signout", "Cancel", () => this.back()), actionButton("confirm-signout", "Sign Out", () => { if (!this.visible || !this.confirmation) return; this.close(); signOut(); })];
+        this.panel = [actionButton("cancel-signout", translate("common.cancel"), () => this.back()), actionButton("confirm-signout", translate("shell.signOut.confirm"), () => { if (!this.visible || !this.confirmation) return; this.close(); signOut(); })];
         this.panel[1]?.element.classList.add("skyline-destructive");
         const header = el("div", "skyline-confirm-header");
         const copy = signOutConfirmationCopy(this.profiles.accountName, this.profiles.serverName?.(), this.profiles.lastAccount === true);
@@ -1033,9 +1087,9 @@ export class Skyline {
     }
 
     private modeItems(library: UserLibrary, type: VideoTab): FocusItem[] {
-        // tvOS's cascade offers three destinations; legacy filters stay within Browse.
-        return (["Recommended", "Collections", "Browse"] as const).map(mode => {
-            const item = this.menuItem(`section:${mode === "Browse" ? "browse" : mode}`, mode, () => this.commit(this.panelAnchor === `library:${library.id}` ? library : { ...library, type }, mode), mode);
+        // tvOS lists them in TVLibraryPill case order (TVLibraryPillRow.swift:11-17); legacy filters stay within Browse.
+        return (["Recommended", "Browse", "Collections"] as const).map(mode => {
+            const item = this.menuItem(`section:${mode === "Browse" ? "browse" : mode}`, translate(MODE_TITLES[mode]), () => this.commit(this.panelAnchor === `library:${library.id}` ? library : { ...library, type }, mode), mode);
             item.element.setAttribute("role", "menuitem");
             return item;
         });
@@ -1049,9 +1103,11 @@ export class Skyline {
         this.flyoutItems = this.modeItems(library, this.panelTab);
         this.flyoutItem = this.flyoutItems[0];
         replaceNodes(this.flyout, this.flyoutItems.map(item => item.element));
-        this.flyout.style.left = `${Math.min(1532, this.selector.getBoundingClientRect().right + 18)}px`;
         this.flyout.style.top = `${Math.min(900, row.element.getBoundingClientRect().top)}px`;
         this.flyout.hidden = false;
+        // The sections open beside the library on its trailing side: the left, when the layout is mirrored.
+        const panel = this.selector.getBoundingClientRect();
+        this.flyout.style.left = `${documentIsRightToLeft() ? Math.max(88, panel.left - 18 - this.flyout.offsetWidth) : Math.min(1532, panel.right + 18)}px`;
         this.refresh();
     }
 }

@@ -2,6 +2,7 @@
 // Retry classes come from the operation's x-silo-retry-safety in openapi.json (see ../contracts/v2/SOURCE).
 
 import { decodeServerBranding } from "../contracts/v2/branding.ts";
+import { ratingOperations } from "./ratingOperations.ts";
 import { shuffleOperations } from "./shuffleOperations.ts";
 import { recommendationOperations } from "./recommendationOperations.ts";
 import {
@@ -102,6 +103,7 @@ export const operations = {
     ...audiobookOperations,
     ...bandwidthProbeOperations,
     ...recommendationOperations,
+    ...ratingOperations,
     ...shuffleOperations,
     ...subtitleOperations,
     watchDetail: (contentId: string): Spec<ReturnType<typeof decodeWatchDetail>> => ({
@@ -338,10 +340,10 @@ export const operations = {
         retry: "safe",
         decode: decodeSeasons,
     }),
-    /** listSeasonEpisodes: bounded, unpaginated; season 0 is specials. */
-    listSeasonEpisodes: (seriesId: string, seasonNumber: number): Spec<Episode[]> => ({
+    /** listSeasonEpisodes: bounded, unpaginated; season 0 is specials. `artwork` (per-slot widths) replaces the one-size still. */
+    listSeasonEpisodes: (seriesId: string, seasonNumber: number, artwork: Readonly<Record<string, string>> = {}): Spec<Episode[]> => ({
         method: "GET",
-        path: `/catalog/series/${encodeURIComponent(seriesId)}/seasons/${seasonNumber}/episodes${query({ image_size: LIST_IMAGES })}`,
+        path: `/catalog/series/${encodeURIComponent(seriesId)}/seasons/${seasonNumber}/episodes${query(Object.keys(artwork).length === 0 ? { image_size: LIST_IMAGES } : artwork)}`,
         retry: "safe",
         decode: decodeEpisodes,
     }),

@@ -15,7 +15,7 @@ import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
 import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
 import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, REMOVE_CONFLICT_MESSAGE, REMOVED_NOTICE, RequestActionGate, REQUEST_NOTICE_MS, UNCONFIRMED_CANCEL_MESSAGE, UNCONFIRMED_REMOVE_MESSAGE, visibleMineRequests } from "./requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations, type TextSearchScope } from "../api/operations.ts";
@@ -33,7 +33,7 @@ import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { TizenKeyManager } from "../session/secretStore.ts";
 import { Skyline } from "./skyline.ts";
-import { decodeImageCapabilities, detailArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
+import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
@@ -57,6 +57,10 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
+import { applyLayoutDirection, clearLayoutDirection, documentIsRightToLeft } from "../i18n/direction.ts";
+import { textLanguage } from "../i18n/translate.ts";
+import { heldSelect } from "./selectRelease.ts";
+import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
 import { NavigationSettings } from "./navigationSettings.ts";
 import { cachedBranding } from "./brandingCache.ts";
 import { getCalendar } from "../api/calendarOperations.ts";
@@ -73,6 +77,7 @@ import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
 import { avatarReference, avatarText } from "./profilePicker.ts";
 import { ExperimentalFeatures } from "../session/experimentalFeatures.ts";
 import { WatchPartyHub, watchPartyApi } from "./watchPartyHub.ts";
+import { translate } from "../i18n/translate.ts";
 import { watchPartyScreen } from "./watchParty.ts";
 import type { MediaChoice } from "./watchPartyChoice.ts";
 
@@ -143,6 +148,9 @@ function unsupportedHomeItemLimit(error: unknown): boolean {
  * from here.
  */
 const rememberedLibraryTabs = new Map<string, UserLibrary[]>();
+
+/** Longest an episode read waits for the image-capability probe before asking for the one-size still. */
+const EPISODE_PROBE_WAIT_MILLISECONDS = 2000;
 
 export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const server = options.server;
@@ -258,11 +266,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const input = el("input", "browse-input");
     input.id = "browse-search";
     input.type = "search";
+    // The field aligns by what is typed, as Apple TV's does: Latin text such as a title reads left to right in Arabic, an empty field takes the layout's direction.
+    input.dir = "auto";
     input.spellcheck = false;
     input.autocomplete = "off";
-    input.placeholder = "Search movies and series...";
+    input.placeholder = translate("search.fieldPrompt.video");
     input.setAttribute("data-focus", "query");
-    const searchLabel = el("label", "browse-label", "Search titles");
+    const searchLabel = el("label", "browse-label", input.placeholder);
     searchLabel.htmlFor = input.id;
     // Kept across renders so the field, and the TV keyboard open on it, are never detached.
     const searchField = el("div", "search-field");
@@ -279,7 +289,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     window.addEventListener("resize", keyboardUp);
     keyboardUp();
     // Apple hides Search's navigation bar (SearchView.swift:65-69); the title stays only as the page's hidden heading.
-    const searchHead = [el("h1", "browse-title", "Search"), searchLabel, searchField];
+    const searchTitle = el("h1", "browse-title", translate("search.title"));
+    const searchHead = [searchTitle, searchLabel, searchField];
 
     let stack: Route[] = [];
     const seriesSeasons = new Map<string, number>();
@@ -427,6 +438,38 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const top = (): Route | undefined => stack[stack.length - 1];
     const themePrefs = new ThemeMusicPreferences(session);
+    // The language the last answer left for this server and profile is shown from the first draw; the server's answer then confirms it.
+    const languagePrefs = new AppLanguagePreferences(session, undefined, options.publicStorage === undefined ? undefined : { storage: options.publicStorage, scope: server.server.serverId });
+    languagePrefs.applyCached();
+    void languagePrefs.refresh();
+    let paintedLanguage = textLanguage();
+    applyLayoutDirection();
+    /**
+     * The language the text is read in (the shown language once its file has landed) differs from the one this screen was drawn in: the server's answer differed from the kept one, or Settings
+     * changed it. The bar is rebuilt and the screen drawn once more in place, with focus restored by zone and item id as a Back
+     * return does. `redraw` is false where the screen is about to be shown anyway. A redraw waits, as it does while browse is covered, while
+     * a Select is held or a card or request menu is open, so no press or menu is replaced under the viewer; the next key release runs it.
+     */
+    const reconcileLanguage = (redraw: boolean): void => {
+        if (textLanguage() === paintedLanguage) return;
+        if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
+        paintedLanguage = textLanguage();
+        const mirroredBefore = documentIsRightToLeft();
+        applyLayoutDirection();
+        const focus = host.focused();
+        shell.relabel();
+        if (redraw) {
+            render(focus);
+            // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+            if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        }
+        // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        // A caller that shows the screen itself afterwards (Settings closing) still needs it, so it runs on this path too.
+        shell.repaintShown();
+    };
+    // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
+    const reconcileAfterKey = (): void => { if (textLanguage() === paintedLanguage) return; window.setTimeout(() => { if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true); }, 0); };
+    document.addEventListener("keyup", reconcileAfterKey);
     const themeCenter = new ThemeMusicCenter(new ThemeMusicController(async (ownerId, themeId) => {
         const probe = document.createElement("audio");
         const grant = await session.call({ ...operations.themePlayback(ownerId, themeId, themeAudioFormats(probe)), profileScoped: true });
@@ -579,6 +622,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         if ((current?.kind === "library" && current.discovery?.mode === "Browse" || current?.kind === "libraryResults") && !playing) render(host.focused());
     }, () => undefined);
+    // RatingSourcesStore: probed with the first Browse load, dropped with the app's session, and a failed probe leaves the answer empty and asks again.
+    let shownRatingSources: ReadonlySet<string> = new Set();
+    let ratingSourcesProbe: Promise<void> | undefined;
+    const probeRatingSources = (): Promise<void> => ratingSourcesProbe ??= session.call({ ...operations.ratingSources(), profileScoped: true, signal: requestsController.signal }).then(sources => {
+        if (torn) return;
+        shownRatingSources = sources;
+        const current = top();
+        if (current?.kind === "library" && current.discovery?.mode === "Browse" && !playing) render(host.focused());
+    }, () => { ratingSourcesProbe = undefined; });
     const startShuffle = (current: Extract<Route, { kind: "library" | "libraryResults" }>): void => {
         if (torn || playing || top() !== current || shuffleStarting || !canShuffle(current)) return;
         const discovery = current.kind === "library" ? current.discovery : undefined, generation = shuffleGeneration;
@@ -594,10 +646,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (!owns()) return;
                 const request = await shufflePick(spec => read(spec, requestsController.signal), shuffle, resolutionCap.quality);
                 if (!owns()) return;
-                if (request === undefined) { shuffleFailure = { route: current, text: "Nothing here can be played." }; return; }
+                if (request === undefined) { shuffleFailure = { route: current, text: translate("shuffle.nothingToPlay") }; return; }
                 play(request);
             } catch (error) {
-                if (owns() && !(error instanceof ApiError && error.aborted)) shuffleFailure = { route: current, text: error instanceof ApiError && error.status === 404 ? "This is no longer available to shuffle." : "Couldn't start the shuffle. Try again." };
+                if (owns() && !(error instanceof ApiError && error.aborted)) shuffleFailure = { route: current, text: translate(error instanceof ApiError && error.status === 404 ? "shuffle.notFound" : "shuffle.failed") };
             } finally {
                 shuffleStarting = false;
                 if (owns()) render(host.focused());
@@ -770,6 +822,18 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             return host.focused();
         }, true);
     }
+    const episodeArtwork = (): Record<string, string> => episodeArtworkQuery(imageCapability, window.devicePixelRatio);
+    // Apple's episode read waits for the probe when no capability is known yet (`requestQueryForImageRequest`), bounded only by its HTTP timeout.
+    // A stalled probe would hold the first rail read for two 15 s attempts, so the wait is capped and the read falls back to `small`. A settled probe never waits again. Details itself does not wait.
+    const episodeArtworkWhenKnown = async (): Promise<Record<string, string>> => {
+        if (imageCapability === undefined) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const cap = new Promise<void>(resolve => { timer = setTimeout(resolve, EPISODE_PROBE_WAIT_MILLISECONDS); });
+            await Promise.race([probeImages(), cap]);
+            clearTimeout(timer);
+        }
+        return episodeArtwork();
+    };
     const probeImages = (): Promise<ImageCapabilities | undefined> => imageProbe ??= session.call({ ...operations.imageCapabilities(), profileScoped: true, signal: requestsController.signal }).then(found => {
         if (torn) return undefined;
         imageCapability = found;
@@ -812,6 +876,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         window.visualViewport?.removeEventListener("resize", keyboardUp);
         window.removeEventListener("resize", keyboardUp);
         themePrefs.stop();
+        languagePrefs.stop();
         themeCenter.reset();
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);
@@ -829,6 +894,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopDetails();
         settingsScreen?.destroy();
         settingsScreen = undefined;
+        // Sign-in and profile screens still read English, so they stay left to right.
+        clearLayoutDirection();
         stopAuthority();
         loading?.abort();
         homeLibraries?.abort();
@@ -836,6 +903,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSearch();
         cancelCalendarDay();
         document.removeEventListener("keydown", recordKey, true);
+        document.removeEventListener("keyup", reconcileAfterKey);
         document.removeEventListener("pointerdown", recordInput, true);
         document.removeEventListener("focus", recordFocus, true);
         stack = [];
@@ -967,7 +1035,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const specs = current.kind === "home" ? [operations.listHomeSections(), operations.listUserLibraries(), operations.hiddenLibraries()]
             : current.kind === "for_you" ? [operations.recommendations()]
             : current.kind === "item" ? [operations.getCatalogItem(current.id), operations.listSeriesSeasons(current.id)]
-            : current.kind === "season" ? [operations.listSeasonEpisodes(current.seriesId, current.seasonNumber), ...(current.id === undefined ? [] : [operations.getCatalogItem(current.id)])] : [];
+            : current.kind === "season" ? [operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork()), ...(current.id === undefined ? [] : [operations.getCatalogItem(current.id)])] : [];
         return specs.some(spec => cache.isOffline(spec));
     };
     const recoverCachedRoute = (current: Route): void => {
@@ -1151,7 +1219,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const refreshWatched = async (current: Route, detail: ItemDetail, signal: AbortSignal): Promise<void> => {
         invalidateWatched(current, detail);
         if (current.kind === "season") {
-            const episodes = await read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber), signal);
+            const episodes = await read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, await episodeArtworkWhenKnown()), signal);
             if (signal.aborted || top() !== current || current.data === undefined) return;
             current.data.episodes = episodes;
         }
@@ -1160,7 +1228,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const series = current.data.details.series;
             const season = series.seasonNumber;
             if (season !== undefined) {
-                const episodes = await read(operations.listSeasonEpisodes(current.id, season), signal);
+                const episodes = await read(operations.listSeasonEpisodes(current.id, season, await episodeArtworkWhenKnown()), signal);
                 if (signal.aborted || top() !== current) return;
                 series.replace(season, episodes);
             }
@@ -1193,6 +1261,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const state = current.discovery;
         if (state === undefined || state.mode !== "Browse") return;
         void probeShuffles();
+        if (!append) void probeRatingSources();
         if (!state.facetsRequested) {
             state.filter = browsePrefs.saved(current.library) ?? state.filter;
             state.facetsRequested = true;
@@ -1539,6 +1608,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     row.start();
                 };
                 if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, async (signal) => {
                     // Slots follow response fields: backdrop_width also sizes a still returned in backdrop_url.
                     const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
@@ -1552,6 +1622,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
+                    // ItemDetailViewModel.loadDetail: "A Watched tap made while this request was in flight wins." The page keeps its
+                    // played and watch state (the resume point) and the season rollups it already refreshed; the rest of the answer applies.
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision) {
+                        const seasons = previous.series?.seasons ?? [];
+                        data = { ...data, detail: { ...data.detail, played: previous.detail.played, watch: previous.detail.watch }, seasons: seasons.length > 0 ? [...seasons] : data.seasons };
+                    }
                     if (previous !== undefined && ((quiet && detailWork === previous && previous.changes.size > 0) || cachedDetailOwners.has(previous))) {
                         const offline = cache.isOffline(operations.getCatalogItem(current.id));
                         const detail = offline ? previous.detail : data.detail;
@@ -1563,7 +1639,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                             series?.stop();
                             const repick = !offline && repickSeasons.delete(detail.id);
                             const season = repick ? undefined : series?.selectionChanged ? series.seasonNumber : data.contextSeason ?? series?.seasonNumber;
-                            previous.series = new SeriesEpisodes(session, detail.id, data.seasons, reason => previous.warmSeriesEpisodes(reason === "load"), season, current.seriesContext?.episodeId);
+                            previous.series = new SeriesEpisodes(session, detail.id, data.seasons, reason => previous.warmSeriesEpisodes(reason === "load"), season, current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                             previous.series.restore(repick ? undefined : series, true);
                             previous.series.start();
                         }
@@ -1575,7 +1651,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     const details = createItemDetails(current, data.detail, data.artwork);
                     details.restore(previous);
                     const repick = repickSeasons.delete(data.detail.id);
-                    if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId);
+                    if (data.detail.type === "series") details.series = new SeriesEpisodes(session, data.detail.id, data.seasons, reason => details.warmSeriesEpisodes(reason === "load"), repick ? previous === undefined ? data.contextSeason : undefined : previous?.series?.seasonNumber ?? data.contextSeason ?? (current.seriesContext === undefined ? seriesSeasons.get(data.detail.id) : undefined), current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                     details.series?.restore(repick ? undefined : previous?.series, true);
                     details.restoreSeasonStates(previous);
                     details.focusedEpisodeId ??= current.seriesContext?.episodeId;
@@ -1618,21 +1694,27 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 }, quiet || had);
                 return;
             }
-            case "season":
+            case "season": {
                 if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, async (signal) => {
+                    const artwork = detailArtworkQuery(imageCapability, window.devicePixelRatio);
                     const [episodes, detail] = await Promise.all([
-                        read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber), signal),
-                        current.id === undefined ? undefined : read(operations.getCatalogItem(current.id), signal).catch((error: unknown) => {
+                        episodeArtworkWhenKnown().then(episodeArtwork => read(operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork), signal)),
+                        current.id === undefined ? undefined : read(operations.getCatalogItem(current.id, artwork), signal).catch((error: unknown) => {
                             if (error instanceof ApiError && error.status === 404) return undefined;
                             throw error;
                         }),
                     ]);
-                    return { episodes, detail };
+                    return { episodes, detail, artwork };
                 }, (data) => {
                     const previous = current.data?.details;
                     if (previous?.panel !== undefined || previous?.busy || previous?.preparingPlay) { current.stale = true; deferredDetails.add(current); return; }
                     deferredDetails.delete(current);
+                    // As the item route: a watched readback after this read was sent wins, and the episodes it refreshed are newer than these.
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision && current.data !== undefined) {
+                        data = { ...data, episodes: current.data.episodes, detail: data.detail && { ...data.detail, played: previous.detail.played, watch: previous.detail.watch } };
+                    }
                     if (previous !== undefined && data.detail !== undefined) {
                         previous.acceptDetail(data.detail);
                         if (data.detail.played !== undefined) previous.values.set("watched", data.detail.played);
@@ -1644,7 +1726,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     stopDetails();
                     current.data = data;
                     if (data.detail !== undefined) {
-                        const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal));
+                        const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
                         resolutionCap.ensure();
                         details.restore(previous);
@@ -1654,6 +1736,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     }
                     if (current.focus === undefined && current.episodeId !== undefined && data.episodes.some(episode => episode.id === current.episodeId)) return { zone: "episodes", key: current.episodeId };
                 }, quiet);
+                return;
+            }
         }
     };
 
@@ -1982,7 +2066,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 details.focusedEpisodeId = undefined;
                 if (series !== undefined) { series.selectionOwnsHero = false; series.focusSelectedEpisode = false; }
                 current.focus = { zone: "actions", key: "next-episode" };
-                host.forgetVisit(`item:${current.id}`);
+                // Details visits are keyed per presentation; a remembered season card would otherwise beat a Play that is not ready yet.
+                const visit = detailVisits.get(current);
+                if (visit !== undefined) host.forgetPresentation(visit);
             }
             showRoute(current, fromProfileMenu ? tabFocus(current) : current.focus);
             if (current.kind === "person") {
@@ -2056,7 +2142,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 const seasons = cache.peek(operations.listSeriesSeasons(current.id)) ?? [];
                 const details = createItemDetails(current, detail, detailArtworkQuery(imageCapability, window.devicePixelRatio));
                 details.restore(previous);
-                if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId);
+                if (detail.type === "series") details.series = new SeriesEpisodes(session, detail.id, seasons, reason => details.warmSeriesEpisodes(reason === "load"), current.seriesContext?.seasonNumber ?? (current.seriesContext === undefined ? seriesSeasons.get(current.id) : undefined), current.seriesContext?.episodeId, episodeArtworkWhenKnown);
                 details.series?.restore(previous?.series, false, true);
                 if (detail.type === "series") { details.focusedEpisodeId = current.seriesContext?.episodeId; details.entryEpisodeId = current.seriesContext?.episodeId; }
                 current.data = { detail, seasons, details };
@@ -2125,7 +2211,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         if (destination.kind === "item") host.forgetVisit(`item:${destination.id}`);
         if (destination.kind === "person") host.forgetVisit(`person:${destination.id}`);
-        if (destination.kind === "audiobook") { push(newRoute({ kind: "audiobook", id: destination.id, title: destination.title, data: undefined })); return; }
+        if (destination.kind === "audiobook") { push(newRoute({ kind: "audiobook", id: destination.id, title: destination.title, ...(destination.seed === undefined ? {} : { seed: destination.seed }), data: undefined })); return; }
         push(destination.kind === "item"
             ? newRoute({ kind: "item", id: destination.id, title: destination.title, ...(destination.seriesContext === undefined ? {} : { seriesContext: destination.seriesContext }), ...(destination.seed === undefined ? {} : { seed: destination.seed }), ...(destination.fromRelated === true ? { fromRelated: true } : {}), data: undefined })
             : destination.kind === "person" ? newRoute({ kind: "person", id: destination.id, title: destination.title, data: undefined, filter: "video", pages: newPages(), pendingIndex: undefined })
@@ -2187,6 +2273,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             root.appendChild(container);
             container.hidden = false;
             host.listen();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) showRoute(current, focus ?? tabFocus(current));
         });
@@ -2230,7 +2317,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2240,7 +2327,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         container.classList.toggle("watch-party-scene", current.kind === "watchParty");
         container.classList.toggle("search-scene", current.kind === "search");
         // SearchView.searchPrompt: the field names audiobooks only while they take part in Search.
-        if (current.kind === "search") input.placeholder = audiobooksInSearch() ? "Search movies, series, audiobooks..." : "Search movies and series...";
+        if (current.kind === "search") {
+            const prompt = translate(audiobooksInSearch() ? "search.fieldPrompt.audiobooks" : "search.fieldPrompt.video");
+            input.placeholder = prompt;
+            searchLabel.textContent = prompt;
+            searchTitle.textContent = translate("search.title");
+        }
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
         container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
         if (browsing) activeBrowse = current.pages;
@@ -2262,8 +2354,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 searchPeople(route, searchTypeFor(route, route.searchType));
                 render(host.focused());
             } });
-        // An open room is a full-screen page, as on tvOS; the entry stays under the bar.
-        const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current) || (current.kind === "watchParty" && current.watchParty.hub.state.room === undefined);
+        // Watch Party is a full-screen page, as on tvOS: Apple pushes it, and its shell draws the bar only while the stack is empty.
+        const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current);
         cancelOfflineRefresh();
         if (offlineRefreshRoute !== current) offlineRefreshAt = undefined;
         offlineRefreshRoute = current;
@@ -2279,7 +2371,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             // A marquee rest armed on remembered rows must not read their card once Home is empty.
             if (current.kind === "home" && !preview) homeDetails.suspend();
             const modal = browsing && (current.discovery?.panel !== undefined || shuffleFailure?.route === current);
-            const decorated = shell.decorate(view, selected, preview, modal ? () => { view.back?.(); } : current.kind === "personal" || isHubRoot(current) || current.kind === "watchParty" ? () => {
+            const decorated = shell.decorate(view, selected, preview, modal ? () => { view.back?.(); } : current.kind === "personal" || isHubRoot(current) ? () => {
                 if (host.focused()?.zone === "nav") pop();
                 else render(tabFocus(current));
             } : undefined, current.kind === "library" ? `library:${current.library.id}:${current.library.type}:${current.discovery?.mode ?? "Recommended"}` : undefined);
@@ -2431,7 +2523,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Neighbor focus must be taken from the pre-removal list (AGENTS.md restore by id).
         const focus = listFocusAfter(route, id, fallback);
         dropRemovedRequest(id);
-        publishRequestNotice(REMOVED_NOTICE);
+        publishRequestNotice(removedNotice());
         await settleVisibleRequests(route, focus, revision);
     };
     const runListRemove = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
@@ -2456,11 +2548,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_REMOVE_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("remove");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
-            const message = error instanceof ApiError && error.problemId === "conflict" ? REMOVE_CONFLICT_MESSAGE : writeFailureMessage(error);
+            const message = error instanceof ApiError && error.problemId === "conflict" ? removeConflictMessage() : writeFailureMessage(error);
             if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
             await settleVisibleRequests(route, origin, revision);
             requestGate.listMessage = message;
@@ -2494,7 +2586,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 requestGate.release(token);
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("cancel");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2626,7 +2718,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (unconfirmed && cancelId !== undefined) {
                     requestGate.hold(cancelId);
                     releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                    if (requestGate.held.has(cancelId)) requestGate.holdMessage("cancel");
                 } else {
                     releaseGate();
                 }
@@ -2837,6 +2929,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // lands on Home.
                 for (const covered of stack) retireRoute(covered);
                 stack = [home];
+                // Home is the top route from here, so the marquee's repaint reads Home's enrichment, not the page that opened Settings.
+                reconcileLanguage(false);
                 host.listen();
                 showRoute(home, { zone: "nav", key: "home" });
                 const spoilersAfterSettings = episodeSpoilers?.settings;
@@ -2853,7 +2947,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
                 ...(options.onSwitchServer === undefined ? {} : { switchServer: options.onSwitchServer }),
-            }, options.onAccounts, episodeSpoilers, experimental, themePrefs);
+            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs);
             syncThemeMusic();
         },
         personal: (source, anchor = "profiles") => {
@@ -2881,6 +2975,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
     }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
+    languagePrefs.subscribe(() => {
+        if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true);
+    });
     shell.translations = translations;
     translations.subscribeMode(() => { if (!torn) shell.armTranslation(); });
     translations.cards.subscribe(() => { if (!torn) shell.refreshTranslation(); });
@@ -2930,6 +3027,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             invalidateCalendar();
             host.listen();
+            reconcileLanguage(false);
             const current = top();
             if (current !== undefined) {
                 showRoute(current, current.focus);

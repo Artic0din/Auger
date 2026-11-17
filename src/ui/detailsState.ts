@@ -17,6 +17,7 @@ import { PreplayTrackPreference } from "./preplayTrackPreference.ts";
 import { subtitlePreferenceOperations, type SubtitlePreferencePick, type SubtitlePreference } from "../api/subtitlePreferenceOperations.ts";
 import { matchesSubtitle, preferredCatalogSubtitle } from "../player/preplaySubtitles.ts";
 import { DescriptionTranslations, type ItemDescriptionTranslation } from "./descriptionTranslation.ts";
+import { translate } from "../i18n/translate.ts";
 import { TrailerFetch } from "./trailerFetch.ts";
 
 /** A failure Apple TV presents as a system alert with one OK button. */
@@ -36,14 +37,16 @@ function heldAlert(kind: PersonalAction): DetailsAlert {
     return { id: "details-change-held", title: "Change Not Confirmed", message: HELD_MESSAGE, held: kind };
 }
 /** TVSeriesDetailView's season watched alert (detail.watchedError). */
-const SEASON_WATCHED_FAILED: DetailsAlert = { id: "details-season-watched-failed", title: "Couldn't Update Watched Status", message: "Please check your connection and try again." };
+function seasonWatchedFailed(): DetailsAlert {
+    return { id: "details-season-watched-failed", title: translate("detail.watchedError.title"), message: translate("detail.watchedError.body") };
+}
 /** ShuffleLauncher.failureMessage under the shuffle.failedTitle alert. */
 function shuffleFailure(error: unknown): DetailsAlert {
     // ShuffleError.classify reads Problem Details only.
     const failure = error instanceof ApiError ? error.failure : undefined;
     const status = failure?.kind === "problem" ? failure.problem.status : undefined;
-    const message = status === 409 ? "Nothing here can be played." : status === 404 ? "This is no longer available to shuffle." : "Couldn't start the shuffle. Try again.";
-    return { id: "details-shuffle-failed", title: "Couldn't Shuffle", message };
+    const message = translate(status === 409 ? "shuffle.nothingToPlay" : status === 404 ? "shuffle.notFound" : "shuffle.failed");
+    return { id: "details-shuffle-failed", title: translate("shuffle.failedTitle"), message };
 }
 
 export interface PersonalChange {
@@ -191,6 +194,7 @@ export class DetailsState {
                 return !episodes.some((episode) => episode.pendingTranslationLanguage !== undefined);
             },
             artwork: () => this.artwork,
+            episodeArtwork: async () => await this.series?.episodeArtwork() ?? {},
             changed: () => this.changed(),
         });
         this.changed = changed;
@@ -216,6 +220,8 @@ export class DetailsState {
     get pending(): boolean { return [...this.changes.values()].some(change => change.pending) || [...this.seasonStates.values()].some(state => state.pending); }
     readonly seasonStates = new Map<number, DetailsState>();
     private aggregateWatched: boolean | undefined;
+    /** Counts watched readbacks, so a Details read sent before one lands cannot put the older state back. */
+    watchedRevision = 0;
     get busy(): boolean { return this.pending || this.pendingElsewhere() || this.episodePreferencesBlocked; }
 
     acceptDetail(detail: ItemDetail): void {
@@ -665,6 +671,7 @@ export class DetailsState {
         this.invalidateEpisodes();
         this.detail = this.mergeDiscoveredTrailers(series);
         this.values.set("watched", series.played);
+        this.watchedRevision++;
         this.aggregateWatched = undefined;
         if (this.series !== undefined) this.series.seasons = seasons;
         this.warmSeriesEpisodes();
@@ -930,7 +937,7 @@ export class DetailsState {
             if (!this.current(controller)) return;
             const held = this.presentsAlerts && unanswered && this.detail.type !== "season";
             this.changes.set(kind, { target, pending: false, failed: true, ...(held ? { held: true as const } : {}) });
-            if (this.presentsAlerts) this.alert = this.detail.type === "season" ? SEASON_WATCHED_FAILED : held ? heldAlert(kind) : ITEM_UPDATE_FAILED;
+            if (this.presentsAlerts) this.alert = this.detail.type === "season" ? seasonWatchedFailed() : held ? heldAlert(kind) : ITEM_UPDATE_FAILED;
             this.changed();
         });
     }
@@ -956,8 +963,11 @@ export class DetailsState {
                 // in flight; keep the richer extras/videos rather than wiping them.
                 this.detail = this.mergeDiscoveredTrailers(detail);
                 this.values.set(kind, detail.played);
+                this.watchedRevision++;
                 if (detail.type === "series" && detail.played === requested && (detail.played === true || writeAccepted)) {
                     this.aggregateWatched = detail.played;
+                    // A page owner that replaces this one rebuilds its season owners from these rollups.
+                    if (this.series !== undefined) this.series.seasons = this.series.seasons.map(season => season.userData === undefined ? season : { ...season, userData: { ...season.userData, played: requested } });
                     for (const owner of this.seasonStates.values()) {
                         owner.values.set("watched", detail.played);
                         owner.detail = { ...owner.detail, played: detail.played };

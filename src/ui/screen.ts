@@ -3,6 +3,8 @@
 // restored by control key, never by position, and never left on nothing. Controls placed in rows
 // move Left/Right within a row and Up/Down between rows.
 
+import { applyScreenDirection } from "../i18n/direction.ts";
+import { SOURCE_LANGUAGE } from "../i18n/language.ts";
 import { remoteKey } from "./keys.ts";
 import { listenSelectRelease } from "./selectRelease.ts";
 
@@ -30,6 +32,10 @@ export interface Screen {
     readonly focus: string;
     /** Undefined: Back is not handled here and reaches the app's own handler. */
     readonly back: (() => void) | undefined;
+    /** True once the screen's text is on the catalog: it then follows the shown language and direction instead of carrying `lang="en"`. */
+    readonly translated?: boolean;
+    /** Runs once when another screen replaces this one, or the host is destroyed: stop listening for anything the screen subscribed to. */
+    readonly dispose?: () => void;
 }
 
 export class ScreenHost {
@@ -52,6 +58,7 @@ export class ScreenHost {
     }
 
     show(screen: Screen, focus?: string): void {
+        if (this.current !== undefined && this.current !== screen) this.current.dispose?.();
         const changed = this.current?.name !== screen.name;
         const kept = this.current?.name === screen.name ? this.focusedKey() : undefined;
         this.current = screen;
@@ -60,6 +67,10 @@ export class ScreenHost {
             section.classList.add("signin-screen-enter");
         }
         section.setAttribute("data-screen", screen.name);
+        // A screen whose text is not on the catalog yet (the profile picker) keeps lang=en under a page whose lang is the shown
+        // language, so assistive technology reads it by English rules. Mark a screen `translated` when its text moves, and drop this with the last one.
+        if (screen.translated === true) applyScreenDirection(section);
+        else section.setAttribute("lang", SOURCE_LANGUAGE);
         section.appendChild(this.wordmark());
         for (const node of screen.content) {
             section.appendChild(node);
@@ -76,6 +87,7 @@ export class ScreenHost {
 
     destroy(): void {
         document.removeEventListener("keydown", this.onKey);
+        this.current?.dispose?.();
         this.current = undefined;
         while (this.root.firstChild !== null) {
             this.root.removeChild(this.root.firstChild);
