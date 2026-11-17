@@ -49,6 +49,8 @@ export interface SignInScreens {
 
 /** The last server connected to, so a restart can restore its session. An address, not a secret. */
 const SERVER_KEY = "silo.native.server";
+/** A refusal or problem is worded when its screen is drawn, so a redraw in a language that just landed says it in that language. */
+type ErrorLine = () => string;
 const CLEANUP_WAIT_MS = 10000;
 const SCHEMES: readonly [AdvancedScheme, MessageKey][] = [["auto", "setup.scheme.auto"], ["https", "setup.scheme.https"], ["http", "setup.scheme.http"]];
 /** Screens before a server answers; the backdrop's brand light changes once one does. */
@@ -122,7 +124,7 @@ interface Active {
     password: string;
     /** "Show password" pressed; kept while the screen is redrawn. */
     shown: boolean;
-    error: string | undefined;
+    error: (() => string) | undefined;
     /** A missing username. Any other error outlines the password. */
     errorField: "username" | undefined;
 }
@@ -213,7 +215,9 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     document.addEventListener("visibilitychange", onVisibility);
 
     // A language file that lands while a screen is up redraws it in that language; `destroy` stops listening.
-    const late = lateRedraw(() => false, () => { if (!destroyed) redraw?.(); });
+    // Replacing a field that holds typed text would close the TV keyboard, so that redraw runs once focus leaves it.
+    const typing = (): boolean => document.activeElement instanceof HTMLInputElement && root.contains(document.activeElement) && document.activeElement.value !== "";
+    const late = lateRedraw(typing, () => { if (!destroyed) redraw?.(); });
     const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
 
     const handOff = (server: ConnectedServer): void => {
@@ -226,7 +230,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * The Apple TV manual entry. `busy`: a connect is running; Connect says so and holds focus,
      * and nothing else is reachable until it answers, as the Apple TV app waits for its probe.
      */
-    const entryScreen = (notes: readonly Note[], offerForget: boolean, error?: string, busy = false, errorField?: "address" | "port"): Screen => {
+    const entryScreen = (notes: readonly Note[], offerForget: boolean, error?: ErrorLine, busy = false, errorField?: "address" | "port"): Screen => {
         const input = textInput("signin-address", "address", translate("setup.placeholder"), "Server address", address);
         input.type = "url";
         input.readOnly = busy;
@@ -247,13 +251,14 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             { key: "address", element: input, row: 0, done: "connect" },
             { ...toggle, row: 1 },
         ];
-        const addressError = error !== undefined && errorField !== "port";
+        const message = error?.();
+        const addressError = message !== undefined && errorField !== "port";
         if (addressError) {
             input.setAttribute("aria-invalid", "true");
         }
         const copy: HTMLElement[] = [headline(text.entryTitle()), lead(text.entryLead()), field(input, "globe", addressError)];
-        if (error !== undefined) {
-            copy.push(errorText(error));
+        if (message !== undefined) {
+            copy.push(errorText(message));
         }
         const toggleRow = actionRow([toggle]);
         toggleRow.classList.add("signin-toggle-row");
@@ -314,7 +319,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         };
     };
 
-    const showEntry = (notes: readonly Note[], offerForget: boolean, focus?: string, error?: string, errorField?: "address" | "port"): void => {
+    const showEntry = (notes: readonly Note[], offerForget: boolean, focus?: string, error?: ErrorLine, errorField?: "address" | "port"): void => {
         show(() => entryScreen(notes, offerForget, error, false, errorField), focus);
     };
 
@@ -327,7 +332,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         if (fault === "port") {
             advanced = true;
         }
-        showEntry([], offerForget, "connect", text.invalidPort(), fault);
+        showEntry([], offerForget, "connect", text.invalidPort, fault);
     };
 
     /** Applies Advanced options; a bad port is explained before anything is sent. */
@@ -362,10 +367,10 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         }
         if (result === "cleared" || result === "guarded" || result === "failed") {
             const failed = result === "failed";
-            showEntry(failed ? [] : [{ text: text.forgetResult(result), tone: "info" }], failed, failed ? "forget" : "connect", failed ? text.forgetResult(result) : undefined);
+            showEntry(failed ? [] : [{ text: text.forgetResult(result), tone: "info" }], failed, failed ? "forget" : "connect", failed ? () => text.forgetResult(result) : undefined);
             return;
         }
-        showEntry([], false, "address", text.connectProblem({ status: "invalid_url", problem: result }));
+        showEntry([], false, "address", () => text.connectProblem({ status: "invalid_url", problem: result }));
     };
 
     /**
@@ -381,7 +386,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             if (connecting === controller && !controller.signal.aborted && !destroyed) {
                 controller.abort();
                 connecting = undefined;
-                showEntry([], false, "connect", "This TV is still removing the earlier sign-in. Try connecting again in a moment.");
+                showEntry([], false, "connect", () => "This TV is still removing the earlier sign-in. Try connecting again in a moment.");
             }
         }, CLEANUP_WAIT_MS);
         pendingAccountCleanup.then(() => {
@@ -411,7 +416,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                     return;
                 }
                 connecting = undefined;
-                showEntry([], false, "connect", "Something went wrong while connecting. Try again.");
+                showEntry([], false, "connect", () => "Something went wrong while connecting. Try again.");
                 clock.schedule(() => {
                     throw error;
                 }, 0);
@@ -436,7 +441,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * Like the tvOS alert: centred over the dimmed address screen, Cancel then Connect, Connect focused.
      */
     const askCleartext = (plain: readonly string[]): void => {
-        const decline = (): void => showEntry([], false, "connect", text.cleartextDeclined());
+        const decline = (): void => showEntry([], false, "connect", text.cleartextDeclined);
         show(() => {
             const controls = [
                 marqueeButton("cancel", translate("common.cancel"), "glass", decline),
@@ -483,7 +488,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         connected(server);
     };
 
-    const showNeedsSetup = (checking: boolean, error?: string): void => {
+    const showNeedsSetup = (checking: boolean, error?: ErrorLine): void => {
         const server = pendingSetup;
         if (server === undefined) {
             return;
@@ -502,7 +507,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                 lead(text.serverNotReadyBody()),
             ];
             if (error !== undefined) {
-                copy.push(errorText(error));
+                copy.push(errorText(error()));
             }
             copy.push(actionRow([retry, change]));
             return {
@@ -540,11 +545,11 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             setupProbe = undefined;
             if (result.status === "needs_setup") {
                 pendingSetup = result.server;
-                showNeedsSetup(false, text.stillNeedsSetup());
+                showNeedsSetup(false, text.stillNeedsSetup);
                 return;
             }
             if (result.status !== "connected") {
-                showNeedsSetup(false, text.setupUnreachable());
+                showNeedsSetup(false, text.setupUnreachable);
                 return;
             }
             enterSignIn(result);
@@ -554,7 +559,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             }
             checkingSetup = false;
             setupProbe = undefined;
-            showNeedsSetup(false, text.setupUnreachable());
+            showNeedsSetup(false, text.setupUnreachable);
             if (!(error instanceof ApiError)) {
                 clock.schedule(() => {
                     throw error;
@@ -603,7 +608,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             return;
         }
         if (result.status !== "connected") {
-            showEntry([], result.status !== "invalid_url", "connect", text.connectProblem(result));
+            showEntry([], result.status !== "invalid_url", "connect", () => text.connectProblem(result));
             return;
         }
         address = result.server.http.base.baseUrl;
@@ -925,10 +930,15 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         }, ms);
     };
 
-    const showCode = (current: Active): void => {
+    /** What the code screen shows now: read when the screen is built, so a redraw never restores an older status. */
+    const codeState = (current: Active): { readonly status: text.CodeStatus; readonly action: string | undefined; readonly code: DeviceCodeView | undefined } => {
         const status = current.status;
-        const action = text.stateAction(status);
         const code = status.kind === "waiting" || status.kind === "opened" || status.kind === "unreachable" || status.kind === "rate_limited" ? current.shownCode : undefined;
+        return { status, action: text.stateAction(status), code };
+    };
+
+    const showCode = (current: Active): void => {
+        const { status, action, code } = codeState(current);
         const shown = current.code;
         const hasAction = root.querySelector('[data-screen] [data-focus="retry"]') !== null;
         if (shown !== undefined && code !== undefined && shown.userCode === code.userCode && host.name === "code" && hasAction === (action !== undefined)) {
@@ -938,13 +948,14 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         const base = current.server.server.http.base.baseUrl;
         const kept = document.activeElement?.getAttribute("data-focus") ?? undefined;
         show(() => {
+            const now = codeState(current);
             const controls = [
-                ...(action === undefined ? [] : [marqueeButton("retry", action, "primary", () => retry(current), { glyph: "retry" })]),
+                ...(now.action === undefined ? [] : [marqueeButton("retry", now.action, "primary", () => retry(current), { glyph: "retry" })]),
                 ...codeActions(current),
             ];
             const view = codeScreen({
-                status,
-                code,
+                status: now.status,
+                code: now.code,
                 serverName: current.serverName ?? text.serverHost(base),
                 host: text.serverHost(base),
                 secure: base.startsWith("https:"),
@@ -991,12 +1002,13 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     const passwordOnly = (current: Active): boolean => current.login.current.phase === "unavailable";
 
     const showCredentials = (current: Active, focus?: string, shake = false): void => {
-        const phoneRoute = !passwordOnly(current);
         const base = current.server.server.http.base.baseUrl;
         // A redraw for a language file that lands later does not shake the fields again.
         let shaking = shake;
         show(
             () => {
+                // Read now: device login can become unavailable after the screen was first drawn.
+                const phoneRoute = !passwordOnly(current);
                 const view = credentialsScreen({
                     serverName: current.serverName ?? text.serverHost(base),
                     host: text.serverHost(base),
@@ -1008,7 +1020,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                     username: current.username,
                     password: current.password,
                     shown: current.shown,
-                    error: current.error,
+                    error: current.error?.(),
                     errorField: current.errorField,
                     shake: shaking,
                     submitting: current.submitting,
@@ -1037,20 +1049,18 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         if (current.submitting) {
             return;
         }
-        const phoneRoute = !passwordOnly(current);
-        const hint = phoneRoute ? text.phoneHint(current.options?.oauthProviders ?? []) : undefined;
-        const refuse = (message: string, field: "username" | "password"): void => {
+        const refuse = (message: ErrorLine, field: "username" | "password"): void => {
             current.error = message;
             current.errorField = field === "username" ? "username" : undefined;
             // A missing username outlines and focuses that field. Every other failure outlines the password.
             showCredentials(current, field === "username" ? "username" : "secret", true);
         };
         if (current.username.trim() === "") {
-            refuse(text.enterUsername(), "username");
+            refuse(text.enterUsername, "username");
             return;
         }
         if (current.password === "") {
-            refuse(text.enterPassword(), "password");
+            refuse(text.enterPassword, "password");
             return;
         }
         current.submitting = true;
@@ -1070,7 +1080,10 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                     signedIn(current, { phase: "signed_in", persistence: result.persistence, previousSession: result.previousSession, passwordChangeRequired: result.passwordChangeRequired });
                     return;
                 case "failed":
-                    refuse(text.passwordProblem(result.error, hint, phoneRoute), "password");
+                    refuse(() => {
+                        const phoneRoute = !passwordOnly(current);
+                        return text.passwordProblem(result.error, phoneRoute ? text.phoneHint(current.options?.oauthProviders ?? []) : undefined, phoneRoute);
+                    }, "password");
                     return;
                 case "superseded":
                     showCredentials(current);

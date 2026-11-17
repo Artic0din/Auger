@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { translate } from "../../src/i18n/translate.ts";
+import { fixture } from "../native/support/fakeSilo.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
@@ -176,7 +177,8 @@ test("the address screen reads English and left to right when English is shown",
     });
 });
 
-test("German's file landing after the first draw redraws the address screen in German and keeps what was typed", async () => {
+/** Holds German's file, loads the page again so it reads English first, and returns what lets the file land. */
+async function withHeldGerman(body: (tv: Tv, release: () => void) => Promise<void>): Promise<void> {
     let release: () => void = () => undefined;
     const held = new Promise<void>(resolve => { release = resolve; });
     const tv = await openTv(browser, { locale: "de-DE" });
@@ -187,13 +189,85 @@ test("German's file landing after the first draw redraws the address screen in G
         const entry = await section(tv, "entry");
         assert.equal(await headlineText(tv), "Enter your\nserver address", "English until the file lands");
         assert.equal(await entry.getAttribute("lang"), "en");
-        await tv.page.fill("#signin-address", "silo.example.test");
-        release();
-        await tv.eventually(async () => await headlineText(tv) === text("setup.headline", "de"), "the screen redraws in German");
-        assert.equal(await tv.page.locator("#signin-address").inputValue(), "silo.example.test", "the typed address survives the redraw");
-        assert.equal(await tv.page.locator('[data-screen="entry"]').getAttribute("lang"), "de");
+        await body(tv, release);
         assert.deepEqual(tv.console, []);
     } finally {
         await tv.page.context().close();
     }
+}
+
+test("German's file landing after the first draw redraws the address screen in German", async () => {
+    await withHeldGerman(async (tv, release) => {
+        release();
+        await tv.eventually(async () => await headlineText(tv) === text("setup.headline", "de"), "the screen redraws in German");
+        assert.equal(await tv.page.locator('[data-screen="entry"]').getAttribute("lang"), "de");
+    });
+});
+
+test("a language file landing while an address is typed waits for the typing to end, then redraws and keeps the address", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await tv.page.fill("#signin-address", "silo.example.test");
+        const input = await tv.page.locator("#signin-address").elementHandle();
+        assert.ok(input);
+        release();
+        await tv.page.waitForTimeout(300);
+        assert.equal(await headlineText(tv), "Enter your\nserver address", "still English while the address is being typed");
+        assert.equal(await input.evaluate(node => node.isConnected), true, "the field the TV keyboard edits is not replaced");
+        await tv.remote(IME_DONE);
+        await tv.eventually(async () => await headlineText(tv) === text("setup.headline", "de"), "the screen redraws once the typing ends");
+        assert.equal(await tv.page.locator("#signin-address").inputValue(), "silo.example.test", "the typed address survives the redraw");
+    });
+});
+
+test("an address problem shown before German's file lands reads in German after it", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await connectTo(tv, "");
+        await tv.page.getByText("Please enter a server host.", { exact: true }).waitFor();
+        release();
+        await tv.page.getByText(text("setup.error.empty", "de"), { exact: true }).waitFor();
+    });
+});
+
+test("a refused password form shown before German's file lands reads in German after it", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await codeScreen(tv);
+        await tv.page.locator('[data-focus="password"]').click();
+        await section(tv, "credentials");
+        await tv.page.locator('[data-focus="signin"]').click();
+        await tv.page.getByText("Please enter your username.", { exact: true }).waitFor();
+        release();
+        await tv.page.getByText(text("signIn.error.usernameMissing", "de"), { exact: true }).waitFor();
+    });
+});
+
+test("a code that was opened on the phone still says so after German's file lands", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await codeScreen(tv);
+        const [code] = [...tv.fake.devices.keys()].slice(-1);
+        assert.ok(code);
+        tv.fake.open(code);
+        await tv.jump(5000);
+        await tv.page.getByText("Continue on your phone", { exact: true }).waitFor();
+        release();
+        // The redraw alone, with no poll after it, must show the status the screen had.
+        await tv.page.locator('[data-screen="code"][lang="de"]').waitFor();
+        assert.equal(await tv.page.locator(".signin-status-text").innerText(), text("tvSignIn.status.opened", "de"));
+    });
+});
+
+test("a password form that went password-only stays so when German's file lands: no phone button, and Back leaves for the address", async () => {
+    await withHeldGerman(async (tv, release) => {
+        const capability = tv.fake.hold("/auth/device/capability");
+        tv.fake.script("/auth/device/capability", { status: 200, body: { ...fixture("get_device_login_capability_ok"), state: "disabled" } });
+        await connectTo(tv);
+        await tv.page.locator('[data-focus="password"]').click();
+        await section(tv, "credentials");
+        capability.release();
+        await tv.page.getByText("This server only supports password sign-in.", { exact: true }).waitFor();
+        release();
+        await tv.page.getByText(text("tvSignIn.passwordOnly", "de"), { exact: true }).waitFor();
+        assert.equal(await tv.page.locator('[data-focus="phone"]').count(), 0, "the phone route stays removed");
+        await tv.remote(10009);
+        assert.equal(await tv.screen(), "entry", "Back uses the password-only route");
+    });
 });
