@@ -305,7 +305,7 @@ export interface HomeSection {
 }
 
 /** Optional extras: a malformed key or argument map shows `title` rather than failing the row, as Apple's decoder does. */
-function titleArguments(value: unknown): Record<string, string> | undefined {
+export function titleArguments(value: unknown): Record<string, string> | undefined {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
     const entries = Object.entries(value);
     return entries.every(([, argument]) => typeof argument === "string") ? Object.fromEntries(entries) as Record<string, string> : undefined;

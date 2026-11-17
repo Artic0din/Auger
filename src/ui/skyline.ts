@@ -407,6 +407,11 @@ export class Skyline {
         if (shown !== undefined && shown.card.id === id && layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
     }
 
+    /** The shown language changed: the marquee's meta, detail line and chips are written again for the title on show. */
+    repaintShown(): void {
+        if (this.shown !== undefined) this.refreshDetails(this.shown.card.id);
+    }
+
     private fillDetails(layer: HTMLElement, card: Card, continuing: boolean): void {
         layer.querySelector(".skyline-meta-line")?.replaceWith(renderMetaLine(this.filled(card), continuing));
         const details = this.details(card, continuing);
@@ -1065,8 +1070,8 @@ export class Skyline {
     }
 
     private modeItems(library: UserLibrary, type: VideoTab): FocusItem[] {
-        // tvOS's cascade offers three destinations; legacy filters stay within Browse.
-        return (["Recommended", "Collections", "Browse"] as const).map(mode => {
+        // tvOS lists them in TVLibraryPill case order (TVLibraryPillRow.swift:11-17); legacy filters stay within Browse.
+        return (["Recommended", "Browse", "Collections"] as const).map(mode => {
             const item = this.menuItem(`section:${mode === "Browse" ? "browse" : mode}`, translate(MODE_TITLES[mode]), () => this.commit(this.panelAnchor === `library:${library.id}` ? library : { ...library, type }, mode), mode);
             item.element.setAttribute("role", "menuitem");
             return item;

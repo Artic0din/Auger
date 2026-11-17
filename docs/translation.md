@@ -23,6 +23,9 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 | Details (movie, series, season, episode) | action row, readout, Version, Audio and Subtitles lists, More menu, facts, rails, empty, error and alert text, trailer status |
 | Top bar and menus | the roots, Search and Profile buttons, the For You, library and profile menus, the sign-out confirmation |
 | Home | `Loading home`, the empty state, `Explore all`, row titles the server keys |
+| Home cards | the caption's episode code and years, the marquee's season and episode, time left, runtime and the Aired line, the card menu's Remove rows and update-failed alert, a season pill's Mark Season rows |
+| For You | loading and empty text, row titles the server keys (`title_key` on each Discover row) |
+| Library tabs | Recommended and Collections states, collection counts, Browse's Sort and Filter panels, A–Z rail, empty and loading states, the shuffle alert |
 | Search | field prompt, filters, empty and first-visit states, result count, People and Box Sets headings, the Requests section heading and caption |
 
 ## Still English
@@ -31,6 +34,6 @@ Apple has no key for these, or they belong to a later row of the plan.
 
 - Tizen-only Details text: the circle buttons' `Versions` and `Audio Tracks`, `Seasons`, `Unknown language`, `Special N`, preference-save notes (`Saving audio preference…`), the unplayable-file notes, `Loading extra…`, the personal-action retry notes, and the held-change alert.
 - Dates and the season view's `45 min` line: the facts' release dates use `Intl` with the device locale, not the shown language.
-- Home's original-language overlay (`cardOverlays.languageName`), card captions and the Aired line, the card context menu and its update-failed alert: English until the library and card row of the plan.
+- Home's original-language overlay (`cardOverlays.languageName`) and the card menu's Play, Resume, Mark as Watched, Add to Favorites and Add to Watchlist rows: Apple builds those as plain strings, so they stay English (see [settings.md](settings.md#card-for-you-and-library-text)).
 - Box set cards, Request cards and the error screen's buttons: collections, requests and error rows of the plan.
 - Subtitle track names from `src/player/trackLabels.ts` (`(Forced)`, `(SDH)`, `External`): the player row.

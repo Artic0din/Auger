@@ -2478,7 +2478,7 @@ browseTest("Series Recommended shares Home stills, band alignment and the three-
     assert.equal(await tv.focused(), "expand:recent");
     await tv.page.locator('[data-focus="series"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout) [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout) [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
     assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout)').evaluate(node => { const style = getComputedStyle(node); return [style.width, style.padding, style.borderRadius]; }), ["460px", "14px", "22px"]);
     assert.equal(await tv.page.locator('.skyline-selector:not(.skyline-flyout) .skyline-menu-icon').count(), 3);
 });
@@ -3425,7 +3425,7 @@ browseTest("R2 cached library restores flyout modes without reads on focus", asy
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.jump(250);
     await press(tv, "ArrowDown", "ArrowRight");
-    assert.deepEqual(await tv.page.locator('.skyline-flyout [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-flyout [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
     assert.equal(tv.fake.requests.length, reads);
 }, { multipleLibraries: true });
 
@@ -3997,7 +3997,7 @@ browseTest("discovery exposes three library menu destinations", async (tv) => {
     }
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
 });
 
 if (process.env.DISCOVERY_PACED !== undefined) {
@@ -4101,7 +4101,7 @@ browseTest("the library cascade offers Apple's three destinations and no dead co
     await showing(tv, "library:12");
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
 });
 
 browseTest("Skyline keeps bounded type tabs and a passive marquee whose text follows focus at once", async (tv) => {
@@ -4288,7 +4288,7 @@ browseTest("reduced motion snaps scrolling and the real Browse flyout preserves 
     await tv.remote(40);
     await tv.remote(39);
     assert.equal(await tv.focused(), "section:Recommended");
-    assert.equal(await tv.page.locator(".skyline-flyout").textContent(), "RecommendedCollectionsBrowse");
+    assert.equal(await tv.page.locator(".skyline-flyout").textContent(), "RecommendedBrowseCollections");
     await tv.remote(37);
     assert.equal(await tv.focused(), "library:12");
     await tv.remote(BACK);

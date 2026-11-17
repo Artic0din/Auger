@@ -1,3 +1,4 @@
+import { shownLocale } from "../i18n/format.ts";
 import { runtimeText } from "./cardPresentation.ts";
 /** Apple EpisodeCardCaption and MediaTextFormatting; calendar dates have no UTC conversion. */
 export function episodeAirDate(value: string | undefined): string | undefined {
@@ -17,9 +18,9 @@ export function episodeAirDate(value: string | undefined): string | undefined {
     return abbreviatedDate(date);
 }
 
-/** Apple's medium DateFormatter uses Sep in English, including Australian English. */
+/** Apple's medium DateFormatter, in the shown language; it uses Sep in English, including Australian English. */
 function abbreviatedDate(date: Date): string {
-    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).formatToParts(date)
+    return new Intl.DateTimeFormat(shownLocale(), { dateStyle: "medium" }).formatToParts(date)
         .map(part => part.type === "month" && part.value === "Sept" ? "Sep" : part.value).join("");
 }
 
