@@ -15,6 +15,8 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 - A track's language is named in the shown language (`languageName` in `src/player/trackLabels.ts`, Apple's `TrackLabels.languageName`): `Portugiesisch` in German. A tag with a region reads as its language, as Apple's does (`pt-BR` is Portuguese).
 - Counts and numbers written into a placeholder use `integerText` (`src/i18n/numbers.ts`), Apple's `LocaleFormat.integer`: the shown language's digits, never grouped.
   A season or episode inside a code (`S1:E2`) stays in ASCII digits.
+  A year is one of these: Details' facts line and loading line, a card's year badge, audiobook narrations, Requests and Watch Party facts all print it with `integerText`, as Apple's `TVDetailHero`, `OverlayRegistry`, `TVRequestsPage` and `WatchPartyLobbyState` do.
+  The player's info panel still writes its Year row in ASCII with the rest of the player's English text.
 
 ## On the catalog
 

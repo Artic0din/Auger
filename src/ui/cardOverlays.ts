@@ -14,6 +14,7 @@ import { resolutionLabel, runtimeText } from "./cardPresentation.ts";
 import { applyStyle, css, hexColor, type OverlayStyle, parseStyle, type Preset, PRESET_STYLES, type PresetId, PRESETS, readableText, type Rgba, type Shadow } from "./overlayPresets.ts";
 import { el } from "./screen.ts";
 import { menuIcon } from "./navigationIcon.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 /** OverlayTypes.swift:44-65: the top-right corner belongs to the watch status, so badges use the side rails. */
 type Position = "top-left" | "bottom-left" | "bottom-right" | "left-edge" | "right-edge";
@@ -135,7 +136,7 @@ const REGISTRY: readonly OverlayDef[] = [
     rating("rating_rt_audience", "RT Audience", "#fa6400", card => percentScore(card.ratingRtAudience)),
     { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "shield", value: card => card.contentRating, valueKey: card => nonEmpty(card.contentRating) },
     { id: "advisory_age", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "users", value: card => card.advisoryAge !== undefined && card.advisoryAge > 0 ? `${card.advisoryAge}+` : undefined },
-    { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? String(card.year) : undefined },
+    { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? integerText(card.year) : undefined },
     { id: "runtime", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "clock", value: card => runtimeText(card.runtimeMinutes) },
     { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "globe", value: card => languageName(card.originalLanguage), valueKey: card => nonEmpty(card.originalLanguage) },
     { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "building", value: card => firstNonEmpty(card.studios), valueKey: card => firstNonEmpty(card.studios) },
