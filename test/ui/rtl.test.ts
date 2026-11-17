@@ -9,6 +9,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
+import { openChangeAccount, withSignedInTv } from "./support/accounts.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
@@ -236,12 +237,11 @@ for (const [language, enter, leave] of [["ar", LEFT, RIGHT], ["en", RIGHT, LEFT]
     });
 }
 
-/** How far the focused card sits inside the row's `edge` side, after a step that had to scroll. */
+/** How far the focused card sits inside the screen's `edge` side, after a step that had to scroll. */
 const insetAfterScroll = (tv: Tv, edge: "left" | "right"): Promise<number> => tv.page.evaluate(edgeName => {
     const card = document.activeElement?.getBoundingClientRect();
-    const row = document.activeElement?.closest(".browse-row")?.getBoundingClientRect();
-    if (card === undefined || row === undefined) return Number.NaN;
-    return edgeName === "left" ? card.left - row.left : row.right - card.right;
+    if (card === undefined) return Number.NaN;
+    return edgeName === "left" ? card.left : 1920 - card.right;
 }, edge);
 
 for (const [language, key, edge] of [["ar", LEFT, "left"], ["en", RIGHT, "right"]] as const) {
@@ -258,7 +258,8 @@ for (const [language, key, edge] of [["ar", LEFT, "left"], ["en", RIGHT, "right"
     });
 }
 
-test("in Arabic Left walks a Details episode rail past its first screen and keeps each card on screen", async () => {
+/** Arabic Details for the series with `seasons` seasons of `episodes` episodes each, on the first season's page. */
+async function withArabicSeries(seasons: number, episodes: number, body: (tv: Tv) => Promise<void>): Promise<void> {
     const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
     const details = new FakeDetails();
     tv.fake.catalog = details;
@@ -266,8 +267,13 @@ test("in Arabic Left walks a Details episode rail past its first screen and keep
     settings.revision = 28;
     settings.profile().set(APP_LANGUAGE_KEY, "ar");
     try {
-        const episodes = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
-        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => route.fulfill({ json: { items: Array.from({ length: 12 }, (_, index) => ({ ...episodes.items[0], content_id: `episode:rail:1:${index}`, season_number: 1, episode_number: index + 1 })), next_cursor: null } }));
+        const listed = details.route("GET", "/catalog/series/series%3As1/seasons", "p-owner")?.body as { items: Record<string, unknown>[] };
+        const first = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons?**", route => route.fulfill({ json: { items: Array.from({ length: seasons }, (_, index) => ({ ...listed.items[0], content_id: `season:${index + 1}`, season_number: index + 1, title: `Season ${index + 1}` })), next_cursor: null } }));
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => {
+            const number = Number(/seasons\/(\d+)\/episodes/.exec(route.request().url())?.[1]);
+            return route.fulfill({ json: { items: Array.from({ length: episodes }, (_, index) => ({ ...first.items[0], content_id: `episode:rail:${number}:${index}`, season_number: number, episode_number: index + 1 })), next_cursor: null } });
+        });
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await tv.page.evaluate(() => window.browseHarness.connect());
         await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
@@ -278,27 +284,58 @@ test("in Arabic Left walks a Details episode rail past its first screen and keep
         await tv.page.evaluate(() => window.browseHarness.mount());
         await waitForDirection(tv, "rtl");
         await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-        await tv.page.locator('[data-focus="episode:rail:1:11"]').waitFor();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').waitFor();
+        await body(tv);
+    } finally { await tv.page.context().close(); }
+}
+
+const onScreen = (tv: Tv): Promise<{ left: number; right: number } | undefined> => tv.page.evaluate(() => { const rect = document.activeElement?.getBoundingClientRect(); return rect === undefined ? undefined : { left: rect.left, right: rect.right }; });
+
+test("in Arabic Left walks a Details episode rail to its last episode and keeps each card on screen", async () => {
+    await withArabicSeries(1, 12, async tv => {
         await tv.page.locator('[data-focus="episode:rail:1:0"]').focus();
         for (let step = 1; step < 12; step++) {
             await tv.remote(LEFT);
-            const card = await tv.page.evaluate(() => { const rect = document.activeElement?.getBoundingClientRect(); return rect === undefined ? undefined : { left: rect.left, right: rect.right }; });
+            const card = await onScreen(tv);
             assert.equal(await tv.focused(), `episode:rail:1:${step}`);
+            const row = await tv.page.locator(".details-episodes").evaluate(node => { const style = getComputedStyle(node); return { sl: node.scrollLeft, sw: node.scrollWidth, cw: node.clientWidth, pl: style.paddingLeft, pr: style.paddingRight, ml: style.marginLeft, mr: style.marginRight, rect: node.getBoundingClientRect().left + ".." + node.getBoundingClientRect().right }; });
             assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode ${step} at ${card?.left}..${card?.right}`);
         }
-    } finally { await tv.page.context().close(); }
+        for (let step = 0; step < 11; step++) await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "episode:rail:1:0");
+        const back = await onScreen(tv);
+        assert.ok(back !== undefined && back.left >= 0 && back.right <= 1920, `episode 0 back at ${back?.left}..${back?.right}`);
+    });
 });
 
-test("a screen opened over Arabic browse reads left to right, and browse is mirrored again when it returns", async () => {
+test("in Arabic the selected season pill is brought on screen when it is picked, with 16 seasons", async () => {
+    await withArabicSeries(16, 3, async tv => {
+        const pills = tv.page.locator(".details-season-chips .browse-button");
+        assert.equal(await pills.count(), 16);
+        await pills.first().focus();
+        for (let step = 1; step < 16; step++) await tv.remote(LEFT);
+        const last = await onScreen(tv);
+        assert.ok(last !== undefined && last.left >= 0 && last.right <= 1920, `pill 16 at ${last?.left}..${last?.right}`);
+        // Select it: the picked pill is the one the rail centres (TVSeriesDetailView).
+        await tv.page.keyboard.press("Enter");
+        await tv.eventually(async () => await tv.page.locator('.details-season-chips .browse-button[aria-pressed="true"]').innerText() === "Season 16", "Season 16 picked");
+        await tv.page.locator('[data-focus="episode:rail:16:0"]').waitFor();
+        const picked = await tv.page.locator('.details-season-chips .browse-button[aria-pressed="true"]').evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right }; });
+        assert.ok(picked.left >= 0 && picked.right <= 1920, `picked pill at ${picked.left}..${picked.right}`);
+    });
+});
+
+test("a screen opened over Arabic browse (Add Profile, Switch Server) keeps the mirrored page, as on Apple TV", async () => {
     await withHome({ stored: "ar", switchServer: true }, async tv => {
         await waitForDirection(tv, "rtl");
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.remote(DOWN);
         await tv.page.locator('.skyline-selector [data-focus="switch-server"]').click();
-        await waitForDirection(tv, null);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.coverBack !== undefined), "the covering screen opened");
+        assert.equal(await direction(tv), "rtl", "browse covered: the page stays right to left");
         await tv.page.evaluate(() => window.browseHarness.coverBack?.());
-        await waitForDirection(tv, "rtl");
-        assert.equal(await tv.focused() !== null, true, "browse has focus again");
+        await tv.page.locator('[data-view="home"]').waitFor();
+        assert.equal(await direction(tv), "rtl");
     });
 });
 
@@ -357,3 +394,18 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
         });
     });
 }
+
+test("Change Account, opened from the profile menu in a right-to-left page, is mirrored as on Apple TV", async () => {
+    await withSignedInTv(browser, async tv => {
+        // The page direction is set by hand: the account screens are what is under test, not the language.
+        await tv.page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+        await openChangeAccount(tv);
+        const screen = await tv.page.evaluate(() => ({
+            direction: getComputedStyle(document.querySelector('[data-view="change-account"] .accounts-screen') ?? document.body).direction,
+            rail: document.querySelector(".accounts-rail")?.getBoundingClientRect().left ?? Number.NaN,
+            pane: document.querySelector(".accounts-pane")?.getBoundingClientRect().left ?? Number.NaN,
+        }));
+        assert.equal(screen.direction, "rtl");
+        assert.ok(screen.rail > screen.pane, `the server rail leads on the right (${screen.rail} vs ${screen.pane})`);
+    });
+});

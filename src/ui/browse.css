@@ -1208,9 +1208,12 @@ svg.library-empty-icon { width: auto; }
 .home-row-glyph { position: relative; display: inline-block; vertical-align: -4px; width: 33px; height: 33px; margin: 0; margin-inline: 3px 17px; border-radius: 50%; background: #ededed; }
 .home-row-glyph::after { content: ""; position: absolute; top: 10px; left: 11px; border-style: solid; border-width: 7px 0 7px 12px; border-color: transparent transparent transparent #000; }
 /* Top is the 20px title gap plus Skyline's 14px card padding. Bottom is that 14px, not MediaRow's 24px default. */
-.home-section .browse-row { margin-inline-start: -40px; padding: 34px 40px 14px; }
-.home-section .browse-card { width: 176px; margin: 0; margin-inline-end: 40px; border: 0; border-radius: 0; transition: none; scroll-margin-top: 20px; }
+.home-section .browse-row { margin-left: -40px; padding: 34px 40px 14px; }
+.home-section .browse-card { width: 176px; margin: 0 40px 0 0; border: 0; border-radius: 0; transition: none; scroll-margin-top: 20px; }
 .home-section .browse-card:focus { transform: none; box-shadow: none; }
+/* Home mirrors its card gap and row inset; the Details and library rails that share these row rules keep their own physical spacing. */
+:root[dir="rtl"] [data-view="home"] .home-section .browse-card { margin-right: 0; margin-left: 40px; }
+:root[dir="rtl"] [data-view="home"] .home-section .browse-row { margin-left: 0; }
 .home-section .browse-art { width: 176px; height: 264px; border-radius: 12px; transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
 .home-section .browse-card.skyline-continue { width: 360px; }
 /* EpisodeThumbCard.swift:352-356 rests at radius 8, y 4; CSS blur is twice the SwiftUI radius. Explore all has only the shared lift (SectionExploreAllCard.swift:37). */
