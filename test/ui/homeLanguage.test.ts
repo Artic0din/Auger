@@ -192,6 +192,9 @@ test("the Home hero's runtime reads in the new language after Settings, with the
         // English first: the hero's runtime arrives with the card's details.
         await tv.eventually(async () => /1h 30m(?!in)/.test(await meta()), "the hero's runtime in English");
         const shown = await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus");
+        const marqueeTitle = (): Promise<string> => tv.page.locator(".skyline-marquee-layer:not(.skyline-outgoing) .skyline-title").first().innerText();
+        const heroTitle = await marqueeTitle();
+        assert.notEqual(heroTitle, "", "the marquee shows a title");
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.page.keyboard.press("Enter");
         await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
@@ -203,7 +206,42 @@ test("the Home hero's runtime reads in the new language after Settings, with the
         await tv.page.locator('[data-view="home"]').waitFor();
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar after Settings");
         assert.equal(await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus"), shown, "the same card is still first");
+        assert.equal(await marqueeTitle(), heroTitle, "the marquee still shows the same card");
         await tv.eventually(async () => /1h 30min/.test(await meta()), `the hero's runtime in German, got "${await meta()}"`);
+    });
+});
+
+test("the Home hero keeps its enriched line in the new language when Settings is opened from a screen without enrichment (Calendar) and closes onto Home (#609)", async () => {
+    await withHome(async tv => {
+        const marquee = (): Promise<{ title: string; meta: string; detail: string }> => tv.page.evaluate(() => {
+            const layer = document.querySelector(".skyline-marquee-layer:not(.skyline-outgoing)");
+            const text = (selector: string): string => Array.from(layer?.querySelectorAll(selector) ?? []).map(node => node.textContent ?? "").join(" | ");
+            return { title: text(".skyline-title"), meta: text(".skyline-meta-line"), detail: text(".skyline-detail-line") };
+        });
+        await tv.eventually(async () => /1h 30m(?!in)/.test((await marquee()).meta), "the hero's runtime in English");
+        const english = await marquee();
+        assert.notEqual(english.detail, "", "the detail line has arrived");
+        // The card's detail read is not asked again in time: what Home already knew of it has to carry the German repaint.
+        await tv.page.route("**/api/v2/catalog/items/**", () => undefined);
+        // Calendar shows no marquee, so Home's card stays the one the marquee holds while Settings is open.
+        await tv.page.locator('[data-focus="calendar"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="calendar"]').waitFor();
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator('[data-focus="app-language"]').waitFor();
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio", { name: "Deutsch", exact: true }).click();
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === de("settings.title"), "Settings in German");
+        // Settings closes onto Home (TVSettingsView.exitSettingsToHome), whichever page opened it.
+        for (let presses = 0; presses < 4 && !await tv.page.locator('[data-view="home"]').isVisible(); presses++) await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar");
+        await tv.eventually(async () => /1h 30min/.test((await marquee()).meta), `the hero's runtime in German, got "${(await marquee()).meta}"`);
+        const german = await marquee();
+        assert.equal(german.title, english.title, "the marquee shows the same card");
+        assert.notEqual(german.detail, "", "the detail line is still there");
     });
 });
 
