@@ -768,11 +768,8 @@ for (const reduced of [false, true]) {
         assert.ok(scroll > 0, "the later request needs horizontal scrolling");
         // The search's own debounced reads and the rest read of the focused card can still be on their way; count reads only once none is.
         await tv.jump(1000);
-        await tv.eventually(async () => {
-            const requests = tv.fake.requests.length;
-            await tv.jump(0);
-            return tv.pendingReplies <= tv.fake.heldReplies && tv.fake.requests.length === requests;
-        }, "no further reads");
+        // A late answer (the search capabilities) can restart the search once it lands, so each turn also waits for a painted frame.
+        await quiet(tv);
         const reads = tv.fake.requests.length;
         people.release();
         await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
@@ -4950,9 +4947,15 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
     assert.equal(await tv.page.locator(".search-people-rail .browse-card").count(), 0, "series results have no People row");
     assert.equal(await tv.page.locator(".browse-grid .browse-card").count(), 4);
     assert.equal(await tv.focused(), "search-filter:series");
+    // A late answer repaints the grid and drops the key's target; press once the answers have landed and painted.
+    await settled(tv);
+    const leftOf = async (key: string): Promise<number> => (await readLive(tv, (id: string) => {
+        const node = document.querySelector(`[data-focus="${id}"]`);
+        return node === null || !node.isConnected ? null : { left: node.getBoundingClientRect().left, width: node.getBoundingClientRect().width };
+    }, key, value => value.width > 0, `${key} laid out`)).left;
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "series:p4", "Series Down lands on the fourth card");
-    const left = await tv.page.locator('[data-focus="series:p4"]').evaluate(node => node.getBoundingClientRect().left);
+    const left = await leftOf("series:p4");
     // Compact 189.2px posters 40 apart from x 238 (TVCatalogGrid.columnSpacing): 238 + 3 × 229.2.
     assert.ok(Math.abs(left - 925.6) < 1, `the fourth series card sits near x 925.6, got ${left}`);
     await tv.page.locator('[data-focus="series:p2"]').focus();
@@ -4962,7 +4965,7 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
     await tv.page.locator('[data-focus="series:p4"]').focus();
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "movie:4", "the fourth series card meets PRIM/GATE");
-    const gate = await tv.page.locator('[data-focus="movie:4"]').evaluate(node => node.getBoundingClientRect().left);
+    const gate = await leftOf("movie:4");
     assert.ok(Math.abs(gate - 901.6) < 1, `PRIM/GATE stays near x 902, got ${gate}`);
 }, { catalog: new PrimSearchCatalog(), beforeConnect: tv => {
     new FakeSettings(tv.fake).profile().set(CARD_PRESENTATION_KEY, { poster_size: "compact", caption: "title_metadata" });
