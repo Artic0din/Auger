@@ -110,6 +110,9 @@ test("the lift ends on every close: a chosen row, a redraw that closes, and the 
         assert.equal(await lifted(tv), true, "a redraw keeps the lift");
         await tv.remote(10009);
         assert.equal(await lifted(tv), false);
+        // The favorite write refreshes Home; a refresh answered after the dismissal reaches the fake would drop the card before the test releases it.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+        await afterPaint(tv);
         await hold(tv, true);
         const dismissal = tv.fake.hold("/home/dismissals/continue_watching/movie%3Am0001", true);
         await row(tv, "Remove from Continue Watching").click();
