@@ -1987,6 +1987,28 @@ test("the Up Next preview sits on the leading side: 180 px from the left in Engl
     }
 });
 
+test("a language that lands while Up Next is showing moves the video preview with the panel", async () => {
+    registerSourceCatalogs();
+    setAppLanguage("en");
+    try {
+        const r = await autoplayRig(false);
+        await playMovie(r, EPISODE);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing");
+        r.avplay.tick((view.durationSeconds! - 20) * 1000);
+        await r.h.clock.advance(0);
+        assert.ok("upNext" in last(r.views));
+        assert.deepEqual(r.avplay.displayRects.at(-1), [180, 112, 760, 428]);
+        setAppLanguage("ar");
+        r.controller.refreshView();
+        assert.deepEqual(r.avplay.displayRects.at(-1), [980, 112, 760, 428], "Arabic");
+        setAppLanguage("en");
+        r.controller.refreshView();
+        assert.deepEqual(r.avplay.displayRects.at(-1), [180, 112, 760, 428], "and back");
+        r.controller.destroy();
+    } finally { setAppLanguage("en"); }
+});
+
 test("optional On Deck reads never delay a playable successor before or after EOF", async () => {
     for (const eof of [false, true]) {
         const r = await autoplayRig(true);

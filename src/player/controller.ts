@@ -563,11 +563,14 @@ export class PlaybackController implements PlayerControls {
 
     /**
      * Track names, flags and Up Next's words are built into each view, so a language that lands while playback is paused has to send the view again.
-     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is.
+     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is. It also puts the Up Next preview rectangle where the language now reads.
      */
     refreshView(): void {
         const attempt = this.attempt;
-        if (attempt !== undefined && (this.current.phase === "playing" || this.current.phase === "paused")) this.showPlayback(attempt);
+        if (attempt === undefined || (this.current.phase !== "playing" && this.current.phase !== "paused")) return;
+        // The Up Next preview sits on the side the language reads from, so a direction that changes moves the video with the panel.
+        if (attempt.prompt !== undefined) this.paintRect(attempt);
+        this.showPlayback(attempt);
     }
 
     /** Starts a new attempt; one already running is stopped and never plays. */

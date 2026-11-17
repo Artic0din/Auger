@@ -69,7 +69,8 @@ The options panel's tab rail, panes, columns, rows and chevrons read from the ri
 The buffering card's two buttons mirror and Left and Right choose between them through the layout (`PlayerView.swift:869`); the transport, the scrubber and a held seek keep the remote's physical keys.
 `.player` takes its `lang` and `dir` from the language on screen (`applyScreenDirection`), not from the page under it, which clears its direction when it is torn down (`clearLayoutDirection`); `player.css` uses logical properties (`inset-inline-end`, `margin-inline-start`, `text-align: start`) and flips only the progress fills' `transform-origin` and `chevron.forward`.
 A title, track or chapter name takes its own direction (`unicode-bidi: plaintext` at the top of `player.css`).
-A language that lands while Up Next is already up moves the captions' box but leaves the video where it was until the next view.
+A language that lands while Up Next is already up moves the video preview, the captions' box and the panel together (the screen's deferred redraw asks the controller to send its view again, which also repaints the preview rectangle).
+A subtitle cue reads in its own direction (`unicode-bidi: plaintext` on `.player-captions`), so English dialogue under an Arabic interface keeps its punctuation.
 Requests, Calendar, Change Account, the PIN screen and Add Profile are mirrored: their art, copy, rails, badges and corners follow the layout's leading and trailing edges as silo-apple's `.leading`, `.topTrailing` and `.bottomTrailing` alignments do, the week strip and number pad read from the right, and Left and Right step through them that way.
 The sign-in screens, the profile picker and Switch Server's entry screens (`signIn.css`: `.marquee-chip` `right`, `.marquee-card` `margin-left`, several `margin-right`) keep their English text and left-to-right layout.
 

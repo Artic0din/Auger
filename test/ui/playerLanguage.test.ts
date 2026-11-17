@@ -226,6 +226,24 @@ test("in Arabic the player mirrors, and only the transport, the scrubber and its
     } finally { await page.close(); }
 });
 
+test("a cue takes its own direction from its text, not from an Arabic interface: English dialogue keeps its punctuation, Arabic dialogue reads right to left", async () => {
+    const page = await open("ar");
+    try {
+        const order = async (cue: string): Promise<{ first: number; last: number }> => {
+            await show(page, playing({ captions: { text: cue, appearance: DEFAULT_APPEARANCE } }));
+            return page.locator(".player-captions span").evaluate(node => {
+                const text = node.firstChild as Text;
+                const at = (index: number): number => { const range = document.createRange(); range.setStart(text, index); range.setEnd(text, index + 1); return range.getBoundingClientRect().left; };
+                return { first: at(0), last: at(text.length - 1) };
+            });
+        };
+        const english = await order("Hello!");
+        assert.ok(english.first < english.last, "Hello! reads H first on the left, ! last on the right");
+        const arabic = await order("مرحبا!");
+        assert.ok(arabic.first > arabic.last, "an Arabic cue reads from the right, its ! on the left");
+    } finally { await page.close(); }
+});
+
 test("English keeps the corners: the skip pill and the buffering card on the right, the transport and the scrubber left to right", async () => {
     const page = await open(undefined);
     try {
