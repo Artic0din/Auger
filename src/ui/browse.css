@@ -274,7 +274,7 @@
 .details-facts .browse-text { padding: 12px; font-size: 24px; border: 2px solid transparent; border-radius: 12px; }
 .details-facts .browse-text:focus { outline: none; border-color: #fff; }
 /* tvOS person portrait is 300×450, not the 260×390 poster. siloSmall capsules, 12px radius. */
-.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
+.details-person-hero .person-portrait { width: 300px; height: 450px; margin-inline-end: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
 /* PersonDetailView.swift:466 pads the name column 10pt. The name at line 451 is
    .system(size: 72, weight: .bold). That face's line height is 84.796875
    (ascender 69.609375, descender -15.1875, leading 0) and SwiftUI lays the

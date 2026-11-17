@@ -4,6 +4,8 @@
 
 import type { Person } from "../contracts/v2/details.ts";
 import { graphemeSegments } from "unicode-segmenter/grapheme";
+import { isolated } from "../i18n/direction.ts";
+import { translate } from "../i18n/translate.ts";
 import { artworkUrl } from "./browseModel.ts";
 import { el } from "./screen.ts";
 import { thumbhashCanvas } from "./heroBackdrop.ts";
@@ -54,12 +56,12 @@ export function personAge(birthValue: string | undefined, today: Date): number |
 export function personMetadataBadges(person: { readonly birthDate?: string | undefined; readonly deathDate?: string | undefined; readonly birthplace?: string | undefined }, today: Date): string[] {
     const badges: string[] = [];
     const birth = formatPersonDate(person.birthDate);
-    if (birth !== undefined) badges.push(`Born ${birth}`);
+    if (birth !== undefined) badges.push(translate("person.born", { date: isolated(birth) }));
     const death = formatPersonDate(person.deathDate);
-    if (death !== undefined) badges.push(`Died ${death}`);
+    if (death !== undefined) badges.push(translate("person.died", { date: isolated(death) }));
     else {
         const age = personAge(person.birthDate, today);
-        if (age !== undefined) badges.push(`${age} years old`);
+        if (age !== undefined) badges.push(translate("person.yearsOld", { count: age }));
     }
     const birthplace = person.birthplace?.trim();
     if (birthplace !== undefined && birthplace !== "") badges.push(birthplace);
