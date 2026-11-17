@@ -184,7 +184,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         backdrop.setStage(marqueeScene.stage);
         backdrop.setAccent(choosing ? undefined : active?.accent);
         host.show(screen, typeof focus === "function" ? focus(screen) : focus);
-        fitActions(root);
+        if (fitActions(root)) restack(root, screen);
     };
 
     /**
@@ -1190,26 +1190,39 @@ function readServer(core: SessionCoreDeps): string | undefined {
     }
 }
 
+/** A stacked action row is vertical, so its buttons take a row each: Down reaches the next, as Up and Down do on the code screen. */
+function restack(root: HTMLElement, screen: Screen): void {
+    const row = root.querySelector(".marquee-actions");
+    const actions = screen.controls.filter(control => row?.contains(control.element) === true);
+    if (actions.length < 2 || actions.some(control => control.row === undefined)) {
+        return;
+    }
+    const first = Math.min(...actions.map(control => control.row ?? 0));
+    actions.forEach((control, at) => { (control as { row: number }).row = first + at; });
+}
+
 const ACTION_GAP = 22;
 /** MarqueeButtonBody: the label is one line that shrinks to 0.8 of its size before it truncates (`minimumScaleFactor(0.8)`). */
 const MIN_LABEL_SCALE = 0.8;
 
 /**
- * The code screens' actions are one row when they fit the 900-wide copy column, else one button per line. Every other screen's row stays a
- * row, as Apple's `HStack` does: when a language's labels do not fit, each label shrinks together to 0.8 of its size, then truncates.
+ * Keeps an action row's buttons whole in the 900-wide copy column. The code screens' row is one row when it fits, else one button per line
+ * (Apple's `ViewThatFits`). Every other screen's row is an `HStack` on Apple: labels that do not fit shrink together to 0.8 of their size
+ * (`minimumScaleFactor(0.8)`). Apple's font is narrower than the TV's, so where even that does not fit here the row stacks as the code
+ * screen's does, rather than cutting a label. Returns whether the row is stacked.
  */
-function fitActions(root: HTMLElement): void {
+function fitActions(root: HTMLElement): boolean {
     const section = root.querySelector(".signin-screen");
     const name = section?.getAttribute("data-screen");
     const row = section?.querySelector(".marquee-actions");
     if (section === null || !(row instanceof HTMLElement) || row.childElementCount < 2) {
-        return;
+        return false;
     }
     const buttons = [...row.children].filter((node): node is HTMLElement => node instanceof HTMLElement);
     const labels = buttons.map(button => button.querySelector("span:not(.marquee-spinner)")).filter((node): node is HTMLElement => node instanceof HTMLElement);
     // A flex row shrinks the buttons to the column, so the laid-out widths always fit. Measure each label at its own width, at its full size.
     for (const label of labels) label.style.fontSize = "";
-    row.classList.remove("marquee-actions-tight");
+    row.classList.remove("marquee-actions-stack");
     for (const button of buttons) {
         button.style.flex = "none";
         button.style.width = "max-content";
@@ -1222,19 +1235,22 @@ function fitActions(root: HTMLElement): void {
     }
     const gaps = ACTION_GAP * (buttons.length - 1);
     const width = widths.reduce((sum, value) => sum + value, 0) + gaps;
+    const room = row.clientWidth;
     if (name === "code" || name === "starting" || name === "ended" || name === "approved") {
         row.classList.toggle("marquee-actions-stack", width > 900);
-        return;
+        return width > 900;
     }
-    const room = row.clientWidth;
     if (width <= room) {
-        return;
+        return false;
     }
     const labelSum = labelWidths.reduce((sum, value) => sum + value, 0);
-    const scale = Math.max(MIN_LABEL_SCALE, Math.min(1, (room - gaps - (width - gaps - labelSum)) / labelSum));
-    for (const label of labels) label.style.fontSize = `${scale}em`;
-    // Past 0.8 the label is cut at the button's edge, never over its neighbour.
-    row.classList.add("marquee-actions-tight");
+    const scale = (room - gaps - (width - gaps - labelSum)) / labelSum;
+    if (scale >= MIN_LABEL_SCALE) {
+        for (const label of labels) label.style.fontSize = `${scale}em`;
+        return false;
+    }
+    row.classList.add("marquee-actions-stack");
+    return true;
 }
 
 export function rememberServer(core: SessionCoreDeps, baseUrl: string): void {

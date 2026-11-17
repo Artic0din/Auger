@@ -14,6 +14,7 @@ registerSourceCatalogs();
 
 const LEFT = 37;
 const RIGHT = 39;
+const DOWN = 40;
 const IME_DONE = 65376;
 const text = (key: Parameters<typeof translate>[0], language: string, args?: Parameters<typeof translate>[1]): string => translate(key, args, language);
 
@@ -165,36 +166,54 @@ test("in Arabic Left and Right step through the code screen's buttons as the mir
     });
 });
 
-for (const [locale, name] of [["de-DE", "German"], ["ar-SA", "Arabic"]] as const) {
-    test(`the ${name} password screen's actions fit the copy column and never overlap`, async () => {
+for (const [locale, name, spacing] of [["de-DE", "German", 4], ["ar-SA", "Arabic", 2.5]] as const) {
+    test(`the ${name} password screen shows every action label whole, inside the copy column, and nothing overlaps`, async () => {
         await withTv(locale, async tv => {
             await tv.eventually(async () => await tv.page.locator('[data-screen="entry"]').getAttribute("lang") === locale.slice(0, 2), `${name} on the address screen`);
             // The TV's own font is wider than the test browser's; letter spacing stands in for it so the longest labels outgrow the column.
-            await tv.page.addStyleTag({ content: ".signin-auth .marquee-button { letter-spacing: 2.5px; }" });
+            await tv.page.addStyleTag({ content: `.signin-auth .marquee-button { letter-spacing: ${spacing}px; }` });
             // Started from Change Account: the longest leave label, "Zurück zu den Konten" in German.
             await tv.page.evaluate(() => window.harness.mount(undefined, false, true));
             await codeScreen(tv);
             await tv.page.locator('[data-focus="password"]').click();
             await section(tv, "credentials");
-            const boxes = await tv.page.evaluate(() => {
+            const shown = await tv.page.evaluate(() => {
                 const column = document.querySelector(".marquee-copy")?.getBoundingClientRect();
-                const buttons = [...document.querySelectorAll(".marquee-actions .marquee-button")];
-                // A label that outgrows its button is drawn over the next one, though the boxes themselves never overlap.
-                const drawn = buttons.map(node => {
-                    const label = node.querySelector("span:not(.marquee-spinner)");
-                    const range = document.createRange();
-                    if (label !== null) range.selectNodeContents(label);
-                    const box = node.getBoundingClientRect();
-                    const text = label === null ? box : range.getBoundingClientRect();
-                    const clipped = label instanceof HTMLElement && label.scrollWidth > label.clientWidth + 1;
-                    return { left: Math.min(box.left, clipped ? box.left : text.left), right: Math.max(box.right, clipped ? box.right : text.right) };
-                });
-                return { column: column === undefined ? undefined : { left: column.left, right: column.right }, buttons: drawn };
+                const buttons = [...document.querySelectorAll<HTMLElement>(".marquee-actions .marquee-button")];
+                return {
+                    column: column === undefined ? undefined : { left: column.left, right: column.right },
+                    stacked: document.querySelector(".marquee-actions")?.classList.contains("marquee-actions-stack") === true,
+                    buttons: buttons.map(node => {
+                        const label = node.querySelector<HTMLElement>("span:not(.marquee-spinner)");
+                        const range = document.createRange();
+                        if (label !== null) range.selectNodeContents(label);
+                        const box = node.getBoundingClientRect();
+                        const text = label === null ? box : range.getBoundingClientRect();
+                        return {
+                            key: node.getAttribute("data-focus"), left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+                            // A cut label has more text than its box shows, or is drawn past the button.
+                            cut: label !== null && (label.scrollWidth > label.clientWidth + 1 || node.scrollWidth > node.clientWidth + 1 || text.left < box.left - 1 || text.right > box.right + 1),
+                            ellipsis: label !== null && getComputedStyle(label).textOverflow === "ellipsis" && label.scrollWidth > label.clientWidth,
+                        };
+                    }),
+                };
             });
-            assert.ok(boxes.column !== undefined && boxes.buttons.length === 3, JSON.stringify(boxes));
-            const ordered = [...boxes.buttons].sort((a, b) => a.left - b.left);
-            for (let index = 1; index < ordered.length; index++) assert.ok(ordered[index]!.left >= ordered[index - 1]!.right, `buttons overlap: ${JSON.stringify(ordered)}`);
-            for (const box of ordered) assert.ok(box.left >= boxes.column.left - 1 && box.right <= boxes.column.right + 1, `a button leaves the column: ${JSON.stringify({ column: boxes.column, box })}`);
+            assert.ok(shown.column !== undefined && shown.buttons.length === 3, JSON.stringify(shown));
+            assert.deepEqual(shown.buttons.filter(box => box.cut || box.ellipsis).map(box => box.key), [], `a label is cut: ${JSON.stringify(shown)}`);
+            for (const box of shown.buttons) assert.ok(box.left >= shown.column.left - 1 && box.right <= shown.column.right + 1, `a button leaves the column: ${JSON.stringify({ column: shown.column, box })}`);
+            for (let at = 0; at < shown.buttons.length; at++) for (let other = at + 1; other < shown.buttons.length; other++) {
+                const a = shown.buttons[at]!;
+                const b = shown.buttons[other]!;
+                assert.ok(a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5, `buttons overlap: ${JSON.stringify([a, b])}`);
+            }
+            if (shown.stacked) {
+                // One button per line: Down steps from Sign in to the next, as on the code screen.
+                await tv.page.locator('[data-focus="signin"]').focus();
+                await tv.remote(DOWN);
+                assert.equal(await tv.focused(), "phone", "Down reaches the next stacked button");
+                await tv.remote(DOWN);
+                assert.equal(await tv.focused(), "change");
+            }
         });
     });
 }
