@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
 const ENTER = 13;
@@ -307,10 +307,17 @@ test("an empty episode response keeps series entry passive until playback detail
     const catalog = new FakeDetails();
     tv.fake.catalog = catalog;
     const playback = tv.fake.hold("/catalog/items/episode%3As1e11");
+    // Home's prefetch reads answer after Home has drawn; each answer repaints a Home section and Home restores focus to the card by id.
+    const prefetch = [tv.fake.hold("/catalog/items/movie%3Am0001"), tv.fake.hold("/catalog/items/episode%3As1e12")];
     try {
         await signedIn(tv);
         await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => route.fulfill({ json: { items: [] } }));
         await tv.page.locator('[data-view="home"] [data-focus="series:s1"]').first().focus();
+        for (const hold of prefetch) hold.release();
+        // The recorder below must see only the entry into Details, so let that repaint and its focus restore finish first.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home prefetch answers delivered");
+        await afterPaint(tv);
+        await tv.eventually(async () => await tv.focused() === "series:s1", "Home card focused after the repaint");
         await tv.page.evaluate(() => {
             window.detailsEntryFocus = [];
             document.addEventListener("focusin", () => window.detailsEntryFocus.push(document.activeElement?.getAttribute("data-focus") ?? null));
@@ -330,7 +337,7 @@ test("an empty episode response keeps series entry passive until playback detail
         assert.equal(await primary.textContent(), "Play S1:E1");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
         assert.deepEqual(tv.console, []);
-    } finally { playback.release(); await tv.page.context().close(); }
+    } finally { playback.release(); for (const hold of prefetch) hold.release(); await tv.page.context().close(); }
 });
 
 test("a primary action that appears after the viewer moves leaves that control focused", async () => {
