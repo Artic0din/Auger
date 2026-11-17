@@ -187,14 +187,17 @@ test("a catalog that lands while Select is held on the PIN pad waits for the rel
     });
 });
 
-test("a PIN screen that has been left stops listening for catalogs", async () => {
-    await withHeldCatalog(async (tv, land) => {
-        // Keep the left screen's Cancel button: a screen still subscribed would rewrite its text when the catalog lands.
-        await tv.page.evaluate(() => { Reflect.set(window, "leftCancel", document.querySelector(".pin-cancel")); });
-        await tv.page.locator(".pin-cancel").click();
-        await tv.page.locator('[data-screen="profiles"]').waitFor();
-        await land();
-        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("lang")) !== null, "page settled");
-        assert.equal(await tv.page.evaluate(() => (Reflect.get(window, "leftCancel") as HTMLElement).textContent), "Cancel", "the left screen was not redrawn");
+for (const exit of ["the Cancel button", "the Back key", "the right PIN"] as const) {
+    test(`a PIN screen left by ${exit} stops listening for catalogs`, async () => {
+        await withHeldCatalog(async (tv, land) => {
+            // Keep the left screen's Cancel button: a screen still subscribed would rewrite its text when the catalog lands.
+            await tv.page.evaluate(() => { Reflect.set(window, "leftCancel", document.querySelector(".pin-cancel")); });
+            if (exit === "the Cancel button") await tv.page.locator(".pin-cancel").click();
+            else if (exit === "the Back key") await tv.remote(10009);
+            else for (const digit of "2468") await tv.page.locator(`[data-focus="${digit}"]`).click();
+            await tv.eventually(async () => await tv.page.locator('[data-screen="pin"]').count() === 0, "the PIN screen left");
+            await land();
+            assert.equal(await tv.page.evaluate(() => (Reflect.get(window, "leftCancel") as HTMLElement).textContent), "Cancel", "the left screen was not redrawn");
+        });
     });
-});
+}

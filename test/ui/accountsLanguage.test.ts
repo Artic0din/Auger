@@ -208,3 +208,14 @@ test("a catalog that lands while Add server has focus keeps focus on it", async 
         assert.equal(await tv.focused(), "add-server", "focus stays on Add server, not on the selected server");
     });
 });
+
+test("a catalog that lands while the second account has focus keeps focus on that account", async () => {
+    await withHeldGerman(async (tv, land) => {
+        await openChangeAccount(tv);
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        assert.equal(await tv.focused(), "second");
+        await land();
+        await tv.eventually(async () => (await tv.page.locator(".accounts-title").innerText()) === text("accounts.headline", "de"), "German headline");
+        assert.equal(await tv.focused(), "second", "focus stays on the second account, by its id");
+    });
+});
