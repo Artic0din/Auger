@@ -84,6 +84,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
 - A library's menu now lists Recommended, Browse, Collections, as Apple TV does; Collections was listed before Browse.
 - Settings now keeps Down on Sign Out, the last item of the left rail, as Apple TV does: it no longer jumps into the Server pane's Accounts row. Up still moves up the rail.
 - Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.

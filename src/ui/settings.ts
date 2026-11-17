@@ -25,6 +25,7 @@ import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
 import type { ShowAudiobooks } from "./audiobookPreference.ts";
 import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatures } from "../session/experimentalFeatures.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
+import { heldSelect } from "./selectRelease.ts";
 
 type Category = "general" | "playback" | "subtitles" | "server";
 const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
@@ -109,7 +110,22 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const connection = new ConnectionSpeed(session, () => { if (!torn) render(host.focused()); });
     const stopSpoilers = spoilers?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
     const stopThemeMusic = themeMusic?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
-    const stopAppLanguage = appLanguage?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
+    // A language change repaints Settings, but not under a held Select: it waits for the release, as Browse's reconcileLanguage does.
+    let repaintAfterRelease = false;
+    const stopAppLanguage = appLanguage?.subscribe(() => {
+        if (torn) return;
+        if (heldSelect() !== undefined) { repaintAfterRelease = true; return; }
+        render(host.focused());
+    }) ?? (() => undefined);
+    // The release clicks the row after this keyup's handlers, so the repaint runs once they have.
+    const onKeyUp = (): void => {
+        if (!repaintAfterRelease) return;
+        window.setTimeout(() => {
+            if (torn || !repaintAfterRelease || heldSelect() !== undefined) return;
+            render(host.focused());
+        }, 0);
+    };
+    document.addEventListener("keyup", onKeyUp);
     const destroy = (): void => {
         if (torn) return;
         torn = true;
@@ -117,6 +133,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         stopSpoilers();
         stopThemeMusic();
         stopAppLanguage();
+        document.removeEventListener("keyup", onKeyUp);
         launchController.abort();
         stopAuthority();
         state.stop();
@@ -359,6 +376,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
 
     function render(focus?: FocusTarget): void {
         if (torn) return;
+        repaintAfterRelease = false;
         if (confirmingPlaybackReset) {
             const playbackKeys = devicePlaybackKeys();
             const keys = playbackKeys.filter(key => state.scope(key) === "profile_device");
