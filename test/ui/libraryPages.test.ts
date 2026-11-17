@@ -9,7 +9,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { HIDDEN_KEY } from "../../src/contracts/v2/settings.ts";
-import { homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { selectLibraryMode } from "./support/library.ts";
 
 let browser: Browser;
@@ -584,6 +584,11 @@ page("Filter text is Apple's: capped rows, monospaced headers and count, and lon
     await tv.page.locator('[data-focus="filter"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('[data-focus="facet:genre"]').waitFor();
+    // The genre rows draw above Decade once their facets answer, and focus stays on the row it started on; settle, then take the genre row.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+    await afterPaint(tv);
+    await tv.page.locator('[data-focus="facet:genre"]').focus();
+    assert.equal(await tv.focused(), "facet:genre");
     assert.equal((await style(tv, ".browse-filter-panel .browse-panel-title", "font-size"))["font-size"], capped(34));
     const section = await style(tv, ".browse-filter-panel .browse-panel-section", "font-family", "font-size");
     assert.match(section["font-family"] ?? "", /monospace/);
