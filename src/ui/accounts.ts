@@ -1,6 +1,7 @@
 import { applyScreenDirection } from "../i18n/direction.ts";
 import { shownLocale } from "../i18n/format.ts";
 import { onCatalogLoaded, translate, translateTv } from "../i18n/translate.ts";
+import { lateRedraw } from "./selectRelease.ts";
 import { AccountDirectory, accountsByRecentUse, profileCountLabel, serversByRecentUse, type SavedAccount } from "../session/accounts.ts";
 import type { ConnectedServer, SessionCoreDeps } from "../session/core.ts";
 import { signOutSavedAccount } from "../session/core.ts";
@@ -38,9 +39,12 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     /** ChangeAccountModel.openingAccountId: the account being opened while Change Account stays up. */
     let opening: { readonly id: string } | undefined;
     let overflow: readonly OverflowColumn[] = [];
-    // A language file that lands after the screen drew (a cold start) redraws it in that language.
-    const stopCatalog = onCatalogLoaded(() => { if (destroyed) return; applyScreenDirection(container); refresh(); });
-    const destroy = (): void => { if (destroyed) return; destroyed = true; stopCatalog(); for (const column of overflow) column.disconnect(); host.destroy(); backdrop.destroy(); container.remove(); };
+    /** A confirmation, the expired-session dialog or an error is on screen in place of the list. */
+    let dialogOpen = false;
+    // A language file that lands after the screen drew (a cold start) redraws it in that language, once no dialog, press or operation is in the way.
+    const late = lateRedraw(() => dialogOpen || removalPending || opening !== undefined, () => { applyScreenDirection(container); refresh(); });
+    const stopCatalog = onCatalogLoaded(() => { if (!destroyed) late.arrived(); });
+    const destroy = (): void => { if (destroyed) return; destroyed = true; stopCatalog(); late.clear(); for (const column of overflow) column.disconnect(); host.destroy(); backdrop.destroy(); container.remove(); };
     const go = (account: SavedAccount | undefined, address?: string): void => { if (opening !== undefined) return; destroy(); void open(account, address); };
     // The card spins until the app replaces this screen or the switch cannot open quietly. Like Apple, nothing cancels it.
     const choose = (row: SavedAccount): void => {
@@ -60,11 +64,13 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     /** Redraws in place: focus stays in the column it was in. */
     const refresh = (zone = host.focused()?.zone): void => { render(zone === "servers", zone === "accounts"); };
     const showError = (message: string, returnZone?: string): void => {
+        dialogOpen = true;
         const leave = (): void => returnZone === undefined ? render() : refresh(returnZone);
         const retry = actionButton("retry", translate("common.back"), leave);
         host.show({ name: "accounts-error", content: [el("h1", "accounts-title", message), retry.element], zones: [{ id: "error", layout: "column", items: [retry] }], focus: { zone: "error", key: "retry" }, back: leave });
     };
     const confirm = (targets: readonly SavedAccount[], removeServer: boolean): void => {
+        dialogOpen = true;
         const dismiss = (): void => { render(false, false, removeServer); };
         let panel: HTMLElement = el("div", "skyline-selector");
         const cancel = actionButton("cancel", translate("common.cancel"), dismiss);
@@ -137,6 +143,10 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     };
     function render(railFocus = false, enterPane = false, focusFirst = false): void {
         if (removalPending) return;
+        // Drawing the list afresh reads the shown language, so a redraw that was waiting is done.
+        dialogOpen = false;
+        applyScreenDirection(container);
+        late.clear();
         const rows = accountsByRecentUse(directory.list());
         const addresses = serversByRecentUse(rows, activeAddress);
         if (manage) {
@@ -238,6 +248,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         for (const column of overflow) column.sync();
     }
     function expired(row: SavedAccount): void {
+        dialogOpen = true;
         const controls = [actionButton("signin", translate("account.signInAgain"), () => go(row)), actionButton("signout", translate("settings.accounts.signOut"), () => confirm([row], false)), actionButton("cancel", translate("common.cancel"), render)];
         const panel = el("div", "accounts-dialog");
         panel.append(el("h1", "signin-title", translate("settings.accounts.expiredTitleAppleTv", { account: row.username })), ...controls.map(item => item.element));

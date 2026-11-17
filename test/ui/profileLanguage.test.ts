@@ -140,3 +140,49 @@ test("in Arabic Add Profile is mirrored: its form leads on the right and its lab
         assert.ok(sides.preview > sides.controls, `the preview leads on the right: ${JSON.stringify(sides)}`);
     });
 });
+
+/** Opens the PIN screen with the device's German file held back, so the screen first draws in English. */
+async function withHeldCatalog(body: (tv: Tv, land: () => Promise<void>) => Promise<void>): Promise<void> {
+    const tv = await openTv(browser, {
+        profiles: true, locale: "de-DE",
+        // The page appends the language's script itself; hold that one until the test lands it.
+        prepare: async page => { await page.addInitScript(() => {
+            const original = Element.prototype.append;
+            const waiting: (() => void)[] = [];
+            Reflect.set(window, "landCatalog", () => { for (const release of waiting.splice(0)) release(); });
+            Element.prototype.append = function (this: Element, ...nodes: (Node | string)[]): void {
+                const held = nodes.find(node => node instanceof HTMLScriptElement && node.src.endsWith("/catalog/de.js"));
+                if (held === undefined) { original.apply(this, nodes); return; }
+                waiting.push(() => original.apply(this, nodes));
+            };
+        }); },
+    });
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await openPin(tv);
+        await body(tv, async () => { await tv.page.evaluate(() => { (Reflect.get(window, "landCatalog") as () => void)(); }); await tv.page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300))); });
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+}
+
+test("a catalog that lands while the PIN screen is up redraws its prompt, Cancel and lang in German", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        assert.equal(await tv.page.locator(".pin-status").innerText(), "Enter your PIN");
+        assert.equal(await tv.page.locator('[data-screen="pin"]').getAttribute("lang"), "en");
+        await land();
+        await tv.eventually(async () => (await tv.page.locator(".pin-status").innerText()) === text("pin.prompt", "de"), "German prompt");
+        assert.equal(await tv.page.locator(".pin-cancel").innerText(), text("common.cancel", "de"));
+        assert.equal(await tv.page.locator('[data-screen="pin"]').getAttribute("lang"), "de");
+    });
+});
+
+test("a catalog that lands while Select is held on the PIN pad waits for the release", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        await tv.page.locator('[data-focus="5"]').focus();
+        await tv.page.keyboard.down("Enter");
+        await land();
+        assert.equal(await tv.page.locator(".pin-status").innerText(), "Enter your PIN", "the held key is not replaced");
+        await tv.page.keyboard.up("Enter");
+        await tv.eventually(async () => (await tv.page.locator(".pin-status").innerText()) === text("pin.prompt", "de"), "German prompt after release");
+    });
+});

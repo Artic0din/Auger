@@ -148,3 +148,52 @@ test("a German catalog that lands while Change Account is up redraws it in Germa
         assert.equal(await tv.page.locator('.accounts-pane [data-focus="second"] .account-count').innerText(), text("account.profiles.count", "de", { count: 3 }));
     } finally { release?.(); await tv.page.context().close(); }
 });
+
+/** Signs in with German stored but its file held, so Change Account and Settings › Accounts first draw in English. */
+async function withHeldGerman(body: (tv: Tv, land: () => Promise<void>) => Promise<void>): Promise<void> {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const tv = await openTv(browser, { app: "application" });
+    await tv.page.route("**/catalog/de.js", async route => { await held; await route.fallback(); });
+    const catalog = new FakeCatalog();
+    catalog.fileIds.set("movie:m0001", "42");
+    tv.fake.catalog = catalog;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "de");
+    try {
+        await signIn(tv);
+        await seed(tv);
+        await body(tv, async () => { release?.(); await tv.page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300))); });
+        assert.deepEqual(tv.console, []);
+    } finally { release?.(); await tv.page.context().close(); }
+}
+
+test("a catalog that lands while a confirmation is open leaves the dialog alone and the screen redraws when it closes", async () => {
+    await withHeldGerman(async (tv, land) => {
+        await openSettingsAccounts(tv);
+        await tv.page.locator('[data-focus^="remove:"]').first().click();
+        const dialog = await tv.page.locator(".skyline-confirm-title").elementHandle();
+        assert.ok(dialog);
+        const english = await dialog.innerText();
+        assert.match(english, /^Remove .*\?$/);
+        await land();
+        assert.equal(await dialog.evaluate(node => node.isConnected), true, "the dialog is still the one on screen");
+        assert.equal(await tv.page.locator(".skyline-confirm-title").innerText(), english, "and still in English");
+        await tv.page.locator('[data-focus="cancel"]').click();
+        await tv.eventually(async () => (await tv.page.locator(".accounts-settings h1").innerText()) === text("accounts.title", "de"), "German pane after the dialog closes");
+    });
+});
+
+test("a catalog that lands while Select is held waits for the release", async () => {
+    await withHeldGerman(async (tv, land) => {
+        await openChangeAccount(tv);
+        const rail = tv.page.locator(".accounts-rail [data-focus]").first();
+        await rail.focus();
+        await tv.page.keyboard.down("Enter");
+        await land();
+        assert.equal(await tv.page.locator(".accounts-title").innerText(), "Change account", "the press is not replaced under the viewer");
+        await tv.page.keyboard.up("Enter");
+        await tv.eventually(async () => (await tv.page.locator(".accounts-title").innerText()) === text("accounts.headline", "de"), "German headline after release");
+    });
+});

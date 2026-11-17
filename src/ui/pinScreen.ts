@@ -6,8 +6,10 @@ import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import type { PinResult } from "../session/profiles.ts";
 import { profileAvatar } from "./profilePicker.ts";
 import { integerText } from "../i18n/numbers.ts";
-import { translate } from "../i18n/translate.ts";
+import { applyScreenDirection } from "../i18n/direction.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
 import { button, type Control, el, type Note, type Screen } from "./screen.ts";
+import { lateRedraw } from "./selectRelease.ts";
 import { waitText } from "./signInText.ts";
 
 const PIN_LENGTH = 4;
@@ -30,7 +32,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
     let digits = "";
     let verifying = false;
     let error: string | undefined;
-    const intro = notes.map((note) => note.text).join(" ") || translate("pin.prompt");
+    const noteText = notes.map((note) => note.text).join(" ");
 
     const avatar = profileAvatar(profile, baseUrl, AVATAR_SIZE);
     // PINEntryView draws a flat surface circle, not the picker tile's tinted gradient.
@@ -60,7 +62,7 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
             spinner.setAttribute("aria-label", CHECKING);
             status.replaceChildren(spinner);
         } else {
-            status.textContent = intro;
+            status.textContent = noteText || translate("pin.prompt");
         }
     };
 
@@ -129,6 +131,20 @@ export function pinScreen(profile: ProfileSummary, baseUrl: string, notes: reado
     const root = el("div", "pin-screen");
     root.append(header, dotRow, status, pad, cancelButton.element);
     render();
+
+    // A language file that lands while the screen is up redraws its words once no Select is held. The screen has no teardown, so it stops listening when it leaves the page.
+    let shown = false;
+    const late = lateRedraw(() => false, () => {
+        cancelButton.element.textContent = translate("common.cancel");
+        const section = root.closest("section");
+        if (section !== null) applyScreenDirection(section);
+        render();
+    });
+    const stopCatalog = onCatalogLoaded(() => {
+        shown ||= root.isConnected;
+        if (shown && !root.isConnected) { stopCatalog(); late.clear(); return; }
+        late.arrived();
+    });
 
     return {
         screen: {
