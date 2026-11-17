@@ -8,12 +8,16 @@ import type { ErrorState } from "./browseRoutes.ts";
 import { PAGE_SIZE, type Route, type RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, FAILURE_ICON, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
 import { feedGrid } from "./catalogFeed.ts";
+import { SOURCE_LANGUAGE } from "../i18n/language.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 import { navigationIcon } from "./navigationIcon.ts";
 import { el } from "./screen.ts";
 
 export type PersonalSource = "watchlist" | "favorites" | "history";
 export type PersonalFilter = "movie" | "series";
-export const PERSONAL_TITLES = { watchlist: "Watchlist", favorites: "Favorites", history: "History" };
+const PERSONAL_TITLE_KEYS: Readonly<Record<PersonalSource, MessageKey>> = { watchlist: "personal.watchlist.title", favorites: "personal.favorites.title", history: "personal.history.title" };
+export const personalTitle = (source: PersonalSource): string => translate(PERSONAL_TITLE_KEYS[source]);
 export interface PersonalListCapability {
     readonly state: string;
     readonly allowed: boolean;
@@ -86,14 +90,13 @@ function sectionEmpty(filter: PersonalFilter): HTMLElement {
     const node = el("div", "personal-section-empty");
     const mark = navigationIcon(filter === "series" ? "series" : "movies");
     mark.classList.add("personal-section-icon");
-    const name = filter === "series" ? "tv shows" : "movies";
-    node.append(mark, el("p", "personal-section-title", `No favorite ${name}`), el("p", "personal-section-subtitle", "Add favorites from any detail page and they will appear here."));
+    node.append(mark, el("p", "personal-section-title", translate(filter === "series" ? "personal.favorites.noTvShows" : "personal.favorites.noMovies")), el("p", "personal-section-subtitle", translate("personal.favorites.emptyAnyBody")));
     return node;
 }
 
 function savedFilters(route: PersonalRoute, handlers: RouteHandlers): FocusItem[] {
     return (["movie", "series"] as const).map(filter => {
-        const item = actionButton(`filter:${filter}`, filter === "movie" ? "Movies" : "TV Shows", () => handlers.personalFilter(route, filter));
+        const item = actionButton(`filter:${filter}`, translate(filter === "movie" ? "personal.filter.movies" : "personal.filter.tvShows"), () => handlers.personalFilter(route, filter));
         item.element.setAttribute("aria-pressed", String(route.filter === filter));
         return item;
     });
@@ -122,9 +125,9 @@ function shownError(route: PersonalRoute, page: CatalogPage | undefined): boolea
 
 /** HistoryViewModel.countLabel: the exact total, or a lower bound while another page remains. */
 function historyCount(page: CatalogPage): string {
-    const count = page.totalExact ? page.total : page.items.length;
+    const count = (page.totalExact ? page.total : undefined) ?? page.items.length;
     const lowerBound = !page.totalExact && page.nextCursor !== undefined;
-    return `${count}${lowerBound ? "+" : ""} ${count === 1 && !lowerBound ? "item" : "items"}`;
+    return translate(lowerBound ? "collections.itemCountMore" : "collections.itemCount", { count, count_text: integerText(count) });
 }
 
 function continuousGrid(route: PersonalRoute, handlers: RouteHandlers, columns: number, posterWidth: number, gridWidth: number): { content: HTMLElement[]; zones: Zone[] } {
@@ -145,7 +148,7 @@ function continuousGrid(route: PersonalRoute, handlers: RouteHandlers, columns: 
 
 /** Watchlist and Favorites, from Apple's tvOS grids at silo-apple 9723df0. One scrolling grid, like CatalogGrid's append path. */
 function savedListView(route: PersonalRoute, handlers: RouteHandlers): View {
-    const title = PERSONAL_TITLES[route.source];
+    const title = personalTitle(route.source);
     const page = route.pages.page;
     const blocked = route.capability !== undefined && (!route.capability.allowed || route.capability.state !== "available");
     if (!blocked && shownError(route, page)) return errorPage(route, handlers);
@@ -153,17 +156,19 @@ function savedListView(route: PersonalRoute, handlers: RouteHandlers): View {
     const zones: Zone[] = [];
     const wholeEmpty = page !== undefined && page.items.length === 0 && (route.source === "watchlist" || route.elsewhere !== true);
     if (blocked) {
-        const status = statusOwner("personal-status", `${title} is unavailable.`, `${title} is unavailable.`);
+        // Apple has no key for this sentence, so it stays English whole, with the title in English too.
+        const unavailable = `${translate(PERSONAL_TITLE_KEYS[route.source], undefined, SOURCE_LANGUAGE)} is unavailable.`;
+        const status = statusOwner("personal-status", unavailable, unavailable);
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
     } else if (page === undefined) {
-        const status = statusOwner("personal-loading", route.source === "watchlist" ? "Loading watchlist" : "Loading favorites");
+        const status = statusOwner("personal-loading", translate(route.source === "watchlist" ? "personal.watchlist.loading" : "personal.favorites.loading"));
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
     } else if (wholeEmpty) {
         const copy = route.source === "watchlist"
-            ? { title: "Watchlist is empty", subtitle: "Tap the bookmark icon on any item to add it here", icon: "watchlist" }
-            : { title: "No favorites", subtitle: "Tap the heart icon on any item to add it here", icon: "favorites" };
+            ? { title: translate("personal.watchlist.empty"), subtitle: translate("personal.watchlist.emptyTapHint"), icon: "watchlist" }
+            : { title: translate("personal.favorites.empty"), subtitle: translate("personal.favorites.emptyTapHint"), icon: "favorites" };
         const status = emptyOwner(copy.title, copy.subtitle, copy.icon);
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
@@ -201,7 +206,7 @@ function historyView(route: PersonalRoute, handlers: RouteHandlers): View {
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
     } else if (page.items.length === 0) {
-        const status = emptyOwner("No watch history", "Items you watch will appear here", "history");
+        const status = emptyOwner(translate("personal.history.empty"), translate("personal.history.emptyBody"), "history");
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
     } else {
@@ -225,5 +230,5 @@ export function personalView(route: PersonalRoute, handlers: RouteHandlers): Vie
     }
     const view = historyView(route, handlers);
     view.content[0]?.classList.add("skyline-content");
-    return { ...view, content: [el("h1", "browse-title section-catalog-title", "History"), ...view.content] };
+    return { ...view, content: [el("h1", "browse-title section-catalog-title", personalTitle("history")), ...view.content] };
 }
