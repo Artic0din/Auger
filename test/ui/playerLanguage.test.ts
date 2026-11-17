@@ -228,3 +228,22 @@ test("a German catalog that lands while the player is up redraws it in German", 
         assert.equal(await page.locator(".player-tab").nth(1).textContent(), text("options.tabStats", "de"));
     } finally { await page.close(); }
 });
+
+test("a catalog that lands while Select is held on a panel choice waits for the release, so the press is not cut off", async () => {
+    const page = await open(undefined);
+    try {
+        await show(page, playing());
+        await openPanel(page, 3);
+        assert.equal(await page.locator(".player-menu-audio .player-menu-heading").textContent(), "TRACKS");
+        await page.evaluate(() => document.activeElement?.setAttribute("data-mark", "held"));
+        await page.keyboard.down("Enter");
+        await page.evaluate(strings => window.player.setLanguage("de", strings), catalog("de"));
+        await page.clock.runFor(50);
+        assert.equal(await page.locator('[data-mark="held"]').count(), 1, "the pressed choice is still on screen while Select is down");
+        assert.equal(await page.locator(".player-menu-audio .player-menu-heading").textContent(), "TRACKS", "still English while Select is held");
+        await page.keyboard.up("Enter");
+        await page.clock.runFor(50);
+        assert.equal(await page.locator(".player-menu-audio .player-menu-heading").textContent(), upper(text("player.hud.tracks", "de"), "de"), "German once it is released");
+        assert.deepEqual(await page.evaluate(() => window.player.commands.filter(command => command.startsWith("selectAudio"))), ["selectAudio a0"], "the press still acted on release");
+    } finally { await page.close(); }
+});
