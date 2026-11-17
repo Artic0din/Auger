@@ -274,7 +274,7 @@
 .details-facts .browse-text { padding: 12px; font-size: 24px; border: 2px solid transparent; border-radius: 12px; }
 .details-facts .browse-text:focus { outline: none; border-color: #fff; }
 /* tvOS person portrait is 300×450, not the 260×390 poster. siloSmall capsules, 12px radius. */
-.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
+.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 0; margin-inline-end: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
 /* PersonDetailView.swift:466 pads the name column 10pt. The name at line 451 is
    .system(size: 72, weight: .bold). That face's line height is 84.796875
    (ascender 69.609375, descender -15.1875, leading 0) and SwiftUI lays the
@@ -1917,7 +1917,7 @@ svg.library-empty-icon { width: auto; }
 .browse[data-view^="person:"] .person-filmography-filters .browse-button:focus { outline: none; background: rgba(14, 15, 18, 0.8); color: var(--silo-text); border-color: rgba(237, 237, 237, 0.85); box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.85); transform: scale(1.06); }
 .browse[data-view^="person:"] .person-filmography-filters .browse-button[aria-pressed="true"]:focus { background: #0e0f12; }
 /* Six 260px cards 40px apart run 160px past the content box to the screen edge, as on Apple TV; the negative right margin keeps that inside the scroll width. */
-.browse[data-view^="person:"] .browse-grid { width: auto; margin: 0 -160px 0 0; padding: 0; grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; }
+.browse[data-view^="person:"] .browse-grid { width: auto; margin: 0; margin-inline-end: -160px; padding: 0; grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; }
 /* PersonDetailView.swift:440 pads the scroll content 72pt at the bottom. The focus
    viewport also excludes tvOS's 60px vertical safe area, so the shared scroll owner
    keeps the focused card 132px above the screen. The generic 32px margin (92px with

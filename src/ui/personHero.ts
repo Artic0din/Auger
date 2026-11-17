@@ -4,6 +4,9 @@
 
 import type { Person } from "../contracts/v2/details.ts";
 import { graphemeSegments } from "unicode-segmenter/grapheme";
+import { isolated } from "../i18n/direction.ts";
+import { deviceLanguages, formattingLocale, shownLanguage } from "../i18n/language.ts";
+import { translate } from "../i18n/translate.ts";
 import { artworkUrl } from "./browseModel.ts";
 import { el } from "./screen.ts";
 import { thumbhashCanvas } from "./heroBackdrop.ts";
@@ -31,12 +34,44 @@ function parsePersonDate(value: string | undefined): CalendarDate | undefined {
     return { year, month, day };
 }
 
-export function formatPersonDate(value: string | undefined): string | undefined {
+/**
+ * A date-only value as the pages show it outside the Person page (the marquee's aired date): the shared medium air-date form in every language.
+ * Blank is no date, and a value that is not an ISO date shows as sent.
+ */
+export function airDateText(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    if (trimmed === undefined || trimmed === "") return undefined;
+    return parsePersonDate(trimmed) === undefined ? trimmed : episodeAirDate(trimmed);
+}
+
+/**
+ * silo-apple `formattedPersonDate` (PersonDetailView.swift:903-906): `LocaleFormat.dateFormatter(dateStyle: .medium, calendar: Calendar(identifier: .gregorian))`
+ * in `AppLanguage.formattingLocale`, the device's locale with its language replaced (AppLanguage.swift:50-61; LocaleFormat.swift:168-184).
+ * English reads that medium date, the one the air dates use. Only a person's Born and Died use this function; every other date goes through `airDateText`.
+ *
+ * shortcut: outside English the source does not explain what Apple TV draws. `.medium` in `de` is "17.08.1943", yet the S95C-paired Apple TV
+ * captures show "17/8/1943" and "١٧/٨/١٩٤٣": the region's numeric order, no leading zeros, the language's digits. The one unusual step in the source is
+ * `formatter.calendar = <gregorian built without a locale>` between the locale and `dateStyle` (LocaleFormat.swift:179-180), whose effect on the pattern is
+ * Foundation's, not the source's. This writes what the captures show; recheck it against Apple TV with another region or language, and replace it by
+ * the exact pattern if Foundation's rule is found. `deviceLocale` is for tests; the app reads the TV's.
+ */
+export function formatPersonDate(value: string | undefined, deviceLocale: string | undefined = deviceLanguages()[0]): string | undefined {
     const trimmed = value?.trim();
     if (trimmed === undefined || trimmed === "") return undefined;
     const parsed = parsePersonDate(trimmed);
     if (parsed === undefined) return trimmed;
-    return episodeAirDate(trimmed);
+    const language = shownLanguage();
+    if (new Intl.Locale(language).language === "en") return episodeAirDate(trimmed);
+    // The shown language's digits: a system the device chose itself (`-u-nu-`) or Arabic's Arabic-Indic (`formattingLocale`), else the language's own default.
+    // `Intl.Locale.numberingSystem` is only an explicit setting, so the default is read from a formatter; without it the region's own digits would leak in.
+    const digits = new Intl.Locale(formattingLocale(language, deviceLocale)).numberingSystem ?? new Intl.NumberFormat(language).resolvedOptions().numberingSystem;
+    const region = new Intl.Locale(deviceLocale ?? language, { calendar: "gregory", numberingSystem: digits });
+    const date = new Date(0);
+    date.setFullYear(parsed.year, parsed.month - 1, parsed.day);
+    date.setHours(12, 0, 0, 0);
+    return new Intl.DateTimeFormat(region.toString(), { day: "numeric", month: "numeric", year: "numeric" }).formatToParts(date)
+        // Day and month are written as numbers, not two-digit fields, whichever digits the language uses.
+        .map(part => (part.type === "day" || part.type === "month") && part.value.length > 1 ? part.value.replace(/^[0\u0660\u06F0]/, "") : part.value).join("");
 }
 
 /** Whole years from `birthValue` to `today`'s local date, or absent when that is not a living age. */
@@ -51,15 +86,15 @@ export function personAge(birthValue: string | undefined, today: Date): number |
 }
 
 /** Born, then either Died or a living age, then birthplace. Blank facts are omitted. */
-export function personMetadataBadges(person: { readonly birthDate?: string | undefined; readonly deathDate?: string | undefined; readonly birthplace?: string | undefined }, today: Date): string[] {
+export function personMetadataBadges(person: { readonly birthDate?: string | undefined; readonly deathDate?: string | undefined; readonly birthplace?: string | undefined }, today: Date, deviceLocale: string | undefined = deviceLanguages()[0]): string[] {
     const badges: string[] = [];
-    const birth = formatPersonDate(person.birthDate);
-    if (birth !== undefined) badges.push(`Born ${birth}`);
-    const death = formatPersonDate(person.deathDate);
-    if (death !== undefined) badges.push(`Died ${death}`);
+    const birth = formatPersonDate(person.birthDate, deviceLocale);
+    if (birth !== undefined) badges.push(translate("person.born", { date: isolated(birth) }));
+    const death = formatPersonDate(person.deathDate, deviceLocale);
+    if (death !== undefined) badges.push(translate("person.died", { date: isolated(death) }));
     else {
         const age = personAge(person.birthDate, today);
-        if (age !== undefined) badges.push(`${age} years old`);
+        if (age !== undefined) badges.push(translate("person.yearsOld", { count: age }));
     }
     const birthplace = person.birthplace?.trim();
     if (birthplace !== undefined && birthplace !== "") badges.push(birthplace);
