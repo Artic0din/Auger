@@ -257,6 +257,77 @@ journey("a backdrop that loads late does not recolour the wash of the one shown 
     void tv.page.route("**/art/bd-m4.svg", async route => { await held; await route.fallback(); });
 } });
 
+let heldSecondBackdrop: { release(): void } | undefined;
+journey("a backdrop's layers exist from the swap and are the same ones after its image is revealed and its fade ends", async tv => {
+    const cdp = await tv.page.context().newCDPSession(tv.page);
+    await cdp.send("DOM.enable");
+    await cdp.send("LayerTree.enable");
+    let layers: { layerId: string; backendNodeId?: number; width: number; height: number }[] = [];
+    cdp.on("LayerTree.layerTreeDidChange", event => { layers = event.layers ?? []; });
+    // The hero's own composited layers, by what each one backs: a layer that comes and goes during a swap is drawn again every time.
+    const heroLayers = async (): Promise<string[]> => {
+        await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-backdrop").evaluate(node => node.getBoundingClientRect());
+        await tv.jump(50);
+        const found: string[] = [];
+        for (const layer of layers) {
+            if (layer.backendNodeId === undefined) continue;
+            const node = (await cdp.send("DOM.describeNode", { backendNodeId: layer.backendNodeId }).catch(() => undefined))?.node;
+            const attributes = node?.attributes ?? [];
+            const classes = attributes[attributes.indexOf("class") + 1] ?? "";
+            if (/skyline-hero-backdrop|skyline-backdrop|skyline-wash-bitmap/.test(classes)) found.push(`${layer.layerId}:${classes.split(" ")[0]}`);
+        }
+        return found.sort();
+    };
+    await tv.page.keyboard.press("ArrowRight");
+    await tv.jump(700);
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing)").count() === 1 && await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loading", "the second backdrop is swapped in and its image is still out");
+    const kinds = (found: string[]): string[] => [...new Set(found.map(layer => layer.split(":")[1] ?? ""))].sort();
+    await afterPaint(tv);
+    await tv.eventually(async () => kinds(await heroLayers()).length === 3, "the layer tree reports the hero's layers");
+    const swapped = await heroLayers();
+    assert.deepEqual(kinds(swapped), ["skyline-backdrop", "skyline-hero-backdrop", "skyline-wash-bitmap"], "the image, the layer and the wash are composited before the image arrives");
+    heldSecondBackdrop?.release();
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loaded", "the image is revealed");
+    await tv.jump(1500);
+    await afterPaint(tv);
+    await tv.eventually(async () => kinds(await heroLayers()).length === 3, "the layer tree reports the hero's layers after the fade");
+    const settled = await heroLayers();
+    assert.deepEqual(kinds(settled), ["skyline-backdrop", "skyline-hero-backdrop", "skyline-wash-bitmap"]);
+    assert.deepEqual(settled.filter(layer => !swapped.includes(layer)), [], "every layer standing after the reveal and the end of the fade was already there when the backdrop swapped in");
+}, catalog => {
+    const featured = catalog.households.get("p-owner")?.sections.find(row => row.id === "hero/opaque");
+    assert.ok(featured);
+    featured.items.push("movie:m0005");
+    enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" }, "movie:m0005": { backdrop_url: "/art/bd-m5.svg" } });
+}, undefined, { beforeMount: tv => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    heldSecondBackdrop = { release };
+    void tv.page.route("**/art/bd-m5.svg", async route => { await held; await route.fallback(); });
+} });
+
+journey("a backdrop already shown is drawn again when the page's direction changes, so its placeholder fades toward the text", async tv => {
+    const frame = tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame");
+    await tv.eventually(async () => await frame.getAttribute("data-art") === "loaded", "first backdrop shown");
+    // The placeholder bitmap is opaque on the text side: the right in English, the left in Arabic.
+    const sides = (): Promise<{ left: string; right: string }> => tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) canvas.hero-art-bitmap").evaluate(node => {
+        const canvas = node as HTMLCanvasElement;
+        const copy = document.createElement("canvas");
+        copy.width = canvas.width;
+        copy.height = canvas.height;
+        const reader = copy.getContext("2d", { willReadFrequently: true });
+        reader?.drawImage(canvas, 0, 0);
+        const alpha = (x: number): number => reader?.getImageData(x, Math.floor(canvas.height / 2), 1, 1).data[3] ?? -1;
+        return { left: alpha(2) > 235 ? "opaque" : alpha(2) < 20 ? "clear" : "partly", right: alpha(canvas.width - 3) > 235 ? "opaque" : alpha(canvas.width - 3) < 20 ? "clear" : "partly" };
+    });
+    assert.deepEqual(await sides(), { left: "clear", right: "opaque" }, "English fades toward the left");
+    await tv.page.evaluate(() => { document.documentElement.setAttribute("dir", "rtl"); });
+    await tv.page.locator('[data-focus="home"]').focus();
+    await tv.page.locator('[data-section="hero/opaque"] [data-focus="movie:m0004"]').focus();
+    await tv.eventually(async () => (await sides()).left === "opaque", "the placeholder is drawn again for the right-to-left page");
+    assert.deepEqual(await sides(), { left: "opaque", right: "clear" });
+}, catalog => enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" } }));
+
 let heldLibraries: { release(): void };
 let heldSections: { release(): void };
 
@@ -940,11 +1011,14 @@ journey("Home's backdrop shows its ThumbHash until the image decodes, and keeps 
     const frame = tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame");
     await frame.waitFor();
     assert.equal(await frame.getAttribute("data-art"), "loading");
-    assert.equal(await frame.locator("canvas.hero-art-thumbhash").count(), 1, "AsyncImageView's ThumbHash placeholder");
+    assert.equal(await frame.locator("canvas.hero-art-bitmap").count(), 1, "AsyncImageView's ThumbHash placeholder, with its backing, as one bitmap");
+    assert.equal(await frame.locator("canvas.hero-art-thumbhash").count(), 0);
+    assert.equal(await frame.evaluate(node => getComputedStyle(node, "::before").display), "none", "the backing is in the bitmap, not a second layer");
+    assert.equal(await frame.locator("canvas.hero-art-bitmap").evaluate(node => getComputedStyle(node).maskImage), "none", "the bitmap carries the art's fade itself");
     assert.equal(await frame.locator(".skyline-backdrop").evaluate(node => getComputedStyle(node).opacity), "0");
     releaseBackdrop();
     await tv.eventually(async () => await frame.getAttribute("data-art") === "failed", "failed backdrop");
-    assert.equal(await frame.locator("canvas.hero-art-thumbhash").count(), 1);
+    assert.equal(await frame.locator("canvas.hero-art-bitmap").count(), 1);
     assert.equal(await frame.locator(".hero-art-missing .hero-art-glyph").count(), 1, "the .surface style's film mark");
 }, catalog => enrichHome(catalog, { "movie:m0003": { backdrop_url: "/art/held-backdrop.svg", backdrop_thumbhash: ART_HASH } }), undefined, { beforeMount: tv => {
     const gate = new Promise<void>(resolve => { releaseBackdrop = resolve; });

@@ -238,6 +238,59 @@ export class HeroWash {
 /** Where a shared wash takes one backdrop's tint: first the cached or ThumbHash tint, then the one sampled from the image. */
 export type WashSink = (tints: Tints | undefined, sampled: boolean) => void;
 
+/** The artwork frame's box (browse.css `.skyline-art-frame`): its bitmaps keep this shape. */
+const ART_FRAME_WIDTH = 1228.8;
+const ART_FRAME_HEIGHT = 756;
+const PLACEHOLDER_WIDTH = 512;
+
+/** `layer` under the art's own fade (`TVBackdropArtworkFadeMask`, browse.css): opaque to 32% from the artwork's edge, then clear. */
+function fadedLayer(width: number, height: number, rtl: boolean, draw: (context: CanvasRenderingContext2D) => void): HTMLCanvasElement | undefined {
+    const layer = document.createElement("canvas");
+    layer.width = width;
+    layer.height = height;
+    const context = layer.getContext("2d");
+    if (context === null) return undefined;
+    draw(context);
+    const ramp = context.createLinearGradient(rtl ? 0 : width, 0, rtl ? width : 0, 0);
+    ramp.addColorStop(0, "#000");
+    ramp.addColorStop(0.32, "#000");
+    ramp.addColorStop(1, "rgba(0,0,0,0)");
+    context.globalCompositeOperation = "destination-in";
+    context.fillStyle = ramp;
+    context.fillRect(0, 0, width, height);
+    return layer;
+}
+
+/**
+ * Home's frame placeholder (AsyncImageView's `.surface`): the #0E0F12 backing and the ThumbHash, each under the art's fade
+ * and one over the other, drawn once into one bitmap. The stylesheet draws them as two masked layers, and every masked layer
+ * is a full-layer draw on the TV for each swap (#310); the pixels are the same. A ThumbHash fills the frame as `object-fit:
+ * cover` did.
+ */
+export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTMLCanvasElement {
+    const width = PLACEHOLDER_WIDTH;
+    const height = Math.round(width * ART_FRAME_HEIGHT / ART_FRAME_WIDTH);
+    const canvas = el("canvas", "hero-art-bitmap");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;z-index:-1";
+    canvas.setAttribute("aria-hidden", "true");
+    const context = canvas.getContext("2d");
+    if (context === null) return canvas;
+    const backing = fadedLayer(width, height, rtl, layer => { layer.fillStyle = "#0e0f12"; layer.fillRect(0, 0, width, height); });
+    if (backing !== undefined) context.drawImage(backing, 0, 0);
+    const decoded = decodeThumbhash(encoded);
+    if (decoded === undefined) return canvas;
+    const source = document.createElement("canvas");
+    source.width = decoded.width;
+    source.height = decoded.height;
+    source.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(decoded.rgba), decoded.width, decoded.height), 0, 0);
+    const scale = Math.max(width / decoded.width, height / decoded.height);
+    const preview = fadedLayer(width, height, rtl, layer => layer.drawImage(source, (width - decoded.width * scale) / 2, (height - decoded.height * scale) / 2, decoded.width * scale, decoded.height * scale));
+    if (preview !== undefined) context.drawImage(preview, 0, 0);
+    return canvas;
+}
+
 /**
  * The backdrop for one marquee selection: the tint wash, the masked art block and the top scrim. Tints
  * already sampled for the URL apply at once; otherwise they follow the image's load.
@@ -273,8 +326,14 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
     });
     if (surface) {
         frame.classList.add("hero-art-surface");
-        const preview = thumbhashCanvas(thumbhash, "hero-art-thumbhash");
-        if (preview !== undefined) frame.appendChild(preview);
+        if (sink === undefined) {
+            const preview = thumbhashCanvas(thumbhash, "hero-art-thumbhash");
+            if (preview !== undefined) frame.appendChild(preview);
+        } else {
+            // Home: the backing and the ThumbHash are one bitmap, so a swap draws one masked layer fewer.
+            frame.classList.add("hero-art-baked");
+            frame.appendChild(heroPlaceholder(thumbhash, document.documentElement.dir === "rtl"));
+        }
         frame.dataset.art = "loading";
         onDecoded(image, () => { frame.dataset.art = "loaded"; });
         image.addEventListener("error", () => { frame.dataset.art = "failed"; image.remove(); const missing = el("div", "hero-art-missing"); missing.appendChild(artworkMark("film", "hero-art-glyph")); frame.appendChild(missing); });
