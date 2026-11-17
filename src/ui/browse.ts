@@ -454,9 +454,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         shell.relabel();
         if (!redraw) return;
         render(focus);
-        // The retained marquee reads in the old language until its card is previewed again, and draw() replays it only when the view changes.
-        const shown = top();
-        if (shown !== undefined) previews.get(shown)?.();
+        // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        shell.repaintShown();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
     const reconcileAfterKey = (): void => { if (textLanguage() === paintedLanguage) return; window.setTimeout(() => { if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true); }, 0); };

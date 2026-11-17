@@ -407,6 +407,11 @@ export class Skyline {
         if (shown !== undefined && shown.card.id === id && layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
     }
 
+    /** The shown language changed: the marquee's meta, detail line and chips are written again for the title on show. */
+    repaintShown(): void {
+        if (this.shown !== undefined) this.refreshDetails(this.shown.card.id);
+    }
+
     private fillDetails(layer: HTMLElement, card: Card, continuing: boolean): void {
         layer.querySelector(".skyline-meta-line")?.replaceWith(renderMetaLine(this.filled(card), continuing));
         const details = this.details(card, continuing);
