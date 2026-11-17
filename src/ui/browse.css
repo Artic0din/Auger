@@ -1749,7 +1749,11 @@ svg.library-empty-icon { width: auto; }
 .browse-panel-leaving { pointer-events: none; animation: browse-panel-leave 180ms ease-out forwards; }
 @keyframes browse-panel-leave { from { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .browse-panel-enter, .browse-panel-leaving { animation: none; } }
-.browse-sort-panel { width: 460px; padding: 14px; }
+/* TVBrowseSortPanel: .frame(maxHeight: 720) centred on screen. A series lists up to 17 sorts, more than that holds, so the rows
+   scroll as focus moves through them; a short list keeps its own height. */
+.browse-sort-panel { width: 460px; max-height: 720px; padding: 14px; display: flex; flex-direction: column; }
+.browse-sort-panel > * { flex-shrink: 0; }
+.browse-sort-panel > .browse-panel-list { flex-shrink: 1; min-height: 0; padding: 0; }
 /* The shuffle failure alert over the same dimmed page as the panels. */
 .browse-alert { width: 720px; padding: 40px 48px 32px; text-align: center; border: 1px solid rgba(255,255,255,.16); background: linear-gradient(rgba(17,17,23,.97), rgba(10,10,14,.98)); box-shadow: 0 20px 60px #000; }
 .browse-alert-title { margin: 0 0 14px; font-size: 34px; font-weight: 600; }

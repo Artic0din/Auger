@@ -622,6 +622,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const current = top();
         if ((current?.kind === "library" && current.discovery?.mode === "Browse" || current?.kind === "libraryResults") && !playing) render(host.focused());
     }, () => undefined);
+    // RatingSourcesStore: probed with the first Browse load, dropped with the app's session, and a failed probe leaves the answer empty and asks again.
+    let shownRatingSources: ReadonlySet<string> = new Set();
+    let ratingSourcesProbe: Promise<void> | undefined;
+    const probeRatingSources = (): Promise<void> => ratingSourcesProbe ??= session.call({ ...operations.ratingSources(), profileScoped: true, signal: requestsController.signal }).then(sources => {
+        if (torn) return;
+        shownRatingSources = sources;
+        const current = top();
+        if (current?.kind === "library" && current.discovery?.mode === "Browse" && !playing) render(host.focused());
+    }, () => { ratingSourcesProbe = undefined; });
     const startShuffle = (current: Extract<Route, { kind: "library" | "libraryResults" }>): void => {
         if (torn || playing || top() !== current || shuffleStarting || !canShuffle(current)) return;
         const discovery = current.kind === "library" ? current.discovery : undefined, generation = shuffleGeneration;
@@ -1252,6 +1261,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const state = current.discovery;
         if (state === undefined || state.mode !== "Browse") return;
         void probeShuffles();
+        if (!append) void probeRatingSources();
         if (!state.facetsRequested) {
             state.filter = browsePrefs.saved(current.library) ?? state.filter;
             state.facetsRequested = true;
@@ -2307,7 +2317,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);

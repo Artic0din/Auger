@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Library Browse's Sort panel now lists Apple TV's full set of sorts for the library: Content Rating, TMDB Rating, Bitrate, Progress, Date Viewed and Plays (reading Fewest and Most) for every video library, Latest Episode Air Date and Latest Episode Added for a series library, and RT Critic and RT Audience Rating while the server shows those sources. A long list scrolls inside a panel 720 tall, and a saved sort stays listed. Movies and series offered seven sorts and audiobooks six before; audiobook libraries now list Apple's twelve.
 - Years now show in the language you pick, as on Apple TV: in Arabic, Details' facts line, a card's year badge, audiobook narrations, Requests and Watch Party read 2023 as ٢٠٢٣. English reads exactly as before.
 - Search now mirrors in Arabic, as on Apple TV: the field sits on the right, People, box sets, requests and results read from the right, and Left and Right on the remote step through them in that order.
 - Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
