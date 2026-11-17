@@ -84,7 +84,8 @@ const ICONS = {
 } as const;
 
 export function icon(name: keyof typeof ICONS): HTMLElement {
-    const node = el("span", "browse-icon");
+    // chevron.backward points the other way in a right-to-left layout (the CSS flips it).
+    const node = el("span", name === "chevronLeft" ? "browse-icon icon-backward" : "browse-icon");
     node.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
     return node;
 }

@@ -57,7 +57,7 @@ import { themeAudioFormats, type ThemePlayback } from "../contracts/v2/themeMusi
 import { ElementThemeOutput } from "./themeAudioOutput.ts";
 import { ThemeMusicCenter, ThemeMusicController, createVolumeRamp, type ThemeAudioOutput, type ThemeMusicPage } from "./themeMusic.ts";
 import { ThemeMusicPreferences } from "./themeMusicPreferences.ts";
-import { applyLayoutDirection, clearLayoutDirection } from "../i18n/direction.ts";
+import { applyLayoutDirection, clearLayoutDirection, documentIsRightToLeft } from "../i18n/direction.ts";
 import { textLanguage } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
 import { AppLanguagePreferences } from "./appLanguagePreferences.ts";
@@ -452,10 +452,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (textLanguage() === paintedLanguage) return;
         if (redraw && (heldSelect() !== undefined || cardActions.active || requestMenu.active)) return;
         paintedLanguage = textLanguage();
+        const mirroredBefore = documentIsRightToLeft();
         applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
         if (redraw) render(focus);
+        // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+        if (redraw && documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.
     const reconcileAfterKey = (): void => { if (textLanguage() === paintedLanguage) return; window.setTimeout(() => { if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true); }, 0); };

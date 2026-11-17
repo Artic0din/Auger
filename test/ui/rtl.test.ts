@@ -372,8 +372,8 @@ test("in Arabic the views that are not mirrored yet stay left to right under a m
     });
 });
 
-for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
-    test(`${language === "ar" ? "in Arabic" : "in English"} Right at the last column of a library's Browse grid enters the letter rail, as the grid is not mirrored`, async () => {
+for (const [language, options, step] of [["ar", { stored: "ar" }, LEFT], ["en", {}, RIGHT]] as const) {
+    test(`${language === "ar" ? "in Arabic" : "in English"} a library's Browse grid reads ${language === "ar" ? "right to left, with its letter rail on the left" : "left to right, with its letter rail on the right"}, and ${language === "ar" ? "Left" : "Right"} at the last column enters the rail (TVLibraryGridView.swift:100-108)`, async () => {
         await withHome(options, async tv => {
             if (language === "ar") await waitForDirection(tv, "rtl");
             await tv.page.locator('[data-focus="movies"]').click();
@@ -383,12 +383,23 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
             await cards.first().waitFor();
             const columns = await cards.evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().top === nodes[0]?.getBoundingClientRect().top).length);
             assert.ok(columns > 1, `${columns} columns`);
+            const rail = await box(tv, ".browse-letters");
+            const first = await box(tv, ".browse-grid [data-focus] >> nth=0");
+            if (language === "ar") {
+                assert.ok(rail.right < 960, `the rail is on the left (${rail.left}..${rail.right})`);
+                assert.ok(first.left > 960, `the first card is on the right (${first.left})`);
+                assert.ok(Math.abs(first.right - (1920 - 55)) <= 2, `the grid mirrors English's 55 px edge: first card ends at ${first.right}`);
+            } else {
+                assert.ok(rail.left > 960, `the rail is on the right (${rail.left}..${rail.right})`);
+                assert.ok(first.right < 960, `the first card is on the left (${first.right})`);
+                assert.ok(Math.abs(first.left - 55) <= 2, `the first card starts at ${first.left}`);
+            }
             await cards.first().focus();
-            for (let step = 0; step < columns - 1; step++) await tv.remote(RIGHT);
-            assert.equal(await tv.page.evaluate(() => document.activeElement?.closest(".browse-grid") !== null), true, "Right walks the row to its last column");
-            await tv.remote(RIGHT);
-            assert.match(await tv.focused() ?? "", /^letter:/, "one more Right enters the letter rail");
-            // The top bar is part of this view's content but is not the library's: it stays mirrored above the pinned grid.
+            for (let move = 0; move < columns - 1; move++) await tv.remote(step);
+            assert.equal(await tv.page.evaluate(() => document.activeElement?.closest(".browse-grid") !== null), true, "the move walks the row to its last column");
+            await tv.remote(step);
+            assert.match(await tv.focused() ?? "", /^letter:/, "one more enters the letter rail");
+            // The top bar is part of this view's content but is not the library's: it stays mirrored above the grid.
             const bar = await tv.page.evaluate(() => getComputedStyle(document.querySelector(".browse-nav") as Element).direction);
             assert.equal(bar, language === "ar" ? "rtl" : "ltr");
             if (language === "ar") {
@@ -512,4 +523,53 @@ test("the sign-in and profile screens (Add Profile among them) are marked lang=e
         const langs = await tv.page.evaluate(() => Array.from(document.querySelectorAll("section.signin-screen")).map(node => node.getAttribute("lang")));
         assert.ok(langs.length > 0 && langs.every(lang => lang === "en"), JSON.stringify(langs));
     } finally { await tv.page.context().close(); }
+});
+
+test("in Arabic Home's artwork placeholder layers fade toward the text, like its loaded image", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        const masks = await tv.page.evaluate(() => {
+            const home = document.querySelector(".skyline-home") as Element;
+            const frame = document.createElement("div");
+            frame.className = "skyline-art-frame hero-art-surface";
+            frame.innerHTML = '<canvas class="hero-art-thumbhash"></canvas><img class="skyline-backdrop" alt=""><div class="hero-art-missing"></div>';
+            home.append(frame);
+            const layers: [string, CSSStyleDeclaration][] = [["frame backing", getComputedStyle(frame, "::before")]];
+            for (const [name, selector] of [["preview", ".hero-art-thumbhash"], ["image", ".skyline-backdrop"], ["missing", ".hero-art-missing"]] as const) layers.push([name, getComputedStyle(frame.querySelector(selector) as Element)]);
+            const result = layers.map(([name, style]) => ({ name, mask: style.maskImage }));
+            frame.remove();
+            return result;
+        });
+        for (const layer of masks) assert.match(layer.mask, /to right/, `${layer.name}: ${layer.mask}`);
+    });
+});
+
+test("in Arabic an aspect-fitted title logo sits against the mirrored marquee's right edge", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        const position = await tv.page.evaluate(() => {
+            const logo = document.createElement("img");
+            logo.className = "skyline-logo";
+            document.querySelector(".skyline-marquee")?.append(logo);
+            const value = getComputedStyle(logo).objectPosition;
+            logo.remove();
+            return value;
+        });
+        assert.match(position, /^(100%|right)/, position);
+    });
+});
+
+test("a Home shelf scrolled in Arabic keeps its card on screen when the server's English overrules the kept language", async () => {
+    await withHome({ cached: "ar", stored: "en", holdLanguage: true }, async (tv, releaseLanguage) => {
+        await waitForDirection(tv, "rtl");
+        const cards = tv.page.locator('[data-section="recent/12"] [data-focus]');
+        await cards.first().focus();
+        for (let step = 0; step < 9; step++) await tv.remote(LEFT);
+        const before = await tv.focused();
+        releaseLanguage();
+        await waitForDirection(tv, null);
+        await tv.eventually(async () => await tv.focused() === before, "focus stays on the viewer's card");
+        const card = await onScreen(tv);
+        assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `${before} at ${card?.left}..${card?.right}`);
+    });
 });
