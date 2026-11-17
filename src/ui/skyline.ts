@@ -553,7 +553,7 @@ export class Skyline {
         const background = hidesMarqueeBackdrop(card, settings) ? undefined : artworkUrl(seriesArt ? card.seriesBackdropUrl : card.backdropUrl, this.baseUrl);
         const thumbhash = seriesArt ? undefined : card.backdropThumbhash;
         // The direction is part of what is drawn: the placeholder bitmap fades toward the text side.
-        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, document.documentElement.dir]);
+        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, documentIsRightToLeft()]);
         // A failed image is not kept: the next preview of the same artwork asks for it again.
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");

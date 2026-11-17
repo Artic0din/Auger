@@ -48,7 +48,9 @@ async function difference(tab: Page, thumbhash: string | undefined, rtl: boolean
         const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
         const box = document.createElement("div");
         box.style.cssText = `position:fixed;left:0;top:0;width:${frame.width}px;height:${frame.height}px;overflow:hidden`;
-        box.appendChild(fixture.heroPlaceholder(thumbhash, rtl));
+        const baked = fixture.heroPlaceholder(thumbhash, rtl);
+        if (baked === undefined) throw new Error("no 2D canvas");
+        box.appendChild(baked);
         document.body.replaceChildren(box);
     }, [thumbhash, rtl, FRAME] as const);
     const baked = await shoot();

@@ -51,6 +51,22 @@ journey("Home retains cached rows after remount offline and refreshes on recover
     await jumpUntil(tv, 15000, () => tv.page.evaluate(() => !window.browseHarness.cacheOffline()), "recovered Home");
 });
 
+test("Home's placeholder keeps the CSS backing and ThumbHash when a 2D canvas cannot be made", async () => {
+    const page = await browser.newPage();
+    try {
+        const fixture = await build({ entryPoints: [new URL("../../src/ui/heroBackdrop.ts", import.meta.url).pathname], bundle: true, format: "iife", globalName: "HomeBackdropFixture", target: "chrome108", write: false });
+        await page.addScriptTag({ content: fixture.outputFiles[0]?.text ?? "" });
+        const frame = await page.evaluate(() => {
+            const fixture = Reflect.get(window, "HomeBackdropFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+            HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+            const backdrop = fixture.heroBackdrop("https://art.invalid/backdrop.jpg", "1QcSHQRnh493V4dIh4eXh1h4kJUI", new Map(), false, true, () => undefined);
+            const surface = backdrop.querySelector(".skyline-art-frame");
+            return { baked: surface?.classList.contains("hero-art-baked") ?? null, bitmaps: backdrop.querySelectorAll("canvas.hero-art-bitmap").length };
+        });
+        assert.deepEqual(frame, { baked: false, bitmaps: 0 }, "without a 2D context the frame keeps its stylesheet backing instead of an empty bitmap");
+    } finally { await page.context().close(); }
+});
+
 test("missing Details artwork renders its tint without an empty image", async () => {
     const page = await browser.newPage();
     try {
@@ -327,6 +343,20 @@ journey("a backdrop already shown is drawn again when the page's direction chang
     await tv.eventually(async () => (await sides()).left === "opaque", "the placeholder is drawn again for the right-to-left page");
     assert.deepEqual(await sides(), { left: "opaque", right: "clear" });
 }, catalog => enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" } }));
+
+journey("only the shared scene's backdrop layers stay composited, so other scenes' marquee art costs no tile memory", async tv => {
+    const willChange = (shared: boolean): Promise<string[]> => tv.page.evaluate(shared => {
+        const scene = document.createElement("div");
+        if (shared) scene.className = "skyline-home";
+        scene.innerHTML = '<div class="skyline-marquee"><div class="skyline-marquee-art"><div class="skyline-hero-backdrop"><div class="skyline-art-frame hero-art-surface"><img class="skyline-backdrop" alt=""></div></div></div><canvas class="skyline-wash-bitmap"></canvas></div>';
+        document.body.append(scene);
+        const read = ["skyline-marquee-art", "skyline-hero-backdrop", "skyline-backdrop", "skyline-wash-bitmap"].map(name => getComputedStyle(scene.querySelector(`.${name}`) as Element).willChange);
+        scene.remove();
+        return read;
+    }, shared);
+    assert.deepEqual(await willChange(true), ["opacity", "transform", "opacity", "opacity"], "Home keeps its hero layers composited");
+    assert.deepEqual(await willChange(false), ["auto", "auto", "auto", "auto"], "a scene outside it does not");
+});
 
 let heldLibraries: { release(): void };
 let heldSections: { release(): void };

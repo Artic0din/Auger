@@ -11,6 +11,7 @@ import { decodeThumbhash } from "./thumbhash.ts";
 import { el, onDecoded } from "./screen.ts";
 import { artworkMark } from "./defaultArtwork.ts";
 import type { Clock } from "../api/clock.ts";
+import { documentIsRightToLeft } from "../i18n/direction.ts";
 
 export interface RGB { readonly r: number; readonly g: number; readonly b: number }
 export interface Tints { readonly base: RGB; readonly accent: RGB; readonly shadow: RGB }
@@ -265,9 +266,9 @@ function fadedLayer(width: number, height: number, rtl: boolean, draw: (context:
  * Home's frame placeholder (AsyncImageView's `.surface`): the #0E0F12 backing and the ThumbHash, each under the art's fade
  * and one over the other, drawn once into one bitmap. The stylesheet draws them as two masked layers, and every masked layer
  * is a full-layer draw on the TV for each swap (#310); the pixels are the same. A ThumbHash fills the frame as `object-fit:
- * cover` did.
+ * cover` did. Undefined where no 2D canvas can be made, so the frame keeps the stylesheet's layers.
  */
-export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTMLCanvasElement {
+export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTMLCanvasElement | undefined {
     const width = PLACEHOLDER_WIDTH;
     const height = Math.round(width * ART_FRAME_HEIGHT / ART_FRAME_WIDTH);
     const canvas = el("canvas", "hero-art-bitmap");
@@ -276,7 +277,7 @@ export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTML
     canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;z-index:-1";
     canvas.setAttribute("aria-hidden", "true");
     const context = canvas.getContext("2d");
-    if (context === null) return canvas;
+    if (context === null) return undefined;
     const backing = fadedLayer(width, height, rtl, layer => { layer.fillStyle = "#0e0f12"; layer.fillRect(0, 0, width, height); });
     if (backing !== undefined) context.drawImage(backing, 0, 0);
     const decoded = decodeThumbhash(encoded);
@@ -331,8 +332,14 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
             if (preview !== undefined) frame.appendChild(preview);
         } else {
             // Home: the backing and the ThumbHash are one bitmap, so a swap draws one masked layer fewer.
-            frame.classList.add("hero-art-baked");
-            frame.appendChild(heroPlaceholder(thumbhash, document.documentElement.dir === "rtl"));
+            const baked = heroPlaceholder(thumbhash, documentIsRightToLeft());
+            if (baked !== undefined) {
+                frame.classList.add("hero-art-baked");
+                frame.appendChild(baked);
+            } else {
+                const preview = thumbhashCanvas(thumbhash, "hero-art-thumbhash");
+                if (preview !== undefined) frame.appendChild(preview);
+            }
         }
         frame.dataset.art = "loading";
         onDecoded(image, () => { frame.dataset.art = "loaded"; });

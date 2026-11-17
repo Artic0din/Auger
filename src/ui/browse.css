@@ -1103,7 +1103,7 @@ svg.library-empty-icon { width: auto; }
 .skyline-home .skyline-hero-backdrop { position: fixed; top: 0; inset-inline-start: 691.2px; width: 1228.8px; height: 756px; z-index: -2; pointer-events: none; }
 /* Composited for their whole life. A layer that is promoted by a fade or the image's reveal and dropped when it ends makes
    the layers around it, with their masks, be drawn again each time: three to four draws of the same hero per swap (#310). */
-.skyline-marquee-art, .skyline-wash-bitmap, .skyline-home .hero-art-surface .skyline-backdrop { will-change: opacity; }
+.skyline-home :is(.skyline-marquee-art, .skyline-wash-bitmap, .hero-art-surface .skyline-backdrop) { will-change: opacity; }
 .skyline-home .skyline-hero-backdrop { will-change: transform; }
 .skyline-hero-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 190px; z-index: -1; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-home .skyline-hero-backdrop .skyline-art-frame { inset-inline-start: 0; }
