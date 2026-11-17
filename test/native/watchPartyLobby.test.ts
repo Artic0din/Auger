@@ -555,7 +555,7 @@ test("the picker reads the shelves once with the room token and lists group pick
     await hub.openPicker();
     assert.deepEqual(tokens, ["room-proof"]);
     assert.equal(hub.state.page.kind, "picker");
-    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.title, shelf.entries.map(entry => entry.card.id)]), [["Continue Together", ["movie:a"]], ["On Your Watchlists", ["movie:b"]]]);
+    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.titleKey, shelf.entries.map(entry => entry.card.id)]), [["watchParty.picker.continueTogether", ["movie:a"]], ["watchParty.picker.watchlists", ["movie:b"]]]);
     assert.equal(hub.state.shelvesLoading, false);
 });
 
@@ -565,7 +565,7 @@ test("a server without the picker reads the viewer's own watchlist instead", asy
     await hub.create("host_pick");
     await hub.openPicker();
     assert.equal(reads, 1);
-    assert.deepEqual(hub.state.shelves.map(shelf => shelf.title), ["On Your Watchlists"]);
+    assert.deepEqual(hub.state.shelves.map(shelf => shelf.titleKey), ["watchParty.picker.watchlists"]);
 });
 
 test("a failed picker read says so and can be tried again", async () => {

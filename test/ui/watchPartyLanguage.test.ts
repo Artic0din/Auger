@@ -179,7 +179,11 @@ test("a vote room reads in German: the question, tallies, vote labels and the Su
         assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), text("watchParty.ballot.removeVote", "de", { title: "Heat" }));
         assert.equal(await button(tv, "suggestion:dune").getAttribute("aria-label"), text("watchParty.ballot.vote", "de", { title: "Dune" }));
         assert.equal(await button(tv, "suggestion:heat").locator(".watch-party-vote-label").textContent(), text("watchParty.ballot.votesLabel", "de", { count: 1 }));
-        assert.equal(await button(tv, "suggestion:heat").locator(".watch-party-vote-badge").getAttribute("aria-label"), text("watchParty.ballot.voteCount", "de", { count: 1 }));
+        // The label is Apple's action; the tally and the leader reach a screen reader as the button's description.
+        const badge = button(tv, "suggestion:heat").locator(".watch-party-vote-badge");
+        assert.equal(await badge.getAttribute("aria-label"), text("watchParty.ballot.candidateLeading", "de", { title: "Heat", count: 1 }));
+        assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-describedby"), await badge.getAttribute("id"));
+        assert.equal(await button(tv, "suggestion:dune").locator(".watch-party-vote-badge").getAttribute("aria-label"), text("watchParty.ballot.candidate", "de", { title: "Dune", count: 0 }));
         assert.equal(await button(tv, "suggestion:dune").locator(".watch-party-candidate-line").textContent(), text("watchParty.ballot.note", "de", { note: "Popcorn night" }));
         await button(tv, "suggestion:dune").click();
         await tv.eventually(async () => (await button(tv, "suggestion:dune").getAttribute("aria-label")) === text("watchParty.ballot.removeVote", "de", { title: "Dune" }), "Remove vote in German");
@@ -271,6 +275,19 @@ test("Watch Party reads English while German's file is on its way, then German w
         await tv.eventually(async () => await button(tv, "create").textContent() === text("watchParty.page.start", "de"), "the hub relabels in German");
         assert.equal(await button(tv, "code").getAttribute("placeholder"), text("watchParty.hub.codeField", "de"), "the retained field relabels too");
         assert.equal(await button(tv, "code").getAttribute("aria-label"), text("watchParty.hub.codeField", "de"));
+    }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
+});
+
+test("the picker's shelf titles read English while German's file is on its way, then German with no new press", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await inLanguage("de", async (tv, fake) => {
+        await enterRoom(tv, fake, "create", "en");
+        await button(tv, "choose").click();
+        await view(tv, "watchParty:picker:shelves").waitFor();
+        assert.deepEqual([...new Set(await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents())].sort(), [text("watchParty.picker.continueTogether", "en"), text("watchParty.picker.watchlists", "en")].sort());
+        release();
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents()).every(title => [text("watchParty.picker.continueTogether", "de"), text("watchParty.picker.watchlists", "de")].includes(title)), "the shelves relabel in German");
     }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
 });
 

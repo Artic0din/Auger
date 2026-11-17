@@ -32,7 +32,8 @@ export type LobbyPage =
     /** Apple's episode picker: the series' season tabs over the chosen season's episodes. */
     | { readonly kind: "episodes"; readonly series: Card; readonly season: Season | undefined };
 
-export interface PickerShelf { readonly id: string; readonly title: string; readonly entries: readonly PickerEntry[] }
+/** `titleKey` is read when the shelf is drawn, so a language that lands after the shelves load relabels them. */
+export interface PickerShelf { readonly id: string; readonly titleKey: MessageKey; readonly entries: readonly PickerEntry[] }
 
 export interface WatchPartyState {
     supported: boolean;
@@ -652,16 +653,16 @@ export class WatchPartyHub {
     private async loadShelves(): Promise<PickerShelf[]> {
         const room = this.requireRoom();
         const playable = (entry: PickerEntry): boolean => PLAYABLE_TYPES.includes(entry.card.type);
-        const shelf = (id: string, title: string, entries: readonly PickerEntry[]): PickerShelf[] => {
+        const shelf = (id: string, titleKey: MessageKey, entries: readonly PickerEntry[]): PickerShelf[] => {
             const shown = entries.filter(playable);
-            return shown.length === 0 ? [] : [{ id, title, entries: shown }];
+            return shown.length === 0 ? [] : [{ id, titleKey, entries: shown }];
         };
         if (this.state.capabilities?.picker === true) {
             const picker = await this.api.picker(room.roomId, this.roomToken, this.controller.signal);
-            return [...shelf("together", translate("watchParty.picker.continueTogether"), picker.continueTogether), ...shelf("watchlist", translate("watchParty.picker.watchlists"), picker.watchlistUnion)];
+            return [...shelf("together", "watchParty.picker.continueTogether", picker.continueTogether), ...shelf("watchlist", "watchParty.picker.watchlists", picker.watchlistUnion)];
         }
         const page = await this.api.watchlist(this.controller.signal);
-        return shelf("watchlist", translate("watchParty.picker.watchlists"), page.items.map(card => ({ card, members: [], nextUp: undefined })));
+        return shelf("watchlist", "watchParty.picker.watchlists", page.items.map(card => ({ card, members: [], nextUp: undefined })));
     }
 
     private async browse(epoch: number, load: (signal: AbortSignal) => Promise<void>): Promise<void> {

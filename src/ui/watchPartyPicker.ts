@@ -52,7 +52,7 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
         firstShelf ??= cards[0];
         zones.push({ id: `shelf:${shelf.id}`, layout: "row", spatial: true, items: cards });
         const block = el("section", "browse-section watch-party-shelf watch-party-ui");
-        block.append(el("h2", "browse-section-title", shelf.title), zoneNode("browse-row", cards));
+        block.append(el("h2", "browse-section-title", translate(shelf.titleKey)), zoneNode("browse-row", cards));
         content.push(block);
     }
     // A failed read shows its reason and Try Again whether or not an earlier read left shelves on the page.

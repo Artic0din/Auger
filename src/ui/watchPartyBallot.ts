@@ -42,7 +42,10 @@ function candidate(hub: WatchPartyHub, suggestion: Suggestion, leader: boolean, 
     const poster = el("span", "watch-party-candidate-poster");
     poster.appendChild(artwork("watch-party-candidate-art", serverPoster(suggestion.posterUrl, baseUrl), baseUrl, ""));
     const badge = el("span", "watch-party-vote-badge");
-    badge.setAttribute("aria-label", translate("watchParty.ballot.voteCount", { count: suggestion.voteCount }));
+    // The button's name is Apple's action; the tally and the leader are its description, as an aria-label on the badge alone would not reach the button.
+    badge.id = `watch-party-vote-${encodeURIComponent(suggestion.id)}`;
+    badge.setAttribute("aria-label", translate(leader ? "watchParty.ballot.candidateLeading" : "watchParty.ballot.candidate", { title: isolated(suggestion.title), count: suggestion.voteCount }));
+    item.element.setAttribute("aria-describedby", badge.id);
     badge.append(el("span", "watch-party-vote-count", integerText(suggestion.voteCount)), el("span", "watch-party-vote-label", translate("watchParty.ballot.votesLabel", { count: suggestion.voteCount })));
     poster.appendChild(badge);
     if (voted === true) {
