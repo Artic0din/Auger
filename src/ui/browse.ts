@@ -456,11 +456,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         applyLayoutDirection();
         const focus = host.focused();
         shell.relabel();
-        if (!redraw) return;
-        render(focus);
-        // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
-        if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        if (redraw) {
+            render(focus);
+            // A row scrolled before the direction changed keeps a scroll position that points the wrong way now.
+            if (documentIsRightToLeft() !== mirroredBefore) host.revealFocused();
+        }
         // The retained marquee reads in the old language until its text is written again; previewing the same card would return early.
+        // A caller that shows the screen itself afterwards (Settings closing) still needs it, so it runs on this path too.
         shell.repaintShown();
     };
     // A Select is released and a menu is closed by a key, so a waiting language change runs once its handlers have.

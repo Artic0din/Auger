@@ -186,6 +186,27 @@ test("picking German in Settings relabels the top bar and Home when Settings clo
     });
 });
 
+test("the Home hero's runtime reads in the new language after Settings, with the same card selected (#609)", async () => {
+    await withHome(async tv => {
+        const meta = (): Promise<string> => tv.page.evaluate(() => Array.from(document.querySelectorAll(".skyline-meta-line")).map(node => node.textContent ?? "").join(" | "));
+        // English first: the hero's runtime arrives with the card's details.
+        await tv.eventually(async () => /1h 30m(?!in)/.test(await meta()), "the hero's runtime in English");
+        const shown = await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus");
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator('[data-focus="app-language"]').waitFor();
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio", { name: "Deutsch", exact: true }).click();
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === de("settings.title"), "Settings in German");
+        for (let presses = 0; presses < 4 && !await tv.page.locator('[data-view="home"]').isVisible(); presses++) await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar after Settings");
+        assert.equal(await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus"), shown, "the same card is still first");
+        await tv.eventually(async () => /1h 30min/.test(await meta()), `the hero's runtime in German, got "${await meta()}"`);
+    });
+});
+
 test("a language that arrives while a top-bar button has focus keeps focus on that button", async () => {
     await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
         assert.ok((await rootTitles(tv)).includes("Calendar"), "English until the language answers");
