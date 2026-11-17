@@ -34,6 +34,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
   - `X-Silo-Device-Id`
   - `X-Silo-Device-Name`
   - `X-Silo-Device-Platform`
+  - `Accept-Language: <tag>`, the bare tag of the language the app shows (`en`, `pt-BR`), as silo-apple's `AppLanguage.applyHeader` sends it. Resource and subtitle downloads send it too. Images and AVPlay streams are fetched by the browser and the player, which send their own.
 - **Headers when set.**
   - `Content-Type: application/json` when a body is sent.
   - `Authorization: Bearer <token>` when the spec carries a bearer.
@@ -265,7 +266,7 @@ Defined in `src/api/operations.ts` unless noted.
 | getCatalogItem | `GET /catalog/items/{id}?image_size=large` (Details overrides with the negotiated detail slots when known: hero, logo, poster and cast photo widths) | safe |
 | listCatalogItemVersions | `GET /catalog/items/{id}/versions` | safe |
 | listSeriesSeasons | `GET /catalog/series/{id}/seasons` | safe |
-| listSeasonEpisodes | `GET /catalog/series/{id}/seasons/{n}/episodes` | safe |
+| listSeasonEpisodes | `GET /catalog/series/{id}/seasons/{n}/episodes?image_size=small` (`still_width` = 360 × device pixel ratio instead when the server takes per-slot widths) | safe |
 | getWatch (detail) | `GET /watch/{id}` | safe |
 | resume position | `GET /watch/{id}?file_id=` (`src/api/detailOperations.ts`) | safe |
 | person | `GET /catalog/people/{id}` (`src/api/detailOperations.ts`) | safe |
@@ -603,6 +604,7 @@ All are Bearer plus Profile.
 | explicit values | `GET /settings/values?scope=&keys=` | safe |
 | effective values | `GET /settings/values/effective?keys=` | safe |
 | hidden libraries | `GET /settings/values/effective?keys=ui.disabled_library_ids` (`hiddenLibraries`, `src/api/operations.ts`, called from `src/ui/browse.ts`) | safe |
+| app language | `GET /settings/values/effective?keys=ui.app_language`, `PUT /settings/values/ui.app_language?scope=profile`, `DELETE /settings/values/ui.app_language?scope=profile_device` (`src/ui/appLanguagePreferences.ts`; see [App language](settings.md#app-language)) | safe, never, never |
 | overlay config | `GET /settings/overlay-config`; its `images` list names the uploaded badge images, drawn with plain `<img>` from their public `/api/v2/overlay-images/{ref}` URLs | safe |
 | set | `PUT /settings/values/{key}?scope=` with `{ "value": ... }` | never |
 | reset | `DELETE /settings/values/{key}?scope=` | never |

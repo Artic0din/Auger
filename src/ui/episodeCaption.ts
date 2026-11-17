@@ -1,3 +1,4 @@
+import { runtimeText } from "./cardPresentation.ts";
 /** Apple EpisodeCardCaption and MediaTextFormatting; calendar dates have no UTC conversion. */
 export function episodeAirDate(value: string | undefined): string | undefined {
     const raw = value?.trim();
@@ -23,6 +24,5 @@ function abbreviatedDate(date: Date): string {
 }
 
 export function episodeRuntime(minutes: number): string | undefined {
-    if (minutes <= 0) return undefined;
-    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+    return runtimeText(minutes);
 }

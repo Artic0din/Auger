@@ -26,7 +26,7 @@ export interface FakeTitle {
     readonly lastAirDate?: string;
 }
 
-interface LibraryRow { id: string; sectionType?: string; title: string; items: string[] }
+interface LibraryRow { id: string; sectionType?: string; title: string; /** The catalog key and arguments the server sends beside a title it wrote. */ titleKey?: string; titleArgs?: Record<string, string>; items: string[] }
 interface Household {
     readonly libraries: { id: string; name: string; type: string; sort_order: number }[];
     hidden: number[] | null;
@@ -166,7 +166,7 @@ export class FakeCatalog implements CatalogRoutes {
             const sections = household.sections.map((section) => {
                 const dismissible = ["continue_watching", "in_progress", "next_up"].includes(section.sectionType ?? section.id);
                 const items = section.items.filter((id) => this.visible(household, id) && !(dismissible && this.homeDismissed.has(id))).map((id) => this.card(id));
-                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, total_count: items.length, items };
+                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, ...(section.titleKey === undefined ? {} : { title_key: section.titleKey }), ...(section.titleArgs === undefined ? {} : { title_args: section.titleArgs }), total_count: items.length, items };
             });
             return { status: 200, body: { sections } };
         }

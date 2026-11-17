@@ -2099,7 +2099,8 @@ browseTest("Search counts results from the response total without an estimate ma
     catalog.failNext("/catalog", { status: 200, body: { items, total: 1200, total_exact: false, page: { has_more: false } } });
     await tv.page.fill("#browse-search", "Estimate"); await tv.remote(IME_DONE);
     await tv.page.locator('.browse-grid [data-focus="movie:estimate-0"]').waitFor();
-    assert.equal(await tv.page.locator(".search-count").innerText(), "1,200 results");
+    // SearchView.swift:276 passes LocaleFormat.integer, which never groups ("1234" in English).
+    assert.equal(await tv.page.locator(".search-count").innerText(), "1200 results");
 });
 
 /** Apple pt sizes drawn at `--silo-sf-cap-scale`. */
@@ -2312,6 +2313,60 @@ browseTest("Details reads its title at Apple TV's detail widths, Home's hero bac
         tv.fake.requests.filter(request => request.path.startsWith("/catalog/items/movie%3Am0002")).map(request => request.path).join("\n"));
 }, { catalog: detailImagesCatalog });
 
+const episodeImagesCatalog = new FakeCatalog();
+episodeImagesCatalog.failNext("/images/capabilities", { status: 200, body: {
+    revision: "r1", state: "available", allowed: true, param: "image_size", sizes: ["small", "medium", "large", "original"], widths: {}, original_max_width_px: 3840,
+    episode_still_provenance: true, episode_parent_artwork: true, extended_item_artwork: true, season_list_artwork_param: "include_artwork", storage_backend: "local", delivery: "server",
+    slot_width_params: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" },
+} });
+browseTest("Details reads a series' episode rail at Apple TV's 360 pt still width", async tv => {
+    await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.hasImageCapabilityCache()), "capability remembered");
+    await tv.page.locator('.browse-card[data-focus="series:s1"]').first().click();
+    await showing(tv, "item:series:s1");
+    await tv.eventually(async () => tv.fake.requests.some(request => /\/seasons\/\d+\/episodes/.test(request.path)), "episode rail read");
+    const reads = tv.fake.requests.filter(request => /\/seasons\/\d+\/episodes/.test(request.path)).map(request => request.path);
+    assert.ok(reads.every(path => path.endsWith("/episodes?still_width=360")), reads.join("\n"));
+}, { catalog: episodeImagesCatalog });
+
+const lateEpisodeImagesCatalog = new FakeCatalog();
+lateEpisodeImagesCatalog.failNext("/images/capabilities", { status: 200, body: {
+    revision: "r1", state: "available", allowed: true, param: "image_size", sizes: ["small", "medium", "large", "original"], widths: {}, original_max_width_px: 3840,
+    episode_still_provenance: true, episode_parent_artwork: true, extended_item_artwork: true, season_list_artwork_param: "include_artwork", storage_backend: "local", delivery: "server",
+    slot_width_params: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" },
+} });
+let lateEpisodeImages: { release(): void };
+browseTest("an episode-rail read waits for a probe still in flight, so its first request is sized at 360 pt", async tv => {
+    await tv.page.locator('.browse-card[data-focus="series:s1"]').first().click();
+    await tv.jump(1000);
+    await tv.page.waitForTimeout(300);
+    assert.deepEqual(tv.fake.requests.filter(request => /\/seasons\/\d+\/episodes/.test(request.path)).map(request => request.path), [], "no episode is read until the probe answers");
+    lateEpisodeImages.release();
+    await showing(tv, "item:series:s1");
+    await tv.eventually(async () => tv.fake.requests.some(request => /\/seasons\/\d+\/episodes/.test(request.path)), "episode rail read");
+    const reads = tv.fake.requests.filter(request => /\/seasons\/\d+\/episodes/.test(request.path)).map(request => request.path);
+    assert.ok(reads.every(path => path.endsWith("/episodes?still_width=360")), reads.join("\n"));
+}, { catalog: lateEpisodeImagesCatalog, beforeConnect: tv => { lateEpisodeImages = tv.fake.hold("/images/capabilities", true); } });
+
+const stalledEpisodeImagesCatalog = new FakeCatalog();
+stalledEpisodeImagesCatalog.failNext("/images/capabilities", { status: 200, body: {
+    revision: "r1", state: "available", allowed: true, param: "image_size", sizes: ["small", "medium", "large", "original"], widths: {}, original_max_width_px: 3840,
+    episode_still_provenance: true, episode_parent_artwork: true, extended_item_artwork: true, season_list_artwork_param: "include_artwork", storage_backend: "local", delivery: "server",
+    slot_width_params: { poster: "poster_width", backdrop: "backdrop_width", logo: "logo_width", still: "still_width", photo: "photo_width" },
+} });
+let stalledEpisodeImages: { release(): void };
+browseTest("an episode-rail read goes out with the small still when the capability probe never answers", async tv => {
+    await tv.page.locator('.browse-card[data-focus="series:s1"]').first().click();
+    await showing(tv, "item:series:s1");
+    await tv.jump(1000);
+    await tv.page.waitForTimeout(300);
+    const reads = (): string[] => tv.fake.requests.filter(request => /\/seasons\/\d+\/episodes/.test(request.path)).map(request => request.path);
+    assert.deepEqual(reads(), [], "the rail waits for the probe for a moment");
+    await tv.jump(2000);
+    await tv.eventually(async () => reads().length > 0, "episode rail read after the wait");
+    assert.ok(reads().every(path => path.endsWith("/episodes?image_size=small")), reads().join("\n"));
+    stalledEpisodeImages.release();
+}, { catalog: stalledEpisodeImagesCatalog, beforeConnect: tv => { stalledEpisodeImages = tv.fake.hold("/images/capabilities", true); } });
+
 // The fake serves one backdrop for every query, so tag it with the widths the read asked for; the hero's src then shows which query produced it.
 const tagBackdropWithQuery = async (tv: Tv): Promise<string[]> => {
     const reads: string[] = [];
@@ -2367,6 +2422,28 @@ browseTest("Details keeps the open read's query when the capability probe lands 
     assert.equal(await heroSource(tv), before);
 }, { catalog: lateProbeCatalog, beforeConnect: tv => { lateDetailProbe = tv.fake.hold("/images/capabilities", true); } });
 
+const seasonRereadCatalog = new FakeDetails();
+seasonRereadCatalog.failNext("/images/capabilities", detailImageCapabilities);
+browseTest("The season page reads its title at Apple TV's detail widths, and Mark Season Watched and its undo re-read with the same query", async tv => {
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/images/capabilities"), "capability probe");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:series:s1");
+    await seasonDetails(tv);
+    const seasonItem = "/catalog/items/series%3As1-S1";
+    const query = (): string[] => browseReads(tv, seasonItem).map(request => request.path.slice(seasonItem.length));
+    const opened = query();
+    assert.deepEqual(opened, ["?image_size=medium&logo_width=880&backdrop_width=1344&poster_width=460&photo_width=200"]);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length, "the watched readback");
+    await quiet(tv);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).click();
+    await tv.eventually(async () => query().length > opened.length + 1, "the undo readback");
+    await quiet(tv);
+    assert.deepEqual([...new Set(query())], opened);
+}, { catalog: seasonRereadCatalog });
+
 const failedCollectionsCatalog = new FakeCatalog();
 failedCollectionsCatalog.failNext("/library/12/collections", problem(422, "validation_failed", "Collections unavailable"));
 browseTest("Recommended defers collections reads and a refused Collections read shows no collections", async tv => {
@@ -2401,7 +2478,7 @@ browseTest("Series Recommended shares Home stills, band alignment and the three-
     assert.equal(await tv.focused(), "expand:recent");
     await tv.page.locator('[data-focus="series"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout) [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout) [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
     assert.deepEqual(await tv.page.locator('.skyline-selector:not(.skyline-flyout)').evaluate(node => { const style = getComputedStyle(node); return [style.width, style.padding, style.borderRadius]; }), ["460px", "14px", "22px"]);
     assert.equal(await tv.page.locator('.skyline-selector:not(.skyline-flyout) .skyline-menu-icon').count(), 3);
 });
@@ -2779,6 +2856,135 @@ for (const aggregate of ["series", "season"]) {
         }, { catalog: new FakeDetails() });
     }
 }
+
+browseTest("S-D2 a movie read sent before Mark as Watched still starts the cached movie's box-set row", async tv => {
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:movie:m0001");
+    await tv.page.locator(".box-set-row .box-set-current-label").waitFor();
+    await tv.remote(BACK); await showing(tv, "boxSet:12:1241");
+    await settled(tv);
+    // The revisit shows the cached movie and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/movie%3Am0001", true);
+    await tv.page.locator('.box-set-grid [data-focus="movie:m0001"]').click();
+    await showing(tv, "item:movie:m0001");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older movie read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await tv.page.locator(".box-set-row .box-set-current-label").waitFor();
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Unwatched", exact: true }).waitFor();
+}, { catalog: new BoxSetCatalog() });
+
+browseTest("S-D2 a movie read sent before Mark as Watched cannot bring back its resume point", async (tv, catalog) => {
+    catalog.progress.set("movie:m0001", 1200);
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:movie:m0001");
+    await tv.page.getByRole("button", { name: /^Resume/ }).waitFor();
+    await tv.remote(BACK); await showing(tv, "boxSet:12:1241");
+    await settled(tv);
+    const older = tv.fake.hold("/catalog/items/movie%3Am0001", true);
+    await tv.page.locator('.box-set-grid [data-focus="movie:m0001"]').click();
+    await showing(tv, "item:movie:m0001");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older movie read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark as Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await afterPaint(tv);
+    assert.equal(await tv.page.getByRole("button", { name: /^Resume/ }).count(), 0, "the older answer's resume point stays cleared");
+}, { catalog: new BoxSetCatalog() });
+
+browseTest("S-D2 a series read sent before Mark Series Watched still brings the seasons a cached series lacked", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    // Leaving before the season list answers keeps the series in the cache without its seasons.
+    tv.fake.hold("/catalog/series/series%3As1/seasons");
+    await press(tv, "ArrowDown", "Enter");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "season list in flight");
+    await tv.remote(BACK);
+    await showing(tv, "home");
+    await settled(tv);
+    // The revisit shows the cached series and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1", true);
+    await press(tv, "Enter");
+    await showing(tv, "item:series:s1");
+    // The first visit's abandoned season-list answer stays held as well.
+    await tv.eventually(async () => tv.fake.heldReplies === 2, "older series read held");
+    assert.equal(await tv.page.locator('[data-focus="season:1"]').count(), 0, "the cached series has no season list yet");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Watched", exact: true }).click();
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await tv.page.locator('[data-focus="season:1"]').waitFor();
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Unwatched", exact: true }).waitFor();
+}, { catalog: new FakeDetails() });
+
+browseTest("S-D2 a series read sent before Mark Series Watched cannot undo the refreshed state", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    await tv.page.route("**/api/v2/recommendations/similar/episode%3As1e12?**", async (route) => {
+        await route.fulfill({ status: 200, json: { ...fixture("list_catalog_items_ok"), items: [{ content_id: "series:s1", type: "series", title: "Harbor Lights" }] } });
+    });
+    await activateDetails(tv, "episode:s1e12", true);
+    await showing(tv, "item:episode:s1e12");
+    const related = tv.page.locator('[data-detail-section="related"] [data-focus="series:s1"]');
+    await related.waitFor();
+    await settled(tv);
+    // Reopening the series shows the visited page and reads it again; that read is answered only after the write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1", true);
+    await related.focus();
+    await press(tv, "Enter");
+    await showing(tv, "item:series:s1");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older series read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Watched", exact: true }).click();
+    await tv.eventually(async () => catalog.mutations.length === 1, "aggregate write sent");
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Series Unwatched", exact: true }).waitFor();
+    assert.equal(catalog.mutations.length, 1);
+}, { catalog: new FakeDetails() });
+
+browseTest("S-D2 a season read sent before Mark Season Watched cannot undo the refreshed state", async (tv, catalog) => {
+    assert.ok(catalog instanceof FakeDetails);
+    catalog.watchedEpisodes.clear();
+    await press(tv, "ArrowDown", "Enter");
+    await showing(tv, "item:series:s1");
+    await seasonDetails(tv);
+    await settled(tv);
+    // An episode change marks the season stale and reads it again; that read is answered only after the next write's refresh.
+    const older = tv.fake.hold("/catalog/items/series%3As1-S1", true);
+    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
+    await tv.page.locator('[data-focus="watched"]').click();
+    await tv.eventually(async () => catalog.mutations.length === 1, "episode write sent");
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "older season read held");
+    await detailsMore(tv);
+    await tv.page.getByRole("button", { name: "Mark Season Watched", exact: true }).click();
+    await tv.eventually(async () => catalog.mutations.length === 2, "aggregate write sent");
+    await quiet(tv);
+    older.release();
+    await quiet(tv);
+    await detailsMore(tv);
+    assert.equal(await tv.page.locator(".browse-episode", { hasText: "Watched" }).count(), 3, "the older answer's episode rows stay replaced");
+    await tv.page.getByRole("button", { name: "Mark Season Unwatched", exact: true }).waitFor();
+    assert.equal(catalog.mutations.length, 2);
+}, { catalog: new FakeDetails() });
 
 browseTest("S-D2 series aggregate invalidates a cached season before returning", async (tv, catalog) => {
     assert.ok(catalog instanceof FakeDetails);
@@ -3219,7 +3425,7 @@ browseTest("R2 cached library restores flyout modes without reads on focus", asy
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.jump(250);
     await press(tv, "ArrowDown", "ArrowRight");
-    assert.deepEqual(await tv.page.locator('.skyline-flyout [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-flyout [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
     assert.equal(tv.fake.requests.length, reads);
 }, { multipleLibraries: true });
 
@@ -3791,7 +3997,7 @@ browseTest("discovery exposes three library menu destinations", async (tv) => {
     }
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
 });
 
 if (process.env.DISCOVERY_PACED !== undefined) {
@@ -3895,7 +4101,7 @@ browseTest("the library cascade offers Apple's three destinations and no dead co
     await showing(tv, "library:12");
     await tv.page.locator('[data-focus="movies"]').focus();
     await tv.remote(40);
-    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Collections", "Browse"]);
+    assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["Recommended", "Browse", "Collections"]);
 });
 
 browseTest("Skyline keeps bounded type tabs and a passive marquee whose text follows focus at once", async (tv) => {
@@ -4082,7 +4288,7 @@ browseTest("reduced motion snaps scrolling and the real Browse flyout preserves 
     await tv.remote(40);
     await tv.remote(39);
     assert.equal(await tv.focused(), "section:Recommended");
-    assert.equal(await tv.page.locator(".skyline-flyout").textContent(), "RecommendedCollectionsBrowse");
+    assert.equal(await tv.page.locator(".skyline-flyout").textContent(), "RecommendedBrowseCollections");
     await tv.remote(37);
     assert.equal(await tv.focused(), "library:12");
     await tv.remote(BACK);
@@ -4202,6 +4408,41 @@ browseTest("series open seasons, episode Select plays directly, and playback ret
     await showing(tv, "home");
     assert.equal(await tv.focused(), "series:s1");
 }, { catalog: new FakeDetails() });
+
+for (const order of ["series first", "episodes first"] as const) {
+    browseTest(`Back from a season page to its series focuses the primary action whichever read answers first (${order})`, async (tv) => {
+        const episodesPath = "/catalog/series/series%3As1/seasons/2/episodes";
+        // Series has not received season 2's episodes when the viewer opens the season page, so it returns without them.
+        const unanswered = [tv.fake.hold(episodesPath, true), tv.fake.hold(episodesPath, true)];
+        await press(tv, "ArrowDown", "Enter");
+        await showing(tv, "item:series:s1");
+        await tv.eventually(async () => await tv.focused() === "next-episode", "Play receives initial Series focus");
+        await press(tv, "ArrowDown", "ArrowRight", "Enter");
+        await tv.eventually(async () => tv.fake.heldReplies === 2, "season 2 episodes in flight");
+        await tv.page.locator('[data-focus="series:s1-S2"]').click();
+        await showing(tv, "season:series:s1:2");
+        await press(tv, "ArrowDown", "Enter");
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.plays.length === 1), "season episode handoff");
+        await settled(tv);
+        // Playback empties the response cache; the season page's rereads are still out when the viewer goes Back.
+        const seasonPage = [tv.fake.hold(episodesPath, true), tv.fake.hold("/catalog/items/series%3As1-S2", true)];
+        await tv.page.evaluate(() => window.browseHarness.resume());
+        await showing(tv, "season:series:s1:2");
+        await tv.eventually(async () => tv.fake.heldReplies === 4, "season page rereads held");
+        const series = [tv.fake.hold("/catalog/items/series%3As1", true), tv.fake.hold(episodesPath, true)];
+        await tv.remote(BACK);
+        await showing(tv, "item:series:s1");
+        await tv.eventually(async () => tv.fake.heldReplies > 4, "series rereads held");
+        // TVSeriesDetailView .defaultFocus($playFocused, true, priority: .userInitiated): focus entering the series goes to its primary action.
+        assert.notEqual(await tv.focused(), "series:s1-S2", "the season card the viewer came from does not take focus");
+        for (const hold of order === "series first" ? [...series, ...seasonPage, ...unanswered] : [...unanswered, ...seasonPage, ...series.reverse()]) {
+            hold.release();
+            await settled(tv);
+            assert.notEqual(await tv.focused(), "series:s1-S2", "a late answer does not hand focus to the season card");
+        }
+        await tv.eventually(async () => await tv.focused() === "next-episode", "focus returns to the primary action");
+    }, { catalog: new FakeDetails() });
+}
 
 for (const mediaKey of [415, 10252]) {
     browseTest(`Continue episode Select opens context and media key ${mediaKey} plays once`, async (tv, catalog) => {

@@ -327,6 +327,9 @@ for (const media of ["movie:m0001", "series:s1"] as const) detailTest(`returning
     await tv.page.locator(`[data-section="recently_added"] [data-focus="${media}"]`).first().click();
     await tv.page.locator('[data-focus="more"]').waitFor();
     await tv.page.locator('[data-focus^="credit:"]').first().waitFor();
+    // A late answer repaints Details and puts the page back at its top; walk to Cast once they have all landed.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Details answers delivered");
+    await afterPaint(tv);
     await tv.eventually(async () => {
         if ((await tv.focused() ?? "").startsWith("credit:")) return true;
         await tv.remote(40);
@@ -338,6 +341,7 @@ for (const media of ["movie:m0001", "series:s1"] as const) detailTest(`returning
     await tv.eventually(async () => { if (await scrollTop() > 100) return true; await tv.jump(100); return false; }, "the cast row scrolled the page");
     await tv.jump(1000);
     // A paused clock makes the sample below land exactly half-way through the move.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered before the clock pauses");
     await pauseTvClock(tv);
     const from = await scrollTop();
     const inHero = (): Promise<boolean> => tv.page.evaluate(() => document.activeElement?.closest(".details-editorial") !== null);
@@ -373,7 +377,13 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
     await tv.remote(move === "down" ? 40 : 38);
     assert.match(await tv.focused() ?? "", /^credit:/);
     late.release();
-    if (move === "down") await tv.page.locator('[data-detail-section="related"] [data-focus]').first().waitFor();
+    // The answer paints on the page clock, which is paused. Wait for the released answer without moving the clock, then step one frame at a time until Related shows, so the repaint still lands within the move's first frames.
+    if (move === "down") await tv.eventually(async () => tv.pendingReplies === 0, "the released answer delivered");
+    if (move === "down") await tv.eventually(async () => {
+        if (await tv.page.locator('[data-detail-section="related"] [data-focus]').count() > 0) return true;
+        await tv.jump(16);
+        return false;
+    }, "Related rows painted");
     else await tv.eventually(async () => tv.fake.paths().some(path => path.startsWith("GET /favorites/movie%3Am0001/membership")) && tv.pendingReplies === 0, "the favorite answer");
     await tv.jump(1000);
     // Apple's Down anchor is 546 px; Up to Cast on a movie returns the page to its top.
