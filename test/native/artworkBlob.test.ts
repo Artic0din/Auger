@@ -54,3 +54,46 @@ test("artwork bytes stop when the caller leaves, and after the request deadline"
     await pending;
     assert.ok(failure instanceof Error, "a request with no answer fails at the 15 s deadline");
 });
+
+/** An answer with no Content-Length whose chunks the test controls, erroring like a real fetch when its request aborts. */
+function chunkedArtwork(chunks: readonly Uint8Array[]): { fetch: (url: string, init: RequestInit) => Promise<Response>; cancelled: () => boolean } {
+    let cancelled = false;
+    return {
+        cancelled: () => cancelled,
+        fetch: async (_url, init) => {
+            let next = 0;
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    const chunk = chunks[next++];
+                    if (chunk === undefined) controller.close();
+                    else controller.enqueue(chunk);
+                },
+                cancel() { cancelled = true; },
+            });
+            init.signal?.addEventListener("abort", () => { cancelled = true; }, { once: true });
+            return new Response(body, { status: 200, headers: { "Content-Type": "image/webp" } });
+        },
+    };
+}
+
+test("a chunked artwork answer with no Content-Length is read to the end when it fits", async () => {
+    const { clock, http } = setup();
+    const answer = chunkedArtwork([new TextEncoder().encode("RIFF"), new TextEncoder().encode("bytes")]);
+    const blob = await new NativeHttp(http.base, device, answer.fetch, clock).artworkBlob(`${http.base.baseUrl}/api/v2/art/a.webp`, new AbortController().signal);
+    assert.equal(await blob.text(), "RIFFbytes");
+    assert.equal(blob.type, "image/webp");
+});
+
+test("a chunked artwork answer with no Content-Length stops at the byte limit", async () => {
+    const { clock, http } = setup();
+    const eightMegabytes = new Uint8Array(8 * 1024 * 1024);
+    const answer = chunkedArtwork([eightMegabytes, eightMegabytes, eightMegabytes]);
+    await assert.rejects(new NativeHttp(http.base, device, answer.fetch, clock).artworkBlob(`${http.base.baseUrl}/api/v2/art/a.webp`, new AbortController().signal), /Artwork download failed/);
+    assert.equal(answer.cancelled(), true, "the rest of the body is not downloaded");
+});
+
+test("an artwork answer with no body is an empty file, not a failure", async () => {
+    const { clock, http } = setup();
+    const empty = async (): Promise<Response> => new Response(null, { status: 200 });
+    assert.equal((await new NativeHttp(http.base, device, empty, clock).artworkBlob(`${http.base.baseUrl}/api/v2/art/a.webp`, new AbortController().signal)).size, 0);
+});

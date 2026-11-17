@@ -82,7 +82,22 @@ export class NativeHttp {
         try {
             const response = await this.fetch(address.href, { signal: abort.signal, mode: "cors", credentials: "omit" });
             if (!response.ok || Number(response.headers.get("Content-Length")) > ARTWORK_MAX_BYTES) throw new Error("Artwork download failed");
-            return await response.blob();
+            const type = response.headers.get("Content-Type") ?? "";
+            if (response.body === null) return new Blob([], { type });
+            // A chunked answer has no Content-Length, so the limit is enforced as the bytes arrive.
+            const reader = response.body.getReader();
+            const chunks: Uint8Array<ArrayBuffer>[] = [];
+            let bytes = 0;
+            for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) return new Blob(chunks, { type });
+                bytes += chunk.value.byteLength;
+                if (bytes > ARTWORK_MAX_BYTES) {
+                    cancel();
+                    throw new Error("Artwork download failed");
+                }
+                chunks.push(chunk.value as Uint8Array<ArrayBuffer>);
+            }
         } finally {
             timeout();
             signal.removeEventListener("abort", cancel);
