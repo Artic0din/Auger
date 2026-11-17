@@ -2,11 +2,14 @@
 // Components/MediaCard.swift:570-620, EpisodeThumbCard.swift:366-416). Rows come from the card's own row data, in
 // MediaStateMenuItems order: Play or Resume, the watched, Favorites and Watchlist rows, then the destructive Remove.
 // Choosing a row closes the menu and the change runs behind it; a failure shows HomeView's "Couldn't Update Item" alert.
+// Only Remove, the alert and a season pill's rows read from the catalog: Apple builds the other labels (Play, Resume, Go to
+// ..., Mark as Watched, Add to Favorites and Watchlist) as plain strings, so they show English in every language.
 
 import { operations } from "../api/operations.ts";
 import { detailOperations, type HomeDismissal } from "../api/detailOperations.ts";
 import type { Card } from "../contracts/v2/catalog.ts";
 import type { NativeSession } from "../session/session.ts";
+import { translate } from "../i18n/translate.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { remoteKey } from "./keys.ts";
 import { el } from "./screen.ts";
@@ -48,9 +51,6 @@ export interface CardActionsHost {
 }
 
 type Row = { readonly key: string; readonly label: string; readonly icon: keyof typeof ICONS; readonly destructive?: boolean; readonly change?: boolean; readonly run: () => void };
-
-const UPDATE_FAILED_TITLE = "Couldn’t Update Item";
-const UPDATE_FAILED_MESSAGE = "The item could not be updated. Try again.";
 
 /** SF Symbols the menu draws, on a 24 point grid. */
 const ICONS = {
@@ -237,7 +237,7 @@ export class CardActions {
         if (card.seasonPill === true) {
             if (card.played === undefined) return rows;
             const watched = card.played;
-            rows.push({ change: true, key: "watched", label: watched ? "Mark Season Unwatched" : "Mark Season Watched", icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source) });
+            rows.push({ change: true, key: "watched", label: translate(watched ? "detail.more.markSeasonUnwatched" : "detail.more.markSeasonWatched"), icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source) });
             return rows;
         }
         const play = options.play;
@@ -260,7 +260,7 @@ export class CardActions {
         }
         const dismissal = options.dismissal;
         if (dismissal !== undefined) {
-            rows.push({ change: true, key: "remove", label: dismissal.surface === "next_up" ? "Remove from Next Up" : "Remove from Continue Watching", icon: "xmark.circle", destructive: true, run: () => this.send(card.id, detailOperations.dismissHomeItem(card.id, dismissal), () => undefined, source, () => this.host.dismissed?.(card)) });
+            rows.push({ change: true, key: "remove", label: translate(dismissal.surface === "next_up" ? "cardMenu.removeNextUp" : "cardMenu.removeContinueWatching"), icon: "xmark.circle", destructive: true, run: () => this.send(card.id, detailOperations.dismissHomeItem(card.id, dismissal), () => undefined, source, () => this.host.dismissed?.(card)) });
         }
         return rows;
     }
@@ -295,12 +295,12 @@ export class CardActions {
         // A reopened menu keeps its focus and Resume action until it closes.
         if (this.shown !== undefined || this.host.canAlert?.() === false) { this.deferredAlert = true; return; }
         if (this.active) this.dismiss();
-        const ok = el("button", "card-alert-button", "OK");
+        const ok = el("button", "card-alert-button", translate("home.updateFailed.ok"));
         ok.type = "button";
         ok.setAttribute("data-focus", "card-alert-ok");
         ok.addEventListener("click", () => this.close());
         const scrim = el("div", "card-actions-scrim card-alert-scrim");
-        scrim.append(...centredDialog({ style: "alert", id: "card-update-failed", title: UPDATE_FAILED_TITLE, message: UPDATE_FAILED_MESSAGE, buttons: [ok], behind: [] }));
+        scrim.append(...centredDialog({ style: "alert", id: "card-update-failed", title: translate("home.updateFailed.title"), message: translate("home.updateFailed.message"), buttons: [ok], behind: [] }));
         this.capture();
         this.panel = scrim;
         this.shown = undefined;
