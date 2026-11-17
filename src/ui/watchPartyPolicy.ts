@@ -1,6 +1,8 @@
 // Apple's WatchPartyLobbyPolicy: seat states, the presence summary, the host's hint and the lobby's one action.
 
 import type { Room, RoomMember, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 
 export type SeatState = "ready" | "notReady" | "away" | "watching" | "joining" | "buffering" | "syncing";
 
@@ -16,9 +18,10 @@ export function seatState(member: RoomMember, phase: Room["phase"]): SeatState {
 /** WatchPartyLobbyPolicy.presenceSummary: "2 of 3 ready". */
 export function presenceSummary(members: readonly RoomMember[], phase: Room["phase"]): string {
     const here = members.filter(member => member.connected);
-    if (here.length <= 1) return here.length === 1 ? "only you so far" : "nobody connected";
+    if (here.length <= 1) return translate(here.length === 1 ? "watchParty.presence.onlyYou" : "watchParty.presence.nobody");
     const wanted: SeatState = phase === "lobby" ? "ready" : "watching";
-    return `${here.filter(member => seatState(member, phase) === wanted).length} of ${here.length} ${phase === "lobby" ? "ready" : "watching"}`;
+    const count = integerText(here.filter(member => seatState(member, phase) === wanted).length);
+    return phase === "lobby" ? translate("watchParty.presence.ready", { ready: count, total: here.length }) : translate("watchParty.presence.watching", { watching: count, total: here.length });
 }
 
 /** WatchPartyLobbyPolicy.waitingNames: connected guests who have not marked ready, for the host's advisory hint. */

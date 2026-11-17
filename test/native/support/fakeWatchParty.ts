@@ -19,6 +19,7 @@ export interface FakeSuggestion {
     readonly subtitle: string;
     readonly posterUrl: string;
     readonly suggesterProfileId: string;
+    readonly note?: string;
     readonly createdAt: string;
     readonly voters: Set<string>;
 }
@@ -110,10 +111,11 @@ export class FakeWatchParty extends FakeRequests {
     }
 
     /** Puts a title on the ballot as Sam, with votes from the given profiles, and broadcasts it when a socket is open. */
-    suggest(id: string, title: string, voters: readonly string[] = [], extra: Partial<Pick<FakeSuggestion, "subtitle" | "posterUrl" | "contentType">> = {}): void {
+    suggest(id: string, title: string, voters: readonly string[] = [], extra: Partial<Pick<FakeSuggestion, "subtitle" | "posterUrl" | "contentType" | "note">> = {}): void {
         this.suggestions.push({
             id, contentId: `movie:${id}`, contentType: extra.contentType ?? "movie", title, subtitle: extra.subtitle ?? "", posterUrl: extra.posterUrl ?? `/art/${id}.svg`,
             suggesterProfileId: "p-guest", createdAt: new Date(Date.UTC(2026, 10, 10, 1, 0, this.suggestions.length)).toISOString(), voters: new Set(voters),
+            ...(extra.note === undefined ? {} : { note: extra.note }),
         });
         this.broadcastBallot();
     }
@@ -131,7 +133,7 @@ export class FakeWatchParty extends FakeRequests {
     private suggestionRow(row: FakeSuggestion, viewer: string | undefined): Record<string, unknown> {
         return {
             id: row.id, room_id: ROOM_ID, suggester_user_id: 2, suggester_profile_id: row.suggesterProfileId, content_id: row.contentId, content_type: row.contentType,
-            title: row.title, subtitle: row.subtitle, poster_url: row.posterUrl, note: "", vote_count: row.voters.size, voted_by_me: viewer !== undefined && row.voters.has(viewer), created_at: row.createdAt,
+            title: row.title, subtitle: row.subtitle, poster_url: row.posterUrl, note: row.note ?? "", vote_count: row.voters.size, voted_by_me: viewer !== undefined && row.voters.has(viewer), created_at: row.createdAt,
         };
     }
 

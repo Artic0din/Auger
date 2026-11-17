@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { after, before, test } from "node:test";
-import type { Browser } from "playwright";
+import type { Browser, Route } from "playwright";
 import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
@@ -110,6 +110,73 @@ audiobookTest("the audiobook detail shows the cover, credits, state and a Play b
     assert.equal(await tv.focused(), "start-over");
 });
 
+const DUNE = "audiobook:dune";
+const duneDetail = "**/api/v2/catalog/items/audiobook%3Adune?**";
+
+/** Remounts Home with nothing cached, so the next open of a book reads its detail again. */
+async function remountHome(tv: Tv): Promise<void> {
+    await tv.page.evaluate(() => { window.browseHarness.clearResponseCache(); window.browseHarness.destroy(); window.browseHarness.mount(); });
+    await showing(tv, "home");
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${DUNE}"]`).waitFor();
+}
+
+audiobookTest("an audiobook opens on Apple's loading frame, painted from its card, until the book is read", async tv => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await tv.page.route(duneDetail, async route => { await gate; await route.fallback(); });
+    await remountHome(tv);
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${DUNE}"]`).click();
+    const page = tv.page.locator(".audiobook-loading");
+    await page.waitFor();
+    assert.equal(await page.getAttribute("aria-busy"), "true");
+    assert.equal(await page.getAttribute("aria-label"), "Loading details for Dune");
+    assert.equal(await tv.focused(), "loading", "the passive frame holds focus so Back still leaves");
+    assert.equal(await page.locator(".audiobook-title").innerText(), "Dune", "the card's title, before the book arrives");
+    assert.match(await page.locator(".audiobook-loading-year").innerText(), /^1965$/);
+    assert.match(await page.locator(".audiobook-cover img").getAttribute("src") ?? "", /audiobook%3Adune|audiobook:dune/, "the card's cover");
+    assert.deepEqual(await page.locator(".audiobook-cover").evaluate(node => { const box = node.getBoundingClientRect(); return [box.width, box.height]; }), [460, 460]);
+    assert.equal(await tv.page.locator('[data-focus="play"]').count(), 0, "no action until the book is read");
+    await shoot(tv, "audiobook-loading");
+    release();
+    await showing(tv, `audiobook:${DUNE}`);
+    assert.equal(await tv.focused(), "play");
+});
+
+audiobookTest("Back from an audiobook's loading frame returns to its card", async tv => {
+    await tv.page.route(duneDetail, () => undefined);
+    await remountHome(tv);
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${DUNE}"]`).click();
+    await tv.page.locator(".audiobook-loading").waitFor();
+    await tv.remote(BACK);
+    await showing(tv, "home");
+    assert.equal(await tv.focused(), DUNE);
+});
+
+audiobookTest("a book that is gone shows Apple's Not found page; Try Again reads it again and Go Back returns to its card", async tv => {
+    const missing = (route: Route): Promise<void> => route.fulfill({ status: 404, contentType: "application/problem+json", body: JSON.stringify({ type: "not_found", title: "Not found", status: 404 }) });
+    await tv.page.route(duneDetail, missing);
+    await remountHome(tv);
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${DUNE}"]`).click();
+    await tv.page.locator(".details-failure").waitFor();
+    assert.equal(await tv.page.locator(".details-failure").innerText().then(text => text.split("\n")[0]), "Not found");
+    assert.match(await tv.page.locator(".details-failure").innerText(), /We couldn't find what you were looking for\. It may have been removed or moved\./);
+    assert.deepEqual(await tv.page.locator(".details-failure .browse-button").allInnerTexts(), ["Go Back", "Try Again"], "Apple ErrorView: a 404 prefers leaving");
+    assert.equal(await tv.focused(), "go-back");
+    await tv.page.unroute(duneDetail, missing);
+    await tv.page.locator('[data-focus="retry"]').click();
+    await showing(tv, `audiobook:${DUNE}`);
+    assert.equal(await tv.focused(), "play", "Try Again reads the book and opens it on Play");
+    await tv.remote(BACK);
+    await showing(tv, "home");
+    await tv.page.route(duneDetail, missing);
+    await tv.page.evaluate(() => window.browseHarness.clearResponseCache());
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${DUNE}"]`).click();
+    await tv.page.locator(".details-failure").waitFor();
+    await tv.page.locator('[data-focus="go-back"]').click();
+    await showing(tv, "home");
+    assert.equal(await tv.focused(), DUNE, "Go Back restores the card");
+});
+
 audiobookTest("Chapters opens a picker on the current chapter and Back returns to the button", async tv => {
     await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
     await showing(tv, `audiobook:${TIDE}`);
@@ -171,6 +238,19 @@ audiobookTest("the Audiobooks Browse page offers no video Shuffle even when the 
     await selectLibraryMode(tv, "Browse");
     await tv.page.locator('.browse-grid .browse-card-square').first().waitFor();
     assert.equal(await tv.page.locator('[data-focus="shuffle"]').count(), 0);
+});
+
+audiobookTest("a library the server types \"audiobook\" opens under the Audiobooks tab as Apple TV does", async tv => {
+    await showAudiobooks(tv);
+    const tab = tv.page.locator('[data-focus="audiobooks"]');
+    await tab.waitFor();
+    await tab.click();
+    await showing(tv, "library:14");
+    await tv.page.locator('[data-section] .browse-card-square').first().waitFor();
+}, catalog => {
+    const library = catalog.households.get("p-owner")?.libraries.find(entry => entry.id === "14");
+    if (library === undefined) throw new Error("Missing synthetic audiobook library");
+    library.type = "audiobook";
 });
 
 audiobookTest("Audiobooks stays off until Show Audiobooks is on, then opens the library with square covers", async tv => {

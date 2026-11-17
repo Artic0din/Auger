@@ -127,7 +127,7 @@ Apple behavior is read from `AudiobookPlaybackContext.swift`, `AudiobookProgress
 | `queryCatalogItems` as `queryAudiobooks` | `natural_idempotent` (`profile_scoped`) | Scoped by `library_id` with no `type`, as Apple omits it for audiobook libraries; the author, narrator or series filter is one `match: any` group of `is` rules |
 | `syncProgress` | `non_retryable` (`profile_scoped`) | The only durable resume point; whole-book milliseconds with `force_overwrite`; never resent, so the caller passes `replayAfterRefresh: false` and the next sample carries a fresh position |
 
-Library gating: `listUserLibraries` reports `type: "audiobooks"`, and `audiobookLibraries` drops hidden ones.
+Library gating: `listUserLibraries` reports `type: "audiobooks"` (the decoder also reads `audiobook`, trimmed and case-folded, as silo-apple `isAudiobookLibrary` does, because the server documents the type as free-form), and `audiobookLibraries` drops hidden ones.
 `nav.show_audiobooks` is `client_local` and defaults to false in the manifest, so the opt-in is stored per profile on the device and is never read from or written to the server.
 There is no server capability flag for audiobooks; a server without audiobook libraries simply lists none.
 `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9); this change only names them.
