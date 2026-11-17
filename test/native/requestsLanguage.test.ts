@@ -8,7 +8,7 @@ import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { unconfirmedWriteMessage, writeFailureMessage } from "../../src/ui/browseRoutes.ts";
 import { requestProgress } from "../../src/ui/requestProgress.ts";
-import { removedNotice, unconfirmedCancelMessage } from "../../src/ui/requestRemoval.ts";
+import { RequestActionGate, removedNotice, unconfirmedCancelMessage } from "../../src/ui/requestRemoval.ts";
 import { requestQuality } from "../../src/ui/requestsScene.ts";
 import { ApiError } from "../../src/api/errors.ts";
 
@@ -67,4 +67,22 @@ test("a language whose file has not landed reads English, and English is unchang
             assert.equal(unconfirmedWriteMessage("create"), "We couldn't confirm the request. Check My Requests before trying again.");
         });
     }
+});
+
+test("a held cancel or remove message follows the shown language and still clears when its holds settle", () => {
+    for (const [kind, key] of [["cancel", "requests.notice.unconfirmedCancel"], ["remove", "requests.notice.unconfirmedRemove"]] as const) {
+        const gate = new RequestActionGate();
+        gate.hold("a");
+        inLanguage("de", () => gate.holdMessage(kind));
+        assert.equal(inLanguage("de", () => gate.listMessage), translate(key, undefined, "de"));
+        assert.equal(inLanguage(null, () => gate.listMessage), translate(key, undefined, "en"), "a language change rewrites it");
+        // Settled in another language than it was raised in: it must still clear.
+        inLanguage(null, () => gate.releaseHolds(gate.cover()));
+        assert.equal(gate.listMessage, undefined, kind);
+    }
+    const gate = new RequestActionGate();
+    gate.hold("a");
+    gate.listMessage = "Already requested";
+    gate.releaseHolds(gate.cover());
+    assert.equal(gate.listMessage, "Already requested", "any other message stays");
 });

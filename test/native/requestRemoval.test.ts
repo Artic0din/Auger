@@ -94,7 +94,7 @@ test("one list action runs at a time, and a later read settles only the holds it
     gate.hold("a");
     const covered = gate.cover();
     gate.hold("b");
-    gate.listMessage = unconfirmedRemoveMessage();
+    gate.holdMessage("remove");
     gate.releaseHolds(covered);
     assert.deepEqual(gate.heldIds(), ["b"]);
     assert.equal(gate.listMessage, unconfirmedRemoveMessage());
@@ -110,7 +110,7 @@ test("one list action runs at a time, and a later read settles only the holds it
     assert.equal(gate.epoch, 1);
     gate.hold("held-a");
     gate.hold("held-b");
-    gate.listMessage = unconfirmedCancelMessage();
+    gate.holdMessage("cancel");
     gate.releaseHold("held-a");
     assert.deepEqual(gate.heldIds(), ["held-b"]);
     assert.equal(gate.listMessage, unconfirmedCancelMessage());

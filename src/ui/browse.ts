@@ -15,7 +15,7 @@ import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
 import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
 import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, unconfirmedCancelMessage, unconfirmedRemoveMessage, visibleMineRequests } from "./requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations, type TextSearchScope } from "../api/operations.ts";
@@ -2548,7 +2548,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = unconfirmedRemoveMessage();
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("remove");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2586,7 +2586,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 requestGate.release(token);
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = unconfirmedCancelMessage();
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("cancel");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2718,7 +2718,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (unconfirmed && cancelId !== undefined) {
                     requestGate.hold(cancelId);
                     releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.listMessage = unconfirmedCancelMessage();
+                    if (requestGate.held.has(cancelId)) requestGate.holdMessage("cancel");
                 } else {
                     releaseGate();
                 }

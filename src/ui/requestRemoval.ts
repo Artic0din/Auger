@@ -88,13 +88,30 @@ export function focusAfterRemoval(data: RequestsHub | MyRequests, removedId: str
 export class RequestActionGate {
     actingId: string | undefined;
     notice: string | undefined;
-    listMessage: string | undefined;
+    /** Which held-write message `listMessage` shows, so it reads in the shown language and clears by kind, not by its words. */
+    private unconfirmed: "remove" | "cancel" | undefined;
+    private message: string | undefined;
     readonly held = new Map<string, number>();
     readonly removed = new Set<string>();
     epoch = 0;
     private token = 0;
     private actingToken = 0;
     private holdSerial = 0;
+
+    get listMessage(): string | undefined {
+        return this.unconfirmed === undefined ? this.message : this.unconfirmed === "remove" ? unconfirmedRemoveMessage() : unconfirmedCancelMessage();
+    }
+
+    set listMessage(text: string | undefined) {
+        this.unconfirmed = undefined;
+        this.message = text;
+    }
+
+    /** A lost cancel or remove stays held until a later list read; its message says so until then. */
+    holdMessage(kind: "remove" | "cancel"): void {
+        this.message = undefined;
+        this.unconfirmed = kind;
+    }
 
     heldIds(): readonly string[] {
         return [...this.held.keys()];
@@ -147,7 +164,7 @@ export class RequestActionGate {
     }
 
     private clearListMessageIfIdle(): void {
-        if (this.held.size === 0 && (this.listMessage === unconfirmedRemoveMessage() || this.listMessage === unconfirmedCancelMessage())) this.listMessage = undefined;
+        if (this.held.size === 0 && this.unconfirmed !== undefined) this.listMessage = undefined;
     }
 
     filter<T extends { readonly id: string }>(items: readonly T[]): T[] {

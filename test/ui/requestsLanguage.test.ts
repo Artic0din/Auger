@@ -25,6 +25,11 @@ const text = (key: Parameters<typeof translate>[0], language: string, args?: Par
 
 /** A discover row of three titles, so a rail has an order to walk. */
 class ThreeTitles extends FakeRequests {
+    constructor() {
+        super();
+        Object.assign(this.record, { backdrop_path: "https://silo.example.test/art/heat.svg" });
+    }
+    override title(): Record<string, unknown> { return { ...super.title(), backdrop_path: "https://silo.example.test/art/heat.svg" }; }
     override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): Reply | undefined {
         const reply = super.route(method, path, profileId, body);
         if (new URL(path, "https://fake.invalid").pathname !== "/requests/discover" || reply?.body === undefined) return reply;
@@ -121,6 +126,8 @@ test("in Arabic the hub is mirrored: its rail reads from the right and Left walk
         assert.equal(await tv.focused(), "movie:949", "Right returns");
         const copy = await tv.page.evaluate(() => document.querySelector(".requests-preview .requests-hero-copy")?.getBoundingClientRect());
         assert.ok(copy !== undefined && copy.left > 1920 - copy.right - 1, `the preview's text sits on the right: ${JSON.stringify(copy)}`);
+        const art = await tv.page.locator(".requests-preview .skyline-art-frame").evaluate(frame => { const box = frame.getBoundingClientRect(); return { left: box.left, right: box.right }; });
+        assert.ok(art.left < 1920 - art.right, `the artwork leans to the left edge: ${JSON.stringify(art)}`);
     });
 });
 
@@ -138,6 +145,8 @@ test("in Arabic a request's detail is mirrored and reads from the catalog", asyn
         });
         assert.equal(sides.direction, "rtl");
         assert.ok(Math.abs(sides.copyRight - (1920 - 100)) <= 2, `the copy hangs from the right edge: ${JSON.stringify(sides)}`);
+        const frame = await tv.page.locator(".requests-detail-hero .skyline-art-frame").evaluate(node => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right }; });
+        assert.ok(frame.left <= 1 && frame.right < 1920 - 100, `the artwork sits at the left edge: ${JSON.stringify(frame)}`);
         await tv.remote(BACK);
         await tv.page.locator('.browse[data-view="requests:hub"]').waitFor();
     });
