@@ -144,6 +144,13 @@ test("in Arabic the three pages follow the mirrored page: the grid reads from th
             const cards = view.locator(".browse-card");
             const lefts = await cards.evaluateAll(nodes => nodes.slice(0, 3).map(node => node.getBoundingClientRect().left));
             assert.ok(lefts[0]! > lefts[1]! && lefts[1]! > lefts[2]!, `${source}: the first card is rightmost: ${JSON.stringify(lefts)}`);
+            // SwiftUI aligns a card's text by the layout, so Latin titles hug the right edge of an Arabic page's card: the line ends where the card does.
+            const align = await cards.evaluateAll(nodes => nodes.slice(0, 3).flatMap(node => [...node.querySelectorAll<HTMLElement>(".browse-card-title, .browse-card-subtitle")]).filter(label => (label.textContent ?? "") !== "").map(label => {
+                const range = document.createRange();
+                range.selectNodeContents(label);
+                return { text: label.textContent, gap: label.getBoundingClientRect().right - range.getBoundingClientRect().right };
+            }));
+            assert.ok(align.length > 0 && align.every(line => line.gap < 3), `${source}: card text is right-aligned: ${JSON.stringify(align)}`);
             const first = await cards.first().getAttribute("data-focus");
             const second = await cards.nth(1).getAttribute("data-focus");
             await cards.first().focus();
@@ -169,5 +176,11 @@ test("Watchlist, Favorites and History keep their English text and left-to-right
         assert.match(await tv.page.locator(".personal-count").innerText(), /^\d+ items$/);
         const lefts = await tv.page.locator('[data-view="personal:history"] .browse-card').evaluateAll(nodes => nodes.slice(0, 2).map(node => node.getBoundingClientRect().left));
         assert.ok(lefts[0]! < lefts[1]!, `English reads left to right: ${JSON.stringify(lefts)}`);
+        const gap = await tv.page.locator('[data-view="personal:history"] .browse-card-title').first().evaluate(label => {
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            return range.getBoundingClientRect().left - label.getBoundingClientRect().left;
+        });
+        assert.ok(gap < 3, `English card text stays left-aligned: ${gap}`);
     });
 });

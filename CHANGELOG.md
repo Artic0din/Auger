@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A card's show-status ribbon (Returning, Ended, Cancelled, Upcoming) now reads in the language you pick, as on Apple TV, in every grid and rail that shows card badges. Uploaded per-status badge images still match in every language (#571).
 - The Watchlist, Favorites and History pages now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: the grid reads from the right and Left and Right on the remote step through it that way. Titles, Favorites' Movies and TV Shows filters, the empty and loading states and History's item count follow the language, with its plural and digits. English reads exactly as before, and the error page keeps its English text until the error screens move (#571).
 - Watch Party now shows in the language you pick under App Language, with Apple TV's strings, and mirrors in Arabic as on Apple TV: the hub, lobby, Ready, ballot, options, invitation and its QR text, picker shelves, confirmation page and episode list. Member and host names stay as the server sent them. A vote card's accessibility label now reads Apple's `Vote for Heat`.
 - An audiobook now opens on Apple TV's loading frame instead of a bare "Loading" page: the card's cover, title and year show in the book page's layout, with quiet placeholders for the rest, until the book is read. Back leaves it.
