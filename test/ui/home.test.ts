@@ -14,7 +14,7 @@ import { type SettingsKey, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY } from "../../
 const CARD_OVERLAYS_KEY = "ui.card_overlays" as SettingsKey;
 const CARD_OVERLAYS_ENABLED_KEY = "ui.card_overlays_enabled" as SettingsKey;
 const CARD_PRESENTATION_KEY = "ui.card_presentation" as SettingsKey;
-import { afterPaint, detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, detailReads, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -863,8 +863,15 @@ journey("card artwork fades in over 0.12 s once it loads, and decoded artwork pa
     await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
     const again = tv.page.locator(`${POSTER} .browse-art-image`);
     await again.waitFor({ state: "attached" });
-    assert.equal(await again.evaluate(node => node.classList.contains("is-cached")), true, "AsyncImageView paints a cached decode with no animation");
-    assert.equal(await again.evaluate(node => getComputedStyle(node).opacity), "1");
+    // A late Home answer repaints the section and replaces the poster; a style read of the old node reports "". Read once the answers have landed and painted.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Home answers delivered");
+    await afterPaint(tv);
+    const painted = await readLive(tv, (selector: string) => {
+        const node = document.querySelector(selector);
+        return node === null || !node.isConnected ? null : { cached: node.classList.contains("is-cached"), opacity: getComputedStyle(node).opacity };
+    }, `${POSTER} .browse-art-image`, value => value.opacity !== "", "live cached artwork");
+    assert.equal(painted.cached, true, "AsyncImageView paints a cached decode with no animation");
+    assert.equal(painted.opacity, "1");
 }, catalog => enrichHome(catalog, { "movie:m0006": { poster_url: "/art/gated-poster.svg" } }), undefined, { beforeMount: tv => {
     const gate = new Promise<void>(resolve => { cardArtGate = resolve; });
     void tv.page.route("**/art/gated-poster.svg", async route => { await gate; await route.fulfill({ contentType: "image/svg+xml", headers: { "cache-control": "max-age=3600" }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>' }); });
