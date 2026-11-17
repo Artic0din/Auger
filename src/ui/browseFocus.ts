@@ -8,6 +8,7 @@
 // brings lost focus back.
 // The sign-in ScreenHost moves through one list; grids and stacked rows need two dimensions.
 
+import { readsInlineRightToLeft, startOffset, startsAtOrPast } from "./inlineAxis.ts";
 import { remoteKey } from "./keys.ts";
 import { heldSelect, isFreshSelect, listenSelectRelease, moveSelect } from "./selectRelease.ts";
 import { SkylineScroll } from "./skylineScroll.ts";
@@ -61,7 +62,7 @@ export interface Zone {
     readonly columns?: number;
     /** Up/Down pass over aria-disabled items, as tvOS focus passes a disabled Button; a focused one keeps focus until a key moves it. */
     readonly skipDisabled?: boolean;
-    /** `true`: nearest centre between zones. `"aligned"`: the intersecting item closest to the focused item's left edge; otherwise the move stays. */
+    /** `true`: nearest centre between zones. `"aligned"`: the intersecting item closest to the focused item's start edge (its left edge left to right); otherwise the move stays. */
     readonly spatial?: boolean | "aligned";
     readonly items: readonly FocusItem[];
 }
@@ -236,6 +237,9 @@ export class FocusHost {
             && (focus === undefined || (focus.zone === kept.zone && focus.key === kept.key))
             && view.zones.find(zone => zone.id === kept.zone)?.items.find(candidate => candidate.key === kept.key)?.element === previous?.item.element;
         place(this.container, view.content);
+        // Home, Search, Details, Settings, Change Account and Browse are mirrored in a right-to-left page; the other views are not yet (#571) and keep their left-to-right layout and keys. The shell's own nodes (data-chrome) follow the page.
+        const mirrored = MIRRORED_VIEW.test(view.name) || this.container.classList.contains("library-browse");
+        for (const node of view.content) { if (node.hasAttribute("data-chrome")) continue; if (mirrored) node.removeAttribute("dir"); else node.setAttribute("dir", "ltr"); }
         this.applyVisit(visit);
         const restoring = !sameVisit && visit !== undefined;
         const target = focus ?? (restoring ? this.memoryTarget() : undefined);
@@ -488,12 +492,13 @@ export class FocusHost {
                 // meets the focused item and sits closest to its left edge does; no meeting, no move.
                 if (zone.spatial === "aligned") {
                     const origin = from.element.getBoundingClientRect();
+                    const rightToLeft = readsInlineRightToLeft(from.element);
                     let match: FocusItem | undefined;
                     let best = Number.POSITIVE_INFINITY;
                     for (const item of edgeItems) {
                         const target = item.element.getBoundingClientRect();
                         if (origin.left >= target.right || target.left >= origin.right) continue;
-                        const distance = Math.max(0, target.left - origin.left);
+                        const distance = startOffset(origin, target, rightToLeft);
                         if (distance < best) {
                             best = distance;
                             match = item;
@@ -886,7 +891,9 @@ function framesMeetRect(origin: DOMRect, target: DOMRect): boolean {
 function columnAtOrPastCenter(items: readonly FocusItem[], from: HTMLElement): FocusItem | undefined {
     const box = from.getBoundingClientRect();
     const center = box.left + box.width / 2;
-    return items.find(item => item.element.getBoundingClientRect().left >= center - 0.5);
+    // Items run in reading order, so "past" is toward the end of the line: the right edge left to right, the left edge right to left.
+    const rightToLeft = readsInlineRightToLeft(from);
+    return items.find(item => startsAtOrPast(item.element.getBoundingClientRect(), center, rightToLeft));
 }
 
 function overlappingNearest(items: readonly FocusItem[], origin: DOMRect): FocusItem | undefined {
@@ -943,6 +950,9 @@ function stepWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index
 }
 
 /** Makes `nodes` the container's children; a node already in its place is not moved, so it keeps focus. */
+/** The views that follow the page's direction: Home, Search, Settings, Change Account and its sibling screens, Details pages and their seasons (`item:` and `season:`), and a library's Browse page (the `library-browse` container class). */
+const MIRRORED_VIEW = /^(home(:|$)|item:|season:|search$|settings(:|$)|accounts-|change-account$|account-expired$)/;
+
 function place(container: HTMLElement, nodes: readonly HTMLElement[]): void {
     // Remove replaced siblings first so retained focus/press hosts never need a DOM move.
     const retained = new Set(nodes);

@@ -3451,3 +3451,17 @@ test("focus moves to a neighbour only when its Sync or Reset row disappears", as
         assert.equal(await focused(page), "subtitles-off", "with no Delay, focus returns to the tracks");
     } finally { await page.close(); }
 });
+
+test("the player keeps its left-to-right layout and the remote's physical keys when the page reads right to left", async () => {
+    const { page } = await open();
+    try {
+        await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+        await show(page, playing(TRACKS));
+        assert.equal(await page.locator('[data-screen="player"]').evaluate(node => getComputedStyle(node).direction), "ltr");
+        // Down to the transport, Right twice to Options, Select, Down into the pane: the same keys as in English.
+        await openPanel(page);
+        assert.equal(await focused(page), "info");
+        await page.locator('[data-focus="info"]').focus();
+        assert.ok(await page.locator(".player-menu-info").isVisible(), "the Options panel opened on Info");
+    } finally { await page.close(); }
+});

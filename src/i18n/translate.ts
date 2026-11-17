@@ -8,8 +8,34 @@ export type MessageKey = keyof typeof english;
 export type Catalog = Readonly<Record<string, string>>;
 export type Catalogs = Readonly<Record<string, Catalog>> & { readonly [SOURCE_LANGUAGE]: Catalog };
 
-/** Add a language here when its file lands in `catalog/`; the source language is always present. */
-const CATALOGS: Catalogs = { [SOURCE_LANGUAGE]: english };
+/**
+ * English is bundled; every other language is its own packaged file that `load.ts` registers when it lands, so
+ * the one script carries no other language's text. A language that has not landed reads as English.
+ */
+const catalogs: { [tag: string]: Catalog; [SOURCE_LANGUAGE]: Catalog } = { [SOURCE_LANGUAGE]: english };
+const listeners = new Set<(tag: string) => void>();
+
+/** Adds a language's text and tells the screens that drew in English meanwhile to draw again. */
+export function registerCatalog(tag: string, catalog: Catalog): void {
+    if (tag === SOURCE_LANGUAGE) return;
+    catalogs[tag] = catalog;
+    for (const listener of listeners) listener(tag);
+}
+
+export function onCatalogLoaded(listener: (tag: string) => void): () => void {
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+}
+
+export function isCatalogLoaded(tag: string): boolean {
+    return Object.hasOwn(catalogs, tag);
+}
+
+/** The language `translate` reads text in right now: the shown language once its file has landed, else English. */
+export function textLanguage(): string {
+    const shown = shownLanguage();
+    return isCatalogLoaded(shown) ? shown : SOURCE_LANGUAGE;
+}
 
 const parsed = new Map<string, readonly MessageNode[]>();
 
@@ -25,5 +51,34 @@ export function resolveMessage(catalogs: Catalogs, key: string, language: string
 }
 
 export function translate(key: MessageKey, args?: MessageArgs, language: string = shownLanguage()): string {
-    return resolveMessage(CATALOGS, key, language, args);
+    return resolveMessage(catalogs, key, language, args);
+}
+
+/**
+ * Text the server wrote (a Home section title), as `AppLanguage.serverText` shows it: the language's own
+ * translation of the catalog key the server sent, else the server's text. English always shows the server's
+ * text as sent, and a key this language lacks never falls back to the English catalog.
+ */
+export function resolveServerText(catalogs: Catalogs, text: string, key: string | undefined, args: Readonly<Record<string, string>> | undefined, language: string): string {
+    if (key === undefined || key === "" || language === SOURCE_LANGUAGE) return text;
+    const template = catalogs[language]?.[key];
+    if (template === undefined) return text;
+    try {
+        return formatMessage(parseMessage(template), args ?? {}, formattingLocale(language, deviceLanguages()[0]));
+    } catch {
+        // A placeholder the server did not fill: its own text reads whole.
+        return text;
+    }
+}
+
+export function serverText(text: string, key: string | undefined, args?: Readonly<Record<string, string>>, language: string = shownLanguage()): string {
+    return resolveServerText(catalogs, text, key, args, language);
+}
+
+/**
+ * Text Apple wrote for "this Apple TV", said of this TV. Settings reads "this TV" for it, and the same
+ * substitution holds in every language, where the brand stays "Apple TV".
+ */
+export function translateTv(key: MessageKey, args?: MessageArgs, language: string = shownLanguage()): string {
+    return translate(key, args, language).replace(/Apple TV/gi, "TV");
 }

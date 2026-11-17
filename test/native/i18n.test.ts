@@ -6,7 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import english from "../../src/i18n/catalog/en.json" with { type: "json" };
 import { formatMessage, parseMessage } from "../../src/i18n/icu.ts";
-import { formattingLocale, matchPreferences, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shownLanguage } from "../../src/i18n/language.ts";
+import { formattingLocale, matchPreferences, matchShipped, SHIPPED_LANGUAGES, setAppLanguage, shippedByName, shownLanguage } from "../../src/i18n/language.ts";
 import { resolveMessage, translate, type Catalogs } from "../../src/i18n/translate.ts";
 
 const SEASONS = "{count, plural, one {# Season} other {# Seasons}}";
@@ -143,6 +143,10 @@ test("every vendored English message parses and formats", () => {
     }
 });
 
+test("the shipped languages are Apple's: English, then the rest sorted by tag", () => {
+    assert.deepEqual(SHIPPED_LANGUAGES, ["en", "ar", "cs", "da", "de", "es", "fi", "fr", "hr", "it", "ja", "ko", "nb", "nl", "pl", "pt-BR", "ru", "sv", "tr", "uk", "zh-Hans", "zh-Hant"]);
+});
+
 test("the shipped languages are the catalog files, English first", () => {
     const files = readdirSync(new URL("../../src/i18n/catalog/", import.meta.url)).filter(name => name.endsWith(".json")).map(name => name.slice(0, -".json".length)).sort();
     assert.deepEqual([...SHIPPED_LANGUAGES].sort(), files);
@@ -152,4 +156,14 @@ test("the shipped languages are the catalog files, English first", () => {
 test("the vendored catalog names the silo-translations commit it came from", () => {
     const source = readFileSync(new URL("../../src/i18n/catalog/SOURCE", import.meta.url), "utf8");
     assert.match(source, /^[0-9a-f]{40}\n$/);
+});
+
+test("the picker order is by each language's own name in the device's locale, not by tag", () => {
+    const order = ["cs", "da", "de", "en", "es", "fr", "hr", "it", "nl", "nb", "pl", "pt-BR", "fi", "sv", "tr", "ru", "uk", "ar", "ko", "ja", "zh-Hans", "zh-Hant"];
+    assert.deepEqual(shippedByName(SHIPPED_LANGUAGES, "en-AU"), order);
+    assert.deepEqual(shippedByName(SHIPPED_LANGUAGES, "de"), order);
+    assert.deepEqual(shippedByName(SHIPPED_LANGUAGES, undefined), order);
+    // Whatever order the list arrives in, and English is not kept first: Arabic follows Cyrillic, English follows Deutsch.
+    assert.deepEqual(shippedByName([...SHIPPED_LANGUAGES].reverse(), "en-AU"), order);
+    assert.equal(SHIPPED_LANGUAGES[0], "en", "the shipped list itself stays Apple's, English first");
 });

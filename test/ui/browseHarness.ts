@@ -10,6 +10,7 @@ import { browseCache, clearBrowseCache } from "../../src/session/browseCache.ts"
 import { operations } from "../../src/api/operations.ts";
 import type { ThemeAudioOutput } from "../../src/ui/themeMusic.ts";
 import { ExperimentalFeatures, type ExperimentalFeature } from "../../src/session/experimentalFeatures.ts";
+import { appLanguageCacheKey } from "../../src/ui/appLanguagePreferences.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
 
 export interface BrowseHarness {
@@ -20,6 +21,10 @@ export interface BrowseHarness {
     /** Whether browse's container was still in the root when onChooseProfile ran. */
     readonly chooseProfileCalls: boolean[];
     signOutCalls: number;
+    /** Returns from the screen Switch Server opened over browse, once `onSwitchServer` has run. */
+    coverBack: (() => void) | undefined;
+    /** Offers Switch Server in the profile menu on the next mount. */
+    offerSwitchServer: boolean;
     lastKeyPrevented: boolean | undefined;
     connect(): Promise<void>;
     selectProfile(id: string, pin?: string): Promise<string>;
@@ -27,6 +32,8 @@ export interface BrowseHarness {
     resume(): void;
     destroy(): void;
     clearResponseCache(): void;
+    /** Keeps a language choice for the selected profile, as an earlier launch's answer left it ("" is Match Device). */
+    seedAppLanguage(choice: string): void;
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -89,6 +96,8 @@ const harness: BrowseHarness = {
     themeEvents,
     chooseProfileCalls: [],
     signOutCalls: 0,
+    coverBack: undefined,
+    offerSwitchServer: false,
     lastKeyPrevented: undefined,
     async connect() {
         const result = await connect("https://silo.example.test", {
@@ -148,6 +157,7 @@ const harness: BrowseHarness = {
                 harness.chooseProfileCalls.push(root.querySelector(".browse") !== null);
             },
             ...(offerSignOut ? { onSignOut: () => { harness.signOutCalls++; } } : {}),
+            ...(harness.offerSwitchServer ? { onSwitchServer: (back: () => void) => { harness.coverBack = back; } } : {}),
         });
     },
     resume() {
@@ -157,6 +167,11 @@ const harness: BrowseHarness = {
         browse?.destroy();
     },
     clearResponseCache() { clearBrowseCache(publicStorage); },
+    seedAppLanguage(choice) {
+        const profileId = connected().session.activeProfile?.id;
+        if (profileId === undefined) throw new Error("missing active profile");
+        publicStorage.setItem(appLanguageCacheKey(connected().server.serverId, profileId), choice);
+    },
     cacheOffline(route = "home") {
         const server = connected();
         const session = server.session;

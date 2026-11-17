@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { operations } from "../../src/api/operations.ts";
 import { decodeCard, type Card, type UserLibrary } from "../../src/contracts/v2/catalog.ts";
 import { decodeCatalogQueryPage } from "../../src/contracts/v2/discovery.ts";
+import { translate } from "../../src/i18n/translate.ts";
 import { ShowAudiobooks } from "../../src/ui/audiobookPreference.ts";
 import { browseCardDestination, destinationOf, searchScope, visibleLibraries } from "../../src/ui/browseModel.ts";
 import { homeRowLayout } from "../../src/ui/browseViews.ts";
@@ -77,9 +78,9 @@ test("an audiobook library is scoped by its id alone, as Apple omits the type", 
 });
 
 test("audiobook libraries offer Apple's sort keys, in Apple's order", () => {
-    assert.deepEqual(sortKeysFor("audiobooks").map(entry => [entry.key, entry.label, entry.order]), [
+    assert.deepEqual(sortKeysFor("audiobooks").map(entry => [entry.key, translate(entry.name), entry.order]), [
         ["title", "Title", "asc"], ["author", "Author", "asc"], ["narrator", "Narrator", "asc"],
-        ["series", "Series", "asc"], ["added_at", "Date Added", "desc"], ["runtime", "Runtime", "desc"],
+        ["series", "Series", "asc"], ["added_at", "Date Added", "desc"], ["runtime", "Duration", "desc"],
     ]);
     assert.deepEqual(sortKeysFor("movies"), SORT_KEYS);
 });

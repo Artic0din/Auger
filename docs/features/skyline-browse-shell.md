@@ -4,7 +4,7 @@ This slice applies the [Skyline guide](https://github.com/Silo-Server/silo-apple
 Home, Movies, Series and Profiles share mounted root navigation.
 Only visible video library types appear, and mixed libraries can be scoped to either video type.
 Search, Detail, season and playback routes remove the root chrome.
-The library dropdown offers Recommended, Collections and Browse, in that order, matching the tvOS cascade.
+The library dropdown offers Recommended, Browse and Collections, in that order, matching the tvOS cascade.
 
 ## Details layout and selection
 
@@ -279,7 +279,7 @@ Saved menu order, omissions and library shortcuts no longer affect the bar.
 Audiobooks follows music in the bar and appears only with Show Audiobooks on and an audiobook library the profile has not hidden.
 The bar order is Apple's `Home · Movies · Series · Music · Audiobooks · For You · Calendar` (`TVMainTabView.swift`).
 The tab never takes focus when it appears, and turning the switch off from the Audiobooks tab returns to Home with focus on the Home tab (`TVMainTabView.ensureSelectedRootIsVisible`).
-It opens the same Recommended, Collections and Browse cascade as the video tabs, with square covers, and Browse offers Apple's audiobook sorts (Title, Author, Narrator, Series, Date Added, Runtime) and sends no `type`.
+It opens the same Recommended, Browse and Collections cascade as the video tabs, with square covers, and Browse offers Apple's audiobook sorts (Title, Author, Narrator, Series, Date Added, Runtime) and sends no `type`.
 Home, For You and Search open an audiobook card on its own detail: cover, author and narrator, chapters, a state line and Resume, Play or Play Again.
 Play, Resume and Start Over are drawn but inert until the player can open an audiobook.
 Watch Party requires both local opt-in (Settings › Server › Extra Features) and synchronized-party support, as Apple's `WatchPartyEntry.isAvailable` does, and sits after Requests in the profile menu only when both hold ([Watch Party](watch-party.md)).
