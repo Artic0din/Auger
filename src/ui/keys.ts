@@ -1,6 +1,6 @@
 // Remote keys as Samsung TVs deliver them: plain keydown events with these key codes
 // (Remote Control guide). Escape stands in for Back on a desktop keyboard.
-import { documentIsRightToLeft } from "../i18n/direction.ts";
+import { readsRightToLeft } from "../i18n/direction.ts";
 
 export type RemoteKey = "up" | "down" | "left" | "right" | "enter" | "back" | "play_pause" | "play" | "pause" | "stop" | "rewind" | "fast_forward" | "ime_done" | "ime_cancel";
 
@@ -52,5 +52,5 @@ const MIRRORED: Readonly<Partial<Record<RemoteKey, RemoteKey>>> = { left: "right
  */
 export function remoteKey(event: KeyboardEvent): RemoteKey | undefined {
     const key = physicalKey(event);
-    return key === undefined || !documentIsRightToLeft() ? key : MIRRORED[key] ?? key;
+    return key === undefined || !readsRightToLeft(event.target) ? key : MIRRORED[key] ?? key;
 }

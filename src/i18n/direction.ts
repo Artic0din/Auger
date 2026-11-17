@@ -57,3 +57,9 @@ export function clearLayoutDirection(): void {
 export function documentIsRightToLeft(): boolean {
     return globalThis.document?.documentElement.getAttribute("dir") === "rtl";
 }
+
+/** True when the layout around `target` (the element a key press landed on) reads right to left: a screen pinned `dir="ltr"` inside an rtl page does not. */
+export function readsRightToLeft(target: EventTarget | null): boolean {
+    const scope = typeof Element !== "undefined" && target instanceof Element ? target.closest("[dir]") : null;
+    return (scope ?? globalThis.document?.documentElement)?.getAttribute("dir") === "rtl";
+}

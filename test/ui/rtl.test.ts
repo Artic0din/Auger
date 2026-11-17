@@ -9,6 +9,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
+import { selectLibraryMode } from "./support/library.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
@@ -300,3 +301,51 @@ test("a screen opened over Arabic browse reads left to right, and browse is mirr
         assert.equal(await tv.focused() !== null, true, "browse has focus again");
     });
 });
+
+test("in Arabic the views that are not mirrored yet stay left to right under a mirrored top bar, and read the remote that way", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        const directions = (): Promise<{ view: string | null; bar: string; content: string[] }> => tv.page.evaluate(() => ({
+            view: document.querySelector("[data-view]")?.getAttribute("data-view") ?? null,
+            bar: getComputedStyle(document.querySelector(".browse-nav") ?? document.documentElement).direction,
+            content: Array.from(document.querySelectorAll("[data-view] > :not(.browse-nav, .skyline-selector, .skyline-dropdown-scrim, .skyline-leaving, .skyline-marquee)")).map(node => getComputedStyle(node).direction),
+        }));
+        const home = await directions();
+        assert.equal(home.view, "home");
+        assert.ok(home.content.length > 0 && home.content.every(direction => direction === "rtl"), `Home ${home.content}`);
+        await tv.page.locator('[data-focus="search"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="search"]').waitFor();
+        const search = await directions();
+        assert.equal(search.bar, "rtl", "the top bar stays mirrored");
+        assert.ok(search.content.length > 0 && search.content.every(direction => direction === "ltr"), `Search ${search.content}`);
+        // A key pressed in a pinned view is read left to right: Right on the field is Right.
+        assert.equal(await tv.page.evaluate(() => {
+            const field = document.querySelector('[data-view="search"] input') as HTMLElement;
+            return field.closest("[dir]")?.getAttribute("dir");
+        }), "ltr");
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        assert.ok((await directions()).content.every(direction => direction === "rtl"), "Home is mirrored again");
+    });
+});
+
+for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
+    test(`${language === "ar" ? "in Arabic" : "in English"} Right at the last column of a library's Browse grid enters the letter rail, as the grid is not mirrored`, async () => {
+        await withHome(options, async tv => {
+            if (language === "ar") await waitForDirection(tv, "rtl");
+            await tv.page.locator('[data-focus="movies"]').click();
+            await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+            await selectLibraryMode(tv, "Browse");
+            const cards = tv.page.locator(".browse-grid [data-focus]");
+            await cards.first().waitFor();
+            const columns = await cards.evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().top === nodes[0]?.getBoundingClientRect().top).length);
+            assert.ok(columns > 1, `${columns} columns`);
+            await cards.first().focus();
+            for (let step = 0; step < columns - 1; step++) await tv.remote(RIGHT);
+            assert.equal(await tv.page.evaluate(() => document.activeElement?.closest(".browse-grid") !== null), true, "Right walks the row to its last column");
+            await tv.remote(RIGHT);
+            assert.match(await tv.focused() ?? "", /^letter:/, "one more Right enters the letter rail");
+        });
+    });
+}

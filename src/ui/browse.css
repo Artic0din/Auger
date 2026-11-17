@@ -71,6 +71,8 @@
 .settings-pane .browse-button.settings-learned-limit .settings-row-value { font-weight: 600; opacity: 1; }
 .settings-learned-limit .settings-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[dir="rtl"] .icon-forward { transform: scaleX(-1); }
+/* A view that is not mirrored yet keeps its chevrons pointing right. */
+:root[dir="rtl"] [dir="ltr"] .icon-forward { transform: none; }
 .settings .settings-chevron { width: 12px; height: 18px; margin: 0 0 0 16px; flex-shrink: 0; opacity: .55; }
 .settings .settings-profile .settings-chevron { width: calc(12px * 17 / 18); height: 17px; opacity: .5; }
 .settings-controls .browse-button:has(.settings-row-value) { display: flex; align-items: center; gap: 16px; }

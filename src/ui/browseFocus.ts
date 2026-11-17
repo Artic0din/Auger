@@ -236,6 +236,9 @@ export class FocusHost {
             && (focus === undefined || (focus.zone === kept.zone && focus.key === kept.key))
             && view.zones.find(zone => zone.id === kept.zone)?.items.find(candidate => candidate.key === kept.key)?.element === previous?.item.element;
         place(this.container, view.content);
+        // Home, Details and Settings are mirrored in a right-to-left page; the other views are not yet (#571) and keep their left-to-right layout and keys.
+        const mirrored = MIRRORED_VIEW.test(view.name);
+        for (const node of view.content) { if (mirrored) node.removeAttribute("dir"); else node.setAttribute("dir", "ltr"); }
         this.applyVisit(visit);
         const restoring = !sameVisit && visit !== undefined;
         const target = focus ?? (restoring ? this.memoryTarget() : undefined);
@@ -943,6 +946,9 @@ function stepWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index
 }
 
 /** Makes `nodes` the container's children; a node already in its place is not moved, so it keeps focus. */
+/** The views that follow the page's direction: Home, Settings, and Details pages and their seasons (`item:` and `season:`). */
+const MIRRORED_VIEW = /^(home(:|$)|item:|season:|settings(:|$))/;
+
 function place(container: HTMLElement, nodes: readonly HTMLElement[]): void {
     // Remove replaced siblings first so retained focus/press hosts never need a DOM move.
     const retained = new Set(nodes);
