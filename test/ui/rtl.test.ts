@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
+import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
@@ -86,6 +87,12 @@ test("Arabic loses its direction when browse is torn down, so the English sign-i
     });
 });
 
+/** The category list is on the side the layout reads from. Polled: the panes settle a frame after the repaint that mirrors them. */
+const categoriesLead = (tv: Tv, side: "left" | "right"): Promise<void> => tv.eventually(async () => {
+    const categories = await left(tv, ".settings-categories"), rows = await left(tv, ".settings-pane.settings-controls");
+    return side === "left" ? categories < rows : categories > rows;
+}, `the categories lead on the ${side}`);
+
 async function openSettings(tv: Tv): Promise<void> {
     await tv.page.locator('[data-focus="profiles"]').focus();
     await tv.page.keyboard.press("Enter");
@@ -97,12 +104,12 @@ test("picking Arabic in Settings mirrors the page in the repaint that changes it
     await withHome({}, async tv => {
         await openSettings(tv);
         assert.equal(await direction(tv), null);
-        assert.ok(await left(tv, ".settings-categories") < await left(tv, ".settings-pane.settings-controls"), "English: the categories lead on the left");
+        await categoriesLead(tv, "left");
         await tv.page.locator('[data-focus="app-language"]').click();
         await tv.page.getByRole("radio", { name: "العربية", exact: true }).click();
         await waitForDirection(tv, "rtl");
         await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() !== "Settings", "Settings in Arabic");
-        assert.ok(await left(tv, ".settings-categories") > await left(tv, ".settings-pane.settings-controls"), "Arabic: the categories lead on the right");
+        await categoriesLead(tv, "right");
         // The row's forward chevron points the way a forward chevron does in Arabic.
         assert.equal(await tv.page.locator(".settings .settings-chevron").first().evaluate(node => getComputedStyle(node).transform), "matrix(-1, 0, 0, 1, 0, 0)");
 
@@ -110,7 +117,7 @@ test("picking Arabic in Settings mirrors the page in the repaint that changes it
         await tv.page.getByRole("radio", { name: "English", exact: true }).click();
         await waitForDirection(tv, null);
         await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === "Settings", "Settings in English");
-        assert.ok(await left(tv, ".settings-categories") < await left(tv, ".settings-pane.settings-controls"));
+        await categoriesLead(tv, "left");
         assert.equal(await tv.page.locator(".settings .settings-chevron").first().evaluate(node => getComputedStyle(node).transform), "none");
     });
 });
@@ -246,3 +253,34 @@ for (const [language, key, edge] of [["ar", LEFT, "left"], ["en", RIGHT, "right"
         });
     });
 }
+
+test("in Arabic Left walks a Details episode rail past its first screen and keeps each card on screen", async () => {
+    const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
+    const details = new FakeDetails();
+    tv.fake.catalog = details;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    try {
+        const episodes = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => route.fulfill({ json: { items: Array.from({ length: 12 }, (_, index) => ({ ...episodes.items[0], content_id: `episode:rail:1:${index}`, season_number: 1, episode_number: index + 1 })), next_cursor: null } }));
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount());
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+        await tv.page.locator('[data-focus="episode:rail:1:11"]').waitFor();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').focus();
+        for (let step = 1; step < 12; step++) {
+            await tv.remote(LEFT);
+            const card = await tv.page.evaluate(() => { const rect = document.activeElement?.getBoundingClientRect(); return rect === undefined ? undefined : { left: rect.left, right: rect.right }; });
+            assert.equal(await tv.focused(), `episode:rail:1:${step}`);
+            assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode ${step} at ${card?.left}..${card?.right}`);
+        }
+    } finally { await tv.page.context().close(); }
+});

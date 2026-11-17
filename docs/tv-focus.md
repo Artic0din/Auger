@@ -343,7 +343,7 @@ Remote keys are physical.
 In Arabic the document is `dir="rtl"` ([translation.md](translation.md#right-to-left)) and `remoteKey` (`src/ui/keys.ts`) swaps Left and Right, as silo-apple's `MoveCommandDirection.inLayout` does, so `moveWithin`, `onLeft`, the menu flyout and Settings' panes keep their meaning on the mirrored screen: "left" is toward the start of the row, and "right" is past its end.
 Write new handlers in layout terms and never swap a key yourself.
 Code that must follow the remote's physical side, as the player's transport does, reads `physicalKey`.
-A horizontal scroll that sets `scrollLeft` handles a negative `scrollLeft` in a right-to-left row (`SkylineScroll.reveal` does; the Details episode and season offsets do not yet).
+A horizontal scroll that sets `scrollLeft` handles a negative `scrollLeft` in a right-to-left row (`SkylineScroll.reveal` does, and a mirrored Details episode or season row uses its plain reveal, because Apple's stepped offsets are measured left to right).
 
 ## Player Keys
 

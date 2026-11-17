@@ -42,7 +42,7 @@ Arabic reads right to left, as on Apple TV, where the root view sets `\.layoutDi
 
 Mirrored so far: the top bar and its menus (the profile menu under its button, a library's sections beside it), Home, Settings, and the hero art on Home and Details.
 Not yet, and listed on [#571](https://github.com/Artic0din/silo-tizen/issues/571):
-Details rails and their scroll offsets (episodes, season pills, cast), Search and library grids, Requests, Calendar, Watch Party, audiobooks, and the player, which stays left to right.
+Details rails (episodes, season pills, cast: they scroll and stay on screen, but their spacing and stepped offsets are the left-to-right ones), Search and library grids, Requests, Calendar, Watch Party, audiobooks, and the player, which stays left to right.
 
 ## Still English
 
