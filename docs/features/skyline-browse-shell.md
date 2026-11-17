@@ -461,7 +461,7 @@ The upgrade merges only artwork for retained section/card identities, preserving
 It waits while Card actions is open so its artwork response cannot clear a watched-state invalidation; closing the dialog resumes the existing content reload or optional upgrade path.
 It also upgrades incomplete remembered sizing when the fresh answer adds better slots.
 A pending, failed or non-improving probe, or a failed artwork read, leaves usable Home intact without an automatic retry loop; later mounts use remembered sizing immediately.
-Canvas sampling first uses the already loaded image; a tainted canvas tries a separate anonymous CORS image without breaking the displayed image.
+Canvas sampling first uses the already loaded image when it shares the page's origin; a cross-origin image would only taint the canvas, so it goes straight to a separate anonymous CORS image without breaking the displayed image and without a full-size decode on the main thread that can only fail.
 If sampling is refused, the matching backdrop ThumbHash supplies the wash, or black when there is no valid hash; an episode-still hash is never used with its series backdrop.
 Real local HTTP tests cover allowed/refused CORS while retaining visible artwork, but do not establish the packaged TV's origin policy.
 Inter is the licensed substitute for SF Pro; drawn symbols and CSS lift/ring approximate native focus effects, with no claim of tvOS parallax or specular equivalence.

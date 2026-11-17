@@ -92,6 +92,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Stopped Home and Details from drawing each new hero backdrop onto a canvas that artwork from another address always refuses, which cost one full-size image decode on the main thread per backdrop. The tint still comes from the same anonymous copy, and nothing changes on screen; whether the TV is quicker is waiting on an S95C trace (#515).
 - Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
 - Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
 - Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.

@@ -673,6 +673,16 @@ for (const [cors, thumbhash] of [[true, undefined], [false, undefined], [false, 
         await page.goto(`http://127.0.0.1:${pageAddress.port}/tv`);
         const fixture = await build({ entryPoints: [new URL("../../src/ui/heroBackdrop.ts", import.meta.url).pathname], bundle: true, format: "iife", globalName: "HomeBackdropFixture", target: "chrome108", write: false });
         await page.addScriptTag({ content: fixture.outputFiles[0]?.text ?? "" });
+        // A cross-origin image loaded without CORS taints any canvas it is drawn on, so drawing it would only cost a
+        // full-size main-thread decode (#515). Only the anonymous CORS copy may be drawn.
+        await page.evaluate(() => {
+            const draw = CanvasRenderingContext2D.prototype.drawImage;
+            Reflect.set(window, "plainImageDraws", 0);
+            CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof draw>) {
+                if (args[0] instanceof HTMLImageElement && args[0].crossOrigin === null) Reflect.set(window, "plainImageDraws", Number(Reflect.get(window, "plainImageDraws")) + 1);
+                return draw.apply(this, args);
+            } as typeof draw;
+        });
         const sampling = cors
             ? page.waitForResponse(response => response.url() === url && response.request().headers().origin !== undefined)
             : page.waitForEvent("requestfailed", request => request.url() === url && request.headers().origin !== undefined);
@@ -688,11 +698,46 @@ for (const [cors, thumbhash] of [[true, undefined], [false, undefined], [false, 
             else assert.match(background, /linear-gradient/);
         }
         assert.ok(samplingRequests > 0, "an anonymous CORS request samples the image independently of display");
+        assert.equal(await page.evaluate(() => Reflect.get(window, "plainImageDraws")), 0, "the displayed cross-origin image is not drawn to a canvas");
     } finally {
         await page.context().close();
         server.closeAllConnections();
         pageServer.closeAllConnections();
         await Promise.all([server, pageServer].map(server => new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))));
+    }
+});
+
+test("Home backdrop samples a same-origin image directly, without a second request", async () => {
+    let imageRequests = 0;
+    const server = createServer((request, response) => {
+        if (request.url === "/home.svg") {
+            imageRequests++;
+            response.writeHead(200, { "Content-Type": "image/svg+xml" });
+            response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>');
+            return;
+        }
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end("<html><body></body></html>");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    assert.ok(address !== null && typeof address !== "string");
+    const page = await browser.newPage();
+    try {
+        await page.goto(`http://127.0.0.1:${address.port}/tv`);
+        const fixture = await build({ entryPoints: [new URL("../../src/ui/heroBackdrop.ts", import.meta.url).pathname], bundle: true, format: "iife", globalName: "HomeBackdropFixture", target: "chrome108", write: false });
+        await page.addScriptTag({ content: fixture.outputFiles[0]?.text ?? "" });
+        await page.evaluate(() => {
+            const fixture = Reflect.get(window, "HomeBackdropFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+            document.body.appendChild(fixture.heroBackdrop("/home.svg", undefined, new Map()));
+        });
+        await page.waitForFunction(() => document.querySelector<HTMLElement>(".skyline-tint-wash")?.style.background.includes("255, 0, 0") === true);
+        assert.equal(imageRequests, 1, "the shown image is the one sampled");
+    } finally {
+        await page.context().close();
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)));
     }
 });
 

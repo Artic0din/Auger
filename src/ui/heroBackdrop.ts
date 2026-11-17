@@ -91,6 +91,16 @@ function rgbaPixels(data: ArrayLike<number>): RGB[] {
     return pixels;
 }
 
+/** A cross-origin image shown without CORS taints every canvas it is drawn on, so drawing it only costs a full-size decode on the main thread. */
+function canvasReadable(source: string): boolean {
+    try {
+        const url = new URL(source, location.href);
+        return url.origin === location.origin || url.protocol === "data:" || url.protocol === "blob:";
+    } catch {
+        return false;
+    }
+}
+
 /** Samples a loaded image as Apple does (a 64px decode redrawn at 24 x 24); undefined when the canvas is tainted. */
 export function sampleImage(image: HTMLImageElement): Tints | undefined {
     const width = image.naturalWidth, height = image.naturalHeight;
@@ -173,7 +183,7 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
             cache.set(url, tints);
             paint(tints);
         };
-        const local = sampleImage(image);
+        const local = canvasReadable(url) ? sampleImage(image) : undefined;
         if (local !== undefined) { apply(local); return; }
         // Keep the visible image credential-free and usable when the server refuses CORS sampling.
         const sample = new Image();
