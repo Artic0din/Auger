@@ -21,7 +21,7 @@
 // a burn-in still reopens. A refused change leaves the current plan playing.
 // On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
-import { translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import { abortedError, type RequestSpec } from "../api/http.ts";
@@ -536,6 +536,7 @@ export class PlaybackController implements PlayerControls {
     private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
+    private readonly stopCatalog: () => void;
 
     constructor(deps: PlaybackDeps) {
         this.deps = deps;
@@ -544,6 +545,11 @@ export class PlaybackController implements PlayerControls {
         this.pending = pending;
         globalThis.addEventListener?.("online", this.onConnectivity);
         globalThis.addEventListener?.("offline", this.onConnectivity);
+        // Track names, flags and Up Next words are built into each view, so a language file that lands while playback is paused has to send the view again.
+        this.stopCatalog = onCatalogLoaded(() => {
+            const attempt = this.attempt;
+            if (attempt !== undefined) this.showPlayback(attempt);
+        });
         this.stopAuthority = deps.session.onAuthorityChange(() => {
             const attempt = this.attempt;
             if (attempt === undefined || (!attempt.live && this.completion === undefined)) {
@@ -1174,6 +1180,7 @@ export class PlaybackController implements PlayerControls {
         }
         this.attempt = undefined;
         this.stopAuthority();
+        this.stopCatalog();
         globalThis.removeEventListener?.("online", this.onConnectivity);
         globalThis.removeEventListener?.("offline", this.onConnectivity);
         this.listeners.length = 0;

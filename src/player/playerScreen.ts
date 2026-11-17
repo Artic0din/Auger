@@ -1700,9 +1700,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         render();
     });
 
-    // A language file that lands while the player is up redraws its words once no Select is held: the panel and the Up Next deck are cached by what they show, so they are drawn afresh.
+    /** An open picker keeps the title and options it was built with; built again from its field it reads in the language now shown, on the same origin, and its option ids keep the focus. */
+    const rebuiltPicker = (open: Extract<SubtitlePane, { kind: "picker" }>): Extract<SubtitlePane, { kind: "picker" }> => {
+        if (view.phase !== "playing" && view.phase !== "paused") return open;
+        const video = open.field === "quality" || open.field === "speed" || open.field === "aspect";
+        const fresh = video ? videoPickerFor(view.hud, view.tracks, open.field) : pickerFor(view.tracks, open.field);
+        return fresh === undefined ? open : { ...fresh, origin: open.origin };
+    };
+    // A language file that lands while the player is up redraws its words once no Select is held: the panel, an open picker and the Up Next deck are cached by what they show, so they are drawn afresh.
     const late = lateRedraw(() => false, () => {
         labelStatics();
+        if (videoPicker !== undefined) videoPicker = rebuiltPicker(videoPicker);
+        if (subtitlePane.kind === "picker") subtitlePane = rebuiltPicker(subtitlePane);
         drawn = undefined;
         delete deck.dataset.items;
         render();

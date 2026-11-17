@@ -12,6 +12,9 @@ import { orderedInventory, PlaybackController, type PlaybackView, type PlayReque
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { operations } from "../../src/api/operations.ts";
+import { readFileSync } from "node:fs";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { FakePlayback } from "./support/fakePlayback.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { connected, type Harness, signIn } from "./support/harness.ts";
@@ -2482,4 +2485,21 @@ test("a sidecar that fails to download reports failed with no cues", async () =>
         assert.ok(view?.phase === "playing");
         assert.deepEqual({ text: view.captions?.text, status: view.captions?.status, cueCount: view.captions?.cueCount }, { text: "", status: "failed", cueCount: 0 });
     } finally { r.controller.destroy(); }
+});
+
+test("a language file that lands while playback is paused sends the track view again in that language", async () => {
+    const r = await rig();
+    try {
+        await playMovie(r);
+        r.controller.setPaused(true);
+        await settle(r);
+        const before = r.views.length;
+        const labels = (view: TrackView): string[] => view.audio.state === "ready" ? view.audio.choices.map(choice => `${choice.label} | ${choice.detail}`) : [];
+        assert.deepEqual(labels(tracks(r)).slice(0, 2), ["English | EAC3 · 5.1 · Default", "Japanese | AAC · Stereo"]);
+        // The file lands after the profile's language was read: Apple's names for the language, the layout and the default flag.
+        setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+        registerCatalog("de", JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>);
+        assert.ok(r.views.length > before, "a paused view is sent again, not left for the next tick");
+        assert.deepEqual(labels(tracks(r)).slice(0, 2), [`Englisch | EAC3 · 5.1 · ${translate("detail.trackDefault", undefined, "de")}`, `Japanisch | AAC · ${translate("detail.stereo", undefined, "de")}`]);
+    } finally { setAppLanguage(null); r.controller.destroy(); }
 });

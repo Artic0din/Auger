@@ -247,3 +247,61 @@ test("a catalog that lands while Select is held on a panel choice waits for the 
         assert.deepEqual(await page.evaluate(() => window.player.commands.filter(command => command.startsWith("selectAudio"))), ["selectAudio a0"], "the press still acted on release");
     } finally { await page.close(); }
 });
+
+const press = async (page: Page, focusId: string): Promise<void> => {
+    await page.locator(`[data-focus="${focusId}"]`).focus();
+    await remote(page, ENTER);
+};
+const picker = (page: Page) => page.locator(".player-menu-picker");
+const landGerman = (page: Page): Promise<void> => page.evaluate(strings => window.player.setLanguage("de", strings), catalog("de"));
+const focusedId = (page: Page): Promise<string | null> => page.evaluate(() => document.activeElement?.getAttribute("data-focus") ?? null);
+
+test("an Aspect picker that is open when German lands is drawn again in German, with the focus on its option", async () => {
+    const page = await open(undefined);
+    try {
+        await show(page, playing({ hud: { ...HUD, speeds: [1, 2] } }));
+        await openPanel(page, 2);
+        await press(page, "video-aspect");
+        assert.equal(await picker(page).getAttribute("aria-label"), "Aspect");
+        assert.deepEqual(await texts(page, ".player-menu-picker .player-choice-label"), ["Fit", "Stretch"]);
+        assert.equal(await focusedId(page), "subtitle-picker:Fit");
+        await landGerman(page);
+        await page.waitForFunction(title => document.querySelector(".player-menu-picker")?.getAttribute("aria-label") === title, text("player.hud.aspect", "de"));
+        assert.equal(await picker(page).locator(".player-menu-picker-title").textContent(), text("player.hud.aspect", "de"));
+        assert.deepEqual(await texts(page, ".player-menu-picker .player-choice-label"), [text("player.aspect.fit", "de"), text("player.aspect.stretch", "de")]);
+        assert.equal(await focusedId(page), "subtitle-picker:Fit", "the focus stays on the option it was on");
+    } finally { await page.close(); }
+});
+
+test("a Subtitle Delay picker opened from the Video tab is drawn again in German", async () => {
+    const page = await open(undefined);
+    try {
+        await show(page, playing());
+        await openPanel(page, 2);
+        await press(page, "subtitle-video-delay");
+        assert.equal(await picker(page).getAttribute("aria-label"), "Subtitle Delay");
+        await landGerman(page);
+        await page.waitForFunction(title => document.querySelector(".player-menu-picker")?.getAttribute("aria-label") === title, text("player.settings.subtitleDelayTitle", "de"));
+        assert.equal(await focusedId(page), "subtitle-picker:0");
+    } finally { await page.close(); }
+});
+
+test("a subtitle Appearance picker that is open when German lands is drawn again in German, and Back still closes it", async () => {
+    const page = await open(undefined);
+    try {
+        await show(page, playing());
+        await openPanel(page, 4);
+        await press(page, "subtitle-appearance");
+        await press(page, "subtitle-appearance:fontSize");
+        assert.equal(await picker(page).getAttribute("aria-label"), "Subtitle Size");
+        assert.deepEqual((await texts(page, ".player-menu-picker .player-choice-label")).slice(0, 2), ["Small", "Medium"]);
+        assert.equal(await focusedId(page), "subtitle-picker:large", "the current size");
+        await landGerman(page);
+        await page.waitForFunction(title => document.querySelector(".player-menu-picker")?.getAttribute("aria-label") === title, text("player.hud.pickerSubtitleSize", "de"));
+        assert.deepEqual((await texts(page, ".player-menu-picker .player-choice-label")).slice(0, 2), [text("player.subtitles.size.small", "de"), text("player.subtitles.size.medium", "de")]);
+        assert.equal(await focusedId(page), "subtitle-picker:large", "the focus stays on the current size");
+        await remote(page, 10009);
+        assert.equal(await picker(page).count(), 0, "Back closes the picker");
+        assert.equal(await page.locator('[data-focus="subtitle-appearance:fontSize"]').count(), 1, "and returns to the Appearance rows");
+    } finally { await page.close(); }
+});
