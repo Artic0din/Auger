@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { decodeCard, decodeItemDetail } from "../../src/contracts/v2/catalog.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { lobbyItemFromDetail, choiceFromCard } from "../../src/ui/watchPartyChoice.ts";
-import { requestMetadata } from "../../src/ui/requestsScene.ts";
+import { requestMetadataParts } from "../../src/ui/requestsScene.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
 import { fixture } from "./support/fakeSilo.ts";
 
@@ -30,7 +30,7 @@ test("a Watch Party title's year reads in Arabic digits, and English is unchange
 });
 
 test("a request's metadata line reads its year in Arabic digits, and English is unchanged", () => {
-    const title = { year: 2023, mediaType: "movie" } as Parameters<typeof requestMetadata>[0];
-    assert.equal(inLanguage("ar", () => requestMetadata(title)).startsWith("٢٠٢٣ · "), true);
-    assert.equal(requestMetadata(title).startsWith("2023 · "), true);
+    const title = { year: 2023, mediaType: "movie" } as Parameters<typeof requestMetadataParts>[0];
+    assert.deepEqual(inLanguage("ar", () => requestMetadataParts(title)), ["٢٠٢٣", "Movie"]);
+    assert.deepEqual(requestMetadataParts(title), ["2023", "Movie"]);
 });

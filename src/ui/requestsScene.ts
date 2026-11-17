@@ -27,7 +27,6 @@ export function requestMetadataParts(title: RequestTitle | MediaRequest): string
     const requested = "createdAt" in title && title.createdAt !== undefined ? translate("requests.requestedOn", { date: requestDate(title.createdAt) }) : undefined;
     return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter((value): value is string => value !== undefined && value !== "");
 }
-export function requestMetadata(title: RequestTitle | MediaRequest): string { return requestMetadataParts(title).join(" · "); }
 
 /** Apple's `.dateTime.month(.abbreviated).day().locale(AppLanguage.formattingLocale)`. */
 export function requestDate(instant: number): string { return new Intl.DateTimeFormat(shownLocale(), { month: "short", day: "numeric" }).format(new Date(instant)); }
