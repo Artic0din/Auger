@@ -1,4 +1,6 @@
 import type { CollectionSummary, LibraryCollections } from "../contracts/v2/discovery.ts";
+import { groupedCount, shownLocale } from "../i18n/format.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { View, Zone } from "./browseFocus.ts";
 import { newPages, newRoute, type Route, type RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, artwork, errorView, failureError, homeView, homeRows, lines, zoneNode } from "./browseViews.ts";
@@ -44,20 +46,20 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
         return { ...errorView(`library:${route.library.id}`, failureError(route.failure, route.error), () => handlers.retry(route), undefined, handlers.signIn), back: handlers.pop };
     }
     if (state.mode === "Recommended" && state.data === undefined) {
-        ownedPage(recommendedLoading(name), `Loading ${name}`);
+        ownedPage(recommendedLoading(name), translate("library.loadingNamed", { name }));
     } else if (state.mode === "Recommended" && rows.length === 0 && state.data !== undefined) {
         // TVLibraryBrowseView.emptyHint (:95-118).
         const symbol: StateSymbol = state.data.scoped !== true && route.library.type === "series" ? "tv" : state.data.scoped !== true && route.library.type === "audiobooks" ? "book.closed" : "film.stack";
-        const title = state.data.incomplete === true ? "Some shelves could not be loaded" : state.data.scoped === true ? "No titles for this tab" : `${name} is empty`;
+        const title = translate(state.data.incomplete === true ? "library.error.someShelvesTitle" : state.data.scoped === true ? "library.noTitlesForTab" : "library.emptyNamed", { name });
         const page = el("div", "library-recommended-state");
-        page.append(emptyState(symbol, title, state.data.scoped === true ? "Open Browse to see titles matching this tab." : "Add media to this library on the server to see it here."));
-        ownedPage(page, `${name} is empty`);
+        page.append(emptyState(symbol, title, translate(state.data.scoped === true ? "library.noTitlesForTabBody" : "library.emptyNamedBody")));
+        ownedPage(page, translate("library.emptyNamed", { name }));
     } else if (state.mode === "Collections" && (route.failure !== undefined || state.data === undefined || collectionCount(state.data.collections) === 0)) {
         // TVLibraryCollectionsView.emptyContent (:139-158): a clear area while loading, and the empty state for none or a failed read.
         const page = el("div", "library-collections-state");
         const loadingCollections = state.data === undefined && route.failure === undefined;
-        if (!loadingCollections) page.append(emptyState("square.stack", "No collections yet", "Collections created on the server will appear here."));
-        ownedPage(page, loadingCollections ? "Loading collections" : "No collections yet");
+        if (!loadingCollections) page.append(emptyState("square.stack", translate("collections.empty"), translate("collections.emptyBody")));
+        ownedPage(page, translate(loadingCollections ? "library.loadingCollections" : "collections.empty"));
     } else if (state.mode === "Recommended" && state.data !== undefined) {
         rows.forEach(({ section }) => {
             const row = homeView([], [section], handlers.context, {
@@ -70,7 +72,7 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
             zones.push(...row.zones);
         });
         // TVLibraryBrowseView.swift:84-89: the overlay that says a narrowed shelf is short.
-        if (state.data.incomplete === true) content.push(el("p", "library-incomplete", "Some shelves could not be fully loaded. Open Browse to see this media type."));
+        if (state.data.incomplete === true) content.push(el("p", "library-incomplete", translate("library.error.someShelvesOpenBrowse")));
     } else if (state.mode === "Collections" && state.data !== undefined) {
         const collections = state.data.collections;
         const groups = collections?.groups ?? [];
@@ -102,11 +104,11 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
             let hash = 2166136261;
             for (const byte of new TextEncoder().encode(collection.id)) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
             art.style.background = `linear-gradient(to bottom right, hsl(${hash % 360} 33.3333% 31.5%), hsl(${hash % 360} 19.0476% 18.48%))`;
-            item.element.setAttribute("aria-label", `${collection.title}, collection${collection.itemCount > 0 ? `, ${collection.itemCount} ${collection.itemCount === 1 ? "item" : "items"}` : ""}`);
+            item.element.setAttribute("aria-label", collection.itemCount > 0 ? translate("library.collectionCard.spokenCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount), name: collection.title }) : translate("library.collectionCard.spoken", { name: collection.title }));
             item.element.append(art, el("span", grid ? "browse-card-title" : "discovery-collection-name", collection.title));
-            if (!grid) item.element.append(el("span", "discovery-collection-count", `${collection.itemCount} titles`));
+            if (!grid) item.element.append(el("span", "discovery-collection-count", translate("library.titleCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount) })));
             else if (collection.itemCount > 0) item.element.append(el("span", "browse-card-subtitle", countLine(collection.itemCount, types.get(collection.id))));
-            item.element.addEventListener("focus", () => handlers.context.preview?.({ id: collection.id, type: "movie", title: collection.title, overview: `${collection.itemCount} titles`, backdropUrl: collection.posterUrl, posterUrl: collection.posterUrl, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined }, "Collections"));
+            item.element.addEventListener("focus", () => handlers.context.preview?.({ id: collection.id, type: "movie", title: collection.title, overview: translate("library.titleCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount) }), backdropUrl: collection.posterUrl, posterUrl: collection.posterUrl, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined }, translate("library.collections")));
             return item;
         });
         if (!grid) items.push(actionButton("collections:all", "See All", () => handlers.mode(route, "Collections")));
@@ -126,35 +128,37 @@ function collectionCount(collections: LibraryCollections | undefined): number {
     return (collections?.collections.length ?? 0) + (collections?.groups ?? []).reduce((sum, group) => sum + group.collections.length, 0) + (collections?.ungrouped?.collections.length ?? 0);
 }
 
-/** Management types such as manual/smart deliberately use Apple's neutral ITEM/ITEMS fallback. */
+/** TVCollectionPosterCard.countText: the content noun for a known type, else the neutral items, in capitals. Management types such as manual/smart use the neutral one. */
 function countLine(count: number, type: string | undefined): string {
-    const plural = count !== 1;
-    switch (type?.toLowerCase()) {
-        case "movie":
-        case "movies":
-            return `${count} ${plural ? "MOVIES" : "MOVIE"}`;
-        case "series":
-        case "show":
-        case "shows":
-        case "tvshows":
-            return `${count} ${plural ? "SHOWS" : "SHOW"}`;
-        case "album":
-        case "albums":
-            return `${count} ${plural ? "ALBUMS" : "ALBUM"}`;
-        case "audiobook":
-        case "audiobooks":
-        case "book":
-        case "books":
-            return `${count} ${plural ? "BOOKS" : "BOOK"}`;
-        default:
-            return `${count} ${plural ? "ITEMS" : "ITEM"}`;
-    }
+    const key = ((): MessageKey => {
+        switch (type?.toLowerCase()) {
+            case "movie":
+            case "movies":
+                return "library.collectionCard.movies";
+            case "series":
+            case "show":
+            case "shows":
+            case "tvshows":
+                return "library.collectionCard.shows";
+            case "album":
+            case "albums":
+                return "library.collectionCard.albums";
+            case "audiobook":
+            case "audiobooks":
+            case "book":
+            case "books":
+                return "library.collectionCard.books";
+            default:
+                return "collections.itemCount";
+        }
+    })();
+    return translate(key, { count, count_text: groupedCount(count) }).toLocaleUpperCase(shownLocale());
 }
 
 export function resultsView(route: Extract<Route, { kind: "libraryResults" }>, grid: { content: HTMLElement[]; zones: Zone[] }, handlers: RouteHandlers): View {
     if (route.source.kind === "collection" && route.failure === undefined && (route.pages.page?.items.length ?? 0) > 0) {
         const shuffle = handlers.shuffle;
-        const button = shuffle === undefined ? undefined : actionButton("shuffle", "Shuffle", () => shuffle.start(route));
+        const button = shuffle === undefined ? undefined : actionButton("shuffle", translate("library.shufflePill"), () => shuffle.start(route));
         if (button !== undefined) {
             button.element.classList.add("browse-shuffle");
             button.element.prepend(icon("shuffle"));
@@ -165,7 +169,7 @@ export function resultsView(route: Extract<Route, { kind: "libraryResults" }>, g
         const more = page?.nextCursor !== undefined;
         const controls = button === undefined ? [] : [button];
         const actions = zoneNode("browse-actions collection-detail-actions", controls);
-        actions.append(el("span", "browse-text", `${count}${more ? "+" : ""} ${count === 1 && !more ? "item" : "items"}`));
+        actions.append(el("span", "browse-text", translate(more ? "collections.itemCountMore" : "collections.itemCount", { count, count_text: groupedCount(count) })));
         for (const node of grid.content) if (node.classList.contains("browse-grid")) {
             node.classList.add("collection-detail-grid");
             node.style.setProperty("--collection-detail-columns", String(handlers.gridColumns));
@@ -179,9 +183,9 @@ export function resultsView(route: Extract<Route, { kind: "libraryResults" }>, g
             zones: [{ id: "controls", layout: "row", items: controls }, ...grid.zones],
             focus: button === undefined ? { zone: "grid", key: grid.zones[0]?.items[0]?.key ?? "" } : { zone: "controls", key: "shuffle" }, back: handlers.pop };
     }
-    const back = actionButton("back", "Back", handlers.pop);
+    const back = actionButton("back", translate("common.back"), handlers.pop);
     const controls = [back];
-    if (route.failure !== undefined) controls.push(actionButton("retry", "Try again", () => handlers.retry(route)));
+    if (route.failure !== undefined) controls.push(actionButton("retry", translate("common.tryAgain"), () => handlers.retry(route)));
     const first = grid.zones.find(zone => zone.items.length > 0);
-    return { name: `results:${route.library.id}:${route.title}`, content: [el("h1", "browse-title", route.title), zoneNode("browse-actions", controls), ...(route.failure === undefined ? [] : lines([route.failure], "error")), ...(grid.zones[0]?.items.length === 0 ? lines(route.source.kind === "collection" ? ["Collection is empty", "This collection does not have any items yet."] : ["No titles"]) : []), ...grid.content], zones: [{ id: "actions", layout: "row", items: controls }, ...grid.zones], focus: first?.items[0] === undefined ? { zone: "actions", key: "back" } : { zone: first.id, key: first.items[0].key }, back: handlers.pop };
+    return { name: `results:${route.library.id}:${route.title}`, content: [el("h1", "browse-title", route.title), zoneNode("browse-actions", controls), ...(route.failure === undefined ? [] : lines([route.failure], "error")), ...(grid.zones[0]?.items.length === 0 ? lines(route.source.kind === "collection" ? [translate("collections.emptyItemsTitle"), translate("collections.emptyItemsBody")] : ["No titles"]) : []), ...grid.content], zones: [{ id: "actions", layout: "row", items: controls }, ...grid.zones], focus: first?.items[0] === undefined ? { zone: "actions", key: "back" } : { zone: first.id, key: first.items[0].key }, back: handlers.pop };
 }
