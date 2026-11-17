@@ -63,6 +63,13 @@ function oneOf<T extends string>(raw: string, known: readonly T[]): T | "unknown
 
 const LIBRARY_TYPES = ["movies", "series", "mixed", "music", "audiobooks"] as const;
 
+/** silo-apple SiloMediaType.isAudiobookLibrary: the server's library type is free-form, so these spellings all name audiobooks. */
+const AUDIOBOOK_LIBRARY_SPELLINGS = ["audiobook", "audiobooks"];
+
+function libraryType(raw: string): (typeof LIBRARY_TYPES)[number] | "unknown" {
+    return AUDIOBOOK_LIBRARY_SPELLINGS.includes(raw.trim().toLowerCase()) ? "audiobooks" : oneOf(raw, LIBRARY_TYPES);
+}
+
 export interface UserLibrary {
     readonly id: string;
     readonly name: string;
@@ -77,7 +84,7 @@ export function decodeUserLibraries(value: unknown): UserLibrary[] {
         return {
             id: string(obj, "id", path),
             name: string(obj, "name", path),
-            type: oneOf(string(obj, "type", path), LIBRARY_TYPES),
+            type: libraryType(string(obj, "type", path)),
             sortOrder: integer(obj, "sort_order", path),
         };
     });

@@ -64,6 +64,14 @@ export function clearLayoutDirection(): void {
     applyLayoutDirection(undefined, SOURCE_LANGUAGE);
 }
 
+/**
+ * `AppLanguage.isolated`: a name or title joined into a sentence is wrapped in first-strong isolates when the language reads
+ * right to left, so text of the other direction keeps its neighbours' punctuation in place. Left to right keeps its bytes.
+ */
+export function isolated(value: string, language: string = textLanguage()): string {
+    return language !== SOURCE_LANGUAGE && isRightToLeft(language) ? `\u2068${value}\u2069` : value;
+}
+
 /** True while the document reads right to left: Left and Right on the remote then follow the mirrored layout. */
 export function documentIsRightToLeft(): boolean {
     return globalThis.document?.documentElement.getAttribute("dir") === "rtl";

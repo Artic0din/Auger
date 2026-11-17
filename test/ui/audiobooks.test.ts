@@ -240,6 +240,19 @@ audiobookTest("the Audiobooks Browse page offers no video Shuffle even when the 
     assert.equal(await tv.page.locator('[data-focus="shuffle"]').count(), 0);
 });
 
+audiobookTest("a library the server types \"audiobook\" opens under the Audiobooks tab as Apple TV does", async tv => {
+    await showAudiobooks(tv);
+    const tab = tv.page.locator('[data-focus="audiobooks"]');
+    await tab.waitFor();
+    await tab.click();
+    await showing(tv, "library:14");
+    await tv.page.locator('[data-section] .browse-card-square').first().waitFor();
+}, catalog => {
+    const library = catalog.households.get("p-owner")?.libraries.find(entry => entry.id === "14");
+    if (library === undefined) throw new Error("Missing synthetic audiobook library");
+    library.type = "audiobook";
+});
+
 audiobookTest("Audiobooks stays off until Show Audiobooks is on, then opens the library with square covers", async tv => {
     assert.equal(await tv.page.locator('[data-focus="audiobooks"]').count(), 0, "off by default");
     await tv.page.locator('[data-focus="profiles"]').click();

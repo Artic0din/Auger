@@ -60,7 +60,7 @@ test("the host's empty lobby is Apple's layout: header, code pill, Options, prom
         assert.equal(await tv.page.locator(".watch-party-room-name").textContent(), "Watch Party");
         assert.equal(await tv.page.locator(".watch-party-connection").textContent(), "2 here");
         assert.equal(await tv.page.locator(".watch-party-code").textContent(), "K7M2QX");
-        assert.equal(await tv.page.locator(".watch-party-code-label").textContent(), "Join with");
+        assert.equal(await tv.page.locator(".watch-party-code-label").textContent(), "JOIN WITH");
         assert.equal(await button(tv, "options").getAttribute("aria-label"), "Party options");
         assert.equal(await tv.page.locator(".watch-party-eyebrow").first().textContent(), "Your party is open");
         assert.equal(await tv.page.locator(".watch-party-hero-title").textContent(), "Pick something\nto watch");
@@ -737,7 +737,7 @@ test("the ballot shows each tally and the leader; Select votes and takes it back
         assert.equal(await button(tv, "start").textContent(), "Start Dune");
         assert.equal(await button(tv, "suggest").textContent(), "Suggest");
         assert.equal(await tv.page.locator(".watch-party-hint").textContent(), "Sam hasn't marked ready. You can still start.");
-        assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Vote for Heat, 0 votes");
+        assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Vote for Heat");
         // Up from the actions passes the seats and reaches the ballot.
         await tv.remote(38);
         await tv.remote(38);
@@ -748,7 +748,7 @@ test("the ballot shows each tally and the leader; Select votes and takes it back
         await tv.eventually(async () => (await tv.page.locator('[data-focus="suggestion:heat"] .watch-party-candidate-tick').count()) === 1, "my tick");
         assert.equal(fake.ballotChanges.at(-1)?.call, "POST /suggestions/heat/vote");
         assert.equal(fake.ballotChanges.at(-1)?.roomToken, "room-proof-one");
-        assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Remove vote for Heat, 1 vote");
+        assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Remove vote for Heat");
         assert.equal(await tv.focused(), "suggestion:heat", "focus stays on the card it voted for");
         assert.equal(await button(tv, "start").textContent(), "Start Dune", "a tie goes to the earlier suggestion");
         // As on Apple, Start does nothing while a ballot change runs, and the server's broadcast can show the new tally before

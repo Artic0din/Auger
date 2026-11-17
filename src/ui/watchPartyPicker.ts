@@ -4,24 +4,26 @@
 // recently added shelves and each member's viewing history.
 
 import type { Card, Episode, Season } from "../contracts/v2/catalog.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, artwork, cardItem, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { backdrop, banner, checkIcon, eyebrow, labelled, plusIcon } from "./watchPartyParts.ts";
 import { choiceFromCard, choiceFromEpisode, choiceFromNextUp, type MediaChoice } from "./watchPartyChoice.ts";
-import type { WatchPartyHub } from "./watchPartyHub.ts";
+import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 import { runtimeText } from "./cardPresentation.ts";
 
 export interface PickerContext { readonly hub: WatchPartyHub; readonly baseUrl: string }
 
-const CLOSE = (hub: WatchPartyHub): FocusItem => actionButton("picker-close", "Close", () => { hub.show({ kind: "lobby" }); });
+const CLOSE = (hub: WatchPartyHub): FocusItem => actionButton("picker-close", translate("watchParty.picker.close"), () => { hub.show({ kind: "lobby" }); });
 
 /** The strip over the shelves: the page name at the left and Close at the right, as the top bar sits over Home. */
 function chrome(hub: WatchPartyHub): { node: HTMLElement; close: FocusItem } {
     const close = CLOSE(hub);
     close.element.classList.add("watch-party-button", "watch-party-secondary");
     const node = el("div", "watch-party-picker-chrome watch-party-ui");
-    node.append(el("span", "watch-party-picker-name", hub.state.pickerPurpose === "suggest" ? "Suggest a title" : "Choose a title"), close.element);
+    node.append(el("span", "watch-party-picker-name", translate(hub.state.pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select")), close.element);
     return { node, close };
 }
 
@@ -50,11 +52,11 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
         firstShelf ??= cards[0];
         zones.push({ id: `shelf:${shelf.id}`, layout: "row", spatial: true, items: cards });
         const block = el("section", "browse-section watch-party-shelf watch-party-ui");
-        block.append(el("h2", "browse-section-title", shelf.title), zoneNode("browse-row", cards));
+        block.append(el("h2", "browse-section-title", translate(shelf.titleKey)), zoneNode("browse-row", cards));
         content.push(block);
     }
     // A failed read shows its reason and Try Again whether or not an earlier read left shelves on the page.
-    const retry = shelvesError === undefined ? undefined : actionButton("picker-retry", "Try Again", () => { void hub.openPicker(hub.state.pickerPurpose); });
+    const retry = shelvesError === undefined ? undefined : actionButton("picker-retry", translate("shell.errorView.tryAgain"), () => { void hub.openPicker(hub.state.pickerPurpose); });
     const notice = el("div", "watch-party-picker-empty watch-party-ui");
     if (shelves.length === 0) {
         if (shelvesLoading) {
@@ -62,7 +64,7 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
             loading.setAttribute("role", "status");
             notice.appendChild(loading);
         } else {
-            notice.append(el("h2", "watch-party-empty-title", "Nothing to pick from yet"), el("p", "watch-party-lead", "Add a title to a watchlist and it shows up here."));
+            notice.append(el("h2", "watch-party-empty-title", translate("watchParty.picker.emptyTitle")), el("p", "watch-party-lead", "Add a title to a watchlist and it shows up here."));
         }
     }
     if (shelvesError !== undefined) notice.appendChild(banner(shelvesError, true));
@@ -84,19 +86,19 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice)
     const suggesting = hub.state.pickerPurpose === "suggest";
     const staged = room?.phase === "lobby" && hub.state.capabilities?.stagedSelection === true;
     const confirm = suggesting
-        ? labelled("confirm", "Add suggestion", "primary", () => { void hub.suggest(choice); }, plusIcon())
-        : labelled("confirm", staged ? "Choose for the party" : "Play for everyone", "primary", () => { void hub.stage(choice); }, checkIcon());
+        ? labelled("confirm", translate("watchParty.confirm.addSuggestion"), "primary", () => { void hub.suggest(choice); }, plusIcon())
+        : labelled("confirm", translate(staged ? "watchParty.confirm.choose" : "watchParty.confirm.playForEveryone"), "primary", () => { void hub.stage(choice); }, checkIcon());
     const poster = artwork("watch-party-choice-poster", choice.posterUrl, baseUrl, "");
     const text = el("div", "watch-party-choice-text");
-    const facts = [choice.subtitle, ...choice.facts].filter((fact): fact is string => fact !== undefined && fact !== "");
-    text.append(eyebrow(suggesting ? "Suggest to the party" : "Watch together"), el("h1", "watch-party-choice-title", choice.title), ...(facts.length === 0 ? [] : [el("p", "watch-party-choice-facts", facts.join(" · "))]));
+    const facts = [choice.subtitle(), ...choice.facts()].filter((fact): fact is string => fact !== undefined && fact !== "");
+    text.append(eyebrow(translate(suggesting ? "watchParty.picker.suggestToParty" : "watchParty.picker.watchTogether")), el("h1", "watch-party-choice-title", choice.title), ...(facts.length === 0 ? [] : [el("p", "watch-party-choice-facts", facts.join(" · "))]));
     const head = el("div", "watch-party-choice-head");
     head.append(poster, text);
     const page = el("div", "watch-party-choice watch-party-ui");
     page.append(head);
     if (choice.overview !== undefined && choice.overview !== "") page.appendChild(el("p", "watch-party-choice-overview", choice.overview));
     page.appendChild(confirm.element);
-    if (hub.state.error !== undefined) page.appendChild(banner(hub.state.error, true));
+    if (hub.state.error !== undefined) page.appendChild(banner(noticeText(hub.state.error), true));
     return {
         name: "watchParty:choice",
         content: [backdrop(choice.backdropUrl ?? choice.posterUrl, baseUrl, choice.backdropUrl === undefined), page],
@@ -111,19 +113,19 @@ function episodeCard(series: Card, episode: Episode, onPress: () => void): Focus
     item.element.classList.add("watch-party-episode");
     // The episode's own still can spoil it, and Apple's spoiler setting is not read here, so the tile is plain.
     const number = el("span", "watch-party-episode-number", `E${episode.episodeNumber}`);
-    const caption = el("span", "watch-party-episode-title", `${episode.episodeNumber}. ${episode.title === "" ? `Episode ${episode.episodeNumber}` : episode.title}`);
+    const caption = el("span", "watch-party-episode-title", translate("watchParty.episodes.numbered", { number: integerText(episode.episodeNumber), title: episode.title === "" ? translate("detail.episode", { number: integerText(episode.episodeNumber) }) : episode.title }));
     const meta = runtimeText(episode.runtimeMinutes);
     item.element.append(number, caption, ...(meta === undefined ? [] : [el("span", "watch-party-episode-meta", meta)]));
     item.element.setAttribute("aria-label", `${series.title}, season ${episode.seasonNumber}, episode ${episode.episodeNumber}`);
     return item;
 }
 
-const seasonLabel = (season: Season): string => season.isSpecials === true ? "Specials" : season.title;
+const seasonLabel = (season: Season): string => season.isSpecials === true ? translate("detail.specials") : season.title;
 
 /** WatchPartyEpisodePicker: the series' seasons as tabs over the chosen season's episodes. */
 export function episodesView({ hub, baseUrl }: PickerContext, series: Card, season: Season | undefined): View {
     const { seasons, episodes, browseLoading, browseError } = hub.state;
-    const back = actionButton("episodes-close", "Close", () => { hub.back(); });
+    const back = actionButton("episodes-close", translate("watchParty.picker.close"), () => { hub.back(); });
     back.element.classList.add("watch-party-button", "watch-party-secondary");
     const tabs = (seasons ?? []).map(candidate => {
         const tab = actionButton(`season:${candidate.seasonNumber}`, seasonLabel(candidate), () => { if (candidate.seasonNumber !== season?.seasonNumber) void hub.openEpisodes(series, candidate); });
@@ -134,23 +136,23 @@ export function episodesView({ hub, baseUrl }: PickerContext, series: Card, seas
     const cards = (episodes ?? []).map(episode => episodeCard(series, episode, () => { hub.show({ kind: "choice", choice: choiceFromEpisode(series, episode), from: { kind: "episodes", series, season } }); }));
     const page = el("div", "watch-party-episodes watch-party-ui");
     const head = el("div", "watch-party-episodes-head");
-    head.append(eyebrow(hub.state.pickerPurpose === "suggest" ? "Watch Party · Suggest an episode" : "Watch Party · Choose an episode"), back.element);
+    head.append(eyebrow(translate(hub.state.pickerPurpose === "suggest" ? "watchParty.eyebrow.suggestEpisode" : "watchParty.eyebrow.chooseEpisode")), back.element);
     page.append(head, el("h1", "watch-party-episodes-title", series.title));
     const zones: Zone[] = [{ id: "episodes-top", layout: "row", items: [back] }];
     if (tabs.length > 0) {
         zones.push({ id: "seasons", layout: "row", items: tabs });
         page.appendChild(zoneNode("browse-row watch-party-season-tabs", tabs));
     }
-    const retry = actionButton("episodes-retry", "Try Again", () => { void hub.openEpisodes(series, season, true); });
+    const retry = actionButton("episodes-retry", translate("shell.errorView.tryAgain"), () => { void hub.openEpisodes(series, season, true); });
     if (cards.length > 0) {
         zones.push({ id: "episode-rail", layout: "row", items: cards });
         page.appendChild(zoneNode("browse-row watch-party-episode-rail", cards));
     } else if (browseLoading) {
-        const loading = el("p", "watch-party-lead", "Loading episodes…");
+        const loading = el("p", "watch-party-lead", translate("watchParty.episodes.loading"));
         loading.setAttribute("role", "status");
         page.appendChild(loading);
     } else {
-        page.append(el("h2", "watch-party-empty-title", "No episodes"), el("p", "watch-party-lead", browseError ?? "Nothing in this season is available to play."));
+        page.append(el("h2", "watch-party-empty-title", translate("watchParty.episodes.noneTitle")), el("p", "watch-party-lead", browseError ?? translate("watchParty.episodes.noneBody")));
         retry.element.classList.add("watch-party-button", "watch-party-secondary");
         zones.push({ id: "episodes-retry", layout: "row", items: [retry] });
         page.appendChild(retry.element);

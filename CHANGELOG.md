@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Watch Party now shows in the language you pick under App Language, with Apple TV's strings, and mirrors in Arabic as on Apple TV: the hub, lobby, Ready, ballot, options, invitation and its QR text, picker shelves, confirmation page and episode list. Member and host names stay as the server sent them. A vote card's accessibility label now reads Apple's `Vote for Heat`.
 - An audiobook now opens on Apple TV's loading frame instead of a bare "Loading" page: the card's cover, title and year show in the book page's layout, with quiet placeholders for the rest, until the book is read. Back leaves it.
 - Requests, Calendar, Change Account, Settings › Accounts, the PIN screen and Add Profile now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: art, text, rails, badges and the week strip read from the right, and Left and Right on the remote step through them that way. Dates and air times print in that language, and English reads exactly as before.
 - Library Browse's Sort panel now lists Apple TV's full set of sorts for the library: Content Rating, TMDB Rating, Bitrate, Progress, Date Viewed and Plays (reading Fewest and Most) for every video library, Latest Episode Air Date and Latest Episode Added for a series library, and RT Critic and RT Audience Rating while the server shows those sources. A long list scrolls inside a panel 720 tall, and a saved sort stays listed. Movies and series offered seven sorts and audiobooks six before; audiobook libraries now list Apple's twelve.
@@ -93,6 +94,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- An audiobook library the server types `audiobook` (singular) now shows the Audiobooks tab and opens, as on Apple TV. Only the plural `audiobooks` did before.
 - Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
 - Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
 - Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
