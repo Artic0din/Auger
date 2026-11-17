@@ -364,7 +364,7 @@ test("in Arabic Search is mirrored under the top bar, as Home is, and reads the 
         // A key pressed in Search is read right to left: the field's layout is the page's.
         assert.equal(await tv.page.evaluate(() => {
             const field = document.querySelector('[data-view="search"] input') as HTMLElement;
-            return field.closest("[dir]")?.getAttribute("dir");
+            return field.parentElement?.closest("[dir]")?.getAttribute("dir");
         }), "rtl");
         await tv.remote(BACK);
         await tv.page.locator('[data-view="home"]').waitFor();
@@ -763,13 +763,22 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
     });
 }
 
-test("in Arabic the Search field takes its text direction from what is typed, so a Latin query that starts with a number is not reordered, and keeps the layout's alignment", async () => {
+test("in Arabic the Search field aligns by what is typed, as Apple TV's field does: Latin text such as Aladdin reads left to right, Arabic and an empty field follow the layout", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
         await tv.page.locator('[data-focus="search"]').click();
-        await tv.page.fill("#browse-search", "10 Cloverfield Lane");
-        const style = await tv.page.locator("#browse-search").evaluate(node => { const computed = getComputedStyle(node); return { unicodeBidi: computed.unicodeBidi, textAlign: computed.textAlign }; });
-        assert.deepEqual(style, { unicodeBidi: "plaintext", textAlign: "right" });
+        const field = tv.page.locator("#browse-search");
+        const read = (): Promise<{ direction: string; textAlign: string }> => field.evaluate(node => { const computed = getComputedStyle(node); return { direction: computed.direction, textAlign: computed.textAlign }; });
+        assert.deepEqual(await read(), { direction: "rtl", textAlign: "start" }, "empty: the layout's direction, so the Arabic prompt sits on the right");
+        // textAlign start resolves against the direction: left for ltr, right for rtl.
+        await field.fill("Aladdin");
+        assert.deepEqual(await read(), { direction: "ltr", textAlign: "start" });
+        await field.fill("10 Cloverfield Lane");
+        assert.equal((await read()).direction, "ltr", "a Latin query that starts with a number is not reordered");
+        await field.fill("علاء الدين");
+        assert.equal((await read()).direction, "rtl");
+        await field.fill("");
+        assert.equal((await read()).direction, "rtl", "emptied again: back to the layout's direction");
     });
 });
 

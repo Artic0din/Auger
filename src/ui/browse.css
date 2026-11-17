@@ -5,7 +5,7 @@
    and a left-to-right page with an Arabic title are unchanged. This is the one list: add a class when a new element shows server text. */
 :where(:root[dir="rtl"]) :is(.browse-card-title, .browse-card-subtitle, .discovery-collection-name, .browse-overview, .skyline-title, .skyline-synopsis, .skyline-meta,
 .requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview,
-.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title, .search-field .browse-input):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
+.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
 .section-catalog * { font-family: var(--silo-font); font-weight: inherit; }
@@ -321,6 +321,8 @@
 .search-scene .search-field-icon svg { display: block; width: 100%; height: 100%; }
 .search-scene .search-field .browse-input { width: 100%; height: 70px; margin: 0; padding: 0; scroll-margin-top: 60px; border: 0; border-radius: 0; font-size: 56px; font-weight: 600; line-height: 67px; background: transparent; color: #888; appearance: none; }
 .search-scene .search-field .browse-input:focus { outline: none; box-shadow: none; }
+/* dir="auto" reads an empty field left to right; the prompt takes the layout's direction, as Apple TV's does. */
+.search-scene .search-field .browse-input:placeholder-shown { direction: inherit; }
 .search-scene .search-field .browse-input::-webkit-search-cancel-button,
 .search-scene .search-field .browse-input::-webkit-search-decoration { -webkit-appearance: none; }
 .search-scene .search-filters { display: flex; align-items: center; gap: 10px; width: 760px; height: 84px; margin: 224px auto 47px; padding: 8px 4px; border: 1px solid rgba(255,255,255,.1); border-radius: 42px; background: #161616; }
