@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
-import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
+import { APP_LANGUAGE_KEY, type SettingsKey } from "../../src/contracts/v2/settings.ts";
 import { formattingLocale } from "../../src/i18n/language.ts";
 import { integerText } from "../../src/i18n/numbers.ts";
 import { translate } from "../../src/i18n/translate.ts";
@@ -183,4 +183,47 @@ test("Watchlist, Favorites and History keep their English text and left-to-right
         });
         assert.ok(gap < 3, `English card text stays left-aligned: ${gap}`);
     });
+});
+
+test("a status ribbon painted before German's file lands reads in German after it, and later pages read the same", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const tv = await openTv(browser, { app: "browse" });
+    const catalog = new PersonalCatalog();
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        // Routes added after the harness's own answer first: German's file waits until the grid has painted in English.
+        await tv.page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); });
+        for (const title of [...catalog.titles.values()]) catalog.add({ ...title, showStatus: title.id.endsWith("1") ? "ended" : "returning series" });
+        tv.fake.catalog = catalog;
+        const settings = new FakeSettings(tv.fake);
+        settings.revision = 28;
+        settings.profile().set(APP_LANGUAGE_KEY, "de");
+        settings.profile().set("ui.card_overlays" as SettingsKey, { version: 2, items: { show_status: { enabled: true, position: "top-right" } } });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "signed in");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount(false));
+        await tv.page.locator('.browse[data-view="home"] .browse-card').first().waitFor();
+        await tv.page.locator('[data-focus="for_you"]').focus();
+        await tv.remote(DOWN);
+        await tv.page.locator('[data-focus="watchlist"]').click();
+        // The ribbons among the card's badges (a resolution badge is not one), as the page draws them: capitals by style, so compare in lower case.
+        const englishWords = ["returning", "ended"];
+        const germanWords = [text("overlays.returning", "de"), text("overlays.ended", "de")].map(word => word.toLowerCase());
+        const ribbons = (): Promise<string[]> => tv.page.locator('[data-view="personal:watchlist"] .card-overlay').allInnerTexts()
+            .then(texts => texts.map(label => label.toLowerCase()).filter(label => englishWords.includes(label) || germanWords.includes(label)));
+        await tv.eventually(async () => (await ribbons()).length > 0, "ribbons painted");
+        assert.ok((await ribbons()).every(label => englishWords.includes(label)), `English until the file lands: ${JSON.stringify(await ribbons())}`);
+        release();
+        await tv.eventually(async () => { const shown = await ribbons(); return shown.length > 0 && shown.every(label => germanWords.includes(label)); }, "the painted ribbons read in German");
+        // A page that arrives later builds its cards in German too, so one grid never mixes the two.
+        await tv.page.locator('[data-view="personal:watchlist"] .browse-card').last().evaluate(node => node.scrollIntoView());
+        await tv.jump(500);
+        assert.ok((await ribbons()).every(label => germanWords.includes(label)), `one grid, one language: ${JSON.stringify(await ribbons())}`);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
 });

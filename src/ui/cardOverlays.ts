@@ -94,7 +94,8 @@ const SHOW_STATUS_LABELS: Readonly<Record<string, MessageKey>> = { Returning: "o
 /** `formatShowStatus`: the badge's label in the shown language; a status Apple does not recognise shows as sent. The value key stays the English status. */
 function showStatusLabel(value: string | undefined): string | undefined {
     const key = showStatusKey(value);
-    const message = key === undefined ? undefined : SHOW_STATUS_LABELS[key];
+    // An own property only: a status named like an object's (`constructor`) is an unrecognised one and shows as sent.
+    const message = key !== undefined && Object.hasOwn(SHOW_STATUS_LABELS, key) ? SHOW_STATUS_LABELS[key] : undefined;
     return message === undefined ? key : translate(message);
 }
 

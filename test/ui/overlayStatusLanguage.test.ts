@@ -66,6 +66,12 @@ test("English keeps its status words, and a status Apple does not recognise show
     assert.equal((await ribbon("de", "Pilot Season")).text, "Pilot Season");
 });
 
+test("a status named like an object property shows as sent and never stops the grid", async () => {
+    for (const status of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+        for (const language of ["de", null]) assert.equal((await ribbon(language, status)).text, status, `${status} in ${language ?? "English"}`);
+    }
+});
+
 test("a per-value image is found by the English status in every language", async () => {
     const found = await ribbon("de", "returning series", "Returning");
     assert.ok(found.image?.includes("/overlay-images/"), `the image listed for "Returning" is used in German: ${JSON.stringify(found)}`);
