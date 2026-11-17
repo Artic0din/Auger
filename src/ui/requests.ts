@@ -7,6 +7,7 @@ import { el } from "./screen.ts";
 import { requestProgress } from "./requestProgress.ts";
 import { canCancel, canRemove, visibleMineRequests } from "./requestRemoval.ts";
 import { cullToRailBounds, requestActionSpinner, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, TRAY_ICON } from "./requestsScene.ts";
+import { integerText } from "../i18n/numbers.ts";
 
 export type RequestWrite = "create" | "cancel" | "follow" | "unfollow";
 export type RequestsSource =
@@ -71,7 +72,7 @@ export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string,
     if ("request" in title && progress !== undefined) { const badge = requestPosterBadge(progress); if (badge !== undefined) art.appendChild(badge); }
     const subtitle = el("span", "browse-card-subtitle");
     if (!("request" in title) && progress !== undefined) subtitle.appendChild(requestStatusLabel(progress));
-    else subtitle.textContent = title.year?.toString() ?? "";
+    else subtitle.textContent = title.year === undefined ? "" : integerText(title.year);
     item.element.replaceChildren(art, el("span", "browse-card-title", title.title), subtitle);
     if (preview !== undefined) item.element.addEventListener("focus", () => preview(title));
     return item;
