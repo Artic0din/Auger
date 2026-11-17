@@ -7,7 +7,7 @@ import type { DeviceCodeView } from "../session/deviceLogin.ts";
 import { actionRow, card, cardSymbol, headline, type IconName, lead, marqueeScreen, noteChips, serverCard, type SymbolTone, spinner } from "./marquee.ts";
 import { qrCode } from "./qr.ts";
 import { type Control, el, type Note, type Screen } from "./screen.ts";
-import { actionTakesFocus, codeLead, type CodeStatus, isTerminal, statusLine } from "./signInText.ts";
+import { actionTakesFocus, codeLead, type CodeStatus, isTerminal, signInTitle, statusLine } from "./signInText.ts";
 
 export interface CodeView {
     readonly status: CodeStatus;
@@ -72,7 +72,7 @@ export function codeScreen(view: CodeView): CodeScreen {
     }
     cardContent.push(status);
 
-    const title = headline(`Sign in to ${view.serverName}`);
+    const title = headline(signInTitle(view.serverName));
     title.setAttribute("data-server-headline", "");
     const copy = [
         ...noteChips(view.notes),
@@ -91,6 +91,7 @@ export function codeScreen(view: CodeView): CodeScreen {
             controls: view.controls,
             focus: hasAction && actionTakesFocus(view.status) ? "retry" : view.rest,
             back: view.back,
+            translated: true,
         },
         update: setStatus,
     };

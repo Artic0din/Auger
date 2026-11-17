@@ -2,6 +2,7 @@
 // and MarqueeFields) for the sign-in screens: copy on the left, a glass card on the right. Icons are
 // drawn here as plain SVG strokes; the app ships no system symbol font.
 
+import { translate } from "../i18n/translate.ts";
 import { button, type Control, el, type Note } from "./screen.ts";
 import { KEYBOARD_TEXT, KEYBOARD_TITLE } from "./signInText.ts";
 
@@ -139,7 +140,7 @@ export function serverCard(name: string, address: string, secure: boolean, markU
     names.appendChild(el("div", "marquee-server-address", address));
     const badge = el("div", secure ? "marquee-badge" : "marquee-badge marquee-badge-warning");
     badge.appendChild(icon(secure ? "lock" : "lockOpen"));
-    badge.appendChild(el("span", "", secure ? "Secure" : "HTTP"));
+    badge.appendChild(el("span", "", translate(secure ? "firstRun.badge.secure" : "firstRun.badge.http")));
     for (const child of [mark, names, badge]) {
         node.appendChild(child);
     }

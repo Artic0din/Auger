@@ -67,7 +67,7 @@ export class ScreenHost {
             section.classList.add("signin-screen-enter");
         }
         section.setAttribute("data-screen", screen.name);
-        // A screen whose text is not on the catalog yet (sign-in, the profile picker) keeps lang=en under a page whose lang is the shown
+        // A screen whose text is not on the catalog yet (the profile picker) keeps lang=en under a page whose lang is the shown
         // language, so assistive technology reads it by English rules. Mark a screen `translated` when its text moves, and drop this with the last one.
         if (screen.translated === true) applyScreenDirection(section);
         else section.setAttribute("lang", SOURCE_LANGUAGE);

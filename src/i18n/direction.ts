@@ -59,7 +59,7 @@ export function applyScreenDirection(screen: Element, language: string = textLan
     screen.setAttribute("dir", language !== SOURCE_LANGUAGE && isRightToLeft(language) ? "rtl" : "ltr");
 }
 
-/** Leaves the screens that are still English, sign-in among them, with the default `lang` and reading left to right. */
+/** Leaves the screens that are still English, the profile picker among them, with the default `lang` and reading left to right. */
 export function clearLayoutDirection(): void {
     applyLayoutDirection(undefined, SOURCE_LANGUAGE);
 }

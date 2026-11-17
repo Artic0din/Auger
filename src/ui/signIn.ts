@@ -8,6 +8,7 @@ import { operations } from "../api/operations.ts";
 import type { ServerConnection } from "../api/discovery.ts";
 import { type AdvancedScheme, advancedAddress, plainHttpFallbacks, portFieldFault } from "../api/serverUrl.ts";
 import { resolveBrandingAsset } from "../contracts/v2/branding.ts";
+import { type MessageKey, onCatalogLoaded, translate } from "../i18n/translate.ts";
 import { type ConnectedServer, type ConnectResult, connect, forgetStoredCredential, openDiscoveredServer, type SessionCoreDeps } from "../session/core.ts";
 import type { DeviceCodeView, DeviceLogin, DeviceLoginState } from "../session/deviceLogin.ts";
 import { passwordLogin } from "../session/passwordLogin.ts";
@@ -18,6 +19,7 @@ import { credentialsScreen, type CredentialsScreen } from "./credentialsScreen.t
 import { actionRow, chip, errorText, field, headline, keyboardCard, lead, marqueeButton, marqueeScreen, noteChips, setServerMark, setupNeededCard, textInput } from "./marquee.ts";
 import { MarqueeBackdrop, marqueeScene } from "./marqueeBackdrop.ts";
 import { type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
+import { lateRedraw } from "./selectRelease.ts";
 import * as text from "./signInText.ts";
 import { AccountDirectory, type SavedAccount } from "../session/accounts.ts";
 
@@ -48,7 +50,7 @@ export interface SignInScreens {
 /** The last server connected to, so a restart can restore its session. An address, not a secret. */
 const SERVER_KEY = "silo.native.server";
 const CLEANUP_WAIT_MS = 10000;
-const SCHEMES: readonly [AdvancedScheme, string][] = [["auto", "Auto"], ["https", "HTTPS"], ["http", "HTTP"]];
+const SCHEMES: readonly [AdvancedScheme, MessageKey][] = [["auto", "setup.scheme.auto"], ["https", "setup.scheme.https"], ["http", "setup.scheme.http"]];
 /** Screens before a server answers; the backdrop's brand light changes once one does. */
 const SERVER_SCREENS: ReadonlySet<string> = new Set(["entry", "connecting", "insecure"]);
 
@@ -157,13 +159,19 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         setupProbe = undefined;
         leaveSignIn();
         document.removeEventListener("visibilitychange", onVisibility);
+        stopCatalog();
+        late.clear();
         backdrop.destroy();
         host.destroy();
         root.classList.remove("signin", "signin-auth");
     };
 
+    /** Draws the screen the builder makes now, and again from the same builder when the shown language's file lands. */
+    let redraw: (() => void) | undefined;
     /** MarqueeScene: choosing a server is generic; a confirmed server is the account stage. */
-    const show = (screen: Screen, focus?: string): void => {
+    const show = (build: () => Screen, focus?: string | ((screen: Screen) => string)): void => {
+        const screen = build();
+        redraw = () => show(build);
         const choosing = SERVER_SCREENS.has(screen.name);
         if (choosing) marqueeScene.showGeneric();
         else {
@@ -172,7 +180,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         }
         backdrop.setStage(marqueeScene.stage);
         backdrop.setAccent(choosing ? undefined : active?.accent);
-        host.show(screen, focus);
+        host.show(screen, typeof focus === "function" ? focus(screen) : focus);
         fitCodeActions(root);
     };
 
@@ -204,6 +212,10 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     };
     document.addEventListener("visibilitychange", onVisibility);
 
+    // A language file that lands while a screen is up redraws it in that language; `destroy` stops listening.
+    const late = lateRedraw(() => false, () => { if (!destroyed) redraw?.(); });
+    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
+
     const handOff = (server: ConnectedServer): void => {
         leaveSignIn(true);
         destroy();
@@ -215,21 +227,21 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * and nothing else is reachable until it answers, as the Apple TV app waits for its probe.
      */
     const entryScreen = (notes: readonly Note[], offerForget: boolean, error?: string, busy = false, errorField?: "address" | "port"): Screen => {
-        const input = textInput("signin-address", "address", "media.example.com", "Server address", address);
+        const input = textInput("signin-address", "address", translate("setup.placeholder"), "Server address", address);
         input.type = "url";
         input.readOnly = busy;
         input.addEventListener("input", () => {
             address = input.value;
         });
-        const connect = marqueeButton("connect", busy ? "Connecting…" : "Connect", "primary", () => {
+        const connect = marqueeButton("connect", translate(busy ? "setup.connecting" : "setup.connect"), "primary", () => {
             if (!busy) {
                 address = input.value;
                 submit();
             }
         }, { loading: busy });
-        const toggle = marqueeButton("advanced", advanced ? "Hide advanced options" : "Advanced options", "plain", () => {
+        const toggle = marqueeButton("advanced", translate(advanced ? "setup.advanced.hide" : "setup.advanced.show"), "plain", () => {
             advanced = !advanced;
-            show(entryScreen(notes, offerForget, error, false, errorField), "advanced");
+            show(() => entryScreen(notes, offerForget, error, false, errorField), "advanced");
         }, { glyph: "gear", compact: true });
         const controls: Control[] = [
             { key: "address", element: input, row: 0, done: "connect" },
@@ -239,7 +251,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         if (addressError) {
             input.setAttribute("aria-invalid", "true");
         }
-        const copy: HTMLElement[] = [headline(text.ENTRY_TITLE), lead(text.ENTRY_LEAD), field(input, "globe", addressError)];
+        const copy: HTMLElement[] = [headline(text.entryTitle()), lead(text.entryLead()), field(input, "globe", addressError)];
         if (error !== undefined) {
             copy.push(errorText(error));
         }
@@ -249,15 +261,15 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         if (advanced) {
             const options = el("div", "signin-advanced");
             for (const [value, label] of SCHEMES) {
-                const option = marqueeButton(`scheme-${value}`, label, "glass", () => {
+                const option = marqueeButton(`scheme-${value}`, translate(label), "glass", () => {
                     scheme = value;
-                    show(entryScreen(notes, offerForget, error, false, errorField), `scheme-${value}`);
+                    show(() => entryScreen(notes, offerForget, error, false, errorField), `scheme-${value}`);
                 }, { compact: true, ...(scheme === value ? { glyph: "check" as const } : {}) });
                 option.element.setAttribute("aria-pressed", String(scheme === value));
                 options.appendChild(option.element);
                 controls.push({ ...option, row: 2, landing: scheme === value });
             }
-            const portInput = textInput("signin-port", "port", "Port: auto", "Port", port);
+            const portInput = textInput("signin-port", "port", translate("setup.port.placeholder"), translate("setup.port.field"), port);
             portInput.inputMode = "numeric";
             portInput.readOnly = busy;
             portInput.addEventListener("input", () => {
@@ -274,9 +286,9 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             copy.push(options);
         }
         const row = [connect];
-        if (options.onCancel) row.push(marqueeButton("back", "Back", "plain", () => { destroy(); options.onCancel?.(); }));
+        if (options.onCancel) row.push(marqueeButton("back", translate("common.back"), "plain", () => { destroy(); options.onCancel?.(); }));
         else if (options.onChangeAccount && opensAccountList()) {
-            row.push(marqueeButton("change-account", options.returnToAccounts ? "Back to accounts" : savedAccounts().some(account => !account.needsSignIn) ? "Back to profiles" : "Change account", "plain", changeServer));
+            row.push(marqueeButton("change-account", options.returnToAccounts ? translate("tvSignIn.backToAccounts") : savedAccounts().some(account => !account.needsSignIn) ? translate("signIn.backToProfiles") : translate("signIn.changeAccount"), "plain", changeServer));
         }
         if (offerForget) {
             row.push(marqueeButton("forget", "Remove saved sign-in", "plain", () => void forget()));
@@ -298,11 +310,12 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             focus: address === "" ? "address" : "connect",
             // Leaving mid-probe would let a late connect pull the app on, so Back waits for it.
             back: busy ? () => undefined : options.onCancel ? () => { destroy(); options.onCancel?.(); } : undefined,
+            translated: true,
         };
     };
 
     const showEntry = (notes: readonly Note[], offerForget: boolean, focus?: string, error?: string, errorField?: "address" | "port"): void => {
-        show(entryScreen(notes, offerForget, error, false, errorField), focus);
+        show(() => entryScreen(notes, offerForget, error, false, errorField), focus);
     };
 
     /**
@@ -314,7 +327,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         if (fault === "port") {
             advanced = true;
         }
-        showEntry([], offerForget, "connect", text.INVALID_PORT, fault);
+        showEntry([], offerForget, "connect", text.invalidPort(), fault);
     };
 
     /** Applies Advanced options; a bad port is explained before anything is sent. */
@@ -363,7 +376,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         connecting?.abort();
         const controller = new AbortController();
         connecting = controller;
-        show(entryScreen([], false, undefined, true), "connect");
+        show(() => entryScreen([], false, undefined, true), "connect");
         const cancelCleanupWait = clock.schedule(() => {
             if (connecting === controller && !controller.signal.aborted && !destroyed) {
                 controller.abort();
@@ -423,34 +436,36 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * Like the tvOS alert: centred over the dimmed address screen, Cancel then Connect, Connect focused.
      */
     const askCleartext = (plain: readonly string[]): void => {
-        const decline = (): void => showEntry([], false, "connect", text.CLEARTEXT_DECLINED);
-        const controls = [
-            marqueeButton("cancel", "Cancel", "glass", decline),
-            marqueeButton("connect", "Connect", "glass", () => {
-                address = plain[0] ?? address;
-                startConnect(plain.slice(1));
-            }),
-        ];
-        // The address screen stays behind the alert, dimmed and out of reach.
-        const behind = el("div", "signin-behind");
-        behind.setAttribute("aria-hidden", "true");
-        for (const node of entryScreen([], false).content) {
-            behind.appendChild(node);
-        }
-        for (const node of Array.from(behind.querySelectorAll("input, button"))) {
-            node.removeAttribute("id");
-            node.removeAttribute("data-focus");
-            node.setAttribute("disabled", "");
-        }
-        const alert = el("div", "signin-alert");
-        alert.setAttribute("role", "alertdialog");
-        alert.setAttribute("aria-labelledby", "signin-alert-title");
-        const title = el("h2", "signin-alert-title", text.CLEARTEXT_TITLE);
-        title.id = "signin-alert-title";
-        for (const node of [title, el("p", "signin-alert-text", text.cleartextWarning(new URL(plain[0] ?? "").host)), actionRow(controls)]) {
-            alert.appendChild(node);
-        }
-        show({ name: "insecure", content: [behind, alert], controls, focus: "connect", back: decline });
+        const decline = (): void => showEntry([], false, "connect", text.cleartextDeclined());
+        show(() => {
+            const controls = [
+                marqueeButton("cancel", translate("common.cancel"), "glass", decline),
+                marqueeButton("connect", translate("setup.cleartext.connect"), "glass", () => {
+                    address = plain[0] ?? address;
+                    startConnect(plain.slice(1));
+                }),
+            ];
+            // The address screen stays behind the alert, dimmed and out of reach.
+            const behind = el("div", "signin-behind");
+            behind.setAttribute("aria-hidden", "true");
+            for (const node of entryScreen([], false).content) {
+                behind.appendChild(node);
+            }
+            for (const node of Array.from(behind.querySelectorAll("input, button"))) {
+                node.removeAttribute("id");
+                node.removeAttribute("data-focus");
+                node.setAttribute("disabled", "");
+            }
+            const alert = el("div", "signin-alert");
+            alert.setAttribute("role", "alertdialog");
+            alert.setAttribute("aria-labelledby", "signin-alert-title");
+            const title = el("h2", "signin-alert-title", text.cleartextTitle());
+            title.id = "signin-alert-title";
+            for (const node of [title, el("p", "signin-alert-text", text.cleartextWarning(new URL(plain[0] ?? "").host)), actionRow(controls)]) {
+                alert.appendChild(node);
+            }
+            return { name: "insecure", content: [behind, alert], controls, focus: "connect", back: decline, translated: true };
+        }, "connect");
     };
 
     const cancelSetupCheck = (): void => {
@@ -474,32 +489,35 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             return;
         }
         const base = server.http.base.baseUrl;
-        const retry = marqueeButton("retry", checking ? "Checking…" : "Check again", "primary", () => {
-            checkAgain();
-        }, { glyph: "retry", loading: checking });
-        const change = marqueeButton("change", "Change server", "plain", () => {
-            leaveForAddress();
-        });
-        const copy = [
-            setupNeededCard(text.serverHostLabel(base), base, text.SETUP_NEEDED),
-            headline(text.SERVER_NOT_READY_TITLE),
-            lead(text.SERVER_NOT_READY_BODY),
-        ];
-        if (error !== undefined) {
-            copy.push(errorText(error));
-        }
-        copy.push(actionRow([retry, change]));
-        show({
-            name: "needs-setup",
-            content: marqueeScreen(copy),
-            controls: [
-                { ...retry, row: 0, landing: true },
-                { ...change, row: 0 },
-            ],
-            focus: "retry",
-            back: () => {
-                backToSignIn();
-            },
+        show(() => {
+            const retry = marqueeButton("retry", translate(checking ? "notReady.checking" : "notReady.check"), "primary", () => {
+                checkAgain();
+            }, { glyph: "retry", loading: checking });
+            const change = marqueeButton("change", translate("common.changeServer"), "plain", () => {
+                leaveForAddress();
+            });
+            const copy = [
+                setupNeededCard(text.serverHostLabel(base), base, text.setupNeeded()),
+                headline(text.serverNotReadyTitle()),
+                lead(text.serverNotReadyBody()),
+            ];
+            if (error !== undefined) {
+                copy.push(errorText(error));
+            }
+            copy.push(actionRow([retry, change]));
+            return {
+                name: "needs-setup",
+                content: marqueeScreen(copy),
+                controls: [
+                    { ...retry, row: 0, landing: true },
+                    { ...change, row: 0 },
+                ],
+                focus: "retry",
+                back: () => {
+                    backToSignIn();
+                },
+                translated: true,
+            };
         });
     };
 
@@ -522,11 +540,11 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             setupProbe = undefined;
             if (result.status === "needs_setup") {
                 pendingSetup = result.server;
-                showNeedsSetup(false, text.STILL_NEEDS_SETUP);
+                showNeedsSetup(false, text.stillNeedsSetup());
                 return;
             }
             if (result.status !== "connected") {
-                showNeedsSetup(false, text.SETUP_UNREACHABLE);
+                showNeedsSetup(false, text.setupUnreachable());
                 return;
             }
             enterSignIn(result);
@@ -536,7 +554,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             }
             checkingSetup = false;
             setupProbe = undefined;
-            showNeedsSetup(false, text.SETUP_UNREACHABLE);
+            showNeedsSetup(false, text.setupUnreachable());
             if (!(error instanceof ApiError)) {
                 clock.schedule(() => {
                     throw error;
@@ -653,7 +671,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             for (const node of Array.from(root.querySelectorAll<HTMLElement>(".marquee-server-name"))) node.textContent = name;
             for (const node of Array.from(root.querySelectorAll<HTMLElement>(".marquee-server-mark"))) setServerMark(node, name, current.markUrl);
             const title = root.querySelector<HTMLElement>("[data-server-headline]");
-            if (title !== null) title.textContent = `Sign in to ${name}`;
+            if (title !== null) title.textContent = text.signInTitle(name);
             const expiry = root.querySelector<HTMLElement>(`[data-note="${EXPIRY_NOTE}"] span`);
             if (expiry !== null) expiry.textContent = text.sessionExpiredNotice(name);
             if (current.credentials) {
@@ -737,11 +755,11 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     };
     /** TVLoginView.leaveTitle at silo-apple 54cf0f34. The sign-in harness has nowhere else to go. */
     const leaveTitle = (): string => {
-        if (!options.onChangeAccount && !options.returnToAccounts) return "Change server";
-        if (options.returnToAccounts) return "Back to accounts";
+        if (!options.onChangeAccount && !options.returnToAccounts) return translate("common.changeServer");
+        if (options.returnToAccounts) return translate("tvSignIn.backToAccounts");
         const rows = savedAccounts();
-        if (rows.some(account => !account.needsSignIn)) return "Back to profiles";
-        return rows.length > 1 ? "Change account" : "Change server";
+        if (rows.some(account => !account.needsSignIn)) return translate("signIn.backToProfiles");
+        return translate(rows.length > 1 ? "signIn.changeAccount" : "common.changeServer");
     };
     /**
      * AppRouter.leaveSignIn. A first sign-in has no account yet, and Back still opens Change
@@ -918,33 +936,34 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             return;
         }
         const base = current.server.server.http.base.baseUrl;
-        const controls = [
-            ...(action === undefined ? [] : [marqueeButton("retry", action, "primary", () => retry(current), { glyph: "retry" })]),
-            ...codeActions(current),
-        ];
-        const view = codeScreen({
-            status,
-            code,
-            serverName: current.serverName ?? text.serverHost(base),
-            host: text.serverHost(base),
-            secure: base.startsWith("https:"),
-            markUrl: current.markUrl,
-            typed: current.typed,
-            notes: shownNotes(current),
-            controls,
-            rest: controls.some((control) => control.key === "password") ? "password" : "change",
-            back: changeServer,
-        });
-        current.code = view;
-        // A state that ends the attempt takes focus to its action; otherwise focus stays where it was.
         const kept = document.activeElement?.getAttribute("data-focus") ?? undefined;
-        const keep = view.screen.focus !== "retry" && controls.some((control) => control.key === kept);
-        show(view.screen, keep ? kept : view.screen.focus);
+        show(() => {
+            const controls = [
+                ...(action === undefined ? [] : [marqueeButton("retry", action, "primary", () => retry(current), { glyph: "retry" })]),
+                ...codeActions(current),
+            ];
+            const view = codeScreen({
+                status,
+                code,
+                serverName: current.serverName ?? text.serverHost(base),
+                host: text.serverHost(base),
+                secure: base.startsWith("https:"),
+                markUrl: current.markUrl,
+                typed: current.typed,
+                notes: shownNotes(current),
+                controls,
+                rest: controls.some((control) => control.key === "password") ? "password" : "change",
+                back: changeServer,
+            });
+            current.code = view;
+            return view.screen;
+            // A state that ends the attempt takes focus to its action; otherwise focus stays where it was.
+        }, (screen) => screen.focus !== "retry" && screen.controls.some((control) => control.key === kept) ? kept ?? screen.focus : screen.focus);
     };
 
     /** "Sign in with a password" unless the server says no provider takes one; then "Change server". */
     const codeActions = (current: Active): Control[] => [
-        ...(current.options?.passwordLogin === false ? [] : [marqueeButton("password", "Sign in with a password", "glass", () => openCredentials(current), { glyph: "key" })]),
+        ...(current.options?.passwordLogin === false ? [] : [marqueeButton("password", translate("tvSignIn.action.password"), "glass", () => openCredentials(current), { glyph: "key" })]),
         marqueeButton("change", leaveTitle(), "plain", changeServer),
     ];
 
@@ -974,36 +993,42 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     const showCredentials = (current: Active, focus?: string, shake = false): void => {
         const phoneRoute = !passwordOnly(current);
         const base = current.server.server.http.base.baseUrl;
+        // A redraw for a language file that lands later does not shake the fields again.
+        let shaking = shake;
         show(
-            current.credentialsView = credentialsScreen({
-                serverName: current.serverName ?? text.serverHost(base),
-                host: text.serverHost(base),
-                secure: base.startsWith("https:"),
-                markUrl: current.markUrl,
-                notes: shownNotes(current),
-                passwordOnly: !phoneRoute,
-                hint: phoneRoute ? text.phoneHint(current.options?.oauthProviders ?? []) : undefined,
-                username: current.username,
-                password: current.password,
-                shown: current.shown,
-                error: current.error,
-                errorField: current.errorField,
-                shake,
-                submitting: current.submitting,
-                onInput: (username, password) => {
-                    current.username = username;
-                    current.password = password;
-                },
-                toggle: () => {
-                    current.shown = !current.shown;
-                    showCredentials(current);
-                },
-                submit: () => submitPassword(current),
-                phone: phoneRoute ? () => returnToCode(current) : undefined,
-                change: changeServer,
-                changeLabel: leaveTitle(),
-                back: current.submitting ? () => undefined : phoneRoute ? () => returnToCode(current) : changeServer,
-            }),
+            () => {
+                const view = credentialsScreen({
+                    serverName: current.serverName ?? text.serverHost(base),
+                    host: text.serverHost(base),
+                    secure: base.startsWith("https:"),
+                    markUrl: current.markUrl,
+                    notes: shownNotes(current),
+                    passwordOnly: !phoneRoute,
+                    hint: phoneRoute ? text.phoneHint(current.options?.oauthProviders ?? []) : undefined,
+                    username: current.username,
+                    password: current.password,
+                    shown: current.shown,
+                    error: current.error,
+                    errorField: current.errorField,
+                    shake: shaking,
+                    submitting: current.submitting,
+                    onInput: (username, password) => {
+                        current.username = username;
+                        current.password = password;
+                    },
+                    toggle: () => {
+                        current.shown = !current.shown;
+                        showCredentials(current);
+                    },
+                    submit: () => submitPassword(current),
+                    phone: phoneRoute ? () => returnToCode(current) : undefined,
+                    change: changeServer,
+                    changeLabel: leaveTitle(),
+                    back: current.submitting ? () => undefined : phoneRoute ? () => returnToCode(current) : changeServer,
+                });
+                shaking = false;
+                return current.credentialsView = view;
+            },
             focus,
         );
     };
@@ -1021,11 +1046,11 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             showCredentials(current, field === "username" ? "username" : "secret", true);
         };
         if (current.username.trim() === "") {
-            refuse(text.ENTER_USERNAME, "username");
+            refuse(text.enterUsername(), "username");
             return;
         }
         if (current.password === "") {
-            refuse(text.ENTER_PASSWORD, "password");
+            refuse(text.enterPassword(), "password");
             return;
         }
         current.submitting = true;
@@ -1098,14 +1123,17 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             return;
         }
         const account = server.session.account;
-        const title = account === undefined || account.username === "" ? "Signed in" : `Signed in as ${account.username}`;
+        const title = text.statusLine({ kind: "approved", account: account === undefined || account.username === "" ? undefined : account.username }, "");
+        // This screen is Tizen's own (Apple keeps no sign-in it cannot store), so its lines and Continue have no Apple key.
         showMessage("notice", title, lines, [marqueeButton("continue", "Continue", "primary", () => handOff(server))], () => undefined);
     };
 
     /** A screen of its own for what only this TV says, such as a session it can't keep. */
     const showMessage = (name: string, title: string, lines: readonly string[], controls: readonly Control[], back: () => void = changeServer): void => {
-        const copy = [headline(title), ...lines.map((line) => lead(line)), actionRow(controls)];
-        show({ name, content: marqueeScreen(copy), controls, focus: controls[0]?.key ?? "", back });
+        show(() => {
+            const copy = [headline(title), ...lines.map((line) => lead(line)), actionRow(controls)];
+            return { name, content: marqueeScreen(copy), controls, focus: controls[0]?.key ?? "", back, translated: true };
+        });
     };
 
     if (options.signedOut !== undefined) {
