@@ -2,6 +2,7 @@
 // and MarqueeFields) for the sign-in screens: copy on the left, a glass card on the right. Icons are
 // drawn here as plain SVG strokes; the app ships no system symbol font.
 
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
 import { button, type Control, el, type Note } from "./screen.ts";
 import { KEYBOARD_TEXT, KEYBOARD_TITLE } from "./signInText.ts";
@@ -75,7 +76,9 @@ export function headline(text: string): HTMLHeadingElement {
 
 /** MarqueeTVBody: 28, secondary ink. */
 export function lead(text: string): HTMLParagraphElement {
-    return el("p", "marquee-lead", text);
+    const node = el("p", "marquee-lead", text);
+    markEnglishOnly(node, text);
+    return node;
 }
 
 /** MarqueeErrorText: inline under its control, never a banner. */
@@ -83,7 +86,9 @@ export function errorText(text: string): HTMLParagraphElement {
     const node = el("p", "marquee-error");
     node.setAttribute("role", "alert");
     node.appendChild(icon("alert"));
-    node.appendChild(el("span", "", text));
+    const message = el("span", "", text);
+    markEnglishOnly(message, text);
+    node.appendChild(message);
     return node;
 }
 
@@ -93,7 +98,9 @@ export function chip(text: string, glyph: IconName | undefined, role?: "status" 
     if (glyph !== undefined) {
         node.appendChild(icon(glyph));
     }
-    node.appendChild(el("span", "", text));
+    const label = el("span", "", text);
+    markEnglishOnly(label, text);
+    node.appendChild(label);
     if (role !== undefined) {
         node.setAttribute("role", role);
     }

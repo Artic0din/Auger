@@ -189,6 +189,29 @@ test("in Arabic the port hint and protocol read Apple's Arabic text, and the key
     });
 });
 
+test("in Arabic a refusal and a notice with no Apple key read as English, left to right, while translated ones follow the page", async () => {
+    await withTv("ar-SA", async tv => {
+        await tv.eventually(async () => await tv.page.locator('[data-screen="entry"]').getAttribute("lang") === "ar", "Arabic on the address screen");
+        // A refusal with no Apple key: the shared error helper marks it as the English it is, so its full stop stays at the end.
+        await connectTo(tv, "ftp://silo.example.test");
+        const keyless = tv.page.locator(".marquee-error span", { hasText: "Use an address that starts with" });
+        await keyless.waitFor();
+        assert.equal(await keyless.getAttribute("lang"), "en");
+        assert.equal(await keyless.evaluate(node => getComputedStyle(node).direction), "ltr");
+        // A refusal Apple does word is Arabic and carries no override.
+        await connectTo(tv, "");
+        const translated = tv.page.locator(".marquee-error span", { hasText: text("setup.error.empty", "ar") });
+        await translated.waitFor();
+        assert.equal(await translated.getAttribute("lang"), null);
+        // A notice with no Apple key (shown after a sign-out) is marked the same way by the note helper.
+        await tv.page.evaluate(() => window.harness.mount({ storage: "cleared", server: "revoked" }));
+        const notice = tv.page.locator(".marquee-chip span", { hasText: "Signed out on this TV." });
+        await notice.waitFor();
+        assert.equal(await notice.getAttribute("lang"), "en");
+        assert.equal(await notice.evaluate(node => getComputedStyle(node).direction), "ltr");
+    });
+});
+
 for (const [locale, name, spacing] of [["de-DE", "German", 4], ["ar-SA", "Arabic", 2.5]] as const) {
     test(`the ${name} password screen shows every action label whole, inside the copy column, and nothing overlaps`, async () => {
         await withTv(locale, async tv => {

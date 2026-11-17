@@ -72,6 +72,20 @@ export function isolated(value: string, language: string = textLanguage()): stri
     return language !== SOURCE_LANGUAGE && isRightToLeft(language) ? `\u2068${value}\u2069` : value;
 }
 
+const RIGHT_TO_LEFT_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * Text with no catalog key is English in every language. In a right-to-left page a line with no right-to-left letter in it takes the page's
+ * direction and moves its closing punctuation to the front, so the line is marked as the English it is: its own language and direction.
+ * Every helper that shows a message from the session core or the screens' own literals does this, so a call site never has to.
+ */
+export function markEnglishOnly(node: HTMLElement, text: string): void {
+    if (isRightToLeft(textLanguage()) && !RIGHT_TO_LEFT_LETTER.test(text)) {
+        node.setAttribute("lang", SOURCE_LANGUAGE);
+        node.setAttribute("dir", "ltr");
+    }
+}
+
 /** True while the document reads right to left: Left and Right on the remote then follow the mirrored layout. */
 export function documentIsRightToLeft(): boolean {
     return globalThis.document?.documentElement.getAttribute("dir") === "rtl";

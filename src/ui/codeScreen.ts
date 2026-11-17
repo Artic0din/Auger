@@ -5,6 +5,7 @@
 
 import type { DeviceCodeView } from "../session/deviceLogin.ts";
 import { actionRow, card, cardSymbol, headline, type IconName, lead, marqueeScreen, noteChips, serverCard, type SymbolTone, spinner } from "./marquee.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { qrCode } from "./qr.ts";
 import { type Control, el, type Note, type Screen } from "./screen.ts";
 import { actionTakesFocus, codeLead, type CodeStatus, isTerminal, signInTitle, statusLine } from "./signInText.ts";
@@ -52,7 +53,12 @@ export function codeScreen(view: CodeView): CodeScreen {
         } else if (!SPINNING.has(next.kind) && spinning) {
             status.removeChild(current);
         }
-        statusText.textContent = statusLine(next, view.host);
+        const line = statusLine(next, view.host);
+        statusText.textContent = line;
+        // A device-login failure with no Apple key is English; a status that follows it may be Arabic, so the mark is set afresh.
+        statusText.removeAttribute("lang");
+        statusText.removeAttribute("dir");
+        markEnglishOnly(statusText, line);
     };
     setStatus(view.status);
 
