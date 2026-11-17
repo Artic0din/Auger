@@ -49,8 +49,10 @@ const MIRRORED: Readonly<Partial<Record<RemoteKey, RemoteKey>>> = { left: "right
  * The key as the screen's layout reads it. Remote presses are physical; in a right-to-left layout the next item
  * lies to the left, so Left and Right swap, as silo-apple's `MoveCommandDirection.inLayout` does, and every
  * handler that steps "left" toward the start of a row or a column keeps doing so on the mirrored screen.
+ * The layout is the one around the element the press landed on, or around `scope` when a screen decides it for
+ * the whole press (the player's focus can sit in its left-to-right scrubber while the press belongs to a mirrored card).
  */
-export function remoteKey(event: KeyboardEvent): RemoteKey | undefined {
+export function remoteKey(event: KeyboardEvent, scope: EventTarget | null = event.target): RemoteKey | undefined {
     const key = physicalKey(event);
-    return key === undefined || !readsRightToLeft(event.target) ? key : MIRRORED[key] ?? key;
+    return key === undefined || !readsRightToLeft(scope) ? key : MIRRORED[key] ?? key;
 }

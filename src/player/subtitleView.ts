@@ -1,10 +1,14 @@
 import { translate } from "../i18n/translate.ts";
+import { textIsRightToLeft } from "../i18n/direction.ts";
 import type { PlaybackView } from "./controller.ts";
+import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+
+const SCREEN_WIDTH = 1920;
 
 export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => void {
     const viewport = document.createElement("div");
-    Object.assign(viewport.style, { position: "absolute", inset: "0", width: "1920px", height: "1080px", pointerEvents: "none", transformOrigin: "0 0" });
+    Object.assign(viewport.style, { position: "absolute", inset: "0", width: `${SCREEN_WIDTH}px`, height: "1080px", pointerEvents: "none", transformOrigin: "0 0" });
     parent.appendChild(viewport);
     const layer = document.createElement("div");
     layer.className = "player-captions";
@@ -19,7 +23,7 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     return view => {
         // Apple's `player.subtitles.dataLoadFailed`, read on every draw so a language that lands later shows.
         status.textContent = translate("player.subtitles.dataLoadFailed");
-        viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? "translate(180px, 112px) scale(0.3958333333333333)" : "none";
+        viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? `translate(${upNextPreviewLeft(SCREEN_WIDTH, textIsRightToLeft())}px, ${UP_NEXT_PREVIEW.top}px) scale(${UP_NEXT_PREVIEW.width / SCREEN_WIDTH})` : "none";
         const captions = view.phase === "playing" || view.phase === "paused" ? view.captions : undefined;
         text.textContent = captions?.text ?? "";
         layer.hidden = !captions?.text;

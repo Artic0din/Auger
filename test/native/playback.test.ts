@@ -17,6 +17,8 @@ import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { HDR_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS } from "../../src/contracts/v2/settings.ts";
 import { clientCapabilities, playbackContext } from "../../src/player/capabilities.ts";
 import { operations } from "../../src/api/operations.ts";
+import { setAppLanguage } from "../../src/i18n/language.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
 import { connected, type Harness, signIn } from "./support/harness.ts";
 
 const MOVIE: PlayRequest = { contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: 12.5 };
@@ -1965,6 +1967,24 @@ test("transport recovery retains the Up Next preview rectangle", async () => {
     assert.deepEqual(r.avplay.displayRects.at(-1), preview);
     assert.notDeepEqual(preview, [0, 0, 1920, 1080]);
     r.controller.destroy();
+});
+
+test("the Up Next preview sits on the leading side: 180 px from the left in English, from the right in Arabic", async () => {
+    registerSourceCatalogs();
+    for (const [language, left] of [["en", 180], ["ar", 980]] as const) {
+        setAppLanguage(language);
+        try {
+            const r = await autoplayRig(false);
+            await playMovie(r, EPISODE);
+            const view = last(r.views);
+            assert.ok(view.phase === "playing");
+            r.avplay.tick((view.durationSeconds! - 20) * 1000);
+            await r.h.clock.advance(0);
+            assert.ok("upNext" in last(r.views));
+            assert.deepEqual(r.avplay.displayRects.at(-1), [left, 112, 760, 428], language);
+            r.controller.destroy();
+        } finally { setAppLanguage("en"); }
+    }
 });
 
 test("optional On Deck reads never delay a playable successor before or after EOF", async () => {

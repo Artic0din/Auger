@@ -3324,13 +3324,13 @@ test("an unavailable AI result says why, stays focusable and Select does nothing
     } finally { await page.close(); }
 });
 
-test("the player keeps its left-to-right layout and the remote's physical keys when the page reads right to left", async () => {
+test("the player takes its layout from the language it shows, not from a page that reads right to left", async () => {
     const { page } = await open();
     try {
         await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
         await show(page, playing(TRACKS));
         assert.equal(await page.locator('[data-screen="player"]').evaluate(node => getComputedStyle(node).direction), "ltr");
-        // Down to the transport, Right twice to Options, Select, Down into the pane: the same keys as in English.
+        // English on a page marked right to left: the keys are the same as in English.
         await openPanel(page);
         assert.equal(await focused(page), "info");
         await page.locator('[data-focus="info"]').focus();

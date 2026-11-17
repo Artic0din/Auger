@@ -58,6 +58,8 @@ import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, star
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
 import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
+import { textIsRightToLeft } from "../i18n/direction.ts";
+import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
 /** What browse hands over: one file of one catalog item. */
@@ -3611,7 +3613,7 @@ export class PlaybackController implements PlayerControls {
 
     private setDisplayRect(attempt: Attempt): void {
         // tvOS standard-card column: 4 × 360 + 3 × 40; preview spans two cards.
-        if (attempt.prompt !== undefined) this.deps.avplay.setDisplayRect(180, 112, 760, Math.round(760 * 9 / 16));
+        if (attempt.prompt !== undefined) this.deps.avplay.setDisplayRect(upNextPreviewLeft(SCREEN.width, textIsRightToLeft()), UP_NEXT_PREVIEW.top, UP_NEXT_PREVIEW.width, UP_NEXT_PREVIEW.height);
         else this.deps.avplay.setDisplayRect(0, 0, SCREEN.width, SCREEN.height);
     }
 

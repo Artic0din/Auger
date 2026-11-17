@@ -390,6 +390,9 @@ Playback has these differences from browse:
 - Back from the overlay leaves playback (`controls.back()`), which restores the originating browse view and focus.
   On the transport buttons Back first returns focus to the overlay, and on Skip it moves focus to Pause (`playerScreen.ts`).
 - Completion and error screens have their own button focus rules.
+- In Arabic the player mirrors except the transport, the scrubber and its time row, which pin `dir="ltr"` as Apple's `.mediaLayoutDirection()` does (`TVPlayerControls.swift:325,555,557,575`).
+  Those three, a held seek and the skip pill's seek keep the remote's physical Left and Right (`physicalKey`).
+  The options panel's tab rail and columns, Up Next's buttons and the buffering card's two buttons read `remoteKey(event, section)`: the scope is the player, because focus can sit in the left-to-right scrubber while the press belongs to the buffering prompt (Apple reads that press through the layout, `PlayerView.swift:869`).
 
 ## Checklist
 
