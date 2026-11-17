@@ -763,6 +763,16 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
     });
 }
 
+test("in Arabic the Search field takes its text direction from what is typed, so a Latin query that starts with a number is not reordered, and keeps the layout's alignment", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.locator('[data-focus="search"]').click();
+        await tv.page.fill("#browse-search", "10 Cloverfield Lane");
+        const style = await tv.page.locator("#browse-search").evaluate(node => { const computed = getComputedStyle(node); return { unicodeBidi: computed.unicodeBidi, textAlign: computed.textAlign }; });
+        assert.deepEqual(style, { unicodeBidi: "plaintext", textAlign: "right" });
+    });
+});
+
 test("in Arabic Left walks Search's People rail to its last person and keeps each person on screen", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
