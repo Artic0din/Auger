@@ -201,6 +201,60 @@ function journey(name: string, body: (tv: Tv, catalog: FakeHome) => Promise<void
     });
 }
 
+journey("Home keeps one tint wash while its backdrop changes, and a new tint fades in over the old one", async tv => {
+    const wash = tv.page.locator(".skyline-wash");
+    const bitmap = (): Promise<string> => tv.page.locator(".skyline-wash canvas").last().evaluate(node => (node as HTMLCanvasElement).toDataURL());
+    await wash.evaluate(node => node.setAttribute("data-first", ""));
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loaded", "first backdrop shown");
+    await tv.jump(300);
+    const before = await bitmap();
+    assert.equal(await tv.page.locator(".skyline-hero-backdrop .skyline-tint-wash").count(), 0, "a backdrop layer carries no wash of its own");
+    // The layer is only as big as its art, so it is not a full-screen layer to draw (#515); the top scrim is one shared strip above every layer.
+    const box = (selector: string): Promise<number[]> => tv.page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); });
+    assert.deepEqual(await box(".skyline-marquee-art:not(.skyline-outgoing) .skyline-hero-backdrop"), [691.2, 0, 1228.8, 756]);
+    assert.deepEqual(await box(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame"), [691.2, 0, 1228.8, 756]);
+    assert.deepEqual(await box(".skyline-hero-scrim"), [0, 0, 1920, 190]);
+    assert.equal(await tv.page.locator(".skyline-hero-backdrop .skyline-top-scrim").count(), 0);
+    assert.equal(await tv.page.evaluate(() => { const z = (selector: string): number => Number(getComputedStyle(document.querySelector(selector) as Element).zIndex); return z(".skyline-hero-scrim") > z(".skyline-hero-backdrop") && z(".skyline-hero-backdrop") > z(".skyline-wash"); }), true, "wash, art, scrim stack in that order");
+    await tv.page.keyboard.press("ArrowRight");
+    await tv.jump(150);
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art.skyline-outgoing").count() === 1, "the next backdrop is swapping in");
+    assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 2, "the new wash fades in over the old one");
+    await tv.jump(700);
+    assert.equal(await tv.page.locator(".skyline-wash[data-first]").count(), 1, "the same wash element stays");
+    assert.equal(await tv.page.locator(".skyline-wash").count(), 1);
+    assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 1, "the old bitmap goes once the new one is opaque");
+    assert.notEqual(await bitmap(), before, "its colours changed with the backdrop");
+}, catalog => {
+    const featured = catalog.households.get("p-owner")?.sections.find(row => row.id === "hero/opaque");
+    assert.ok(featured);
+    featured.items.push("movie:m0005");
+    enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" }, "movie:m0005": { backdrop_url: "/art/bd-m5.svg" } });
+});
+
+let heldFirstBackdrop: { release(): void } | undefined;
+journey("a backdrop that loads late does not recolour the wash of the one shown now", async tv => {
+    const bitmap = (): Promise<string> => tv.page.locator(".skyline-wash canvas").last().evaluate(node => (node as HTMLCanvasElement).toDataURL());
+    await tv.page.keyboard.press("ArrowRight");
+    await tv.jump(700);
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-art-frame").getAttribute("data-art") === "loaded", "the second backdrop is shown");
+    const shown = await bitmap();
+    heldFirstBackdrop?.release();
+    await tv.jump(700);
+    await afterPaint(tv);
+    assert.equal(await bitmap(), shown, "the first backdrop's sample is for a layer that is gone");
+}, catalog => {
+    const featured = catalog.households.get("p-owner")?.sections.find(row => row.id === "hero/opaque");
+    assert.ok(featured);
+    featured.items.push("movie:m0005");
+    enrichHome(catalog, { "movie:m0004": { backdrop_url: "/art/bd-m4.svg" }, "movie:m0005": { backdrop_url: "/art/bd-m5.svg" } });
+}, undefined, { whileReading: true, beforeMount: tv => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    heldFirstBackdrop = { release };
+    void tv.page.route("**/art/bd-m4.svg", async route => { await held; await route.fallback(); });
+} });
+
 let heldLibraries: { release(): void };
 let heldSections: { release(): void };
 

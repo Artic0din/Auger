@@ -10,6 +10,7 @@
 import { decodeThumbhash } from "./thumbhash.ts";
 import { el, onDecoded } from "./screen.ts";
 import { artworkMark } from "./defaultArtwork.ts";
+import type { Clock } from "../api/clock.ts";
 
 export interface RGB { readonly r: number; readonly g: number; readonly b: number }
 export interface Tints { readonly base: RGB; readonly accent: RGB; readonly shadow: RGB }
@@ -149,18 +150,106 @@ export function washBackground(tints: Tints | undefined, detail = false): string
     ].join(", ");
 }
 
+const WASH_WIDTH = 1920;
+const WASH_HEIGHT = 1080;
+/** `TVHeroAmbientRenderer.pointsPerPixel` (silo-apple 6eea7cf7): the wash is one bitmap at two screen points per pixel. */
+const WASH_POINTS_PER_PIXEL = 2;
+/** `SiloTheme.Skyline.marqueeCrossfadeDuration`: a new wash fades in over the old one. */
+const WASH_CROSSFADE_MILLISECONDS = 240;
+
+/**
+ * The root wash as one small bitmap, with the stops and geometry of `TVHeroAmbientRenderer.render` (base from the
+ * top trailing to the bottom leading corner, accent and shadow ellipses at 70% and 0% along the bottom edge), which
+ * are `washBackground`'s gradients. The compositor stretches it, so a new tint costs one small canvas draw instead of
+ * a software raster of 1920 x 1080 gradients on the TV (#515).
+ */
+function drawWash(canvas: HTMLCanvasElement, tints: Tints | undefined): void {
+    canvas.width = WASH_WIDTH / WASH_POINTS_PER_PIXEL;
+    canvas.height = WASH_HEIGHT / WASH_POINTS_PER_PIXEL;
+    const context = canvas.getContext("2d");
+    if (context === null) { canvas.style.background = "#000"; return; }
+    context.scale(1 / WASH_POINTS_PER_PIXEL, 1 / WASH_POINTS_PER_PIXEL);
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, WASH_WIDTH, WASH_HEIGHT);
+    if (tints === undefined) return;
+    const base = context.createLinearGradient(WASH_WIDTH, 0, 0, WASH_HEIGHT);
+    base.addColorStop(0, cssColor(tints.base));
+    base.addColorStop(0.45, cssColor(tints.base, 0.5));
+    base.addColorStop(1, cssColor(tints.base, 0.18));
+    context.fillStyle = base;
+    context.fillRect(0, 0, WASH_WIDTH, WASH_HEIGHT);
+    const ellipse = (color: RGB, alpha: number, centerX: number, radius: number): void => {
+        context.save();
+        context.translate(centerX * WASH_WIDTH, WASH_HEIGHT);
+        context.scale(radius * WASH_WIDTH, radius * WASH_HEIGHT);
+        const fade = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+        fade.addColorStop(0, cssColor(color, alpha));
+        fade.addColorStop(1, cssColor(color, 0));
+        context.fillStyle = fade;
+        context.fillRect(-1, -1, 2, 2);
+        context.restore();
+    };
+    ellipse(tints.accent, 0.3, 0.7, 0.3);
+    ellipse(tints.shadow, 0.55, 0, 0.42);
+}
+
+function washBitmap(tints: Tints | undefined): HTMLCanvasElement {
+    const canvas = el("canvas", "skyline-wash-bitmap");
+    canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%";
+    drawWash(canvas, tints);
+    return canvas;
+}
+
+/**
+ * The one tint wash a root page keeps while its backdrops come and go (`TVHeroAmbientWash`): a new bitmap fades in over
+ * the ones on screen, which stay fully opaque until it is, and a change that does not fade replaces them.
+ */
+export class HeroWash {
+    readonly element = el("div", "skyline-wash");
+    private readonly clock: Clock;
+    private cancel = (): void => undefined;
+
+    constructor(clock: Clock) {
+        this.clock = clock;
+        this.element.setAttribute("aria-hidden", "true");
+    }
+
+    show(tints: Tints | undefined, fade: boolean): void {
+        this.cancel();
+        // A swap sooner than the crossfade leaves the timer to the next one; what lies under the two newest bitmaps is covered.
+        for (const covered of Array.from(this.element.children).slice(0, -2)) covered.remove();
+        const below = Array.from(this.element.children);
+        const next = washBitmap(tints);
+        this.element.appendChild(next);
+        const drop = (): void => { for (const old of below) old.remove(); };
+        if (!fade || below.length === 0) { drop(); return; }
+        next.classList.add("skyline-art-enter");
+        this.cancel = this.clock.schedule(drop, WASH_CROSSFADE_MILLISECONDS);
+    }
+
+    /** Redraws the newest bitmap with the tint sampled from its image, in place, so a fade under way carries on. */
+    update(tints: Tints | undefined): void {
+        const newest = this.element.lastElementChild;
+        if (newest instanceof HTMLCanvasElement) drawWash(newest, tints);
+        else this.show(tints, false);
+    }
+}
+
+/** Where a shared wash takes one backdrop's tint: first the cached or ThumbHash tint, then the one sampled from the image. */
+export type WashSink = (tints: Tints | undefined, sampled: boolean) => void;
+
 /**
  * The backdrop for one marquee selection: the tint wash, the masked art block and the top scrim. Tints
  * already sampled for the URL apply at once; otherwise they follow the image's load.
  * `surface` is AsyncImageView's .surface placeholder (Details): the ThumbHash, else #0E0F12, while loading;
  * that surface with a film mark at .3 after a failure; and a 0.12 s fade-in unless the image was cached.
  */
-export function heroBackdrop(url: string, thumbhash: string | undefined, cache: Map<string, Tints>, detail = false, surface = false): HTMLElement {
+export function heroBackdrop(url: string, thumbhash: string | undefined, cache: Map<string, Tints>, detail = false, surface = false, sink?: WashSink): HTMLElement {
     const root = el("div", "skyline-hero-backdrop");
     const wash = el("div", "skyline-tint-wash");
-    const paint = (tints: Tints | undefined): void => { wash.style.background = washBackground(tints, detail); };
+    const paint = (tints: Tints | undefined, sampled = false): void => { if (sink === undefined) wash.style.background = washBackground(tints, detail); else sink(tints, sampled); };
     paint(cache.get(url) ?? sampleThumbhash(thumbhash));
-    root.appendChild(wash);
+    if (sink === undefined) root.appendChild(wash);
     if (url === "") return root;
     const frame = el("div", "skyline-art-frame");
     const image = el("img", "skyline-backdrop");
@@ -171,7 +260,7 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
         const apply = (tints: Tints | undefined): void => {
             if (tints === undefined) return;
             cache.set(url, tints);
-            paint(tints);
+            paint(tints, true);
         };
         const local = sampleImage(image);
         if (local !== undefined) { apply(local); return; }
@@ -195,6 +284,6 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
     if (surface && image.complete && image.naturalWidth > 0) frame.dataset.art = "cached";
     frame.appendChild(image);
     root.appendChild(frame);
-    if (!detail) root.appendChild(el("div", "skyline-top-scrim"));
+    if (!detail && sink === undefined) root.appendChild(el("div", "skyline-top-scrim"));
     return root;
 }
