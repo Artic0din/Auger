@@ -51,6 +51,10 @@ async function onPersonPage(language: string | null, prepare: (tv: Tv) => Promis
         await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().focus();
         await tv.page.keyboard.press("Enter");
         await tv.page.locator('.browse[data-view="person:7"] .browse-grid .browse-card').first().waitFor();
+        // The person's facts come from their own answer, which can land after the grid; read them once it has landed and painted.
+        await tv.page.locator(".person-fact").first().waitFor();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "person answers delivered");
+        await afterPaint(tv);
         await body(tv, catalog);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
