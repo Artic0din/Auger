@@ -47,6 +47,9 @@ async function openSettings(tv: Tv, name: string): Promise<void> {
 
 /** Settings' own reads (playback capability, connection, values) have all been answered, so none of them can repaint the screen under a press. */
 async function settingsSettled(tv: Tv): Promise<void> {
+    // Settings loads in steps (capability, values, libraries, metadata) and repaints once when the last lands; answered requests are not that repaint.
+    // The "Loading settings…" status is on screen until it has run, and the language row's own read follows it.
+    await tv.eventually(async () => await tv.page.getByText("Loading settings…", { exact: true }).count() === 0, "Settings finished loading");
     await tv.eventually(async () => {
         const requests = tv.fake.requests.length;
         await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
