@@ -2082,8 +2082,15 @@ appTest("destroy during preparation is idempotent and late callbacks cannot repl
 
 appTest("native posters keep their shape and the exit modal covers the viewport", async (tv) => {
     await signIn(tv);
-    const poster = await tv.page.locator('.browse-card:not(.skyline-continue) .browse-art').first().boundingBox();
-    assert.ok(poster !== null);
+    // A late Home answer repaints the cards and detaches the poster a bounding box was just asked for; read it live once the answers have painted.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+    await afterPaint(tv);
+    const poster = await readLive(tv, () => {
+        const art = document.querySelector('.browse-card:not(.skyline-continue) .browse-art');
+        if (art === null || !art.isConnected) return null;
+        const box = art.getBoundingClientRect();
+        return box.width > 0 ? { width: box.width, height: box.height } : null;
+    }, null, () => true, "a laid-out poster");
     assert.ok(Math.abs(poster.height / poster.width - 1.5) < 0.001);
     await tv.remote(10009);
     assert.equal(await tv.focused(), "home");
