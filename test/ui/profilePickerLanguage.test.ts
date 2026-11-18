@@ -205,3 +205,27 @@ test("a language file that lands on the password-reset page keeps the focus wher
         assert.equal(await tv.focused(), "signout", "focus is not sent back to the first control");
     });
 });
+
+/** The footer's sign-out glyph: its drawn parts and where the arrow's tip sits against the box (rectangle.portrait.and.arrow.forward on Apple TV). */
+async function signOutGlyph(tv: Tv): Promise<{ filled: boolean; boxClosed: boolean; boxRounded: boolean; strokes: number; arrowReachesPastBox: "right" | "left" | "inside" }> {
+    await tv.page.addStyleTag({ path: fileURLToPath(new URL("../../src/ui/browse.css", import.meta.url)) });
+    return tv.page.locator('[data-focus="signout"] svg').evaluate(icon => {
+        const [box, arrow] = [icon.querySelector("path[fill-rule]"), icon.querySelector("path[stroke]")];
+        const outline = box?.getAttribute("d") ?? "";
+        const frame = box?.getBoundingClientRect(), tip = arrow?.getBoundingClientRect();
+        const reaches = frame === undefined || tip === undefined ? "inside" : tip.right > frame.right + 1 ? "right" : tip.left < frame.left - 1 ? "left" : "inside";
+        return { filled: icon.classList.contains("skyline-menu-icon-filled"), boxClosed: outline.trimEnd().endsWith("Z"), boxRounded: /A[\d.]+ [\d.]+ 0 0 [01]/.test(outline), strokes: icon.querySelectorAll("path[stroke]").length, arrowReachesPastBox: reaches };
+    });
+}
+
+test("the footer's sign-out icon is Apple's closed box with an arrow through its gap, the arrow leaving to the right", async () => {
+    await inPicker("en-AU", async tv => {
+        assert.deepEqual(await signOutGlyph(tv), { filled: true, boxClosed: true, boxRounded: true, strokes: 1, arrowReachesPastBox: "right" });
+    });
+});
+
+test("in Arabic the footer's sign-out icon is the same closed box, the arrow leaving to the left", async () => {
+    await inPicker("ar", async tv => {
+        assert.deepEqual(await signOutGlyph(tv), { filled: true, boxClosed: true, boxRounded: true, strokes: 1, arrowReachesPastBox: "left" });
+    });
+});

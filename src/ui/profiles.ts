@@ -13,7 +13,7 @@ import { isolated, markEnglishOnly } from "../i18n/direction.ts";
 import { onCatalogLoaded, translate, translateTv } from "../i18n/translate.ts";
 import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { actions, button, type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
-import { navigationIcon } from "./navigationIcon.ts";
+import { menuIcon, navigationIcon } from "./navigationIcon.ts";
 import { logoutCollectedAccount } from "./signIn.ts";
 import { PASSWORD_CHANGE_REQUIRED_MESSAGE } from "./signInText.ts";
 import { MarqueeBackdrop, marqueeScene } from "./marqueeBackdrop.ts";
@@ -475,7 +475,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             const change = button("change-account", translate("profiles.changeAccount"), options.onChangeServer);
             const out = signOutButton(() => showReset("signout"));
             change.element.prepend(navigationIcon("switch-profile"));
-            out.element.prepend(navigationIcon("signout"));
+            out.element.prepend(menuIcon("signout"));
             const retryRow = actions([retry]);
             const footer = el("div", "profile-footer");
             footer.append(change.element, out.element);
