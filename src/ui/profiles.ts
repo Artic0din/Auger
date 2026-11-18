@@ -9,17 +9,19 @@ import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { ProfileLaunch } from "../session/profileLaunch.ts";
 import { type AuthorityChange, type LogoutResult, SessionError } from "../session/session.ts";
-import { translate } from "../i18n/translate.ts";
+import { isolated, markEnglishOnly } from "../i18n/direction.ts";
+import { onCatalogLoaded, translate, translateTv } from "../i18n/translate.ts";
 import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { actions, button, type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
-import { navigationIcon } from "./navigationIcon.ts";
+import { menuIcon, navigationIcon } from "./navigationIcon.ts";
 import { logoutCollectedAccount } from "./signIn.ts";
-import { PASSWORD_CHANGE_REQUIRED_MESSAGE } from "./signInText.ts";
+import { passwordChangeRequiredMessage } from "./signInText.ts";
 import { MarqueeBackdrop, marqueeScene } from "./marqueeBackdrop.ts";
 import { profilePickerScreen } from "./profilePicker.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { createProfileFlow, type ProfileCreateFlow } from "./profileCreate.ts";
 import { signOutConfirmationCopy, signOutRemovesServer } from "./signOutConfirmation.ts";
+import { lateRedraw } from "./selectRelease.ts";
 
 export interface ProfileHandoff {
     readonly profile: ProfileSummary;
@@ -65,7 +67,7 @@ export interface ProfileScreens {
     destroy(): void;
 }
 
-const TITLE = "Who's watching?";
+const title = (): string => translate("profiles.headline");
 const PROOF_ENDED = "The PIN for this profile changed, or its unlock ended. Enter the PIN again.";
 
 export function mountProfiles(root: HTMLElement, options: ProfileOptions): ProfileScreens {
@@ -88,6 +90,8 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     /** Profile list result or failure kept while the sign-out confirmation is open. */
     let heldProfileLoad: (() => void) | undefined;
     let confirmingSignOut = false;
+    /** Draws the screen on display again, for a language file that lands after it was drawn; undefined for a screen with its own text handling. */
+    let redrawer: (() => void) | undefined;
 
     const show = (screen: Screen, focus?: string): void => {
         if (host === undefined) {
@@ -124,20 +128,27 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         oldCreation?.destroy();
         restoring = false;
         confirmingSignOut = false;
+        redrawer = undefined;
         heldProfileLoad = undefined;
         pending?.abort();
         pending = undefined;
         return ++view;
     };
 
-    const message = (name: string, title: string, lines: readonly string[], controls: readonly Control[], back?: () => void, tone: Note["tone"] = "info", focus?: string): void => {
+    const message = (name: string, heading0: string, lines: readonly string[], controls: readonly Control[], back?: () => void, tone: Note["tone"] = "info", focus?: string): void => {
         // Only the first line is the error; any later line is ordinary copy.
-        const body = lines.map((line, index) => el("p", tone === "error" && index === 0 ? "signin-text signin-error" : "signin-text", line));
+        const body = lines.map((line, index) => {
+            const node = el("p", tone === "error" && index === 0 ? "signin-text signin-error" : "signin-text", line);
+            markEnglishOnly(node, line);
+            return node;
+        });
         if (tone === "error") {
             body[0]?.setAttribute("role", "alert");
         }
         const key = focus ?? controls[0]?.key ?? "";
-        show({ name, content: [el("h1", "signin-title", title), ...body, actions(controls)], controls, focus: key, back }, key);
+        const heading = el("h1", "signin-title", heading0);
+        markEnglishOnly(heading, heading0);
+        show({ name, content: [heading, ...body, actions(controls)], controls, focus: key, back, translated: true }, key);
     };
 
     /** An Add Profile cover can return to the profile still acting; the root picker cannot. */
@@ -188,7 +199,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     };
 
     /** Apple's tvOS sign-out confirmation. Cancel stays focused; Back cancels and returns to Sign out. A profile list that arrives while this is open waits, replays on Cancel or Back, and is dropped on Sign Out. */
-    const askSignOut = (restore: () => void): void => {
+    const askSignOut = (restore: () => void, focused = "cancel-signout"): void => {
         if (leaving || destroyed) return;
         confirmingSignOut = true;
         const dismiss = (): void => {
@@ -200,20 +211,23 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         };
         const removesServer = signOutRemovesServer(() => server.accounts.directory.list(), server.server.http.base.baseUrl);
         const copy = signOutConfirmationCopy(session.account?.username, options.serverName?.(), removesServer);
-        const cancel = button("cancel-signout", "Cancel", dismiss);
-        const accept = button("confirm-signout", "Sign Out", () => {
+        const cancel = button("cancel-signout", translate("common.cancel"), dismiss);
+        const accept = button("confirm-signout", translate("shell.signOut.confirm"), () => {
             confirmingSignOut = false;
             heldProfileLoad = undefined;
             signOut();
         });
         // AccountRemovalConfirmation on tvOS: TVSettingsConfirmationOverlay over the screen, Cancel then Sign Out, Cancel focused.
+        // A redraw draws the screen under the dialog afresh first, so the dialog covers a copy of that screen and not of itself.
+        redrawer = () => { const focus = host?.focusedKey(); restore(); askSignOut(restore, focus); };
         show({
             name: "profiles:signout",
             content: centredDialog({ style: "confirmation", id: "profiles-signout", title: copy.title, message: copy.message,
                 buttons: [cancel.element, accept.element], destructive: accept.element, behind: screenBehind() }),
             controls: [{ ...cancel, row: 0, column: 0 }, { ...accept, row: 0, column: 1 }],
-            focus: "cancel-signout",
+            focus: focused,
             back: dismiss,
+            translated: true,
         });
     };
 
@@ -228,20 +242,22 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         apply();
     };
 
-    const signOutButton = (restore: () => void): Control => button("signout", "Sign out", () => askSignOut(restore));
+    const signOutButton = (restore: () => void): Control => button("signout", translate("common.signOut"), () => askSignOut(restore));
 
     // `retry` re-runs whatever started this load, so a failed launch load retries through launch.
     const load = (then: (list: ProfileSummary[]) => void, retry: () => void, restoreRememberedOffline = false): void => {
         const token = begin();
         const controller = new AbortController();
         pending = controller;
-        const showLoading = (): void => message("profiles-loading", TITLE, ["Loading profiles."], [signOutButton(showLoading)], resume(), "info", "signout");
+        const showLoading = (): void => { redrawer = showLoading; message("profiles-loading", title(), ["Loading profiles."], [signOutButton(showLoading)], resume(), "info", "signout"); };
         showLoading();
         const deliver = (apply: () => void): void => hold(token, apply);
         server.profiles.list(controller.signal).then(
             (list) => deliver(() => {
                 if (token !== view) return;
                 pending = undefined;
+                // The loading screen is over; whatever `then` draws registers its own redraw, and a screen that does not has none.
+                redrawer = undefined;
                 const id = server.accounts.localAccountId;
                 if (id) {
                     try { server.accounts.directory.update(id, { profileCount: list.length }); }
@@ -284,6 +300,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
 
     const showPicker = (list: readonly ProfileSummary[], focus?: string): void => {
         shownList = list;
+        redrawer = () => showPicker(list, focus);
         const preferred = focus ?? current?.id ?? options.launch?.rememberedProfileId ?? list[0]?.id;
         const focusKey = preferred === "signout" || preferred === "add-profile" || preferred === undefined ? (preferred ?? "add-profile") : `profile:${preferred}`;
         show(profilePickerScreen({ profiles: list, baseUrl: server.server.http.base.baseUrl,
@@ -315,11 +332,15 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     const addProfile = (): void => load(list => {
         if (list.length > 1) { picker(list, current?.id); return; }
         if (list[0] === undefined || list[0].id !== session.activeProfile?.id) {
-            const back = resume() ?? (() => showList());
-            const ok = button("ok", translate("newProfile.ok"), back);
-            const line = el("p", "signin-text signin-error", translate("profiles.error.noPrimaryCreate"));
-            line.setAttribute("role", "alert");
-            show({ name: "profile-create-unavailable", content: [el("h1", "signin-title", translate("menu.addProfile")), line, actions([ok])], controls: [ok], focus: ok.key, back, translated: true }, ok.key);
+            const showRefusal = (): void => {
+                redrawer = showRefusal;
+                const back = resume() ?? (() => showList());
+                const ok = button("ok", translate("newProfile.ok"), back);
+                const line = el("p", "signin-text signin-error", translate("profiles.error.noPrimaryCreate"));
+                line.setAttribute("role", "alert");
+                show({ name: "profile-create-unavailable", content: [el("h1", "signin-title", translate("menu.addProfile")), line, actions([ok])], controls: [ok], focus: ok.key, back, translated: true }, ok.key);
+            };
+            showRefusal();
             return;
         }
         shownList = list;
@@ -355,7 +376,8 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             ? "Could not reach the server. Check the TV's internet connection, then try again."
             : "The server had a problem. Try again in a moment.";
         const showError = (focused = "retry"): void => {
-            const retry = button("retry", "Try again", retryLoad);
+            redrawer = () => showError(host?.focusedKey() ?? focused);
+            const retry = button("retry", translate("common.tryAgain"), retryLoad);
             message("profiles-error", "Profiles didn't load", [detail], [retry, signOutButton(() => showError("signout"))], resume(), "error", focused);
         };
         showError();
@@ -381,22 +403,23 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         const offer = (error = false): void => {
             begin();
             const name = profile.name.trim();
-            const ask = button("ask-every-launch", "Ask Every Time", () => save(false));
-            const remember = button("remember", "Remember", () => save(true));
+            redrawer = () => offer(error);
+            const ask = button("ask-every-launch", translate("launch.offer.ask"), () => save(false));
+            const remember = button("remember", translate("launch.offer.remember"), () => save(true));
             const controls: Control[] = [{ ...ask, row: 0, column: 0 }, { ...remember, row: 0, column: 1 }];
-            if (error) controls.push({ ...button("continue-session", "Continue without saving", () => { launch.continueWithoutSaving(); handOff(profile); }), row: 1, column: 0 });
-            const content = centredDialog({ style: "alert", id: "remember-offer", title: name === "" ? "Open this profile automatically?" : `Open ${name} automatically?`,
-                ...(error ? { problem: "Silo couldn't securely remember this profile. Please try again." } : {}),
-                message: "Silo can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.",
+            if (error) controls.push({ ...button("continue-session", translate("firstRun.tour.continueWithoutSaving"), () => { launch.continueWithoutSaving(); handOff(profile); }), row: 1, column: 0 });
+            const content = centredDialog({ style: "alert", id: "remember-offer", title: name === "" ? translate("profiles.rememberOffer.titleUnnamed") : translate("launch.offer.title", { name: isolated(name) }),
+                ...(error ? { problem: translate("profiles.error.rememberFailed") } : {}),
+                message: translateTv("profiles.rememberOffer.bodyAppleTv"),
                 buttons: controls.map(control => control.element), behind: pickerBehind() });
-            show({ name: "remember-profile", content, controls, focus: "remember",
+            show({ name: "remember-profile", content, controls, focus: "remember", translated: true,
                 back: pendingOffer ? () => save(false) : () => showList(profile.id) });
         };
         const save = (remember: boolean): void => {
             const token = begin();
             const controller = new AbortController();
             pending = controller;
-            message("remember-saving", "Saving launch choice", [], [button("back", "Back", () => showList(profile.id))], () => showList(profile.id));
+            message("remember-saving", "Saving launch choice", [], [button("back", translate("common.back"), () => showList(profile.id))], () => showList(profile.id));
             launch.setRemember(remember, controller.signal, profile).then(() => { if (token === view) handOff(profile); }, () => { if (token === view) offer(true); });
         };
         if (pendingOffer) offer();
@@ -447,19 +470,20 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     const passwordResetRequired = (): void => {
         begin();
         const showReset = (focused = "change-account"): void => {
-            const retry = button("retry", "Try Again", () => showList());
-            const change = button("change-account", "Change account", options.onChangeServer);
+            redrawer = () => showReset(host?.focusedKey() ?? focused);
+            const retry = button("retry", translate("shell.errorView.tryAgain"), () => showList());
+            const change = button("change-account", translate("profiles.changeAccount"), options.onChangeServer);
             const out = signOutButton(() => showReset("signout"));
             change.element.prepend(navigationIcon("switch-profile"));
-            out.element.prepend(navigationIcon("signout"));
+            out.element.prepend(menuIcon("signout"));
             const retryRow = actions([retry]);
             const footer = el("div", "profile-footer");
             footer.append(change.element, out.element);
-            const detail = el("p", "signin-text signin-error", PASSWORD_CHANGE_REQUIRED_MESSAGE);
+            const detail = el("p", "signin-text signin-error", passwordChangeRequiredMessage());
             detail.setAttribute("role", "alert");
             show({
                 name: "profiles-error",
-                content: [el("h1", "signin-title", "Not allowed"), detail, retryRow, footer],
+                content: [el("h1", "signin-title", translate("shell.errorView.notAllowed")), detail, retryRow, footer],
                 controls: [
                     { ...retry, row: 0 },
                     { ...change, row: 1, landing: true },
@@ -467,6 +491,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
                 ],
                 focus: focused,
                 back: undefined,
+                translated: true,
             }, focused);
         };
         showReset();
@@ -524,12 +549,17 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         }
     };
     const unsubscribe = session.onAuthorityChange(onChange);
+    // A language file that lands after the screen drew redraws it in that language, once no Select is held. The PIN and Add Profile screens do the same for themselves.
+    const late = lateRedraw(() => false, () => { if (!destroyed && host !== undefined) redrawer?.(); });
+    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
 
     const destroy = (): void => {
         if (destroyed) {
             return;
         }
         destroyed = true;
+        stopCatalog();
+        late.clear();
         cancelReconcile?.();
         begin();
         unsubscribe();
@@ -557,7 +587,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             restoring = false;
             pending = undefined;
             if (error instanceof SessionError && error.reason !== "unavailable") { expired(); return; }
-            const showLaunchError = (focused = "retry"): void => message("profile-launch-error", "Remembered profile didn't open", ["Could not verify the remembered profile. Try again or choose who's watching."], [button("retry", "Retry", launchOnline), button("back", "Choose profile", () => picker(list)), signOutButton(() => showLaunchError("signout"))], () => picker(list), "error", focused);
+            const showLaunchError = (focused = "retry"): void => { redrawer = () => showLaunchError(host?.focusedKey() ?? focused); message("profile-launch-error", "Remembered profile didn't open", ["Could not verify the remembered profile. Try again or choose who's watching."], [button("retry", translate("common.retry"), launchOnline), button("back", "Choose profile", () => picker(list)), signOutButton(() => showLaunchError("signout"))], () => picker(list), "error", focused); };
             showLaunchError();
         }));
     }, launchOnline, !options.pickerRequested && !options.skipRemembered);
