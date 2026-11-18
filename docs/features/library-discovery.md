@@ -3,7 +3,8 @@
 Movies and Series each keep one selected library using the existing server/profile storage key.
 Recommended uses Home's shared Skyline backdrop, marquee and preference-aware media rows.
 Featured rows and rows without supported video destinations are omitted; headings are not focus targets, and Explore All opens the existing library-scoped section catalog.
-Recommended omits collections; Collections is a separate destination, matching Apple TV.
+Recommended omits the Collections tab's collections; Collections is a separate destination, matching Apple TV.
+A row the server marks `collection_posters` is the exception: it is an ordinary Recommended shelf, described under Rows of collections.
 The top-bar cascade provides every supported library destination without a duplicate mode strip.
 Hero enrichment uses the existing bounded queue after accepted loads and cached re-entry, never on focus movement.
 Known artwork capabilities size the initial section read; a late improving answer rereads sections only and merges artwork by retained section/card identity.
@@ -131,3 +132,15 @@ Optional test screenshots require both `DISCOVERY_CAPTURE` and `DISCOVERY_OUTPUT
 Desktop fake-server tests exercise discovery, authentication authority and the existing detail/player handoff.
 They do not establish Samsung simulator, actual Tizen 8 Chromium 108, packaged Tizen or physical TV compatibility.
 Home and whole-app parity remain outside this slice, and issue 28 remains open for parent review and remaining acceptance.
+
+## Rows of collections
+
+A Home or library row with `section_type` `collection_posters` shows collections instead of titles (silo-apple `TVCollectionsRow`, `TVSkylineSectionFeed` and `SectionCollectionCard` at 6eea7cf7; silo-server `docs/catalog-api.md`, Rows of collections).
+Its `collections` cards decode leniently: a card with an unknown source, or a server collection with no `library_id`, is left out and the rest of the row stays; a malformed backdrop leaves the card without one.
+The row keeps the server's order, is never featured, and shows every card it lists: `item_limit` does not apply.
+It has no Explore all card, because each collection is its own page, and `source=section` answers it with an empty page.
+A row left with no cards is omitted like any empty row, and a library tab's Movies or Series narrowing, Home's card removal and the artwork upgrade pass it through unchanged.
+Cards are the Collections tab's poster card at the title posters' size, keyed by source and id so Back restores the card.
+A focused card previews in the Home hero with its backdrop when the server sent one, else its poster.
+A server collection opens in its library (the page's own on a library page, so the tab's narrowing carries over); a personal collection opens its own page, read by collection id with no library.
+The "by Name" line for another profile's shared collection waits on Apple's `collections.card.byOwner` string, which the vendored catalog does not have yet.

@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Rows of collections now show on Home and on a library's Recommended page, as on Apple TV: a row the server builds from collections draws their posters, opens a server collection in its library and a personal collection on its own page, has no Explore all card, and previews the focused collection in the hero. Before, such a row arrived with no titles and was left out.
 - The pull request `Evidence` check that CONTRIBUTING.md describes now runs: a pull request that changes `app/` or `src/` fails until captures are attached under its Evidence heading, unless a maintainer adds the `evidence-not-needed` label.
 - Added the shared DevKit pull request check, which rejects non-conventional titles and commit messages, agent attribution and forbidden paths such as `node_modules`.
 - A few lines Apple TV words from its catalog now show in the language you pick under App Language: the password-reset line on the profile picker, the Box Set page's Movies heading, and the Multi-Audio and subtitles badges on a card. English reads exactly as before (#571).

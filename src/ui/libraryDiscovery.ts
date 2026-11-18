@@ -1,7 +1,7 @@
 import { operations } from "../api/operations.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { ApiError } from "../api/errors.ts";
-import type { Card, HomeSection, UserLibrary } from "../contracts/v2/catalog.ts";
+import { holdsCollections, type Card, type HomeSection, type UserLibrary } from "../contracts/v2/catalog.ts";
 import type { CatalogFilters, CatalogQueryRequest, LibraryCollections, MediaScope } from "../contracts/v2/discovery.ts";
 import { scopeOf } from "./browseModel.ts";
 import { DEFAULT_FILTER, type BrowseFilter, type Facet } from "./libraryBrowse.ts";
@@ -79,6 +79,8 @@ export function inVideoScope(scope: VideoScope, card: Card): boolean {
  * pages its section source and keeps the server's order. Only a missing continuation proves the shelf ran out.
  */
 export async function refillSection(original: HomeSection, scope: VideoScope, loadPage: (cursor: string | undefined) => Promise<ScopedPage>): Promise<ScopedSection> {
+    // A row of collections has no titles to narrow or page; it shows the collections the server listed for this library.
+    if (holdsCollections(original)) return { section: original, incomplete: false };
     const initial = original.items.filter(card => inVideoScope(scope, card));
     const target = Math.min(100, original.itemLimit !== undefined && original.itemLimit > 0 ? original.itemLimit : Math.max(20, original.items.length));
     const result = (items: readonly Card[], incomplete = false): ScopedSection => ({ section: { ...original, totalCount: undefined, items: items.slice(0, target) }, incomplete });

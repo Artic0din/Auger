@@ -23,7 +23,7 @@ import { ShowAudiobooks } from "./audiobookPreference.ts";
 import { detailOperations } from "../api/detailOperations.ts";
 import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
-import type { ItemDetail, UserLibrary } from "../contracts/v2/catalog.ts";
+import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import { DetailsState } from "./detailsState.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
@@ -2105,6 +2105,19 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stack.push(next);
         showRoute(next, focus);
     };
+    /** A personal collection's page is read by collection id alone, so no library stands behind it. */
+    const NO_LIBRARY: UserLibrary = { id: "", name: "", type: "unknown", sortOrder: 0 };
+    /**
+     * A card of a row of collections (TVCollectionsRow.swift): a server collection opens in its library, the page's own when it has one, so
+     * a library page's Movies or Series tab keeps narrowing it; a personal collection opens its own page, read without a library.
+     * The page reads its titles by collection id, so a library the viewer cannot list stands in by id alone.
+     */
+    const openCollection = (card: SectionCollectionCard, page: UserLibrary | undefined): void => {
+        const personal = card.source === "user";
+        const libraryId = card.libraryId ?? "";
+        const library: UserLibrary = personal ? NO_LIBRARY : page?.id === libraryId ? page : serverLibrary(libraryId) ?? { id: libraryId, name: "", type: "unknown", sortOrder: 0 };
+        push(newRoute({ kind: "libraryResults", library, title: card.title, source: { kind: "collection", id: card.id, groupKind: personal ? "user_collections" : "admin" }, pages: newPages() }));
+    };
 
     /** push() without keeping the top page: Back from the new page returns to the one beneath. */
     const replaceTop = (next: Route): void => {
@@ -2320,7 +2333,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
