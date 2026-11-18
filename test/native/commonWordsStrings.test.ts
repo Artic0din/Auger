@@ -4,7 +4,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
 
@@ -45,14 +44,8 @@ test("every key is in the German and Arabic files, and each reads differently fr
     }
 });
 
-test("English reads exactly as before and German and Arabic read the catalog", () => {
-    for (const [, key, word] of SITES) {
-        assert.equal(translate(key), word);
-        for (const tag of ["de", "ar"]) {
-            setAppLanguage(tag, SHIPPED_LANGUAGES, ["en-AU"]);
-            try { assert.equal(translate(key), translate(key, undefined, tag)); } finally { setAppLanguage(null); }
-        }
-    }
+test("English reads exactly as before for every key (the rendered German and Arabic checks are in test/ui/commonWordsLanguage.test.ts)", () => {
+    for (const [, key, word] of SITES) assert.equal(translate(key), word);
 });
 
 test("words with no common Apple key stay English: Continue, Delete, Search, Discard Held Change", () => {

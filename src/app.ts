@@ -336,7 +336,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     return { destroy };
 }
 
-function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
+export function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
     const container = el("div", "signin");
     root.appendChild(container);
     const host = new ScreenHost(container);
