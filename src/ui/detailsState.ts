@@ -145,8 +145,8 @@ export class DetailsState {
     relatedFailed = false;
     personalSupported: boolean | undefined;
     personalFailed = false;
-    /** A new Not interested mark the server accepted: the host drops the title from the rows that suggest it (HomeViewModel.removeNotInterested). */
-    onNotInterested: ((id: string) => void) | undefined;
+    /** A Not interested mark or clear the server accepted: the host updates the cards it retains and drops a newly marked title from the rows that suggest it (HomeViewModel.removeNotInterested). */
+    onNotInterested: ((id: string, marked: boolean) => void) | undefined;
     /** The page's own answer to a press on Not interested until a read of the title agrees with it. */
     private notInterestedAnswer: boolean | undefined;
     notInterestedPending = false;
@@ -243,17 +243,17 @@ export class DetailsState {
         this.notInterestedAnswer = target;
         this.notInterestedPending = true;
         this.changed();
-        this.session.call({ ...detailOperations.setNotInterested(id, target), profileScoped: true, replayAfterRefresh: false, signal: controller.signal }).then(() => {
-            if (!this.current(controller)) return;
+        // The write is not tied to this owner's controller: a title opened over the page must not leave it pending, and an accepted mark still reaches Home.
+        this.session.call({ ...detailOperations.setNotInterested(id, target), profileScoped: true, replayAfterRefresh: false }).then(() => {
             this.notInterestedPending = false;
-            if (target) this.onNotInterested?.(id);
-            this.changed();
+            this.onNotInterested?.(id, target);
+            if (this.controller !== undefined && !this.controller.signal.aborted) this.changed();
         }, () => {
-            if (!this.current(controller)) return;
             this.notInterestedPending = false;
             this.notInterestedAnswer = current;
-            if (this.presentsAlerts) this.alert = ITEM_UPDATE_FAILED;
-            this.changed();
+            const live = this.controller !== undefined && !this.controller.signal.aborted;
+            if (live && this.presentsAlerts) this.alert = ITEM_UPDATE_FAILED;
+            if (live) this.changed();
         });
     }
 

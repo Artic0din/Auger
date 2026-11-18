@@ -38,7 +38,7 @@ import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
-import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, type ViewContext } from "./browseViews.ts";
+import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, withNotInterested, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
@@ -326,6 +326,19 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, id);
             else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
         }
+    };
+    /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */
+    const noteNotInterested = (id: string, marked: boolean): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = withNotInterested(entry.data.sections, id, marked);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = withNotInterested(entry.data, id, marked);
+        }
+        if (marked) dropNotInterested(id);
+        cache.invalidate();
+        const current = top();
+        for (const entry of new Set([...roots.values(), ...stack])) if (entry !== current) entry.stale = true;
+        // The answer can land after Back has shown Home again: its cards were built from the rows before the change.
+        if (!torn && !playing && !cardActions.active && settingsScreen === undefined && (current?.kind === "home" || current?.kind === "for_you")) showRoute(current, host.focused());
     };
     const personalPending = (): boolean => detailWork?.pending === true || cardActions.pending;
     const cardActions = new CardActions(container, session, {
@@ -1205,7 +1218,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             detailsChanged(current, audioClosed);
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
-        details.onNotInterested = dropNotInterested;
+        details.onNotInterested = noteNotInterested;
         resolutionCap.ensure();
         return details;
     };
@@ -1740,7 +1753,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (data.detail !== undefined) {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
-                        details.onNotInterested = dropNotInterested;
+                        details.onNotInterested = noteNotInterested;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;
