@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "アカウントを追加",
  "changeAccount.current": "使用中",
  "changeAccount.signInOn": "{server}にサインイン",
+ "collections.card.byOwner": "作成者：{owner}",
  "collections.empty": "コレクションはまだありません",
  "collections.emptyBody": "サーバーで作成したコレクションがここに表示されます。",
  "collections.emptyItemsBody": "このコレクションにはまだアイテムがありません。",

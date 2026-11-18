@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A shared collection in a Home or library row of collections now reads `by Name` in the hero beside its item count, as on Apple TV, in the language you pick. The hero's line for any collection is now Apple's item count, not a synopsis.
 - Movie and series cards now offer Not Interested in their long-press menu, as on Apple TV: a title you mark leaves Home's recommendation and discovery rows and every For You row at once, and Show in Recommendations clears the mark. Rows of what is new, in progress or saved keep the title. The entry shows only when the server sends the mark.
 - Home's, For You's and the library pages' backdrop wash now takes a colour for each screen corner from the same quarter of the art, kept dark, with the four glows overlapping, as Apple TV does. Item details keep their wash.
 - Rows of collections now show on Home and on a library's Recommended page, as on Apple TV: a row the server builds from collections draws their posters, opens a server collection in its library and a personal collection on its own page, has no Explore all card, and previews the focused collection in the hero. Before, such a row arrived with no titles and was left out.

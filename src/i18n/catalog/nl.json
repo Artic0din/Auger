@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Account toevoegen",
  "changeAccount.current": "Huidig",
  "changeAccount.signInOn": "Inloggen op {server}",
+ "collections.card.byOwner": "door {owner}",
  "collections.empty": "Nog geen collecties",
  "collections.emptyBody": "Collecties die op de server zijn gemaakt, verschijnen hier.",
  "collections.emptyItemsBody": "Deze collectie bevat nog geen items.",
