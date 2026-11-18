@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { problem } from "../native/support/fakeSilo.ts";
 import { afterPaint, launchBrowser, type Tv } from "./support/tv.ts";
-import { card, ids, RECOMMENDED, runTv, startHome } from "./support/notInterestedFake.ts";
+import { card, hold, ids, menu, RECOMMENDED, rows, runTv, startHome } from "./support/notInterestedFake.ts";
 
 const start = startHome;
 
@@ -200,4 +200,82 @@ test("a mark whose answer is delayed is still pending when the title is reopened
     const settled = tv.page.locator('.details-more-popover [data-focus="not-interested"]');
     await tv.eventually(async () => (await settled.getAttribute("aria-disabled")) !== "true", "the action is free once the write settles");
     assert.equal((await settled.innerText()).trim(), "Show in Recommendations");
+}));
+
+// One per-title store serves the card menu and the page: the write out, the last confirmed value, and what a later read says.
+const settle = (tv: Tv): Promise<void> => tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+async function homeAgain(tv: Tv): Promise<void> {
+    await tv.remote(BACK);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await settle(tv);
+}
+async function openMovieMore(tv: Tv, section: string, id: string): Promise<string> {
+    await card(tv, section, id).click();
+    await tv.page.locator(`[data-view="item:${id}"] [data-focus="more"]`).waitFor();
+    await settle(tv);
+    await tv.page.locator('[data-focus="more"]').click();
+    return (await tv.page.locator('.details-more-popover [data-focus="not-interested"]').innerText()).trim();
+}
+
+test("a mark made on the page and cleared in the card menu reads as cleared when the page is opened again", () => run(async tv => {
+    const catalog = await start(tv);
+    await openPage(tv, "movie:m0002");
+    await choose(tv, "Not Interested");
+    await tv.eventually(async () => catalog.marks.length === 1, "the mark");
+    await settle(tv);
+    await homeAgain(tv);
+    // Home may still be drawing again from the stale read the return started; open the menu again until its row is live.
+    for (let attempt = 0; attempt < 6 && catalog.marks.length < 2; attempt++) {
+        await settle(tv);
+        await hold(tv, "recently_added", "movie:m0002");
+        const row = menu(tv).getByRole("menuitem", { name: "Show in Recommendations" });
+        if (await row.count() === 1 && (await row.getAttribute("aria-disabled")) !== "true") await row.click({ timeout: 2000 }).catch(() => undefined);
+        if (catalog.marks.length < 2 && await menu(tv).count() > 0) await tv.remote(BACK);
+    }
+    await tv.eventually(async () => catalog.marks.length === 2, "the clear from the card menu");
+    assert.equal(catalog.marks[1], "DELETE /not-interested/movie%3Am0002");
+    await settle(tv);
+    assert.equal(await openMovieMore(tv, "recently_added", "movie:m0002"), "Not Interested", "a fresh read of the cleared title wins over the page's earlier mark");
+}));
+
+test("a mark from the page still out blocks the card menu's change for that title, and the menu offers the clear once it is answered", () => run(async tv => {
+    const catalog = await start(tv);
+    await openPage(tv, "movie:m0002");
+    const answer = tv.fake.hold("/not-interested/movie%3Am0002", true);
+    await choose(tv, "Not Interested");
+    await tv.eventually(async () => catalog.marks.length === 1, "the write is out");
+    await homeAgain(tv);
+    await hold(tv, "recently_added", "movie:m0002");
+    const item = menu(tv).getByRole("menuitem").last();
+    assert.equal((await item.innerText()).trim(), "Show in Recommendations", "the menu reads the state the write will leave");
+    await item.click({ force: true });
+    await tv.page.waitForTimeout(100);
+    assert.deepEqual(catalog.marks, ["PUT /not-interested/movie%3Am0002"], "no clear is sent over the write still out");
+    if (await menu(tv).count() > 0) await tv.remote(BACK);
+    answer.release();
+    await settle(tv);
+    await hold(tv, "recently_added", "movie:m0002");
+    assert.equal((await rows(tv)).at(-1), "Show in Recommendations");
+    await menu(tv).getByRole("menuitem", { name: "Show in Recommendations" }).click();
+    await tv.eventually(async () => catalog.marks.length === 2, "the clear is sent once the mark is answered");
+}));
+
+test("a mark from the card menu still out is the page's pending write too: the page reads the state it will leave, waits, and sends nothing", () => run(async tv => {
+    const catalog = await start(tv);
+    const answer = tv.fake.hold("/not-interested/movie%3Am0002", true);
+    await hold(tv, "recently_added", "movie:m0002");
+    await menu(tv).getByRole("menuitem", { name: "Not Interested" }).click();
+    await tv.eventually(async () => catalog.marks.length === 1, "the write is out");
+    await card(tv, "recently_added", "movie:m0002").click();
+    await tv.page.locator('[data-view="item:movie:m0002"] [data-focus="more"]').waitFor();
+    await settle(tv);
+    await tv.page.locator('[data-focus="more"]').click();
+    const item = tv.page.locator('.details-more-popover [data-focus="not-interested"]');
+    assert.equal((await item.innerText()).trim(), "Show in Recommendations");
+    assert.equal(await item.getAttribute("aria-disabled"), "true", "the page waits for the card menu's write");
+    await item.click({ force: true });
+    assert.deepEqual(catalog.marks, ["PUT /not-interested/movie%3Am0002"], "nothing is sent over it");
+    answer.release();
+    await settle(tv);
 }));

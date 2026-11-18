@@ -24,7 +24,8 @@ import { detailOperations } from "../api/detailOperations.ts";
 import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
-import { DetailsState, NotInterestedWrites } from "./detailsState.ts";
+import { DetailsState } from "./detailsState.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
 import { SeriesEpisodes } from "./seriesEpisodes.ts";
@@ -328,11 +329,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
         }
     };
-    // The writes still out, shared by every title page of this session; the page showing the title draws again when one is answered.
-    const notInterestedWrites = new NotInterestedWrites(() => {
+    // The one per-title Not interested record of this session, used by the card menu and the title page; the page showing the title draws again when a write is answered.
+    const notInterestedStore = new NotInterestedStore(() => {
         const current = top();
         if (!torn && !playing && current?.kind === "item" && !cardActions.active && settingsScreen === undefined) render(host.focused());
     });
+    /** The store's stamp when each route's latest read began; a write answered since is not undone by that read. */
+    const readStamps = new WeakMap<Route, number>();
     /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */
     const noteNotInterested = (id: string, marked: boolean): void => {
         for (const entry of new Set([...roots.values(), ...stack])) {
@@ -347,7 +350,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (!torn && !playing && !cardActions.active && settingsScreen === undefined && (current?.kind === "home" || current?.kind === "for_you")) showRoute(current, host.focused());
     };
     const personalPending = (): boolean => detailWork?.pending === true || cardActions.pending;
-    const cardActions = new CardActions(container, session, {
+    const cardActions = new CardActions(container, session, notInterestedStore, {
         applied: (id, watched) => {
             visitedDetails.delete(id);
             // MediaCardWatchedSync.swift:15 refreshes Apple's cached page, which picks its season again; favorites keep it.
@@ -954,6 +957,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSlow();
         const controller = new AbortController();
         loading = controller;
+        readStamps.set(current, notInterestedStore.stamp());
         const entryRevision = inputRevision;
         const enterResults = !quiet && (current.kind === "personal" || (current.kind === "requests" && current.requests.data === undefined && current.requests.source.kind !== "search") || (current.kind === "library" && host.focused()?.key !== "sort"));
         current.slow = false;
@@ -1244,7 +1248,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
         details.onNotInterested = noteNotInterested;
-        details.notInterestedWrites = notInterestedWrites;
+        details.notInterestedStore = notInterestedStore;
+        details.readStamp = readStamps.get(current) ?? 0;
         resolutionCap.ensure();
         return details;
     };
@@ -1684,6 +1689,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         const detail = offline ? previous.detail : data.detail;
                         if (!offline) cachedDetailOwners.delete(previous);
                         previous.acceptDetail(detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (detail.played !== undefined) previous.values.set("watched", detail.played);
                         if (detail.type === "series") {
                             const series = previous.series;
@@ -1768,6 +1774,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     }
                     if (previous !== undefined && data.detail !== undefined) {
                         previous.acceptDetail(data.detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (data.detail.played !== undefined) previous.values.set("watched", data.detail.played);
                         current.data = { ...data, details: previous };
                         detailWork = previous;
@@ -1780,7 +1787,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
                         details.onNotInterested = noteNotInterested;
-                        details.notInterestedWrites = notInterestedWrites;
+                        details.notInterestedStore = notInterestedStore;
+                        details.readStamp = readStamps.get(current) ?? 0;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;

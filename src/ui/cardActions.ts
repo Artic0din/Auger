@@ -13,6 +13,7 @@ import { translate } from "../i18n/translate.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { remoteKey } from "./keys.ts";
 import { el } from "./screen.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { heldSelect, listenSelectRelease, moveSelect, releasedSelect, swallowSelect } from "./selectRelease.ts";
 
 /** What the opener knows about the card. A field it does not know is read from the item before the menu opens. */
@@ -107,7 +108,10 @@ export class CardActions {
     private readonly host: CardActionsHost;
     private readonly stopAuthority: () => void;
 
-    constructor(container: HTMLElement, session: NativeSession, host: CardActionsHost) {
+    private readonly notInterested: NotInterestedStore;
+
+    constructor(container: HTMLElement, session: NativeSession, notInterested: NotInterestedStore, host: CardActionsHost) {
+        this.notInterested = notInterested;
         this.container = container;
         this.session = session;
         this.host = host;
@@ -163,7 +167,7 @@ export class CardActions {
         const rows = this.menuRows(card, options, source);
         // Apple attaches no menu to a card without actions.
         if (rows.length === 0) { this.host.closed(); return; }
-        const busy = this.writes.has(card.id) || this.host.pendingElsewhere?.() === true;
+        const busy = this.writes.has(card.id) || this.notInterested.pending(card.id) !== undefined || this.host.pendingElsewhere?.() === true;
         const scrim = el("div", "card-actions-scrim card-menu-scrim");
         for (const type of ["click", "contextmenu"]) scrim.addEventListener(type, event => {
             if (event.target !== scrim) return;
@@ -266,7 +270,8 @@ export class CardActions {
         }
         // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
         if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
-            const marked = card.notInterested;
+            // A write still out for the title, from this menu or the page, shows the state it will leave.
+            const marked = this.notInterested.pending(card.id) ?? card.notInterested;
             rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
         }
         const dismissal = options.dismissal;
@@ -279,10 +284,14 @@ export class CardActions {
     /** `landed` gives the card's state after the change, or undefined when the card leaves its row. */
     private send(id: string, spec: ReturnType<typeof detailOperations.setPersonal>, landed: (card: MenuCard) => MenuCard | undefined, source: MenuCard, accepted?: () => void): void {
         // HomeViewModel.pendingWatchedUpdates: one change per card at a time, and none beside a pending Details change.
-        if (this.writes.has(id) || this.host.pendingElsewhere?.() === true) return;
+        if (this.writes.has(id) || this.notInterested.pending(id) !== undefined || this.host.pendingElsewhere?.() === true) return;
         const controller = new AbortController();
         this.writes.set(id, controller);
+        // Not interested goes through the one per-title store, so the page and other menus see this write while it is out.
+        const target = spec.path.startsWith("/not-interested/") ? spec.method === "PUT" : undefined;
+        if (target !== undefined) this.notInterested.start(id, target);
         this.session.call({ ...spec, profileScoped: true, replayAfterRefresh: false, signal: controller.signal }).then(() => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             accepted?.();
@@ -292,6 +301,7 @@ export class CardActions {
             if (shown !== undefined && shown.card.id === id) this.redraw(landed(shown.card));
             this.host.applied(id, spec.path.startsWith("/watched/"));
         }, () => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? !target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             if (this.shown?.card.id === id) this.redraw(this.shown.card);
