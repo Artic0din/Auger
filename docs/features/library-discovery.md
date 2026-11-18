@@ -141,6 +141,6 @@ The row keeps the server's order, is never featured, and shows every card it lis
 It has no Explore all card, because each collection is its own page, and `source=section` answers it with an empty page.
 A row left with no cards is omitted like any empty row, and a library tab's Movies or Series narrowing, Home's card removal and the artwork upgrade pass it through unchanged.
 Cards are the Collections tab's poster card at the title posters' size, keyed by source and id so Back restores the card.
-A focused card previews in the Home hero with its backdrop when the server sent one, else its poster.
+A focused card previews in the Home hero with its backdrop when the server sent one, else its poster. It is no title, so the hero reads no detail for it and ends the previous card's pending read.
 A server collection opens in its library (the page's own on a library page, so the tab's narrowing carries over); a personal collection opens its own page, read by collection id with no library.
 The "by Name" line for another profile's shared collection waits on Apple's `collections.card.byOwner` string, which the vendored catalog does not have yet.

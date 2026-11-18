@@ -30,7 +30,8 @@ export interface ViewContext {
     /** Resolves relative artwork references. */
     readonly baseUrl: string;
     readonly open: (destination: Destination) => void;
-    readonly preview?: (card: Card, row: string, continuing?: boolean, featured?: boolean) => void;
+    /** `title` is false for a card that is no title (a collection), which has no detail for the hero to read. */
+    readonly preview?: (card: Card, row: string, continuing?: boolean, featured?: boolean, title?: boolean) => void;
     readonly continueWatching?: boolean;
     /** Apple `SectionRow.layout` on tvOS. Unset keeps the Continue Watching still and poster otherwise. */
     /** "grid" sizes each card by its own type: poster, or square for an audiobook. */

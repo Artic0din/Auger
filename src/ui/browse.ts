@@ -231,11 +231,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let shownOverlays: CardOverlayPrefs | undefined = presentation.cardOverlays;
     let episodeSpoilers: EpisodeSpoilerPreferences | undefined;
     const previews = new WeakMap<Route, () => void>();
-    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured) => {
+    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured, title) => {
         const current = top();
         const preview = (): void => {
             // The read is armed first, so a row change the marquee reports during preview starts this card's read.
-            if (enrichedScene()) homeDetails.rest(card, continuing === true);
+            if (enrichedScene()) { if (title === false) homeDetails.leave(); else homeDetails.rest(card, continuing === true); }
             shell.preview(card, row, continuing ?? false, featured === true);
         };
         if (current !== undefined) previews.set(current, preview);

@@ -68,11 +68,11 @@ export interface CollectionRowHandlers {
 export function collectionRowCards(section: HomeSection, rowTitle: string, handlers: CollectionRowHandlers, library?: UserLibrary): FocusItem[] {
     return (section.collections ?? []).map(card => {
         const item = actionButton(`collection:${card.source}:${card.id}`, "", () => handlers.openCollection(card, library));
-        item.element.classList.add("browse-card", "discovery-collection", "collection-poster");
+        item.element.classList.add("browse-card", "collection-poster");
         item.element.setAttribute("aria-label", collectionSpoken(card));
         item.element.append(collectionArt(card, "browse-art", handlers.context.baseUrl), el("span", "browse-card-title", card.title));
         if (card.itemCount > 0) item.element.append(el("span", "browse-card-subtitle", countLine(card.itemCount, undefined)));
-        item.element.addEventListener("focus", () => handlers.context.preview?.(collectionPreview(card), rowTitle, false, false));
+        item.element.addEventListener("focus", () => handlers.context.preview?.(collectionPreview(card), rowTitle, false, false, false));
         return item;
     });
 }

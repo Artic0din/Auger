@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeHome } from "../native/support/fakeHome.ts";
-import { homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -56,6 +56,16 @@ test("Home draws a row of collections as poster cards with no Explore all card",
     const poster = await row.locator('[data-focus="collection:library:c1"] .browse-art').evaluate(node => ({ width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height }));
     const title = await tv.page.locator('[data-section="recent/12"] .browse-art').first().evaluate(node => ({ width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height }));
     assert.deepEqual(poster, title);
+    // The card around the poster is the title card's footprint too, not the landscape collection tile (430 x 234 with padding).
+    const box = (selector: string) => tv.page.locator(selector).first().evaluate(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height, padding: getComputedStyle(node).padding }; });
+    const card = await box('[data-section="franchises"] [data-focus="collection:library:c1"]');
+    const titleCard = await box('[data-section="recent/12"] .browse-card');
+    assert.equal(card.width, titleCard.width, "the same card width as a title poster");
+    assert.equal(card.padding, titleCard.padding, "the same card padding");
+    assert.ok(card.height >= poster.height, `the card (${card.height}) holds its poster (${poster.height})`);
+    // No poster: the stacked-cards symbol fills the poster, not a corner of it.
+    const symbol = await tv.page.locator('[data-section="franchises"] [data-focus="collection:library:c1"] .collection-stack').evaluate(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height }; });
+    assert.deepEqual(symbol, poster);
 }));
 
 test("Home keeps the rows around a row of collections, and a row of collections the server left empty is not drawn", () => {
@@ -87,16 +97,23 @@ test("a server collection opens in its library and a personal collection opens o
     assert.equal(await tv.focused(), "collection:user:u1");
 }));
 
-test("a focused collection card previews itself in the Home hero", () => open(withRow(), async tv => {
+test("a focused collection card previews itself in the Home hero and reads no title detail", () => open(withRow(), async tv => {
+    const detailReads = (since: number): string[] => tv.fake.requests.slice(since).map(request => request.path).filter(path => path.startsWith("/catalog/items/"));
+    const before = tv.fake.requests.length;
     await tv.page.locator('[data-focus="collection:library:c1"]').focus();
     await tv.eventually(async () => (await tv.page.locator(".skyline-title").first().innerText()) === "Franchises", "the hero names the focused collection");
     // A collection is no title: the hero reads no title detail for it (Apple builds its preview with no content id).
     await tv.jump(2000);
-    assert.deepEqual(tv.fake.requests.filter(request => /\/catalog\/items\/.*(c1|u1)/.test(request.path)).map(request => request.path), []);
+    await afterPaint(tv);
+    await tv.eventually(async () => tv.pendingReplies === 0, "answers delivered");
+    assert.deepEqual(detailReads(before), []);
     // The same wait does read a title's detail, so the check above can fail.
-    await tv.page.locator('[data-section="recent/12"] .browse-card').first().focus();
+    const control = tv.fake.requests.length;
+    await tv.page.locator('[data-section="recent/12"] .browse-card').nth(6).focus();
     await tv.jump(2000);
-    assert.ok(tv.fake.requests.some(request => request.path.startsWith("/catalog/items/movie")), "a focused title reads its detail");
+    await afterPaint(tv);
+    await tv.eventually(async () => tv.pendingReplies === 0, "answers delivered");
+    assert.equal(detailReads(control).length, 1, "a focused title reads its detail");
 }));
 
 test("a library page's Recommended shelves include a row of collections, in the server's order, with no Explore all card", () => open(withRow(true), async tv => {
