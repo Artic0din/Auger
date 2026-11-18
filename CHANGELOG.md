@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - The video skip pickers in Settings › Playback now open as "Video Skip Back" and "Video Skip Forward", as on Apple TV, and read in the language you pick.
+- A movie or series page now offers Not Interested in More, as on Apple TV, reading Show in Recommendations once the title is marked. A new mark takes the title out of Home's recommendation rows and every For You row, and Back lands on the card that took its place.
 - A shared collection in a Home or library row of collections now reads `by Name` in the hero beside its item count, as on Apple TV, in the language you pick. The hero's line for any collection is now Apple's item count, not a synopsis.
 - Home's, For You's and the library pages' colour wash now blends into the next one over 0.7 s, as Apple TV does, so page colours drift between items while the art still swaps in 0.24 s.
 - Movie and series cards now offer Not Interested in their long-press menu, as on Apple TV: a title you mark leaves Home's recommendation and discovery rows and every For You row at once, and Show in Recommendations clears the mark. Rows of what is new, in progress or saved keep the title. The entry shows only when the server sends the mark.

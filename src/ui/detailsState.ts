@@ -19,6 +19,7 @@ import { matchesSubtitle, preferredCatalogSubtitle } from "../player/preplaySubt
 import { DescriptionTranslations, type ItemDescriptionTranslation } from "./descriptionTranslation.ts";
 import { translate } from "../i18n/translate.ts";
 import { TrailerFetch } from "./trailerFetch.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 
 /** A failure Apple TV presents as a system alert with one OK button. */
 export interface DetailsAlert {
@@ -145,6 +146,14 @@ export class DetailsState {
     relatedFailed = false;
     personalSupported: boolean | undefined;
     personalFailed = false;
+    /** A Not interested mark or clear the server accepted: the host updates the cards it retains and drops a newly marked title from the rows that suggest it (HomeViewModel.removeNotInterested). */
+    onNotInterested: ((id: string, marked: boolean) => void) | undefined;
+    /** Shared with the other owners of this browse session; an owner of its own keeps a private one. */
+    notInterestedStore = new NotInterestedStore();
+    private stopNotInterested: (() => void) | undefined;
+    /** The store's stamp when the read behind `detail` began, so a write answered since is not undone by it. */
+    readStamp = 0;
+    get notInterestedPending(): boolean { return this.notInterestedStore.pending(this.detail.id) !== undefined; }
     readonly values = new Map<PersonalAction, boolean>();
     readonly changes = new Map<PersonalAction, PersonalChange>();
     private controller: AbortController | undefined;
@@ -222,6 +231,35 @@ export class DetailsState {
     private aggregateWatched: boolean | undefined;
     /** Counts watched readbacks, so a Details read sent before one lands cannot put the older state back. */
     watchedRevision = 0;
+    /** TVMovieDetailView and TVSeriesDetailView: `isNotInterested` is nil, so More offers nothing, for anything but a movie or series and for a server that predates the mark. */
+    get notInterested(): boolean | undefined {
+        if (this.detail.type !== "movie" && this.detail.type !== "series") return undefined;
+        const id = this.detail.id;
+        return this.notInterestedStore.state(id, this.detail.notInterested, this.readStamp);
+    }
+
+    /** ItemDetailViewModel.toggleNotInterested: shown at once, kept once the server accepts it, put back with the update-failed alert when it does not. */
+    toggleNotInterested(): void {
+        const controller = this.controller;
+        const current = this.notInterested;
+        if (controller === undefined || current === undefined || this.notInterestedPending || this.busy) return;
+        const target = !current;
+        const id = this.detail.id;
+        this.notInterestedStore.start(id, target);
+        this.changed();
+        // The write is not tied to this owner's controller: a title opened over the page must not leave it pending, and an accepted mark still reaches Home.
+        this.session.call({ ...detailOperations.setNotInterested(id, target), profileScoped: true, replayAfterRefresh: false }).then(() => {
+            this.notInterestedStore.finish(id, target);
+            this.onNotInterested?.(id, target);
+            if (this.controller !== undefined && !this.controller.signal.aborted) this.changed();
+        }, () => {
+            this.notInterestedStore.finish(id, current);
+            const live = this.controller !== undefined && !this.controller.signal.aborted;
+            if (live && this.presentsAlerts) this.alert = ITEM_UPDATE_FAILED;
+            if (live) this.changed();
+        });
+    }
+
     get busy(): boolean { return this.pending || this.pendingElsewhere() || this.episodePreferencesBlocked; }
 
     acceptDetail(detail: ItemDetail): void {
@@ -248,6 +286,8 @@ export class DetailsState {
     start(mode: "full" | "personal" | "playback" = "full"): void {
         if (this.controller !== undefined) return;
         this.controller = new AbortController();
+        // The page draws again when a Not interested write for its title is answered, whichever surface sent it, while it is shown.
+        this.stopNotInterested = this.notInterestedStore.subscribe(id => { if (id === this.detail.id) this.changed(); });
         for (const state of this.seasonStates.values()) state.start("personal");
         if (["movie", "episode"].includes(this.detail.type)) this.audioPreference.start();
         if (["movie", "episode"].includes(this.detail.type)) this.subtitlePreference.start();
@@ -297,6 +337,8 @@ export class DetailsState {
     }
 
     stop(): void {
+        this.stopNotInterested?.();
+        this.stopNotInterested = undefined;
         this.cancelEpisodeFocus();
         for (const [kind, change] of this.changes) {
             if (change.pending) this.changes.set(kind, { ...change, pending: false, failed: true });

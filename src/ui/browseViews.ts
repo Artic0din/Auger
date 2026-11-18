@@ -371,6 +371,13 @@ function withoutTitle<Row extends HomeSection>(sections: readonly Row[], id: str
     }).filter(hasCards);
 }
 
+/** The rows with this title's Not interested state set where a card carries one, so a card menu opened from retained rows offers the other action. */
+export function withNotInterested<Row extends HomeSection>(sections: readonly Row[], id: string, marked: boolean): Row[] {
+    return sections.map(section => section.items.some(item => item.id === id && item.notInterested !== undefined)
+        ? { ...section, items: section.items.map(item => item.id === id && item.notInterested !== undefined ? { ...item, notInterested: marked } : item) }
+        : section);
+}
+
 /** Home's rows without a title the profile just marked Not interested, once the server accepted the mark; the reread that follows leaves it out too. */
 export function removingNotInterested<Row extends HomeSection>(sections: readonly Row[], id: string): Row[] {
     return withoutTitle(sections, id, NOT_INTERESTED_ROW_TYPES);

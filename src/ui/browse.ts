@@ -25,6 +25,7 @@ import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import { DetailsState } from "./detailsState.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
 import { SeriesEpisodes } from "./seriesEpisodes.ts";
@@ -39,7 +40,7 @@ import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine,
 import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
 import { collectionRowPreview } from "./collectionCards.ts";
-import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, type ViewContext } from "./browseViews.ts";
+import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, withNotInterested, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
@@ -321,8 +322,32 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cache.discard(operations.listSeriesSeasons(id));
         return visitedDetails.delete(id);
     };
+    /** HomeViewModel.removeNotInterested and RecommendationsViewModel.removeNotInterested: a newly marked title leaves Home's recommendation rows and every For You row. */
+    const dropNotInterested = (id: string): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, id);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
+        }
+    };
+    // The one per-title Not interested record of this session, used by the card menu and the title page, which each subscribe to its answers while shown.
+    const notInterestedStore = new NotInterestedStore();
+    /** The store's stamp when each route's latest read began; a write answered since is not undone by that read. */
+    const readStamps = new WeakMap<Route, number>();
+    /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */
+    const noteNotInterested = (id: string, marked: boolean): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = withNotInterested(entry.data.sections, id, marked);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = withNotInterested(entry.data, id, marked);
+        }
+        if (marked) dropNotInterested(id);
+        cache.invalidate();
+        const current = top();
+        for (const entry of new Set([...roots.values(), ...stack])) if (entry !== current) entry.stale = true;
+        // The answer can land after Back has shown Home again: its cards were built from the rows before the change.
+        if (!torn && !playing && !cardActions.active && settingsScreen === undefined && (current?.kind === "home" || current?.kind === "for_you")) showRoute(current, host.focused());
+    };
     const personalPending = (): boolean => detailWork?.pending === true || cardActions.pending;
-    const cardActions = new CardActions(container, session, {
+    const cardActions = new CardActions(container, session, notInterestedStore, {
         applied: (id, watched) => {
             visitedDetails.delete(id);
             // MediaCardWatchedSync.swift:15 refreshes Apple's cached page, which picks its season again; favorites keep it.
@@ -342,12 +367,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingDismissed(entry.data.sections, { id: card.id, type: card.type, seriesId: card.seriesId });
             }
         },
-        markedNotInterested: card => {
-            for (const entry of new Set([...roots.values(), ...stack])) {
-                if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, card.id);
-                else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, card.id);
-            }
-        },
+        markedNotInterested: card => dropNotInterested(card.id),
         opened: () => {
             const current = top();
             if (current === undefined) return;
@@ -934,6 +954,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSlow();
         const controller = new AbortController();
         loading = controller;
+        readStamps.set(current, notInterestedStore.stamp());
         const entryRevision = inputRevision;
         const enterResults = !quiet && (current.kind === "personal" || (current.kind === "requests" && current.requests.data === undefined && current.requests.source.kind !== "search") || (current.kind === "library" && host.focused()?.key !== "sort"));
         current.slow = false;
@@ -1223,6 +1244,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             detailsChanged(current, audioClosed);
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
+        details.onNotInterested = noteNotInterested;
+        details.notInterestedStore = notInterestedStore;
+        details.readStamp = readStamps.get(current) ?? 0;
         resolutionCap.ensure();
         return details;
     };
@@ -1662,6 +1686,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         const detail = offline ? previous.detail : data.detail;
                         if (!offline) cachedDetailOwners.delete(previous);
                         previous.acceptDetail(detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (detail.played !== undefined) previous.values.set("watched", detail.played);
                         if (detail.type === "series") {
                             const series = previous.series;
@@ -1746,6 +1771,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     }
                     if (previous !== undefined && data.detail !== undefined) {
                         previous.acceptDetail(data.detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (data.detail.played !== undefined) previous.values.set("watched", data.detail.played);
                         current.data = { ...data, details: previous };
                         detailWork = previous;
@@ -1757,6 +1783,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (data.detail !== undefined) {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
+                        details.onNotInterested = noteNotInterested;
+                        details.notInterestedStore = notInterestedStore;
+                        details.readStamp = readStamps.get(current) ?? 0;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;

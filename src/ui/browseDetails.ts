@@ -672,6 +672,13 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         }
         if (detail.type === "movie" || detail.type === "series") items.push(actionButton("find-trailers", translate("detail.more.findTrailers"), () => { state.trailers.start(state.detail); state.closePanel(); }));
         if (state.descriptions?.offers() === true) items.push(actionButton("translate-description", translate("detail.more.translate"), () => { state.descriptions?.translate(); state.closePanel(); }));
+        // TVMovieDetailView / TVSeriesDetailView: after the translation row, before Watch Party.
+        const notInterested = state.notInterested;
+        if (notInterested !== undefined) {
+            const item = actionButton("not-interested", translate(notInterested ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), () => { state.closePanel(); state.toggleNotInterested(); });
+            item.element.setAttribute("aria-disabled", String(state.notInterestedPending));
+            items.push(item);
+        }
         // WatchPartyEntry.isAvailable: last, and only while the experimental switch is on and the server can host a party.
         // A series offers the episode its hero shows.
         const partyTitle = detail.type === "series" ? state.nextEpisode : detail.type === "movie" || detail.type === "episode" ? state.detail : undefined;
