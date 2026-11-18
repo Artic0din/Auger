@@ -298,8 +298,8 @@ test("a playlist check reads only the head, stays on permitted origins and sends
         return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ pull(stream) { pulled++; stream.enqueue(line); } }), { status: 200 }));
     };
     const reader = new NativeHttp(http.base, device, big, clock);
-    const head = await reader.playlistHead(`${http.base.baseUrl}/api/v2/stream/s?st=1`, new AbortController().signal);
-    assert.match(head, /^#EXT-X-DEFINE/);
+    const [head] = await reader.playlistHeads(`${http.base.baseUrl}/api/v2/stream/s?st=1`, new AbortController().signal);
+    assert.match(head ?? "", /^#EXT-X-DEFINE/);
     assert.ok(pulled <= 3, `a long playlist is not read to its end (${pulled} reads)`);
-    await assert.rejects(reader.playlistHead("http://silo.example.test/api/v2/stream/s", new AbortController().signal), /Invalid playlist URL/);
+    await assert.rejects(reader.playlistHeads("http://silo.example.test/api/v2/stream/s", new AbortController().signal), /Invalid playlist URL/);
 });

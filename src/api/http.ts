@@ -68,6 +68,14 @@ const PLAYLIST_HEAD_BYTES = 64 * 1024;
 /** Longer than a healthy playlist takes to answer; a slower one is left to AVPlay. */
 const PLAYLIST_HEAD_TIMEOUT_MS = 5000;
 
+/** The address after the first `#EXT-X-STREAM-INF`: the video variant, not the `URI=` of a subtitle or audio rendition. */
+function firstVariantUri(master: string): string | undefined {
+    const lines = master.split(/\r?\n/);
+    const tag = lines.findIndex(line => line.startsWith("#EXT-X-STREAM-INF"));
+    if (tag === -1) return undefined;
+    return lines.slice(tag + 1).map(line => line.trim()).find(line => line !== "" && !line.startsWith("#"));
+}
+
 /**
  * A subtitle download the origin broke off or let go quiet after the answer began: `text` is what
  * arrived. Apple's `SubtitleDecoderError.truncated`; a refused or unreachable first fetch is not one.
@@ -82,35 +90,54 @@ export class SubtitleTruncated extends Error {
 
 export class NativeHttp {
     /**
-     * The first 64 KiB of an HLS playlist, read the way AVPlay will read it (address only, no headers). It
-     * throws on any refusal or silence, which the caller treats as "unknown", not as a verdict.
+     * The first 64 KiB of an HLS playlist and, when it is a master, of the first variant it lists, read the way AVPlay will read them
+     * (address only, no headers). Subtitle and audio renditions are not read. One 5 s budget covers both reads. The master's own
+     * failure throws and the variant's does not, so the caller treats either as "unknown", never as a verdict.
      */
-    async playlistHead(url: string, signal: AbortSignal): Promise<string> {
-        const address = new URL(url);
-        if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid playlist URL");
+    async playlistHeads(url: string, signal: AbortSignal): Promise<string[]> {
+        const master = new URL(url);
+        this.requirePlaylistUrl(master);
         const abort = new AbortController();
         const cancel = (): void => abort.abort();
         signal.addEventListener("abort", cancel, { once: true });
         if (signal.aborted) cancel();
         const timeout = this.clock.schedule(cancel, PLAYLIST_HEAD_TIMEOUT_MS);
         try {
-            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", cache: "no-store" });
-            if (!response.ok || response.body === null) throw new Error("Playlist read failed");
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let text = "";
-            for (let bytes = 0; bytes < PLAYLIST_HEAD_BYTES;) {
-                const chunk = await reader.read();
-                if (chunk.done) break;
-                bytes += chunk.value.byteLength;
-                text += decoder.decode(chunk.value, { stream: true });
+            const heads = [await this.readPlaylistHead(master, abort.signal)];
+            const variant = firstVariantUri(heads[0] ?? "");
+            if (variant === undefined) return heads;
+            try {
+                const address = new URL(variant, master);
+                this.requirePlaylistUrl(address);
+                heads.push(await this.readPlaylistHead(address, abort.signal));
+            } catch {
+                if (signal.aborted) throw new Error("Playlist read aborted");
             }
-            cancel();
-            return text + decoder.decode();
+            return heads;
         } finally {
             timeout();
             signal.removeEventListener("abort", cancel);
         }
+    }
+
+    private requirePlaylistUrl(address: URL): void {
+        if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid playlist URL");
+    }
+
+    private async readPlaylistHead(address: URL, signal: AbortSignal): Promise<string> {
+        const response = await this.fetch(address.href, { signal, credentials: "omit", redirect: "error", cache: "no-store" });
+        if (!response.ok || response.body === null) throw new Error("Playlist read failed");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let text = "";
+        for (let bytes = 0; bytes < PLAYLIST_HEAD_BYTES;) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            bytes += chunk.value.byteLength;
+            text += decoder.decode(chunk.value, { stream: true });
+        }
+        await reader.cancel().catch(() => undefined);
+        return text + decoder.decode();
     }
 
     async subtitleText(url: string, signal: AbortSignal): Promise<string> {

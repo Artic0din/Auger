@@ -85,7 +85,7 @@ export class FakeSilo {
     /** Further operations, e.g. playback; answered before the 404 fallback. */
     readonly extraRoutes: ((method: string, path: string, headers: Record<string, string>, body: Record<string, unknown> | undefined) => Reply | undefined)[] = [];
     /** Answers GET /stream/... without sign-in, as a media URL carries its own token. Unset, it falls through to the 404. */
-    streamPlaylist: Reply | undefined;
+    streamPlaylist: Reply | ((path: string) => Reply) | undefined;
     /** Browse reads (test/native/support/fakeCatalog.ts); unset, they answer 404. */
     catalog: CatalogRoutes | undefined;
     /** The household GET /profiles returns: the fixture's owner and a PIN-locked child. */
@@ -265,7 +265,7 @@ export class FakeSilo {
             }
         }
         if (method === "GET" && path.startsWith("/stream/") && this.streamPlaylist !== undefined) {
-            return this.streamPlaylist;
+            return typeof this.streamPlaylist === "function" ? this.streamPlaylist(path) : this.streamPlaylist;
         }
         // Until the password changes, the session may only log out (auth-api.md, temporary passwords).
         const denied = this.denyUnauthenticated(headers);

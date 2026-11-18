@@ -3339,3 +3339,83 @@ test("leaving while the playlist is being read opens nothing (#650)", async () =
     assert.deepEqual(opens(r), []);
     r.controller.destroy();
 });
+
+// The real shape (S95C, 20 Nov): a version 3 master with no define, 31 subtitle renditions, and a version 8 video variant with the define on line 3.
+const MASTER_PATH = (id: string): string => `/api/v2/stream/${id}/master.m3u8?st=signed`;
+const VARIANT_URI = "master.m3u8?silo_rendition=video&st=signed";
+
+function masterPlaylist(): string {
+    const subtitles = Array.from({ length: 31 }, (_, index) => `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Track ${index}",LANGUAGE="en",URI="master.m3u8?silo_rendition=subtitles&silo_track=${index}&st=signed"`);
+    return ["#EXTM3U", "#EXT-X-VERSION:3", ...subtitles, '#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x800,SUBTITLES="subs"', VARIANT_URI].join("\n");
+}
+
+function streams(variant: string, master = masterPlaylist()): (path: string) => { status: number; text: string } {
+    return path => path.includes("silo_rendition=video") ? { status: 200, text: variant } : path.includes("silo_rendition=") ? { status: 200, text: "#EXTM3U\n#EXT-X-VERSION:3\n" } : { status: 200, text: master };
+}
+
+async function playMaster(r: Rig): Promise<void> {
+    r.server.next.push({ delivery: "server_transcode_hls", protocol: "hls", container: "mpegts", url: MASTER_PATH });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+}
+
+function streamReads(r: Rig): string[] {
+    return r.h.fake.requests.filter(request => request.path.startsWith("/stream/")).map(request => request.path.replace(/&token=.*$/, ""));
+}
+
+test("a define that is only in the video variant is refused, reading the master and that one variant (#650)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        r.h.fake.streamPlaylist = streams(DEFINE_PLAYLIST);
+        await playMaster(r);
+        assert.deepEqual(opens(r), []);
+        const view = last(r.views);
+        assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+        const id = sessionIds(r.server)[0] ?? "";
+        assert.deepEqual(streamReads(r), [`/stream/${id}/master.m3u8?st=signed`, `/stream/${id}/master.m3u8?silo_rendition=video&st=signed`], "the master, then its first video variant; no subtitle rendition");
+        assert.equal(warnings.mock.calls.length, 1);
+        assert.equal(r.h.clock.scheduled, 0);
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a master whose video variant is plain is opened after those two reads (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = streams(PLAIN_PLAYLIST);
+    await playMaster(r);
+    assert.equal(streamReads(r).length, 2);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a variant the check cannot read is left to AVPlay (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = path => path.includes("silo_rendition=video") ? { status: 404, text: "" } : { status: 200, text: masterPlaylist() };
+    await playMaster(r);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a variant on another origin is not read (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = { status: 200, text: masterPlaylist().replace(VARIANT_URI, "http://other.example.test/video.m3u8") };
+    await playMaster(r);
+    assert.equal(streamReads(r).length, 1);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("the master and the variant share one five-second budget (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = streams(DEFINE_PLAYLIST);
+    r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000/master.m3u8?silo_rendition=video&st=signed");
+    await playMaster(r);
+    await r.h.clock.advance(4999);
+    assert.deepEqual(opens(r), [], "the held variant read is still waiting");
+    await r.h.clock.advance(1);
+    assert.equal(opens(r).length, 1, "five seconds in all, then AVPlay gets it");
+    r.controller.destroy();
+});

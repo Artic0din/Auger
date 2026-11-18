@@ -2768,19 +2768,20 @@ export class PlaybackController implements PlayerControls {
     }
 
     /**
-     * True when an HLS playlist is written with `#EXT-X-DEFINE` variables (or leaves one in a segment address). AVPlay
+     * True when an HLS playlist, or the first video variant of a master, is written with `#EXT-X-DEFINE` variables (or leaves one in a
+     * segment address). The master is version 3 and clean; the define is in the variant (S95C, #650). Rendition playlists are not read. AVPlay
      * cannot read those, and handing it such a stream stops the page's JavaScript until the TV closes Silo (#650, #314),
      * so no timer could catch it. A playlist that cannot be read here is no verdict: AVPlay gets it as before.
      */
     private async playlistUnreadable(attempt: Attempt, plan: PlaybackPlan, url: string): Promise<boolean> {
         if (plan.delivery !== "server_remux_hls" && plan.delivery !== "server_transcode_hls") return false;
-        let head: string;
+        let heads: string[];
         try {
-            head = await this.deps.session.http.playlistHead(url, attempt.signal);
+            heads = await this.deps.session.http.playlistHeads(url, attempt.signal);
         } catch {
             return false;
         }
-        if (!/#EXT-X-DEFINE|\{\$/.test(head)) return false;
+        if (!heads.some(head => /#EXT-X-DEFINE|\{\$/.test(head))) return false;
         console.warn(`Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery ${plan.delivery})`);
         return true;
     }
