@@ -2,7 +2,11 @@
 // TVAudiobookChaptersView and AudiobookDetailFormatting, kept free of the DOM so Node can test them.
 
 import { currentChapterIndex, isFinished, resumePosition, type Audiobook, type AudiobookChapter, type AudiobookRelatedItem } from "../contracts/v2/audiobooks.ts";
+import { isolated } from "../i18n/direction.ts";
+import { durationText } from "../i18n/duration.ts";
+import { localizeNumerals, percentText } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
 
 // --- AudiobookDetailFormatting ---
 
@@ -51,8 +55,9 @@ export function seriesLine(name: string | undefined, index: number | undefined, 
     const trimmed = name?.trim();
     if (trimmed === undefined || trimmed === "") return undefined;
     if (index === undefined || index <= 0) return trimmed;
-    if (total !== undefined && total >= index && total > 1) return `${trimmed} · Book ${index} of ${total}`;
-    return `${trimmed} · Book ${index}`;
+    const series = isolated(trimmed);
+    if (total !== undefined && total >= index && total > 1) return translate("detail.audiobook.seriesLineOf", { series, number: integerText(index), total: integerText(total) });
+    return translate("detail.audiobook.seriesLine", { series, number: integerText(index) });
 }
 
 function naturalJoin(names: readonly string[]): string {
@@ -65,18 +70,15 @@ export function peopleSummary(names: readonly string[], visible = 2): string | u
     const cleaned = names.flatMap(name => name.split(",")).map(name => name.trim()).filter(name => name !== "");
     if (cleaned.length === 0) return undefined;
     if (cleaned.length <= visible + 1) return naturalJoin(cleaned);
-    return `${cleaned.slice(0, visible).join(", ")} & ${cleaned.length - visible} more`;
+    return translate("detail.audiobook.peopleMore", { count: cleaned.length - visible, names: isolated(cleaned.slice(0, visible).join(", ")) });
 }
 
 // --- PlayerTimeFormatter ---
 
-/** "1h 42m" / "42m" / "" for an unknown length. */
+/** "1h 42m" / "42m" / "" for an unknown length, in the shown language's units and digits (Apple's `LocaleFormat.duration`). */
 export function formatRuntime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds <= 0) return "";
-    const total = Math.floor(seconds);
-    const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60);
-    if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-    return `${minutes}m`;
+    return durationText(Math.floor(Math.floor(seconds) / 60), false);
 }
 
 /** "m:ss" or "h:mm:ss". */
@@ -85,7 +87,7 @@ export function formatHMS(seconds: number): string {
     const total = Math.floor(seconds);
     const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60), rest = total % 60;
     const pad = (value: number): string => String(value).padStart(2, "0");
-    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
+    return localizeNumerals(hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`);
 }
 
 // --- AudiobookProgress ---
@@ -125,7 +127,7 @@ export interface AudiobookPage {
     readonly seriesLine: string | undefined;
     readonly credits: { readonly author: string | undefined; readonly narrator: string | undefined } | undefined;
     readonly state: AudiobookState;
-    readonly primary: { readonly label: "Resume" | "Play" | "Play Again"; readonly icon: "play" | "restart" };
+    readonly primary: { readonly label: string; readonly icon: "play" | "restart" };
     /** Whole-book seconds Resume starts at. */
     readonly resumeSeconds: number | undefined;
     readonly showsChapters: boolean;
@@ -140,7 +142,7 @@ export interface AudiobookPage {
 }
 
 function railItem(item: AudiobookRelatedItem): RailItem {
-    return { id: item.id, title: item.title, posterUrl: item.posterUrl, caption: item.seriesIndex === undefined ? undefined : `Book ${item.seriesIndex}` };
+    return { id: item.id, title: item.title, posterUrl: item.posterUrl, caption: item.seriesIndex === undefined ? undefined : translate("detail.audiobook.bookNumber", { number: integerText(item.seriesIndex) }) };
 }
 
 export function audiobookPage(book: Audiobook): AudiobookPage {
@@ -154,7 +156,7 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     const fraction = total > 0 ? Math.min(1, Math.max(0, position / total)) : 0;
     const percent = Math.floor(fraction * 100 + 0.5);
     const runtime = formatRuntime(total);
-    const chapterTitle = (index: number): string => chapters[index]?.title || `Chapter ${index + 1}`;
+    const chapterTitle = (index: number): string => chapters[index]?.title || translate("detail.audiobook.chapter", { number: integerText(index + 1) });
 
     const genre = book.genres[0];
     const volume = volumeIn(book.title);
@@ -165,24 +167,24 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     let state: AudiobookState;
     if (resume !== undefined) {
         const line1 = current !== undefined && chapters[current] !== undefined
-            ? `Chapter ${current + 1} · ${chapterTitle(current)}`
-            : formatRuntime(position) === "" ? "In progress" : `${formatRuntime(position)} listened`;
+            ? translate("detail.audiobook.currentChapter", { number: integerText(current + 1), title: isolated(chapterTitle(current)) })
+            : formatRuntime(position) === "" ? translate("detail.audiobook.inProgress") : translate("detail.audiobook.listened", { time: formatRuntime(position) });
         const pieces: string[] = [];
-        if (current !== undefined && chapters[current] !== undefined) pieces.push(`${formatHMS(Math.max(0, position - (chapters[current]?.start ?? 0)))} into the chapter`);
+        if (current !== undefined && chapters[current] !== undefined) pieces.push(translate("detail.audiobook.intoChapter", { time: formatHMS(Math.max(0, position - (chapters[current]?.start ?? 0))) }));
         const left = formatRuntime(Math.max(0, total - position));
-        if (left !== "") pieces.push(`${left} left in the book`);
+        if (left !== "") pieces.push(translate("detail.audiobook.leftInBook", { time: left }));
         state = { kind: "inProgress", fraction, percent, line1, line2: pieces.length === 0 ? undefined : pieces.join(" · ") };
     } else if (finished) {
-        state = { kind: "finished", line1: "Finished", line2: runtime === "" ? undefined : runtime };
+        state = { kind: "finished", line1: translate("detail.audiobook.finished"), line2: runtime === "" ? undefined : runtime };
     } else {
         const pieces: string[] = [];
         if (runtime !== "") pieces.push(runtime);
-        if (chapters.length > 0) pieces.push(`${chapters.length} chapters`);
-        state = { kind: "notStarted", line1: "Not started", line2: pieces.length === 0 ? undefined : pieces.join(" · ") };
+        if (chapters.length > 0) pieces.push(translate("detail.audiobook.chapterCount", { count: chapters.length, count_text: integerText(chapters.length) }));
+        state = { kind: "notStarted", line1: translate("detail.audiobook.notStarted"), line2: pieces.length === 0 ? undefined : pieces.join(" · ") };
     }
 
     const rows: PickerRow[] = chapters.length === 0
-        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: part.fileName !== undefined && part.fileName !== "" ? part.fileName : `Part ${partIndex + 1}`, duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
+        ? book.parts.map((part, partIndex) => ({ id: `part-${partIndex}`, number: partIndex + 1, title: part.fileName !== undefined && part.fileName !== "" ? part.fileName : translate("detail.audiobook.part", { number: integerText(partIndex + 1) }), duration: part.duration, startSeconds: part.offset, isCurrent: false, isDone: false, progress: undefined }))
         : chapters.map((chapter, chapterIndex) => {
             const duration = chapterDuration(chapters, chapterIndex, total);
             const isCurrent = current === chapterIndex;
@@ -194,13 +196,13 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
         });
     const subline: string[] = [];
     if (resume !== undefined) {
-        subline.push(`${percent}%`);
-        if (current !== undefined && chapters.length > 0) subline.push(`Chapter ${current + 1} of ${chapters.length}`);
+        subline.push(percentText(percent));
+        if (current !== undefined && chapters.length > 0) subline.push(translate("detail.audiobook.chapterOf", { number: integerText(current + 1), total: integerText(chapters.length) }));
         const left = formatRuntime(Math.max(0, total - position));
-        if (left !== "") subline.push(`${left} left`);
+        if (left !== "") subline.push(translate("detail.audiobook.timeLeft", { time: left }));
     } else {
-        if (chapters.length > 0) subline.push(`${chapters.length} chapters`);
-        else if (book.parts.length > 1) subline.push(`${book.parts.length} parts`);
+        if (chapters.length > 0) subline.push(translate("detail.audiobook.chapterCount", { count: chapters.length, count_text: integerText(chapters.length) }));
+        else if (book.parts.length > 1) subline.push(translate("detail.audiobook.partCount", { count: book.parts.length, count_text: integerText(book.parts.length) }));
         if (runtime !== "") subline.push(runtime);
     }
 
@@ -212,18 +214,18 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
     if (detail.publisher !== undefined && detail.publisher !== "") credits.push(detail.publisher);
     if (book.year !== undefined) credits.push(integerText(book.year));
     const rails: { title: string; items: RailItem[] }[] = [];
-    if (detail.series !== undefined && detail.series.entries.length > 0) rails.push({ title: detail.series.name ?? "Series", items: detail.series.entries.map(railItem) });
-    if (detail.alsoByAuthor.length > 0) rails.push({ title: "More by Author", items: detail.alsoByAuthor.map(railItem) });
-    if (detail.similar.length > 0) rails.push({ title: "Related", items: detail.similar.map(railItem) });
+    if (detail.series !== undefined && detail.series.entries.length > 0) rails.push({ title: detail.series.name ?? translate("detail.audiobook.series"), items: detail.series.entries.map(railItem) });
+    if (detail.alsoByAuthor.length > 0) rails.push({ title: translate("detail.audiobook.moreByAuthor"), items: detail.alsoByAuthor.map(railItem) });
+    if (detail.similar.length > 0) rails.push({ title: translate("detail.audiobook.related"), items: detail.similar.map(railItem) });
     const narrations = detail.otherNarrations.map(narration => ({ id: narration.id, label: narration.narrators.length === 0 ? narration.title : narration.narrators.join(", "), year: narration.year }));
 
     return {
         title: cleanTitle(book.title, detail.series?.name),
-        eyebrow: genre === undefined || genre === "" ? "AUDIOBOOK" : `AUDIOBOOK · ${genre.toUpperCase()}`,
+        eyebrow: genre === undefined || genre === "" ? translate("detail.audiobook.label") : translate("detail.audiobook.labelWithGenre", { genre: genre.toUpperCase() }),
         seriesLine: seriesLine(detail.series?.name, index, volume.total),
         credits: author === undefined && narrator === undefined ? undefined : { author, narrator },
         state,
-        primary: resume !== undefined ? { label: "Resume", icon: "play" } : finished ? { label: "Play Again", icon: "restart" } : { label: "Play", icon: "play" },
+        primary: resume !== undefined ? { label: translate("detail.resume"), icon: "play" } : finished ? { label: translate("detail.playAgain"), icon: "restart" } : { label: translate("common.play"), icon: "play" },
         resumeSeconds: resume,
         showsChapters: chapters.length > 0 || book.parts.length > 1,
         picker: { rows, defaultRowId: rows.find(row => row.isCurrent)?.id ?? rows[0]?.id, subline: subline.join(" · ") },

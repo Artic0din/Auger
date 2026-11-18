@@ -9,7 +9,10 @@ import { artworkUrl } from "./browseModel.ts";
 import { actionButton, artwork, cardItem, type ViewContext, zoneNode } from "./browseViews.ts";
 import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { el } from "./screen.ts";
+import { isolated, markEnglishOnly } from "../i18n/direction.ts";
+import { percentText } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
+import { textLanguage, translate } from "../i18n/translate.ts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const ICONS = { play: "M8 4 21 12 8 20Z", restart: "M5 4V20M19 4 7 12 19 20Z", chapters: "M8 6H21M8 12H21M8 18H21M3 6H4M3 12H4M3 18H4" } as const;
@@ -49,19 +52,24 @@ function stateCluster(page: AudiobookPage): HTMLElement {
     if (page.state.line2 !== undefined) lines.append(el("p", "audiobook-state-detail", page.state.line2));
     const cluster = el("div", "audiobook-state");
     cluster.dataset.state = page.state.kind;
-    if (page.state.kind === "inProgress") cluster.append(ring(page.state.fraction, `${page.state.percent}%`));
-    else if (page.state.kind === "finished") cluster.append(ring(1, "100%"));
+    if (page.state.kind === "inProgress") cluster.append(ring(page.state.fraction, percentText(page.state.percent)));
+    else if (page.state.kind === "finished") cluster.append(ring(1, percentText(100)));
     cluster.append(lines);
     return cluster;
 }
 
 function credits(page: AudiobookPage): HTMLElement | undefined {
     if (page.credits === undefined) return undefined;
+    const { author, narrator } = page.credits;
+    // One catalog message with the names restyled in place, so a translation can reorder it (TVAudiobookDetailView.creditsText).
+    const message = author !== undefined && narrator !== undefined ? translate("detail.audiobook.byAuthorReadBy", { author: isolated(author), narrator: isolated(narrator) })
+        : author !== undefined ? translate("detail.audiobook.byAuthor", { author: isolated(author) }) : translate("detail.audiobook.readBy", { narrator: isolated(narrator ?? "") });
     const line = el("p", "audiobook-credits");
-    if (page.credits.author !== undefined) line.append("by ", el("strong", "", page.credits.author));
-    if (page.credits.narrator !== undefined) {
-        if (page.credits.author !== undefined) line.append("  ·  ");
-        line.append("read by ", el("strong", "", page.credits.narrator));
+    const names = [author, narrator].filter((name): name is string => name !== undefined && name !== "").sort((a, b) => b.length - a.length);
+    const escaped = names.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    // Every occurrence: an author who narrates appears twice.
+    for (const piece of escaped.length === 0 ? [message] : message.split(new RegExp(`(${escaped.join("|")})`))) {
+        line.append(names.includes(piece) ? el("strong", "", piece) : piece);
     }
     return line;
 }
@@ -98,8 +106,13 @@ function sections(page: AudiobookPage, context: ViewContext): { content: HTMLEle
         // One reading stop, so the remote can reach text that sits below the first screen.
         const stop = actionButton("about", "", () => undefined);
         stop.element.classList.add("audiobook-about-stop");
-        if (body.about !== undefined) stop.element.append(el("h2", "audiobook-section-title", "About"), el("p", "audiobook-about", body.about));
-        if (body.credits !== undefined) stop.element.append(el("p", "audiobook-static-credits", body.credits));
+        if (body.about !== undefined) stop.element.append(el("h2", "audiobook-section-title", translate("detail.audiobook.about")), el("p", "audiobook-about", body.about));
+        if (body.credits !== undefined) {
+            // Tizen's own "Written by … · Narrated by …" line has no Apple key, so it is English whatever the page is.
+            const line = el("p", "audiobook-static-credits", body.credits);
+            markEnglishOnly(line, body.credits);
+            stop.element.append(line);
+        }
         content.push(stop.element);
         zones.push({ id: "about", layout: "column", spatial: true, reading: true, items: [stop] });
     }
@@ -112,7 +125,7 @@ function sections(page: AudiobookPage, context: ViewContext): { content: HTMLEle
             return row;
         });
         const block = el("section", "audiobook-section");
-        block.append(sectionTitle("Narrations"), zoneNode("audiobook-rows", items));
+        block.append(sectionTitle(translate("detail.audiobook.narrations")), zoneNode("audiobook-rows", items));
         content.push(block);
         zones.push({ id: "narrations", layout: "column", spatial: true, items });
     }
@@ -160,14 +173,14 @@ export function audiobookView(book: Audiobook, given: AudiobookHandlers): View {
 function detailView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHandlers): View {
     const { context } = handlers;
     const actions: FocusItem[] = [pill("play", page.primary.label, page.primary.icon, undefined)];
-    if (page.showsChapters) actions.push(pill("chapters", "Chapters", "chapters", () => handlers.setPicker(true)));
-    actions.push(pill("start-over", "Start Over", "restart", undefined));
+    if (page.showsChapters) actions.push(pill("chapters", translate("detail.audiobook.chapters"), "chapters", () => handlers.setPicker(true)));
+    actions.push(pill("start-over", translate("detail.startOver"), "restart", undefined));
 
     const identity = el("div", "audiobook-identity");
     const eyebrow = el("p", "audiobook-eyebrow");
     eyebrow.append(el("span", "audiobook-eyebrow-rule"), page.eyebrow);
     identity.append(eyebrow, el("h1", "audiobook-title", page.title));
-    if (page.seriesLine !== undefined) identity.append(el("p", "audiobook-series", page.seriesLine.toUpperCase()));
+    if (page.seriesLine !== undefined) identity.append(el("p", "audiobook-series", page.seriesLine.toLocaleUpperCase(textLanguage())));
     const byline = credits(page);
     if (byline !== undefined) identity.append(byline);
     identity.append(stateCluster(page), zoneNode("audiobook-actions", actions));
@@ -200,7 +213,7 @@ function rowNode(row: PickerRow): FocusItem {
     item.element.setAttribute("aria-label", `${row.number}. ${row.title}, ${formatRuntime(row.duration)}${row.isCurrent ? ", now" : ""}${row.isDone ? ", finished" : ""}`);
     item.element.append(el("span", "audiobook-chapter-number", String(row.number)), el("span", "audiobook-row-title", row.title));
     if (row.isDone) item.element.append(el("span", "audiobook-chapter-done", "✓"));
-    if (row.isCurrent) item.element.append(el("span", "audiobook-chapter-now", "NOW"));
+    if (row.isCurrent) item.element.append(el("span", "audiobook-chapter-now", translate("detail.audiobook.nowBadge")));
     item.element.append(el("span", "audiobook-row-detail", formatRuntime(row.duration)));
     if (row.isCurrent && row.progress !== undefined && row.progress > 0) {
         const underline = el("span", "audiobook-chapter-progress");
@@ -214,11 +227,11 @@ function pickerView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHan
     const items = page.picker.rows.map(rowNode);
     const header = el("header", "audiobook-picker-header");
     const titles = el("div", "audiobook-picker-titles");
-    titles.append(el("h1", "audiobook-picker-title", "Chapters"), el("p", "audiobook-picker-subline", page.picker.subline));
+    titles.append(el("h1", "audiobook-picker-title", translate("detail.audiobook.chapters")), el("p", "audiobook-picker-subline", page.picker.subline));
     header.append(cover(book, handlers.context), titles);
     const root = el("div", "audiobook-picker");
     root.setAttribute("role", "dialog");
-    root.setAttribute("aria-label", "Chapters");
+    root.setAttribute("aria-label", translate("detail.audiobook.chapters"));
     root.append(header, zoneNode("audiobook-rows", items));
     return {
         name: `audiobook:${book.id}:chapters`,
