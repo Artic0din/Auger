@@ -224,8 +224,9 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         item.element.replaceChildren(el("span", "settings-row-title", pickerLabel(id)), el("span", "settings-row-value", text), settingsChevron());
         return item;
     };
-    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value) : isSkipKey(key)
-        ? state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value)
+    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value)     : isSkipKey(key)
+        // SeekIntervalLabel.choiceLabel: Apple's own plural message in the shown language and digits, not the manifest's English label.
+        ? typeof value === "number" ? translate("player.seekInterval.choice", { seconds: value }) : String(value)
         : valueLabel(value, key);
     const note = (key: SettingsKey): HTMLElement => {
         const effective = state.effective.get(key);
@@ -788,9 +789,10 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     }
                     body.appendChild(el("p", "settings-value", spoilers.footer));
                 }
-                // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair.
+                // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair. The Video help line is Android TV's
+                // `footerVideo`, not Apple TV's `footerVideoAppleTv`, which names the Siri Remote that a Samsung TV does not have.
                 const skipGroups = [
-                    { header: translate("settings.playback.tvHeader.video"), ids: ["seek-back", "seek-forward"], footer: "Used by the remote and on-screen skip buttons. Applies to every device signed in to this profile." },
+                    { header: translate("settings.playback.tvHeader.video"), ids: ["seek-back", "seek-forward"], footer: translate("settings.skipIntervals.footerVideo") },
                     { header: translate("settings.playback.tvHeader.audiobooks"), ids: ["audiobook-seek-back", "audiobook-seek-forward"], footer: translate("settings.skipIntervals.footerAudiobook") },
                 ] as const;
                 for (const group of skipGroups) {

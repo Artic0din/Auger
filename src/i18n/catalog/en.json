@@ -2620,6 +2620,7 @@
  "settings.signIn.wrongSiloPassword": "That Silo password is incorrect.",
  "settings.signOut": "Sign Out",
  "settings.skipIntervals.footerAudiobook": "Used by the audiobook player's skip buttons. Applies to every device signed in to this profile.",
+ "settings.skipIntervals.footerVideo": "Used by left and right presses on the remote and the on-screen skip buttons. Applies to every device signed in to this profile.",
  "settings.skipIntervals.footerVideoApple": "Used by the on-screen skip buttons, double-tap, arrow keys, and remote clicks. Applies to every device signed in to this profile.",
  "settings.skipIntervals.footerVideoAppleTv": "Used by clicks and swipes on the Siri Remote and the on-screen skip buttons. Applies to every device signed in to this profile.",
  "settings.skipIntervals.footerVideoMac": "Used by the on-screen skip buttons and the arrow keys. Applies to every device signed in to this profile.",
