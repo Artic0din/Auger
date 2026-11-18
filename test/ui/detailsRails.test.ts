@@ -5,7 +5,7 @@ import type { Browser } from "playwright";
 import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
@@ -311,6 +311,9 @@ railTest("Cast and Related always enter on their first card", async (tv, details
     const people = tv.page.locator(".details-people [data-focus]");
     await people.nth(1).waitFor();
     await tv.page.locator('[data-detail-section="related"] .browse-card').nth(2).waitFor();
+    // A late answer reorders or replaces the rails, so the first card read below would not be the one a press lands on; wait for them to settle.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Details answers delivered");
+    await afterPaint(tv);
     await people.nth(1).focus();
     await tv.remote(38);
     assert.equal(await tv.page.locator(".details-people :focus").count(), 0, "Up leaves the cast rail");
