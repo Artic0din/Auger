@@ -89,3 +89,18 @@ test("a failed profile list leaves the by line off and the hero's item count in 
     assert.ok(profileReads(tv) >= 1, "the list was tried");
     assert.equal(await meta(tv).innerText(), "3 items");
 }));
+
+test("names that arrive after focus has left the row update the hero still showing the collection", () => open(async tv => {
+    const list = tv.fake.hold("/profiles", true);
+    await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
+    await tv.page.locator('[data-view="home"] [data-section="picks"]').waitFor();
+    await focusCard(tv, "user:kid", "Kid's picks");
+    assert.equal(await meta(tv).innerText(), "3 items", "no name yet: the list is held");
+    // Up from the row to the top bar: the hero stays on the collection while focus is in the bar.
+    await tv.page.locator('.skyline-roots [data-focus]').first().focus();
+    assert.match((await tv.focused()) ?? "", /^(search|home|movies|series|for_you|calendar|profiles|music|audiobooks|requests)$/, "focus is in the top bar");
+    const reads = profileReads(tv);
+    list.release();
+    await tv.eventually(async () => (await meta(tv).innerText()) === "3 items · by Kid", "the retained hero names the owner once the list lands");
+    assert.equal(profileReads(tv), reads, "the late names cost no read of their own");
+}));

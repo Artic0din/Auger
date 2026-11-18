@@ -66,7 +66,7 @@ export function collectionRowPreview(card: SectionCollectionCard, owner: string 
     const parts: string[] = [];
     if (card.itemCount > 0) parts.push(translate("collections.itemCount", { count: card.itemCount, count_text: groupedCount(card.itemCount) }));
     if (owner !== undefined) parts.push(translate("collections.card.byOwner", { owner }));
-    return { ...collectionPreview(card), overview: undefined, metaParts: parts };
+    return { ...collectionPreview(card), overview: undefined, metaParts: parts, collection: card };
 }
 
 export interface CollectionRowHandlers {

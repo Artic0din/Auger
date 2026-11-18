@@ -438,6 +438,11 @@ export class Skyline {
         if (badges !== null) replaceNodes(badges as HTMLElement, (details.badges ?? marqueeBadges(card.overlay)).map(badge => el("span", "skyline-chip", badge)));
     }
 
+    /** The card the marquee shows now, with its row. */
+    shownPreview(): { readonly card: Card; readonly row: string } | undefined {
+        return this.shown === undefined ? undefined : { card: this.shown.card, row: this.shown.row };
+    }
+
     /**
      * TVFocusMarquee.preview (silo-apple 85679e7 `tvOS/Components/TVFocusMarquee.swift:779-816`): the title, meta and
      * synopsis follow focus at once with no animation (`:1249`, `:1262-1264`); only the backdrop waits.

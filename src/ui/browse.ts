@@ -38,6 +38,7 @@ import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
+import { collectionRowPreview } from "./collectionCards.ts";
 import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
@@ -1152,6 +1153,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (torn) return;
             ownerNames = new Map(list.map(profile => [profile.id, profile.name]));
             render(host.focused());
+            // A hero left showing a collection (focus has moved to the top bar) is built again with the name; no card focus is needed, and nothing is read.
+            const shown = shell.shownPreview();
+            if (shown?.card.collection !== undefined && !playing) context.preview?.(collectionRowPreview(shown.card.collection, context.ownerName?.(shown.card.collection.creatorProfileId)), shown.row, false, false, false);
         }, () => undefined);
     };
     const presentEnrichment = (sections: Parameters<typeof homeRows>[0], prewarmRatings: boolean): void => {
