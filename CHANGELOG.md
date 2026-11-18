@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Home's, For You's and the library pages' colour wash now blends into the next one over 0.7 s, as Apple TV does, so page colours drift between items while the art still swaps in 0.24 s.
 - The pull request `Evidence` check that CONTRIBUTING.md describes now runs: a pull request that changes `app/` or `src/` fails until captures are attached under its Evidence heading, unless a maintainer adds the `evidence-not-needed` label.
 - Added the shared DevKit pull request check, which rejects non-conventional titles and commit messages, agent attribution and forbidden paths such as `node_modules`.
 - A few lines Apple TV words from its catalog now show in the language you pick under App Language: the password-reset line on the profile picker, the Box Set page's Movies heading, and the Multi-Audio and subtitles badges on a card. English reads exactly as before (#571).

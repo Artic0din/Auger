@@ -530,7 +530,7 @@ Deliberate pill and same-tab scope changes crossfade for 200 ms with a 12 px upw
 Focus and remote input take effect synchronously; chrome and pills stay mounted above the outgoing layer.
 The marquee crossfades without translation so its fixed backdrop keeps the viewport as its containing block.
 On Home, For You and library roots the tint wash is one bitmap the marquee keeps (`HeroWash`, silo-apple `TVHeroAmbientWash`, 6eea7cf7): 960 x 540, two screen points per pixel, with the base, accent and shadow stops of `washBackground` drawn into a canvas.
-A new tint fades in over the old bitmap for 240 ms, which stays opaque until it finishes; the tint sampled from the image redraws the newest bitmap in place.
+A new tint blends in over the old bitmap for 0.7 s (`SiloTheme.Skyline.marqueeWashCrossfadeDuration`, silo-apple 648091a7; the art still swaps in 240 ms), which stays opaque until it finishes; the tint sampled from the image redraws the newest bitmap in place.
 Each backdrop layer is only the artwork's own 1228.8 x 756 box, and the 190 px top scrim is one shared strip above every layer, so a swap no longer draws a full-screen layer of gradients (the S95C trace on #515 put about 72% of Home Down raster time in the two full-screen layers).
 Details, Requests and box sets keep the CSS wash.
 Home's backdrop layers are composited from the moment they swap in (`will-change` on the fading layer, its image and the wash bitmaps), so a layer promoted by a fade or by the image's reveal and dropped when it ends no longer makes the others draw again: the S95C trace on #310 showed each hero layer drawn two to four times per swap, 38 redraws in a run against 12 first draws.

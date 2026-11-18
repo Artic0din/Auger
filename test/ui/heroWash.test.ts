@@ -85,20 +85,22 @@ test("a new wash fades in over the old one, which stays until it is opaque", asy
         const layers = await tab.evaluate(async ([tints]) => {
             const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
             let release: (() => void) | undefined;
-            const wash = new fixture.HeroWash({ now: () => 0, schedule: run => { release = run; return () => { release = undefined; }; } });
+            const delays: number[] = [];
+            const wash = new fixture.HeroWash({ now: () => 0, schedule: (run, ms) => { delays.push(ms); release = run; return () => { release = undefined; }; } });
             document.body.appendChild(wash.element);
             const count = (): number => wash.element.querySelectorAll("canvas").length;
             wash.show(tints[0], false);
             const first = count();
             wash.show(tints[1], true);
             const fading = count();
-            const entering = wash.element.lastElementChild?.classList.contains("skyline-art-enter") === true;
+            const entering = wash.element.lastElementChild?.classList.contains("skyline-wash-enter") === true;
             release?.();
             const settled = count();
             wash.show(tints[2], false);
-            return { first, fading, entering, settled, snapped: count() };
+            return { first, fading, entering, settled, snapped: count(), delays };
         }, [TINTS] as const);
-        assert.deepEqual(layers, { first: 1, fading: 2, entering: true, settled: 1, snapped: 1 });
+        // The old bitmap goes when the 0.7 s blend ends (marqueeWashCrossfadeDuration), not after the art's 0.24 s.
+        assert.deepEqual(layers, { first: 1, fading: 2, entering: true, settled: 1, snapped: 1, delays: [700] });
     } finally { await tab.context().close(); }
 });
 

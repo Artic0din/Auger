@@ -155,8 +155,11 @@ const WASH_WIDTH = 1920;
 const WASH_HEIGHT = 1080;
 /** `TVHeroAmbientRenderer.pointsPerPixel` (silo-apple 6eea7cf7): the wash is one bitmap at two screen points per pixel. */
 const WASH_POINTS_PER_PIXEL = 2;
-/** `SiloTheme.Skyline.marqueeCrossfadeDuration`: a new wash fades in over the old one. */
-const WASH_CROSSFADE_MILLISECONDS = 240;
+/**
+ * `SiloTheme.Skyline.marqueeWashCrossfadeDuration` (silo-apple 648091a7): a new wash blends in over the old one for 0.7 s, longer than
+ * the art's 0.24 s swap, so a change of focus drifts the page colours. `.skyline-wash-enter` (browse.css) runs the same 0.7 s.
+ */
+const WASH_CROSSFADE_MILLISECONDS = 700;
 
 /**
  * The root wash as one small bitmap, with the stops and geometry of `TVHeroAmbientRenderer.render` (base from the
@@ -224,7 +227,7 @@ export class HeroWash {
         this.element.appendChild(next);
         const drop = (): void => { for (const old of below) old.remove(); };
         if (!fade || below.length === 0) { drop(); return; }
-        next.classList.add("skyline-art-enter");
+        next.classList.add("skyline-wash-enter");
         this.cancel = this.clock.schedule(drop, WASH_CROSSFADE_MILLISECONDS);
     }
 
