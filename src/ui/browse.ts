@@ -1140,7 +1140,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
     }, (fn, ms) => clock.schedule(fn, ms));
     // CollectionOwnerName: another profile's shared collection names its owner from this login's profile list, read once when a row needs it
-    // (not on focus), and the shown hero is drawn again when it lands. A failed read leaves the cards without a by line and is tried again with the next rows.
+    // (not on focus), and the shown hero is drawn again when it lands. A failed read leaves the cards without a by line (Apple's `try?` reads nil) until this screen is opened again.
     let ownerNames: ReadonlyMap<string, string> | undefined;
     let ownerNamesRequested = false;
     const readOwnerNames = (sections: readonly { readonly collections?: readonly SectionCollectionCard[] | undefined }[]): void => {
@@ -1152,7 +1152,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (torn) return;
             ownerNames = new Map(list.map(profile => [profile.id, profile.name]));
             render(host.focused());
-        }, () => { ownerNamesRequested = false; });
+        }, () => undefined);
     };
     const presentEnrichment = (sections: Parameters<typeof homeRows>[0], prewarmRatings: boolean): void => {
         readOwnerNames(sections);

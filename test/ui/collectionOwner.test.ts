@@ -78,3 +78,14 @@ test("the by line reads Apple's German string", () => open(async tv => {
     await focusCard(tv, "user:kid", "Kid's picks");
     await tv.eventually(async () => (await meta(tv).innerText()).includes(translate("collections.card.byOwner", { owner: "Kid" }, "de")), "German by line");
 }, "de"));
+
+test("a failed profile list leaves the by line off and the hero's item count in place", () => open(async tv => {
+    await tv.page.route("**/api/v2/profiles**", route => route.fulfill({ status: 500, contentType: "application/problem+json", body: JSON.stringify({ type: "about:blank", title: "Server error", status: 500 }) }));
+    await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
+    await tv.page.locator('[data-view="home"] [data-section="picks"]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+    await focusCard(tv, "user:kid", "Kid's picks");
+    await tv.jump(5000);
+    assert.ok(profileReads(tv) >= 1, "the list was tried");
+    assert.equal(await meta(tv).innerText(), "3 items");
+}));
