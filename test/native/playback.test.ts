@@ -1192,11 +1192,11 @@ test("a codec-route failure replans once per failed plan with echoed opaque keys
     assert.equal(only(bodies(r.h, "/progress")).position, 12.5, "its time is not the new transport's");
 });
 
-test("a prepare that hangs is a failed route after 60 s; its late success cannot touch the replacement", async () => {
+test("a prepare that hangs is a failed route after 15 s, before the TV gives up on the app; its late success cannot touch the replacement", async () => {
     const r = await rig();
     r.controller.play(MOVIE);
     await r.h.clock.advance(0);
-    await r.h.clock.advance(59999);
+    await r.h.clock.advance(14999);
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(1);
     assert.deepEqual(only(bodies(r.h, "/replan")).failure, { classification: "avplay_startup_timeout" });
@@ -1212,6 +1212,35 @@ test("a prepare that hangs is a failed route after 60 s; its late success cannot
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
     assert.equal(r.avplay.state, "PLAYING");
+});
+
+test("prepares that hang end in the playback error page within a bounded time, with AVPlay closed and nothing left running (#650)", async () => {
+    // AVPlay never answers prepareAsync (an HLS transcode it cannot open): the app must show the error page rather than wait until the TV closes it.
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    for (let hang = 0; hang < 4; hang++) {
+        await r.h.clock.advance(15000);
+    }
+    const replans = bodies(r.h, "/replan");
+    assert.deepEqual(replans.map((body) => (body.failure as { classification?: string }).classification), ["avplay_startup_timeout", "avplay_startup_timeout", "avplay_startup_timeout"]);
+    const view = last(r.views);
+    assert.equal(view.phase, "error");
+    assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.avplay.state, "NONE", "AVPlay is closed, not left in its half-open state");
+    assert.equal(r.avplay.calls.filter((call) => call.startsWith("open ")).length, 4, "one open per route tried");
+    assert.equal(r.avplay.calls.filter((call) => call === "close").length >= 4, true, "every hung route was closed");
+    assert.equal(ops(r.h)[ops(r.h).length - 1], "DELETE /playback/S1", "the server session is stopped");
+    assert.equal(r.h.clock.scheduled, 0, "no timer is left behind");
+    // Nothing keeps reporting for a session that never played: the keep-alive posts made while it hung are the last.
+    const progressWhileHung = bodies(r.h, "/progress").length;
+    const before = playbackRequests(r.h).length;
+    await r.h.clock.advance(120000);
+    assert.equal(playbackRequests(r.h).length, before, "no progress or other request after the error");
+    assert.equal(bodies(r.h, "/progress").length, progressWhileHung, "reporting stopped with the error page");
+    assert.deepEqual(r.exits, [], "the app is not closed");
+    r.controller.dismissError();
+    assert.deepEqual(r.exits, ["error:playback_failed"]);
 });
 
 test("failure replans are bounded; then playback ends with an error and a stop", async () => {

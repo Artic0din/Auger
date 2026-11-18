@@ -314,8 +314,12 @@ export interface PlaybackDeps {
 }
 
 const PROGRESS_INTERVAL_MS = 10000;
-/** The server keeps a fresh plan 90 s, enough for a 60 s startup and the next replan (protocol v3 §2.5). */
-const STARTUP_TIMEOUT_MS = 60000;
+/**
+ * How long AVPlay may take to prepare a stream before the route counts as failed. A transcode it cannot open can leave `prepareAsync` with
+ * no answer at all, and the TV closes the app about 21 s after that (#650), so the wait ends well before. A failed route is replanned,
+ * and the third replan that fails ends in the error page. The server keeps a fresh plan 90 s (protocol v3 §2.5).
+ */
+const STARTUP_TIMEOUT_MS = 15000;
 /** Failed routes this client replans before giving up; the protocol allows up to 8. */
 const MAX_RECOVERY_REPLANS = 3;
 /** Apple's typed failure for a track its engine could not select (AetherEngine PlaybackErrorKind). */

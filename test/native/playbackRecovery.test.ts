@@ -292,7 +292,7 @@ test("retired restore cannot mark a preparing user replacement started", async (
     r.avplay.finishRestore();
     await r.h.clock.advance(0);
     assert.equal(last(r.views).phase, "loading", "retired native callback cannot mark new preparation playing");
-    await r.h.clock.advance(60000);
+    await r.h.clock.advance(15000);
     assert.equal(replans(r.h).length, 2, "replacement startup watchdog remains armed");
     r.controller.destroy();
 });
@@ -563,7 +563,7 @@ test("the stable reconnect window starts when the replacement plays", async () =
     await play(r);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
     await r.h.clock.advance(1000);
-    await r.h.clock.advance(29000);
+    await r.h.clock.advance(13000);
     await resumePlan(r);
     await r.h.clock.advance(1000);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
@@ -581,14 +581,14 @@ test("a hidden pending prepare retains its startup deadline", async () => {
     await r.h.clock.advance(1000);
     assert.equal(replans(r.h).length, 1);
     r.controller.suspend();
-    await r.h.clock.advance(30000);
+    await r.h.clock.advance(7000);
     r.controller.restore();
     await r.h.clock.advance(0);
     assert.equal(replans(r.h).length, 1, "show does not duplicate the pending preparation");
-    await r.h.clock.advance(29999);
+    await r.h.clock.advance(7999);
     assert.equal(replans(r.h).length, 1);
     await r.h.clock.advance(1);
-    assert.equal(replans(r.h).length, 2, "the original 60-second startup deadline still fires");
+    assert.equal(replans(r.h).length, 2, "the original 15-second startup deadline still fires");
     assert.equal(replans(r.h)[1]?.operation, "failure_recovery");
     r.controller.destroy();
 });
