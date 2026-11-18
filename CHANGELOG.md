@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Movie and series cards now offer Not Interested in their long-press menu, as on Apple TV: a title you mark leaves Home's recommendation and discovery rows and every For You row at once, and Show in Recommendations clears the mark. Rows of what is new, in progress or saved keep the title. The entry shows only when the server sends the mark.
 - The pull request `Evidence` check that CONTRIBUTING.md describes now runs: a pull request that changes `app/` or `src/` fails until captures are attached under its Evidence heading, unless a maintainer adds the `evidence-not-needed` label.
 - The buttons Retry, Back, Try again and Cancel on the startup, playback-unavailable, exit and Box Set screens, Close on the Details More panel, Sign in again after a sign-out, Back to profiles and the Home page's Profiles button now show in the language you pick under App Language, with Apple TV's words. The lines around them that Apple TV has no words for stay English; English reads exactly as before (#571).
 - Added the shared DevKit pull request check, which rejects non-conventional titles and commit messages, agent attribution and forbidden paths such as `node_modules`.
