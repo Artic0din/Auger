@@ -156,6 +156,10 @@ export interface Card {
     readonly logoUrl?: string | undefined;
     /** True when the poster is an episode still. Absent means unknown. */
     readonly posterIsEpisodeStill?: boolean;
+    /** The Home hero's meta line for a card that is no title (a collection), already in the shown language; the line shows these joined with a dot. Never on the wire. */
+    readonly metaParts?: readonly string[];
+    /** The collection card a row-of-collections preview was built from, so the shown hero can be built again when the owner's name arrives. Never on the wire. */
+    readonly collection?: SectionCollectionCard;
     /** True when the backdrop is an episode still. Absent means unknown. */
     readonly backdropIsEpisodeStill?: boolean;
     /** Fields the card overlay badges and the marquee rating read. */

@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "계정 추가",
  "changeAccount.current": "현재",
  "changeAccount.signInOn": "{server} 서버에 로그인",
+ "collections.card.byOwner": "{owner}님이 만듦",
  "collections.empty": "아직 컬렉션이 없어요",
  "collections.emptyBody": "서버에서 만든 컬렉션이 여기에 표시돼요.",
  "collections.emptyItemsBody": "이 컬렉션에는 아직 항목이 없어요.",

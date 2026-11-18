@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Додати обліковий запис",
  "changeAccount.current": "Поточний",
  "changeAccount.signInOn": "Увійти на сервер {server}",
+ "collections.card.byOwner": "Власник: {owner}",
  "collections.empty": "Ще немає колекцій",
  "collections.emptyBody": "Тут з’являться колекції, створені на сервері.",
  "collections.emptyItemsBody": "У цій колекції ще немає елементів.",

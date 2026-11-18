@@ -32,6 +32,8 @@ export interface ViewContext {
     readonly open: (destination: Destination) => void;
     /** `title` is false for a card that is no title (a collection), which has no detail for the hero to read. */
     readonly preview?: (card: Card, row: string, continuing?: boolean, featured?: boolean, title?: boolean) => void;
+    /** The name of another profile on this login that made a shared collection, for its "by Name" line; undefined for the acting profile, an unknown profile, and while the list is still being read. */
+    readonly ownerName?: (creatorProfileId: string | undefined) => string | undefined;
     readonly continueWatching?: boolean;
     /** Apple `SectionRow.layout` on tvOS. Unset keeps the Continue Watching still and poster otherwise. */
     /** "grid" sizes each card by its own type: poster, or square for an audiobook. */

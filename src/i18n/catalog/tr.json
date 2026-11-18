@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Hesap ekle",
  "changeAccount.current": "Geçerli",
  "changeAccount.signInOn": "{server} sunucusunda oturum aç",
+ "collections.card.byOwner": "Oluşturan: {owner}",
  "collections.empty": "Henüz koleksiyon yok",
  "collections.emptyBody": "Sunucuda oluşturulan koleksiyonlar burada görünür.",
  "collections.emptyItemsBody": "Bu koleksiyonda henüz öğe yok.",

@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "新增帳號",
  "changeAccount.current": "目前",
  "changeAccount.signInOn": "在 {server} 上登入",
+ "collections.card.byOwner": "由 {owner} 建立",
  "collections.empty": "尚無合輯",
  "collections.emptyBody": "在伺服器上建立的合輯會顯示在這裡。",
  "collections.emptyItemsBody": "這個合輯尚未包含任何項目。",

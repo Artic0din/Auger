@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Dodaj konto",
  "changeAccount.current": "Bieżące",
  "changeAccount.signInOn": "Zaloguj się na serwerze {server}",
+ "collections.card.byOwner": "Od: {owner}",
  "collections.empty": "Brak kolekcji",
  "collections.emptyBody": "Tutaj pojawią się kolekcje utworzone na serwerze.",
  "collections.emptyItemsBody": "Ta kolekcja nie zawiera jeszcze żadnych elementów.",

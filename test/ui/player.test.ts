@@ -638,6 +638,55 @@ test("Up Next cancels an armed scrub hold before it can pause behind the panel",
     } finally { await page.close(); }
 });
 
+test("Up Next ends a timeline scrub and hides its preview as it appears, and the preview does not return when Up Next is dismissed", async () => {
+    // silo-apple 0e17c3e3 (PlayerView.onChange(of: showNextUpScreen) hides the timeline preview at once).
+    const { page } = await open();
+    try {
+        const view = { ...playing(TRACKS), positionSeconds: 600, durationSeconds: 7200 };
+        await show(page, view);
+        await remote(page, ENTER);
+        await remote(page, RIGHT);
+        await page.clock.runFor(500);
+        // The card itself waits for a thumbnail sheet; its clock is set while a preview is up and cleared with it.
+        const previewClock = (): Promise<string> => page.locator(".player-thumbnail-time").evaluate(node => node.textContent ?? "");
+        const barPreview = (): Promise<boolean> => page.locator(".player-bar").evaluate(node => node.classList.contains("player-bar-preview"));
+        assert.equal(await barPreview(), true, "the timeline scrub is on");
+        assert.notEqual(await previewClock(), "", "the preview is up");
+        const candidate = { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true as const };
+        // Entering the timeline scrub paused playback; ending it for Up Next sends nothing more and seeks nowhere.
+        const sent = await commands(page);
+        await show(page, { ...view, upNext: { next: candidate, deck: [], countdown: 30, status: "Up Next" } });
+        assert.equal(await previewClock(), "", "the preview went with Up Next");
+        assert.deepEqual(await commands(page), sent, "ending the scrub seeks nowhere");
+        // Up Next is dismissed: the controls come back on the playhead, not on the old preview.
+        await show(page, view);
+        await page.clock.runFor(500);
+        assert.equal(await barPreview(), false, "the scrub does not return");
+        assert.equal(await previewClock(), "", "the preview does not return");
+    } finally { await page.close(); }
+});
+
+test("Up Next hides a seek preview moved with Left or Right the moment it appears", async () => {
+    const { page } = await open();
+    try {
+        const view = { ...playing(TRACKS), positionSeconds: 600, durationSeconds: 7200 };
+        await show(page, view);
+        await holdKey(page, RIGHT);
+        await page.clock.runFor(300);
+        // The card itself waits for a thumbnail sheet; its clock is set while a preview is up and cleared with it.
+        const previewClock = (): Promise<string> => page.locator(".player-thumbnail-time").evaluate(node => node.textContent ?? "");
+        assert.notEqual(await previewClock(), "", "the seek preview is up");
+        const candidate = { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true as const };
+        await show(page, { ...view, upNext: { next: candidate, deck: [], countdown: 30, status: "Up Next" } });
+        assert.equal(await previewClock(), "", "the seek preview goes with Up Next");
+        await page.clock.runFor(2000);
+        assert.deepEqual(await commands(page), [], "the pending seek is dropped, not committed");
+        await show(page, view);
+        await page.clock.runFor(500);
+        assert.equal(await previewClock(), "", "the seek preview does not return");
+    } finally { await page.close(); }
+});
+
 test("On Deck resolves relative artwork against the connected server", async () => {
     const { page } = await open();
     try {

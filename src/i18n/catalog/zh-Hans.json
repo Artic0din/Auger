@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "添加账户",
  "changeAccount.current": "当前",
  "changeAccount.signInOn": "在{server}上登录",
+ "collections.card.byOwner": "由{owner}创建",
  "collections.empty": "还没有合集",
  "collections.emptyBody": "在服务器上创建的合集会显示在这里。",
  "collections.emptyItemsBody": "此合集还没有任何项目。",
