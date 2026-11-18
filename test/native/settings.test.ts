@@ -231,6 +231,25 @@ test("audiobook skip definitions need revision 9, the profile scope and every ch
     }
 });
 
+test("each media kind's skip pair stands alone: a broken pair never hides the other", async () => {
+    const pairs = [{ broken: [AUDIOBOOK_BACK, AUDIOBOOK_FORWARD], kept: [SEEK_BACK, SEEK_FORWARD] }, { broken: [SEEK_BACK, SEEK_FORWARD], kept: [AUDIOBOOK_BACK, AUDIOBOOK_FORWARD] }];
+    for (const { broken, kept } of pairs) {
+        for (const mode of ["missing", "profile_client"] as const) {
+            const { state, fake } = await setup();
+            const contract = fixture("settings_contract_ok");
+            assert.ok(Array.isArray(contract.definitions));
+            // Breaking the pair's forward key is enough: a skip key is offered only with its whole pair.
+            contract.definitions = contract.definitions.flatMap(def => def.key !== broken[1] ? [def] : mode === "missing" ? [] : [{ ...def, allowed_scopes: ["profile_client"] }]);
+            fake.script("/settings/contract", { status: 200, body: contract });
+            await state.load();
+            const offered = (key: SettingsKey): boolean => state.definitions.some(def => def.key === key);
+            assert.deepEqual(broken.map(offered), [false, false], `${mode}: ${broken[0]} pair hidden`);
+            assert.deepEqual(kept.map(offered), [true, true], `${mode}: ${kept[0]} pair stays`);
+            state.stop();
+        }
+    }
+});
+
 test("profile quality and bitrate are discovered from the supported manifest", () => {
     const keys = decodeSettingsContract(fixture("settings_contract_ok")).definitions.filter(def => def.profile).map(def => def.key);
     assert.ok(keys.includes(QUALITY), "preferred quality must be a supported profile control");
