@@ -272,7 +272,7 @@ export function cardItem(card: Card, context: ViewContext): FocusItem | undefine
     const line = episodeLine(card);
     const play = card.type === "movie" || card.type === "episode" ? () => context.resume?.(card.id, card.title, line) : undefined;
     const home = context.homeRow !== undefined;
-    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home });
+    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home, wide: thumbnail });
 }
 
 export function cardItems(cards: readonly Card[], context: ViewContext): FocusItem[] {
@@ -347,6 +347,36 @@ export function removingDismissed(sections: readonly HomeSection[], card: Pick<C
         const items = section.items.filter(item => item.id !== card.id && (series === undefined || (item.id !== series && item.seriesId !== series)));
         return items.length === section.items.length ? section : { ...section, items };
     }).filter(hasCards);
+}
+
+/**
+ * The rows a Not interested title leaves: the recommendation rows and the discovery rows the server filters (silo-apple
+ * HomeSectionsMutation.notInterestedSectionTypes). Rows of what is new, in progress, saved or chosen keep it.
+ */
+const NOT_INTERESTED_ROW_TYPES: ReadonlySet<string> = new Set([
+    "recommended_for_you", "because_you_watched", "similar_users_liked", "taste_match",
+    "hidden_gems", "critically_acclaimed", "award_winners", "forgotten_favorites",
+    "format_showcase", "editorial_spotlight", "seasonal_themed", "mood_collection",
+    "trending_on_server", "most_watched", "trending_discover", "genre_roulette",
+    "anniversaries", "short_watches",
+]);
+
+function withoutTitle<Row extends HomeSection>(sections: readonly Row[], id: string, rowTypes: ReadonlySet<string> | undefined): Row[] {
+    return sections.map(section => {
+        if (rowTypes !== undefined && !rowTypes.has(section.sectionType.toLowerCase())) return section;
+        const items = section.items.filter(item => item.id !== id);
+        return items.length === section.items.length ? section : { ...section, items };
+    }).filter(hasCards);
+}
+
+/** Home's rows without a title the profile just marked Not interested, once the server accepted the mark; the reread that follows leaves it out too. */
+export function removingNotInterested<Row extends HomeSection>(sections: readonly Row[], id: string): Row[] {
+    return withoutTitle(sections, id, NOT_INTERESTED_ROW_TYPES);
+}
+
+/** For You's rows are all live recommendation lists, which the server filters for marks, so a marked title leaves every one of them. */
+export function removingNotInterestedFromAll<Row extends HomeSection>(sections: readonly Row[], id: string): Row[] {
+    return withoutTitle(sections, id, undefined);
 }
 
 /** Apple HomeDismissal for a card in a Continue Watching or Next Up row (SectionRow.offersHomeDismissal); otherwise none. */

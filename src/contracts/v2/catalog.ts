@@ -150,6 +150,8 @@ export interface Card {
     /** `user_state.is_favorite` and `user_state.in_watchlist`; absent without a profile or on an older server. */
     readonly favorite?: boolean | undefined;
     readonly watchlist?: boolean | undefined;
+    /** `user_state.not_interested`: the profile marked the movie or series Not interested. Absent on a server that predates the mark, which then cannot be offered. */
+    readonly notInterested?: boolean | undefined;
     /** Title logo art (`logo_url`); shown only where the profile's title-art setting allows. */
     readonly logoUrl?: string | undefined;
     /** True when the poster is an episode still. Absent means unknown. */
@@ -199,13 +201,14 @@ export interface CardOverlay {
     readonly multiSub?: boolean | undefined;
 }
 
-/** The card's Favorites and Watchlist membership, which Apple's card menu reads from the row (MediaCardPersonalState). */
-function listMembership(obj: WireObject, path: string): { favorite?: boolean; watchlist?: boolean } {
+/** The card's Favorites, Watchlist and Not interested state, which Apple's card menu reads from the row (MediaCardPersonalState). */
+function listMembership(obj: WireObject, path: string): { favorite?: boolean; watchlist?: boolean; notInterested?: boolean } {
     if (obj.user_state === undefined) return {};
     const state = object(obj.user_state, `${path}.user_state`);
     const favorite = optionalBoolean(state, "is_favorite", `${path}.user_state`);
     const watchlist = optionalBoolean(state, "in_watchlist", `${path}.user_state`);
-    return { ...(favorite === undefined ? {} : { favorite }), ...(watchlist === undefined ? {} : { watchlist }) };
+    const notInterested = optionalBoolean(state, "not_interested", `${path}.user_state`);
+    return { ...(favorite === undefined ? {} : { favorite }), ...(watchlist === undefined ? {} : { watchlist }), ...(notInterested === undefined ? {} : { notInterested }) };
 }
 
 /**
@@ -499,6 +502,7 @@ export interface ItemDetail {
     readonly played: boolean | undefined;
     readonly favorite?: boolean | undefined;
     readonly watchlist?: boolean | undefined;
+    readonly notInterested?: boolean | undefined;
     readonly extra?: DetailExtras;
     readonly id: string;
     readonly type: CardType;

@@ -38,7 +38,7 @@ import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
-import { homeRows, removingDismissed, type ViewContext } from "./browseViews.ts";
+import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
@@ -339,6 +339,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         dismissed: card => {
             for (const entry of new Set([...roots.values(), ...stack])) {
                 if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingDismissed(entry.data.sections, { id: card.id, type: card.type, seriesId: card.seriesId });
+            }
+        },
+        markedNotInterested: card => {
+            for (const entry of new Set([...roots.values(), ...stack])) {
+                if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, card.id);
+                else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, card.id);
             }
         },
         opened: () => {
