@@ -55,6 +55,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
 - Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
@@ -119,6 +120,7 @@ All notable changes to this project are documented in this file.
 - Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
 - Returning to a paused or playing video now keeps the Restoring message up until the video is back, even when the server answers an earlier request late.
 - A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
+- A subtitle download that ends early now keeps the cues that arrived and is fetched again after 2, 5, 10, 10 and 10 seconds, as on Apple TV, instead of showing "Subtitle data couldn’t be loaded". The largest partial stays if every refetch ends early.
 - Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
 - A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
 - Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.

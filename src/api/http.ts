@@ -63,6 +63,18 @@ const SUBTITLE_IDLE_TIMEOUT_MS = 60000;
 /** Apple's `ExternalSubtitlePreparationPolicy.maximumFileBytes`. */
 const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
 
+/**
+ * A subtitle download the origin broke off or let go quiet after the answer began: `text` is what
+ * arrived. Apple's `SubtitleDecoderError.truncated`; a refused or unreachable first fetch is not one.
+ */
+export class SubtitleTruncated extends Error {
+    readonly text: string;
+    constructor(text: string) {
+        super("Subtitle download ended early");
+        this.text = text;
+    }
+}
+
 export class NativeHttp {
     async subtitleText(url: string, signal: AbortSignal): Promise<string> {
         const address = new URL(url);
@@ -86,7 +98,13 @@ export class NativeHttp {
             let bytes = 0;
             for (;;) {
                 heard();
-                const chunk = await reader.read();
+                let chunk: ReadableStreamReadResult<Uint8Array>;
+                try {
+                    chunk = await reader.read();
+                } catch (error) {
+                    if (signal.aborted) throw error;
+                    throw new SubtitleTruncated(text + decoder.decode());
+                }
                 if (chunk.done) return text + decoder.decode();
                 bytes += chunk.value.byteLength;
                 if (bytes > SUBTITLE_MAX_BYTES) {
