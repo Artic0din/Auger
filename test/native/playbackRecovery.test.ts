@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { RECONNECT_STABLE_MS } from "../../src/player/playbackRecovery.ts";
 import { PlaybackController, type PlaybackView, type PlayRequest } from "../../src/player/controller.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -560,10 +561,13 @@ test("a prepared replacement that loses its session starts one replacement", asy
 
 test("the stable reconnect window starts when the replacement plays", async () => {
     const r = await rig();
-    await play(r);
+    const id = await play(r);
+    // The replan answer is held, not the prepare, so the wait outlasts the window without meeting the startup bound.
+    const held = r.h.fake.hold(`/playback/${id}/replan`, true);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
     await r.h.clock.advance(1000);
-    await r.h.clock.advance(13000);
+    await r.h.clock.advance(RECONNECT_STABLE_MS - 1000);
+    held.release();
     await resumePlan(r);
     await r.h.clock.advance(1000);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
@@ -571,6 +575,27 @@ test("the stable reconnect window starts when the replacement plays", async () =
     assert.equal(replans(r.h).length, 1, "one second of stable playback keeps the previous attempt budget");
     await r.h.clock.advance(1);
     assert.equal(replans(r.h).length, 2);
+    r.controller.destroy();
+});
+
+test("a reconnect whose replacement never prepares stays a reconnect until the replan budget ends it", async () => {
+    const r = await rig();
+    await play(r);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(1000);
+    assert.equal(replans(r.h).length, 1);
+    // Each hung prepare costs the startup bound (15 s) plus the next resend delay; the reconnect budget is not what ends it.
+    for (let second = 0; second < 55; second++) {
+        await r.h.clock.advance(1000);
+        const view = last(r.views);
+        assert.equal(view.phase, "loading");
+        assert.equal(view.phase === "loading" && view.detail, "reconnecting");
+    }
+    await r.h.clock.advance(5000);
+    assert.equal(replans(r.h).length, 4, "the reconnect replan and three failure replans");
+    const end = last(r.views);
+    assert.equal(end.phase === "error" && end.error.kind, "playback_failed");
+    assert.equal(stops(r.h), 1);
     r.controller.destroy();
 });
 
