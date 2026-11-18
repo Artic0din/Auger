@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "Sesli kitap oynatıcısının atlama düğmeleri için kullanılır. Bu profilde oturum açmış tüm cihazlarda geçerlidir.",
  "settings.skipIntervals.picker.audiobookBackApple": "Sesli kitap geri atlama",
  "settings.skipIntervals.picker.audiobookForwardApple": "Sesli kitap ileri atlama",
+ "settings.skipIntervals.picker.videoBack": "Video geri atlama",
+ "settings.skipIntervals.picker.videoForward": "Video ileri atlama",
  "settings.spoilers.footer": "Başlamadığınız bölümlere, bu profili kullanan tüm cihazlarda uygulanır.",
  "settings.subtitles": "Altyazılar",
  "settings.subtitles.authoredStyle": "Kendi yerleşik stiline sahip altyazılar özgün görünümlerini korur; görüntü tabanlı altyazılar kendi yazı tiplerini ve renklerini korur ancak boyut, konum ve arka plan ayarlarına uyar.",

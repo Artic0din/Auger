@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "오디오북 플레이어의 건너뛰기 버튼에 사용돼요. 이 프로필로 로그인한 모든 기기에 적용돼요.",
  "settings.skipIntervals.picker.audiobookBackApple": "오디오북 뒤로 건너뛰기",
  "settings.skipIntervals.picker.audiobookForwardApple": "오디오북 앞으로 건너뛰기",
+ "settings.skipIntervals.picker.videoBack": "동영상 뒤로 건너뛰기",
+ "settings.skipIntervals.picker.videoForward": "동영상 앞으로 건너뛰기",
  "settings.spoilers.footer": "이 프로필을 사용하는 모든 기기에서 아직 시작하지 않은 에피소드에 적용돼요.",
  "settings.subtitles": "자막",
  "settings.subtitles.authoredStyle": "자체 스타일이 포함된 자막은 원래 모양을 유지해요. 이미지 기반 자막은 제작 시 지정된 글꼴과 색상을 유지하지만 크기, 위치, 배경 설정은 따라요.",

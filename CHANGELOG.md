@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The video skip pickers in Settings › Playback now open as "Video Skip Back" and "Video Skip Forward", as on Apple TV, and read in the language you pick.
 - Added the shared DevKit pull request check, which rejects non-conventional titles and commit messages, agent attribution and forbidden paths such as `node_modules`.
 - Settings › Playback now has Apple TV's Audiobooks group under Video, with Skip Back and Skip Forward rows for the audiobook skip buttons. They are saved to your profile apart from the video intervals, and a server that cannot store them hides the group.
 - A few lines Apple TV words from its catalog now show in the language you pick under App Language: the password-reset line on the profile picker, the Box Set page's Movies heading, and the Multi-Audio and subtitles badges on a card. English reads exactly as before (#571).

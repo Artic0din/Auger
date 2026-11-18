@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "Usati dai pulsanti di salto del lettore di audiolibri. Valgono per tutti i dispositivi con accesso a questo profilo.",
  "settings.skipIntervals.picker.audiobookBackApple": "Salto indietro audiolibro",
  "settings.skipIntervals.picker.audiobookForwardApple": "Salto avanti audiolibro",
+ "settings.skipIntervals.picker.videoBack": "Salto indietro video",
+ "settings.skipIntervals.picker.videoForward": "Salto avanti video",
  "settings.spoilers.footer": "Vale per gli episodi che non hai iniziato, su ogni dispositivo che usa questo profilo.",
  "settings.subtitles": "Sottotitoli",
  "settings.subtitles.authoredStyle": "I sottotitoli con uno stile incorporato mantengono il loro aspetto originale; i sottotitoli basati su immagini mantengono i caratteri e i colori originali, ma seguono le impostazioni di dimensione, posizione e sfondo.",

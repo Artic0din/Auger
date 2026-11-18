@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "Використовується кнопками перемотування в програвачі аудіокниг. Застосовується до всіх пристроїв, на яких виконано вхід у цей профіль.",
  "settings.skipIntervals.picker.audiobookBackApple": "Перемотування назад (аудіокниги)",
  "settings.skipIntervals.picker.audiobookForwardApple": "Перемотування вперед (аудіокниги)",
+ "settings.skipIntervals.picker.videoBack": "Перемотування назад (відео)",
+ "settings.skipIntervals.picker.videoForward": "Перемотування вперед (відео)",
  "settings.spoilers.footer": "Застосовується до епізодів, які ви ще не почали дивитися, на всіх пристроях, що використовують цей профіль.",
  "settings.subtitles": "Субтитри",
  "settings.subtitles.authoredStyle": "Субтитри з власним вбудованим оформленням зберігають початковий вигляд; графічні субтитри зберігають авторські шрифти й кольори, але враховують параметри розміру, положення й фону.",

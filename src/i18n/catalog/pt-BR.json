@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "Usados pelos botões de salto do player de audiolivros. Valem para todos os dispositivos conectados a este perfil.",
  "settings.skipIntervals.picker.audiobookBackApple": "Voltar em audiolivros",
  "settings.skipIntervals.picker.audiobookForwardApple": "Avançar em audiolivros",
+ "settings.skipIntervals.picker.videoBack": "Voltar em vídeos",
+ "settings.skipIntervals.picker.videoForward": "Avançar em vídeos",
  "settings.spoilers.footer": "Vale para episódios que você ainda não começou, em todos os dispositivos que usam este perfil.",
  "settings.subtitles": "Legendas",
  "settings.subtitles.authoredStyle": "Legendas com estilo próprio incorporado mantêm a aparência original; legendas baseadas em imagem mantêm as fontes e cores originais, mas seguem as configurações de tamanho, posição e fundo.",

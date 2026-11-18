@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "Används av ljudboksspelarens hoppknappar. Gäller alla enheter som är inloggade på den här profilen.",
  "settings.skipIntervals.picker.audiobookBackApple": "Hoppa bakåt i ljudbok",
  "settings.skipIntervals.picker.audiobookForwardApple": "Hoppa framåt i ljudbok",
+ "settings.skipIntervals.picker.videoBack": "Hoppa bakåt i video",
+ "settings.skipIntervals.picker.videoForward": "Hoppa framåt i video",
  "settings.spoilers.footer": "Gäller avsnitt som du inte har börjat titta på, på alla enheter som använder den här profilen.",
  "settings.subtitles": "Undertexter",
  "settings.subtitles.authoredStyle": "Undertexter med egen inbyggd formatering behåller sitt ursprungliga utseende; bildbaserade undertexter behåller sina egna typsnitt och färger men följer inställningarna för storlek, position och bakgrund.",

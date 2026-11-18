@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "تستخدمها أزرار التخطي في مشغّل الكتب الصوتية. تنطبق على كل جهاز مسجّل الدخول إلى هذا الملف الشخصي.",
  "settings.skipIntervals.picker.audiobookBackApple": "التخطي للخلف في الكتب الصوتية",
  "settings.skipIntervals.picker.audiobookForwardApple": "التخطي للأمام في الكتب الصوتية",
+ "settings.skipIntervals.picker.videoBack": "التخطي للخلف في الفيديو",
+ "settings.skipIntervals.picker.videoForward": "التخطي للأمام في الفيديو",
  "settings.spoilers.footer": "ينطبق على الحلقات التي لم تبدأ مشاهدتها، على كل جهاز يستخدم هذا الملف الشخصي.",
  "settings.subtitles": "الترجمة",
  "settings.subtitles.authoredStyle": "تحتفظ الترجمات ذات التنسيق المدمج بمظهرها الأصلي؛ وتحتفظ الترجمات المعتمدة على الصور بخطوطها وألوانها الأصلية لكنها تتبع إعدادات الحجم والموضع والخلفية.",

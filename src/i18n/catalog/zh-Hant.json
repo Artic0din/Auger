@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "供有聲書播放器的略過按鈕使用。會套用至所有登入此個人檔案的裝置。",
  "settings.skipIntervals.picker.audiobookBackApple": "有聲書倒轉",
  "settings.skipIntervals.picker.audiobookForwardApple": "有聲書快轉",
+ "settings.skipIntervals.picker.videoBack": "影片倒轉",
+ "settings.skipIntervals.picker.videoForward": "影片快轉",
  "settings.spoilers.footer": "適用於你尚未開始觀看的集數，並套用至所有使用此個人檔案的裝置。",
  "settings.subtitles": "字幕",
  "settings.subtitles.authoredStyle": "具有內建樣式的字幕會保留原始外觀；圖像式字幕會保留原本的字型和顏色，但會依照大小、位置和背景設定。",

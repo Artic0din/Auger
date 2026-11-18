@@ -775,6 +775,8 @@
  "settings.skipIntervals.footerAudiobook": "オーディオブックプレーヤーのスキップボタンで使用します。このプロフィールでサインインしているすべてのデバイスに適用されます。",
  "settings.skipIntervals.picker.audiobookBackApple": "オーディオブックのスキップ（戻る）",
  "settings.skipIntervals.picker.audiobookForwardApple": "オーディオブックのスキップ（進む）",
+ "settings.skipIntervals.picker.videoBack": "ビデオのスキップ（戻る）",
+ "settings.skipIntervals.picker.videoForward": "ビデオのスキップ（進む）",
  "settings.spoilers.footer": "このプロフィールを使用するすべてのデバイスで、未視聴のエピソードに適用されます。",
  "settings.subtitles": "字幕",
  "settings.subtitles.authoredStyle": "独自のスタイルを持つ字幕は元の外観のまま表示されます。画像ベースの字幕は作成時のフォントと色を保持しますが、サイズ、位置、背景の設定には従います。",
