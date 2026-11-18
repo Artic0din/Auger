@@ -34,7 +34,7 @@ class KeyedHome extends FakeHome {
     }
 }
 
-async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly cached?: string; readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
+async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly cached?: string; readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean; readonly keyedLanguageHold?: boolean } = {}): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new KeyedHome();
     if (options.empty === true) {
@@ -58,7 +58,9 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
         // The profile's language answers late: Home draws in English first.
         // A hold answers one read, and Browse makes several effective reads at launch; hold the first few.
-        if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        // Some tests need the language read itself held whatever order the launch reads come in: it takes its own hold, registered first, in place of one of the eight.
+        const keyed = options.holdLanguage === true && options.keyedLanguageHold === true ? [tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true)] : [];
+        if (options.holdLanguage === true) held = [...keyed, ...Array.from({ length: 8 - keyed.length }, () => tv.fake.hold("/settings/values/effective", true))];
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
         // The top bar paints a frame after Home's view appears; the tests read its first draw.
@@ -256,7 +258,7 @@ test("a language that arrives while a top-bar button has focus keeps focus on th
         releaseLanguage();
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar");
         assert.equal(await tv.focused(), "calendar", "the viewer's button keeps focus when the bar is rebuilt");
-    }, { stored: "de", holdLanguage: true });
+    }, { stored: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a language that arrives during playback shows on the top bar when browse resumes", async () => {
