@@ -4,7 +4,7 @@ import type { Browser } from "playwright";
 import { mkdir } from "node:fs/promises";
 import { PersonalCatalog } from "../native/support/personalCatalog.ts";
 import { problem, type Reply } from "../native/support/fakeSilo.ts";
-import { jumpUntil, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { personalQuery, readPersonalPage } from "../../src/ui/personalLists.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
@@ -990,6 +990,9 @@ test("remote personal journey keeps scrolled focus visible with Reduced Motion a
             await tv.page.keyboard.press(key);
             if (process.env.PERSONAL_VIDEO !== undefined) await tv.page.waitForTimeout(350);
         };
+        // A late answer repaints the page and moves what the keys land on; press once the answers have landed and painted.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+        await afterPaint(tv);
         await step("ArrowUp");
         for (let i = 0; i < 3; i++) await step("ArrowRight");
         await step("ArrowDown");
