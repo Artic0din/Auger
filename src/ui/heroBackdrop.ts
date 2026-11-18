@@ -263,11 +263,35 @@ const WASH_WIDTH = 1920;
 const WASH_HEIGHT = 1080;
 /** `TVHeroAmbientRenderer.pointsPerPixel` (silo-apple 6eea7cf7): the wash is one bitmap at two screen points per pixel. */
 const WASH_POINTS_PER_PIXEL = 2;
-/** `SiloTheme.Skyline.marqueeCrossfadeDuration`: a new wash fades in over the old one. */
-const WASH_CROSSFADE_MILLISECONDS = 240;
+/**
+ * `SiloTheme.Skyline.marqueeWashCrossfadeDuration` (silo-apple 648091a7): a new wash blends in over the old one for 0.7 s, longer than
+ * the art's 0.24 s swap, so a change of focus drifts the page colours. `.skyline-wash-enter` (browse.css) runs the same 0.7 s.
+ */
+const WASH_CROSSFADE_MILLISECONDS = 700;
+/**
+ * The new bitmap is at 0.98 opacity 630 ms into the 0.7 s fade (CSS ease-in-out), so the bitmap under it goes then: a change of at most two levels
+ * in these dark washes, and 70 ms less with two full-screen bitmaps up (#674). Without it the blend kept two up for 45 to 62% of a roll on the S95C
+ * against 17 to 31% before, and up to three when the next swap came before the last had finished.
+ */
+const WASH_DROP_MILLISECONDS = 630;
 
 /** `TVBackdropCornerWash.reach`: how far each corner's colour reaches before it is fully faded, as a fraction of the screen's width and height. */
 const WASH_REACH = 4 / 3;
+
+/** One coordinate of the cubic Bezier from (0, 0) to (1, 1) with control values `p1` and `p2`, at curve parameter `t`. */
+const bezier = (p1: number, p2: number, t: number): number => 3 * (1 - t) * (1 - t) * t * p1 + 3 * (1 - t) * t * t * p2 + t * t * t;
+
+/** CSS `ease-in-out`, `cubic-bezier(0.42, 0, 0.58, 1)`: the opacity a fade has reached once `progress` (0 to 1) of its time has passed. */
+function easeInOut(progress: number): number {
+    const x = Math.min(1, Math.max(0, progress));
+    // x(t) rises with t, so bisection finds the parameter for this time; 20 halvings are exact to a millionth.
+    let low = 0, high = 1;
+    for (let step = 0; step < 20; step++) {
+        const middle = (low + high) / 2;
+        if (bezier(0.42, 0.58, middle) < x) low = middle; else high = middle;
+    }
+    return bezier(0, 1, (low + high) / 2);
+}
 
 /**
  * The root wash as one small bitmap, with the layers and geometry of `TVHeroAmbientRenderer.render` (silo-apple c5453eae): black, then each
@@ -317,6 +341,7 @@ export class HeroWash {
     readonly element = el("div", "skyline-wash");
     private readonly clock: Clock;
     private cancel = (): void => undefined;
+    private fadeStart = 0;
 
     constructor(clock: Clock) {
         this.clock = clock;
@@ -325,15 +350,27 @@ export class HeroWash {
 
     show(tints: Tints | undefined, fade: boolean): void {
         this.cancel();
-        // A swap sooner than the crossfade leaves the timer to the next one; what lies under the two newest bitmaps is covered.
-        for (const covered of Array.from(this.element.children).slice(0, -2)) covered.remove();
+        // A fade still under way is baked into the bitmap below it, at the opacity it has reached, so a roll of swaps never holds a third full-screen bitmap.
+        const [under, entering] = Array.from(this.element.children).slice(-2);
+        if (fade && under instanceof HTMLCanvasElement && entering instanceof HTMLCanvasElement && entering.classList.contains("skyline-wash-enter")) {
+            const context = under.getContext("2d");
+            if (context !== null) {
+                context.save();
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.globalAlpha = easeInOut((this.clock.now() - this.fadeStart) / WASH_CROSSFADE_MILLISECONDS);
+                context.drawImage(entering, 0, 0);
+                context.restore();
+                entering.remove();
+            }
+        }
         const below = Array.from(this.element.children);
         const next = washBitmap(tints);
         this.element.appendChild(next);
-        const drop = (): void => { for (const old of below) old.remove(); };
+        const drop = (): void => { for (const old of below) old.remove(); next.classList.remove("skyline-wash-enter"); };
         if (!fade || below.length === 0) { drop(); return; }
-        next.classList.add("skyline-art-enter");
-        this.cancel = this.clock.schedule(drop, WASH_CROSSFADE_MILLISECONDS);
+        next.classList.add("skyline-wash-enter");
+        this.fadeStart = this.clock.now();
+        this.cancel = this.clock.schedule(drop, WASH_DROP_MILLISECONDS);
     }
 
     /** Redraws the newest bitmap with the tint sampled from its image, in place, so a fade under way carries on. */
