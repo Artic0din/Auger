@@ -38,6 +38,7 @@ import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
+import { collectionRowPreview } from "./collectionCards.ts";
 import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
@@ -231,7 +232,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let shownOverlays: CardOverlayPrefs | undefined = presentation.cardOverlays;
     let episodeSpoilers: EpisodeSpoilerPreferences | undefined;
     const previews = new WeakMap<Route, () => void>();
-    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured, title) => {
+    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, ownerName: creator => creator === undefined || creator === session.activeProfile?.id ? undefined : ownerNames?.get(creator), titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured, title) => {
         const current = top();
         const preview = (): void => {
             // The read is armed first, so a row change the marquee reports during preview starts this card's read.
@@ -1139,7 +1140,26 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             render(host.focused());
         }
     }, (fn, ms) => clock.schedule(fn, ms));
+    // CollectionOwnerName: another profile's shared collection names its owner from this login's profile list, read once when a row needs it
+    // (not on focus), and the shown hero is drawn again when it lands. A failed read leaves the cards without a by line (Apple's `try?` reads nil) until this screen is opened again.
+    let ownerNames: ReadonlyMap<string, string> | undefined;
+    let ownerNamesRequested = false;
+    const readOwnerNames = (sections: readonly { readonly collections?: readonly SectionCollectionCard[] | undefined }[]): void => {
+        if (ownerNames !== undefined || ownerNamesRequested) return;
+        const acting = session.activeProfile?.id;
+        if (!sections.some(section => section.collections?.some(card => card.creatorProfileId !== undefined && card.creatorProfileId !== acting) === true)) return;
+        ownerNamesRequested = true;
+        void server.profiles.list().then(list => {
+            if (torn) return;
+            ownerNames = new Map(list.map(profile => [profile.id, profile.name]));
+            render(host.focused());
+            // A hero left showing a collection (focus has moved to the top bar) is built again with the name; no card focus is needed, and nothing is read.
+            const shown = shell.shownPreview();
+            if (shown?.card.collection !== undefined && !playing) context.preview?.(collectionRowPreview(shown.card.collection, context.ownerName?.(shown.card.collection.creatorProfileId)), shown.row, false, false, false);
+        }, () => undefined);
+    };
     const presentEnrichment = (sections: Parameters<typeof homeRows>[0], prewarmRatings: boolean): void => {
+        readOwnerNames(sections);
         homeDetails.present(homeRows(sections).map(row => ({ cards: row.cards, continuing: row.continuing })), prewarmRatings);
     };
 

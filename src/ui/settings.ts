@@ -1,5 +1,5 @@
 import type { NativeSession } from "../session/session.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { FocusHost, type FocusItem, type FocusTarget } from "./browseFocus.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
@@ -43,10 +43,12 @@ const MODE_CHOICES = [["auto", "Auto"], ["always", "Always"], ["off", "Off"]] as
 const LAUNCH_CHOICES = [["automatic", "settings.profileLaunch.automatic"], ["askEveryLaunch", "settings.profileLaunch.askEveryLaunch"], ["afterOneHour", "settings.profileLaunch.afterOneHour"], ["afterTwelveHours", "settings.profileLaunch.afterTwelveHours"]] as const satisfies readonly (readonly [LaunchBehavior, MessageKey])[];
 /** Apple scrolls its Acknowledgements document by remote presses while the document holds focus. */
 const DOCUMENT_STEP = 160;
-type Picker = "audio" | "quality" | "bitrate" | "seek-back" | "seek-forward" | "subtitle-language" | "subtitle-mode";
-const PICKER_KEYS = { audio: AUDIO_KEY, quality: QUALITY_KEY, bitrate: BITRATE_KEY, "seek-back": SEEK_BACK_KEY, "seek-forward": SEEK_FORWARD_KEY, "subtitle-language": SUBTITLE_LANGUAGE_KEY, "subtitle-mode": SUBTITLE_MODE_KEY } as const;
-const PICKER_LABELS = { audio: "settings.control.audioLanguage", quality: "settings.control.resolution", bitrate: "settings.control.bitrate", "seek-back": "settings.control.skipBack", "seek-forward": "settings.control.skipForward", "subtitle-language": "settings.control.language", "subtitle-mode": "settings.control.behavior" } as const satisfies Record<Picker, MessageKey>;
+type Picker = "audio" | "quality" | "bitrate" | "seek-back" | "seek-forward" | "audiobook-seek-back" | "audiobook-seek-forward" | "subtitle-language" | "subtitle-mode";
+const PICKER_KEYS = { audio: AUDIO_KEY, quality: QUALITY_KEY, bitrate: BITRATE_KEY, "seek-back": SEEK_BACK_KEY, "seek-forward": SEEK_FORWARD_KEY, "audiobook-seek-back": AUDIOBOOK_SEEK_BACK_KEY, "audiobook-seek-forward": AUDIOBOOK_SEEK_FORWARD_KEY, "subtitle-language": SUBTITLE_LANGUAGE_KEY, "subtitle-mode": SUBTITLE_MODE_KEY } as const;
+const PICKER_LABELS = { audio: "settings.control.audioLanguage", quality: "settings.control.resolution", bitrate: "settings.control.bitrate", "seek-back": "settings.control.skipBack", "seek-forward": "settings.control.skipForward", "audiobook-seek-back": "settings.control.skipBack", "audiobook-seek-forward": "settings.control.skipForward", "subtitle-language": "settings.control.language", "subtitle-mode": "settings.control.behavior" } as const satisfies Record<Picker, MessageKey>;
 const pickerLabel = (picker: Picker): string => translate(PICKER_LABELS[picker]);
+/** Apple names the audiobook pickers apart from their rows; the video picker keeps its row's name here. */
+const pickerTitle = (picker: Picker): string => picker === "audiobook-seek-back" ? translate("settings.skipIntervals.picker.audiobookBackApple") : picker === "audiobook-seek-forward" ? translate("settings.skipIntervals.picker.audiobookForwardApple") : pickerLabel(picker);
 const onOffText = (on: boolean): string => translate(on ? "settings.on" : "settings.off");
 const BITRATE_CHOICES = [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500];
 export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
@@ -221,8 +223,9 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         item.element.replaceChildren(el("span", "settings-row-title", pickerLabel(id)), el("span", "settings-row-value", text), settingsChevron());
         return item;
     };
-    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value) : key === SEEK_BACK_KEY || key === SEEK_FORWARD_KEY
-        ? state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value)
+    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value)     : isSkipKey(key)
+        // SeekIntervalLabel.choiceLabel: Apple's own plural message in the shown language and digits, not the manifest's English label.
+        ? typeof value === "number" ? translate("player.seekInterval.choice", { seconds: value }) : String(value)
         : valueLabel(value, key);
     const note = (key: SettingsKey): HTMLElement => {
         const effective = state.effective.get(key);
@@ -302,7 +305,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         const key = PICKER_KEYS[picker];
         const stored = state.stored(key);
         const controls: FocusItem[] = [];
-        const content: HTMLElement[] = [el("h1", "browse-title", pickerLabel(picker)), ...feedback()];
+        const content: HTMLElement[] = [el("h1", "browse-title", pickerTitle(picker)), ...feedback()];
         if (picker === "audio") {
             const current = stored?.isSet ? stored.value : state.scope(key) === "profile" ? state.effective.get(key)?.value : undefined;
             const effective = state.effective.get(AUDIO_KEY);
@@ -326,7 +329,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 item.element.setAttribute("aria-checked", String(current === value));
                 controls.push(item);
             }
-        } else if (picker === "quality" || picker === "seek-back" || picker === "seek-forward") {
+        } else if (picker === "quality" || picker === "seek-back" || picker === "seek-forward" || picker === "audiobook-seek-back" || picker === "audiobook-seek-forward") {
             const current = stored?.isSet ? stored.value : state.scope(key) === "profile" ? state.effective.get(key)?.value : undefined;
             const options = picker === "quality" ? ["auto", "2160p", "1080p", "720p", "480p"].flatMap(value => state.qualityOptions.filter(option => option.value === value)) : state.definitions.find(def => def.key === key)?.options ?? [];
             if (current !== undefined && !options.some(option => option.value === current)) content.push(el("p", "browse-text", `Current ${state.scope(key) === "profile_device" ? "device" : "profile"} value: ${label(current, key)} · Not offered`));
@@ -357,7 +360,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             controls.unshift(reset);
         }
         controls.push(...retryButton());
-        showModal(`settings:${picker}`, pickerLabel(picker), content, controls);
+        showModal(`settings:${picker}`, pickerTitle(picker), content, controls);
     };
 
     const renderAcknowledgements = (): void => {
@@ -785,14 +788,23 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     }
                     body.appendChild(el("p", "settings-value", spoilers.footer));
                 }
-                const skipRows = (["seek-back", "seek-forward"] as const).filter(id => state.definitions.some(def => def.key === PICKER_KEYS[id]));
-                if (skipRows.length > 0) body.appendChild(el("h3", "settings-section-header", translate("settings.playback.tvHeader.video")));
-                for (const id of skipRows) {
-                    const item = button(id, pickerLabel(id), () => openPicker(id));
-                    item.element.replaceChildren(el("span", "settings-row-title", pickerLabel(id)), el("span", "settings-row-value", label(state.effective.get(PICKER_KEYS[id])?.value ?? (id === "seek-back" ? 10 : 30), PICKER_KEYS[id])), settingsChevron());
-                    rows.push(item); body.appendChild(item.element);
+                // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair. The Video help line is Android TV's
+                // `footerVideo`, not Apple TV's `footerVideoAppleTv`, which names the Siri Remote that a Samsung TV does not have.
+                const skipGroups = [
+                    { header: translate("settings.playback.tvHeader.video"), ids: ["seek-back", "seek-forward"], footer: translate("settings.skipIntervals.footerVideo") },
+                    { header: translate("settings.playback.tvHeader.audiobooks"), ids: ["audiobook-seek-back", "audiobook-seek-forward"], footer: translate("settings.skipIntervals.footerAudiobook") },
+                ] as const;
+                for (const group of skipGroups) {
+                    const skipRows = group.ids.filter(id => state.definitions.some(def => def.key === PICKER_KEYS[id]));
+                    if (skipRows.length === 0) continue;
+                    body.appendChild(el("h3", "settings-section-header", group.header));
+                    for (const id of skipRows) {
+                        const item = button(id, pickerLabel(id), () => openPicker(id));
+                        item.element.replaceChildren(el("span", "settings-row-title", pickerLabel(id)), el("span", "settings-row-value", label(state.effective.get(PICKER_KEYS[id])?.value ?? (id.endsWith("back") ? 10 : 30), PICKER_KEYS[id])), settingsChevron());
+                        rows.push(item); body.appendChild(item.element);
+                    }
+                    body.appendChild(el("p", "settings-value", group.footer));
                 }
-                if (skipRows.length > 0) body.appendChild(el("p", "settings-value", "Used by the remote and on-screen skip buttons. Applies to every device signed in to this profile."));
                 const playbackKeys = devicePlaybackKeys();
                 if (playbackKeys.some(key => state.scope(key) === "profile_device")) {
                     const reset = button("reset-playback", translate("settings.profileSettings.useAll"), () => { confirmingPlaybackReset = true; render(); });
