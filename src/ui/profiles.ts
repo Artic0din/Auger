@@ -199,7 +199,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     };
 
     /** Apple's tvOS sign-out confirmation. Cancel stays focused; Back cancels and returns to Sign out. A profile list that arrives while this is open waits, replays on Cancel or Back, and is dropped on Sign Out. */
-    const askSignOut = (restore: () => void): void => {
+    const askSignOut = (restore: () => void, focused = "cancel-signout"): void => {
         if (leaving || destroyed) return;
         confirmingSignOut = true;
         const dismiss = (): void => {
@@ -218,13 +218,14 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             signOut();
         });
         // AccountRemovalConfirmation on tvOS: TVSettingsConfirmationOverlay over the screen, Cancel then Sign Out, Cancel focused.
-        redrawer = () => askSignOut(restore);
+        // A redraw draws the screen under the dialog afresh first, so the dialog covers a copy of that screen and not of itself.
+        redrawer = () => { const focus = host?.focusedKey(); restore(); askSignOut(restore, focus); };
         show({
             name: "profiles:signout",
             content: centredDialog({ style: "confirmation", id: "profiles-signout", title: copy.title, message: copy.message,
                 buttons: [cancel.element, accept.element], destructive: accept.element, behind: screenBehind() }),
             controls: [{ ...cancel, row: 0, column: 0 }, { ...accept, row: 0, column: 1 }],
-            focus: "cancel-signout",
+            focus: focused,
             back: dismiss,
             translated: true,
         });
@@ -255,6 +256,8 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             (list) => deliver(() => {
                 if (token !== view) return;
                 pending = undefined;
+                // The loading screen is over; whatever `then` draws registers its own redraw, and a screen that does not has none.
+                redrawer = undefined;
                 const id = server.accounts.localAccountId;
                 if (id) {
                     try { server.accounts.directory.update(id, { profileCount: list.length }); }
@@ -329,11 +332,15 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     const addProfile = (): void => load(list => {
         if (list.length > 1) { picker(list, current?.id); return; }
         if (list[0] === undefined || list[0].id !== session.activeProfile?.id) {
-            const back = resume() ?? (() => showList());
-            const ok = button("ok", translate("newProfile.ok"), back);
-            const line = el("p", "signin-text signin-error", translate("profiles.error.noPrimaryCreate"));
-            line.setAttribute("role", "alert");
-            show({ name: "profile-create-unavailable", content: [el("h1", "signin-title", translate("menu.addProfile")), line, actions([ok])], controls: [ok], focus: ok.key, back, translated: true }, ok.key);
+            const showRefusal = (): void => {
+                redrawer = showRefusal;
+                const back = resume() ?? (() => showList());
+                const ok = button("ok", translate("newProfile.ok"), back);
+                const line = el("p", "signin-text signin-error", translate("profiles.error.noPrimaryCreate"));
+                line.setAttribute("role", "alert");
+                show({ name: "profile-create-unavailable", content: [el("h1", "signin-title", translate("menu.addProfile")), line, actions([ok])], controls: [ok], focus: ok.key, back, translated: true }, ok.key);
+            };
+            showRefusal();
             return;
         }
         shownList = list;
@@ -369,7 +376,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             ? "Could not reach the server. Check the TV's internet connection, then try again."
             : "The server had a problem. Try again in a moment.";
         const showError = (focused = "retry"): void => {
-            redrawer = () => showError(focused);
+            redrawer = () => showError(host?.focusedKey() ?? focused);
             const retry = button("retry", translate("common.tryAgain"), retryLoad);
             message("profiles-error", "Profiles didn't load", [detail], [retry, signOutButton(() => showError("signout"))], resume(), "error", focused);
         };
@@ -463,7 +470,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
     const passwordResetRequired = (): void => {
         begin();
         const showReset = (focused = "change-account"): void => {
-            redrawer = () => showReset(focused);
+            redrawer = () => showReset(host?.focusedKey() ?? focused);
             const retry = button("retry", translate("shell.errorView.tryAgain"), () => showList());
             const change = button("change-account", translate("profiles.changeAccount"), options.onChangeServer);
             const out = signOutButton(() => showReset("signout"));
@@ -580,7 +587,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             restoring = false;
             pending = undefined;
             if (error instanceof SessionError && error.reason !== "unavailable") { expired(); return; }
-            const showLaunchError = (focused = "retry"): void => { redrawer = () => showLaunchError(focused); message("profile-launch-error", "Remembered profile didn't open", ["Could not verify the remembered profile. Try again or choose who's watching."], [button("retry", translate("common.retry"), launchOnline), button("back", "Choose profile", () => picker(list)), signOutButton(() => showLaunchError("signout"))], () => picker(list), "error", focused); };
+            const showLaunchError = (focused = "retry"): void => { redrawer = () => showLaunchError(host?.focusedKey() ?? focused); message("profile-launch-error", "Remembered profile didn't open", ["Could not verify the remembered profile. Try again or choose who's watching."], [button("retry", translate("common.retry"), launchOnline), button("back", "Choose profile", () => picker(list)), signOutButton(() => showLaunchError("signout"))], () => picker(list), "error", focused); };
             showLaunchError();
         }));
     }, launchOnline, !options.pickerRequested && !options.skipRemembered);

@@ -2,6 +2,7 @@
 // at d49d7bd): their text reads from the catalog, they follow the shown language and direction instead of carrying lang=en, in Arabic the
 // tiles read from the right and Left steps to the next tile, and English is unchanged. Text with no Apple key stays English.
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { translate, translateTv } from "../../src/i18n/translate.ts";
@@ -30,6 +31,12 @@ async function toPicker(tv: Tv): Promise<void> {
     await tv.page.locator('[data-screen="profiles"]').waitFor();
 }
 
+/** The computed transform of the arrow in the footer's Sign out button, with the browse stylesheet the packaged app loads beside the sign-in one (`.icon-forward` lives there). */
+async function signOutArrow(tv: Tv): Promise<string> {
+    await tv.page.addStyleTag({ path: fileURLToPath(new URL("../../src/ui/browse.css", import.meta.url)) });
+    return tv.page.locator('[data-focus="signout"] svg').evaluate(icon => getComputedStyle(icon).transform);
+}
+
 async function inPicker(locale: string, body: (tv: Tv) => Promise<void>): Promise<void> {
     const tv = await openTv(browser, { profiles: true, locale });
     tv.fake.catalog = new FakeDetails();
@@ -54,6 +61,7 @@ test("the picker reads in German and carries lang=de", async () => {
         assert.equal(await tv.page.locator('[data-focus="add-profile"] .profile-name').innerText(), text("profiles.add", "de"));
         assert.equal(await tv.page.locator('[data-focus="change-server"]').innerText(), text("profiles.changeAccount", "de"));
         assert.equal(await tv.page.locator('[data-focus="signout"]').innerText(), text("common.signOut", "de"));
+        assert.equal(await signOutArrow(tv), "none", "left to right keeps the arrow pointing out to the right");
     });
 });
 
@@ -83,6 +91,8 @@ test("in Arabic the picker is mirrored: the tiles read from the right and Left s
         await tv.page.locator(`[data-focus="${first}"]`).focus();
         await tv.remote(LEFT);
         assert.equal(await tv.focused(), second, "Left goes to the tile drawn on the left");
+        // SF Symbols named `.forward` mirror in a right-to-left language, so Sign out's arrow points out to the left as on Apple TV.
+        assert.equal(await signOutArrow(tv), "matrix(-1, 0, 0, 1, 0, 0)");
     });
 });
 
@@ -132,4 +142,66 @@ test("a picker drawn in English is drawn again in German when the file lands", a
         assert.equal(await tv.page.locator('[data-focus="signout"]').innerText(), text("common.signOut", "de"));
         assert.equal(await tv.page.locator('[data-screen="profiles"]').getAttribute("lang"), "de");
     } finally { await tv.page.context().close(); }
+});
+
+/** Holds German's file, loads the page again so it reads English first, and opens the picker. `release` lets the file land. */
+async function withHeldGerman(body: (tv: Tv, release: () => void) => Promise<void>): Promise<void> {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const tv = await openTv(browser, { profiles: true, locale: "de-DE" });
+    tv.fake.catalog = new FakeDetails();
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); });
+        await tv.page.reload({ waitUntil: "commit" });
+        await toPicker(tv);
+        await body(tv, release);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+}
+
+test("a language file that lands while Select is held waits for the release, then the press still runs and the dialog reads German", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await tv.page.locator('[data-focus="signout"]').focus();
+        await tv.page.keyboard.down("Enter");
+        const landed = tv.page.waitForResponse(response => new URL(response.url()).pathname === "/tv/catalog/de.js");
+        release();
+        await landed;
+        await tv.jump(500);
+        assert.equal(await tv.page.locator(".profile-picker-title").innerText(), "Who's watching?", "still English while Select is held");
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator('[data-focus="cancel-signout"]').waitFor();
+        await tv.eventually(async () => (await tv.page.locator('[data-focus="cancel-signout"]').innerText()) === text("common.cancel", "de"), "the dialog reads German");
+    });
+});
+
+test("a language file that lands while the sign-out confirmation is open redraws it once, over the German picker", async () => {
+    await withHeldGerman(async (tv, release) => {
+        await tv.page.locator('[data-focus="signout"]').click();
+        await tv.page.locator('[data-focus="cancel-signout"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="cancel-signout"]').innerText(), "Cancel");
+        await tv.page.locator('[data-focus="cancel-signout"]').focus();
+        await tv.page.keyboard.press("ArrowRight");
+        assert.equal(await tv.focused(), "confirm-signout");
+        release();
+        await tv.eventually(async () => (await tv.page.locator('[data-focus="cancel-signout"]').innerText()) === text("common.cancel", "de"), "the dialog reads German");
+        const screen = tv.page.locator('[data-screen="profiles:signout"]');
+        assert.equal(await screen.locator('[role="alertdialog"]').count(), 1, "one dialog, not a copy of the old one behind the new one");
+        assert.equal(await screen.locator(".profile-picker-title").first().innerText(), text("profiles.headline", "de"), "the picker behind it is German too");
+        assert.equal(await tv.focused(), "confirm-signout", "focus stays where the viewer moved it");
+    });
+});
+
+test("a language file that lands on the password-reset page keeps the focus where the viewer moved it", async () => {
+    await withHeldGerman(async (tv, release) => {
+        tv.fake.passwordChangeRequired = true;
+        tv.fake.expireAccessTokens();
+        await tv.page.evaluate(() => window.harness.mount());
+        await tv.page.locator('[data-screen="profiles-error"]').waitFor();
+        await tv.page.locator('[data-focus="signout"]').focus();
+        assert.equal(await tv.focused(), "signout");
+        release();
+        await tv.eventually(async () => (await tv.page.locator('[data-focus="retry"]').innerText()) === text("shell.errorView.tryAgain", "de"), "the page reads German");
+        assert.equal(await tv.focused(), "signout", "focus is not sent back to the first control");
+    });
 });
