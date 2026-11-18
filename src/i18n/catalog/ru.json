@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Действует для нажатий «Влево» и «Вправо» на пульте и экранных кнопок перемотки. Применяется ко всем устройствам, где выполнен вход в этот профиль.",
  "settings.skipIntervals.picker.audiobookBackApple": "Перемотка аудиокниги назад",
  "settings.skipIntervals.picker.audiobookForwardApple": "Перемотка аудиокниги вперёд",
+ "settings.skipIntervals.picker.videoBack": "Перемотка видео назад",
+ "settings.skipIntervals.picker.videoForward": "Перемотка видео вперёд",
  "settings.spoilers.footer": "Действует для серий, которые вы ещё не начали смотреть, на всех устройствах с этим профилем.",
  "settings.subtitles": "Субтитры",
  "settings.subtitles.authoredStyle": "Субтитры со встроенным оформлением сохраняют исходный вид; графические субтитры сохраняют заданные авторами шрифты и цвета, но следуют настройкам размера, положения и фона.",

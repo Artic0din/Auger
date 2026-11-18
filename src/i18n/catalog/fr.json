@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Utilisés par les appuis sur Gauche et Droite de la télécommande et par les boutons de saut à l’écran. S’appliquent à tous les appareils connectés à ce profil.",
  "settings.skipIntervals.picker.audiobookBackApple": "Saut en arrière (livres audio)",
  "settings.skipIntervals.picker.audiobookForwardApple": "Saut en avant (livres audio)",
+ "settings.skipIntervals.picker.videoBack": "Saut en arrière (vidéo)",
+ "settings.skipIntervals.picker.videoForward": "Saut en avant (vidéo)",
  "settings.spoilers.footer": "S’applique aux épisodes que vous n’avez pas commencés, sur chaque appareil qui utilise ce profil.",
  "settings.subtitles": "Sous-titres",
  "settings.subtitles.authoredStyle": "Les sous-titres dotés de leur propre style conservent leur apparence d’origine ; les sous-titres en image conservent leurs polices et couleurs d’origine, mais suivent les paramètres de taille, de position et d’arrière-plan.",

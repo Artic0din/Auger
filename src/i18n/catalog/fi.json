@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Käytetään kaukosäätimen vasemmalle ja oikealle painalluksissa sekä näytön siirtopainikkeissa. Koskee kaikkia laitteita, joilla on kirjauduttu tähän profiiliin.",
  "settings.skipIntervals.picker.audiobookBackApple": "Äänikirjan siirto taaksepäin",
  "settings.skipIntervals.picker.audiobookForwardApple": "Äänikirjan siirto eteenpäin",
+ "settings.skipIntervals.picker.videoBack": "Videon siirto taaksepäin",
+ "settings.skipIntervals.picker.videoForward": "Videon siirto eteenpäin",
  "settings.spoilers.footer": "Koskee jaksoja, joita et ole aloittanut, kaikissa tätä profiilia käyttävissä laitteissa.",
  "settings.subtitles": "Tekstitys",
  "settings.subtitles.authoredStyle": "Tekstitykset, joissa on oma sisäänrakennettu muotoilu, säilyttävät alkuperäisen ulkoasunsa; kuvapohjaiset tekstitykset säilyttävät alkuperäiset fonttinsa ja värinsä mutta noudattavat koko-, sijainti- ja tausta-asetuksia.",
