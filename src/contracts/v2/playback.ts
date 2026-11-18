@@ -195,6 +195,20 @@ export interface PlanRecipe {
     readonly width: number;
     readonly height: number;
     readonly bitrateKbps: number;
+    readonly frameRate: number | undefined;
+    readonly dynamicRange: string | undefined;
+    readonly audioChannels: number | undefined;
+}
+
+/** `PlaybackSource`: the file as stored, before any server transform. */
+export interface PlanSource {
+    readonly container: string | undefined;
+    readonly videoCodec: string | undefined;
+    readonly width: number | undefined;
+    readonly height: number | undefined;
+    readonly frameRate: number | undefined;
+    readonly dynamicRange: string | undefined;
+    readonly dolbyVisionProfile: number | undefined;
 }
 
 export interface DegradationWarning {
@@ -226,6 +240,9 @@ export interface PlaybackPlan {
     readonly effectiveMediaFileId: string;
     readonly subtitle: PlanSubtitle;
     readonly warnings: readonly DegradationWarning[];
+    /** The server's reason code for this delivery, e.g. `video_codec_unsupported`. */
+    readonly decisionReason: string | undefined;
+    readonly source: PlanSource;
 }
 
 export interface PlaybackTerminal {
@@ -358,6 +375,9 @@ function decodeRecipe(value: unknown, path: string): PlanRecipe | undefined {
         width: integer(obj, "width", path),
         height: integer(obj, "height", path),
         bitrateKbps: integer(obj, "bitrate_kbps", path),
+        frameRate: optionalNumber(obj, "frame_rate", path),
+        dynamicRange: optionalText(obj, "dynamic_range", path),
+        audioChannels: optionalInteger(obj, "audio_channels", path),
     };
 }
 
@@ -428,6 +448,16 @@ function decodePlan(value: unknown, path: string): PlaybackPlan {
         effectiveMediaFileId: nonEmptyString(obj, "effective_media_file_id", path),
         subtitle: decodeSubtitle(obj.subtitle, `${path}.subtitle`),
         warnings: list(obj, "degradation_warnings", path).map((entry, index) => decodeWarning(entry, `${path}.degradation_warnings[${index}]`)),
+        decisionReason: optionalText(obj, "decision_reason", path),
+        source: {
+            container: optionalText(source, "container", `${path}.source`),
+            videoCodec: optionalText(source, "video_codec", `${path}.source`),
+            width: optionalInteger(source, "width", `${path}.source`),
+            height: optionalInteger(source, "height", `${path}.source`),
+            frameRate: optionalNumber(source, "frame_rate", `${path}.source`),
+            dynamicRange: optionalText(source, "dynamic_range", `${path}.source`),
+            dolbyVisionProfile: optionalInteger(source, "dolby_vision_profile", `${path}.source`),
+        },
     };
 }
 

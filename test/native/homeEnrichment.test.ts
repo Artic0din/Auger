@@ -4,6 +4,12 @@ import type { RequestSpec } from "../../src/api/http.ts";
 import { type Card, decodeMarqueeDetail } from "../../src/contracts/v2/catalog.ts";
 import { FOR_YOU_PREWARM_CARDS, FOR_YOU_PREWARM_CONCURRENCY, FOR_YOU_PREWARM_ROWS, HomeEnrichment, MARQUEE_REST_MILLISECONDS, type HomeEnrichmentRow } from "../../src/ui/homeEnrichment.ts";
 import { fixture } from "./support/fakeSilo.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { episodeAirDate } from "../../src/ui/episodeCaption.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 import { ManualClock, settle } from "./support/clock.ts";
 
 function card(id: string, extra: Partial<Card> = {}): Card {
@@ -200,6 +206,23 @@ test("the marquee line is the aired date and the first three billed cast", async
     await clock.advance(MARQUEE_REST_MILLISECONDS);
     await server.drain();
     assert.equal(enrichment.detailLine("episode:e1"), "Aired Mar 12, 2026 · Pedro Pascal, Bella Ramsey, Anna Torv");
+});
+
+test("the marquee's aired date in German is the shared air-date form, not the Person page's numeric date", async () => {
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const server = new DetailServer();
+        server.details.set("episode:e1", { air_date: "2026-03-12", cast: [] });
+        const { enrichment, clock } = owner(server);
+        enrichment.rest(card("episode:e1"), false);
+        await clock.advance(MARQUEE_REST_MILLISECONDS);
+        await server.drain();
+        const shared = episodeAirDate("2026-03-12");
+        assert.ok(shared !== undefined);
+        // Unchanged from main: the medium date the air dates use, "12.03.2026" in German, not the Person rule's "12.3.2026" or "12/3/2026".
+        assert.equal(enrichment.detailLine("episode:e1"), translate("home.airedOn", { date: shared }, "de"));
+        assert.equal(shared, new Intl.DateTimeFormat("de", { dateStyle: "medium" }).format(new Date(2026, 2, 12, 12)));
+    } finally { setAppLanguage(null); }
 });
 
 test("a 20-card Continue Watching row keeps 4 saved-file reads in flight, then completes and redraws every badge", async () => {

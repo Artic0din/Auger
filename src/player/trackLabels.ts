@@ -213,16 +213,67 @@ export function audioRow(track: { readonly language: string | undefined; readonl
     return row(name, [qualifier, audioCodec(track.codec), audioLayout(track.channels), track.isDefault ? "Default" : undefined]);
 }
 
-export function subtitleRow(entry: { readonly label: string | undefined; readonly language: string | undefined; readonly codec?: string | undefined; readonly forced: boolean; readonly hearingImpaired: boolean; readonly source: string }, ordinal: number): TrackRow {
-    const showsHearingImpaired = entry.hearingImpaired || titleIndicatesHearingImpaired(entry.label);
-    const showsForced = entry.forced || (entry.label?.toLowerCase().includes("forced") ?? false);
+type SubtitleEntry = { readonly label: string | undefined; readonly language: string | undefined; readonly codec?: string | undefined; readonly forced: boolean; readonly hearingImpaired: boolean; readonly source: string };
+
+function subtitleParts(entry: SubtitleEntry, ordinal: number): { name: string; qualifier: string | undefined; format: string | undefined; forced: boolean; sdh: boolean } {
+    const sdh = entry.hearingImpaired || titleIndicatesHearingImpaired(entry.label);
+    const forced = entry.forced || (entry.label?.toLowerCase().includes("forced") ?? false);
     const format = subtitleCodec(entry.codec);
-    const title = subtitleTitle(entry.label, entry.language, entry.codec, showsHearingImpaired);
+    const title = subtitleTitle(entry.label, entry.language, entry.codec, sdh);
     const name = languageName(entry.language) ?? title ?? format ?? `Subtitles ${ordinal + 1}`;
     const qualifier = title !== undefined && title.localeCompare(name, undefined, { sensitivity: "accent" }) !== 0 ? title : undefined;
+    return { name, qualifier, format, forced, sdh };
+}
+
+export function subtitleRow(entry: SubtitleEntry, ordinal: number): TrackRow {
+    const { name, qualifier, format, forced, sdh } = subtitleParts(entry, ordinal);
     const formatPill = format !== undefined && format !== name ? format : undefined;
     const external = entry.source === "external" || entry.source === "downloaded" ? "External" : undefined;
-    return row(name, [qualifier, formatPill, showsForced ? "Forced" : undefined, showsHearingImpaired ? "SDH" : undefined, external]);
+    return row(name, [qualifier, formatPill, forced ? "Forced" : undefined, sdh ? "SDH" : undefined, external]);
+}
+
+/** PlayerTrack.singleLineLabel: "English", "English (Signs & Songs, Forced)". */
+export function subtitleSingleLine(entry: SubtitleEntry, ordinal: number): string {
+    const { name, qualifier, forced, sdh } = subtitleParts(entry, ordinal);
+    const qualifiers = [qualifier, forced ? "Forced" : undefined, sdh ? "SDH" : undefined].filter((part): part is string => part !== undefined);
+    return qualifiers.length === 0 ? name : `${name} (${qualifiers.join(", ")})`;
+}
+
+/** Case- and accent-blind containment, as Apple's `containsToken`. */
+function containsToken(token: string, values: readonly string[]): boolean {
+    const fold = (text: string): string => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    return values.some(value => fold(value).includes(fold(token)));
+}
+
+/** AetherPlaybackStatsProjection.subtitleLabel: "English · SRT", "Portuguese · PGS · Forced". */
+export function subtitleStatsLine(entry: SubtitleEntry): string {
+    const parts: string[] = [];
+    const title = subtitleTitle(entry.label, entry.language, entry.codec, entry.hearingImpaired);
+    if (title !== undefined) parts.push(title);
+    const language = languageName(entry.language);
+    if (language !== undefined && !containsToken(language, parts)) parts.unshift(language);
+    const codec = subtitleCodec(entry.codec);
+    if (codec !== undefined) parts.push(codec);
+    if (entry.forced && !containsToken("forced", parts)) parts.push("Forced");
+    if (entry.hearingImpaired && !containsToken("sdh", parts)) parts.push("SDH");
+    return parts.length === 0 ? "On" : parts.join(" · ");
+}
+
+type AudioEntry = { readonly language: string | undefined; readonly codec: string | undefined; readonly channels: number | undefined; readonly title: string | undefined };
+
+/** InfoNowPlayingRows.audioValue: the track as the Audio tab names it, with its format: "English · EAC3 5.1". */
+export function audioInfoLine(track: AudioEntry, ordinal: number): string {
+    const name = languageName(track.language) ?? audioTitle(track.title, track.language) ?? `Track ${ordinal + 1}`;
+    const format = [audioCodec(track.codec), audioLayout(track.channels)].filter((part): part is string => part !== undefined).join(" ");
+    return format === "" ? name : `${name} · ${format}`;
+}
+
+/** AetherPlaybackStatsProjection.audioStream: the language (else the title), then codec and layout; undefined when neither is known. */
+export function audioStatsLine(track: AudioEntry): string | undefined {
+    const channels = track.channels !== undefined && track.channels > 0 && ![1, 2, 6, 8].includes(track.channels) ? `${track.channels} channels` : audioLayout(track.channels);
+    const format = [audioCodec(track.codec), channels].filter((part): part is string => part !== undefined).join(" ");
+    const parts = [languageName(track.language) ?? audioTitle(track.title, track.language), format === "" ? undefined : format].filter((part): part is string => part !== undefined);
+    return parts.length === 0 ? undefined : parts.join(" · ");
 }
 
 /** Apple's `subtitlePillSummary`: the language leads, SDH and Forced follow in parentheses, then the format. */

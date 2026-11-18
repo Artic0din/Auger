@@ -9,7 +9,7 @@ import { translate } from "../../src/i18n/translate.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 // The expected German text is read here, in the test process; the page loads the same file the way the app does.
 registerSourceCatalogs();
@@ -61,6 +61,9 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
+        // The top bar paints a frame after Home's view appears; the tests read its first draw.
+        await tv.page.locator(".skyline-roots [data-focus]").first().waitFor();
+        await afterPaint(tv);
         await body(tv, settings, catalog, () => held.forEach(hold => hold.release()), held);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
@@ -339,7 +342,10 @@ test("a late answer that differs from the kept language redraws the screen once 
         assert.equal(await tv.focused(), key);
         releaseLanguage();
         await tv.eventually(async () => (await sectionTitles(tv)).includes(de("home.section.recentlyAddedIn", { library: "Movies" })), "German rows");
-        assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
+        const expected = ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0]));
+        // The libraries answer on their own read, which can land after the language file.
+        await tv.eventually(async () => (await rootTitles(tv)).join("|") === expected.join("|"), "German top bar with the libraries");
+        assert.deepEqual(await rootTitles(tv), expected);
         assert.equal(await tv.focused(), key, "focus is restored by section and item id");
     }, { stored: "de", cached: "", holdLanguage: true });
 });

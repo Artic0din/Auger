@@ -2,6 +2,7 @@
 // Retry classes come from the operation's x-silo-retry-safety in openapi.json (see ../contracts/v2/SOURCE).
 
 import { decodeServerBranding } from "../contracts/v2/branding.ts";
+import { ratingOperations } from "./ratingOperations.ts";
 import { shuffleOperations } from "./shuffleOperations.ts";
 import { recommendationOperations } from "./recommendationOperations.ts";
 import {
@@ -102,6 +103,7 @@ export const operations = {
     ...audiobookOperations,
     ...bandwidthProbeOperations,
     ...recommendationOperations,
+    ...ratingOperations,
     ...shuffleOperations,
     ...subtitleOperations,
     watchDetail: (contentId: string): Spec<ReturnType<typeof decodeWatchDetail>> => ({

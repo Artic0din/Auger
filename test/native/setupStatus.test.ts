@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { connect } from "../../src/session/core.ts";
-import { SERVER_NOT_READY_BODY, SERVER_NOT_READY_TITLE, serverHostLabel, SETUP_NEEDED, SETUP_UNREACHABLE, STILL_NEEDS_SETUP } from "../../src/ui/signInText.ts";
+import { serverHostLabel, serverNotReadyBody, serverNotReadyTitle, setupNeeded, setupUnreachable, stillNeedsSetup } from "../../src/ui/signInText.ts";
 import { ManualClock } from "./support/clock.ts";
 import { FakeSilo } from "./support/fakeSilo.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "./support/keyManager.ts";
@@ -24,11 +24,11 @@ async function connectTo(fake: FakeSilo, clock = new ManualClock()) {
 }
 
 test("the recovery copy and host label match TVServerNeedsSetupView", () => {
-    assert.equal(SERVER_NOT_READY_TITLE, "This server\nisn't ready");
-    assert.equal(SERVER_NOT_READY_BODY, "Ask the server administrator to finish setup. When it is ready, check again.");
-    assert.equal(SETUP_NEEDED, "Setup needed");
-    assert.equal(STILL_NEEDS_SETUP, "This server still needs administrator setup.");
-    assert.equal(SETUP_UNREACHABLE, "Couldn't reach the server. Check it's running and try again.");
+    assert.equal(serverNotReadyTitle(), "This server\nisn't ready");
+    assert.equal(serverNotReadyBody(), "Ask the server administrator to finish setup. When it is ready, check again.");
+    assert.equal(setupNeeded(), "Setup needed");
+    assert.equal(stillNeedsSetup(), "This server still needs administrator setup.");
+    assert.equal(setupUnreachable(), "Couldn't reach the server. Check it's running and try again.");
     assert.equal(serverHostLabel("https://silo.example.test"), "silo.example.test");
     assert.equal(serverHostLabel("https://silo.example.test:8443/silo"), "silo.example.test:8443");
     assert.equal(serverHostLabel("http://silo.example.test"), "silo.example.test");

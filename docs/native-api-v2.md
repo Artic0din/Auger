@@ -305,6 +305,7 @@ All are Bearer plus Profile.
 | Operation | Method and path | Retry |
 | --- | --- | --- |
 | personal-list capability | `GET /capabilities/personal-lists` | safe |
+| rating sources shown (`ratingSources`, `src/api/ratingOperations.ts`) | `GET /capabilities/ratings`; only `state: "available"` counts, and its `sources[].source` names decide whether Browse's Sort lists RT Critic and RT Audience. Read with the first Browse load, not on a focus move | safe |
 | membership | `GET /watchlist/{id}/membership` and `GET /favorites/{id}/membership` | safe |
 | add to watchlist or favorites | `PUT /watchlist/{id}`, `PUT /favorites/{id}` | never |
 | remove from watchlist or favorites | `DELETE /watchlist/{id}`, `DELETE /favorites/{id}` | never |

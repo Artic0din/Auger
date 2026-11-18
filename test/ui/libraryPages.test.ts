@@ -9,7 +9,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { HIDDEN_KEY } from "../../src/contracts/v2/settings.ts";
-import { homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { selectLibraryMode } from "./support/library.ts";
 
 let browser: Browser;
@@ -584,6 +584,11 @@ page("Filter text is Apple's: capped rows, monospaced headers and count, and lon
     await tv.page.locator('[data-focus="filter"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('[data-focus="facet:genre"]').waitFor();
+    // The genre rows draw above Decade once their facets answer, and focus stays on the row it started on; settle, then take the genre row.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+    await afterPaint(tv);
+    await tv.page.locator('[data-focus="facet:genre"]').focus();
+    assert.equal(await tv.focused(), "facet:genre");
     assert.equal((await style(tv, ".browse-filter-panel .browse-panel-title", "font-size"))["font-size"], capped(34));
     const section = await style(tv, ".browse-filter-panel .browse-panel-section", "font-family", "font-size");
     assert.match(section["font-family"] ?? "", /monospace/);
@@ -777,7 +782,8 @@ page("Browse pills keep Apple's padding, symbol frames and spacing", async tv =>
 });
 
 page("the Sort panel keeps Apple's stack: 4 between parts, 58-point rows and SF Mono tracking", async tv => {
-    // TVBrowseFilterUI.swift:125-155: a 4pt VStack inside 14 padding, centred on y510; rows 13 + 32 + 13; the eyebrow 18pt mono, tracking 2.
+    // TVBrowseFilterUI.swift:125-155: a 4pt VStack inside 14 padding, centred on y510 and 720 tall at most (a movie library's 13 sorts
+    // are more than that holds, so its rows scroll); rows 13 + 32 + 13; the eyebrow 18pt mono, tracking 2.
     await browseReady(tv);
     await tv.page.locator('[data-focus="sort"]').focus();
     await tv.page.keyboard.press("Enter");
@@ -789,16 +795,80 @@ page("the Sort panel keeps Apple's stack: 4 between parts, 58-point rows and SF 
         const text = document.createRange(); text.selectNodeContents(eyebrow);
         return {
             top: panel.top, height: panel.height, eyebrow: eyebrow.getBoundingClientRect().top - panel.top, first: rows[0]!.top - panel.top,
-            rows: rows.map(row => row.height), pitch: rows.slice(1).map((row, index) => row.top - rows[index]!.top), bottom: panel.bottom - rows[rows.length - 1]!.bottom,
+            rows: rows.map(row => row.height), pitch: rows.slice(1).map((row, index) => row.top - rows[index]!.top),
             family: getComputedStyle(eyebrow).fontFamily.split(",")[0]?.trim(), tracking: getComputedStyle(eyebrow).letterSpacing, width: Math.round(text.getBoundingClientRect().width * 10) / 10,
         };
     });
     assert.deepEqual(layout, {
-        top: 264.5, height: 491, eyebrow: 14, first: 14 + 21 + 8 + 4,
-        rows: [58, 58, 58, 58, 58, 58, 58], pitch: [62, 62, 62, 62, 62, 62], bottom: 14,
+        top: 150, height: 720, eyebrow: 14, first: 14 + 21 + 8 + 4,
+        rows: Array(13).fill(58), pitch: Array(12).fill(62),
         // SF Mono's advance is 0.618 em and Roboto Mono's 0.6 em; 0.33px more tracking keeps Apple's 91.9 SORT BY.
         family: '"Roboto Mono"', tracking: "2.33px", width: 91.9,
     });
+});
+
+const RT_SOURCES = { state: "available", allowed: true, revision: "r", sources: [{ source: "imdb", name: "IMDb" }, { source: "tmdb", name: "TMDB" }, { source: "rt_critic", name: "Rotten Tomatoes" }, { source: "rt_audience", name: "RT Audience" }] };
+const sortKeys = (tv: Tv) => tv.page.locator('.browse-sort-panel [data-focus^="sort:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")?.slice(5)));
+async function openSort(tv: Tv): Promise<void> {
+    await tv.page.locator('[data-focus="sort"]').focus();
+    await tv.page.keyboard.press("Enter");
+    await tv.page.locator('[data-focus="sort:title"]').waitFor();
+}
+
+page("the Sort panel offers no RT sort while the server does not show that rating source", async tv => {
+    // CatalogSortKey.available(for:shownRatingSources:current:), with RatingSourcesStore empty until the capability answers.
+    await browseReady(tv);
+    await openSort(tv);
+    assert.deepEqual(await sortKeys(tv), ["title", "added_at", "release_date", "year", "content_rating", "runtime", "rating_imdb", "rating_tmdb", "resolution", "bitrate", "progress", "date_viewed", "plays"]);
+    assert.equal(tv.fake.requests.filter(request => request.path === "/capabilities/ratings").length, 1, "the rating sources are read once, with Browse and not on a focus move");
+});
+
+page("the Sort panel lists RT Critic and RT Audience after IMDb and TMDB once the server shows those sources", async tv => {
+    await tv.page.route("**/api/v2/capabilities/ratings", route => route.fulfill({ json: RT_SOURCES }));
+    await browseReady(tv);
+    await openSort(tv);
+    assert.deepEqual(await sortKeys(tv), ["title", "added_at", "release_date", "year", "content_rating", "runtime", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "resolution", "bitrate", "progress", "date_viewed", "plays"]);
+});
+
+page("a series library lists Apple's 17 sorts in a panel 720 tall, and focus scrolls the last row into view", async tv => {
+    await tv.page.route("**/api/v2/capabilities/ratings", route => route.fulfill({ json: RT_SOURCES }));
+    await tv.page.locator('[data-focus="series"]').click();
+    await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+    await selectLibraryMode(tv, "Browse");
+    await tv.page.locator(".catalog-grid .browse-card").first().waitFor();
+    await openSort(tv);
+    const keys = await sortKeys(tv);
+    assert.deepEqual(keys, ["title", "added_at", "release_date", "last_air_date", "latest_episode_added", "year", "content_rating", "runtime", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "resolution", "bitrate", "progress", "date_viewed", "plays"]);
+    const panel = await tv.page.locator(".browse-sort-panel").boundingBox();
+    assert.deepEqual([panel?.y, panel?.height], [150, 720]);
+    for (let index = 1; index < keys.length; index += 1) await tv.remote(40);
+    assert.equal(await tv.focused(), "sort:plays");
+    await tv.eventually(() => tv.page.evaluate(() => {
+        const row = document.querySelector('[data-focus="sort:plays"]')!.getBoundingClientRect(), list = document.querySelector(".browse-sort-panel .browse-panel-list")!.getBoundingClientRect();
+        return row.top >= list.top && row.bottom <= list.bottom;
+    }), "the last Sort row scrolls into the list");
+}, catalog => {
+    const library = catalog.households.get("p-owner")?.libraries.find(item => item.id === "12");
+    assert.ok(library);
+    library.type = "series";
+});
+
+page("picking a new sort sends its server field, starts it in Apple's direction, and picking it again flips it", async tv => {
+    await browseReady(tv);
+    await openSort(tv);
+    await tv.page.locator('[data-focus="sort:plays"]').click();
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && request.body?.sort === "plays" && request.body?.order === "desc"), "Plays, Most first, is requested");
+    assert.match((await tv.page.locator('[data-focus="sort"]').textContent()) ?? "", /Plays.*Most/);
+    await openSort(tv);
+    // The panel opens on the sort in use, Plays, the last of 13 rows, so it scrolls that row into view.
+    assert.equal(await tv.focused(), "sort:plays");
+    await tv.eventually(() => tv.page.evaluate(() => {
+        const row = document.querySelector('[data-focus="sort:plays"]')!.getBoundingClientRect(), list = document.querySelector(".browse-sort-panel .browse-panel-list")!.getBoundingClientRect();
+        return row.top >= list.top && row.bottom <= list.bottom;
+    }), "the sort in use is scrolled into view");
+    await tv.page.locator('[data-focus="sort:plays"]').click();
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && request.body?.sort === "plays" && request.body?.order === "asc"), "Plays, Fewest first, is requested");
+    assert.match((await tv.page.locator('[data-focus="sort"]').textContent()) ?? "", /Plays.*Fewest/);
 });
 
 page("choosing a letter keeps the open rail's size and scroll while the grid reloads", async tv => {

@@ -2,6 +2,8 @@
 // controller so every state's wording is in one place.
 
 import type { ApiError } from "../api/errors.ts";
+import { isolated } from "../i18n/direction.ts";
+import { type MessageKey, translate, translateTv } from "../i18n/translate.ts";
 import type { ServerUrlProblem } from "../api/serverUrl.ts";
 import type { ConnectResult } from "../session/core.ts";
 import type { VaultClear } from "../session/credentialVault.ts";
@@ -14,7 +16,7 @@ export function connectProblem(result: Exclude<ConnectResult, { readonly status:
             return urlProblem(result.problem);
         case "unreachable":
             // ServerSetupViewModel's words once every address tried has failed.
-            return "Could not reach a Silo server at that address.";
+            return translate("setup.error.unreachable");
         case "not_silo_v2":
             return "This server can't be used with this app. It needs a Silo server with the version 2 API.";
         case "origin_mismatch":
@@ -26,11 +28,11 @@ export function connectProblem(result: Exclude<ConnectResult, { readonly status:
 
 function urlProblem(problem: ServerUrlProblem): string {
     switch (problem) {
-        // ServerSetupValidationError's missingHost and invalidHost, word for word.
+        // ServerSetupValidationError's missingHost and invalidHost, word for word. The other problems have no Apple key.
         case "empty":
-            return "Please enter a server host.";
+            return translate("setup.error.empty");
         case "invalid":
-            return "Please enter a valid server host.";
+            return translate("setup.error.invalidAddress");
         case "unsupported_scheme":
             return "Use an address that starts with https:// or http://.";
         case "has_credentials":
@@ -43,20 +45,25 @@ function urlProblem(problem: ServerUrlProblem): string {
 }
 
 // The Apple TV app's question before anything is sent over plain HTTP, word for word.
-export const CLEARTEXT_TITLE = "Connect without encryption?";
+export const cleartextTitle = (): string => translate("setup.cleartext.title");
 
-export function cleartextWarning(host: string): string {
-    return `Your password and what you watch will be sent unencrypted to ${host}. Only do this on a network you trust.`;
+/** TVLoginView's headline: the server's name, isolated in a right-to-left sentence. */
+export function signInTitle(serverName: string): string {
+    return translate("tvSignIn.title", { server: isolated(serverName) });
 }
 
-export const CLEARTEXT_DECLINED = "Could not reach a Silo server at that address over HTTPS.";
+export function cleartextWarning(host: string): string {
+    return translate("setup.cleartext.body", { host: isolated(host) });
+}
+
+export const cleartextDeclined = (): string => translate("setup.error.httpsOnly");
 
 // TVServerNeedsSetupView and ServerNeedsSetupRetryModel, word for word.
-export const SERVER_NOT_READY_TITLE = "This server\nisn't ready";
-export const SERVER_NOT_READY_BODY = "Ask the server administrator to finish setup. When it is ready, check again.";
-export const SETUP_NEEDED = "Setup needed";
-export const STILL_NEEDS_SETUP = "This server still needs administrator setup.";
-export const SETUP_UNREACHABLE = "Couldn't reach the server. Check it's running and try again.";
+export const serverNotReadyTitle = (): string => translate("notReady.headline");
+export const serverNotReadyBody = (): string => translate("notReady.body");
+export const setupNeeded = (): string => translate("notReady.badge");
+export const stillNeedsSetup = (): string => translate("notReady.still");
+export const setupUnreachable = (): string => translate("notReady.unreachable");
 
 export function forgetResult(result: VaultClear): string {
     return result === "failed"
@@ -82,7 +89,7 @@ export const SESSION_ONLY = "This TV can't store your sign-in securely, so you w
 
 /** AppRouter.LoginNotice.sessionExpired (AppRouter.swift:1014-1016 at silo-apple 54cf0f34). */
 export function sessionExpiredNotice(serverName: string): string {
-    return `You were signed out of ${serverName}. Sign in again.`;
+    return translate("signIn.expired", { server: isolated(serverName) });
 }
 
 export function signedOutNotice(result: LogoutResult): string[] {
@@ -141,9 +148,11 @@ export function serverHost(serverUrl: string): string {
  */
 export function codeLead(status: CodeStatus, typed: string | undefined): string {
     if (status.kind === "denied") {
-        return "Show a new code to try again.";
+        return translate("tvSignIn.declinedLead");
     }
-    return `Scan the code with your phone's camera, or go to ${typed ?? "your server's /activate page"} and enter it. Approve on your phone and this TV signs in by itself.`;
+    // Apple's text says "this Apple TV"; this TV is a TV.
+    // Without a typed address the catalog text names the page's path itself; a right-to-left sentence would move its slash behind it ("activate/").
+    return typed === undefined ? translateTv("tvSignIn.appleTv.leadNoPage").replace("/activate", isolated("/activate")) : translateTv("tvSignIn.appleTv.lead", { page: isolated(typed) });
 }
 
 /**
@@ -171,39 +180,39 @@ export function isTerminal(status: CodeStatus): boolean {
 export function statusLine(status: CodeStatus, host: string): string {
     switch (status.kind) {
         case "getting_code":
-            return "Getting a sign-in code…";
+            return translate("tvSignIn.status.gettingCode");
         case "waiting":
-            return status.renewed ? "New code. Waiting for approval." : "Waiting for approval";
+            return translate(status.renewed ? "tvSignIn.status.newCode" : "tvSignIn.status.waiting");
         case "opened":
-            return "Continue on your phone";
+            return translate("tvSignIn.status.opened");
         case "approved":
-            return status.account === undefined ? "Signed in" : `Signed in as ${status.account}`;
+            return status.account === undefined ? translate("tvSignIn.status.signedIn") : translate("tvSignIn.status.signedInAs", { account: isolated(status.account) });
         case "could_not_finish":
-            return "Couldn't finish signing in on this TV.";
+            return translate("tvSignIn.status.couldntFinish");
         case "denied":
-            return "Sign-in was declined.";
+            return translate("tvSignIn.status.denied");
         case "paused":
-            return "Sign-in paused.";
+            return translate("tvSignIn.status.paused");
         case "unreachable":
-            return `Can't reach ${host}. Check this TV's connection.`;
+            return translate("tvSignIn.status.unreachable", { host: isolated(host) });
         case "rate_limited":
-            return "Too many sign-in attempts. Trying again shortly.";
+            return translate("tvSignIn.status.tooMany");
         case "failed":
             return status.message;
     }
 }
 
 /** The one action beside a state, when it has one. */
-export function stateAction(status: CodeStatus): "Try again" | "Show a new code" | undefined {
+export function stateAction(status: CodeStatus): string | undefined {
     switch (status.kind) {
         case "could_not_finish":
         case "unreachable":
         case "rate_limited":
         case "failed":
-            return "Try again";
+            return translate("common.tryAgain");
         case "denied":
         case "paused":
-            return "Show a new code";
+            return translate("tvSignIn.action.newCode");
         default:
             return undefined;
     }
@@ -222,13 +231,14 @@ export function failedMessage(state: Extract<DeviceLoginState, { readonly phase:
 // The card beside the address and password forms. The Apple TV app points at the keyboard
 // notification on nearby iPhones; this TV offers its own on-screen keyboard and, per Samsung's
 // 2023 TV e-Manual, USB and Bluetooth keyboards.
+// No Apple key: Apple's own card (`tvSignIn.appleTv.typeOnPhoneBody`) points at the iPhone keyboard notification.
 export const KEYBOARD_TITLE = "Type with a keyboard";
 export const KEYBOARD_TEXT = "When you select a field, this TV's on-screen keyboard opens. You can also type on a USB or Bluetooth keyboard connected to the TV.";
 
 // The Apple TV manual entry (TVServerSetupView.manualEntry).
-export const ENTRY_TITLE = "Enter your\nserver address";
-export const ENTRY_LEAD = "Type the address you use for Silo.";
-export const INVALID_PORT = "Port must be a number between 1 and 65535.";
+export const entryTitle = (): string => translate("setup.headline");
+export const entryLead = (): string => translate("setup.body");
+export const invalidPort = (): string => translate("setup.error.invalidPort");
 
 function failure(state: Extract<DeviceLoginState, { readonly phase: "failed" }>): string {
     switch (state.reason) {
@@ -266,13 +276,13 @@ export function waitText(seconds: number): string {
 export const PASSWORD_CHANGE_REQUIRED_MESSAGE = "Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back.";
 
 // The Apple TV app's password screen (TVLoginView, LoginViewModel), word for word.
-export const PASSWORD_TITLE = "Sign in with\na password";
-export const ENTER_USERNAME = "Please enter your username.";
-export const ENTER_PASSWORD = "Please enter your password.";
+export const passwordTitle = (): string => translate("signIn.headline");
+export const enterUsername = (): string => translate("signIn.error.usernameMissing");
+export const enterPassword = (): string => translate("signIn.error.passwordMissing");
 
 /** `serverName` is the host (and port) until the server's branding name is read. */
 export function passwordLead(serverName: string, passwordOnly: boolean): string {
-    return passwordOnly ? "This server only supports password sign-in." : `Use your ${serverName} username and password.`;
+    return passwordOnly ? translate("tvSignIn.passwordOnly") : translate("signIn.body", { server: isolated(serverName) });
 }
 
 /** Single sign-on accounts have no Silo password; one provider is named, several read as single sign-on. */
@@ -281,7 +291,7 @@ export function phoneHint(oauthProviders: readonly string[]): string | undefined
     if (first === undefined) {
         return undefined;
     }
-    return `If you sign in with ${oauthProviders.length === 1 ? providerName(first) : "single sign-on"}, use your phone instead.`;
+    return oauthProviders.length === 1 ? translate("tvSignIn.form.providerHint", { provider: isolated(providerName(first)) }) : translate("signIn.phoneHintSso");
 }
 
 function providerName(displayName: string): string {
@@ -295,13 +305,13 @@ function providerName(displayName: string): string {
     return name === "" ? "single sign-on" : name;
 }
 
-const REFUSALS: Readonly<Record<string, string>> = {
-    not_permitted: "Your account at the sign-in provider isn't allowed to use this server.",
-    email_in_use: "An account with this email already exists. Ask an admin to connect it to the sign-in provider.",
-    identity_linked_elsewhere: "That provider account is already connected to another account.",
-    provider_unavailable: "The sign-in provider can't be reached right now. Try again later.",
-    password_expired: "Your directory password has expired. Change it with your organization, then try again.",
-    account_required: "You don't have an account on this server yet. Ask an admin to add you.",
+const REFUSALS: Readonly<Record<string, MessageKey>> = {
+    not_permitted: "signIn.provider.reason.notPermitted",
+    email_in_use: "signIn.error.emailInUse",
+    identity_linked_elsewhere: "signIn.provider.reason.linkedElsewhere",
+    provider_unavailable: "signIn.provider.reason.unavailable",
+    password_expired: "signIn.provider.reason.passwordExpired",
+    account_required: "tvSignIn.error.accountRequired",
 };
 
 /**
@@ -311,26 +321,24 @@ const REFUSALS: Readonly<Record<string, string>> = {
 export function passwordProblem(error: ApiError, hint: string | undefined, phoneRoute: boolean): string {
     const id = error.problemId;
     if (id === "local_login_disabled") {
-        const off = "Password sign-in is turned off on this server.";
-        return phoneRoute ? `${off} Use your phone instead.` : off;
+        return translate(phoneRoute ? "tvSignIn.error.localLoginDisabled" : "signIn.error.passwordOff");
     }
     const refusal = id === undefined ? undefined : REFUSALS[id];
     if (refusal !== undefined) {
-        return refusal;
+        return translate(refusal);
     }
     const status = error.status;
     if (status === 429) {
-        return "Too many sign-in attempts. Wait a moment, then try again.";
+        return translate("signIn.error.tooManyAttempts");
     }
     if (id !== undefined && status === 401) {
-        const wrong = "Incorrect username or password.";
-        return hint === undefined ? wrong : `${wrong} ${hint}`;
+        return hint === undefined ? translate("tvSignIn.error.invalidCredentials") : translate("signIn.error.invalidWithHint", { hint: isolated(hint) });
     }
     if (id !== undefined && status === 403) {
-        return "This account can't sign in. Contact your server administrator.";
+        return translate("signIn.error.cantSignIn");
     }
     if (id !== undefined && (status === 400 || status === 422)) {
-        return "Check your username and password, then try again.";
+        return translate("signIn.error.checkCredentials");
     }
     // Where the Apple TV app shows the system's description of the failure.
     const kind = error.failure.kind;

@@ -69,7 +69,7 @@ test("the library Browse page, its sort panel and its filter panel read in Germa
         await sortPanel.waitFor();
         assert.equal(await sortPanel.locator(".browse-panel-eyebrow").innerText(), de("library.sortBy").toLocaleUpperCase("de"));
         const names = await sortPanel.locator('[data-focus^="sort:"]').evaluateAll(rows => rows.map(row => row.querySelector(".browse-panel-text")?.textContent ?? row.textContent ?? ""));
-        assert.deepEqual(names.map(name => name.trim()), ["catalog.sort.title", "catalog.sort.added", "catalog.sort.released", "catalog.sort.year", "catalog.sort.imdbRating", "catalog.sort.duration", "catalog.sort.resolution"].map(key => de(key as Parameters<typeof de>[0])));
+        assert.deepEqual(names.map(name => name.trim()), ["catalog.sort.title", "catalog.sort.added", "catalog.sort.released", "catalog.sort.year", "catalog.sort.contentRating", "catalog.sort.duration", "catalog.sort.imdbRating", "catalog.sort.tmdbRating", "catalog.sort.resolution", "catalog.sort.bitrate", "catalog.sort.progress", "catalog.sort.dateViewed", "catalog.sort.plays"].map(key => de(key as Parameters<typeof de>[0])));
         await tv.remote(10009);
 
         await tv.page.locator('.browse-controls [data-focus="filter"]').click();

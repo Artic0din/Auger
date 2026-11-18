@@ -9,6 +9,7 @@ import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { ProfileLaunch } from "../session/profileLaunch.ts";
 import { type AuthorityChange, type LogoutResult, SessionError } from "../session/session.ts";
+import { translate } from "../i18n/translate.ts";
 import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { actions, button, type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
 import { navigationIcon } from "./navigationIcon.ts";
@@ -315,7 +316,10 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         if (list.length > 1) { picker(list, current?.id); return; }
         if (list[0] === undefined || list[0].id !== session.activeProfile?.id) {
             const back = resume() ?? (() => showList());
-            message("profile-create-unavailable", "Add Profile", ["Couldn't find the primary profile needed to create another profile."], [button("ok", "OK", back)], back, "error");
+            const ok = button("ok", translate("newProfile.ok"), back);
+            const line = el("p", "signin-text signin-error", translate("profiles.error.noPrimaryCreate"));
+            line.setAttribute("role", "alert");
+            show({ name: "profile-create-unavailable", content: [el("h1", "signin-title", translate("menu.addProfile")), line, actions([ok])], controls: [ok], focus: ok.key, back, translated: true }, ok.key);
             return;
         }
         shownList = list;

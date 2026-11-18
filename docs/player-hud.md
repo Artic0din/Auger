@@ -14,10 +14,13 @@ Apple source: `Silo-Server/silo-apple` at `bbd1e470f0e1d3a99f486d0d7246d11ed1c97
 Paths below are relative to `iosApp/iosApp`.
 
 - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:38–72`: tab order and availability.
-- `Screens/Player/tvOS/TVPlayerInfoHUD.swift:599–730`: title, metadata, overview, stream rows and current chapter.
-- `Screens/Player/tvOS/TVPlayerInfoHUD.swift:733–777`: separate Stats pane.
-- `Screens/Player/PlaybackStatsPanel.swift:68–80`: Source/Media and Buffer/Network/Engine columns.
-- `Screens/Player/tvOS/TVPlayerInfoHUD.swift:831–901`: speed, aspect and Auto-play next controls.
+- Info, Stats and Video follow `main` `e0337595` (silo-apple #1178, 15 Nov), issue #523:
+  - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:600–739`: Info has TITLE (series in capitals, title, `S1 · E2`, year for a film then runtime joined by `  ·  `, overview) beside NOW PLAYING (Video, Audio, Subtitles, Playback, Chapter).
+  - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:745–790`, `Screens/Player/PlaybackStatsPanel.swift:33–38`, `:75–160`: Stats shows Playback, a divider, then Stream over Engine; a section with no rows has no heading.
+  - `Screens/Player/PlaybackStats.swift:99–207`: one row per fact. Playback: how it plays and the file's container, Video, Dynamic range, Audio, Subtitles, Playback rate (only when not 1×), then Diagnostics (the server's reason and each warning, one label). Stream: Playback status. Engine: Delivery, Source.
+  - `Screens/Player/AetherPlaybackStatsProjection.swift`: labels and formats ("Direct play", "Remuxed by the server", "Transcoded by the server"; "4K", "1080p"; "HEVC · 3840×1600 · 24 fps · 20.0 Mbps"; "Dolby Vision Profile 8 → SDR").
+  - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:795–957`: Video has PICTURE (Quality, Aspect) beside PLAYBACK (Speed, Auto-play next). Subtitle delay is in the Subtitles tab only.
+  - `:336–421`: Info and Stats are each one focusable scroll pane; Up at its top returns to the tab.
 - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:961`: speeds 0.75, 1.0, 1.25, 1.5 and 2.0.
 - `Screens/Player/PlayerSettings.swift:19–36`: Fit, Fill and Stretch.
 - `Screens/Player/tvOS/TVPlayerInfoHUD.swift:2053–2162`: numbered chapter rows, title fallback, time, current marker, seek and dismiss.
@@ -45,7 +48,7 @@ Issue #391 matches Apple's two-column panes (`Silo-Server/silo-apple` at `7e478b
 
 - `:1653–1659`: Subtitles has TRACKS (470 px) and an options column (440 px), 58 px apart. Tracks, AI results and the series choice sit in TRACKS. Silo-apple `main` `e958f58` (#1178, 15 Nov) groups the options column as OPTIONS (AI actions, Search Subtitles…), TIMING (Delay, Sync to Audio, Reset Timing) and STYLE (Appearance with its Large · Box · Bottom line under the label, then Only on this TV); a group with no row has no heading, and Size and Position are in Appearance. TIMING also holds Sync to Audio and Reset Timing for the selected track ([subtitle sync](playback/subtitle-sync.md), #522). AI Subtitles… as one row and the SECONDARY list are not built (#522). Audio has one TRACKS column and no options column.
 - Subtitles in TRACKS are ordered as `SubtitleDisplayOrder` does (`orderSubtitles`): the watch read's `effective_subtitle_language` first (Apple takes it only from the watch detail, so the catalog item's language is not used; with none, A to Z), the other languages A to Z by name, then format, full before forced before SDH, then incoming order. The server's inventory has no default flag, so that tie-break is not applied.
-- `:821–920` (older reference `7e478b26`; Apple has since regrouped Video as PICTURE and PLAYBACK, #523): Video has equal PLAYBACK and SYNC columns, 48 px apart. PLAYBACK lists Quality, Speed and Aspect, each opening its picker (Quality, Playback Speed, Aspect); SYNC holds Subtitle delay, when the overlay offers a delay, and Auto-play next.
+- Video has two equal columns 48 px apart, PICTURE (Quality, Aspect) and PLAYBACK (Speed, Auto-play next), as `main` `e0337595` (#523). Quality, Aspect and Speed each open their picker (Quality, Aspect, Playback Speed).
 - `:548–593`: option rows show the value right-aligned at 72 % white, then a chevron when the row opens a picker. Toggles have no chevron. Appearance carries `textformat` ("Aa"), Search `magnifyingglass` and the AI rows `sparkles` (`:1964–2077`), drawn as inline SVG at 20 pt.
 - `:2191–2245`: track rows mark the selection with a 20 pt checkmark and no wash.
 - `:1042–1144`, `:1665–1684`: a picker is a 620 px dialog over its pane, which dims to 28 % and leaves the focus graph. Its title keeps its case at 30 px semibold, options are 24 px with the 14 % selected wash, and Back closes it; it has no Back row.
@@ -58,10 +61,11 @@ Issue #391 matches Apple's two-column panes (`Silo-Server/silo-apple` at `7e478b
 
 Still different from Apple, outside this issue: Speed offers 1× and 2× and Aspect Fit and Stretch, because AVPlay supports only those (see Platform limits). Liquid Glass also blurs the video under the panel; AVPlay draws video on a plane below the web page, so the CSS blur cannot reach it, and the video shows through the tint unblurred. Inter replaces SF Pro, so text widths differ by a few pixels.
 
-Stats display engine and playback-plan facts, including output codec, resolution and configured bitrate when supplied.
-Configured bitrate is labelled explicitly and is never presented as measured throughput.
-Buffer seconds/bytes, download speed, network throughput, FPS, dropped frames, decoder memory and engine-specific Apple metrics are omitted because this client does not measure them.
-No estimate is substituted.
+Stats and Info's Now playing rows come from the playback plan (`src/player/playerHUD.ts`, `planStats`).
+The picture and the Stats Audio format are the plan's `effective_recipe` (what reaches the TV, where Apple reads its engine's decoded stream), falling back to `source` and the selected track; Info's Audio row names the track as the Audio tab does. The Video row's bitrate is the recipe's, never a measured throughput.
+Dynamic range is the source's, or "source → output" when the recipe changes it, as Apple's planned-range label.
+Apple's engine-measured rows (buffer, network, read bitrates, dropped frames, A/V sync, decoders, Aether counters) are left out because AVPlay does not report them; no estimate is substituted (#556).
+The Info and Stats panes have no focus ring yet, and Stats scrolls by page rather than by section (#556).
 
 ## Native capture checklist
 

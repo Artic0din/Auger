@@ -411,10 +411,9 @@ for (const [language, options, step] of [["ar", { stored: "ar" }, LEFT], ["en", 
     });
 }
 
-test("Change Account, opened from the profile menu in a right-to-left page, is mirrored as on Apple TV", async () => {
+test("Change Account, opened from the profile menu in Arabic, is mirrored as on Apple TV", async () => {
     await withSignedInTv(browser, async tv => {
-        // The page direction is set by hand: the account screens are what is under test, not the language.
-        await tv.page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl", "dir rtl");
         await openChangeAccount(tv);
         const screen = await tv.page.evaluate(() => ({
             direction: getComputedStyle(document.querySelector('[data-view="change-account"] .accounts-screen') ?? document.body).direction,
@@ -423,7 +422,7 @@ test("Change Account, opened from the profile menu in a right-to-left page, is m
         }));
         assert.equal(screen.direction, "rtl");
         assert.ok(screen.rail > screen.pane, `the server rail leads on the right (${screen.rail} vs ${screen.pane})`);
-    });
+    }, "ar");
 });
 
 for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as const) {
@@ -501,18 +500,17 @@ test("in Arabic Left from season 1's first episode to season 2's last (Big Mood'
     });
 });
 
-test("Change Account, over Arabic browse, is marked lang=en on its own root while the document says ar", async () => {
+test("Change Account, over Arabic browse, follows the shown language on its own root: lang=ar, not lang=en", async () => {
     await withSignedInTv(browser, async tv => {
-        // The document's language is set by hand: the cover screen is what is under test, not the language.
-        await tv.page.evaluate(() => { document.documentElement.setAttribute("lang", "ar"); document.documentElement.setAttribute("dir", "rtl"); });
+        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl", "dir rtl");
         await openChangeAccount(tv);
         const langs = await tv.page.evaluate(() => ({
             document: document.documentElement.getAttribute("lang"),
             screen: document.querySelector('[data-view="change-account"]')?.getAttribute("lang") ?? null,
             direction: getComputedStyle(document.querySelector('[data-view="change-account"]') as Element).direction,
         }));
-        assert.deepEqual(langs, { document: "ar", screen: "en", direction: "rtl" }, "English text, mirrored layout");
-    });
+        assert.deepEqual(langs, { document: "ar", screen: "ar", direction: "rtl" }, "Arabic text, mirrored layout");
+    }, "ar");
 });
 
 test("the sign-in and profile screens (Add Profile among them) are marked lang=en while the document says ar", async () => {
