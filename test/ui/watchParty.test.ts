@@ -3,8 +3,16 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeWatchParty } from "../native/support/fakeWatchParty.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { button, menuTitles, openHub, pressDisabled, start } from "./support/watchParty.ts";
+
+// Requests and Watch Party each come from their own read, so list the menu once Requests is in and the answers have landed and painted.
+async function settledMenu(tv: Tv): Promise<string[]> {
+    await tv.eventually(async () => (await menuTitles(tv)).includes("Requests"), "Requests offered");
+    await tv.eventually(async () => tv.pendingReplies === 0, "the capability answers landed");
+    await afterPaint(tv);
+    return await menuTitles(tv);
+}
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -24,7 +32,7 @@ test("the profile menu hides Watch Party until the device turns it on", async ()
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv, new FakeWatchParty(), false);
-        assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"]);
+        assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"]);
     } finally { await tv.page.context().close(); }
 });
 
@@ -33,7 +41,7 @@ test("with the toggle on and the server allowing it, Watch Party sits after Requ
     try {
         const fake = await start(tv);
         await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "Watch Party offered");
-        assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Watch Party", "Settings", "Switch Profile", "Sign Out"]);
+        assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Watch Party", "Settings", "Switch Profile", "Sign Out"]);
         assert.deepEqual([...new Set(fake.capabilityReads)].sort(), ["playback", "watch-together"]);
     } finally { await tv.page.context().close(); }
 });
@@ -73,7 +81,7 @@ test("the entry stays hidden unless the server gate, the room socket and both pl
             await start(tv, fake);
             await tv.eventually(async () => fake.capabilityReads.length >= 2, `${name}: probed`);
             await tv.jump(100);
-            assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"], name);
+            assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"], name);
         } finally { await tv.page.context().close(); }
     }
 });
