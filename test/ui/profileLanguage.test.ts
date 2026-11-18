@@ -71,11 +71,11 @@ test("in Arabic the PIN screen is mirrored: its pad reads from the right and Lef
     });
 });
 
-test("the sign-in screens keep lang=en while the PIN screen follows the shown language", async () => {
+test("the sign-in screens follow the shown language once their text is on the catalog", async () => {
     const tv = await openTv(browser, { profiles: true, locale: "de-DE" });
     try {
         await tv.page.locator("section.signin-screen").first().waitFor();
-        assert.equal(await tv.page.locator("section.signin-screen").first().getAttribute("lang"), "en");
+        await tv.eventually(async () => await tv.page.locator("section.signin-screen").first().getAttribute("lang") === "de", "the address screen in German");
     } finally { await tv.page.context().close(); }
 });
 

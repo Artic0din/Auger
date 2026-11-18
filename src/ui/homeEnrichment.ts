@@ -18,7 +18,7 @@ import { operations } from "../api/operations.ts";
 import type { Card, CardOverlay, MarqueeAudioTrack, MarqueeDetail, MarqueeFile } from "../contracts/v2/catalog.ts";
 import { resolutionLabel } from "./cardPresentation.ts";
 import { translate } from "../i18n/translate.ts";
-import { formatPersonDate } from "./personHero.ts";
+import { airDateText } from "./personHero.ts";
 
 /** `SiloTheme.Skyline.marqueeRestDebounceMilliseconds` at silo-apple 2ef3a171. */
 export const MARQUEE_REST_MILLISECONDS = 150;
@@ -280,7 +280,7 @@ export class HomeEnrichment {
         const detail = this.entries.get(id)?.detail;
         if (detail === undefined) return undefined;
         const parts: string[] = [];
-        const aired = detail.airDate === undefined || detail.airDate.trim() === "" ? undefined : formatPersonDate(detail.airDate);
+        const aired = detail.airDate === undefined || detail.airDate.trim() === "" ? undefined : airDateText(detail.airDate);
         if (aired !== undefined) parts.push(translate("home.airedOn", { date: aired }));
         const cast = detail.cast.map((credit, position) => ({ credit, position }))
             .sort((a, b) => (a.credit.order ?? Number.MAX_SAFE_INTEGER) - (b.credit.order ?? Number.MAX_SAFE_INTEGER) || a.position - b.position)
