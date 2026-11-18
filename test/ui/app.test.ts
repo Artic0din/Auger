@@ -886,6 +886,24 @@ for (const language of ["de", "ar"]) appTest(`the saved-accounts recovery screen
     await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
 });
 
+appTest("a language file landing under the open exit dialog waits for it to close, and Cancel returns to the control it was opened from", async tv => {
+    const catalog = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>;
+    await tv.page.evaluate(() => { window.appHarness.destroy(); window.appHarness.showLanguage("de"); window.appHarness.storage.failGet = true; window.appHarness.mount(); });
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    await tv.page.locator('[data-focus="continue"]').focus();
+    await tv.remote(10009);
+    await tv.page.getByRole("dialog").waitFor();
+    await tv.page.evaluate(file => window.appHarness.landLanguage("de", file), catalog);
+    await tv.page.evaluate(() => new Promise(resolve => window.setTimeout(resolve, 50)));
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Retry", "not redrawn under the open dialog");
+    await tv.page.keyboard.press("Enter");
+    await tv.page.getByRole("dialog").waitFor({ state: "detached" });
+    assert.equal(await tv.focused(), "continue", "Cancel returns to the control the dialog was opened from");
+    await tv.eventually(async () => (await tv.page.locator('[data-focus="retry"]').innerText()) === translate("common.retry", undefined, "de"), "the screen is drawn again once the dialog closed");
+    assert.equal(await tv.focused(), "continue", "and keeps that control");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
+});
+
 appTest("a language file landing while Select is held on Retry waits for the release, and the press still runs Retry", async tv => {
     const catalog = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>;
     await tv.page.evaluate(() => { window.appHarness.destroy(); window.appHarness.showLanguage("de"); window.appHarness.storage.failGet = true; window.appHarness.mount(); });

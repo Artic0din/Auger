@@ -39,6 +39,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     let player: PlayerScreen | undefined;
     let profile: ProfileHandoff | undefined;
     let exitDialog: ExitDialog | undefined;
+    let reconcileStartup: (() => void) | undefined;
     let destroyed = false;
     let activeServer: ConnectedServer | undefined;
     let accounts: AccountsScreen | undefined;
@@ -273,7 +274,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             player = undefined;
             options.exit();
             destroy();
-        }, () => { exitDialog = undefined; });
+        }, () => { exitDialog = undefined; window.setTimeout(() => reconcileStartup?.(), 0); });
     };
 
     const onVisibility = (): void => {
@@ -336,8 +337,15 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             };
             draw();
             // A cold launch fetches the shown language while this draws, so the button is drawn again when the file lands (the focused control stays).
-            const late = lateRedraw(() => false, () => { if (startup === host) draw(); else stopCatalog(); });
-            const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
+            let landed = false;
+            const late = lateRedraw(() => exitDialog !== undefined, () => {
+                landed = false;
+                if (startup === host) draw();
+                else { stopCatalog(); reconcileStartup = undefined; }
+            });
+            const stopCatalog = onCatalogLoaded(() => { landed = true; late.arrived(); });
+            // Closing the exit dialog is no key release the redraw can wait for, so it asks again, after Cancel has put focus back.
+            reconcileStartup = () => { if (landed) late.arrived(); };
         }
     };
     void migrate();
