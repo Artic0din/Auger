@@ -96,6 +96,46 @@ for (const index of [undefined, 0, 1, 2]) test(`the bitmap wash draws the four c
     } finally { await tab.context().close(); }
 });
 
+/**
+ * Right to left (Codex P2 on #675). TVHeroAmbientWash draws the wash as a bitmap with `Image(decorative:)` at the corners' unit-square centres, and
+ * neither the bitmap nor those numbers mirror: rendering that image under `\.layoutDirection = .rightToLeft` on macOS leaves its physical left
+ * on the left (the SwiftUI `EllipticalGradient` beneath it does mirror, but the opaque bitmap covers it). So in Arabic the top-leading corner and
+ * its 0.2 cap stay at the physical top-left, while the art and the marquee move right; this pins that, so a later change cannot mirror the wash
+ * by accident. It is a reading of Apple's source and a macOS render, not an Apple TV capture.
+ */
+test("the wash keeps its physical corners in a right-to-left page, as Apple's bitmap does", async () => {
+    const tab = await page();
+    try {
+        const shoot = async (direction: "ltr" | "rtl"): Promise<readonly number[]> => {
+            await tab.evaluate(([direction, tints]) => {
+                document.documentElement.dir = direction;
+                const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+                const wash = new fixture.HeroWash({ now: () => 0, schedule: () => () => undefined });
+                wash.element.style.cssText = "position:fixed;left:0;top:0;width:1920px;height:1080px";
+                wash.show(tints[0], false);
+                document.body.replaceChildren(wash.element);
+            }, [direction, TINTS] as const);
+            const png = (await tab.screenshot({ clip: { x: 0, y: 0, width: 1920, height: 1080 } })).toString("base64");
+            // The top-left and top-right corners, and the screen's middle, as RGB triples.
+            return tab.evaluate(async data => {
+                const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob());
+                const canvas = document.createElement("canvas");
+                canvas.width = image.width;
+                canvas.height = image.height;
+                const context = canvas.getContext("2d");
+                if (context === null) throw new Error("no canvas");
+                context.drawImage(image, 0, 0);
+                return [[2, 2], [1917, 2], [960, 540]].flatMap(([x, y]) => Array.from(context.getImageData(x ?? 0, y ?? 0, 1, 1).data).slice(0, 3));
+            }, png);
+        };
+        const [left, right] = [await shoot("ltr"), await shoot("rtl")];
+        assert.deepEqual(right, left, "the same pixels in a right-to-left page");
+        assert.notDeepEqual(left.slice(0, 3), left.slice(3, 6), "the two top corners carry different colours, so the check can tell them apart");
+        // The top-leading corner is the darkest (value 0.2) and sits at the physical left.
+        assert.ok(Math.max(...left.slice(0, 3)) < Math.max(...left.slice(3, 6)), "the darker top-leading colour is at the physical left");
+    } finally { await tab.context().close(); }
+});
+
 test("a new wash fades in over the old one, which stays until it is opaque", async () => {
     const tab = await page();
     try {
