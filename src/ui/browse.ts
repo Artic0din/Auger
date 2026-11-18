@@ -36,7 +36,7 @@ import { Skyline } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
-import { errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
+import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
 import { homeRows, removingDismissed, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
@@ -1008,9 +1008,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     return;
                 }
                 current.failure = text ?? "Something went wrong. Try again.";
-                current.error = errorState(error);
+                // A generic error keeps Apple's keyed message so a late language redraws it; a route's own wording (no key) replaces it.
+                const state = errorState(error);
+                const body = error instanceof CalendarTimezoneError ? undefined : failureBody(error, current);
+                current.error = body === undefined ? state : { ...state, route: body };
                 // Apple BoxSetDetailViewModel.errorState: a 404 keeps Not found but says why a box set can be missing.
-                if (current.kind === "boxSet" && current.error.headline === "Not found" && text !== undefined) current.error = { ...current.error, message: text };
+                if (current.kind === "boxSet" && current.error.kind === "notFound" && text !== undefined) current.error = { ...current.error, body: { key: "boxSets.unavailableMessage" } };
                 // SearchViewModel.performSearch: a failed new search clears its titles, people and box sets; a failed next page keeps them behind the error.
                 if (current.kind === "search" && current.appending !== true) {
                     current.pages = newPages();
@@ -1019,7 +1022,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (current.supplement !== undefined) Object.assign(current.supplement, { people: [], peoplePending: false, boxSets: [], boxSetsPending: false });
                 }
                 if (current.kind === "search") current.appending = false;
-                if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? { headline: "Something went wrong", message: error.message, signIn: false } : errorState(error);
+                if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? failureState(error.message) : errorState(error);
                 if (current.kind === "requests") { current.requests.error = errorState(error); if (!current.requests.unconfirmed && !current.requests.writing) current.requests.action = undefined; }
                 if (current.kind === "requests" && error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
                 if (top() === current) {

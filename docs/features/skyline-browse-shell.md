@@ -533,6 +533,9 @@ On Home, For You and library roots the tint wash is one bitmap the marquee keeps
 A new tint fades in over the old bitmap for 240 ms, which stays opaque until it finishes; the tint sampled from the image redraws the newest bitmap in place.
 Each backdrop layer is only the artwork's own 1228.8 x 756 box, and the 190 px top scrim is one shared strip above every layer, so a swap no longer draws a full-screen layer of gradients (the S95C trace on #515 put about 72% of Home Down raster time in the two full-screen layers).
 Details, Requests and box sets keep the CSS wash.
+Home's backdrop layers are composited from the moment they swap in (`will-change` on the fading layer, its image and the wash bitmaps), so a layer promoted by a fade or by the image's reveal and dropped when it ends no longer makes the others draw again: the S95C trace on #310 showed each hero layer drawn two to four times per swap, 38 redraws in a run against 12 first draws.
+The frame's backing and ThumbHash are one bitmap (`heroPlaceholder`, 512 px wide, drawn under the art's fade for the text-side direction) instead of two masked layers: the stylesheet draws them as separate masked layers, each a full-layer gradient-mask draw (about 50 ms of a 240 ms hero layer on the S95C), and the bitmap has the same pixels (about 99.95% of channel values within 2, the largest gap 4).
+Details and Requests keep the masked layers, because their spoiler blur filters the ThumbHash on its own.
 The shell receives a library/type/mode identity separately from the loading view name.
 Loading, data completion and selector refreshes do not start a second transition.
 Rapid changes replace the outgoing layer, and stopping or destroying the focus host removes that layer, incoming motion classes and its cleanup timer.
