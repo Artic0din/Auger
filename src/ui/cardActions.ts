@@ -28,6 +28,8 @@ export interface CardMenuOptions {
     readonly dismissal?: HomeDismissal | undefined;
     /** Home injects its watched handler into every row, so its cards always get the watched row. */
     readonly home?: boolean | undefined;
+    /** A wide still in a thumbnail row: Apple draws it as EpisodeThumbCard, whose menu has no Not Interested row. */
+    readonly wide?: boolean | undefined;
 }
 
 export interface CardActionsHost {
@@ -262,8 +264,8 @@ export class CardActions {
             const watchlist = card.watchlist;
             rows.push({ change: true, key: "watchlist", label: watchlist ? "Remove from Watchlist" : "Add to Watchlist", icon: watchlist ? "bookmark.slash" : "bookmark", run: () => this.send(card.id, detailOperations.setPersonal("watchlist", card.id, !watchlist), menu => ({ ...menu, watchlist: !watchlist }), source) });
         }
-        // MediaCardPersonalState.offersNotInterested: a movie or series from a server that sends the mark.
-        if (card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
+        // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
+        if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
             const marked = card.notInterested;
             rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
         }

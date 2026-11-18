@@ -34,6 +34,8 @@ class NotInterestedFake extends FakeDetails {
         home.sections = [
             { id: RECOMMENDED, sectionType: RECOMMENDED, title: "Recommended for You", items: ["movie:m0002", "movie:m0004", "series:s2", "movie:m0006"] },
             { id: "recently_added", sectionType: "recently_added", title: "Recently Added", items: ["movie:m0002", "movie:m0005", "episode:s1e12"] },
+            // A row with an episode among TV titles draws wide cards (EpisodeThumbCard), whose menu has no Not Interested.
+            { id: "recent_tv", sectionType: "recently_added", title: "Recently Added TV", items: ["series:s2", "episode:s1e12"] },
         ];
     }
 
@@ -123,6 +125,16 @@ test("a movie or series card from a server that sends the mark offers Not Intere
     await afterPaint(tv);
     await hold(tv, RECOMMENDED, "movie:m0002");
     assert.deepEqual(await rows(tv), ["Mark as Watched", "Add to Favorites", "Add to Watchlist"], "a server that predates the mark cannot be offered it");
+}));
+
+test("a wide card (a still in a thumbnail row) offers no Not Interested, though the server sends the mark, while the same series on a poster card does", () => run(async tv => {
+    await start(tv);
+    assert.equal(await tv.page.locator('[data-section="recent_tv"] .skyline-continue:not(.skyline-explore)').count(), 2, "Recently Added TV draws wide cards");
+    await hold(tv, "recent_tv", "series:s2");
+    assert.deepEqual(await rows(tv), ["Mark as Watched", "Add to Favorites", "Add to Watchlist"], "EpisodeThumbCard's menu has no Not Interested row");
+    await tv.remote(10009);
+    await hold(tv, RECOMMENDED, "series:s2");
+    assert.equal((await rows(tv)).at(-1), "Not Interested", "MediaCard's menu does");
 }));
 
 test("marking a title writes PUT /not-interested, takes it out of the recommendation row at once, keeps it in Recently Added, and lands focus on the card that took its place", () => run(async tv => {

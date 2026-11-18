@@ -271,7 +271,7 @@ export function cardItem(card: Card, context: ViewContext): FocusItem | undefine
     const line = episodeLine(card);
     const play = card.type === "movie" || card.type === "episode" ? () => context.resume?.(card.id, card.title, line) : undefined;
     const home = context.homeRow !== undefined;
-    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home });
+    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home, wide: thumbnail });
 }
 
 export function cardItems(cards: readonly Card[], context: ViewContext): FocusItem[] {
