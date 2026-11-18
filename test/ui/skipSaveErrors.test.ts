@@ -118,3 +118,37 @@ test("a refused value, a 403 and a 429 keep Tizen's own wording, with the retry-
         assert.equal(await failingSave(language, interval, async tv => { await tv.page.route(`**/api/v2/settings/values/${interval.key}**`, route => route.request().method() === "PUT" ? route.fulfill({ status: 429, headers: { "Retry-After": "7" }, contentType: "application/problem+json", body: JSON.stringify({ type: "about:blank", title: "Too many", status: 429 }) }) : route.fallback()); }), "Too many requests. Try again after 7 seconds.", `429, ${language}`);
     }
 });
+
+test("a skip save error shown before the language file lands is translated when it does", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const interval = INTERVALS[0];
+    const tv = await openTv(browser, { app: "browse" });
+    tv.fake.catalog = new FakeCatalog();
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "de");
+    try {
+        await tv.page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); });
+        await refuse(interval.key, "Connection")(tv);
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator(`[data-focus="${interval.row}"]`).click();
+        await tv.page.locator(`[data-focus="${interval.row}:${interval.choice}"]`).click();
+        const warning = tv.page.locator(".settings-warning");
+        await warning.waitFor();
+        assert.equal((await warning.innerText()).trim(), MESSAGES.en.ConnectionVideoRewind, "English until the file lands");
+        release();
+        await tv.eventually(async () => (await tv.page.locator(".settings-warning").innerText()).trim() === MESSAGES.de.ConnectionVideoRewind, "the warning reads German once the file lands");
+    } finally { release(); await tv.page.context().close(); }
+});
