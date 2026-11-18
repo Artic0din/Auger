@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Gebruikt door links en rechts op de afstandsbediening en de spoelknoppen op het scherm. Geldt voor elk apparaat dat bij dit profiel is ingelogd.",
  "settings.skipIntervals.picker.audiobookBackApple": "Luisterboek terugspoelen",
  "settings.skipIntervals.picker.audiobookForwardApple": "Luisterboek vooruitspoelen",
+ "settings.skipIntervals.picker.videoBack": "Video terugspoelen",
+ "settings.skipIntervals.picker.videoForward": "Video vooruitspoelen",
  "settings.spoilers.footer": "Geldt voor afleveringen waar je nog niet aan bent begonnen, op elk apparaat dat dit profiel gebruikt.",
  "settings.subtitles": "Ondertitels",
  "settings.subtitles.authoredStyle": "Ondertitels met eigen ingebouwde opmaak behouden hun oorspronkelijke weergave; ondertitels op basis van afbeeldingen behouden hun eigen lettertypen en kleuren, maar volgen de instellingen voor grootte, positie en achtergrond.",

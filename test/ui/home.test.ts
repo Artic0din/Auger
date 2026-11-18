@@ -238,6 +238,16 @@ journey("Home keeps one tint wash while its backdrop changes, and a new tint fad
     assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 2, "the new wash fades in over the old one");
     // The fading layer's opacity makes it a stacking context, so it must sit at the art's own depth or the shared scrim would fall under it until the fade ends.
     assert.deepEqual(await tv.page.locator(".skyline-marquee-art.skyline-art-enter").evaluate(node => { const style = getComputedStyle(node); return [style.position, style.zIndex]; }), ["absolute", "-2"]);
+    // TVRootHeroBackdrop: the art swaps in 0.24 s (SiloTheme.Skyline.marqueeCrossfadeDuration) and the wash behind it blends over
+    // 0.7 s (marqueeWashCrossfadeDuration, silo-apple 648091a7), so a change of focus drifts the page colours instead of switching them.
+    // The journey runs under Reduce Motion, which turns every animation off in CSS; read the durations the stylesheet sets with motion allowed.
+    await tv.page.emulateMedia({ reducedMotion: "no-preference" });
+    const duration = (selector: string): Promise<string> => tv.page.locator(selector).evaluate(node => getComputedStyle(node).animationDuration);
+    assert.equal(await duration(".skyline-marquee-art.skyline-art-enter"), "0.24s", "the art keeps its 0.24 s swap");
+    assert.equal(await duration(".skyline-wash canvas:last-child"), "0.7s", "the wash blends over 0.7 s");
+    await tv.jump(300);
+    assert.equal(await tv.page.locator(".skyline-marquee-art.skyline-outgoing").count(), 0, "the old art is gone after its 0.24 s");
+    assert.equal(await tv.page.locator(".skyline-wash canvas").count(), 2, "the old wash stays until the 0.7 s blend has finished");
     await tv.jump(700);
     assert.equal(await tv.page.locator(".skyline-wash[data-first]").count(), 1, "the same wash element stays");
     assert.equal(await tv.page.locator(".skyline-wash").count(), 1);

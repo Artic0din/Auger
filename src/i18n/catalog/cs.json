@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Používá se pro stisknutí vlevo a vpravo na ovladači a tlačítka přeskočení na obrazovce. Platí pro všechna zařízení přihlášená k tomuto profilu.",
  "settings.skipIntervals.picker.audiobookBackApple": "Přeskočit zpět v audioknize",
  "settings.skipIntervals.picker.audiobookForwardApple": "Přeskočit vpřed v audioknize",
+ "settings.skipIntervals.picker.videoBack": "Přeskočit zpět ve videu",
+ "settings.skipIntervals.picker.videoForward": "Přeskočit vpřed ve videu",
  "settings.spoilers.footer": "Platí pro nezačaté díly na všech zařízeních, která používají tento profil.",
  "settings.subtitles": "Titulky",
  "settings.subtitles.authoredStyle": "Titulky s vlastním vestavěným stylem si zachovají původní vzhled; obrázkové titulky si zachovají původní písma a barvy, ale řídí se nastavením velikosti, umístění a pozadí.",

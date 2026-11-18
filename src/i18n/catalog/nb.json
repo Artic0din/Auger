@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Brukes når du trykker på Venstre og Høyre på fjernkontrollen, og av hoppknappene på skjermen. Gjelder alle enheter som er logget på denne profilen.",
  "settings.skipIntervals.picker.audiobookBackApple": "Hopp tilbake i lydbøker",
  "settings.skipIntervals.picker.audiobookForwardApple": "Hopp fremover i lydbøker",
+ "settings.skipIntervals.picker.videoBack": "Hopp tilbake i video",
+ "settings.skipIntervals.picker.videoForward": "Hopp fremover i video",
  "settings.spoilers.footer": "Gjelder episoder du ikke har begynt på, på alle enheter som bruker denne profilen.",
  "settings.subtitles": "Undertekster",
  "settings.subtitles.authoredStyle": "Undertekster med egen innebygd stil beholder sitt opprinnelige utseende; bildebaserte undertekster beholder sine egne skrifttyper og farger, men følger innstillingene for størrelse, plassering og bakgrunn.",

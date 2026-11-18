@@ -142,35 +142,131 @@ test("a new wash fades in over the old one, which stays until it is opaque", asy
         const layers = await tab.evaluate(async ([tints]) => {
             const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
             let release: (() => void) | undefined;
-            const wash = new fixture.HeroWash({ now: () => 0, schedule: run => { release = run; return () => { release = undefined; }; } });
+            const delays: number[] = [];
+            const wash = new fixture.HeroWash({ now: () => 0, schedule: (run, ms) => { delays.push(ms); release = run; return () => { release = undefined; }; } });
             document.body.appendChild(wash.element);
             const count = (): number => wash.element.querySelectorAll("canvas").length;
             wash.show(tints[0], false);
             const first = count();
             wash.show(tints[1], true);
             const fading = count();
-            const entering = wash.element.lastElementChild?.classList.contains("skyline-art-enter") === true;
+            const entering = wash.element.lastElementChild?.classList.contains("skyline-wash-enter") === true;
             release?.();
             const settled = count();
             wash.show(tints[2], false);
-            return { first, fading, entering, settled, snapped: count() };
+            return { first, fading, entering, settled, snapped: count(), delays };
         }, [TINTS] as const);
-        assert.deepEqual(layers, { first: 1, fading: 2, entering: true, settled: 1, snapped: 1 });
+        // The blend runs 0.7 s (marqueeWashCrossfadeDuration, not the art's 0.24 s); the old bitmap goes once the new one is at 0.98 opacity, at 630 ms,
+        // because two full-screen bitmaps cost the TV frames for as long as both are up (#674).
+        assert.deepEqual(layers, { first: 1, fading: 2, entering: true, settled: 1, snapped: 1, delays: [630] });
     } finally { await tab.context().close(); }
 });
 
-test("a steady roll never keeps more than three bitmaps", async () => {
+test("a swap mid-fade bakes the blend under way into the bitmap below, so the colours carry on without a jump", async () => {
+    const tab = await page();
+    try {
+        // The fade follows CSS ease-in-out: 0.5 of the way at 350 ms and 0.8708 at 525 ms.
+        for (const [elapsed, alpha] of [[350, 0.5], [525, 0.8708]] as const) {
+            const result = await tab.evaluate(([tints, elapsed]) => {
+                const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+                let time = 0;
+                const wash = new fixture.HeroWash({ now: () => time, schedule: () => () => undefined });
+                document.body.replaceChildren(wash.element);
+                const canvases = (): HTMLCanvasElement[] => Array.from(wash.element.querySelectorAll("canvas"));
+                // The middle and the two corners where the tints differ most, as RGB triples.
+                const centre = (canvas: HTMLCanvasElement | undefined): number[] => [[480, 270], [40, 40], [920, 500]].flatMap(([x, y]) => Array.from(canvas?.getContext("2d")?.getImageData(x ?? 0, y ?? 0, 1, 1).data ?? []).slice(0, 3));
+                wash.show(tints[0], false);
+                const under = centre(canvases()[0]);
+                wash.show(tints[1], true);
+                const entering = centre(canvases()[1]);
+                time = elapsed;
+                wash.show(tints[2], true);
+                return { count: canvases().length, baked: centre(canvases()[0]), under, entering };
+            }, [TINTS, elapsed] as const);
+            assert.equal(result.count, 2, "the blend is baked in, so the new bitmap fades over one bitmap, not two");
+            for (const channel of Array.from({ length: 9 }, (_, index) => index)) {
+                const expected = (1 - alpha) * (result.under[channel] ?? 0) + alpha * (result.entering[channel] ?? 0);
+                assert.ok(Math.abs((result.baked[channel] ?? 0) - expected) <= 2, `after ${elapsed} ms value ${channel}: ${result.baked[channel]} against ${expected.toFixed(1)}`);
+            }
+        }
+    } finally { await tab.context().close(); }
+});
+
+/**
+ * Codex P2 on #674: moving across cards every 200 to 300 ms must not make the wash darken or jump on the third swap. The visible wash is the bitmap
+ * under, with the fading one over it at the opacity the fade has reached; the opacity here is the browser's own ease-in-out, read from a paused Web
+ * Animation, not the code under test. At each swap the visible wash just before and the one just after must be the same.
+ */
+test("swaps 250 ms apart never darken or jump the visible wash", async () => {
+    const tab = await page();
+    try {
+        const steps = await tab.evaluate(([tints]) => {
+            const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+            let time = 0;
+            const wash = new fixture.HeroWash({ now: () => time, schedule: () => () => undefined });
+            document.body.replaceChildren(wash.element);
+            const canvases = (): HTMLCanvasElement[] => Array.from(wash.element.querySelectorAll("canvas"));
+            const points = [[480, 270], [40, 40], [920, 500], [40, 500], [920, 40]] as const;
+            const read = (canvas: HTMLCanvasElement): number[] => points.flatMap(([x, y]) => Array.from(canvas.getContext("2d")?.getImageData(x, y, 1, 1).data ?? []).slice(0, 3));
+            // The opacity CSS ease-in-out has reached after `ms` of a 700 ms fade.
+            const reference = (ms: number): number => {
+                const probe = document.createElement("div");
+                document.body.appendChild(probe);
+                const animation = probe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 700, easing: "ease-in-out", fill: "both" });
+                animation.pause();
+                animation.currentTime = ms;
+                const value = Number(getComputedStyle(probe).opacity);
+                probe.remove();
+                return value;
+            };
+            const visible = (fadeStart: number): number[] => {
+                const [under, over] = canvases();
+                if (under === undefined) return [];
+                const base = read(under);
+                if (over === undefined) return base;
+                const top = read(over), alpha = reference(time - fadeStart);
+                return base.map((value, index) => (1 - alpha) * value + alpha * (top[index] ?? 0));
+            };
+            // Mean luminance over the sample points, so 8-bit rounding of half a level a point does not add up.
+            const luma = (values: number[]): number => values.reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index % 3]!, 0) / points.length;
+            const result: { swap: number; count: number; worst: number; darker: number }[] = [];
+            wash.show(tints[0], false);
+            let fadeStart = -1;
+            for (let swap = 1; swap <= 5; swap++) {
+                const before = visible(fadeStart);
+                wash.show(tints[swap % 3], true);
+                fadeStart = time;
+                // The new bitmap starts at opacity 0, so what shows is the bitmap under it.
+                const after = read(canvases()[0]!);
+                result.push({
+                    swap, count: canvases().length,
+                    worst: swap === 1 ? 0 : Math.max(...before.map((value, index) => Math.abs(value - (after[index] ?? 0)))),
+                    darker: swap === 1 ? 0 : luma(before) - luma(after),
+                });
+                time += 250;
+            }
+            return result;
+        }, [TINTS] as const);
+        for (const step of steps) {
+            assert.equal(step.count, 2, `swap ${step.swap}: never more than the bitmap under and the one fading in`);
+            assert.ok(step.worst <= 3, `swap ${step.swap}: the visible wash jumped by ${step.worst.toFixed(1)} levels`);
+            assert.ok(step.darker <= 1, `swap ${step.swap}: the visible wash darkened by ${step.darker.toFixed(2)}`);
+        }
+    } finally { await tab.context().close(); }
+});
+
+test("a steady roll never keeps more than two bitmaps: the one fading in and the one under it", async () => {
     const tab = await page();
     try {
         const peak = await tab.evaluate(([tints]) => {
             const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
-            // The timer never fires: each swap comes sooner than the 240 ms crossfade.
+            // The timer never fires: each swap comes sooner than the crossfade ends.
             const wash = new fixture.HeroWash({ now: () => 0, schedule: () => () => undefined });
             document.body.appendChild(wash.element);
             let most = 0;
             for (let swap = 0; swap < 12; swap++) { wash.show(tints[swap % 3], swap > 0); most = Math.max(most, wash.element.querySelectorAll("canvas").length); }
             return most;
         }, [TINTS] as const);
-        assert.ok(peak <= 3, `${peak} bitmaps`);
+        assert.ok(peak <= 2, `${peak} bitmaps`);
     } finally { await tab.context().close(); }
 });

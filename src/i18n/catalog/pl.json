@@ -782,6 +782,8 @@
  "settings.skipIntervals.footerVideo": "Używane przez naciśnięcia przycisków w lewo i w prawo na pilocie oraz przyciski przewijania na ekranie. Dotyczy wszystkich urządzeń zalogowanych w tym profilu.",
  "settings.skipIntervals.picker.audiobookBackApple": "Przewijanie audiobooka do tyłu",
  "settings.skipIntervals.picker.audiobookForwardApple": "Przewijanie audiobooka do przodu",
+ "settings.skipIntervals.picker.videoBack": "Przewijanie wideo do tyłu",
+ "settings.skipIntervals.picker.videoForward": "Przewijanie wideo do przodu",
  "settings.spoilers.footer": "Dotyczy nierozpoczętych odcinków na każdym urządzeniu, które używa tego profilu.",
  "settings.subtitles": "Napisy",
  "settings.subtitles.authoredStyle": "Napisy z własnym wbudowanym stylem zachowują oryginalny wygląd; napisy graficzne zachowują swoje czcionki i kolory, ale stosują ustawienia rozmiaru, położenia i tła.",
