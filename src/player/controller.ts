@@ -52,6 +52,7 @@ import { aiMenu, aiRoute, hasActionableSource, quotaText, relyOnTranscription, t
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
+import { downloadSubtitle } from "./subtitleRefetch.ts";
 import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleCue } from "../contracts/v2/subtitles.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
@@ -2072,12 +2073,20 @@ export class PlaybackController implements PlayerControls {
         void (async () => {
             try {
                 const base = this.deps.session.http.base;
-                const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
-                if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
-                if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                const text = await this.deps.session.http.subtitleText(url.href, abort.signal);
+                const show = (cues: readonly SubtitleCue[]): void => {
+                    if (!current()) return;
+                    attempt.cues = cues;
+                    attempt.captionNotice = "";
+                    this.showPlayback(attempt);
+                };
+                const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
+                    const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
+                    if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
+                    if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
+                    return this.deps.session.http.subtitleText(url.href, abort.signal);
+                }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
-                attempt.cues = decodeCues(text, artifact.format, artifact.origin);
+                attempt.cues = cues;
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
