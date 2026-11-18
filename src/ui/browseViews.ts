@@ -99,9 +99,9 @@ export function recoveryActions(error: Pick<ErrorState, "kind" | "signIn">, retr
  */
 type ShownError = ErrorState;
 
-/** Apple ErrorState: a 401, 403 or 404 keeps Apple's headline and copy; any other failure keeps the route's own message. */
+/** Apple ErrorState: a 401, 403 or 404 keeps Apple's headline and copy, any other failure keeps the route's own message, as a key where Apple has the words. */
 export function failureError(failure: string, stored: ShownError | undefined): ShownError {
-    return stored !== undefined && stored.kind !== "generic" ? stored : { kind: "generic", body: { text: failure }, signIn: false };
+    return stored !== undefined && stored.kind !== "generic" ? stored : { kind: "generic", body: stored?.route ?? { text: failure }, signIn: false };
 }
 
 export function errorView(name: string, error: ShownError, retry: () => void, back?: () => void, signIn?: () => void, manageServers?: () => void): View {

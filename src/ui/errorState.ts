@@ -6,7 +6,13 @@ import { SessionError } from "../session/session.ts";
 export type ErrorKind = "generic" | "sessionExpired" | "notAllowed" | "notFound" | "updateRequired";
 /** A catalog key read when the page is drawn, so a language that lands late redraws it; or text the server or the screen already worded. */
 export type ErrorBody = { readonly key: MessageKey } | { readonly text: string };
-export interface ErrorState { readonly kind: ErrorKind; readonly body: ErrorBody; readonly signIn: boolean }
+export interface ErrorState {
+    readonly kind: ErrorKind;
+    readonly body: ErrorBody;
+    readonly signIn: boolean;
+    /** The route's own wording for a generic failure (`failureBody`), shown by the pages that keep it over Apple's message. */
+    readonly route?: ErrorBody;
+}
 
 const HEADLINES = {
     generic: "status.errorGeneric", sessionExpired: "shell.errorView.sessionExpired", notAllowed: "shell.errorView.notAllowed",

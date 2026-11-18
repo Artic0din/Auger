@@ -19,7 +19,7 @@ import { browseCardDestination, type SearchFilter, type EpisodeSelection, type P
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
 import { translate } from "../i18n/translate.ts";
-import { errorMessage, errorState, type ErrorState } from "./errorState.ts";
+import { type ErrorBody, errorMessage, errorState, type ErrorState } from "./errorState.ts";
 
 export { errorHeadline, errorMessage, errorState, failureState, type ErrorBody, type ErrorKind, type ErrorState } from "./errorState.ts";
 import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
@@ -338,34 +338,40 @@ export function unconfirmedWriteMessage(action: RequestWrite): string {
     return action === "cancel" ? translate("requests.notice.unconfirmedCancel") : "Could not confirm the change. Refresh before trying again.";
 }
 
-/** What to tell the person; undefined for an error that is not a server or session answer (a defect). */
-export function failureText(error: unknown, current: Route): string | undefined {
+/** What to tell the person, as a catalog key where Apple has the words; undefined for an error that is not a server or session answer (a defect). */
+export function failureBody(error: unknown, current: Route): ErrorBody | undefined {
+    const text = (line: string): ErrorBody => ({ text: line });
     if (error instanceof SessionError) {
-        return error.reason === "unavailable" ? translate("shell.error.serverProblem") : "This TV is no longer signed in.";
+        return error.reason === "unavailable" ? { key: "shell.error.serverProblem" } : text("This TV is no longer signed in.");
     }
     if (!(error instanceof ApiError)) {
         return undefined;
     }
     const kind = error.failure.kind;
     if (kind === "network" || kind === "timeout") {
-        return "Could not reach the server. Check the connection and try again.";
+        return text("Could not reach the server. Check the connection and try again.");
     }
     if (error.status === 404) {
-        if (current.kind === "calendar") return "Could not load Calendar. Try again.";
-        if (current.kind === "audiobook") return "This audiobook is no longer available.";
-        if (current.kind === "boxSet") return translate("boxSets.unavailableMessage");
-        return current.kind === "library"
+        if (current.kind === "calendar") return text("Could not load Calendar. Try again.");
+        if (current.kind === "audiobook") return text("This audiobook is no longer available.");
+        if (current.kind === "boxSet") return { key: "boxSets.unavailableMessage" };
+        return text(current.kind === "library"
             ? "This library is no longer available."
             : current.kind === "season"
               ? "This season is no longer available."
-              : current.kind === "person" ? "This person is no longer available." : "This title is no longer available.";
+              : current.kind === "person" ? "This person is no longer available." : "This title is no longer available.");
     }
     if (error.problemId === "invalid_cursor") {
-        if (current.kind === "homeSection" || current.kind === "person") return "The list changed. Try again.";
-        return "The list changed. Go back and open it again.";
+        return text(current.kind === "homeSection" || current.kind === "person" ? "The list changed. Try again." : "The list changed. Go back and open it again.");
     }
     if (kind === "invalid_response") {
-        return "The server sent an answer this TV could not read.";
+        return text("The server sent an answer this TV could not read.");
     }
-    return error.transient ? translate("shell.error.serverProblem") : "Something went wrong. Try again.";
+    return error.transient ? { key: "shell.error.serverProblem" } : text("Something went wrong. Try again.");
+}
+
+/** What to tell the person, in the language shown now. */
+export function failureText(error: unknown, current: Route): string | undefined {
+    const body = failureBody(error, current);
+    return body === undefined ? undefined : errorMessage({ body });
 }

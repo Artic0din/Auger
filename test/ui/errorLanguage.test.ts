@@ -123,3 +123,20 @@ test("an error page drawn in English is drawn again in German when the file land
         await tv.remote(BACK);
     }, false);
 });
+
+test("a generic server error drawn in English keeps its catalog message and is drawn again in German when the file lands", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const problem = { type: "about:blank", title: "Server error", status: 500 };
+    await inLanguage("de", async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); }, async tv => {
+        await tv.page.route("**/api/v2/catalog/query**", route => route.request().method() === "POST" && route.request().postDataJSON()?.source === "section"
+            ? route.fulfill({ status: 500, contentType: "application/problem+json", body: JSON.stringify(problem) })
+            : route.fallback());
+        await tv.page.locator('[data-focus="expand:recent/12"]').click();
+        assert.deepEqual(await errorPage(tv), { headline: "Something went wrong", message: "The server ran into a problem. Try again in a moment.", buttons: ["Try Again"] }, "English until the file lands");
+        release();
+        await tv.eventually(async () => (await errorPage(tv)).message === text("shell.error.serverProblem", "de"), "the message is German");
+        assert.deepEqual(await errorPage(tv), { headline: text("status.errorGeneric", "de"), message: text("shell.error.serverProblem", "de"), buttons: [TRY_AGAIN("de")] });
+        await tv.remote(BACK);
+    }, false);
+});

@@ -7,7 +7,7 @@ import { ApiError } from "../../src/api/errors.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { SessionError } from "../../src/session/session.ts";
-import { errorHeadline, errorMessage, errorState, failureText, type Route } from "../../src/ui/browseRoutes.ts";
+import { errorHeadline, errorMessage, errorState, failureBody, failureText, type Route } from "../../src/ui/browseRoutes.ts";
 import { recoveryActions } from "../../src/ui/browseViews.ts";
 import { registerSourceCatalogs } from "./support/catalogs.ts";
 
@@ -77,6 +77,8 @@ test("the route failure notes that have an Apple key read it, and the others sta
     const box = { kind: "boxSet" } as unknown as Route;
     const serverProblem = new ApiError({ kind: "http", status: 500, retryAfterSeconds: undefined });
     assert.equal(failureText(serverProblem, library), "The server ran into a problem. Try again in a moment.");
+    assert.deepEqual(failureBody(serverProblem, library), { key: "shell.error.serverProblem" }, "a key, so a language that lands late redraws it");
+    assert.deepEqual(failureBody(http(404), library), { text: "This library is no longer available." });
     inLanguage("de", () => {
         assert.equal(failureText(serverProblem, library), translate("shell.error.serverProblem", undefined, "de"));
         assert.equal(failureText(http(404), box), translate("boxSets.unavailableMessage", undefined, "de"));
