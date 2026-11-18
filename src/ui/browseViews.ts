@@ -402,6 +402,17 @@ function isContinueWatching(sectionType: string): boolean {
     return type === "continue_watching" || type === "in_progress";
 }
 
+/**
+ * Apple `ResolvedSection.showsWholeSection` (`SectionRow.swift`): only Continue Watching can tell it is
+ * complete, because its `total_count` is the list's own size and the server fills the row to its limit.
+ * A shorter row whose total is no more than it holds gets no Explore all card.
+ */
+function showsWholeSection(section: HomeSection): boolean {
+    if (!isContinueWatching(section.sectionType) || section.totalCount === undefined) return false;
+    const sentLimit = section.itemLimit !== undefined && section.itemLimit > 0 ? section.itemLimit : HOME_ROW_CARDS;
+    return section.items.length < Math.min(HOME_ROW_CARDS, sentLimit) && section.totalCount <= section.items.length;
+}
+
 function isTvItem(type: Card["type"]): boolean {
     switch (type) {
         case "episode":
@@ -479,7 +490,7 @@ export function homeView(libraries: readonly UserLibrary[], sections: readonly H
         if (cards.length === 0) {
             continue;
         }
-        if (handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(rowTitle, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
+        if (!showsWholeSection(section) && handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(rowTitle, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
         addRow(section, rowTitle, cards, continuing);
     }
     if (zones.length === 0 && handlers.dismisses === true) {

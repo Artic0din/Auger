@@ -15,6 +15,9 @@ async function mount(options: { stills: boolean; images?: boolean; overviews?: b
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new FakeCatalog();
     catalog.episodeStills = options.stills;
+    // A partial Continue Watching row, so it has an Explore all card to open.
+    const resume = catalog.households.get("p-owner")?.sections.find(row => row.id === "continue_watching");
+    if (resume !== undefined) resume.totalCount = 5;
     tv.fake.catalog = options.gridEpisode ? { route: (method, path, profile, body) => {
         if (path.split("?")[0] === "/catalog/query") return { status: 200, body: {
             items: [{ content_id: "episode:s1e12", type: "episode", title: "Harbor Lights chapter 1.2", series_id: "series:s1", season_number: 1, episode_number: 2,

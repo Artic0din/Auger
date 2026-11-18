@@ -118,6 +118,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A Continue Watching row on Home or a library's Recommended page that already shows everything you are watching no longer ends with an Explore all card, as on Apple TV. A row with more titles than it shows keeps the card (#691).
+
 - A video whose HLS playlist uses variables the TV cannot read (the long transcoded streams, #314) no longer freezes Silo until the TV closes it. Silo reads the start of the playlist, and of the first video stream it lists, before handing it over and, when it finds one, shows the playback error page straight away.
 - A video the TV is slow to open no longer leaves Silo waiting for a minute. If AVPlay has not prepared a stream after 15 seconds, the route counts as failed, is replanned, and after the third failed route the playback error page shows with its Try Again button.
 - The profile picker's Sign out button now draws Apple TV's icon, a closed rounded box with a gap for its arrow, instead of an open bracket; the arrow leaves to the right, and to the left in Arabic (#656).
