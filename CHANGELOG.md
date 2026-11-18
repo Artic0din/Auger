@@ -54,6 +54,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
 - Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
 - Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
