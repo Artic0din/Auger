@@ -205,7 +205,8 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         trackColumn.rows.appendChild(choice("secondary-off", "Off", tracks.secondary.selectedId === undefined));
         for (const track of tracks.secondary.choices) {
             const row = choice(`secondary:${track.id}`, track.label, track.id === tracks.secondary.selectedId, track.detail);
-            if (track.unavailable === true) row.setAttribute("data-unavailable", "true");
+            // HUDTrackRow is `.disabled(isDisabled)` for the primary's own row, so the focus engine skips it (TVPlayerInfoHUD.swift:2146, :1776).
+            if (track.unavailable === true) { row.setAttribute("data-unavailable", "true"); row.setAttribute("data-focus-skip", "true"); }
             trackColumn.rows.appendChild(row);
         }
     }
@@ -1231,6 +1232,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
      * Left and Right cross between a pane's columns (each a `focusSection` in SubtitlesPane and VideoPane) and land on the
      * row nearest the focused one's height, as the tvOS focus engine does. Past the last column they switch panes.
      */
+    /** Rows the arrow keys can land on: a row the focus engine skips (a disabled Apple row) stays out unless it already holds focus. */
+    const landable = (rows: HTMLElement[]): HTMLElement[] => rows.filter(row => row === document.activeElement || row.getAttribute("data-focus-skip") !== "true");
     const crossColumn = (direction: -1 | 1): boolean => {
         const from = document.activeElement;
         const own = from?.closest<HTMLElement>(".player-menu-column");
@@ -1239,7 +1242,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const middle = (node: Element): number => { const box = node.getBoundingClientRect(); return box.top + box.height / 2; };
         const height = middle(from);
         for (let index = columns.indexOf(own) + direction; index >= 0 && index < columns.length; index += direction) {
-            const rows = Array.from(columns[index]!.querySelectorAll<HTMLElement>("[data-focus]"));
+            const rows = landable(Array.from(columns[index]!.querySelectorAll<HTMLElement>("[data-focus]")));
             const nearest = rows.reduce<HTMLElement | undefined>((best, row) => best === undefined || Math.abs(middle(row) - height) < Math.abs(middle(best) - height) ? row : best, undefined);
             if (nearest !== undefined) { nearest.focus(); return true; }
         }
@@ -1268,7 +1271,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         // Up and Down stay inside the focused column of a two-column pane.
         const columnScope = document.activeElement?.closest<HTMLElement>(".player-menu-column");
-        const all = columnScope ? Array.from(columnScope.querySelectorAll<HTMLElement>("[data-focus]")) : buttons(column);
+        const all = landable(columnScope ? Array.from(columnScope.querySelectorAll<HTMLElement>("[data-focus]")) : buttons(column));
         const at = all.findIndex((button) => button === document.activeElement);
         const atTab = tabs.findIndex(tab => tab === document.activeElement);
         const infoPane = lists[column];

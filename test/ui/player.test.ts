@@ -3433,6 +3433,23 @@ test("Select on a SECONDARY row chooses it, Off clears it, and the dimmed primar
     } finally { await page.close(); }
 });
 
+test("Up and Down skip the dimmed primary row in SECONDARY, as Apple's disabled row is skipped", async () => {
+    // HUDTrackRow: `.disabled(isDisabled)` with the primary's own row disabled (TVPlayerInfoHUD.swift:2146, :1776).
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: SECONDARY });
+        await page.locator('[data-focus="secondary-off"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "secondary:file:42:subtitle:1", "Down passes the dimmed row");
+        await remote(page, UP);
+        assert.equal(await focused(page), "secondary-off", "Up passes it too");
+        await page.locator('[data-focus="secondary:file:42:subtitle:1"]').focus();
+        await remote(page, UP);
+        assert.equal(await focused(page), "secondary-off", "from the row below, Up passes it as well");
+        assert.deepEqual(await commands(page), []);
+    } finally { await page.close(); }
+});
+
 test("the second line draws under the primary at Apple's offsets for each position", async () => {
     const { page } = await open();
     try {
