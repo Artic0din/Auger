@@ -62,6 +62,7 @@ test("Apple's text for 'this Apple TV' reads 'this TV' in every language", () =>
         "settings.general.pairingSharedAskEveryTime", "settings.general.pairingShared", "settings.general.themeMusicFooterTv", "settings.general.titleArtAllOffTv",
         "settings.general.titleArtAllOnTv", "settings.general.titleArtThisAppleTv", "settings.profileLaunch.automatic.detailAppleTv", "settings.profileSettings.resetFooterAppleTv",
         "settings.subtitles.onlyOnThisAppleTv", "settings.subtitles.resetMessageAppleTv", "settings.subtitles.scopeDeviceOnlyAppleTv",
+        "tvSignIn.appleTv.lead", "tvSignIn.appleTv.leadNoPage",
     ].sort());
     for (const key of appleTvKeys) {
         const readThroughTranslateTv = sources.some(source => new RegExp(`translateTv\\([^;]*"${key.replace(/\./g, "\\.")}"`).test(source) || (source.includes("CATEGORY_BLURBS") && source.includes(`"${key}"`)));
@@ -70,7 +71,7 @@ test("Apple's text for 'this Apple TV' reads 'this TV' in every language", () =>
     assert.equal(inLanguage(null, () => translateTv("settings.blurb.generalAppleTv")), "App-level options for this TV.");
     assert.equal(inLanguage(null, () => translateTv("settings.general.appleTvUserHeaderTv")), "TV USER");
     for (const tag of SHIPPED_LANGUAGES) {
-        for (const key of appleTvKeys) assert.doesNotMatch(translateTv(key as MessageKey, undefined, tag), /apple tv/i, `${tag} ${key}`);
+        for (const key of appleTvKeys) assert.doesNotMatch(translateTv(key as MessageKey, { page: "silo.test/activate" }, tag), /apple tv/i, `${tag} ${key}`);
     }
 });
 

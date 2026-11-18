@@ -46,7 +46,14 @@ const TRACKS: TrackView = {
         display: { delay: true, styling: true, deviceScope: true, textOpacity: true, delayMs: 0, appearance: DEFAULT_APPEARANCE, deviceOverride: false, busy: false, message: "" },
     },
 };
-const HUD = { chapters: [{ title: "Opening", seconds: 0 }], chapterState: "ready" as const, stats: [["Engine", "AVPlay"], ["Delivery", "remux"], ["Video codec", "h264"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false, metadata: { genres: [], seriesTitle: "Die Serie", year: 1999 } as never };
+const rows = (pairs: readonly (readonly [string, string])[]): { label: string; value: string }[] => pairs.map(([label, value]) => ({ label, value }));
+const STATS = {
+    nowPlaying: rows([["Video", "1080p"], ["Audio", "English · EAC3 5.1"], ["Subtitles", "Off"], ["Playback", "Direct play"]]),
+    playback: rows([["Playback", "Direct play · MKV"], ["Dynamic range", "SDR"]]),
+    stream: rows([["Playback status", "Playing"]]),
+    engine: rows([["Delivery", "Original HTTP"], ["Source", "media.example"]]),
+};
+const HUD = { chapters: [{ title: "Opening", seconds: 0 }], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false, metadata: { genres: [], seriesTitle: "Die Serie", year: 1999 } as never };
 const playing = (extra: Partial<Extract<PlaybackView, { phase: "playing" | "paused" }>> = {}): Extract<PlaybackView, { phase: "playing" | "paused" }> => ({
     phase: "playing", title: "The Movie", positionSeconds: 754, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks: TRACKS, hud: HUD, ...extra,
 });
@@ -127,11 +134,9 @@ for (const language of ["de", "ar"]) {
             await show(page, playing({ hud: { ...HUD, chapterState: "failed" } }));
             await openPanel(page);
             assert.deepEqual(await texts(page, ".player-tab:not([hidden])"), (["options.tabInfo", "options.tabStats", "options.tabVideo", "options.tabAudio", "options.tabSubtitles", "options.tabChapters"] as const).map(key => text(key, language)));
-            assert.deepEqual(await texts(page, ".player-menu-info .player-menu-heading"), [upper(text("player.hud.title", language), language), upper(text("player.hud.stream", language), language)]);
+            assert.deepEqual(await texts(page, ".player-menu-info .player-menu-heading"), [upper(text("player.hud.title", language), language), upper(text("player.hud.nowPlayingHeading", language), language)]);
             const labels = await texts(page, ".player-menu-info .player-info-label");
-            assert.ok(labels.includes(text("player.hud.audio", language)) && labels.includes(text("player.hud.subtitles", language)), labels.join(" | "));
-            assert.ok(labels.includes("Series") && labels.includes("Year"), "rows Apple's tvOS Info does not have stay English");
-            assert.ok((await texts(page, ".player-menu-info .player-info-value")).includes(text("player.tracks.subtitlesOff", language)));
+            assert.deepEqual(labels.slice(0, 4), (["player.hud.video", "player.hud.audio", "player.hud.subtitles", "player.hud.playback"] as const).map(key => text(key, language)));
             assert.equal(await page.locator(".player-menu-info .player-info-title").textContent(), "The Movie");
             assert.ok((await texts(page, ".player-menu-info .player-menu-note")).includes("Couldn't load chapters."));
             assert.equal(await page.locator('.player-menu-info [data-focus="chapters-retry"]').first().textContent(), "Retry chapters");
@@ -143,11 +148,10 @@ for (const language of ["de", "ar"]) {
         try {
             await show(page, playing());
             await openPanel(page, 1);
-            assert.deepEqual(await texts(page, ".player-menu-stats .player-menu-heading"), [upper(text("player.stats.title", language), language)]);
-            const rows = await texts(page, ".player-menu-stats .player-info-row");
-            assert.deepEqual(rows, [`${text("player.stats.sectionEngine", language)}: AVPlay`, `${text("player.stats.delivery", language)}: remux`, "Video codec: h264"]);
+            assert.deepEqual(await texts(page, ".player-stats-heading"), (["player.hud.playback", "player.hud.stream", "player.stats.sectionEngine"] as const).map(key => text(key, language)));
+            assert.deepEqual(await texts(page, ".player-stats-label"), (["player.hud.playback", "player.stats.dynamicRange", "player.stats.playbackStatus", "player.stats.delivery", "player.stats.source"] as const).map(key => text(key, language)));
             await nextTab(page, 1);
-            assert.deepEqual(await texts(page, ".player-menu-quality .player-menu-column > .player-menu-heading"), [upper(text("player.hud.playback", language), language), upper(text("player.hud.sync", language), language)]);
+            assert.deepEqual(await texts(page, ".player-menu-quality .player-menu-column > .player-menu-heading"), [upper(text("player.hud.picture", language), language), upper(text("player.hud.playback", language), language)]);
             const names = await texts(page, ".player-menu-quality .player-setting-label");
             assert.ok(names.includes(text("player.hud.aspect", language)) && names.includes(text("player.settings.speed", language)) && names.includes(text("options.autoplayNext", language)), names.join(" | "));
             assert.ok((await texts(page, ".player-menu-quality .player-setting-value")).includes(text("options.on", language)));
@@ -444,12 +448,12 @@ test("an Aspect picker that is open when German lands is drawn again in German, 
     } finally { await page.close(); }
 });
 
-test("a Subtitle Delay picker opened from the Video tab is drawn again in German", async () => {
+test("a Subtitle Delay picker opened from the Subtitles tab is drawn again in German", async () => {
     const page = await open(undefined);
     try {
         await show(page, playing());
-        await openPanel(page, 2);
-        await press(page, "subtitle-video-delay");
+        await openPanel(page, 4);
+        await press(page, "subtitle-delay");
         assert.equal(await picker(page).getAttribute("aria-label"), "Subtitle Delay");
         await landGerman(page);
         await page.waitForFunction(title => document.querySelector(".player-menu-picker")?.getAttribute("aria-label") === title, text("player.settings.subtitleDelayTitle", "de"));

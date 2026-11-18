@@ -30,7 +30,7 @@ import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
-import { currentChapter } from "./playerHUD.ts";
+import { currentChapter, statLabel } from "./playerHUD.ts";
 import { heading } from "./headings.ts";
 
 /** The options panel's tabs: the id the screen keys on, and the catalog key Apple's `HUDTab.title` reads. */
@@ -561,31 +561,27 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
     tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen) focusList(index); }));
 
-    const fillInfo = (list: HTMLElement, tracks: TrackView): void => {
+    const fillInfo = (list: HTMLElement): void => {
         if (view.phase !== "playing" && view.phase !== "paused") return;
         const body = el("div", "player-info");
         body.tabIndex = -1;
         body.setAttribute("data-focus", "info");
+        // InfoPane (TVPlayerInfoHUD.swift:600-739): the title column, then what reaches the screen, a row each.
         const titleColumn = el("div", "player-info-column");
         titleColumn.appendChild(el("h2", "player-menu-heading", heading("player.hud.title")));
-        titleColumn.appendChild(el("p", "player-info-title", view.title));
         const metadata = view.hud?.metadata;
-        if (metadata?.seriesTitle) titleColumn.appendChild(infoRow("Series", metadata.seriesTitle));
-        if (metadata?.year !== undefined) titleColumn.appendChild(infoRow("Year", String(metadata.year)));
-        if (metadata?.contentRating) titleColumn.appendChild(infoRow("Rating", metadata.contentRating));
-        if (metadata?.genres.length) titleColumn.appendChild(infoRow("Genres", metadata.genres.join(", ")));
-        const runtime = runtimeText(view.durationSeconds);
-        if (runtime !== undefined) titleColumn.appendChild(el("p", "player-info-meta", runtime));
-        if (view.hud?.overview) titleColumn.appendChild(el("p", "player-info-meta", view.hud.overview));
+        const episode = metadata?.type === "episode" || view.seasonNumber !== undefined || view.episodeNumber !== undefined;
+        const series = episode ? metadata?.seriesTitle ?? view.seriesTitle : undefined;
+        if (series) titleColumn.appendChild(el("p", "player-info-series", series.toUpperCase()));
+        titleColumn.appendChild(el("p", "player-info-title", view.title));
+        const tag = [view.seasonNumber === undefined ? undefined : `S${view.seasonNumber}`, view.episodeNumber === undefined ? undefined : `E${view.episodeNumber}`].filter(part => part !== undefined).join(" · ");
+        if (episode && tag !== "") titleColumn.appendChild(el("p", "player-info-episode", tag));
+        const metaBits = [episode || metadata?.year === undefined ? undefined : String(metadata.year), runtimeText(view.durationSeconds)].filter(part => part !== undefined);
+        if (metaBits.length > 0) titleColumn.appendChild(el("p", "player-info-meta", metaBits.join("  ·  ")));
+        if (view.hud?.overview) titleColumn.appendChild(el("p", "player-info-overview", view.hud.overview));
         const stream = el("div", "player-info-column");
-        stream.appendChild(el("h2", "player-menu-heading", heading("player.hud.stream")));
-        const selectedAudio = tracks.audio.state === "ready" ? tracks.audio.choices.find((choice) => choice.id === tracks.selectedAudioId) : undefined;
-        if (selectedAudio !== undefined) {
-            stream.appendChild(infoRow(translate("player.hud.audio"), selectedAudio.detail === undefined ? selectedAudio.label : `${selectedAudio.label} · ${selectedAudio.detail}`));
-        }
-        const selectedSubtitle = tracks.subtitles.find((choice) => choice.id === tracks.selectedSubtitleId);
-        const subtitleText = selectedSubtitle === undefined ? translate("player.tracks.subtitlesOff") : selectedSubtitle.detail === undefined ? selectedSubtitle.label : `${selectedSubtitle.label} · ${selectedSubtitle.detail}`;
-        stream.appendChild(infoRow(translate("player.hud.subtitles"), subtitleText));
+        stream.appendChild(el("h2", "player-menu-heading", heading("player.hud.nowPlayingHeading")));
+        for (const row of view.hud?.stats.nowPlaying ?? []) stream.appendChild(infoRow(statLabel(row.label), row.value));
         const hud = view.hud;
         if (hud !== undefined) {
             const chapter = hud.chapters[currentChapter(hud.chapters, view.positionSeconds)];
@@ -623,7 +619,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && !tracks.aiTranslate && !tracks.ai?.available.transcribe && tracks.subtitleTools?.search.offered !== true;
                 list.style.display = hidden ? "none" : "";
                 if (hidden) continue;
-                if (name === "Info") fillInfo(list, tracks);
+                if (name === "Info") fillInfo(list);
                 else if (name === "Audio") fillAudio(list, tracks);
                 else if (name === "Subtitles") {
                     fillSubtitles(list, tracks, aiLanguages, subtitlePicker === undefined ? subtitlePane : { kind: subtitlePicker.origin.pane === "appearance" ? "appearance" : "tracks" });
@@ -1283,7 +1279,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const at = all.findIndex((button) => button === document.activeElement);
         const atTab = tabs.findIndex(tab => tab === document.activeElement);
         const infoPane = lists[column];
-        const infoCanScrollUp = key === "up" && focusedId() === "info" && tabNames[column] === "Info" && infoPane !== undefined && infoPane.scrollTop > 1;
+        // Info and Stats are each one HUDScrollablePane: Up scrolls back to the top before it reaches the tab.
+        const scrollPane = focusedId() === "info" && tabNames[column] === "Info" || focusedId() === "stats" && tabNames[column] === "Stats";
+        const infoCanScrollUp = key === "up" && scrollPane && infoPane !== undefined && infoPane.scrollTop > 1;
         if (key === "up" && at <= 0 && !infoCanScrollUp) {
             // An open picker takes the rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1709-1712).
             if (openPicker() === undefined) tabs[column]?.focus();
@@ -1306,7 +1304,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (key === "up" || key === "down") {
             const pane = lists[column];
-            if (focusedId() === "info" && tabNames[column] === "Info" && pane !== undefined && pane.scrollHeight > pane.clientHeight) {
+            if (scrollPane && pane !== undefined && pane.scrollHeight > pane.clientHeight) {
                 const end = pane.scrollHeight - pane.clientHeight;
                 if (key === "down" && pane.scrollTop < end - 1 || key === "up" && pane.scrollTop > 1) {
                     pane.scrollTop = Math.max(0, Math.min(end, pane.scrollTop + (key === "down" ? 1 : -1) * pane.clientHeight * 0.8));
@@ -1366,10 +1364,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             } else if (id === "video-quality" || id === "video-speed" || id === "video-aspect") {
                 const next = view.phase === "playing" || view.phase === "paused" ? videoPickerFor(view.hud, view.tracks, id.slice("video-".length)) : undefined;
                 if (next !== undefined) videoPicker = { ...next, origin: { pane: "video", focusId: id } };
-            } else if (id === "subtitle-delay" || id === "subtitle-video-delay") {
+            } else if (id === "subtitle-delay") {
                 const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, "delay") : undefined;
-                if (next !== undefined && id === "subtitle-video-delay") videoPicker = { ...next, origin: { pane: "video", focusId: id } };
-                else if (next !== undefined) subtitlePane = { ...next, origin: { pane: "tracks", focusId: id } };
+                if (next !== undefined) subtitlePane = { ...next, origin: { pane: "tracks", focusId: id } };
             } else if (id === "subtitle-appearance") {
                 subtitlePane = { kind: "appearance" };
             } else if (id === "subtitle-appearance-back") {

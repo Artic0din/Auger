@@ -36,7 +36,7 @@ export interface SignInHarness {
     /** Whether the app's own handler would see the last key as unhandled. */
     lastKeyPrevented: boolean | undefined;
     /** A fresh mount on the same storage, as after the app restarts. */
-    mount(signedOut?: LogoutResult, chooseServer?: boolean): void;
+    mount(signedOut?: LogoutResult, chooseServer?: boolean, returnToAccounts?: boolean): void;
     /** Signs the server sign-in is connected to out from outside the sign-in screens, before any handoff. */
     signOutElsewhere(): Promise<LogoutResult>;
     destroy(): void;
@@ -154,12 +154,14 @@ const harness: SignInHarness = {
         }
         profileScreens?.switchProfile();
     },
-    mount(signedOut, chooseServer) {
+    mount(signedOut, chooseServer, returnToAccounts) {
         screens?.destroy();
         profileScreens?.destroy();
         profileScreens = undefined;
         screens = mountSignIn(root, {
             ...(chooseServer ? { chooseServer: true } : {}),
+            // Started from Change Account, so the leave button reads "Back to accounts".
+            ...(returnToAccounts ? { onChangeAccount: () => undefined, returnToAccounts: true } : {}),
             core: {
                 fetch: (url, init) => {
                     if (new URL(url).pathname.endsWith("/system/info")) {
