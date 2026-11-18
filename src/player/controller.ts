@@ -51,6 +51,7 @@ import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
+import { downloadSubtitle } from "./subtitleRefetch.ts";
 import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleCue } from "../contracts/v2/subtitles.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
@@ -2104,11 +2105,19 @@ export class PlaybackController implements PlayerControls {
         const current = (): boolean => attempt.live && !abort.signal.aborted && attempt.captionAbort === abort;
         void (async () => {
             try {
-                const url = await this.captionUrl(artifact.url, abort.signal);
-                if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                const text = await this.deps.session.http.subtitleText(url, abort.signal);
+                const show = (cues: readonly SubtitleCue[]): void => {
+                    if (!current()) return;
+                    attempt.cues = cues;
+                    attempt.captionNotice = "";
+                    this.showPlayback(attempt);
+                };
+                const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
+                    const url = await this.captionUrl(artifact.url, abort.signal);
+                    if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
+                    return this.deps.session.http.subtitleText(url, abort.signal);
+                }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
-                attempt.cues = decodeCues(text, artifact.format, artifact.origin);
+                attempt.cues = cues;
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
