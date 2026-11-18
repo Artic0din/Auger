@@ -14,7 +14,7 @@ import { navigationRoots } from "./navigation.ts";
 import type { PrimaryMenu } from "../contracts/v2/navigation.ts";
 import { menuIcon } from "./navigationIcon.ts";
 import { remoteKey } from "./keys.ts";
-import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
+import { HeroWash, heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { hidesCardOverview, hidesMarqueeBackdrop, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
 import type { LibraryMode } from "./libraryDiscovery.ts";
@@ -164,6 +164,10 @@ export class Skyline {
     private rowScrolling = false;
     private cancelHoldCap = (): void => undefined;
     private readonly tints = new Map<string, Tints>();
+    /** TVHeroAmbientWash: one tint wash under every backdrop the marquee shows. */
+    private readonly wash: HeroWash;
+    /** The 190 px top scrim every Home backdrop carries, shared: it sits above all of them, so a crossfade blends the art under one strip. */
+    private readonly topScrim = el("div", "skyline-hero-scrim");
     private selected = "home";
     private sharedScene = false;
     private scopes = new Map<VideoTab, string>();
@@ -226,6 +230,9 @@ export class Skyline {
         this.flyout.setAttribute("role", "menu");
         this.leaving.setAttribute("aria-hidden", "true");
         this.leaving.inert = true;
+        this.wash = new HeroWash(clock);
+        this.topScrim.hidden = true;
+        this.marquee.prepend(this.wash.element, this.topScrim);
         this.marquee.setAttribute("aria-live", "polite");
         this.marquee.setAttribute("aria-atomic", "true");
         container.addEventListener("focusin", this.onFocus);
@@ -550,9 +557,16 @@ export class Skyline {
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");
         layer.setAttribute("aria-hidden", "true");
+        const outgoing = this.art;
+        const fade = animate && this.artShown && outgoing !== undefined;
+        this.topScrim.hidden = background === undefined || !this.sharedScene;
         if (background !== undefined && this.sharedScene) {
-            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true));
-        } else if (background !== undefined) {
+            // The cached or ThumbHash tint comes with the swap and fades in; the tint sampled from the image replaces it as it lands, if this is still the backdrop shown.
+            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true, (tints, sampled) => { if (!sampled) this.wash.show(tints, fade); else if (this.art === layer) this.wash.update(tints); }));
+        } else {
+            this.wash.show(undefined, fade);
+        }
+        if (background !== undefined && !this.sharedScene) {
             const image = el("img", "skyline-backdrop");
             image.alt = "";
             image.referrerPolicy = "no-referrer";
@@ -561,7 +575,6 @@ export class Skyline {
             layer.append(image, el("div", "skyline-scrim"));
         }
         layer.querySelector("img.skyline-backdrop")?.addEventListener("error", () => { layer.dataset.failed = ""; });
-        const outgoing = this.art;
         for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) old.classList.add("skyline-outgoing");
         if (outgoing === undefined) this.marquee.prepend(layer);
         else outgoing.after(layer);
@@ -569,7 +582,6 @@ export class Skyline {
         this.artKey = key;
         this.cancelFade();
         this.cancelFade = () => undefined;
-        const fade = animate && this.artShown && outgoing !== undefined;
         if (background !== undefined) this.artShown = true;
         const clear = (): void => { for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) if (old !== layer) old.remove(); };
         if (!fade) { clear(); return; }

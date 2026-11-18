@@ -24,8 +24,9 @@ test("a language that arrives while a top-bar button has focus repaints the marq
         const settings = new FakeSettings(tv.fake);
         settings.revision = 28;
         settings.profile().set(APP_LANGUAGE_KEY, "de");
-        // The profile's language answers late; Browse makes several effective reads at launch, so hold the first few.
-        const held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        // The profile's language answers late. Hold its own reads by key: holding the first few effective reads held whichever
+        // read came first, and a held read the marquee needs left it without a runtime to wait for.
+        const held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await tv.page.evaluate(() => window.browseHarness.connect());
         await tv.eventually(async () => tv.fake.devices.size > 0, "device code");

@@ -192,6 +192,13 @@
         linear-gradient(to right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.55) 30%, rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.1) 80%, rgba(0, 0, 0, 0.3) 100%);
 }
 
+/* MarqueeScrimStyle.leading: its dark side is the leading edge, so a right-to-left screen darkens on the right. */
+.signin-auth .signin-screen[dir="rtl"] {
+    background-image:
+        linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 35%),
+        linear-gradient(to left, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.55) 30%, rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.1) 80%, rgba(0, 0, 0, 0.3) 100%);
+}
+
 /* SiloWordmarkView(width: 150) scaled to fit the 64-high top row: the 764x400 asset draws 122x64,
    centred (measured on the Apple TV app: x 104, 124 wide). */
 .signin-auth .signin-wordmark {
@@ -247,14 +254,14 @@
 .signin-behind > .marquee-chip {
     position: absolute;
     top: 66px;
-    right: 90px;
+    inset-inline-end: 90px;
 }
 
 .marquee-chip .marquee-icon {
     flex: none;
     width: 22px;
     height: 22px;
-    margin-right: 14px;
+    margin-inline-end: 14px;
 }
 
 .marquee-icon {
@@ -285,7 +292,7 @@
     flex: none;
     width: 80px;
     height: 80px;
-    margin-right: 22px;
+    margin-inline-end: 22px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 20px;
     background: linear-gradient(135deg, #eaa65c, #a8521d, #5e290d);
@@ -331,7 +338,7 @@
 
 .marquee-server-names {
     min-width: 0;
-    margin-right: 22px;
+    margin-inline-end: 22px;
 }
 
 .marquee-server-name,
@@ -374,7 +381,7 @@
 .marquee-badge .marquee-icon {
     width: 18px;
     height: 18px;
-    margin-right: 5px;
+    margin-inline-end: 5px;
     stroke-width: 2.6;
 }
 
@@ -452,7 +459,7 @@
     /* Glyph size: estimate for a symbol at the 30 field font. */
     width: 30px;
     height: 30px;
-    margin-right: 18px;
+    margin-inline-end: 18px;
 }
 
 .marquee-input {
@@ -542,7 +549,8 @@
     justify-content: center;
     height: 76px;
     min-width: 0;
-    margin: 0 22px 0 0;
+    margin: 0;
+    margin-inline-end: 22px;
     padding: 0 40px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 38px;
@@ -583,7 +591,7 @@
 }
 
 .marquee-button:last-child {
-    margin-right: 0;
+    margin-inline-end: 0;
 }
 
 .marquee-button .marquee-icon {
@@ -591,18 +599,19 @@
     width: 1em;
     height: 1em;
     /* Label's glyph gap: estimate. */
-    margin-right: 12px;
+    margin-inline-end: 12px;
 }
 
 .marquee-button .marquee-spinner {
     width: 0.9em;
     height: 0.9em;
-    margin-right: 10px;
+    margin-inline-end: 10px;
 }
 
 .signin-auth .signin-toggle {
     flex: none;
-    margin: 0 0 0 16px;
+    margin: 0;
+    margin-inline-start: 16px;
 }
 
 /* Apple TV frames: the button is 124 wide and its eye about 38; this eye spans 7/8 of its box. */
@@ -630,7 +639,7 @@
 }
 
 .marquee-actions-stack > .marquee-button {
-    margin-right: 0;
+    margin-inline-end: 0;
     margin-bottom: 22px;
 }
 
@@ -657,7 +666,7 @@
 }
 
 .signin-advanced .marquee-button {
-    margin-right: 14px;
+    margin-inline-end: 14px;
 }
 
 .signin-advanced .signin-port {
@@ -691,7 +700,7 @@
     flex-direction: column;
     align-items: center;
     width: 640px;
-    margin-left: auto;
+    margin-inline-start: auto;
     padding: 52px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 40px;
@@ -817,7 +826,7 @@
 }
 
 .signin-status .marquee-spinner {
-    margin-right: 14px;
+    margin-inline-end: 14px;
 }
 
 [data-screen="code"] .signin-status {

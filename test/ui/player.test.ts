@@ -9,6 +9,7 @@ import { type Browser, chromium, type Page } from "playwright";
 import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import type { SkipMarker } from "../../src/contracts/v2/markers.ts";
+import { decodeItemDetail, type ItemDetail } from "../../src/contracts/v2/catalog.ts";
 import { readLive } from "./support/tv.ts";
 
 const ORIGIN = "https://tv.example.test";
@@ -45,11 +46,19 @@ const TRACKS: TrackView = {
     notices: [],
 };
 const playing = (tracks: TrackView): Extract<PlaybackView, { phase: "playing" | "paused" }> => ({ phase: "playing", title: "The Movie", positionSeconds: 754, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks });
+/** What the controller's `planStats` gives the fixture's direct play (test/native/playerHUD.test.ts). */
+const STATS = {
+    nowPlaying: [{ label: "Video", value: "1080p" }, { label: "Audio", value: "English · EAC3 5.1" }, { label: "Subtitles", value: "Off" }, { label: "Playback", value: "Direct play" }],
+    playback: [{ label: "Playback", value: "Direct play · MP4" }, { label: "Video", value: "H.264 · 1920×1080 · 23.976 fps · 8.0 Mbps" }, { label: "Dynamic range", value: "SDR" }, { label: "Audio", value: "English · EAC3 5.1" }, { label: "Subtitles", value: "Off" }, { label: "Diagnostics", value: "Validated original playback" }, { label: "", value: "HDR was tone-mapped to SDR." }],
+    stream: [{ label: "Playback status", value: "Playing" }],
+    engine: [{ label: "Delivery", value: "Original HTTP" }, { label: "Source", value: "media.example" }],
+};
+const NO_STATS = { nowPlaying: [], playback: [], stream: [], engine: [] };
 
 test("Info Retry remains visible when Down is pressed on its focused action", async () => {
     const { page } = await open();
     try {
-        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "failed", overview: "Long overview. ".repeat(400), stats: [], speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "failed", overview: "Long overview. ".repeat(400), stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
         await openPanel(page);
         const retry = page.locator('[data-focus="chapters-retry"]');
         await retry.focus();
@@ -70,7 +79,7 @@ test("Info Retry remains visible when Down is pressed on its focused action", as
 test("Up scrolls a long Info overview before returning to its tab", async () => {
     const { page } = await open();
     try {
-        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "ready", overview: "Long overview. ".repeat(400), stats: [], speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "ready", overview: "Long overview. ".repeat(400), stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
         await openPanel(page);
         // TVPlayerInfoHUD.availableTabs hides Chapters when there are none.
         assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Audio", "Subtitles"]);
@@ -93,7 +102,7 @@ test("Up scrolls a long Info overview before returning to its tab", async () => 
 test("chapters seek in source time, close options and retain a remote focus target", async () => {
     const { page } = await open();
     try {
-        await show(page, { ...playing(TRACKS), hud: { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready", stats: [["Engine", "AVPlay"]], speeds: [1, 2], aspects: ["Fit", "Stretch"], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready", stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
         await openPanel(page);
         assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Audio", "Subtitles", "Chapters"]);
         await remote(page, RIGHT);
@@ -114,18 +123,20 @@ test("chapters seek in source time, close options and retain a remote focus targ
 test("Video actions and Stats are remote reachable and updates preserve the selected control", async () => {
     const { page } = await open();
     try {
-        const hud = { chapters: [], chapterState: "ready" as const, overview: "An overview.", stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
+        const hud = { chapters: [], chapterState: "ready" as const, overview: "An overview.", stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
         await show(page, { ...playing(TRACKS), hud });
         await openPanel(page);
         assert.match(await text(page, ".player-menu-info"), /An overview/);
         await nextTab(page, 1);
-        assert.equal(await focused(page), "stat:Engine");
-        assert.match(await text(page, ".player-menu-stats"), /Engine: AVPlay/);
+        assert.equal(await focused(page), "stats");
+        assert.match(await text(page, ".player-menu-stats"), /Delivery\s+Original HTTP/);
         await nextTab(page, 1);
-        // VideoPane PLAYBACK rows open pickers (TVPlayerInfoHUD.swift:825-879).
-        assert.equal(await focused(page), "video-speed");
+        // VideoPane rows open pickers (TVPlayerInfoHUD.swift:816-876): Aspect tops PICTURE when there is no quality choice.
+        assert.equal(await focused(page), "video-aspect");
         assert.equal(await text(page, '[data-focus="video-speed"]'), "Speed\n1.0×");
         assert.equal(await text(page, '[data-focus="video-aspect"]'), "Aspect\nFit");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "video-speed");
         await remote(page, ENTER);
         assert.equal(await text(page, ".player-menu-quality .player-menu-picker-title"), "Playback Speed");
         assert.equal(await focused(page), "subtitle-picker:1", "the picker opens on the current speed");
@@ -135,14 +146,15 @@ test("Video actions and Stats are remote reachable and updates preserve the sele
         await show(page, { ...playing(TRACKS), hud: { ...hud, speed: 2 } });
         assert.equal(await focused(page), "video-speed");
         assert.equal(await text(page, '[data-focus="video-speed"]'), "Speed\n2.00×");
-        await remote(page, DOWN);
+        await remote(page, LEFT);
         await remote(page, ENTER);
         assert.equal(await text(page, ".player-menu-quality .player-menu-picker-title"), "Aspect");
         await remote(page, DOWN);
         await remote(page, ENTER);
         await remote(page, DOWN);
-        assert.equal(await focused(page), "video-aspect", "Down stays in the PLAYBACK column");
+        assert.equal(await focused(page), "video-aspect", "Down stays in the PICTURE column");
         await remote(page, RIGHT);
+        await remote(page, DOWN);
         assert.equal(await focused(page), "auto-next");
         assert.equal(await text(page, '[data-focus="auto-next"]'), "Auto-play next\nOff");
         await remote(page, ENTER);
@@ -275,7 +287,7 @@ test("transport focus re-arms five seconds then hides and hidden Up reveals the 
 test("a Select held while the window loses focus runs nothing on release", async () => {
     const { page } = await open();
     try {
-        await show(page, { ...playing(TRACKS), hud: { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready", stats: [["Engine", "AVPlay"]], speeds: [1, 2], aspects: ["Fit", "Stretch"], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready", stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
         await openPanel(page);
         await nextTab(page, 5);
         await remote(page, DOWN);
@@ -318,14 +330,14 @@ const keyEvent = (page: Page, type: "keydown" | "keyup", code: number): Promise<
 test("a Select held on a menu row through a HUD repaint runs that row on release", async () => {
     const { page } = await open();
     try {
-        const hud = { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready" as const, stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
+        const hud = { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
         await show(page, { ...playing(TRACKS), hud });
         await openPanel(page);
         await nextTab(page, 5);
         await remote(page, DOWN);
         const before = await page.evaluate(() => document.activeElement);
         await keyEvent(page, "keydown", ENTER);
-        await show(page, { ...playing(TRACKS), hud: { ...hud, stats: [["Engine", "AVPlay"], ["Dropped", "0"]] } });
+        await show(page, { ...playing(TRACKS), hud: { ...hud, stats: { ...STATS, stream: [...STATS.stream, { label: "Dropped frames", value: "0" }] } } });
         assert.equal(await focused(page), "chapter:1");
         assert.equal(await page.evaluate(node => node !== document.activeElement, before), true, "the repaint replaced the focused row");
         await keyEvent(page, "keyup", ENTER);
@@ -336,13 +348,13 @@ test("a Select held on a menu row through a HUD repaint runs that row on release
 test("a Select held through a HUD repaint still ends when focus leaves the repainted row", async () => {
     const { page } = await open();
     try {
-        const hud = { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready" as const, stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
+        const hud = { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 800 }], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
         await show(page, { ...playing(TRACKS), hud });
         await openPanel(page);
         await nextTab(page, 5);
         await remote(page, DOWN);
         await keyEvent(page, "keydown", ENTER);
-        await show(page, { ...playing(TRACKS), hud: { ...hud, stats: [["Engine", "AVPlay"], ["Dropped", "0"]] } });
+        await show(page, { ...playing(TRACKS), hud: { ...hud, stats: { ...STATS, stream: [...STATS.stream, { label: "Dropped frames", value: "0" }] } } });
         assert.equal(await focused(page), "chapter:1");
         await page.evaluate(() => {
             const row = document.activeElement;
@@ -1958,7 +1970,6 @@ test("the scrubber steps, scrubs and seeks like the Apple TV remote", async () =
         assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Audio", "Subtitles"]);
         assert.match(await page.locator(".player-menu-info").innerText(), /The Movie/);
         assert.match(await page.locator(".player-menu-info").innerText(), /\b2h\b/);
-        assert.match(await page.locator(".player-menu-info").innerText(), /Off/);
         await press(page, BACK);
         await press(page, DOWN);
         await press(page, RIGHT);
@@ -2789,7 +2800,7 @@ test("an empty audio list does not trap remote movement between Info and Subtitl
         await openPanel(page);
         assert.equal(await focused(page), "info");
         await nextTab(page, 1);
-        assert.equal(await focused(page), "stat:Engine");
+        assert.equal(await focused(page), "stats");
         await nextTab(page, 1);
         assert.equal(await focused(page), "video-empty");
         assert.equal(await page.locator(".player-tab:not([hidden])").allTextContents().then(names => names.includes("Audio")), false);
@@ -2797,7 +2808,7 @@ test("an empty audio list does not trap remote movement between Info and Subtitl
         assert.deepEqual(await commands(page), []);
         await nextTab(page, 1);
         assert.equal(await focused(page), "subtitles-off");
-        for (const expected of ["video-empty", "stat:Engine", "info"]) {
+        for (const expected of ["video-empty", "stats", "info"]) {
             await remote(page, UP);
             await remote(page, LEFT);
             await remote(page, DOWN);
@@ -3267,7 +3278,7 @@ test("the S95C findings: checkmark, column height, setting rows and glass follow
 
 test("a Video picker closes first on Back and leaves the Subtitles pane as it was", async () => {
     const { page } = await open();
-    const hud = { chapters: [], chapterState: "ready" as const, stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
+    const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
     try {
         await show(page, { ...playing({ ...aiTracks(), subtitleTools: ALL_TOOLS }), hud });
         await openPanel(page);
@@ -3279,6 +3290,8 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, LEFT);
         await remote(page, LEFT);
         await remote(page, DOWN);
+        assert.equal(await focused(page), "video-aspect");
+        await remote(page, RIGHT);
         assert.equal(await focused(page), "video-speed");
         await remote(page, ENTER);
         assert.equal(await text(page, ".player-menu-picker-title"), "Playback Speed");
@@ -3300,6 +3313,7 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, LEFT);
         await remote(page, LEFT);
         await remote(page, DOWN);
+        await remote(page, RIGHT);
         await remote(page, ENTER);
         assert.equal(await text(page, ".player-menu-picker-title"), "Playback Speed");
         await remote(page, BACK);
@@ -3309,10 +3323,12 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
     } finally { await page.close(); }
 });
 
-test("Video PLAYBACK lists Quality, Speed and Aspect as picker rows in Apple's order", async () => {
+// VideoPane (TVPlayerInfoHUD.swift:795-957, silo-apple e0337595): PICTURE holds Quality and Aspect, PLAYBACK holds Speed and
+// Auto-play next; subtitle timing lives only in the Subtitles pane's TIMING group (#1178).
+test("Video groups Quality and Aspect under PICTURE and Speed and Auto-play next under PLAYBACK, with no Subtitle delay", async () => {
     const { page } = await open();
     const quality = { choices: [{ id: "auto", label: "Auto" }, { id: "1080p", label: "1080p" }], selectedId: "auto" };
-    const hud = { chapters: [], chapterState: "ready" as const, stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
+    const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
     try {
         await page.emulateMedia({ reducedMotion: "reduce" });
         await show(page, { ...playing({ ...TRACKS, quality, subtitleTools: ALL_TOOLS }), hud });
@@ -3320,47 +3336,92 @@ test("Video PLAYBACK lists Quality, Speed and Aspect as picker rows in Apple's o
         await openPanel(page);
         await nextTab(page, 2);
         assert.equal(await focused(page), "video-quality");
-        assert.deepEqual(await page.locator(".player-menu-column-playback [data-focus]").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace("\n", " = "))), ["Quality = Auto", "Speed = 1.0×", "Aspect = Fit"]);
-        assert.equal(await page.locator(".player-menu-column-playback .player-setting-chevron").count(), 3);
-        await capture(page, "player-video-sync");
+        assert.deepEqual(await page.locator(".player-menu-quality .player-menu-column > .player-menu-heading").allTextContents(), ["PICTURE", "PLAYBACK"]);
+        const rows = (column: string): Promise<string[]> => page.locator(`.player-menu-column-${column} [data-focus]`).evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace("\n", " = ")));
+        assert.deepEqual(await rows("picture"), ["Quality = Auto", "Aspect = Fit"]);
+        assert.deepEqual(await rows("playback"), ["Speed = 1.0×", "Auto-play next = On"]);
+        assert.equal(await page.locator(".player-menu-column-picture .player-setting-chevron").count(), 2);
+        assert.equal(await page.locator(".player-menu-column-playback .player-setting-chevron").count(), 1, "the toggle has no chevron");
+        assert.equal(await page.locator('.player-menu-quality [data-focus="subtitle-video-delay"]').count(), 0);
+        assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-delay"]').count(), 1, "the delay stays in Subtitles' TIMING");
+        await capture(page, "player-video-panes");
         await remote(page, DOWN);
+        assert.equal(await focused(page), "video-aspect");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "video-aspect", "Down stays inside PICTURE");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "auto-next", "Right lands on the PLAYBACK row level with Aspect");
+        await capture(page, "player-video-last-row");
+        await remote(page, UP);
+        assert.equal(await focused(page), "video-speed");
         await remote(page, ENTER);
         assert.equal(await text(page, ".player-menu-picker-title"), "Playback Speed");
         assert.deepEqual(await page.locator(".player-menu-picker [data-focus]").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText)), ["1.0×", "2.00×"]);
-        await capture(page, "player-video-speed-picker");
         await remote(page, BACK);
         assert.equal(await focused(page), "video-speed");
+        await remote(page, LEFT);
+        assert.equal(await focused(page), "video-quality");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Video", "Up from the top row returns to the tab");
         assert.deepEqual(await commands(page), []);
     } finally { await page.close(); }
 });
 
-test("Video SYNC offers Subtitle delay, which opens the Subtitle Delay picker and returns to its row", async () => {
+// InfoPane (TVPlayerInfoHUD.swift:600-739): TITLE then NOW PLAYING with Video, Audio, Subtitles, Playback and Chapter.
+test("Info shows Apple's TITLE column and a NOW PLAYING column of one row per fact, focused as one scrollable pane", async () => {
     const { page } = await open();
+    const item = (overrides: Partial<ItemDetail>): ItemDetail => ({ ...decodeItemDetail(JSON.parse(readFileSync(new URL("../../src/contracts/v2/fixtures/get_catalog_item_ok.json", import.meta.url), "utf8"))), ...overrides });
+    const metadata = item({ type: "episode", title: "Pilot", year: 2019, contentRating: "PG", genres: ["Drama"], seriesTitle: "The Show" });
+    const hud = { chapters: [{ title: "Opening", seconds: 0 }, { title: "Second", seconds: 700 }], chapterState: "ready" as const, metadata, overview: "An overview.", stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
     try {
-        const hud = { chapters: [], chapterState: "ready" as const, stats: [["Engine", "AVPlay"]] as const, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
         await page.emulateMedia({ reducedMotion: "reduce" });
-        await show(page, { ...playing({ ...TRACKS, subtitleTools: ALL_TOOLS }), hud });
+        await show(page, { ...playing(TRACKS), title: "Pilot", seriesTitle: "The Show", seasonNumber: 1, episodeNumber: 2, hud });
+        await page.evaluate(() => document.fonts.ready);
         await openPanel(page);
-        await nextTab(page, 2);
-        assert.equal(await focused(page), "video-speed");
-        assert.deepEqual(await page.locator(".player-menu-quality .player-menu-column > .player-menu-heading").allTextContents(), ["PLAYBACK", "SYNC"]);
-        assert.deepEqual(await page.locator(".player-menu-column-sync [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["subtitle-video-delay", "auto-next"]);
-        assert.equal(await text(page, '[data-focus="subtitle-video-delay"]'), "Subtitle delay\n0 ms");
-        assert.equal(await page.locator('[data-focus="subtitle-video-delay"] .player-setting-chevron').count(), 1);
-        assert.equal(await page.locator('[data-focus="auto-next"] .player-setting-chevron').count(), 0);
-        await remote(page, RIGHT);
-        assert.equal(await focused(page), "subtitle-video-delay");
-        await remote(page, ENTER);
-        assert.equal(await text(page, ".player-menu-quality .player-menu-picker-title"), "Subtitle Delay");
-        assert.equal(await focused(page), "subtitle-picker:0");
+        assert.equal(await focused(page), "info");
+        assert.deepEqual(await page.locator(".player-menu-info .player-menu-heading").allTextContents(), ["TITLE", "NOW PLAYING"]);
+        assert.deepEqual(await page.locator(".player-info-column:first-child > *:not(.player-menu-heading)").allInnerTexts(), ["THE SHOW", "Pilot", "S1 · E2", "2h", "An overview."]);
+        assert.deepEqual(await page.locator(".player-info-column:last-child .player-info-row").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText.replace(/\s+/, " = "))), ["Video = 1080p", "Audio = English · EAC3 5.1", "Subtitles = Off", "Playback = Direct play", "Chapter = Second"]);
+        await capture(page, "player-info");
         await remote(page, DOWN);
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ['subtitleTool {"kind":"delay","milliseconds":100}']);
-        assert.equal(await focused(page), "subtitle-video-delay");
-        await remote(page, ENTER);
-        await remote(page, BACK);
-        assert.equal(await focused(page), "subtitle-video-delay", "Back closes the picker onto its row");
-        assert.equal((await commands(page)).length, 1);
+        assert.equal(await focused(page), "info", "the pane is the one focus target");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Info");
+        await show(page, { ...playing(TRACKS), hud: { ...hud, metadata: item({ type: "movie", year: 1995, seriesTitle: undefined }) } });
+        assert.deepEqual(await page.locator(".player-info-column:first-child > *:not(.player-menu-heading)").allInnerTexts(), ["The Movie", "1995  ·  2h", "An overview."], "a film has no series or episode line, and its year leads the runtime");
+    } finally { await page.close(); }
+});
+
+// StatsPane + PlaybackStatsPanel two-column layout (TVPlayerInfoHUD.swift:745-790, PlaybackStatsPanel.swift:33-38, :74-89):
+// PLAYBACK on the left, a divider, STREAM over ENGINE on the right; an empty section has no heading.
+test("Stats lays out PLAYBACK beside STREAM and ENGINE with one row per fact, focused as one scrollable pane", async () => {
+    const { page } = await open();
+    const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, { ...playing(TRACKS), hud });
+        await page.evaluate(() => document.fonts.ready);
+        await openPanel(page);
+        await nextTab(page, 1);
+        assert.equal(await focused(page), "stats");
+        const sections = await page.locator(".player-stats-column").evaluateAll(columns => columns.map(column => Array.from(column.querySelectorAll(".player-stats-heading")).map(node => node.textContent)));
+        assert.deepEqual(sections, [["Playback"], ["Stream", "Engine"]]);
+        assert.equal(await page.locator(".player-stats-heading").first().evaluate(node => getComputedStyle(node).textTransform), "uppercase");
+        assert.equal(await page.locator(".player-stats > .player-stats-divider").count(), 1);
+        const rows = await page.locator(".player-stats-label").evaluateAll(nodes => nodes.map(node => `${node.textContent} = ${node.nextElementSibling?.textContent}`));
+        assert.deepEqual(rows, [
+            "Playback = Direct play · MP4", "Video = H.264 · 1920×1080 · 23.976 fps · 8.0 Mbps", "Dynamic range = SDR", "Audio = English · EAC3 5.1", "Subtitles = Off", "Diagnostics = Validated original playback", " = HDR was tone-mapped to SDR.",
+            "Playback status = Playing", "Delivery = Original HTTP", "Source = media.example",
+        ]);
+        assert.equal(await page.locator(".player-menu-stats [data-focus]").count(), 1);
+        await capture(page, "player-stats");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "stats");
+        await capture(page, "player-stats-last-row");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Stats");
+        await show(page, { ...playing(TRACKS), hud: { ...hud, stats: { ...STATS, stream: [] } } });
+        assert.deepEqual(await page.locator(".player-stats-heading").allTextContents(), ["Playback", "Engine"], "a section with no rows has no heading");
     } finally { await page.close(); }
 });
 

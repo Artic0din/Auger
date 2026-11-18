@@ -144,6 +144,8 @@ export interface AudiobookPart {
     readonly fileId: string;
     readonly duration: number;
     readonly offset: number;
+    /** `file_name`; Apple names a part in the chapterless picker by it. */
+    readonly fileName?: string | undefined;
 }
 export interface AudiobookChapter {
     readonly title: string;
@@ -174,6 +176,7 @@ interface DecodedVersion {
     readonly fileId: string;
     readonly order: number;
     readonly duration: number;
+    readonly fileName: string | undefined;
     readonly chapters: readonly { readonly title: string; readonly start: number; readonly end: number | undefined }[];
 }
 
@@ -197,6 +200,7 @@ function decodeVersion(value: unknown, path: string): DecodedVersion | undefined
         fileId: nonEmptyString(obj, "file_id", path),
         order: obj.presentation_part_index === undefined ? Number.MAX_SAFE_INTEGER : integer(obj, "presentation_part_index", path),
         duration: declared > 0 ? declared : furthestEnd,
+        fileName: optionalString(obj, "file_name", path),
         chapters,
     };
 }
@@ -220,7 +224,7 @@ export function decodeAudiobook(value: unknown): Audiobook {
     const parts: AudiobookPart[] = [];
     const chapters: { title: string; start: number; end: number | undefined; partIndex: number }[] = [];
     versions.forEach((version, partIndex) => {
-        parts.push({ fileId: version.fileId, duration: version.duration, offset });
+        parts.push({ fileId: version.fileId, duration: version.duration, offset, ...(version.fileName === undefined ? {} : { fileName: version.fileName }) });
         for (const chapter of version.chapters) {
             chapters.push({ title: chapter.title, start: offset + chapter.start, end: chapter.end === undefined ? undefined : offset + chapter.end, partIndex });
         }

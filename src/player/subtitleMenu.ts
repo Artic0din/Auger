@@ -4,7 +4,7 @@ import type { TrackView } from "./controller.ts";
 import { chevronForwardIcon, magnifyingGlassIcon } from "./playerIcons.ts";
 import { appearanceSummary, BACKGROUND_COLORS, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
 
-/** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PLAYBACK and SYNC rows. */
+/** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
     | { readonly kind: "tracks" }
     | { readonly kind: "appearance" }

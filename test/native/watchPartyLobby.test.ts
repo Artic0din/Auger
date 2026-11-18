@@ -7,7 +7,7 @@ import { decodePicker } from "../../src/contracts/v2/watchTogether.ts";
 import type { PlayRequest } from "../../src/ui/browseModel.ts";
 import { choiceFromCard, type MediaChoice } from "../../src/ui/watchPartyChoice.ts";
 import { inviteUrl } from "../../src/ui/watchPartyInvite.ts";
-import { WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+import { noticeText, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
 import { primaryAction } from "../../src/ui/watchPartyPolicy.ts";
 import { fixture } from "./support/fakeSilo.ts";
 import { playbackCapabilities, ROOM_ID, roomAccess, roomCapabilities, unusedLobbyOperations, offline } from "./support/watchPartyApi.ts";
@@ -101,10 +101,10 @@ test("the host stages a title with the staged-selection call, keeps the answered
     assert.equal(await hub.stage(pick), true);
     assert.deepEqual(seen, [`stage ${ROOM_ID} movie:m0004`]);
     assert.equal(hub.state.room?.selectedContentId, "movie:m0004");
-    assert.equal(hub.state.selected?.title, pick.lobby.title, "the picked title shows while the catalog read runs");
+    assert.equal(hub.state.selected?.title(), pick.lobby.title(), "the picked title shows while the catalog read runs");
     release(detail({ content_id: "movie:m0004", title: "Loaded Heat" }));
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(hub.state.selected?.title, "Loaded Heat");
+    assert.equal(hub.state.selected?.title(), "Loaded Heat");
     assert.equal(hub.state.page.kind, "lobby");
     assert.equal(hub.state.busy, false);
 });
@@ -137,7 +137,7 @@ test("a refused stage shows the server's reason, leaves the room as it was and d
     const { hub } = lobby({ stageSelection: async () => { throw problem(409, "That title is not available."); } });
     await hub.create("host_pick");
     assert.equal(await hub.stage(movie()), false);
-    assert.equal(hub.state.error, "That title is not available.");
+    assert.equal(noticeText(hub.state.error ?? ""), "That title is not available.");
     assert.equal(hub.state.room?.selectedContentId, undefined);
     assert.equal(hub.state.selected, undefined);
     assert.equal(hub.state.busy, false);
@@ -185,7 +185,7 @@ test("Start waits for a chosen title, a host and a lobby, and a refused start st
     await refused.hub.create("host_pick");
     assert.equal(await refused.hub.start(), false);
     assert.equal(starts, 1);
-    assert.equal(refused.hub.state.error, "Everyone needs the title.");
+    assert.equal(noticeText(refused.hub.state.error ?? ""), "Everyone needs the title.");
     assert.equal(refused.hub.state.room?.phase, "lobby");
     assert.deepEqual(refused.plays, []);
 });
@@ -273,7 +273,7 @@ test("a lost start that was not read back because the party was ending is read o
     const ending = hub.endParty();
     fail();
     await Promise.all([starting, ending]);
-    assert.equal(hub.state.error, "Try again in a moment.", "the failure shows while the room is still being read");
+    assert.equal(noticeText(hub.state.error ?? ""), "Try again in a moment.", "the failure shows while the room is still being read");
     assert.equal(reads, 1, "the room is read once, after the close failed");
     await hub.endParty();
     assert.equal(closes, 2, "End can be tried again without waiting for the read");
@@ -528,13 +528,13 @@ test("End party closes the room, leaves the room screen and says the party ended
     await ended.hub.endParty();
     assert.deepEqual(ended.calls, [`close ${ROOM_ID}`]);
     assert.equal(ended.hub.state.room, undefined);
-    assert.equal(ended.hub.state.error, "This party has ended.");
+    assert.equal(noticeText(ended.hub.state.error ?? ""), "This party has ended.");
     const refused = lobby({ closeRoom: async () => { throw problem(500, "Try later."); } });
     await refused.hub.create("host_pick");
     await refused.hub.endParty();
     assert.notEqual(refused.hub.state.room, undefined);
     assert.equal(refused.hub.state.busy, false);
-    assert.match(refused.hub.state.error ?? "", /Try later\./);
+    assert.match(noticeText(refused.hub.state.error ?? ""), /Try later\./);
 });
 
 test("a guest has no End party; leaving just exits the room screen and calls nothing", async () => {
@@ -555,7 +555,7 @@ test("the picker reads the shelves once with the room token and lists group pick
     await hub.openPicker();
     assert.deepEqual(tokens, ["room-proof"]);
     assert.equal(hub.state.page.kind, "picker");
-    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.title, shelf.entries.map(entry => entry.card.id)]), [["Continue Together", ["movie:a"]], ["On Your Watchlists", ["movie:b"]]]);
+    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.titleKey, shelf.entries.map(entry => entry.card.id)]), [["watchParty.picker.continueTogether", ["movie:a"]], ["watchParty.picker.watchlists", ["movie:b"]]]);
     assert.equal(hub.state.shelvesLoading, false);
 });
 
@@ -565,7 +565,7 @@ test("a server without the picker reads the viewer's own watchlist instead", asy
     await hub.create("host_pick");
     await hub.openPicker();
     assert.equal(reads, 1);
-    assert.deepEqual(hub.state.shelves.map(shelf => shelf.title), ["On Your Watchlists"]);
+    assert.deepEqual(hub.state.shelves.map(shelf => shelf.titleKey), ["watchParty.picker.watchlists"]);
 });
 
 test("a failed picker read says so and can be tried again", async () => {
@@ -678,13 +678,13 @@ test("a guest who cannot see the playing title has nothing to return to, as Watc
 test("an episode lays out as Apple's lobby does: its own title, with the series and code underneath", () => {
     const pick = episode();
     assert.equal(pick.title, "Harbor Lights", "the picker page leads with the series");
-    assert.equal(pick.subtitle, "S1 · E2 · Chapter 1.2");
-    assert.equal(pick.lobby.title, "Chapter 1.2");
-    assert.equal(pick.lobby.subtitle, "Harbor Lights · S1:E2");
+    assert.equal(pick.subtitle(), "S1 · E2 · Chapter 1.2");
+    assert.equal(pick.lobby.title(), "Chapter 1.2");
+    assert.equal(pick.lobby.subtitle(), "Harbor Lights · S1:E2");
     assert.equal(pick.lobby.backdropUrl, "/series-b.jpg", "an episode never shows its own still");
     assert.equal(pick.lobby.overview, undefined, "or its description");
     const film = movie();
-    assert.deepEqual(film.lobby.facts, ["1994", "2h 6m"]);
+    assert.deepEqual(film.lobby.facts(), ["1994", "2h 6m"]);
     assert.equal(film.lobby.backdropUrl, "/b.jpg");
 });
 
