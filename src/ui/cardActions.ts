@@ -109,6 +109,9 @@ export class CardActions {
     private readonly stopAuthority: () => void;
 
     private readonly notInterested: NotInterestedStore;
+    /** The store's stamp when the open menu's card was taken, so a write answered while the menu is open reconciles its state. */
+    private shownStamp = 0;
+    private stopNotInterested: (() => void) | undefined;
 
     constructor(container: HTMLElement, session: NativeSession, notInterested: NotInterestedStore, host: CardActionsHost) {
         this.notInterested = notInterested;
@@ -128,6 +131,7 @@ export class CardActions {
 
     open(card: MenuCard, options: CardMenuOptions = {}): void {
         if (this.active) return;
+        this.shownStamp = this.notInterested.stamp();
         const anchor = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
         const known = card.played !== undefined && card.favorite !== undefined && card.watchlist !== undefined;
         const source = card;
@@ -165,6 +169,8 @@ export class CardActions {
 
     private show(card: MenuCard, options: CardMenuOptions, anchor: HTMLElement | undefined, source: MenuCard): void {
         const rows = this.menuRows(card, options, source);
+        // While the menu is shown, a Not interested write for its card being answered, from here or from the page, draws it again.
+        this.stopNotInterested ??= this.notInterested.subscribe(id => { if (id === this.shown?.card.id) this.refresh(); });
         // Apple attaches no menu to a card without actions.
         if (rows.length === 0) { this.host.closed(); return; }
         const busy = this.writes.has(card.id) || this.notInterested.pending(card.id) !== undefined || this.host.pendingElsewhere?.() === true;
@@ -271,7 +277,7 @@ export class CardActions {
         // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
         if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
             // A write still out for the title, from this menu or the page, shows the state it will leave.
-            const marked = this.notInterested.pending(card.id) ?? card.notInterested;
+            const marked = this.notInterested.state(card.id, card.notInterested, this.shownStamp);
             rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
         }
         const dismissal = options.dismissal;
@@ -337,6 +343,8 @@ export class CardActions {
     }
 
     private dismiss(): void {
+        this.stopNotInterested?.();
+        this.stopNotInterested = undefined;
         this.lifted?.card.classList.remove(MENU_LIFTED_CLASS);
         this.lifted = undefined;
         this.reading?.abort();

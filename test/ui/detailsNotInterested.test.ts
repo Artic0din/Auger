@@ -279,3 +279,33 @@ test("a mark from the card menu still out is the page's pending write too: the p
     answer.release();
     await settle(tv);
 }));
+
+test("a card menu open while the page's write settles is redrawn: its row is enabled again and reads the state the write left", () => run(async tv => {
+    const catalog = await start(tv);
+    await openPage(tv, "movie:m0002");
+    const answer = tv.fake.hold("/not-interested/movie%3Am0002", true);
+    await choose(tv, "Not Interested");
+    await tv.eventually(async () => catalog.marks.length === 1, "the write is out");
+    await homeAgain(tv);
+    await hold(tv, "recently_added", "movie:m0002");
+    const row = menu(tv).getByRole("menuitem", { name: "Show in Recommendations" });
+    assert.equal(await row.getAttribute("aria-disabled"), "true", "the row waits while the write is out");
+    answer.release();
+    await tv.eventually(async () => (await menu(tv).getByRole("menuitem").last().getAttribute("aria-disabled")) !== "true", "the open menu is redrawn when the write settles");
+    assert.equal((await menu(tv).getByRole("menuitem").last().innerText()).trim(), "Show in Recommendations");
+}));
+
+test("a card menu open while the page's write fails shows the state before it and is enabled again", () => run(async tv => {
+    const catalog = await start(tv);
+    await openPage(tv, "movie:m0004");
+    const answer = tv.fake.hold("/not-interested/movie%3Am0004", true);
+    catalog.markFailure = problem(500, "internal", "Server error");
+    await choose(tv, "Not Interested");
+    await tv.eventually(async () => catalog.marks.length === 1, "the write is out");
+    await homeAgain(tv);
+    await hold(tv, RECOMMENDED, "movie:m0004");
+    assert.equal((await menu(tv).getByRole("menuitem").last().innerText()).trim(), "Show in Recommendations", "optimistic while out");
+    answer.release();
+    await tv.eventually(async () => (await menu(tv).getByRole("menuitem").last().innerText()).trim() === "Not Interested", "the refused write puts the label back");
+    assert.notEqual(await menu(tv).getByRole("menuitem").last().getAttribute("aria-disabled"), "true");
+}));

@@ -5,9 +5,13 @@ export class NotInterestedStore {
     private serial = 0;
     private readonly out = new Map<string, boolean>();
     private readonly confirmed = new Map<string, { readonly state: boolean; readonly serial: number }>();
-    private readonly settled: () => void;
+    private readonly listeners = new Set<(id: string) => void>();
 
-    constructor(settled: () => void = () => undefined) { this.settled = settled; }
+    /** Called with the title's id whenever a write for it is answered. A surface subscribes while it is shown and unsubscribes when it closes. */
+    subscribe(listener: (id: string) => void): () => void {
+        this.listeners.add(listener);
+        return () => { this.listeners.delete(listener); };
+    }
 
     /** Taken when a read starts. A write that starts or is answered after it makes the read possibly out of date. */
     stamp(): number { return this.serial; }
@@ -37,6 +41,6 @@ export class NotInterestedStore {
         this.out.delete(id);
         if (state === undefined) this.confirmed.delete(id);
         else this.confirmed.set(id, { state, serial: this.serial });
-        this.settled();
+        for (const listener of [...this.listeners]) listener(id);
     }
 }

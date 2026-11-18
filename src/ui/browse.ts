@@ -329,11 +329,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
         }
     };
-    // The one per-title Not interested record of this session, used by the card menu and the title page; the page showing the title draws again when a write is answered.
-    const notInterestedStore = new NotInterestedStore(() => {
-        const current = top();
-        if (!torn && !playing && current?.kind === "item" && !cardActions.active && settingsScreen === undefined) render(host.focused());
-    });
+    // The one per-title Not interested record of this session, used by the card menu and the title page, which each subscribe to its answers while shown.
+    const notInterestedStore = new NotInterestedStore();
     /** The store's stamp when each route's latest read began; a write answered since is not undone by that read. */
     const readStamps = new WeakMap<Route, number>();
     /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */

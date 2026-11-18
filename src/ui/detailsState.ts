@@ -150,6 +150,7 @@ export class DetailsState {
     onNotInterested: ((id: string, marked: boolean) => void) | undefined;
     /** Shared with the other owners of this browse session; an owner of its own keeps a private one. */
     notInterestedStore = new NotInterestedStore();
+    private stopNotInterested: (() => void) | undefined;
     /** The store's stamp when the read behind `detail` began, so a write answered since is not undone by it. */
     readStamp = 0;
     get notInterestedPending(): boolean { return this.notInterestedStore.pending(this.detail.id) !== undefined; }
@@ -285,6 +286,8 @@ export class DetailsState {
     start(mode: "full" | "personal" | "playback" = "full"): void {
         if (this.controller !== undefined) return;
         this.controller = new AbortController();
+        // The page draws again when a Not interested write for its title is answered, whichever surface sent it, while it is shown.
+        this.stopNotInterested = this.notInterestedStore.subscribe(id => { if (id === this.detail.id) this.changed(); });
         for (const state of this.seasonStates.values()) state.start("personal");
         if (["movie", "episode"].includes(this.detail.type)) this.audioPreference.start();
         if (["movie", "episode"].includes(this.detail.type)) this.subtitlePreference.start();
@@ -334,6 +337,8 @@ export class DetailsState {
     }
 
     stop(): void {
+        this.stopNotInterested?.();
+        this.stopNotInterested = undefined;
         this.cancelEpisodeFocus();
         for (const [kind, change] of this.changes) {
             if (change.pending) this.changes.set(kind, { ...change, pending: false, failed: true });
