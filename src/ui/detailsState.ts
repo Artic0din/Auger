@@ -145,6 +145,11 @@ export class DetailsState {
     relatedFailed = false;
     personalSupported: boolean | undefined;
     personalFailed = false;
+    /** A new Not interested mark the server accepted: the host drops the title from the rows that suggest it (HomeViewModel.removeNotInterested). */
+    onNotInterested: ((id: string) => void) | undefined;
+    /** The page's own answer to a press on Not interested until a read of the title agrees with it. */
+    private notInterestedAnswer: boolean | undefined;
+    notInterestedPending = false;
     readonly values = new Map<PersonalAction, boolean>();
     readonly changes = new Map<PersonalAction, PersonalChange>();
     private controller: AbortController | undefined;
@@ -222,6 +227,36 @@ export class DetailsState {
     private aggregateWatched: boolean | undefined;
     /** Counts watched readbacks, so a Details read sent before one lands cannot put the older state back. */
     watchedRevision = 0;
+    /** TVMovieDetailView and TVSeriesDetailView: `isNotInterested` is nil, so More offers nothing, for anything but a movie or series and for a server that predates the mark. */
+    get notInterested(): boolean | undefined {
+        if (this.detail.type !== "movie" && this.detail.type !== "series") return undefined;
+        return this.notInterestedAnswer ?? this.detail.notInterested;
+    }
+
+    /** ItemDetailViewModel.toggleNotInterested: shown at once, kept once the server accepts it, put back with the update-failed alert when it does not. */
+    toggleNotInterested(): void {
+        const controller = this.controller;
+        const current = this.notInterested;
+        if (controller === undefined || current === undefined || this.notInterestedPending || this.busy) return;
+        const target = !current;
+        const id = this.detail.id;
+        this.notInterestedAnswer = target;
+        this.notInterestedPending = true;
+        this.changed();
+        this.session.call({ ...detailOperations.setNotInterested(id, target), profileScoped: true, replayAfterRefresh: false, signal: controller.signal }).then(() => {
+            if (!this.current(controller)) return;
+            this.notInterestedPending = false;
+            if (target) this.onNotInterested?.(id);
+            this.changed();
+        }, () => {
+            if (!this.current(controller)) return;
+            this.notInterestedPending = false;
+            this.notInterestedAnswer = current;
+            if (this.presentsAlerts) this.alert = ITEM_UPDATE_FAILED;
+            this.changed();
+        });
+    }
+
     get busy(): boolean { return this.pending || this.pendingElsewhere() || this.episodePreferencesBlocked; }
 
     acceptDetail(detail: ItemDetail): void {

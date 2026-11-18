@@ -320,6 +320,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cache.discard(operations.listSeriesSeasons(id));
         return visitedDetails.delete(id);
     };
+    /** HomeViewModel.removeNotInterested and RecommendationsViewModel.removeNotInterested: a newly marked title leaves Home's recommendation rows and every For You row. */
+    const dropNotInterested = (id: string): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, id);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
+        }
+    };
     const personalPending = (): boolean => detailWork?.pending === true || cardActions.pending;
     const cardActions = new CardActions(container, session, {
         applied: (id, watched) => {
@@ -341,12 +348,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingDismissed(entry.data.sections, { id: card.id, type: card.type, seriesId: card.seriesId });
             }
         },
-        markedNotInterested: card => {
-            for (const entry of new Set([...roots.values(), ...stack])) {
-                if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, card.id);
-                else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, card.id);
-            }
-        },
+        markedNotInterested: card => dropNotInterested(card.id),
         opened: () => {
             const current = top();
             if (current === undefined) return;
@@ -1203,6 +1205,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             detailsChanged(current, audioClosed);
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
+        details.onNotInterested = dropNotInterested;
         resolutionCap.ensure();
         return details;
     };
@@ -1737,6 +1740,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (data.detail !== undefined) {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
+                        details.onNotInterested = dropNotInterested;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;
