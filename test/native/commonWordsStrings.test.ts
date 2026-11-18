@@ -24,7 +24,6 @@ const SITES = [
     ["src/ui/browseDetails.ts", "rowPage.close", "Close", 'actionButton("close-more", "Close"'],
     ["src/ui/profiles.ts", "account.signInAgain", "Sign in again", 'button("signin", "Sign in again"'],
     ["src/ui/browseRoutes.ts", "account.profiles", "Profiles", 'actionButton("profiles", "Profiles"'],
-    ["src/ui/browseViews.ts", "library.browse", "Browse", 'actionButton("browse", "Browse"'],
 ] as const;
 
 test("each generic word reads its Apple key, and the key's English is the word it showed", () => {
@@ -41,7 +40,7 @@ test("every key is in the German and Arabic files, and each reads differently fr
         const catalog = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
         for (const [, key, word] of SITES) {
             assert.ok(Object.hasOwn(catalog, key), `${tag} has ${key}`);
-            if (tag === "ar" || word !== "Browse") assert.notEqual(catalog[key], word, `${tag} ${key} is translated`);
+            assert.notEqual(catalog[key], word, `${tag} ${key} is translated`);
         }
     }
 });

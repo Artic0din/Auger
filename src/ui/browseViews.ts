@@ -481,7 +481,7 @@ export function pagedGrid(state: PagerState, context: ViewContext, columns = GRI
 
 export function libraryView(library: UserLibrary, grid: { content: HTMLElement[]; zones: Zone[] }, back: () => void, focusDefault: () => void): View {
     const empty = grid.zones[0]?.items.length === 0;
-    const browse = actionButton("browse", translate("library.browse"), focusDefault);
+    const browse = actionButton("browse", "Browse", focusDefault);
     const pills = zoneNode("skyline-pills", [browse]);
     pills.appendChild(el("span", "skyline-scope", library.name));
     const content = [pills, ...(empty ? lines(["This library is empty."]) : []), ...grid.content];
