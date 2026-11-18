@@ -167,7 +167,7 @@ test("Playback saves the image switch for the profile", async () => {
         await tv.page.locator('[data-focus="playback"]').click();
         const swatch = tv.page.locator('[data-focus="spoiler-images"][aria-disabled="false"]');
         await swatch.waitFor();
-        assert.deepEqual(await tv.page.locator(".settings-pane .settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "RESET"]);
+        assert.deepEqual(await tv.page.locator(".settings-pane .settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS", "RESET"]);
         assert.equal(await tv.page.locator('[data-focus="spoiler-images"] .settings-row-value').innerText(), "Off");
         assert.equal(await tv.page.locator('[data-focus="spoiler-overviews"] .settings-row-value').innerText(), "Off");
         assert.match(await tv.page.getByText("Blur an episode's thumbnail until you start watching it, so the image does not give away the story.", { exact: false }).innerText(), /Blur an episode's thumbnail until you start watching it/);

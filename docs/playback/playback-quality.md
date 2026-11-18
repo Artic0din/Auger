@@ -141,7 +141,9 @@ This source candidate does not close issue #12: signed packaging, real-TV movie 
 Playback Settings also offers separate video rewind and fast-forward intervals.
 The profile-only remote keys are `player.video_skip_back_seconds` and `player.video_skip_forward_seconds`, introduced in settings manifest revision 9.
 Their numeric choices are 5, 10, 15, 30, 45, 60 and 90 seconds, with inherited defaults of 10 and 30 seconds.
-The controls use server labels, display explicit and effective values, and reset one key with DELETE.
+The controls show each interval as Apple does (`player.seekInterval.choice`: "10 seconds", "10 Sekunden", Arabic digits in Arabic) instead of the manifest's English label, with the catalog's help lines (`settings.skipIntervals.footerVideo` for Video, Android TV's key, because Apple TV's `footerVideoAppleTv` names the Siri Remote and a Samsung remote has arrow keys; `footerAudiobook` for Audiobooks); they display explicit and effective values, and reset one key with DELETE.
+A skip picker opens on the stored choice, or on the first when that choice is not offered, as `TVSettingsPickerSheet.focusSelection` does (silo-apple 648091a7, `TVSettingsComponents.swift` lines 837-839).
+The audiobook pair, `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds`, has the same shape and is listed under Audiobooks beneath the video pair, as on Apple TV. The audiobook player is not built yet, so nothing reads these values at playback.
 They reuse Settings' pre-write read, post-write confirmation, uncertain-answer reconciliation, busy lock, Retry-After and profile authority fences.
 
 The controller discovers the supported pair before each start and carries it in PlaybackView to buttons, repeated Left/Right previews and dedicated Rewind/Fast Forward keys.
