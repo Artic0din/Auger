@@ -2,6 +2,7 @@ import { mountApp, type AppOptions, type SiloApp } from "./app.ts";
 import { loadShownLanguage } from "./i18n/load.ts";
 import { platformOptions } from "./platform.ts";
 import { actions, button, el, ScreenHost } from "./ui/screen.ts";
+import { translate } from "./i18n/translate.ts";
 
 export function boot(root: HTMLElement, appVersion: string): SiloApp {
     // A TV set to Match Device starts fetching its own language before the profile says so.
@@ -15,7 +16,7 @@ export function boot(root: HTMLElement, appVersion: string): SiloApp {
         } catch {
             const host = new ScreenHost(root);
             root.classList.add("signin");
-            const retry = button("retry", "Try again", start);
+            const retry = button("retry", translate("common.tryAgain"), start);
             host.show({ name: "startup-failed", content: [el("h1", "signin-title", "Silo could not start"), actions([retry])], controls: [retry], focus: "retry", back: undefined });
             current = { destroy: () => { host.destroy(); root.classList.remove("signin"); } };
             return;

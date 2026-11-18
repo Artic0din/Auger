@@ -12,6 +12,7 @@ import { mountAccounts, type AccountsScreen } from "./ui/accounts.ts";
 import { cachedBranding } from "./ui/brandingCache.ts";
 import { AccountDirectory, AccountVault, type SavedAccount } from "./session/accounts.ts";
 import { openSecretStore } from "./session/secretStore.ts";
+import { translate } from "./i18n/translate.ts";
 
 export interface AppOptions {
     readonly core: SessionCoreDeps;
@@ -81,7 +82,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             try { live.accounts.directory.select(account.id); }
             catch {
                 startup = new ScreenHost(root);
-                const controls = [button("retry", "Retry", () => { startup?.destroy(); startup = undefined; showSignIn(notice, chooseServer, account, address, pickerRequested, route); }), button("accounts", "Back to profiles", () => { startup?.destroy(); startup = undefined; showProfiles(live, { pickerRequested: true }); })];
+                const controls = [button("retry", translate("common.retry"), () => { startup?.destroy(); startup = undefined; showSignIn(notice, chooseServer, account, address, pickerRequested, route); }), button("accounts", translate("signIn.backToProfiles"), () => { startup?.destroy(); startup = undefined; showProfiles(live, { pickerRequested: true }); })];
                 startup.show({ name: "account-selection-error", content: [el("h1", "signin-title", "Could not save the account selection"), actions(controls)], controls, focus: "retry", back: undefined });
                 return;
             }
@@ -323,7 +324,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         } catch {
             if (destroyed) return;
             startup = new ScreenHost(root);
-            const controls = [button("retry", "Retry", () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
+            const controls = [button("retry", translate("common.retry"), () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
                 startup?.destroy(); startup = undefined;
                 activeCore = { ...activeCore, publicStorage: undefined, keyManager: undefined };
                 showSignIn();
@@ -344,7 +345,7 @@ function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
         container.remove();
     };
     const close = (): void => { destroy(); back(); };
-    const control = button("back", "Back", close);
+    const control = button("back", translate("common.back"), close);
     host.show({ name: "playback-unavailable", content: [el("h1", "signin-title", "Playback unavailable"), actions([control])], controls: [control], focus: "back", back: close });
     return { destroy };
 }

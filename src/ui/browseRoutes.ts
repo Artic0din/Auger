@@ -162,7 +162,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     const { context, pop } = handlers;
     if (current.kind === "calendar") return calendarView(current.calendar, handlers.calendar(current));
     const back = current.kind === "home" ? undefined : pop;
-    const escape = back === undefined ? actionButton("profiles", "Profiles", handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
+    const escape = back === undefined ? actionButton("profiles", translate("account.profiles"), handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
     if (current.kind === "personal") return personalView(current, handlers);
     if (current.kind === "person") return personFilmographyView(current, handlers);
     if (current.kind === "library") {
