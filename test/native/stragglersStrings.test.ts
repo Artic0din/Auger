@@ -1,6 +1,6 @@
 // Text that has an Apple catalog key and was left out of the earlier screen groups (silo-apple d49d7bd): the password-reset line
 // (ErrorState.swift), the Box Set page's Movies heading (BoxSetDetailView.swift), the Multi-Audio and subtitles overlay values
-// (OverlayRegistry.swift) and the Mono, Stereo and channel-count labels (TrackLabels.swift). English is the text it always was.
+// (OverlayRegistry.swift). The saved-file audio layout stays English: it is also the key a per-value overlay image is looked up by.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -14,7 +14,7 @@ registerSourceCatalogs();
 
 const english = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/en.json", import.meta.url), "utf8")) as Record<string, string>;
 const source = (name: string): string => readFileSync(new URL(`../../src/ui/${name}`, import.meta.url), "utf8");
-const KEYS = ["profiles.error.passwordReset", "boxSets.movies", "overlays.multiAudio", "overlays.subtitles", "detail.mono", "detail.stereo", "detail.channels"] as const;
+const KEYS = ["profiles.error.passwordReset", "boxSets.movies", "overlays.multiAudio", "overlays.subtitles"] as const;
 
 function inLanguage<T>(tag: string | null, body: () => T): T {
     setAppLanguage(tag, SHIPPED_LANGUAGES, ["en-AU"]);
@@ -24,7 +24,7 @@ function inLanguage<T>(tag: string | null, body: () => T): T {
 test("every key these screens read is read by the screen and is in the German and Arabic files", () => {
     const reads: Record<string, readonly string[]> = {
         "signInText.ts": ["profiles.error.passwordReset"], "boxSetView.ts": ["boxSets.movies"],
-        "cardOverlays.ts": ["overlays.multiAudio", "overlays.subtitles"], "homeEnrichment.ts": ["detail.mono", "detail.stereo", "detail.channels"],
+        "cardOverlays.ts": ["overlays.multiAudio", "overlays.subtitles"],
     };
     for (const [file, keys] of Object.entries(reads)) for (const key of keys) assert.ok(source(file).includes(`"${key}"`), `${file} reads ${key}`);
     for (const tag of ["de", "ar"]) {
@@ -45,14 +45,10 @@ test("English reads exactly as before", () => {
 });
 
 for (const tag of ["de", "ar"]) {
-    test(`the password-reset line and the audio labels read ${tag}`, () => inLanguage(tag, () => {
+    test(`the password-reset line reads ${tag}, and the saved-file audio layout stays the English text its overlay image is keyed by`, () => inLanguage(tag, () => {
         assert.equal(passwordChangeRequiredMessage(), translate("profiles.error.passwordReset", undefined, tag));
         assert.notEqual(passwordChangeRequiredMessage(), "Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back.");
         const label = (channels: number, layout?: string): string | undefined => compactAudioLayout({ index: 0, layout, channels } as never);
-        assert.equal(label(1), translate("detail.mono", undefined, tag));
-        assert.equal(label(2), translate("detail.stereo", undefined, tag));
-        assert.equal(label(3), translate("detail.channels", { count: tag === "ar" ? "٣" : "3" }, tag));
-        assert.equal(label(2, "Stereo"), translate("detail.stereo", undefined, tag), "a layout that names stereo");
-        assert.equal(label(6), "5.1", "a surround layout is the same in every language");
+        assert.deepEqual([label(1), label(2), label(3), label(2, "Stereo"), label(6)], ["Mono", "Stereo", "3ch", "Stereo", "5.1"]);
     }));
 }

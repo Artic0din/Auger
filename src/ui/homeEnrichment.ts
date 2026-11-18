@@ -17,7 +17,6 @@ import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import type { Card, CardOverlay, MarqueeAudioTrack, MarqueeDetail, MarqueeFile } from "../contracts/v2/catalog.ts";
 import { resolutionLabel } from "./cardPresentation.ts";
-import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { airDateText } from "./personHero.ts";
 
@@ -351,6 +350,10 @@ function selectedAudioTrack(file: MarqueeFile): MarqueeAudioTrack | undefined {
     return tracks.find(track => track.isDefault === true) ?? tracks[0];
 }
 
+/**
+ * The saved file's audio layout, which doubles as the overlay's value key (a per-value image is looked up by it), so it stays the
+ * English text in every language: translating it would stop an image configured under `Stereo` from matching.
+ */
 export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
     if (track === undefined) return undefined;
     const layout = nonEmpty(track.layout);
@@ -359,16 +362,16 @@ export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string
         if (lowered.includes("atmos")) return "Atmos";
         if (lowered.includes("7.1")) return "7.1";
         if (lowered.includes("5.1")) return "5.1";
-        if (lowered.includes("stereo") || lowered === "2.0") return translate("detail.stereo");
+        if (lowered.includes("stereo") || lowered === "2.0") return "Stereo";
         return layout;
     }
     switch (track.channels) {
         case undefined: return undefined;
-        case 1: return translate("detail.mono");
-        case 2: return translate("detail.stereo");
+        case 1: return "Mono";
+        case 2: return "Stereo";
         case 6: return "5.1";
         case 8: return "7.1";
-        default: return translate("detail.channels", { count: integerText(track.channels) });
+        default: return `${track.channels}ch`;
     }
 }
 
