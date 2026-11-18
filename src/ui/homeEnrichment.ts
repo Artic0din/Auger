@@ -121,6 +121,17 @@ export class HomeEnrichment {
         this.pump(ids.map(id => ({ id, revision: undefined })), prewarm.signal, FOR_YOU_PREWARM_CONCURRENCY);
     }
 
+    /** A focused card that is no title (a collection): it has no detail to read, and the previous card's wait and read end, so a late answer cannot land on it. */
+    leave(): void {
+        this.cancelRest();
+        this.cancelRest = () => undefined;
+        this.pendingRead = undefined;
+        this.focusController?.abort();
+        this.focusController = undefined;
+        this.focusedId = undefined;
+        this.focusRevision = undefined;
+    }
+
     /**
      * The focused card. A cached detail fills the marquee now. An uncached one waits out the rest
      * delay, and a newer focus cancels both the wait and the read so the late answer cannot land.

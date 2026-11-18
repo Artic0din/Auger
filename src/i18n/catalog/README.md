@@ -5,7 +5,7 @@
 The keys are the ones Apple ships (no `x-platforms`, or one naming `apple`), because tvOS is the parity target and Apple's keys use the ICU subset `src/i18n/icu.ts` reads.
 One Android-only key is also vendored (`PLATFORM_EXCEPTIONS` in `scripts/sync-translations.ts`): Settings › Playback's Video help line, `settings.skipIntervals.footerVideo`, because Apple TV's own line names the Siri Remote.
 Metadata and Info.plist prompts are left out, and a message outside that subset stops the sync.
-`en.json` holds all 3,571 messages (247 KB, 57 KB gzipped).
+`en.json` holds all 3,576 messages (247 KB, 57 KB gzipped).
 Each of the other 21 languages (Apple's list) holds only the keys `src` names as strings, plus every `home.section.*` key because the server names those, 476 today at 29 to 44 KB each: the whole catalog would add about 5 MB to the package, and a key no screen shows is dead weight there. A test holds each file to exactly the keys in use, so a screen that starts using a key needs a new sync, and one that stops using it a new sync too.
 Phone-only text is in it, because `x-platforms` names `apple` for all Apple devices; trim it by key prefix if the size ever matters.
 

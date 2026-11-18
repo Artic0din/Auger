@@ -53,7 +53,8 @@ async function withHome(options: HomeOptions, body: (tv: Tv, releaseLanguage: ()
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
-        if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        // Hold the language read by key: holding the first eight effective reads held whichever came first, and the language answer could slip through.
+        if (options.holdLanguage === true) held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
         if (options.switchServer === true) await tv.page.evaluate(() => { window.browseHarness.offerSwitchServer = true; });
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();

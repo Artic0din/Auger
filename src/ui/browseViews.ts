@@ -2,7 +2,7 @@
 // returns a View for FocusHost: the nodes and their focus zones. Nothing here fetches; presses
 // call the handlers passed in. Item and season pages are in browseDetails.ts.
 
-import type { Card, CardOverlay, CatalogPage, HomeSection, UserLibrary } from "../contracts/v2/catalog.ts";
+import { hasCards, holdsCollections, type Card, type CardOverlay, type CatalogPage, type HomeSection, type UserLibrary } from "../contracts/v2/catalog.ts";
 import { markEnglishOnly } from "../i18n/direction.ts";
 import { serverText, translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage, type ErrorState } from "./errorState.ts";
@@ -30,7 +30,8 @@ export interface ViewContext {
     /** Resolves relative artwork references. */
     readonly baseUrl: string;
     readonly open: (destination: Destination) => void;
-    readonly preview?: (card: Card, row: string, continuing?: boolean, featured?: boolean) => void;
+    /** `title` is false for a card that is no title (a collection), which has no detail for the hero to read. */
+    readonly preview?: (card: Card, row: string, continuing?: boolean, featured?: boolean, title?: boolean) => void;
     readonly continueWatching?: boolean;
     /** Apple `SectionRow.layout` on tvOS. Unset keeps the Continue Watching still and poster otherwise. */
     /** "grid" sizes each card by its own type: poster, or square for an audiobook. */
@@ -271,7 +272,7 @@ export function cardItem(card: Card, context: ViewContext): FocusItem | undefine
     const line = episodeLine(card);
     const play = card.type === "movie" || card.type === "episode" ? () => context.resume?.(card.id, card.title, line) : undefined;
     const home = context.homeRow !== undefined;
-    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home });
+    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home, wide: thumbnail });
 }
 
 export function cardItems(cards: readonly Card[], context: ViewContext): FocusItem[] {
@@ -322,6 +323,8 @@ export function statusView(name: string, title: string, texts: readonly string[]
 export interface HomeHandlers {
     readonly expand: (section: HomeSection) => void;
     readonly canExpand?: (section: HomeSection) => boolean;
+    /** The cards of a row of collections, in its order; without it such a row is left out. */
+    readonly collectionCards?: (section: HomeSection, rowTitle: string) => FocusItem[];
     readonly search: () => void;
     readonly library: (library: UserLibrary) => void;
     readonly chooseProfile: () => void;
@@ -343,7 +346,37 @@ export function removingDismissed(sections: readonly HomeSection[], card: Pick<C
         if (!(isContinueWatching(type) || type === "next_up")) return section;
         const items = section.items.filter(item => item.id !== card.id && (series === undefined || (item.id !== series && item.seriesId !== series)));
         return items.length === section.items.length ? section : { ...section, items };
-    }).filter(section => section.items.length > 0);
+    }).filter(hasCards);
+}
+
+/**
+ * The rows a Not interested title leaves: the recommendation rows and the discovery rows the server filters (silo-apple
+ * HomeSectionsMutation.notInterestedSectionTypes). Rows of what is new, in progress, saved or chosen keep it.
+ */
+const NOT_INTERESTED_ROW_TYPES: ReadonlySet<string> = new Set([
+    "recommended_for_you", "because_you_watched", "similar_users_liked", "taste_match",
+    "hidden_gems", "critically_acclaimed", "award_winners", "forgotten_favorites",
+    "format_showcase", "editorial_spotlight", "seasonal_themed", "mood_collection",
+    "trending_on_server", "most_watched", "trending_discover", "genre_roulette",
+    "anniversaries", "short_watches",
+]);
+
+function withoutTitle<Row extends HomeSection>(sections: readonly Row[], id: string, rowTypes: ReadonlySet<string> | undefined): Row[] {
+    return sections.map(section => {
+        if (rowTypes !== undefined && !rowTypes.has(section.sectionType.toLowerCase())) return section;
+        const items = section.items.filter(item => item.id !== id);
+        return items.length === section.items.length ? section : { ...section, items };
+    }).filter(hasCards);
+}
+
+/** Home's rows without a title the profile just marked Not interested, once the server accepted the mark; the reread that follows leaves it out too. */
+export function removingNotInterested<Row extends HomeSection>(sections: readonly Row[], id: string): Row[] {
+    return withoutTitle(sections, id, NOT_INTERESTED_ROW_TYPES);
+}
+
+/** For You's rows are all live recommendation lists, which the server filters for marks, so a marked title leaves every one of them. */
+export function removingNotInterestedFromAll<Row extends HomeSection>(sections: readonly Row[], id: string): Row[] {
+    return withoutTitle(sections, id, undefined);
 }
 
 /** Apple HomeDismissal for a card in a Continue Watching or Next Up row (SectionRow.offersHomeDismissal); otherwise none. */
@@ -408,18 +441,9 @@ export function sectionTitle(section: HomeSection): string {
 export function homeView(libraries: readonly UserLibrary[], sections: readonly HomeSection[], context: ViewContext, handlers: HomeHandlers): View {
     const zones: Zone[] = [];
     const content: HTMLElement[] = [];
-    // Server order is the profile's order; featured rows render as ordinary rows (Apple HomeViewModel).
-    for (const { section, continuing, layout, cards: titles } of homeRows(sections)) {
-        const rowTitle = sectionTitle(section);
-        const cards = cardItems(titles, { ...context, continueWatching: continuing, homeRow: section.sectionType, homeDismissals: handlers.dismisses === true, cardLayout: layout, homeCaptions: true, seriesYears: true, overlays: context.cardOverlays?.(), preview: (card) => context.preview?.(card, rowTitle, continuing, section.featured === true) });
-        // A row of only books, podcasts or other media this client does not browse is left out.
-        if (cards.length === 0) {
-            continue;
-        }
-        const id = `section:${section.id}`;
-        if (handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(rowTitle, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
+    const addRow = (section: HomeSection, rowTitle: string, cards: FocusItem[], continuing: boolean): void => {
         // Apple `focusSection`: Up and Down between these rows stay geometric, including a row already visited.
-        zones.push({ id, layout: "row", spatial: true, items: cards });
+        zones.push({ id: `section:${section.id}`, layout: "row", spatial: true, items: cards });
         const block = el("section", "browse-section home-section");
         block.setAttribute("data-section", section.id);
         const title = el("h2", "browse-section-title", rowTitle);
@@ -431,6 +455,23 @@ export function homeView(libraries: readonly UserLibrary[], sections: readonly H
         block.appendChild(title);
         block.appendChild(zoneNode("browse-row", cards));
         content.push(block);
+    };
+    // Server order is the profile's order; featured rows render as ordinary rows (Apple HomeViewModel).
+    for (const { section, continuing, layout, cards: titles } of homeRows(sections)) {
+        const rowTitle = sectionTitle(section);
+        // A row of collections has no Explore all card: each collection is its own page.
+        if (holdsCollections(section)) {
+            const collections = handlers.collectionCards?.(section, rowTitle) ?? [];
+            if (collections.length > 0) addRow(section, rowTitle, collections, false);
+            continue;
+        }
+        const cards = cardItems(titles, { ...context, continueWatching: continuing, homeRow: section.sectionType, homeDismissals: handlers.dismisses === true, cardLayout: layout, homeCaptions: true, seriesYears: true, overlays: context.cardOverlays?.(), preview: (card) => context.preview?.(card, rowTitle, continuing, section.featured === true) });
+        // A row of only books, podcasts or other media this client does not browse is left out.
+        if (cards.length === 0) {
+            continue;
+        }
+        if (handlers.canExpand?.(section) !== false) cards.push(exploreAllCard(rowTitle, `expand:${section.id}`, layout === "thumbnail", () => handlers.expand(section)));
+        addRow(section, rowTitle, cards, continuing);
     }
     if (zones.length === 0 && handlers.dismisses === true) {
         // Apple HomeView: EmptyStateView under a page focus owner whose Up goes to the top bar.

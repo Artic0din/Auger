@@ -728,6 +728,13 @@ test("fifty libraries: the Movies menu shows six rows at a time as Apple does, s
         await tv.jump(250);
         const rows = '.skyline-selector:not(.skyline-flyout) [role="menuitemradio"]';
         assert.equal(await tv.page.locator(rows).count(), household.libraries.filter(library => library.type === "movies").length, "every library is a menu row");
+        // A request leaves the page before the fake records it, so take the count once a settled turn sends nothing more.
+        await tv.eventually(async () => {
+            const requests = tv.fake.requests.length;
+            await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+            await afterPaint(tv);
+            return tv.fake.requests.length === requests;
+        }, "no further reads");
         const reads = tv.fake.requests.length;
         const geometry = (): Promise<{ bottom: number; visible: number; focusInside: boolean; offCentre: number; scrollTop: number; maximum: number; headerTop: number }> => tv.page.evaluate((selector) => {
             const panel = document.querySelector<HTMLElement>(".skyline-selector:not(.skyline-flyout)");

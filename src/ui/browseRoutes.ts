@@ -6,7 +6,7 @@ import { requestsView, type RequestsHandlers, type RequestsState, type RequestWr
 import type { TextSearchScope } from "../api/operations.ts";
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { audiobookView } from "./audiobookView.ts";
-import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, UserLibrary } from "../contracts/v2/catalog.ts";
+import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import type { Person } from "../contracts/v2/details.ts";
 import type { PersonMetadataRefresh } from "./personMetadataRefresh.ts";
 import type { DetailsState } from "./detailsState.ts";
@@ -25,6 +25,7 @@ export { errorHeadline, errorMessage, errorState, failureState, type ErrorBody, 
 import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
+import { collectionRowCards } from "./collectionCards.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
 import { personalView, type PersonalFilter, type PersonalSource, type PersonalListCapability } from "./personalLists.ts";
 import type { MediaScope } from "../contracts/v2/discovery.ts";
@@ -146,6 +147,8 @@ export interface RouteHandlers {
     readonly audiobooksEnabled: boolean;
     readonly retryPeople: (route: Extract<Route, { kind: "search" }>) => void;
     readonly push: (route: Route) => void;
+    /** Opens a card of a row of collections: a server collection in its library, a personal one on its own page. */
+    readonly openCollection: (card: SectionCollectionCard, library: UserLibrary | undefined) => void;
     readonly pop: () => void;
     readonly play: (request: PlayRequest) => void;
     readonly chooseProfile: () => void;
@@ -162,7 +165,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     const { context, pop } = handlers;
     if (current.kind === "calendar") return calendarView(current.calendar, handlers.calendar(current));
     const back = current.kind === "home" ? undefined : pop;
-    const escape = back === undefined ? actionButton("profiles", "Profiles", handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
+    const escape = back === undefined ? actionButton("profiles", translate("account.profiles"), handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
     if (current.kind === "personal") return personalView(current, handlers);
     if (current.kind === "person") return personFilmographyView(current, handlers);
     if (current.kind === "library") {
@@ -184,6 +187,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
                 search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
                 library: (library) => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,
+                collectionCards: (section, rowTitle) => collectionRowCards(section, rowTitle, handlers),
                 dismisses: true,
             });
             // Apple tvOS HomeView shows only the feed while it has rows, whether a refresh is running or failed;
