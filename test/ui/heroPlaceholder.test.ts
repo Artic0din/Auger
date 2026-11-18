@@ -16,6 +16,19 @@ after(async () => { await browser.close(); });
 const THUMBHASHES = [undefined, "1QcSHQRnh493V4dIh4eXh1h4kJUI", "3OcRJYB4d3h/iIeHeEh3eIhw+j3A"];
 const FRAME = { width: 1228.8, height: 756 };
 
+/**
+ * What "the same pixels" means for this check, the same for every variant. Both paths are 8-bit approximations of one ramp, and they round
+ * differently: the bitmap is a little darker in the fade zone (a mean shift of -0.2 to -0.4 of 255 on macOS, never more than 4), which is
+ * not visible on a dark placeholder under the art. The share of values more than 2 apart is 0.05% to 0.08% on macOS and 0.14% on the Linux
+ * CI runner, whose raster rounds the masks a little differently. A fade on the wrong side or a wrong ramp is off by tens of levels over most
+ * of the frame (up to 149, 80% to 90% of values over 2, a mean of 15 to 40), so these bounds still fail it.
+ */
+const LARGEST_GAP = 4;
+const SHARE_OVER_TWO = 0.003;
+const MEAN_GAP = 0.7;
+/** The signed mean must stay under one level: a real change in tone shifts every value in a region the same way. */
+const MAX_BIAS = 1;
+
 async function page(): Promise<Page> {
     const tab = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     await tab.setContent("<html><body style='margin:0;background:rgb(18,40,66)'></body></html>");
@@ -28,7 +41,7 @@ async function page(): Promise<Page> {
  * each under the art's own fade (opaque from the text-side edge to 32%, then clear), against the bitmap that stands in for
  * the two on Home, one masked layer fewer per swap (#310). Returns the largest and mean channel difference.
  */
-async function difference(tab: Page, thumbhash: string | undefined, rtl: boolean): Promise<{ max: number; mean: number; over2: number }> {
+async function difference(tab: Page, thumbhash: string | undefined, rtl: boolean): Promise<{ max: number; mean: number; over2: number; bias: number }> {
     const shoot = async (): Promise<string> => (await tab.screenshot({ clip: { x: 0, y: 0, width: FRAME.width, height: FRAME.height } })).toString("base64");
     const ramp = `linear-gradient(to ${rtl ? "right" : "left"}, #000 0%, #000 32%, transparent 100%)`;
     await tab.evaluate(([thumbhash, ramp, frame]) => {
@@ -66,15 +79,17 @@ async function difference(tab: Page, thumbhash: string | undefined, rtl: boolean
             return context.getImageData(0, 0, canvas.width, canvas.height).data;
         };
         const [first, second] = [await read(a), await read(b)];
-        let max = 0, total = 0, over2 = 0;
+        let max = 0, total = 0, over2 = 0, signed = 0;
         const samples = first.length / 4 * 3;
         for (let i = 0; i < first.length; i += 4) for (let channel = 0; channel < 3; channel++) {
-            const gap = Math.abs((first[i + channel] ?? 0) - (second[i + channel] ?? 0));
+            const raw = (second[i + channel] ?? 0) - (first[i + channel] ?? 0);
+            signed += raw;
+            const gap = Math.abs(raw);
             max = Math.max(max, gap);
             total += gap;
             if (gap > 2) over2++;
         }
-        return { max, mean: total / samples, over2: over2 / samples };
+        return { max, mean: total / samples, over2: over2 / samples, bias: signed / samples };
     }, [reference, baked] as const);
 }
 
@@ -82,9 +97,9 @@ for (const rtl of [false, true]) for (const [index, thumbhash] of THUMBHASHES.en
     const tab = await page();
     try {
         const gap = await difference(tab, thumbhash, rtl);
-        // The largest gap is 4 and the mean about 0.5 on the macOS and Linux runners: the two masks are rounded separately. The share of values
-        // more than 2 apart is 0.05% to 0.08% on macOS and up to 0.14% on the Linux CI runner; a mask on the wrong side or a wrong ramp is
-        // off by tens of levels over a large part of the frame.
-        assert.ok(gap.max <= 4 && gap.over2 < 0.003 && gap.mean < 0.7, `largest channel difference ${gap.max}, over 2: ${gap.over2}, mean ${gap.mean.toFixed(3)}`);
+        assert.ok(
+            gap.max <= LARGEST_GAP && gap.over2 < SHARE_OVER_TWO && gap.mean < MEAN_GAP && Math.abs(gap.bias) < MAX_BIAS,
+            `largest channel difference ${gap.max}, over 2: ${gap.over2}, mean ${gap.mean.toFixed(3)}, bias ${gap.bias.toFixed(3)}`,
+        );
     } finally { await tab.context().close(); }
 });
