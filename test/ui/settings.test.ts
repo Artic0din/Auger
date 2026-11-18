@@ -1474,6 +1474,9 @@ test("quality controls remain absent for unsupported manifests and empty Playbac
     try {
         const contract = fixture("settings_contract_ok");
         contract.definitions = [];
+        // Home loads the spoiler and theme-music preferences once capabilities arrive, which can be after setup returns; count from after they landed.
+        await tv.eventually(async () => ["keys=catalog.hide_unwatched_episode_images", "keys=ui.theme_music_enabled"].every(key => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes(key))), "Home's preference reads");
+        await tv.eventually(async () => tv.pendingReplies === 0, "the launch reads answered");
         const requests = tv.fake.requests.length;
         tv.fake.script("/settings/contract", { status: 200, body: contract });
         await tv.page.locator('[data-focus="profiles"]').click();
