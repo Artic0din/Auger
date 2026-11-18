@@ -1,4 +1,6 @@
 import type { ProfileSummary } from "../contracts/v2/wire.ts";
+import { isolated } from "../i18n/direction.ts";
+import { translate, translateTv } from "../i18n/translate.ts";
 import { navigationAvatar } from "./navigationAvatar.ts";
 import { navigationIcon } from "./navigationIcon.ts";
 import { button, el, type Control, type Screen } from "./screen.ts";
@@ -50,7 +52,7 @@ interface PickerOptions {
 
 export function profilePickerScreen(options: PickerOptions): Screen {
     const main = el("div", "profile-picker-main");
-    main.append(el("h1", "profile-picker-title", "Who's watching?"), el("p", "profile-account", options.accountName === undefined ? " " : `Signed in as ${options.accountName}`));
+    main.append(el("h1", "profile-picker-title", translate("profiles.headline")), el("p", "profile-account", options.accountName === undefined ? " " : translate("profiles.signedInAs", { name: isolated(options.accountName) })));
     const grid = el("div", "profile-grid");
     const columns = Math.min(6, options.profiles.length + 1);
     grid.style.gridTemplateColumns = `repeat(${columns}, 240px)`;
@@ -60,8 +62,8 @@ export function profilePickerScreen(options: PickerOptions): Screen {
         tile.element.className = "profile-tile";
         const remembered = profile.id === options.rememberedId;
         // ProfileTile accessibilityValue on tvOS, with "Apple TV user" read as "TV user".
-        const values = [remembered ? "Paired with this TV user" : "", profile.hasPin ? "PIN protected" : "", profile.isChild ? "Kids profile" : ""].filter(value => value !== "");
-        tile.element.setAttribute("aria-label", [profile.name, ...values].join(", "));
+        const values = [remembered ? translateTv("profiles.tile.pairedAppleTvUser") : "", profile.hasPin ? translate("profiles.pinProtected") : "", profile.isChild ? translate("profiles.kidsProfile") : ""].filter(value => value !== "");
+        tile.element.setAttribute("aria-label", [isolated(profile.name), ...values].join(", "));
         const face = el("span", "profile-face");
         face.appendChild(profileAvatar(profile, options.baseUrl));
         if (profile.hasPin) {
@@ -69,18 +71,18 @@ export function profilePickerScreen(options: PickerOptions): Screen {
             lock.setAttribute("aria-hidden", "true");
             face.appendChild(lock);
         }
-        if (profile.isChild) face.appendChild(el("span", "profile-child", "KIDS"));
+        if (profile.isChild) face.appendChild(el("span", "profile-child", translate("profiles.kids")));
         tile.element.append(face, el("span", "profile-name", profile.name));
-        if (remembered) tile.element.appendChild(el("span", "profile-remembered", "TV user"));
+        if (remembered) tile.element.appendChild(el("span", "profile-remembered", translateTv("profiles.tile.appleTvUser")));
         grid.appendChild(tile.element);
         return { ...tile, row: Math.floor(index / columns) };
     });
     const add = button("add-profile", "", options.add);
     add.element.className = "profile-tile profile-add";
-    add.element.setAttribute("aria-label", "Add");
+    add.element.setAttribute("aria-label", translate("profiles.add"));
     const plus = el("span", "profile-add-circle", "+");
     plus.setAttribute("aria-hidden", "true");
-    add.element.append(plus, el("span", "profile-name", "Add"));
+    add.element.append(plus, el("span", "profile-name", translate("profiles.add")));
     grid.appendChild(add.element);
     controls.push({ ...add, row: Math.floor(options.profiles.length / columns) });
     grid.addEventListener("focusin", event => {
@@ -89,8 +91,8 @@ export function profilePickerScreen(options: PickerOptions): Screen {
     });
     main.appendChild(grid);
     const footer = el("div", "profile-footer");
-    const change = button("change-server", "Change account", options.changeServer);
-    const out = button("signout", "Sign out", options.signOut);
+    const change = button("change-server", translate("profiles.changeAccount"), options.changeServer);
+    const out = button("signout", translate("common.signOut"), options.signOut);
     // ProfileSelectionView labels Change account with SF Symbol person.2, the two-person glyph Switch Profile uses.
     change.element.prepend(navigationIcon("switch-profile"));
     out.element.prepend(navigationIcon("signout"));
@@ -103,5 +105,5 @@ export function profilePickerScreen(options: PickerOptions): Screen {
         event.stopPropagation();
         lastTile.focus();
     });
-    return { name: "profiles", content: [main, footer], controls, focus: options.focus, back: options.back };
+    return { name: "profiles", content: [main, footer], controls, focus: options.focus, back: options.back, translated: true };
 }
