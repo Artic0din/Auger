@@ -2,7 +2,7 @@ import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import { isolated } from "../i18n/direction.ts";
 import { translate, translateTv } from "../i18n/translate.ts";
 import { navigationAvatar } from "./navigationAvatar.ts";
-import { navigationIcon } from "./navigationIcon.ts";
+import { menuIcon, navigationIcon } from "./navigationIcon.ts";
 import { button, el, type Control, type Screen } from "./screen.ts";
 
 // ProfileTilePalette and tvOS sizing, silo-apple 1a7ccee.
@@ -95,7 +95,8 @@ export function profilePickerScreen(options: PickerOptions): Screen {
     const out = button("signout", translate("common.signOut"), options.signOut);
     // ProfileSelectionView labels Change account with SF Symbol person.2, the two-person glyph Switch Profile uses.
     change.element.prepend(navigationIcon("switch-profile"));
-    out.element.prepend(navigationIcon("signout"));
+    // Apple draws Sign Out as rectangle.portrait.and.arrow.forward, a box with a gap for its arrow; the line drawing was an open bracket.
+    out.element.prepend(menuIcon("signout"));
     footer.append(change.element, out.element);
     const footerRow = Math.ceil((options.profiles.length + 1) / columns);
     controls.push({ ...change, row: footerRow }, { ...out, row: footerRow });

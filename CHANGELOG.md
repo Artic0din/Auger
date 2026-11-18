@@ -104,6 +104,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The profile picker's Sign out button now draws Apple TV's icon, a closed rounded box with a gap for its arrow, instead of an open bracket; the arrow leaves to the right, and to the left in Arabic (#656).
 - The Calendar's error page now offers Sign In Again first when the session has expired, with Try Again second and no Go Back, as Apple TV's error page does on a root tab, and the first button on every error page now wraps its label instead of cutting it off in longer languages such as German (#648).
 - Home's backdrop now keeps its layers from the moment it swaps in and draws the frame's dark backing and its ThumbHash as one bitmap, so the TV draws the hero once per change instead of two to four times, and one masked layer fewer. Nothing changes on screen (about 99.95% of colour values within 2 of 255, the largest gap 4); whether Home's Down press is quicker waits on an S95C trace (#310).
 - Home's, For You's and the library pages' backdrop now keeps one tint wash and draws it as a small bitmap that fades into the next one, as Apple TV does, instead of building and painting a new full-screen layer of gradients for every backdrop change; the artwork's layer is only its own box and the top scrim is shared. Nothing changes on screen (pixel difference under 7 of 255, on average 0.3); whether the TV scrolls faster waits on an S95C trace (#515).

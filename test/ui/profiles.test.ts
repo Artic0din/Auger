@@ -133,16 +133,18 @@ tvTest("the Change account footer button draws Apple's two-person person.2 glyph
             sized: box.width > 0 && box.height > 0,
             inside: box.left >= frame.left && box.right <= frame.right && box.top >= frame.top && box.bottom <= frame.bottom,
             shown: style.display !== "none" && style.visibility === "visible" && style.opacity === "1",
-            inked: style.stroke === getComputedStyle(button).color && !/^(none|transparent|rgba\(.*, 0\))$/.test(style.stroke),
+            // A filled glyph (Sign out) is inked by its path's fill, a line glyph by the stroke.
+            inked: (icon.classList.contains("skyline-menu-icon-filled") ? getComputedStyle(icon.querySelector("path") ?? icon).fill : style.stroke) === getComputedStyle(button).color && !/^(none|transparent|rgba\(.*, 0\))$/.test(style.stroke === "none" ? getComputedStyle(icon.querySelector("path") ?? icon).fill : style.stroke),
         };
     }));
     const painted = { sized: true, inside: true, shown: true, inked: true };
     const expected = [
         "M8 3A4 4 0 1 1 8 11 4 4 0 0 1 8 3ZM1 22V18C1 12 15 12 15 18V22M18 4A4 4 0 0 1 18 12M19 15C23 15 23 19 23 22",
-        "M10 3H3V21H10M8 12H22M17 7 22 12 17 17",
+        // rectangle.portrait.and.arrow.forward: a closed rounded box with a gap for its arrow.
+        "M18.52 8.6V3.97A4.64 4.64 0 0 0 13.87 -.67H2.02A4.64 4.64 0 0 0 -2.63 3.97V20.03A4.64 4.64 0 0 0 2.02 24.67H13.87A4.64 4.64 0 0 0 18.52 20.03V15.37H15.79V20.09A2 2 0 0 1 13.79 22.09H2.08A2 2 0 0 1 .07 20.09V3.91A2 2 0 0 1 2.08 1.91H13.79A2 2 0 0 1 15.79 3.91V8.6Z",
     ];
     await picker(tv);
-    assert.deepEqual(await footerIcons(), expected, "Change account shows two people, not a server stack; Sign out keeps its arrow");
+    assert.deepEqual(await footerIcons(), expected, "Change account shows two people, not a server stack; Sign out shows Apple's box and arrow");
     assert.deepEqual(await footerIconPaint(), [painted, painted], "both footer icons are drawn inside their buttons");
     tv.fake.passwordChangeRequired = true;
     tv.fake.expireAccessTokens();
