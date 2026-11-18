@@ -39,7 +39,8 @@ interface Hold {
     readonly released: Promise<void>;
 }
 
-export type Reply = { status: number; body?: unknown; text?: string; headers?: Record<string, string> };
+/** `cut` sends `text`, then breaks the connection the way a dropped download does. */
+export type Reply = { status: number; body?: unknown; text?: string; headers?: Record<string, string>; cut?: boolean };
 
 /** Answers the browse reads once the caller's bearer and profile proof are checked. */
 export interface CatalogRoutes {
@@ -217,6 +218,13 @@ export class FakeSilo {
         const responseHeaders = new Headers(reply.headers);
         if (reply.body !== undefined && !responseHeaders.has("Content-Type")) {
             responseHeaders.set("Content-Type", "application/json");
+        }
+        if (reply.cut === true) {
+            const sent = new TextEncoder().encode(reply.text ?? "");
+            let pulls = 0;
+            // Erroring a stream drops its queue, so the text goes out on the first read and the break on the next.
+            const cutBody = new ReadableStream<Uint8Array>({ pull(stream) { if (pulls++ === 0) stream.enqueue(sent); else stream.error(new TypeError("network error")); } });
+            return new Response(cutBody, { status: reply.status, headers: responseHeaders });
         }
         return new Response(reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body)), { status: reply.status, headers: responseHeaders });
     };

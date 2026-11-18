@@ -51,13 +51,14 @@ import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
+import { downloadSubtitle } from "./subtitleRefetch.ts";
 import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleCue } from "../contracts/v2/subtitles.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
 import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
-import { planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
 /** What browse hands over: one file of one catalog item. */
 export interface PlayRequest {
@@ -454,6 +455,8 @@ interface Attempt {
     suspendedReady: boolean;
     deferredOpen: boolean;
     restoring: boolean;
+    /** The restoreAsync that has not answered; revalidation already cleared `restoring`. Only its own answer or the close of its transport clears it. */
+    restoreOpen: object | undefined;
     /** The next open is a reconnect handoff and should say so. */
     resuming: boolean;
     recovery: PlaybackRecovery | undefined;
@@ -615,6 +618,7 @@ export class PlaybackController implements PlayerControls {
             suspendedReady: false,
             deferredOpen: false,
             restoring: false,
+            restoreOpen: undefined,
             resuming: false,
             recovery: undefined,
             recoveryPending: false,
@@ -2022,12 +2026,20 @@ export class PlaybackController implements PlayerControls {
         void (async () => {
             try {
                 const base = this.deps.session.http.base;
-                const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
-                if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
-                if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                const text = await this.deps.session.http.subtitleText(url.href, abort.signal);
+                const show = (cues: readonly SubtitleCue[]): void => {
+                    if (!current()) return;
+                    attempt.cues = cues;
+                    attempt.captionNotice = "";
+                    this.showPlayback(attempt);
+                };
+                const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
+                    const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
+                    if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
+                    if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
+                    return this.deps.session.http.subtitleText(url.href, abort.signal);
+                }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
-                attempt.cues = decodeCues(text, artifact.format, artifact.origin);
+                attempt.cues = cues;
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
@@ -2311,6 +2323,7 @@ export class PlaybackController implements PlayerControls {
             attempt.suspended = false;
             attempt.suspendedReady = false;
             attempt.deferredOpen = false;
+            attempt.restoreOpen = undefined;
         }
         this.startupDue = undefined;
         this.cancelStartup?.();
@@ -3238,9 +3251,15 @@ export class PlaybackController implements PlayerControls {
         const generation = attempt.resumeGeneration;
         const transport = this.transport;
         this.showLoading(attempt, "restoring");
-        return new Promise((resolve) => {
+        const open = {};
+        attempt.restoreOpen = open;
+        const close = (): void => {
+            if (attempt.restoreOpen === open) attempt.restoreOpen = undefined;
+        };
+        return new Promise<boolean>((resolve) => {
             try {
                 restore.call(this.deps.avplay, url, resumeMs, false, () => {
+                    close();
                     if (transport !== this.transport) {
                         resolve(false);
                         return;
@@ -3279,7 +3298,7 @@ export class PlaybackController implements PlayerControls {
             } catch {
                 resolve(false);
             }
-        });
+        }).finally(close);
     }
 
     private urlWithToken(plan: PlaybackPlan, token: string): string | undefined {
@@ -3364,7 +3383,8 @@ export class PlaybackController implements PlayerControls {
 
     private showPlayback(attempt: Attempt): void {
         const plan = attempt.plan;
-        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined) {
+        // A late read must not draw over the Restoring overlay; the restore itself draws the view when it ends.
+        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined || attempt.restoring || attempt.restoreOpen !== undefined) {
             return;
         }
         const frozen = attempt.busy && !attempt.reporting;
@@ -3393,7 +3413,7 @@ export class PlaybackController implements PlayerControls {
                 chapters: attempt.hud.chapters, chapterState: attempt.hud.chapterState,
                 overview: attempt.hud.metadata?.overview ?? attempt.request.overview,
                 metadata: attempt.hud.metadata, metadataFailed: attempt.hud.metadataFailed,
-                stats: planStats(plan),
+                stats: planStats(plan, liveStats(attempt, plan, this.deps.session.http.base.baseUrl)),
                 ...videoOptions(this.deps.avplay.setSpeed !== undefined, this.deps.avplay.setDisplayMethod !== undefined, plan.streamProtocol),
                 speed: attempt.hud.speed, aspect: attempt.hud.aspect,
                 autoNext: attempt.autoNextSupported ? attempt.autoNext : undefined,
@@ -3701,6 +3721,25 @@ function sameStart(attempt: Attempt): PlayRequest {
     const request = attempt.request;
     if (attempt.plan === undefined || request.startSeconds === attempt.sourceSeconds) return request;
     return { ...request, startSeconds: attempt.sourceSeconds };
+}
+
+/** The selected tracks, speed, phase and media host the Stats and Info rows need beside the plan. */
+function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string): LiveStats {
+    const fileId = plan.effectiveMediaFileId;
+    const version = attempt.tracks?.state === "ready" ? attempt.tracks.versions.find(candidate => candidate.fileId === fileId) : undefined;
+    const ordinal = version?.audio.findIndex((_, index) => `file:${fileId}:audio:${index}` === plan.selectedTracks.audio?.id) ?? -1;
+    const track = version?.audio[ordinal];
+    const shown = shownSubtitle(attempt, plan);
+    const entry = shown === undefined ? undefined : plan.subtitle.inventory.find(row => row.trackId === shown);
+    let host: string | undefined;
+    try { host = new URL(plan.streamUrl, baseUrl).hostname || undefined; } catch { host = undefined; }
+    return {
+        audio: track === undefined ? undefined : { track, ordinal },
+        subtitle: entry === undefined ? undefined : { entry, generated: attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label },
+        speed: attempt.hud.speed,
+        status: attempt.buffering ? "Rebuffering" : attempt.paused ? "Paused" : "Playing",
+        host,
+    };
 }
 
 function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
