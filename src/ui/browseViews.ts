@@ -3,7 +3,9 @@
 // call the handlers passed in. Item and season pages are in browseDetails.ts.
 
 import type { Card, CardOverlay, CatalogPage, HomeSection, UserLibrary } from "../contracts/v2/catalog.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { serverText, translate } from "../i18n/translate.ts";
+import { errorHeadline, errorMessage, type ErrorState } from "./errorState.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { artworkUrl, type Destination, type EpisodeSelection, type SeriesLine, browseCardDestination, destinationOf } from "./browseModel.ts";
 import { type CardOverlayPrefs, overlayLayer, watchStatus } from "./cardOverlays.ts";
@@ -83,10 +85,10 @@ export function actionButton(key: string, label: string, onPress: () => void): F
 }
 
 /** Apple ErrorView.recoveryPlan: a 401 offers sign-in, a 403 or 404 prefers leaving, and otherwise Try Again is the only action. */
-export function recoveryActions(error: { readonly headline: string; readonly signIn: boolean }, retry: FocusItem, back?: FocusItem, signIn?: FocusItem): FocusItem[] {
+export function recoveryActions(error: Pick<ErrorState, "kind" | "signIn">, retry: FocusItem, back?: FocusItem, signIn?: FocusItem): FocusItem[] {
     const items: FocusItem[] = [];
     if (error.signIn && signIn !== undefined) items.push(signIn);
-    if (back !== undefined && (error.headline === "Not found" || error.headline === "Not allowed")) items.push(back);
+    if (back !== undefined && (error.kind === "notFound" || error.kind === "notAllowed")) items.push(back);
     items.push(retry);
     return items;
 }
@@ -95,23 +97,23 @@ export function recoveryActions(error: { readonly headline: string; readonly sig
  * Apple ErrorView: icon, headline, message, then the recovery plan's buttons in a column. Manage Servers leads the
  * secondary buttons; Go Back appears only for Not found or Not allowed, since the remote's Back already leaves.
  */
-type ShownError = { readonly headline: string; readonly message: string; readonly signIn: boolean };
+type ShownError = ErrorState;
 
 /** Apple ErrorState: a 401, 403 or 404 keeps Apple's headline and copy; any other failure keeps the route's own message. */
 export function failureError(failure: string, stored: ShownError | undefined): ShownError {
-    return stored !== undefined && stored.headline !== "Something went wrong" ? stored : { headline: "Something went wrong", message: failure, signIn: false };
+    return stored !== undefined && stored.kind !== "generic" ? stored : { kind: "generic", body: { text: failure }, signIn: false };
 }
 
 export function errorView(name: string, error: ShownError, retry: () => void, back?: () => void, signIn?: () => void, manageServers?: () => void): View {
     const [primary, ...secondary] = recoveryActions(
         error,
-        actionButton("retry", "Try Again", retry),
-        back === undefined ? undefined : actionButton("go-back", "Go Back", back),
-        signIn === undefined ? undefined : actionButton("sign-in", "Sign In Again", signIn),
+        actionButton("retry", translate("shell.errorView.tryAgain"), retry),
+        back === undefined ? undefined : actionButton("go-back", translate("player.goBack"), back),
+        signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), signIn),
     );
-    const manage = manageServers === undefined ? [] : [actionButton("manage-servers", "Manage Servers", manageServers)];
+    const manage = manageServers === undefined ? [] : [actionButton("manage-servers", translate("shell.errorView.manageServers"), manageServers)];
     const items = primary === undefined ? manage : [primary, ...manage, ...secondary];
-    const page = searchState(error.headline, error.message, "details-failure", FAILURE_ICON);
+    const page = searchState(errorHeadline(error), errorMessage(error), "details-failure", FAILURE_ICON);
     page.setAttribute("role", "alert");
     page.appendChild(zoneNode("browse-actions", items));
     return { name, content: [page], zones: [{ id: "status", layout: "column", items }], focus: { zone: "status", key: items[0]?.key ?? "retry" }, back };
@@ -298,6 +300,7 @@ export function heading(text: string): HTMLElement {
 export function lines(texts: readonly string[], tone: "info" | "error" = "info"): HTMLElement[] {
     return texts.map((text, index) => {
         const node = el("p", tone === "error" ? "browse-text browse-error" : "browse-text", text);
+        markEnglishOnly(node, text);
         if (index === 0) {
             node.setAttribute("role", tone === "error" ? "alert" : "status");
         }
@@ -484,7 +487,7 @@ export function libraryView(library: UserLibrary, grid: { content: HTMLElement[]
     const content = [pills, ...(empty ? lines(["This library is empty."]) : []), ...grid.content];
     const zones: Zone[] = [{ id: "pills", layout: "row", items: [browse] }, ...grid.zones];
     if (zones.every((zone) => zone.items.length === 0)) {
-        const escape = actionButton("back", "Back", back);
+        const escape = actionButton("back", translate("common.back"), back);
         content.push(zoneNode("browse-actions", [escape]));
         zones.push({ id: "status", layout: "row", items: [escape] });
     }
@@ -514,11 +517,11 @@ export function searchView(head: readonly HTMLElement[], input: HTMLInputElement
             // Search is a pushed page, so Back is available and a 403 or 404 offers Go Back (ErrorView.swift:77-97).
             const items = recoveryActions(
                 results.error,
-                actionButton("retry", "Try Again", results.retry),
-                actionButton("go-back", "Go Back", back),
-                results.signIn === undefined ? undefined : actionButton("sign-in", "Sign In Again", results.signIn),
+                actionButton("retry", translate("shell.errorView.tryAgain"), results.retry),
+                actionButton("go-back", translate("player.goBack"), back),
+                results.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), results.signIn),
             );
-            const failure = searchState(results.error.headline, results.error.message, "search-failure");
+            const failure = searchState(errorHeadline(results.error), errorMessage(results.error), "search-failure");
             failure.setAttribute("role", "alert");
             failure.appendChild(zoneNode("browse-actions", items));
             content.push(failure);
@@ -563,6 +566,11 @@ export function searchState(title: string, subtitle: string, className: string, 
     icon.innerHTML = iconMarkup ?? (className === "search-failure"
         ? FAILURE_ICON
         : '<svg viewBox="0 0 48 48" fill="none"><circle cx="20" cy="20" r="13" stroke="currentColor" stroke-width="4"/><path d="m30 30 12 12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>');
-    state.append(icon, el("h2", "search-state-title", title), el("p", "search-state-description", subtitle));
+    const heading = el("h2", "search-state-title", title);
+    const description = el("p", "search-state-description", subtitle);
+    // A server's detail or a note with no Apple key is English whatever the page is.
+    markEnglishOnly(heading, title);
+    markEnglishOnly(description, subtitle);
+    state.append(icon, heading, description);
     return state;
 }

@@ -19,6 +19,9 @@ import { browseCardDestination, type SearchFilter, type EpisodeSelection, type P
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
 import { translate } from "../i18n/translate.ts";
+import { errorMessage, errorState, type ErrorState } from "./errorState.ts";
+
+export { errorHeadline, errorMessage, errorState, failureState, type ErrorBody, type ErrorKind, type ErrorState } from "./errorState.ts";
 import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
@@ -159,11 +162,11 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     const { context, pop } = handlers;
     if (current.kind === "calendar") return calendarView(current.calendar, handlers.calendar(current));
     const back = current.kind === "home" ? undefined : pop;
-    const escape = back === undefined ? actionButton("profiles", "Profiles", handlers.chooseProfile) : actionButton("back", "Back", back);
+    const escape = back === undefined ? actionButton("profiles", "Profiles", handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
     if (current.kind === "personal") return personalView(current, handlers);
     if (current.kind === "person") return personFilmographyView(current, handlers);
     if (current.kind === "library") {
-        if (current.library.type === "music") return statusView(`library:${current.library.id}`, "Music", ["Music browsing is not available on this TV."], [escape], back);
+        if (current.library.type === "music") return statusView(`library:${current.library.id}`, translate("library.kind.music"), ["Music browsing is not available on this TV."], [escape], back);
         current.discovery ??= discoveryState();
         return discoveryView(current, current.discovery, handlers);
     }
@@ -193,7 +196,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
         case "homeSection":
             if (current.pages.page !== undefined) {
                 const contents = grid(current, current.pages, current.pages.page, { ...handlers, context: { ...context, continueWatching: current.continuing } });
-                const actions = [escape, ...(current.failure === undefined ? [] : [actionButton("retry", "Try again", () => handlers.retry(current))])];
+                const actions = [escape, ...(current.failure === undefined ? [] : [actionButton("retry", translate("common.tryAgain"), () => handlers.retry(current))])];
                 return {
                     name: `homeSection:${current.id}`,
                     content: [el("h1", "browse-title", current.title), ...contents.content,
@@ -242,7 +245,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     if (current.kind === "audiobook") return audiobookLoadingView(current, context, pop);
     // Other routes keep the slow note. Home returned above: an empty page labelled "Loading home".
     const waiting = current.slow ? ["Still waiting for the server."] : [];
-    return statusView(`${current.kind}:loading`, "Loading", waiting, [escape], back);
+    return statusView(`${current.kind}:loading`, translate("common.loading"), waiting, [escape], back);
 }
 
 /** Apple tvOS HomeView and RecommendationsView while loading with nothing to show: a clear `tvPageFocusOwner` page that is only spoken. */
@@ -312,40 +315,6 @@ function withNote(view: View, failure: string | undefined): View {
     return { ...view, content: [note, ...view.content] };
 }
 
-export interface ErrorState { readonly headline: string; readonly message: string; readonly signIn: boolean }
-
-/** Apple ErrorState.humanize(statusCode:). */
-function statusMessage(status: number): string {
-    if (status === 401) return "Your session has expired. Sign in again to continue.";
-    if (status === 403) return "You don't have permission to do this. Ask your server admin if you need access.";
-    if (status === 404) return "We couldn't find what you were looking for. It may have been removed or moved.";
-    if (status === 408 || status === 504) return "The server took too long to respond. Try again in a moment.";
-    if (status === 429) return "Too many requests. Please wait a moment and try again.";
-    return status >= 500 && status <= 599 ? "The server ran into a problem. Try again in a moment." : "Something went wrong while talking to the server.";
-}
-
-/** Apple ErrorState and ErrorView.headline: a problem's own detail says more than its status, except where a headline already says it. */
-export function errorState(error: unknown): ErrorState {
-    const generic = (message: string): ErrorState => ({ headline: "Something went wrong", message, signIn: false });
-    const forStatus = (status: number, message = statusMessage(status)): ErrorState =>
-        status === 401 ? { headline: "Session expired", message, signIn: true }
-        : status === 403 ? { headline: "Not allowed", message, signIn: false }
-        : status === 404 ? { headline: "Not found", message, signIn: false }
-        : generic(message);
-    if (error instanceof SessionError) return forStatus(error.reason === "unavailable" ? 503 : 401);
-    if (!(error instanceof ApiError)) return generic(statusMessage(0));
-    const failure = error.failure;
-    if (failure.kind === "http") return forStatus(failure.status);
-    if (failure.kind === "invalid_response") return generic("The server response was in an unexpected format.");
-    if (failure.kind !== "problem") return generic("Can't reach the server. Check your connection and try again.");
-    const { status, id, title, detail } = failure.problem;
-    // UpdateRequirement.app: only this problem is an update prompt; a bare 410 also ends playback sessions and sign-in codes.
-    if (status === 410 && id === "client_upgrade_required") return { headline: "Update required", message: "Update Silo to keep using this server.", signIn: false };
-    if (status === 401 || status === 404) return forStatus(status);
-    if (status === 403) return forStatus(403, id === "permission_denied" && detail?.trim() ? detail : statusMessage(403));
-    return forStatus(status, detail?.trim() ? detail : title);
-}
-
 /** Apple RequestMutationFailure.isUncertain: only an answer from the server, or a refusal before sending, rules out a write having landed. */
 export function writeMayHaveApplied(error: unknown): boolean {
     if (error instanceof SessionError || error instanceof SessionRefreshError) return false;
@@ -360,7 +329,7 @@ export function writeFailureMessage(error: unknown): string {
         if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return translate("requests.reason.requests_disabled");
         if (detail?.trim()) return detail;
     }
-    return errorState(error).message;
+    return errorMessage(errorState(error));
 }
 
 /** Apple RequestErrorCopy.unconfirmed*Message; Apple TV has no Follow, so it keeps this client's wording. */
@@ -372,7 +341,7 @@ export function unconfirmedWriteMessage(action: RequestWrite): string {
 /** What to tell the person; undefined for an error that is not a server or session answer (a defect). */
 export function failureText(error: unknown, current: Route): string | undefined {
     if (error instanceof SessionError) {
-        return error.reason === "unavailable" ? "The server ran into a problem. Try again in a moment." : "This TV is no longer signed in.";
+        return error.reason === "unavailable" ? translate("shell.error.serverProblem") : "This TV is no longer signed in.";
     }
     if (!(error instanceof ApiError)) {
         return undefined;
@@ -384,7 +353,7 @@ export function failureText(error: unknown, current: Route): string | undefined 
     if (error.status === 404) {
         if (current.kind === "calendar") return "Could not load Calendar. Try again.";
         if (current.kind === "audiobook") return "This audiobook is no longer available.";
-        if (current.kind === "boxSet") return "This box set isn't available. Box sets may be turned off for this library, or too few of its movies are here.";
+        if (current.kind === "boxSet") return translate("boxSets.unavailableMessage");
         return current.kind === "library"
             ? "This library is no longer available."
             : current.kind === "season"
@@ -398,5 +367,5 @@ export function failureText(error: unknown, current: Route): string | undefined 
     if (kind === "invalid_response") {
         return "The server sent an answer this TV could not read.";
     }
-    return error.transient ? "The server ran into a problem. Try again in a moment." : "Something went wrong. Try again.";
+    return error.transient ? translate("shell.error.serverProblem") : "Something went wrong. Try again.";
 }

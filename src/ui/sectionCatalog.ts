@@ -3,8 +3,17 @@ import type { Route } from "./browseRoutes.ts";
 import type { FocusItem, View } from "./browseFocus.ts";
 import { actionButton, cardItem, errorView, failureError, type ViewContext } from "./browseViews.ts";
 import { loadingMore } from "./catalogFeed.ts";
+import { isolated, markEnglishOnly } from "../i18n/direction.ts";
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 import { sectionCountLabel, type SectionSnapshot } from "./sectionCatalogState.ts";
+
+/** A route's own failure note: keyed text reads in the shown language, the rest is English whatever the page is. */
+function failureNote(text: string): HTMLElement {
+    const note = el("p", "browse-text", text);
+    markEnglishOnly(note, text);
+    return note;
+}
 
 const MIN_GRID_WIDTH = 1664;
 const POSTER_WIDTH = 260;
@@ -45,17 +54,17 @@ export class SectionCatalog {
         if (page === undefined || page.items.length === 0) {
             const unavailable = this.snapshot?.unavailable === true;
             if (!unavailable && route.failure !== undefined) return errorView(name, failureError(route.failure, route.error), retry, back, signIn);
-            const message = unavailable ? "Row unavailable" : busy ? "Loading" : "Nothing here yet";
+            const message = unavailable ? translate("rowPage.unavailable") : busy ? translate("common.loading") : translate("rowPage.empty");
             const owner = el("div", "section-catalog-state", message);
             owner.tabIndex = 0;
             owner.setAttribute("role", route.failure === undefined ? "status" : "alert");
-            owner.setAttribute("aria-label", busy ? `Loading ${route.title}` : message);
+            owner.setAttribute("aria-label", busy ? translate("rowPage.loading", { title: isolated(route.title) }) : message);
             owner.setAttribute("data-focus", "state");
             content.push(owner);
-            if (route.failure !== undefined) content.push(el("p", "browse-text", route.failure));
-            else if (unavailable) content.push(el("p", "browse-text", "This row is no longer available."));
-            else if (!busy) content.push(el("p", "browse-text", "This row does not have any items right now."));
-            const controls = route.failure === undefined ? [{ key: "state", element: owner }] : [actionButton("retry", "Try again", retry)];
+            if (route.failure !== undefined) content.push(failureNote(route.failure));
+            else if (unavailable) content.push(el("p", "browse-text", translate("rowPage.unavailableBody")));
+            else if (!busy) content.push(el("p", "browse-text", translate("rowPage.emptyBody")));
+            const controls = route.failure === undefined ? [{ key: "state", element: owner }] : [actionButton("retry", translate("common.tryAgain"), retry)];
             if (route.failure !== undefined) content.push(...controls.map(item => item.element));
             return { name, content, zones: [{ id: "state", layout: "column", items: controls }], focus: { zone: "state", key: controls[0]?.key ?? "state" }, back };
         }
@@ -92,9 +101,9 @@ export class SectionCatalog {
         this.cards = page.items;
         content.push(this.grid);
         if (busy) content.push(loadingMore());
-        const actions = route.failure === undefined ? [] : [actionButton("retry", "Try again", retry)];
+        const actions = route.failure === undefined ? [] : [actionButton("retry", translate("common.tryAgain"), retry)];
         if (route.failure !== undefined) {
-            const error = el("p", "browse-text", route.failure);
+            const error = failureNote(route.failure);
             error.setAttribute("role", "alert");
             content.push(error, ...actions.map(item => item.element));
         }
