@@ -455,7 +455,7 @@ This preserves server-resolved membership, preferences, episode cards and cursor
 Home's row band begins at y596 with height 484, and the bottom-anchored marquee frame is at x88/y256, 880×280, at the 1920×1080 logical viewport.
 Rows start at x80 and retain an 80 px trailing reveal clearance.
 The top bar uses the packaged 96 px wordmark, 26 pt semibold labels, 56 px tab capsules and 58 px icon targets; this slice preserves its existing destinations and ordering.
-The backdrop follows `TVRootHeroBackdrop`: a top-right 1228.8×756 artwork block with multiplied horizontal/vertical masks, a 190 px top scrim and sampled base/accent/shadow washes over black.
+The backdrop follows `TVRootHeroBackdrop`: a top-right 1228.8×756 artwork block with multiplied horizontal/vertical masks, a 190 px top scrim and a sampled colour wash over black: one colour per screen corner on Home, For You and the library roots, and the base, accent and shadow washes on item details.
 Home immediately uses small artwork while an optional cold-start probe runs, then upgrades once through its existing load owner when the answer advertises better artwork sizing.
 The upgrade merges only artwork for retained section/card identities, preserving focus, content, hidden-library choices and in-flight metadata reads.
 It waits while Card actions is open so its artwork response cannot clear a watched-state invalidation; closing the dialog resumes the existing content reload or optional upgrade path.
@@ -530,7 +530,9 @@ Root transitions take 200 ms, and reduced motion snaps transitions and scrolling
 Deliberate pill and same-tab scope changes crossfade for 200 ms with a 12 px upward drift of incoming content.
 Focus and remote input take effect synchronously; chrome and pills stay mounted above the outgoing layer.
 The marquee crossfades without translation so its fixed backdrop keeps the viewport as its containing block.
-On Home, For You and library roots the tint wash is one bitmap the marquee keeps (`HeroWash`, silo-apple `TVHeroAmbientWash`, 6eea7cf7): 960 x 540, two screen points per pixel, with the base, accent and shadow stops of `washBackground` drawn into a canvas.
+On Home, For You and library roots the tint wash is one bitmap the marquee keeps (`HeroWash`, silo-apple `TVHeroAmbientWash`, 6eea7cf7): 960 x 540, two screen points per pixel, drawn into a canvas as black under four corner glows (silo-apple c5453eae, `TVHeroAmbientRenderer`): each screen corner takes its own colour from the same quarter of the art (`HeroBackdropPalette.sampleCorners`: coverage and saturation picked, kept dark, the top-leading corner darkest), fading from full strength to nothing over 4/3 of the screen's width and height, drawn bottom-trailing, bottom-leading, top-trailing, then top-leading, so the four overlap.
+Item details keep the base, accent and shadow wash (`washBackground`).
+In a right-to-left page the wash keeps these physical corners, as Apple's does: its bitmap is drawn with `Image(decorative:)` at the corners' unit-square centres, and neither mirrors (rendered under `\.layoutDirection = .rightToLeft` on macOS, the image keeps its physical left; only the SwiftUI `EllipticalGradient` beneath it flips, and the opaque bitmap covers it). So in Arabic the darkest top-leading corner stays at the physical top-left while the art and the marquee move right; the test in `test/ui/heroWash.test.ts` pins it, and an Arabic Home capture on Apple TV is the remaining check.
 A new tint fades in over the old bitmap for 240 ms, which stays opaque until it finishes; the tint sampled from the image redraws the newest bitmap in place.
 Each backdrop layer is only the artwork's own 1228.8 x 756 box, and the 190 px top scrim is one shared strip above every layer, so a swap no longer draws a full-screen layer of gradients (the S95C trace on #515 put about 72% of Home Down raster time in the two full-screen layers).
 Details, Requests and box sets keep the CSS wash.
