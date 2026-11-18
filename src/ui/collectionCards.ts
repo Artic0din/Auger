@@ -58,6 +58,17 @@ export function collectionPreview(card: CollectionFace & { readonly backdropUrl?
     return { id: card.id, type: "movie", title: card.title, overview: translate("library.titleCount", { count: card.itemCount, count_text: groupedCount(card.itemCount) }), backdropUrl: card.backdropUrl ?? card.posterUrl, posterUrl: card.posterUrl, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined };
 }
 
+/**
+ * A row card's hero preview (TVSkylineSectionFeed.marqueeContent(for: SectionCollectionCard)): the meta line holds the item
+ * count and, for another profile's shared collection, "by Name"; there is no synopsis. The backdrop is the server's when it sent one.
+ */
+export function collectionRowPreview(card: SectionCollectionCard, owner: string | undefined): Card {
+    const parts: string[] = [];
+    if (card.itemCount > 0) parts.push(translate("collections.itemCount", { count: card.itemCount, count_text: groupedCount(card.itemCount) }));
+    if (owner !== undefined) parts.push(translate("collections.card.byOwner", { owner }));
+    return { ...collectionPreview(card), overview: undefined, metaParts: parts };
+}
+
 export interface CollectionRowHandlers {
     readonly context: ViewContext;
     /** Opens the card: a server collection in its library (`library` is the page's own, when it has one), a personal one on its page. */
@@ -72,7 +83,7 @@ export function collectionRowCards(section: HomeSection, rowTitle: string, handl
         item.element.setAttribute("aria-label", collectionSpoken(card));
         item.element.append(collectionArt(card, "browse-art", handlers.context.baseUrl), el("span", "browse-card-title", card.title));
         if (card.itemCount > 0) item.element.append(el("span", "browse-card-subtitle", countLine(card.itemCount, undefined)));
-        item.element.addEventListener("focus", () => handlers.context.preview?.(collectionPreview(card), rowTitle, false, false, false));
+        item.element.addEventListener("focus", () => handlers.context.preview?.(collectionRowPreview(card, handlers.context.ownerName?.(card.creatorProfileId)), rowTitle, false, false, false));
         return item;
     });
 }
