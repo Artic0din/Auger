@@ -56,6 +56,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
 - Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
 - A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
