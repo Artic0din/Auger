@@ -45,9 +45,10 @@ def required_patterns(base: str) -> list[str]:
 
 
 def evidence_text(body: str) -> str:
+    body = body.replace("\r\n", "\n")  # GitHub sends PR bodies with CRLF line endings.
     body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
-    body = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
-    body = re.sub(r"`[^`\n]*`", "", body)
+    body = re.sub(r"^[ \t>]*(`{3,}|~{3,})[^`\n]*\n.*?^[ \t>]*\1\1?[`~]*[ \t]*$", "", body, flags=re.DOTALL | re.MULTILINE)
+    body = re.sub(r"(`+)[^\n]*?\1", "", body)
     sections, level = [], None
     for line in body.splitlines():
         heading = HEADING.match(line)

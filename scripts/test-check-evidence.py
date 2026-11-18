@@ -51,6 +51,11 @@ class CheckEvidenceTest(unittest.TestCase):
                      "## Validation\n\n![x](https://example.com/shot.png)\n\n## Evidence\n\nEvidence: none, no user-visible change\n",
                      "## Evidence\n\nStill need to capture before.png and after.png.\n",
                      "## Evidence\n\n`https://example.com/after.png`\n",
+                     "## Evidence\n\n``a ` https://example.com/after.png``\n",
+                     "## Evidence\n\n~~~markdown\n![a](https://example.com/after.png)\n~~~\n",
+                     "## Evidence\r\n\r\n```\r\n![a](https://example.com/after.png)\r\n```\r\n",
+                     "## Evidence\n\n- Example:\n\n    ```\n    ![a](https://example.com/after.png)\n    ```\n",
+                     "## Evidence\n\n```\n![a](https://example.com/after.png)\n`````\n",
                      "## Evidence\n\nPending.\n\n# Risks\n\n![diagram](https://example.com/diagram.png)\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
@@ -62,7 +67,8 @@ class CheckEvidenceTest(unittest.TestCase):
         for body in (f"## Evidence\n\n| Before | After |\n| --- | --- |\n| ![a]({CAPTURE}) | ![b]({CAPTURE}) |\n",
                      f"## Signed comparison\n\n<img src=\"{CAPTURE}\">\n",
                      "## Apple evidence\n\n### Home\n\n![home](https://example.com/home.png)\n",
-                     f"# Evidence\n\n![tv]({CAPTURE})\n"):
+                     f"# Evidence\n\n![tv]({CAPTURE})\n",
+                     f"## Evidence\n\nRan ```npm test```.\n\n![tv]({CAPTURE})\n\n```\nlog\n```\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
