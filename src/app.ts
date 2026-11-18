@@ -12,7 +12,8 @@ import { mountAccounts, type AccountsScreen } from "./ui/accounts.ts";
 import { cachedBranding } from "./ui/brandingCache.ts";
 import { AccountDirectory, AccountVault, type SavedAccount } from "./session/accounts.ts";
 import { openSecretStore } from "./session/secretStore.ts";
-import { translate } from "./i18n/translate.ts";
+import { onCatalogLoaded, translate } from "./i18n/translate.ts";
+import { lateRedraw } from "./ui/selectRelease.ts";
 
 export interface AppOptions {
     readonly core: SessionCoreDeps;
@@ -323,13 +324,20 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             else showSignIn(undefined, false, account);
         } catch {
             if (destroyed) return;
-            startup = new ScreenHost(root);
-            const controls = [button("retry", translate("common.retry"), () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
-                startup?.destroy(); startup = undefined;
-                activeCore = { ...activeCore, publicStorage: undefined, keyManager: undefined };
-                showSignIn();
-            })];
-            startup.show({ name: "accounts-storage-error", content: [el("h1", "signin-title", "Saved accounts unavailable"), el("p", "signin-text", "Your saved sign-ins have been kept. Retry, or sign in for this session."), actions(controls)], controls, focus: "retry", back: undefined });
+            const host = new ScreenHost(root);
+            startup = host;
+            const draw = (): void => {
+                const controls = [button("retry", translate("common.retry"), () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
+                    startup?.destroy(); startup = undefined;
+                    activeCore = { ...activeCore, publicStorage: undefined, keyManager: undefined };
+                    showSignIn();
+                })];
+                host.show({ name: "accounts-storage-error", content: [el("h1", "signin-title", "Saved accounts unavailable"), el("p", "signin-text", "Your saved sign-ins have been kept. Retry, or sign in for this session."), actions(controls)], controls, focus: "retry", back: undefined });
+            };
+            draw();
+            // A cold launch fetches the shown language while this draws, so the button is drawn again when the file lands (the focused control stays).
+            const late = lateRedraw(() => false, () => { if (startup === host) draw(); else stopCatalog(); });
+            const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
         }
     };
     void migrate();

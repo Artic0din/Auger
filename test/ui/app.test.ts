@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
@@ -6,9 +7,13 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -866,6 +871,19 @@ appTest("unreadable account storage shows recovery and preserves the saved bytes
     await tv.page.getByRole("button", { name: "Continue without saved accounts", exact: true }).click();
     await tv.page.locator('[data-screen="entry"]').waitFor();
     await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; });
+});
+
+for (const language of ["de", "ar"]) appTest(`the saved-accounts recovery screen is drawn again in ${language} when the language file lands after it drew, keeping the focused control`, async tv => {
+    const catalog = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${language}.json`, import.meta.url), "utf8")) as Record<string, string>;
+    // The shown language is set but its file has not arrived, as on a cold launch: the screen draws in English.
+    await tv.page.evaluate(tag => { window.appHarness.destroy(); window.appHarness.showLanguage(tag); window.appHarness.storage.failGet = true; window.appHarness.mount(); }, language);
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Retry");
+    await tv.page.locator('[data-focus="continue"]').focus();
+    await tv.page.evaluate(([tag, file]) => window.appHarness.landLanguage(tag, file), [language, catalog] as const);
+    await tv.eventually(async () => (await tv.page.locator('[data-focus="retry"]').innerText()) === translate("common.retry", undefined, language), "the Retry button reads the catalog");
+    assert.equal(await tv.focused(), "continue", "the control the viewer moved to keeps focus");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
 });
 
 appTest("failed live account selection returns to profiles without another directory write", async tv => {
