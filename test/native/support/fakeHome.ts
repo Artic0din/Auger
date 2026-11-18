@@ -14,7 +14,8 @@ export class FakeHome extends FakeCatalog {
             { id: "hero/opaque", sectionType: "recently_added", title: "Featured", items: ["movie:m0004"] },
             { id: "recent/12", sectionType: "recently_added", title: "Recently Added in Movies", items: [...this.titles.keys()].filter(id => id.startsWith("movie:m")) },
             { id: "because/opaque", sectionType: "because_you_watched", title: "Because you watched", items: ["movie:m0005"] },
-            { id: "resume/opaque", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"] },
+            // A total above the cards sent keeps this row partial, so it has an Explore all card (Apple SectionRow.showsWholeSection).
+            { id: "resume/opaque", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"], totalCount: 5 },
             { id: "future/opaque", sectionType: "future_valid_row", title: "Server Picks", items: ["movie:m0006"] },
             { id: "for/you", sectionType: "recommended_for_you", title: "Your discoveries", items: ["movie:m0007"] },
         ];
