@@ -3,7 +3,7 @@
 // requests and source positions, not only what the player shows.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { type PlaybackDeps, type PlaybackError, PlaybackController, type PlaybackView, type PlayRequest } from "../../src/player/controller.ts";
 import type { EpisodeSpoilerSettings } from "../../src/ui/episodeSpoilers.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -3217,5 +3217,125 @@ test("the HUD's Now playing and Stats rows name the plan's audio track and follo
     r.controller.setPaused(true);
     await r.h.clock.advance(0);
     assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Paused" }]);
+    r.controller.destroy();
+});
+
+// --- HLS playlists AVPlay cannot read (#650): the check runs before the blocking open and prepare ---
+
+const DEFINE_PLAYLIST = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:8",
+    '#EXT-X-DEFINE:NAME="silo_query",VALUE="st=abc&token=xyz"',
+    "#EXT-X-TARGETDURATION:2",
+    "#EXTINF:2.000,",
+    "segment/seg_0.ts?{$silo_query}",
+    "#EXT-X-ENDLIST",
+].join("\n");
+
+const PLAIN_PLAYLIST = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:2",
+    "#EXTINF:2.000,",
+    "segment/seg_0.ts?st=abc",
+    "#EXT-X-ENDLIST",
+].join("\n");
+
+const PLAYLIST_REPLY = (text: string) => ({ status: 200, text, headers: { "Content-Type": "application/vnd.apple.mpegurl" } });
+
+function opens(r: Rig): string[] {
+    return r.avplay.calls.filter(call => call.startsWith("open "));
+}
+
+async function playHls(r: Rig, delivery = "server_transcode_hls"): Promise<void> {
+    r.server.next.push({ delivery, protocol: "hls", container: "mpegts", url: (id: string) => `/api/v2/stream/${id}?st=signed` });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+}
+
+test("an HLS playlist that needs variable substitution is refused before AVPlay opens it (#650)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+        await playHls(r);
+        assert.deepEqual(opens(r), [], "AVPlay is never given the stream");
+        assert.deepEqual(r.avplay.calls.filter(call => call !== "close"), [], "nothing reaches AVPlay but the cleanup close");
+        const view = last(r.views);
+        assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+        assert.equal(ops(r.h).at(-1), "DELETE /playback/S1", "the session is stopped");
+        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
+        assert.equal(r.h.clock.scheduled, 0);
+        r.controller.dismissError();
+        assert.deepEqual(r.exits, ["error:playback_failed"]);
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a segment address that still holds a variable is refused even without the define line (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST.replace("st=abc", "{$silo_query}"));
+    await playHls(r, "server_remux_hls");
+    assert.deepEqual(opens(r), []);
+    const view = last(r.views);
+    assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+    r.controller.destroy();
+});
+
+test("an HLS playlist AVPlay can read is opened as before, with the same address the check read (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
+    await playHls(r);
+    const read = r.h.fake.requests.find(request => request.path.startsWith("/stream/"));
+    assert.ok(read !== undefined);
+    assert.equal(read.redirect, "error");
+    assert.equal(read.headers.authorization, undefined, "the media token is in the address, as AVPlay would send it");
+    assert.match(read.path, /\?st=signed&token=/);
+    assert.equal(opens(r).length, 1);
+    assert.equal(opens(r)[0], `open ${r.h.fake.origin}/api/v2${read.path}`);
+    r.controller.destroy();
+});
+
+for (const [name, reply] of [["answers 404", { status: 404, text: "" }], ["answers 503", { status: 503, text: "" }]] as const) test(`a playlist the check cannot read (${name}) is left to AVPlay (#650)`, async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = reply;
+    await playHls(r);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a playlist that never answers is left to AVPlay after five seconds (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+    r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000");
+    await playHls(r);
+    assert.deepEqual(opens(r), []);
+    await r.h.clock.advance(4999);
+    assert.deepEqual(opens(r), []);
+    await r.h.clock.advance(1);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("direct play reads no playlist (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+    await playMovie(r);
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path.startsWith("/stream/")), []);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("leaving while the playlist is being read opens nothing (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
+    const held = r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000", true);
+    await playHls(r);
+    r.controller.back();
+    held.release();
+    await r.h.clock.advance(0);
+    assert.deepEqual(opens(r), []);
     r.controller.destroy();
 });

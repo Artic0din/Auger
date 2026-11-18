@@ -63,6 +63,11 @@ const SUBTITLE_IDLE_TIMEOUT_MS = 60000;
 /** Apple's `ExternalSubtitlePreparationPolicy.maximumFileBytes`. */
 const SUBTITLE_MAX_BYTES = 4 * 1024 * 1024;
 
+/** The opening of an HLS playlist is enough to see how it is written; `#EXT-X-DEFINE` is a header line. */
+const PLAYLIST_HEAD_BYTES = 64 * 1024;
+/** Longer than a healthy playlist takes to answer; a slower one is left to AVPlay. */
+const PLAYLIST_HEAD_TIMEOUT_MS = 5000;
+
 /**
  * A subtitle download the origin broke off or let go quiet after the answer began: `text` is what
  * arrived. Apple's `SubtitleDecoderError.truncated`; a refused or unreachable first fetch is not one.
@@ -76,6 +81,38 @@ export class SubtitleTruncated extends Error {
 }
 
 export class NativeHttp {
+    /**
+     * The first 64 KiB of an HLS playlist, read the way AVPlay will read it (address only, no headers). It
+     * throws on any refusal or silence, which the caller treats as "unknown", not as a verdict.
+     */
+    async playlistHead(url: string, signal: AbortSignal): Promise<string> {
+        const address = new URL(url);
+        if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid playlist URL");
+        const abort = new AbortController();
+        const cancel = (): void => abort.abort();
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+        const timeout = this.clock.schedule(cancel, PLAYLIST_HEAD_TIMEOUT_MS);
+        try {
+            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", cache: "no-store" });
+            if (!response.ok || response.body === null) throw new Error("Playlist read failed");
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let text = "";
+            for (let bytes = 0; bytes < PLAYLIST_HEAD_BYTES;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                bytes += chunk.value.byteLength;
+                text += decoder.decode(chunk.value, { stream: true });
+            }
+            cancel();
+            return text + decoder.decode();
+        } finally {
+            timeout();
+            signal.removeEventListener("abort", cancel);
+        }
+    }
+
     async subtitleText(url: string, signal: AbortSignal): Promise<string> {
         const address = new URL(url);
         if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid subtitle URL");

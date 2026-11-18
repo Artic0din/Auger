@@ -287,3 +287,19 @@ test("leaving, the size limit and a refused answer are not cuts", async () => {
     const refused = new NativeHttp(http.base, device, async () => new Response("", { status: 502 }), clock).subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
     assert.ok(!((await refused) instanceof SubtitleTruncated));
 });
+
+test("a playlist check reads only the head, stays on permitted origins and sends no headers (#650)", async () => {
+    const { clock, http } = setup();
+    let pulled = 0;
+    const big = (_url: string, init: RequestInit): Promise<Response> => {
+        assert.equal(init.headers, undefined, "AVPlay sends none, so the check sends none");
+        assert.equal(init.redirect, "error");
+        const line = new TextEncoder().encode(`#EXT-X-DEFINE:NAME="silo_query",VALUE="x"\n${"#EXTINF:2.0,\nsegment/seg.ts?{$silo_query}\n".repeat(1000)}`);
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ pull(stream) { pulled++; stream.enqueue(line); } }), { status: 200 }));
+    };
+    const reader = new NativeHttp(http.base, device, big, clock);
+    const head = await reader.playlistHead(`${http.base.baseUrl}/api/v2/stream/s?st=1`, new AbortController().signal);
+    assert.match(head, /^#EXT-X-DEFINE/);
+    assert.ok(pulled <= 3, `a long playlist is not read to its end (${pulled} reads)`);
+    await assert.rejects(reader.playlistHead("http://silo.example.test/api/v2/stream/s", new AbortController().signal), /Invalid playlist URL/);
+});

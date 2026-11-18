@@ -510,6 +510,11 @@ URLs failing `isPermittedUrl` fail the playback.
 The code comment calls this a "Gate C candidate" from silo-server's `docs/playback-api.md` (at the commit in `src/contracts/v2/SOURCE`), so the server's acceptance of the `token` query on stream and subtitle URLs is not marked final.
 On `visibilitychange` the stream URL is rebuilt with a fresh token (`urlWithToken`).
 
+Before `open`, a `server_remux_hls` or `server_transcode_hls` plan has its playlist read once with that same address (`NativeHttp.playlistHead`: the first 64 KiB, no headers, 5 s limit).
+A playlist with `#EXT-X-DEFINE`, or a `{$` left in a segment address, is not given to AVPlay: `prepareAsync` on it stops the page's JavaScript until the TV closes Silo (#650, #314), so no timer can catch it.
+The player shows the playback error page and the console logs the reason.
+A playlist that cannot be read here (refused, no answer, another origin's CORS) is no verdict, and AVPlay gets it as before.
+
 Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
 After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
 A selection without its `index`, a stream with no matching AUDIO row, or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
