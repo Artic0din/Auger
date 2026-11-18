@@ -408,6 +408,31 @@ test("sidecar subtitles apply profile appearance and timing without blocking pla
     }
 });
 
+test("a sidecar that ends early keeps its cues on screen, is refetched after 2 s and never shows the failure", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 0, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n", cut: true });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n00:20.000 --> 00:22.000\nSecond" });
+    await playMovie(r);
+    r.avplay.tick(13000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "First", "the cues that arrived show while the file is fetched again");
+    assert.equal(view.captions?.status, "ready");
+    assert.ok(!view.tracks.notices.some(notice => /Subtitle data|Loading subtitles/.test(notice)));
+    assert.equal(view.captions?.cueCount, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/captions")).length, 1);
+    await r.h.clock.advance(2000);
+    r.avplay.tick(21000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Second");
+    assert.equal(view.captions?.cueCount, 2);
+    assert.ok(!view.tracks.notices.some(notice => /Subtitle data|Loading subtitles/.test(notice)));
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/captions")).length, 2);
+    r.controller.destroy();
+});
+
 test("an audio replan with the same subtitle artifact keeps cues and preferences without refetching", async () => {
     const r = await rig();
     const artifact = { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 };
