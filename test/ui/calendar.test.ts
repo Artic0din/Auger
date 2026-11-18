@@ -37,8 +37,10 @@ test("Calendar root opens a weekly catalog journey by remote", async () => {
         await tv.page.locator('[data-focus="calendar"]').focus();
         await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => await tv.page.locator('.browse[data-view="calendar"]').count() === 1, "Calendar root");
+        // A request leaves the page before the fake records it, so wait for the read before counting it.
+        await tv.eventually(async () => tv.fake.requests.some(r => r.path.startsWith("/calendar?")), "the weekly read");
         assert.equal(tv.fake.requests.filter(r => r.path.startsWith("/calendar?")).length, 1, "one weekly read");
-        assert.equal(await tv.page.locator(".calendar-day").count(), 7, "Monday through Sunday");
+        await tv.eventually(async () => await tv.page.locator(".calendar-day").count() === 7, "Monday through Sunday");
     } finally { await tv.page.context().close(); }
 });
 
