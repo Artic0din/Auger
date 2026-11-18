@@ -13,7 +13,7 @@ import sys
 
 NOT_NEEDED = "evidence-not-needed"
 REQUIRED = "evidence-required"
-HEADING = re.compile(r"^(#{2,3})\s+(.*)$")
+HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 EVIDENCE_HEADING = re.compile(r"evidence|comparison", re.IGNORECASE)
 # A capture is a URL: a GitHub upload, or an http(s) link to an image or video. Bare filenames are not captures.
 MEDIA = re.compile(

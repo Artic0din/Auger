@@ -50,7 +50,8 @@ class CheckEvidenceTest(unittest.TestCase):
                      "## Evidence\n\n<!-- ![x](https://github.com/user-attachments/assets/a) -->\nPending.\n",
                      "## Validation\n\n![x](https://example.com/shot.png)\n\n## Evidence\n\nEvidence: none, no user-visible change\n",
                      "## Evidence\n\nStill need to capture before.png and after.png.\n",
-                     "## Evidence\n\n`https://example.com/after.png`\n"):
+                     "## Evidence\n\n`https://example.com/after.png`\n",
+                     "## Evidence\n\nPending.\n\n# Risks\n\n![diagram](https://example.com/diagram.png)\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(1, result.returncode, result.stdout)
@@ -60,7 +61,8 @@ class CheckEvidenceTest(unittest.TestCase):
         head = self.commit({"app/index.html": "<html></html>\n"})
         for body in (f"## Evidence\n\n| Before | After |\n| --- | --- |\n| ![a]({CAPTURE}) | ![b]({CAPTURE}) |\n",
                      f"## Signed comparison\n\n<img src=\"{CAPTURE}\">\n",
-                     "## Apple evidence\n\n### Home\n\n![home](https://example.com/home.png)\n"):
+                     "## Apple evidence\n\n### Home\n\n![home](https://example.com/home.png)\n",
+                     f"# Evidence\n\n![tv]({CAPTURE})\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
@@ -84,7 +86,9 @@ class CheckEvidenceTest(unittest.TestCase):
 
     def test_reads_the_rules_from_the_base_commit(self):
         head = self.commit({".github/evidence.yml": "require: []\n", "src/ui/home.ts": "export {};\n"})
-        self.assertEqual(1, self.check(head).returncode)
+        result = self.check(head)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("needs evidence because it changes src/ui/home.ts", result.stdout)
 
 
 if __name__ == "__main__":
