@@ -1583,7 +1583,8 @@ for (const mode of ["on", "off", "pending", "failed"] as const) {
                 return;
             }
             await tv.jump(300);
-            assert.equal(await title.textContent(), "Movie 0006");
+            // The title text draws once the settings answer says art is off; wait for it rather than read it after a fixed step.
+            await tv.eventually(async () => await title.textContent() === "Movie 0006", "the text title");
             assert.equal(logos, 0, "no logo is requested once the profile's off is known");
         } finally { hold?.release(); }
     }, catalog => enrichHome(catalog, badgeFields), (settings, tv) => {
