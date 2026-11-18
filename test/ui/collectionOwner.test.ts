@@ -95,6 +95,8 @@ test("names that arrive after focus has left the row update the hero still showi
     await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
     await tv.page.locator('[data-view="home"] [data-section="picks"]').waitFor();
     await focusCard(tv, "user:kid", "Kid's picks");
+    // The list is read once Home's enrichment lands, which can be after the card is focused; release only once the read is held.
+    await tv.eventually(async () => tv.fake.heldReplies === 1, "the profile list is held");
     assert.equal(await meta(tv).innerText(), "3 items", "no name yet: the list is held");
     // Up from the row to the top bar: the hero stays on the collection while focus is in the bar.
     await tv.page.locator('.skyline-roots [data-focus]').first().focus();

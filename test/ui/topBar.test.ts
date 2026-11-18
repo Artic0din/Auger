@@ -963,6 +963,9 @@ for (const reduced of [false, true]) test(`the avatar keeps its white 18% disc o
     try {
         if (reduced) await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await start(tv);
+        // A late answer redraws the top bar; a style read of the replaced avatar comes back empty.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home's answers delivered");
+        await afterPaint(tv);
         const avatar = tv.page.locator('[data-focus="profiles"]');
         const look = () => avatar.evaluate(node => {
             for (const animation of document.getAnimations()) animation.finish();
