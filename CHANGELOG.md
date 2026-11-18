@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A skip interval that cannot be saved because the connection failed, or because the server cannot store it, now says so with Apple TV's message for that interval (rewind or fast-forward, video or audiobook), in the language you pick. Its English now reads "Couldn't save the video rewind interval. Check the connection and try again." where it said "Could not confirm settings with the server." Other failures, such as a refused value or too many requests, keep their wording.
 - The video skip pickers in Settings › Playback now open as "Video Skip Back" and "Video Skip Forward", as on Apple TV, and read in the language you pick.
 - A movie or series page now offers Not Interested in More, as on Apple TV, reading Show in Recommendations once the title is marked. A new mark takes the title out of Home's recommendation rows and every For You row, and Back lands on the card that took its place.
 - A shared collection in a Home or library row of collections now reads `by Name` in the hero beside its item count, as on Apple TV, in the language you pick. The hero's line for any collection is now Apple's item count, not a synopsis.
