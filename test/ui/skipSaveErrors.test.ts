@@ -7,9 +7,13 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -79,6 +83,8 @@ async function failingSave(language: Language, interval: typeof INTERVALS[number
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
+        // The profile menu opens in the language the top bar shows, so wait for the language's file to land.
+        if (language !== "en") await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").allInnerTexts()).includes(translate("topBar.forYou", undefined, language)), `the ${language} top bar`);
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.page.keyboard.press("Enter");
         await tv.page.getByRole("menuitem", { name: SETTINGS.settings[language], exact: true }).click();

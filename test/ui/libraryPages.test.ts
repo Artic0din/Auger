@@ -465,6 +465,9 @@ async function browseReady(tv: Tv): Promise<void> {
 
 page("Sort and Filter panels use the top-bar panel chrome and fade in and out", async tv => {
     await browseReady(tv);
+    // A late answer redraws Browse and replaces the open panel's nodes, which then carry no fade.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Browse's answers delivered");
+    await afterPaint(tv);
     await tv.page.locator('[data-focus="sort"]').focus();
     await tv.page.keyboard.press("Enter");
     const panel = tv.page.locator(".browse .browse-sort-panel");
