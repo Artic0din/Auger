@@ -12,24 +12,25 @@ registerSourceCatalogs();
 const english = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/en.json", import.meta.url), "utf8")) as Record<string, string>;
 const read = (path: string): string => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
-/** [file, the Apple key it reads, the English word it showed, the call that held the literal]. */
+/** [file, the Apple key it reads, the English word it showed, the call that held the literal, the call that reads the key on that same control]. */
 const SITES = [
-    ["src/app.ts", "common.retry", "Retry", 'button("retry", "Retry"'],
-    ["src/app.ts", "signIn.backToProfiles", "Back to profiles", '"Back to profiles"'],
-    ["src/app.ts", "common.back", "Back", 'button("back", "Back"'],
-    ["src/bootstrap.ts", "common.tryAgain", "Try again", 'button("retry", "Try again"'],
-    ["src/ui/boxSetView.ts", "common.back", "Back", 'actionButton("back", "Back"'],
-    ["src/ui/exitDialog.ts", "common.cancel", "Cancel", 'button("cancel-exit", "Cancel"'],
-    ["src/ui/browseDetails.ts", "rowPage.close", "Close", 'actionButton("close-more", "Close"'],
-    ["src/ui/profiles.ts", "account.signInAgain", "Sign in again", 'button("signin", "Sign in again"'],
-    ["src/ui/browseRoutes.ts", "account.profiles", "Profiles", 'actionButton("profiles", "Profiles"'],
+    ["src/app.ts", "common.retry", "Retry", 'button("retry", "Retry"', 'button("retry", translate("common.retry")'],
+    ["src/app.ts", "signIn.backToProfiles", "Back to profiles", 'button("accounts", "Back to profiles"', 'button("accounts", translate("signIn.backToProfiles")'],
+    ["src/app.ts", "common.back", "Back", 'button("back", "Back"', 'button("back", translate("common.back")'],
+    ["src/bootstrap.ts", "common.tryAgain", "Try again", 'button("retry", "Try again"', 'button("retry", translate("common.tryAgain")'],
+    ["src/ui/boxSetView.ts", "common.back", "Back", 'actionButton("back", "Back"', 'actionButton("back", translate("common.back")'],
+    ["src/ui/exitDialog.ts", "common.cancel", "Cancel", 'button("cancel-exit", "Cancel"', 'button("cancel-exit", translate("common.cancel")'],
+    ["src/ui/browseDetails.ts", "rowPage.close", "Close", 'actionButton("close-more", "Close"', 'actionButton("close-more", translate("rowPage.close")'],
+    ["src/ui/profiles.ts", "account.signInAgain", "Sign in again", 'button("signin", "Sign in again"', 'button("signin", translate("account.signInAgain")'],
+    ["src/ui/browseRoutes.ts", "account.profiles", "Profiles", 'actionButton("profiles", "Profiles"', 'actionButton("profiles", translate("account.profiles")'],
 ] as const;
 
-test("each generic word reads its Apple key, and the key's English is the word it showed", () => {
-    for (const [file, key, word, literal] of SITES) {
+test("each generic word reads its Apple key on its own control, and the key's English is the word it showed", () => {
+    for (const [file, key, word, literal, call] of SITES) {
         assert.equal(english[key], word, `${key} is "${word}" in English`);
         const source = read(file);
-        assert.ok(source.includes(`"${key}"`), `${file} reads ${key}`);
+        // The key must sit on the button it labels: a key that moves to another call, a comment or unused code does not pass.
+        assert.ok(source.includes(call), `${file} draws ${call}`);
         assert.ok(!source.includes(literal), `${file} no longer draws the English literal ${literal}`);
     }
 });
