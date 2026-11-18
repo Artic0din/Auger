@@ -951,7 +951,7 @@ function stepWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index
 
 /** Makes `nodes` the container's children; a node already in its place is not moved, so it keeps focus. */
 /** The views that follow the page's direction: Home, Search, Requests, Calendar, Settings, Change Account and its sibling screens, Details pages and their seasons (`item:` and `season:`), the Watchlist, Favorites and History pages (`personal:`), the Person page (`person:`), and a library's Browse page (the `library-browse` container class). */
-const MIRRORED_VIEW = /^(home(:|$)|item:|season:|search$|requests:|calendar$|settings(:|$)|watchParty:|personal:|person:|accounts-|change-account$|account-expired$)/;
+const MIRRORED_VIEW = /^(home(:|$)|item:|audiobook:|season:|search$|requests:|calendar$|settings(:|$)|watchParty:|personal:|person:|accounts-|change-account$|account-expired$)/;
 
 function place(container: HTMLElement, nodes: readonly HTMLElement[]): void {
     // Remove replaced siblings first so retained focus/press hosts never need a DOM move.
