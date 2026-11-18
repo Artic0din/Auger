@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Legg til en konto",
  "changeAccount.current": "Nåværende",
  "changeAccount.signInOn": "Logg på {server}",
+ "collections.card.byOwner": "av {owner}",
  "collections.empty": "Ingen samlinger ennå",
  "collections.emptyBody": "Samlinger som opprettes på serveren, vises her.",
  "collections.emptyItemsBody": "Denne samlingen har ingen elementer ennå.",

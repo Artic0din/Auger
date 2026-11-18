@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Добавить аккаунт",
  "changeAccount.current": "Текущий",
  "changeAccount.signInOn": "Войти на сервере {server}",
+ "collections.card.byOwner": "Автор: {owner}",
  "collections.empty": "Коллекций пока нет",
  "collections.emptyBody": "Здесь появятся коллекции, созданные на сервере.",
  "collections.emptyItemsBody": "В этой коллекции пока нет элементов.",

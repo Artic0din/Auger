@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Dodaj račun",
  "changeAccount.current": "Trenutačni",
  "changeAccount.signInOn": "Prijavi se na {server}",
+ "collections.card.byOwner": "Stvorio profil {owner}",
  "collections.empty": "Još nema kolekcija",
  "collections.emptyBody": "Kolekcije stvorene na poslužitelju prikazat će se ovdje.",
  "collections.emptyItemsBody": "Ova kolekcija još nema nijednu stavku.",
