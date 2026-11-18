@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
 import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
@@ -1143,12 +1143,33 @@ test("Playback restores video skip intervals after episodes and focus moves do n
         await openSettings(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         assert.equal(await tv.page.locator('[data-focus="seek-back"], [data-focus="seek-forward"]').count(), 2);
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS"]);
         const requests = tv.fake.requests.length;
         await tv.page.locator('[data-focus="quality"]').focus();
         await tv.remote(40); await tv.remote(40);
         assert.equal(tv.fake.requests.length, requests);
         assert.equal(tv.fake.requests.filter(r => r.method === "PUT" || r.method === "DELETE").length, 0);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Playback offers audiobook skip intervals in their own group, saved apart from video's", async () => {
+    const { tv, settings } = await setup();
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator('[data-focus="audiobook-seek-back"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="audiobook-seek-back"], [data-focus="audiobook-seek-forward"]').count(), 2);
+        assert.deepEqual(await tv.page.locator('[data-focus="audiobook-seek-back"] .settings-row-value, [data-focus="audiobook-seek-forward"] .settings-row-value').allTextContents(), ["10 seconds", "30 seconds"]);
+        assert.equal(await tv.page.locator(".settings-value", { hasText: "Used by the audiobook player's skip buttons." }).count(), 1);
+        await tv.page.locator('[data-focus="audiobook-seek-back"]').click();
+        await tv.page.getByRole("heading", { name: "Audiobook Skip Back", exact: true }).waitFor();
+        await tv.page.getByRole("radio", { name: "45 seconds", exact: true }).click();
+        await tv.eventually(async () => settings.profile().get(AUDIOBOOK_SEEK_BACK_KEY) === 45, "audiobook back interval saved");
+        await tv.page.getByRole("dialog").waitFor({ state: "detached" });
+        assert.equal(settings.profile().has(SEEK_BACK_KEY), false, "video's interval is not written");
+        assert.equal(await tv.page.locator('[data-focus="audiobook-seek-back"] .settings-row-value').textContent(), "45 seconds");
+        assert.equal(await tv.page.locator('[data-focus="seek-back"] .settings-row-value').textContent(), "10 seconds");
+        assert.equal(await tv.focused(), "audiobook-seek-back", "Back from the picker returns to its row");
     } finally { await tv.page.context().close(); }
 });
 
@@ -1483,7 +1504,7 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         assert.equal(order.includes("dolby-vision"), false, order.join(","));
         assert.equal(await tv.page.getByRole("switch", { name: "Dolby Vision", exact: true }).count(), 0);
         assert.ok(audio >= 0 && audio < hdr && order[hdr + 1] === "spoiler-images", order.join(","));
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "RESET"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS", "RESET"]);
         assert.equal(await tv.page.locator('[data-focus="hdr"] .settings-row-value').innerText(), "On");
         assert.equal(await tv.page.getByRole("switch", { name: "HDR", exact: true }).getAttribute("aria-checked"), "true");
         // TVPlaybackSettingsView.swift:248-258, after the STREAMING rows. The first sentence of

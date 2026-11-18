@@ -3,6 +3,7 @@ import { boolean, integer, object, string, WireError } from "./wire.ts";
 import { PRIMARY_MENU_KEY, decodePrimaryMenu } from "./navigation.ts";
 import { ROW_KEYS, BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY, ADVISORY_KEY, APPEARANCE_KEY, METADATA_KEY } from "./settingsRows.ts";
 import { decodeAppearance } from "./subtitles.ts";
+import { AUDIOBOOK_SEEK_KEYS } from "./audiobooks.ts";
 
 export const HIDDEN_KEY = "ui.disabled_library_ids";
 export const TITLE_ART_KEY = "ui.title_art";
@@ -15,6 +16,11 @@ export const SHOW_FORCED_KEY = "playback.show_forced_subtitles" as const;
 export const SEEK_BACK_KEY = "player.video_skip_back_seconds";
 export const SEEK_FORWARD_KEY = "player.video_skip_forward_seconds";
 export const SEEK_KEYS = [SEEK_BACK_KEY, SEEK_FORWARD_KEY] as const;
+export const [AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY] = AUDIOBOOK_SEEK_KEYS;
+/** Video and audiobook skip intervals share one contract shape: a profile enum of SEEK_SECONDS, 10 back and 30 forward by default. */
+const SKIP_KEYS = [...SEEK_KEYS, ...AUDIOBOOK_SEEK_KEYS] as const;
+export const isSkipKey = (key: string): boolean => SKIP_KEYS.some(skip => skip === key);
+const skipDefault = (key: string): number => key === SEEK_BACK_KEY || key === AUDIOBOOK_SEEK_BACK_KEY ? 10 : 30;
 /** Device-only boolean. Apple's manifest lists it; the vendored subset does not. */
 export const HDR_KEY = "player.hdr_enabled";
 export const HDR_KEYS = [HDR_KEY] as const;
@@ -33,7 +39,7 @@ export const THEME_MUSIC_LOOP_KEY = "ui.theme_music_loop";
 /** Profile and profile-device language tag from settings manifest revision 28, read and written by `AppLanguagePreferences` only. Null follows the device. */
 export const APP_LANGUAGE_KEY = "ui.app_language";
 export const SPOILER_OVERVIEW_KEY = "catalog.hide_unwatched_episode_overviews";
-export const SETTINGS_KEYS = [HIDDEN_KEY, AUDIO_KEY, QUALITY_KEY, BITRATE_KEY, ...SEEK_KEYS, ...HDR_KEYS, TITLE_ART_KEY, AUTO_NEXT_KEY, NEXT_UP_KEY, ...ROW_KEYS] as const;
+export const SETTINGS_KEYS = [HIDDEN_KEY, AUDIO_KEY, QUALITY_KEY, BITRATE_KEY, ...SKIP_KEYS, ...HDR_KEYS, TITLE_ART_KEY, AUTO_NEXT_KEY, NEXT_UP_KEY, ...ROW_KEYS] as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[number] | typeof AUTO_NEXT_KEY | typeof SUBTITLE_LANGUAGE_KEY | typeof SUBTITLE_MODE_KEY | typeof SHOW_FORCED_KEY | typeof CARD_OVERLAYS_KEY | typeof CARD_OVERLAYS_ENABLED_KEY | typeof CARD_PRESENTATION_KEY | typeof PRIMARY_MENU_KEY | typeof SPOILER_IMAGE_KEY | typeof SPOILER_OVERVIEW_KEY | typeof THEME_MUSIC_ENABLED_KEY | typeof THEME_MUSIC_LOOP_KEY | typeof APP_LANGUAGE_KEY;
 type Json = null | boolean | string | number | readonly Json[] | { readonly [member: string]: Json | undefined };
 export type SettingValue = null | boolean | string | number | readonly number[] | { readonly [member: string]: Json | undefined };
@@ -116,7 +122,7 @@ export function decodeSettingsContract(value: unknown): SettingsContract {
         const schema = object(def.value_schema, "setting_definition.value_schema");
         const extra = ROW_KEYS.some(row => row === key);
         if (extra && (def.persistence !== "remote" || schema.type !== (key === INTRO_SKIP_KEY || key === BUFFERING_MODE_KEY ? "enum" : key === METADATA_KEY ? "language_tag" : key === APPEARANCE_KEY || key === CARD_PRESENTATION_KEY ? "object" : "boolean"))) continue;
-        const seek = key === SEEK_BACK_KEY || key === SEEK_FORWARD_KEY;
+        const seek = isSkipKey(key);
         const titleArt = key === TITLE_ART_KEY;
         const subtitleLanguage = key === SUBTITLE_LANGUAGE_KEY;
         const subtitleMode = key === SUBTITLE_MODE_KEY;
@@ -124,7 +130,7 @@ export function decodeSettingsContract(value: unknown): SettingsContract {
         if (key === NEXT_UP_KEY && (def.persistence !== "remote" || schema.type !== "integer" || schema.nullable === true || schema.minimum !== 0 || schema.maximum !== 120 || def.default_value !== 30)) continue;
         if (key === AUTO_NEXT_KEY && (def.persistence !== "remote" || schema.type !== "boolean" || schema.nullable === true || def.default_value !== true || def.introduced_in !== 1 || JSON.stringify(def.allowed_scopes) !== JSON.stringify(["profile", "profile_device"]) || JSON.stringify(def.resolution_order) !== JSON.stringify(["profile_device", "profile", "default"]))) continue;
         if (titleArt && (def.persistence !== "remote" || schema.type !== "boolean" || (schema.nullable !== undefined && schema.nullable !== false) || def.default_value !== true || def.introduced_in !== 16 || def.recommended_control !== "switch")) continue;
-        if (seek && (def.persistence !== "remote" || schema.type !== "enum" || schema.nullable === true || def.default_value !== (key === SEEK_BACK_KEY ? 10 : 30) || def.unit !== "seconds" || def.recommended_control !== "select" || def.introduced_in !== 9)) continue;
+        if (seek && (def.persistence !== "remote" || schema.type !== "enum" || schema.nullable === true || def.default_value !== skipDefault(key) || def.unit !== "seconds" || def.recommended_control !== "select" || def.introduced_in !== 9)) continue;
         if ((key === QUALITY_KEY || key === BITRATE_KEY) && def.persistence !== "remote") continue;
         if (key === AUDIO_KEY && (schema.nullable !== true || schema.type !== "language_tag")) continue;
         if (subtitleLanguage && (schema.nullable !== true || schema.type !== "language_tag" || def.default_value !== null || def.recommended_control !== "select" || def.unset_label !== "None" || typeof def.suggested_options !== "string")) continue;
@@ -178,9 +184,9 @@ export function decodeSettingsContract(value: unknown): SettingsContract {
                 if (label.trim() === "") throw new WireError("seek_option.label", "a nonblank label");
                 return { value, label, introducedIn: option.introduced_in === undefined ? 9 : integer(option, "introduced_in", "seek_option"), deprecated: option.deprecated === true };
             });
-            if (definitions.some(def => def.key === key)) throw new WireError("setting_definition.key", "each seek key once");
+            if (definitions.some(def => def.key === key)) throw new WireError("setting_definition.key", "each skip key once");
         }
-        // Only the two seek keys and title art have approved advisory-platform adoption for a profile row.
+        // Only the four skip keys and title art have approved advisory-platform adoption for a profile row.
         // HDR keys are device-only, so a platform list that omits tizen does not hide them.
         definitions.push({ key, introducedIn: integer(def, "introduced_in", "setting_definition"), profile: scopes.includes("profile") && (extra || seek || titleArt || subtitleLanguage || subtitleMode || showForced || platforms === undefined || platforms.includes("tizen")), device: scopes.includes("profile_device"), client: scopes.includes("profile_client"), options });
     }
@@ -192,8 +198,10 @@ export function profileSettings(contract: SettingsContract, capability: Settings
     const revision = Math.min(contract.revision, capability.manifestRevision);
     const deviceScope = capability.scopes.includes("profile_device");
     const definitions = contract.definitions.filter(def => def.introducedIn <= revision && (def.profile || (deviceScope && def.device && def.key === HDR_KEY))).map(def => ({ ...def, device: def.device === true && deviceScope, options: def.options.filter(option => option.introducedIn <= revision) }));
-    const pair = revision >= 9 && SEEK_KEYS.every(key => definitions.some(def => def.key === key && def.options.length === SEEK_SECONDS.length && def.options.every(option => !option.deprecated)));
-    return definitions.filter(def => (pair || (def.key !== SEEK_BACK_KEY && def.key !== SEEK_FORWARD_KEY)) && (def.key !== TITLE_ART_KEY || capability.scopes.includes("profile_device")));
+    // A skip interval is offered only with its whole pair, one pair per media kind.
+    const complete = (pair: readonly SettingsKey[]): boolean => revision >= 9 && pair.every(key => definitions.some(def => def.key === key && def.options.length === SEEK_SECONDS.length && def.options.every(option => !option.deprecated)));
+    const offered = [SEEK_KEYS, AUDIOBOOK_SEEK_KEYS].filter(complete).flat();
+    return definitions.filter(def => (!isSkipKey(def.key) || offered.some(key => key === def.key)) && (def.key !== TITLE_ART_KEY || capability.scopes.includes("profile_device")));
 }
 
 /** Keep opaque library IDs as strings everywhere except this validated JSON-integer boundary. */
@@ -264,8 +272,8 @@ export function decodeSettingValue(key: SettingsKey, value: unknown): SettingVal
         if (typeof value !== "boolean") throw new WireError("theme_music.value", "a JSON boolean");
         return value;
     }
-    if (key === SEEK_BACK_KEY || key === SEEK_FORWARD_KEY) {
-        if (typeof value !== "number" || !SEEK_SECONDS.includes(value)) throw new WireError("video_skip_seconds.value", "one of 5, 10, 15, 30, 45, 60 or 90");
+    if (isSkipKey(key)) {
+        if (typeof value !== "number" || !SEEK_SECONDS.includes(value)) throw new WireError("skip_seconds.value", "one of 5, 10, 15, 30, 45, 60 or 90");
         return value;
     }
     if (key === QUALITY_KEY) {
@@ -355,7 +363,7 @@ export function decodeEffectiveSettings(keys: readonly SettingsKey[], value: unk
             ...(row.permitted_values === undefined ? {} : { permittedValues: array(row.permitted_values, "permitted_values").map(value => decodeSettingValue(key, value)) }),
             ...(row.suggested_values === undefined ? {} : { suggestedValues: array(row.suggested_values, "suggested_values").map(value => decodeSettingValue(key, value)) }),
         };
-        if ((key === SEEK_BACK_KEY || key === SEEK_FORWARD_KEY) && (!["profile", "default"].includes(result.source) || result.definitionRevision < 9)) throw new WireError("effective_setting", "a profile or default seek interval introduced at revision 9");
+        if (isSkipKey(key) && (!["profile", "default"].includes(result.source) || result.definitionRevision < 9)) throw new WireError("effective_setting", "a profile or default seek interval introduced at revision 9");
         if (key === TITLE_ART_KEY) {
             if (!["profile", "profile_device", "default"].includes(result.source) || result.definitionRevision < 16 || result.definitionRevision > Number(obj.revision)) throw new WireError("title_art.effective", "a compatible effective source and definition revision");
             if (result.source === "default") {

@@ -142,6 +142,7 @@ Playback Settings also offers separate video rewind and fast-forward intervals.
 The profile-only remote keys are `player.video_skip_back_seconds` and `player.video_skip_forward_seconds`, introduced in settings manifest revision 9.
 Their numeric choices are 5, 10, 15, 30, 45, 60 and 90 seconds, with inherited defaults of 10 and 30 seconds.
 The controls use server labels, display explicit and effective values, and reset one key with DELETE.
+The audiobook pair, `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds`, has the same shape and is listed under Audiobooks beneath the video pair, as on Apple TV. The audiobook player is not built yet, so nothing reads these values at playback.
 They reuse Settings' pre-write read, post-write confirmation, uncertain-answer reconciliation, busy lock, Retry-After and profile authority fences.
 
 The controller discovers the supported pair before each start and carries it in PlaybackView to buttons, repeated Left/Right previews and dedicated Rewind/Fast Forward keys.

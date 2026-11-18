@@ -3,7 +3,7 @@ import { systemClock, type Clock } from "../api/clock.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import type { UserLibrary } from "../contracts/v2/catalog.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, SEEK_KEYS, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, isSkipKey, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
 import { NativeSession, SessionError } from "../session/session.ts";
 import { APPEARANCE_KEY, BUFFERING_MODE_KEY, METADATA_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { descriptionTranslationOperations } from "../api/descriptionTranslationOperations.ts";
@@ -190,7 +190,7 @@ export class SettingsState {
             if (edit.kind === "value") {
                 decodeSettingValue(edit.key, edit.value);
                 if (edit.key === QUALITY_KEY && !this.qualityOptions.some(option => option.value === edit.value)) throw new Error("Choose a supported quality.");
-                if (SEEK_KEYS.some(key => key === edit.key) && !this.definitions.find(def => def.key === edit.key)?.options.some(option => option.value === edit.value)) throw new Error("Choose a supported seek interval.");
+                if (isSkipKey(edit.key) && !this.definitions.find(def => def.key === edit.key)?.options.some(option => option.value === edit.value)) throw new Error("Choose a supported seek interval.");
             }
             await this.readValues([edit.key]);
             if ((edit.kind === "value" || edit.kind === "reset") && originalScope !== this.scope(edit.key)) throw new SettingsConflict("The setting scope changed. Reload settings before editing it.");

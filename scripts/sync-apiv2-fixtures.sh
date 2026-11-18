@@ -113,6 +113,8 @@ SETTINGS_KEYS=(
   playback.max_bitrate_kbps
   player.video_skip_back_seconds
   player.video_skip_forward_seconds
+  player.audiobook_skip_back_seconds
+  player.audiobook_skip_forward_seconds
   ui.title_art
 )
 SETTINGS_OPTION_SETS=(

@@ -18,6 +18,8 @@ const QUALITY = "playback.preferred_quality" as SettingsKey;
 const BITRATE = "playback.max_bitrate_kbps" as SettingsKey;
 const SEEK_BACK = "player.video_skip_back_seconds" as SettingsKey;
 const SEEK_FORWARD = "player.video_skip_forward_seconds" as SettingsKey;
+const AUDIOBOOK_BACK = "player.audiobook_skip_back_seconds" as SettingsKey;
+const AUDIOBOOK_FORWARD = "player.audiobook_skip_forward_seconds" as SettingsKey;
 
 test("device save leaves disagreeing profile intact and clear reveals profile", async () => {
     const { state, core, fakeSettings, fake } = await setup(true);
@@ -189,6 +191,42 @@ test("unsupported seek definitions never expose profile edits or request their v
         await state.save(SEEK_BACK, 15);
         await state.save(SEEK_FORWARD, 45);
         assert.equal(fake.requests.slice(count).filter(r => r.path.includes("player.video_skip")).length, 0, mode);
+        state.stop();
+    }
+});
+
+test("audiobook skip intervals are profile settings of their own, saved and reset apart from video's", async () => {
+    for (const key of [AUDIOBOOK_BACK, AUDIOBOOK_FORWARD]) {
+        for (const value of [5, 10, 15, 30, 45, 60, 90]) assert.equal(decodeSettingValue(key, value), value);
+        for (const value of [null, undefined, "15", 15.5, 20, false]) assert.throws(() => decodeSettingValue(key, value), String(value));
+    }
+    const { state, fakeSettings } = await setup();
+    assert.deepEqual([AUDIOBOOK_BACK, AUDIOBOOK_FORWARD].map(key => state.definitions.some(def => def.key === key)), [true, true]);
+    assert.deepEqual([AUDIOBOOK_BACK, AUDIOBOOK_FORWARD].map(key => state.effective.get(key)?.value), [10, 30]);
+    await state.save(AUDIOBOOK_BACK, 45);
+    await state.save(AUDIOBOOK_FORWARD, 60);
+    assert.deepEqual([fakeSettings.profile().get(AUDIOBOOK_BACK), fakeSettings.profile().get(AUDIOBOOK_FORWARD)], [45, 60]);
+    assert.deepEqual([fakeSettings.profile().get(SEEK_BACK), fakeSettings.profile().get(SEEK_FORWARD)], [undefined, undefined], "video intervals stay untouched");
+    await state.reset(AUDIOBOOK_BACK);
+    assert.equal(state.effective.get(AUDIOBOOK_BACK)?.value, 10);
+    assert.equal(state.effective.get(AUDIOBOOK_FORWARD)?.value, 60);
+    state.stop();
+});
+
+test("audiobook skip definitions need revision 9, the profile scope and every choice, as video's do", async () => {
+    for (const mode of ["revision8", "missing", "profile_client", "denied"] as const) {
+        const { state, fake, fakeSettings } = await setup();
+        if (mode === "revision8") fakeSettings.revision = 8;
+        if (mode === "denied") fakeSettings.allowed = false;
+        const contract = fixture("settings_contract_ok");
+        assert.ok(Array.isArray(contract.definitions));
+        contract.definitions = contract.definitions.flatMap(def => def.key !== AUDIOBOOK_FORWARD ? [def] : mode === "missing" ? [] : mode === "profile_client" ? [{ ...def, allowed_scopes: ["profile_client"] }] : [def]);
+        fake.script("/settings/contract", { status: 200, body: contract });
+        const count = fake.requests.length;
+        await state.load();
+        assert.ok(!state.definitions.some(def => def.key === AUDIOBOOK_BACK || def.key === AUDIOBOOK_FORWARD), mode);
+        await state.save(AUDIOBOOK_BACK, 15);
+        assert.equal(fake.requests.slice(count).filter(r => r.path.includes("player.audiobook_skip")).length, 0, mode);
         state.stop();
     }
 });
