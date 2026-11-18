@@ -8,6 +8,7 @@ import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, cardItems, GRID_COLUMNS, heading, type ViewContext, zoneNode } from "./browseViews.ts";
 import { detailAction } from "./detailsActions.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
+import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 import { translate } from "../i18n/translate.ts";
 
@@ -52,7 +53,7 @@ export function boxSetView(detail: CatalogBoxSetDetail, context: ViewContext, pl
     // BoxSetDetailView's TVCatalogGrid captions with CardYears; its cards are 220 wide (BoxSetDetailView.swift:246).
     const movies = cardItems(detail.items, { ...context, seriesYears: true, posterWidth: 220 });
     const grid = zoneNode("browse-grid box-set-grid", movies);
-    const content = [wash, layout, el("h2", "browse-section-title", "Movies"), grid].filter((node): node is HTMLElement => node !== null && node !== undefined);
+    const content = [wash, layout, el("h2", "browse-section-title", translate("boxSets.movies")), grid].filter((node): node is HTMLElement => node !== null && node !== undefined);
     const zones: Zone[] = [
         { id: "actions", layout: "row", items: actions },
         { id: "grid", layout: "grid", columns: GRID_COLUMNS, items: movies },

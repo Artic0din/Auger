@@ -350,7 +350,11 @@ function selectedAudioTrack(file: MarqueeFile): MarqueeAudioTrack | undefined {
     return tracks.find(track => track.isDefault === true) ?? tracks[0];
 }
 
-function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
+/**
+ * The saved file's audio layout, which doubles as the overlay's value key (a per-value image is looked up by it), so it stays the
+ * English text in every language: translating it would stop an image configured under `Stereo` from matching.
+ */
+export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
     if (track === undefined) return undefined;
     const layout = nonEmpty(track.layout);
     if (layout !== undefined) {
