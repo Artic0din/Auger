@@ -150,7 +150,9 @@ The pull request's `Evidence` check asks for evidence when the change touches
 `app/` or `src/` (see [`.github/evidence.yml`](.github/evidence.yml)), or when a
 maintainer adds the `evidence-required` label; a maintainer adds
 `evidence-not-needed` when nothing visible changed.
-Changes users cannot see write `Evidence: none, no user-visible change`. If you
+Changes users cannot see write `Evidence: none, no user-visible change`; when such
+a change touches `app/` or `src/`, the check stays red until a maintainer adds
+`evidence-not-needed`, because the line alone is not proof. If you
 could not capture evidence, say why; the reviewer decides whether the pull
 request can merge without it.
 
