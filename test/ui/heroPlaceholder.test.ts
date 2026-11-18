@@ -82,7 +82,9 @@ for (const rtl of [false, true]) for (const [index, thumbhash] of THUMBHASHES.en
     const tab = await page();
     try {
         const gap = await difference(tab, thumbhash, rtl);
-        // Measured on a 1228.8 x 756 frame: about 99.95% of channel values within 2, the largest gap 4, from the two separately rounded masks.
-        assert.ok(gap.max <= 4 && gap.over2 < 0.001 && gap.mean < 0.6, `largest channel difference ${gap.max}, over 2: ${gap.over2}, mean ${gap.mean.toFixed(3)}`);
+        // The largest gap is 4 and the mean about 0.5 on the macOS and Linux runners: the two masks are rounded separately. The share of values
+        // more than 2 apart is 0.05% to 0.08% on macOS and up to 0.14% on the Linux CI runner; a mask on the wrong side or a wrong ramp is
+        // off by tens of levels over a large part of the frame.
+        assert.ok(gap.max <= 4 && gap.over2 < 0.003 && gap.mean < 0.7, `largest channel difference ${gap.max}, over 2: ${gap.over2}, mean ${gap.mean.toFixed(3)}`);
     } finally { await tab.context().close(); }
 });
