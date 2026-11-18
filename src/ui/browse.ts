@@ -24,7 +24,7 @@ import { detailOperations } from "../api/detailOperations.ts";
 import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
-import { DetailsState } from "./detailsState.ts";
+import { DetailsState, NotInterestedWrites } from "./detailsState.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
 import { SeriesEpisodes } from "./seriesEpisodes.ts";
@@ -328,6 +328,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
         }
     };
+    // The writes still out, shared by every title page of this session; the page showing the title draws again when one is answered.
+    const notInterestedWrites = new NotInterestedWrites(() => {
+        const current = top();
+        if (!torn && !playing && current?.kind === "item" && !cardActions.active && settingsScreen === undefined) render(host.focused());
+    });
     /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */
     const noteNotInterested = (id: string, marked: boolean): void => {
         for (const entry of new Set([...roots.values(), ...stack])) {
@@ -1239,6 +1244,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
         details.onNotInterested = noteNotInterested;
+        details.notInterestedWrites = notInterestedWrites;
         resolutionCap.ensure();
         return details;
     };
@@ -1774,6 +1780,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
                         details.onNotInterested = noteNotInterested;
+                        details.notInterestedWrites = notInterestedWrites;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;

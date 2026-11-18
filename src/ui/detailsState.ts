@@ -49,6 +49,25 @@ function shuffleFailure(error: unknown): DetailsAlert {
     return { id: "details-shuffle-failed", title: translate("shuffle.failedTitle"), message };
 }
 
+/**
+ * The Not interested writes still out, by title, shared by every Details owner of one browse session: a page opened again while a
+ * write is out must show the state that write will leave and send nothing over it, and a late answer must not overwrite a newer one.
+ */
+export class NotInterestedWrites {
+    private readonly out = new Map<string, boolean>();
+    /** What the last answered write left, which a page read before it may not hold yet. */
+    private readonly left = new Map<string, boolean>();
+    private readonly settled: () => void;
+    constructor(settled: () => void = () => undefined) { this.settled = settled; }
+    /** The state the write still out for this title will leave, or undefined when none is out. */
+    target(id: string): boolean | undefined { return this.out.get(id); }
+    /** The state the last answered write left, or undefined when none was sent. */
+    known(id: string): boolean | undefined { return this.left.get(id); }
+    start(id: string, target: boolean): void { this.out.set(id, target); }
+    /** The answer came and left the title in `state`: the page showing the title draws again, whichever owner sent the write. */
+    finish(id: string, state: boolean): void { this.out.delete(id); this.left.set(id, state); this.settled(); }
+}
+
 export interface PersonalChange {
     readonly target: boolean;
     readonly pending: boolean;
@@ -147,9 +166,9 @@ export class DetailsState {
     personalFailed = false;
     /** A Not interested mark or clear the server accepted: the host updates the cards it retains and drops a newly marked title from the rows that suggest it (HomeViewModel.removeNotInterested). */
     onNotInterested: ((id: string, marked: boolean) => void) | undefined;
-    /** The page's own answer to a press on Not interested until a read of the title agrees with it. */
-    private notInterestedAnswer: boolean | undefined;
-    notInterestedPending = false;
+    /** Shared with the other owners of this browse session; an owner of its own keeps a private one. */
+    notInterestedWrites = new NotInterestedWrites();
+    get notInterestedPending(): boolean { return this.notInterestedWrites.target(this.detail.id) !== undefined; }
     readonly values = new Map<PersonalAction, boolean>();
     readonly changes = new Map<PersonalAction, PersonalChange>();
     private controller: AbortController | undefined;
@@ -230,7 +249,8 @@ export class DetailsState {
     /** TVMovieDetailView and TVSeriesDetailView: `isNotInterested` is nil, so More offers nothing, for anything but a movie or series and for a server that predates the mark. */
     get notInterested(): boolean | undefined {
         if (this.detail.type !== "movie" && this.detail.type !== "series") return undefined;
-        return this.notInterestedAnswer ?? this.detail.notInterested;
+        const id = this.detail.id;
+        return this.notInterestedWrites.target(id) ?? this.notInterestedWrites.known(id) ?? this.detail.notInterested;
     }
 
     /** ItemDetailViewModel.toggleNotInterested: shown at once, kept once the server accepts it, put back with the update-failed alert when it does not. */
@@ -240,17 +260,15 @@ export class DetailsState {
         if (controller === undefined || current === undefined || this.notInterestedPending || this.busy) return;
         const target = !current;
         const id = this.detail.id;
-        this.notInterestedAnswer = target;
-        this.notInterestedPending = true;
+        this.notInterestedWrites.start(id, target);
         this.changed();
         // The write is not tied to this owner's controller: a title opened over the page must not leave it pending, and an accepted mark still reaches Home.
         this.session.call({ ...detailOperations.setNotInterested(id, target), profileScoped: true, replayAfterRefresh: false }).then(() => {
-            this.notInterestedPending = false;
+            this.notInterestedWrites.finish(id, target);
             this.onNotInterested?.(id, target);
             if (this.controller !== undefined && !this.controller.signal.aborted) this.changed();
         }, () => {
-            this.notInterestedPending = false;
-            this.notInterestedAnswer = current;
+            this.notInterestedWrites.finish(id, current);
             const live = this.controller !== undefined && !this.controller.signal.aborted;
             if (live && this.presentsAlerts) this.alert = ITEM_UPDATE_FAILED;
             if (live) this.changed();

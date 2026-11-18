@@ -109,7 +109,7 @@ test("a write the page is covered during still finishes: Home drops the card, an
     const catalog = await start(tv);
     await openPage(tv, "movie:m0002");
     await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
-    const answer = tv.fake.hold("/not-interested/", true);
+    const answer = tv.fake.hold("/not-interested/movie%3Am0002", true);
     await choose(tv, "Not Interested");
     await tv.eventually(async () => catalog.marks.length === 1, "the write is out");
     // Another title opens over the page before the answer arrives, and the answer lands while it covers.
@@ -138,6 +138,7 @@ test("Home's retained cards read the new mark after a change from the page, so t
     await tv.remote(BACK);
     await tv.remote(BACK);
     await tv.page.locator('[data-view="home"]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "the write's answer delivered");
     const reread = tv.fake.hold("/home/sections", true);
     await card(tv, "recently_added", "movie:m0002").focus();
     await tv.down(13);
@@ -161,6 +162,7 @@ test("clearing a mark from the page leaves Home's retained card offering Not Int
     await tv.eventually(async () => tv.pendingReplies === 0, "answers delivered");
     await tv.remote(BACK);
     await tv.page.locator('[data-view="home"]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "the write's answer delivered");
     const reread = tv.fake.hold("/home/sections", true);
     await card(tv, "recently_added", "movie:m0005").focus();
     await tv.down(13);
@@ -170,4 +172,32 @@ test("clearing a mark from the page leaves Home's retained card offering Not Int
     const rows = await tv.page.getByRole("menu").getByRole("menuitem").evaluateAll(nodes => nodes.map(node => node.textContent ?? ""));
     assert.equal(rows.at(-1), "Not Interested", "the retained card reads the cleared state");
     reread.release();
+}));
+
+test("a mark whose answer is delayed is still pending when the title is reopened, so no clear is sent over it", () => run(async tv => {
+    const catalog = await start(tv);
+    await openPage(tv, "movie:m0002");
+    const answer = tv.fake.hold("/not-interested/movie%3Am0002", true);
+    await choose(tv, "Not Interested");
+    await tv.eventually(async () => catalog.marks.length === 1, "the write reaches the server");
+    // Back to Home and the same title again: a new owner for the page, while the first answer is still out.
+    await tv.remote(BACK);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await card(tv, "recently_added", "movie:m0002").click();
+    await tv.page.locator('[data-view="item:movie:m0002"] [data-focus="more"]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "the page's reads answered");
+    await tv.page.locator('[data-focus="more"]').click();
+    const item = tv.page.locator('.details-more-popover [data-focus="not-interested"]');
+    assert.equal(await item.getAttribute("aria-disabled"), "true", "the action waits for the write that is still out");
+    assert.equal((await item.innerText()).trim(), "Show in Recommendations", "and reads the state that write will leave");
+    await item.click({ force: true });
+    assert.deepEqual(catalog.marks, ["PUT /not-interested/movie%3Am0002"], "no clear is sent over it");
+    answer.release();
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "the answer delivered");
+    // The write has settled: the page offers the clear, and sending it now is allowed.
+    await tv.page.locator('[data-focus="more"]').click();
+    const settled = tv.page.locator('.details-more-popover [data-focus="not-interested"]');
+    await tv.eventually(async () => (await settled.getAttribute("aria-disabled")) !== "true", "the action is free once the write settles");
+    assert.equal((await settled.innerText()).trim(), "Show in Recommendations");
 }));
