@@ -17,6 +17,7 @@ import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import type { Card, CardOverlay, MarqueeAudioTrack, MarqueeDetail, MarqueeFile } from "../contracts/v2/catalog.ts";
 import { resolutionLabel } from "./cardPresentation.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { airDateText } from "./personHero.ts";
 
@@ -350,7 +351,7 @@ function selectedAudioTrack(file: MarqueeFile): MarqueeAudioTrack | undefined {
     return tracks.find(track => track.isDefault === true) ?? tracks[0];
 }
 
-function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
+export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
     if (track === undefined) return undefined;
     const layout = nonEmpty(track.layout);
     if (layout !== undefined) {
@@ -358,16 +359,16 @@ function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | unde
         if (lowered.includes("atmos")) return "Atmos";
         if (lowered.includes("7.1")) return "7.1";
         if (lowered.includes("5.1")) return "5.1";
-        if (lowered.includes("stereo") || lowered === "2.0") return "Stereo";
+        if (lowered.includes("stereo") || lowered === "2.0") return translate("detail.stereo");
         return layout;
     }
     switch (track.channels) {
         case undefined: return undefined;
-        case 1: return "Mono";
-        case 2: return "Stereo";
+        case 1: return translate("detail.mono");
+        case 2: return translate("detail.stereo");
         case 6: return "5.1";
         case 8: return "7.1";
-        default: return `${track.channels}ch`;
+        default: return translate("detail.channels", { count: integerText(track.channels) });
     }
 }
 
