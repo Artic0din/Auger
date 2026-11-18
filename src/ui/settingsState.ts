@@ -3,7 +3,8 @@ import { systemClock, type Clock } from "../api/clock.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import type { UserLibrary } from "../contracts/v2/catalog.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, isSkipKey, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
+import { translate, type MessageKey } from "../i18n/translate.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, isSkipKey, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
 import { NativeSession, SessionError } from "../session/session.ts";
 import { APPEARANCE_KEY, BUFFERING_MODE_KEY, METADATA_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { descriptionTranslationOperations } from "../api/descriptionTranslationOperations.ts";
@@ -26,7 +27,11 @@ export class SettingsState {
     subtitleOptions: readonly string[] = [];
     busy = false;
     loaded = false;
-    error: string | undefined;
+    /** The failure on screen: a catalog key resolved each time it is read, so a language file that lands later translates it, or a plain line. */
+    private errorKey: MessageKey | undefined;
+    private errorText: string | undefined;
+    get error(): string | undefined { return this.errorKey === undefined ? this.errorText : translate(this.errorKey); }
+    set error(value: string | undefined) { this.errorKey = undefined; this.errorText = value; }
     hiddenChanged = false;
     private retryEdit: Edit | undefined;
     private readonly session: NativeSession;
@@ -224,7 +229,7 @@ export class SettingsState {
             throw new Error("The server did not confirm the change. Check again before retrying.");
         } catch (error) {
             if (!this.active) return;
-            this.fail(error);
+            this.fail(error, edit.key);
             if (!(error instanceof SettingsConflict) && (!(error instanceof ApiError) || error.transient || error.status === 404 || error.failure.kind === "invalid_response")) this.retryEdit = edit;
         } finally {
             this.busy = false;
@@ -293,9 +298,31 @@ export class SettingsState {
         this.error = undefined;
     }
 
-    private fail(error: unknown): void {
-        this.error = settingsError(error);
+    private fail(error: unknown, key?: SettingsKey): void {
+        const skip = key === undefined ? undefined : skipSaveError(key, error);
+        if (skip !== undefined) { this.errorKey = skip; this.errorText = undefined; } else this.error = settingsError(error);
         if (error instanceof ApiError && error.retryAfterSeconds !== undefined) this.retryAt = this.clock.now() + error.retryAfterSeconds * 1000;
+    }
+}
+
+/**
+ * silo-apple's SeekIntervalPreferences.writeFailureMessage for the causes Tizen words the same way: a request that never reached the
+ * server or an answer that did not parse is the connection message, and a 422 at the key (an unknown setting) is the unsupported one,
+ * each for the interval being saved. Every other failure keeps Tizen's own wording, whose 429 retry-after and 422 reload advice Apple's
+ * single "rejected" line has no room for (#592).
+ */
+function skipSaveError(key: string, error: unknown): MessageKey | undefined {
+    if (!(error instanceof ApiError)) return undefined;
+    const failure = error.failure;
+    const connection = failure.kind === "network" || failure.kind === "timeout" || failure.kind === "invalid_response";
+    const unsupported = failure.kind === "problem" && failure.problem.status === 422 && failure.problem.errors.some(field => field.location === "path.key" || field.location === "query.keys");
+    if (!connection && !unsupported) return undefined;
+    switch (key) {
+        case SEEK_BACK_KEY: return connection ? "player.seekInterval.saveConnectionVideoRewind" : "player.seekInterval.saveUnsupportedVideoRewind";
+        case SEEK_FORWARD_KEY: return connection ? "player.seekInterval.saveConnectionVideoFastForward" : "player.seekInterval.saveUnsupportedVideoFastForward";
+        case AUDIOBOOK_SEEK_BACK_KEY: return connection ? "player.seekInterval.saveConnectionAudiobookRewind" : "player.seekInterval.saveUnsupportedAudiobookRewind";
+        case AUDIOBOOK_SEEK_FORWARD_KEY: return connection ? "player.seekInterval.saveConnectionAudiobookFastForward" : "player.seekInterval.saveUnsupportedAudiobookFastForward";
+        default: return undefined;
     }
 }
 
