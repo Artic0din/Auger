@@ -886,6 +886,25 @@ for (const language of ["de", "ar"]) appTest(`the saved-accounts recovery screen
     await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
 });
 
+appTest("a language file landing while Select is held on Retry waits for the release, and the press still runs Retry", async tv => {
+    const catalog = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>;
+    await tv.page.evaluate(() => { window.appHarness.destroy(); window.appHarness.showLanguage("de"); window.appHarness.storage.failGet = true; window.appHarness.mount(); });
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    const retry = tv.page.locator('[data-focus="retry"]');
+    await retry.focus();
+    await tv.page.keyboard.down("Enter");
+    await tv.page.evaluate(file => window.appHarness.landLanguage("de", file), catalog);
+    // The catalog is in, but the held press keeps its own button: no redraw until the release.
+    await tv.page.evaluate(() => new Promise(resolve => window.setTimeout(resolve, 50)));
+    assert.equal(await retry.innerText(), "Retry", "not redrawn while Select is held");
+    assert.equal(await retry.getAttribute("data-pressed"), "", "the press is still drawn on the button it started on");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; });
+    await tv.page.keyboard.up("Enter");
+    // Retry ran on release: the saved accounts read now succeeds, so the recovery screen is gone.
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor({ state: "detached" });
+    await tv.page.evaluate(() => window.appHarness.showLanguage(null));
+});
+
 appTest("failed live account selection returns to profiles without another directory write", async tv => {
     await signIn(tv);
     await tv.page.locator('[data-focus="profiles"]').click();

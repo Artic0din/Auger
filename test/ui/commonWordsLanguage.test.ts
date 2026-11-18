@@ -92,6 +92,30 @@ test("a language file that lands after the startup failure screen drew redraws i
     for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Silo could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
 
+test("a language file landing while Select is held on the startup failure's button waits for the release, and the press still runs Retry", async () => {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    try {
+        await page.setContent("<!doctype html><main id='root'></main>");
+        await page.addScriptTag({ content: bundle });
+        await page.evaluate(() => {
+            const api = window as unknown as ScreenApi & { retries?: number };
+            api.retries = 0;
+            api.setAppLanguage("de", api.SHIPPED_LANGUAGES, ["en-AU"]);
+            api.startupFailure(document.getElementById("root") as HTMLElement, () => { api.retries = (api.retries ?? 0) + 1; });
+        });
+        const retry = page.locator("button");
+        await retry.focus();
+        await page.keyboard.down("Enter");
+        await page.evaluate(files => { for (const [file, catalog] of Object.entries(files)) (window as unknown as ScreenApi).registerCatalog(file, catalog); }, catalogs);
+        await page.evaluate(() => new Promise(resolve => window.setTimeout(resolve, 50)));
+        assert.equal(await retry.innerText(), "Try again", "not redrawn while Select is held");
+        assert.equal(await retry.getAttribute("data-pressed"), "", "the press is still drawn on the button it started on");
+        await page.keyboard.up("Enter");
+        assert.equal(await page.evaluate(() => (window as unknown as { retries: number }).retries), 1, "the press ran Retry once");
+        await page.waitForFunction(text => document.querySelector("button")?.textContent === text, translate("common.tryAgain", undefined, "de"));
+    } finally { await page.close(); }
+});
+
 test("the playback-unavailable screen's Back reads the catalog in German and Arabic, and English is unchanged", async () => {
     assert.deepEqual(await screenText("unavailablePlayer", null), { title: "Playback unavailable", buttons: ["Back"] });
     for (const language of ["de", "ar"]) assert.deepEqual(await screenText("unavailablePlayer", language), { title: "Playback unavailable", buttons: [translate("common.back", undefined, language)] }, language);
