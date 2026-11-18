@@ -11,6 +11,7 @@ import { feedGrid } from "./catalogFeed.ts";
 import { SOURCE_LANGUAGE } from "../i18n/language.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
+import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
 import { navigationIcon } from "./navigationIcon.ts";
 import { el } from "./screen.ts";
 
@@ -104,14 +105,14 @@ function savedFilters(route: PersonalRoute, handlers: RouteHandlers): FocusItem[
 
 /** Apple ErrorView, the same recovery plan the Requests hub uses. */
 function errorPage(route: PersonalRoute, handlers: RouteHandlers): View {
-    const error: ErrorState = route.error ?? { headline: "Something went wrong", message: route.failure ?? "", signIn: false };
-    const page = searchState(error.headline, error.message, "personal-failure", FAILURE_ICON);
+    const error: ErrorState = route.error ?? failureState(route.failure ?? "");
+    const page = searchState(errorHeadline(error), errorMessage(error), "personal-failure", FAILURE_ICON);
     page.setAttribute("role", "alert");
     const items = recoveryActions(
         error,
-        actionButton("retry", "Try Again", () => handlers.retry(route)),
-        actionButton("go-back", "Go Back", handlers.pop),
-        handlers.signIn === undefined ? undefined : actionButton("sign-in", "Sign In Again", handlers.signIn),
+        actionButton("retry", translate("shell.errorView.tryAgain"), () => handlers.retry(route)),
+        actionButton("go-back", translate("player.goBack"), handlers.pop),
+        handlers.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), handlers.signIn),
     );
     page.appendChild(zoneNode("browse-actions", items));
     const pageNode = el("div", "personal-page");
@@ -139,7 +140,7 @@ function continuousGrid(route: PersonalRoute, handlers: RouteHandlers, columns: 
     const grid = feedGrid(route.pages, page, { ...context, seriesYears: route.source === "history" }, LOAD_LEAD, handlers.busy, () => handlers.morePersonal(route), columns, posterWidth, gridWidth);
     if (posterWidth === DENSE_POSTER) grid.content[0]?.classList.add("personal-grid");
     if (route.failure !== undefined) {
-        const retry = actionButton("retry", "Try Again", () => handlers.retry(route));
+        const retry = actionButton("retry", translate("shell.errorView.tryAgain"), () => handlers.retry(route));
         grid.content.push(zoneNode("browse-actions", [retry]));
         grid.zones.push({ id: "status", layout: "row", items: [retry] });
     }

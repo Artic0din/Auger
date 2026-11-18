@@ -9,6 +9,7 @@ import { canCancel, canRemove, visibleMineRequests } from "./requestRemoval.ts";
 import { cullToRailBounds, requestActionSpinner, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, TRAY_ICON } from "./requestsScene.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
+import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
 
 export type RequestWrite = "create" | "cancel" | "follow" | "unfollow";
 export type RequestsSource =
@@ -89,10 +90,10 @@ function pageOwner(page: HTMLElement, label: string): FocusItem {
 }
 /** Apple ErrorView.recoveryPlan: a 401 offers sign-in, a 403 or 404 prefers leaving when there is somewhere to go, and otherwise leaving is the remote's Back. */
 function errorPlaceholder(state: RequestsState, h: RequestsHandlers, name: string, goBack?: () => void): View {
-    const error = state.error ?? { headline: "Something went wrong", message: h.failure ?? "", signIn: false };
-    const page = searchState(error.headline, error.message, "requests-state requests-failure", FAILURE_ICON);
+    const error = state.error ?? failureState(h.failure ?? "");
+    const page = searchState(errorHeadline(error), errorMessage(error), "requests-state requests-failure", FAILURE_ICON);
     page.setAttribute("role", "alert");
-    const items = recoveryActions(error, actionButton("retry", "Try Again", h.retry), goBack === undefined ? undefined : actionButton("go-back", "Go Back", goBack), h.signIn === undefined ? undefined : actionButton("sign-in", "Sign In Again", h.signIn));
+    const items = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), h.retry), goBack === undefined ? undefined : actionButton("go-back", translate("player.goBack"), goBack), h.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), h.signIn));
     page.appendChild(zoneNode("browse-actions", items));
     return { name, content: [page], zones: [{ id: "status", layout: "column", items }], focus: { zone: "status", key: items[0]?.key ?? "retry" }, back: h.back };
 }

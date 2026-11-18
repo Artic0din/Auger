@@ -7,7 +7,9 @@ import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { shownLocale } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { abbreviatedWeekday } from "../i18n/weekdays.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
+import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
 
 export interface CalendarHandlers {
     readonly now: number;
@@ -57,7 +59,7 @@ export function calendarView(state: CalendarState, handlers: CalendarHandlers): 
     try { return calendarContent(state, handlers); }
     catch (error) {
         if (!(error instanceof CalendarTimezoneError)) throw error;
-        return calendarContent({ ...state, start: undefined, data: undefined, error: { headline: "Something went wrong", message: error.message, signIn: false } }, { ...handlers, busy: false, failure: error.message });
+        return calendarContent({ ...state, start: undefined, data: undefined, error: failureState(error.message) }, { ...handlers, busy: false, failure: error.message });
     }
 }
 function calendarContent(state: CalendarState, handlers: CalendarHandlers): View {
@@ -129,10 +131,10 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
     zones.push(dayZone);
     if (state.data === undefined) {
         if (failure !== undefined) {
-            const error = state.error ?? { headline: "Something went wrong", message: failure };
-            const page = searchState(error.headline, error.message, "calendar-failure", FAILURE_ICON);
+            const error = state.error ?? failureState(failure);
+            const page = searchState(errorHeadline(error), errorMessage(error), "calendar-failure", FAILURE_ICON);
             page.setAttribute("role", "alert");
-            const action = actionButton("retry", "Try Again", retry);
+            const action = actionButton("retry", translate("shell.errorView.tryAgain"), retry);
             page.appendChild(zoneNode("browse-actions", [action]));
             content.push(page);
             zones.push({ id: "status", layout: "row", items: [action] });
@@ -179,9 +181,11 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
     }
     if (failure !== undefined && state.data !== undefined) {
         // A failed quiet refresh retains its cards, as CalendarViewModel.load does.
-        const action = actionButton("retry", "Try Again", retry);
+        const action = actionButton("retry", translate("shell.errorView.tryAgain"), retry);
         status.setAttribute("role", "alert");
-        status.appendChild(el("p", "browse-text", state.error?.message ?? failure));
+        const note = el("p", "browse-text", state.error === undefined ? failure : errorMessage(state.error));
+        markEnglishOnly(note, note.textContent ?? "");
+        status.appendChild(note);
         content.push(zoneNode("browse-actions", [action]));
         zones.push({ id: "status", layout: "row", items: [action] });
     }
