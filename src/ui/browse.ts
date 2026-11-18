@@ -2758,7 +2758,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
     const calendarHandlers = (current: Extract<Route, { kind: "calendar" }>): CalendarHandlers => ({
         now: clock.now(), busy: loading !== undefined, failure: current.failure, context,
-        focus: target => render(target), retry: () => retry(current), back: pop,
+        focus: target => render(target), retry: () => retry(current), signIn: options.onSignOut, back: pop,
         change: value => {
             try { prepareCalendar(current); }
             catch (error) { current.failure = error instanceof Error ? error.message : "Could not read this TV’s timezone."; render(); return; }

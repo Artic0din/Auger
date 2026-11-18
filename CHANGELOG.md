@@ -101,6 +101,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The Calendar's error page now offers Sign In Again first when the session has expired, with Try Again second and no Go Back, as Apple TV's error page does on a root tab (#648).
 - Home's, For You's and the library pages' backdrop now keeps one tint wash and draws it as a small bitmap that fades into the next one, as Apple TV does, instead of building and painting a new full-screen layer of gradients for every backdrop change; the artwork's layer is only its own box and the top scrim is shared. Nothing changes on screen (pixel difference under 7 of 255, on average 0.3); whether the TV scrolls faster waits on an S95C trace (#515).
 - A multi-part audiobook with no chapters now lists its parts in the Chapters picker by their file names, as on Apple TV, and falls back to Part 1, Part 2 only when a file has no name.
 - The Watch Party hub now opens full screen with no top bar, as on Apple TV, 52 px further in at each edge, and its join field takes Apple TV's text field look: no box at rest, the hint at the start (also in Arabic), and a light grey capsule when focused. Back returns to the tab it opened over. Typing still uses the Samsung TV keyboard.

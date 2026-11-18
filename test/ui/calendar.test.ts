@@ -12,7 +12,7 @@ const timezoneSessions = new WeakMap<Tv, CDPSession>();
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 
-async function start(tv: Tv, catalog = new FakeCalendar()): Promise<FakeCalendar> {
+async function start(tv: Tv, catalog = new FakeCalendar(), offerSignOut = false): Promise<FakeCalendar> {
     tv.fake.catalog = catalog;
     const cdp = await tv.page.context().newCDPSession(tv.page);
     timezoneSessions.set(tv, cdp);
@@ -23,7 +23,7 @@ async function start(tv: Tv, catalog = new FakeCalendar()): Promise<FakeCalendar
     await tv.jump(5000);
     await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "sign-in");
     await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
-    await tv.page.evaluate(() => window.browseHarness.mount());
+    await tv.page.evaluate(offer => window.browseHarness.mount(offer), offerSignOut);
     await tv.eventually(async () => await tv.page.locator('.browse[data-view="home"] .browse-card').count() > 0, "Home");
     return catalog;
 }
@@ -531,6 +531,28 @@ calendarTest("Calendar filters, empty weeks, Today, loading, decode failure and 
     catalog.calendarFailure = undefined;
     await activate(tv, "retry"); await ready(tv, 32);
     assert.deepEqual(reads(tv).map(r => new URL(r.path, "https://fake.invalid").searchParams.get("filter")).slice(0, 3), ["following", "trending", "trending"]);
+});
+
+/** Apple ErrorView.recoveryPlan inside CalendarView: a 401 offers Sign In Again first and Try Again second; a root tab offers no Go Back. */
+for (const [status, id, headline, buttons] of [
+    [401, "token_invalid", "Session expired", ["Sign In Again", "Try Again"]],
+    [403, "forbidden", "Not allowed", ["Try Again"]],
+] as const) test(`a ${status} on the Calendar's first read offers ${buttons.join(" then ")}`, async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCalendar();
+        catalog.calendarFailure = problem(status, id, "Hidden");
+        await start(tv, catalog, true);
+        await activate(tv, "calendar");
+        await tv.page.locator(".calendar-failure").waitFor();
+        assert.equal(await tv.page.locator(".calendar-failure .search-state-title").innerText(), headline);
+        assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").allTextContents(), buttons);
+        if (status === 401) {
+            await activate(tv, "sign-in");
+            await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.signOutCalls) === 1, "Sign In Again signs out");
+        }
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
 });
 
 calendarTest("Calendar held week, filter and timezone replies cannot publish stale data or take menu focus", async (tv) => {

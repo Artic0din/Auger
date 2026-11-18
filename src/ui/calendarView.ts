@@ -1,6 +1,6 @@
 import type { CalendarEvent, CalendarFilter } from "../contracts/v2/calendar.ts";
 import type { FocusItem, FocusTarget, View, Zone } from "./browseFocus.ts";
-import { actionButton, artwork, FAILURE_ICON, mediaItem, searchState, zoneNode, type ViewContext } from "./browseViews.ts";
+import { actionButton, artwork, FAILURE_ICON, mediaItem, recoveryActions, searchState, zoneNode, type ViewContext } from "./browseViews.ts";
 import { calendarDateLabel, calendarDestination, calendarEventKeys, calendarWeek, CalendarTimezoneError, dayDate, eventTime, localDateKey, shiftDay, type CalendarState } from "./calendarState.ts";
 import { el } from "./screen.ts";
 import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
@@ -19,6 +19,8 @@ export interface CalendarHandlers {
     readonly change: (step: -1 | 0 | 1 | CalendarFilter) => void;
     readonly focus: (target: FocusTarget) => void;
     readonly retry: () => void;
+    /** Where Sign In Again goes; absent when the host offers no sign-out. */
+    readonly signIn?: (() => void) | undefined;
     readonly back: () => void;
 }
 const FILTERS = ["following", "trending", "everything"] as const;
@@ -129,15 +131,18 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
     content.push(strip, status);
     const dayZone: Zone = { id: "days", layout: "row", items: stripItems, get entry() { return `day:${state.selectedDay ?? dates[0]}`; } };
     zones.push(dayZone);
+    let failureFocus = "retry";
     if (state.data === undefined) {
         if (failure !== undefined) {
             const error = state.error ?? failureState(failure);
             const page = searchState(errorHeadline(error), errorMessage(error), "calendar-failure", FAILURE_ICON);
             page.setAttribute("role", "alert");
-            const action = actionButton("retry", translate("shell.errorView.tryAgain"), retry);
-            page.appendChild(zoneNode("browse-actions", [action]));
+            // Apple ErrorView.recoveryPlan on a root tab: a 401 offers Sign In Again first, then Try Again; there is no Go Back.
+            const items = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), retry), undefined, handlers.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), handlers.signIn));
+            page.appendChild(zoneNode("browse-actions", items));
             content.push(page);
-            zones.push({ id: "status", layout: "row", items: [action] });
+            failureFocus = items[0]?.key ?? "retry";
+            zones.push({ id: "status", layout: "column", items });
         } else {
             const page = el("div", "calendar-loading");
             page.tabIndex = -1;
@@ -190,7 +195,7 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         zones.push({ id: "status", layout: "row", items: [action] });
     }
     const first = days.find(day => day.key === `day:${state.selectedDay}`) ?? days[0];
-    let initial = first === undefined ? { zone: "status", key: failure === undefined ? "calendar-page" : "retry" } : { zone: "filters", key: `filter:${state.filter}` };
+    let initial = first === undefined ? { zone: "status", key: failure === undefined ? "calendar-page" : failureFocus } : { zone: "filters", key: `filter:${state.filter}` };
     if (state.emptyLinkFocus) {
         if (empty) initial = { zone: "empty", key: `empty:${FILTERS.find(value => value !== state.filter)}` };
         else if (state.data === undefined) initial = { zone: "status", key: failure === undefined ? "calendar-page" : "retry" };
