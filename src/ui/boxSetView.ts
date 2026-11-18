@@ -8,7 +8,6 @@ import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, cardItems, GRID_COLUMNS, heading, type ViewContext, zoneNode } from "./browseViews.ts";
 import { detailAction } from "./detailsActions.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
 import { translate } from "../i18n/translate.ts";
 
