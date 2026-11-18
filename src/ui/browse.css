@@ -1101,6 +1101,10 @@ svg.library-empty-icon { width: auto; }
 .skyline-home .home-section .browse-row { margin-inline-start: -80px; padding-inline-start: 80px; --reveal-end: 80px; }
 /* The layer is the artwork's own box: the wash and the top scrim are shared, so it is not a full-screen layer. */
 .skyline-home .skyline-hero-backdrop { position: fixed; top: 0; inset-inline-start: 691.2px; width: 1228.8px; height: 756px; z-index: -2; pointer-events: none; }
+/* Composited for their whole life. A layer that is promoted by a fade or the image's reveal and dropped when it ends makes
+   the layers around it, with their masks, be drawn again each time: three to four draws of the same hero per swap (#310). */
+.skyline-home :is(.skyline-marquee-art, .skyline-wash-bitmap, .hero-art-surface .skyline-backdrop) { will-change: opacity; }
+.skyline-home .skyline-hero-backdrop { will-change: transform; }
 .skyline-hero-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 190px; z-index: -1; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-home .skyline-hero-backdrop .skyline-art-frame { inset-inline-start: 0; }
 .skyline-home .skyline-tint-wash { position: absolute; inset: 0; background: #000; }
@@ -1492,6 +1496,8 @@ svg.library-empty-icon { width: auto; }
    Each layer takes the art's leading fade, as Apple masks the whole image view. */
 .hero-art-surface::before, .hero-art-thumbhash, .hero-art-missing { position: absolute; inset: 0; width: 100%; height: 100%; mask-image: linear-gradient(to left, #000 0%, #000 32%, transparent 100%); }
 .hero-art-surface::before { content: ""; z-index: -1; background: #0e0f12; }
+/* Home draws the backing and the ThumbHash as one bitmap (heroPlaceholder), already under the art's fade. */
+.hero-art-baked::before { display: none; }
 .hero-art-thumbhash { z-index: -1; object-fit: cover; }
 .hero-art-missing { display: flex; align-items: center; justify-content: center; }
 /* The body-size (29pt) SF Symbol film is 34.8 x 25.8. */
