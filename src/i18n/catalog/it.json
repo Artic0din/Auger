@@ -774,7 +774,7 @@
  "settings.saving": "Salvataggio…",
  "settings.signOut": "Esci",
  "settings.skipIntervals.footerAudiobook": "Usati dai pulsanti di salto del lettore di audiolibri. Valgono per tutti i dispositivi con accesso a questo profilo.",
- "settings.skipIntervals.footerVideoAppleTv": "Usati dai clic e dagli scorrimenti sul Siri Remote e dai pulsanti di salto sullo schermo. Valgono per tutti i dispositivi con accesso a questo profilo.",
+ "settings.skipIntervals.footerVideo": "Usati dai tasti Sinistra e Destra del telecomando e dai pulsanti di salto sullo schermo. Valgono per tutti i dispositivi con accesso a questo profilo.",
  "settings.skipIntervals.picker.audiobookBackApple": "Salto indietro audiolibro",
  "settings.skipIntervals.picker.audiobookForwardApple": "Salto avanti audiolibro",
  "settings.spoilers.footer": "Vale per gli episodi che non hai iniziato, su ogni dispositivo che usa questo profilo.",

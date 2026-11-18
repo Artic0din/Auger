@@ -774,7 +774,7 @@
  "settings.saving": "正在儲存……",
  "settings.signOut": "登出",
  "settings.skipIntervals.footerAudiobook": "供有聲書播放器的略過按鈕使用。會套用至所有登入此個人檔案的裝置。",
- "settings.skipIntervals.footerVideoAppleTv": "供 Siri Remote 的點按和滑動，以及畫面上的略過按鈕使用。會套用至所有登入此個人檔案的裝置。",
+ "settings.skipIntervals.footerVideo": "供遙控器的向左鍵和向右鍵，以及畫面上的略過按鈕使用。會套用至所有登入此個人檔案的裝置。",
  "settings.skipIntervals.picker.audiobookBackApple": "有聲書倒轉",
  "settings.skipIntervals.picker.audiobookForwardApple": "有聲書快轉",
  "settings.spoilers.footer": "適用於你尚未開始觀看的集數，並套用至所有使用此個人檔案的裝置。",

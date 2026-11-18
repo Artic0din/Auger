@@ -774,7 +774,7 @@
  "settings.saving": "Salvando…",
  "settings.signOut": "Sair",
  "settings.skipIntervals.footerAudiobook": "Usados pelos botões de salto do player de audiolivros. Valem para todos os dispositivos conectados a este perfil.",
- "settings.skipIntervals.footerVideoAppleTv": "Usados pelos cliques e deslizes no Siri Remote e pelos botões de salto na tela. Valem para todos os dispositivos conectados a este perfil.",
+ "settings.skipIntervals.footerVideo": "Usados ao pressionar Esquerda e Direita no controle remoto e pelos botões de salto na tela. Valem para todos os dispositivos conectados a este perfil.",
  "settings.skipIntervals.picker.audiobookBackApple": "Voltar em audiolivros",
  "settings.skipIntervals.picker.audiobookForwardApple": "Avançar em audiolivros",
  "settings.spoilers.footer": "Vale para episódios que você ainda não começou, em todos os dispositivos que usam este perfil.",

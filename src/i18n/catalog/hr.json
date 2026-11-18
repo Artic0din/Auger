@@ -774,7 +774,7 @@
  "settings.saving": "Spremanje…",
  "settings.signOut": "Odjavi se",
  "settings.skipIntervals.footerAudiobook": "Koriste ih gumbi za preskakanje u reproduktoru audioknjiga. Primjenjuje se na sve uređaje prijavljene na ovaj profil.",
- "settings.skipIntervals.footerVideoAppleTv": "Koriste ih klikovi i prelasci prstom na daljinskom upravljaču Siri Remote te gumbi za preskakanje na zaslonu. Primjenjuje se na sve uređaje prijavljene na ovaj profil.",
+ "settings.skipIntervals.footerVideo": "Koriste ih pritisci lijevo i desno na daljinskom upravljaču te gumbi za preskakanje na zaslonu. Primjenjuje se na sve uređaje prijavljene na ovaj profil.",
  "settings.skipIntervals.picker.audiobookBackApple": "Audioknjiga: preskok unatrag",
  "settings.skipIntervals.picker.audiobookForwardApple": "Audioknjiga: preskok naprijed",
  "settings.spoilers.footer": "Odnosi se na epizode koje niste započeli, na svim uređajima koji koriste ovaj profil.",

@@ -774,7 +774,7 @@
  "settings.saving": "正在保存……",
  "settings.signOut": "退出登录",
  "settings.skipIntervals.footerAudiobook": "用于有声书播放器的跳转按钮。适用于登录此个人资料的所有设备。",
- "settings.skipIntervals.footerVideoAppleTv": "用于Siri Remote上的点按和轻扫以及屏幕上的跳转按钮。适用于登录此个人资料的所有设备。",
+ "settings.skipIntervals.footerVideo": "用于遥控器上的向左键和向右键以及屏幕上的跳转按钮。适用于登录此个人资料的所有设备。",
  "settings.skipIntervals.picker.audiobookBackApple": "有声书后退",
  "settings.skipIntervals.picker.audiobookForwardApple": "有声书快进",
  "settings.spoilers.footer": "适用于你尚未开始观看的集，并作用于使用此个人资料的所有设备。",

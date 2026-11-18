@@ -774,7 +774,7 @@
  "settings.saving": "Wird gespeichert …",
  "settings.signOut": "Abmelden",
  "settings.skipIntervals.footerAudiobook": "Betrifft die Sprungtasten des Hörbuch-Players. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
- "settings.skipIntervals.footerVideoAppleTv": "Betrifft Klicks und Wischgesten auf der Siri Remote sowie die Sprungtasten auf dem Bildschirm. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
+ "settings.skipIntervals.footerVideo": "Betrifft Links und Rechts auf der Fernbedienung sowie die Sprungtasten auf dem Bildschirm. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
  "settings.skipIntervals.picker.audiobookBackApple": "Hörbuch-Sprung zurück",
  "settings.skipIntervals.picker.audiobookForwardApple": "Hörbuch-Sprung vorwärts",
  "settings.spoilers.footer": "Gilt für Folgen, die du noch nicht begonnen hast, auf allen Geräten, die dieses Profil verwenden.",

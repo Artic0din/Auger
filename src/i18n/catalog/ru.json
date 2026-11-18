@@ -774,7 +774,7 @@
  "settings.saving": "Сохранение…",
  "settings.signOut": "Выйти",
  "settings.skipIntervals.footerAudiobook": "Действует для кнопок перемотки в плеере аудиокниг. Применяется ко всем устройствам, где выполнен вход в этот профиль.",
- "settings.skipIntervals.footerVideoAppleTv": "Действует для нажатий и смахиваний на пульте Siri Remote и экранных кнопок перемотки. Применяется ко всем устройствам, где выполнен вход в этот профиль.",
+ "settings.skipIntervals.footerVideo": "Действует для нажатий «Влево» и «Вправо» на пульте и экранных кнопок перемотки. Применяется ко всем устройствам, где выполнен вход в этот профиль.",
  "settings.skipIntervals.picker.audiobookBackApple": "Перемотка аудиокниги назад",
  "settings.skipIntervals.picker.audiobookForwardApple": "Перемотка аудиокниги вперёд",
  "settings.spoilers.footer": "Действует для серий, которые вы ещё не начали смотреть, на всех устройствах с этим профилем.",

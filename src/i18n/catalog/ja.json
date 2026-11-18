@@ -774,7 +774,7 @@
  "settings.saving": "保存中…",
  "settings.signOut": "サインアウト",
  "settings.skipIntervals.footerAudiobook": "オーディオブックプレーヤーのスキップボタンで使用します。このプロフィールでサインインしているすべてのデバイスに適用されます。",
- "settings.skipIntervals.footerVideoAppleTv": "Siri Remoteのクリックとスワイプ、画面上のスキップボタンで使用します。このプロフィールでサインインしているすべてのデバイスに適用されます。",
+ "settings.skipIntervals.footerVideo": "リモコンの左右ボタンと画面上のスキップボタンで使用します。このプロフィールでサインインしているすべてのデバイスに適用されます。",
  "settings.skipIntervals.picker.audiobookBackApple": "オーディオブックのスキップ（戻る）",
  "settings.skipIntervals.picker.audiobookForwardApple": "オーディオブックのスキップ（進む）",
  "settings.spoilers.footer": "このプロフィールを使用するすべてのデバイスで、未視聴のエピソードに適用されます。",

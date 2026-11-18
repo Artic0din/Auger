@@ -774,7 +774,7 @@
  "settings.saving": "Kaydediliyor…",
  "settings.signOut": "Oturumu kapat",
  "settings.skipIntervals.footerAudiobook": "Sesli kitap oynatıcısının atlama düğmeleri için kullanılır. Bu profilde oturum açmış tüm cihazlarda geçerlidir.",
- "settings.skipIntervals.footerVideoAppleTv": "Siri Remote’taki tıklama ve kaydırmalar ile ekrandaki atlama düğmeleri için kullanılır. Bu profilde oturum açmış tüm cihazlarda geçerlidir.",
+ "settings.skipIntervals.footerVideo": "Kumandadaki Sol ve Sağ düğmeleri ile ekrandaki atlama düğmeleri için kullanılır. Bu profilde oturum açmış tüm cihazlarda geçerlidir.",
  "settings.skipIntervals.picker.audiobookBackApple": "Sesli kitap geri atlama",
  "settings.skipIntervals.picker.audiobookForwardApple": "Sesli kitap ileri atlama",
  "settings.spoilers.footer": "Başlamadığınız bölümlere, bu profili kullanan tüm cihazlarda uygulanır.",

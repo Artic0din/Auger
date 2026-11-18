@@ -774,7 +774,7 @@
  "settings.saving": "Lagrer …",
  "settings.signOut": "Logg ut",
  "settings.skipIntervals.footerAudiobook": "Brukes av hoppknappene i lydbokspilleren. Gjelder alle enheter som er logget på denne profilen.",
- "settings.skipIntervals.footerVideoAppleTv": "Brukes av klikk og sveip på Siri Remote og av hoppknappene på skjermen. Gjelder alle enheter som er logget på denne profilen.",
+ "settings.skipIntervals.footerVideo": "Brukes når du trykker på Venstre og Høyre på fjernkontrollen, og av hoppknappene på skjermen. Gjelder alle enheter som er logget på denne profilen.",
  "settings.skipIntervals.picker.audiobookBackApple": "Hopp tilbake i lydbøker",
  "settings.skipIntervals.picker.audiobookForwardApple": "Hopp fremover i lydbøker",
  "settings.spoilers.footer": "Gjelder episoder du ikke har begynt på, på alle enheter som bruker denne profilen.",
