@@ -116,6 +116,37 @@ test("a language file landing while Select is held on the startup failure's butt
     } finally { await page.close(); }
 });
 
+test("an exit dialog open when the language file lands reads Cancel from it in place, keeping focus and a held Select press", async () => {
+    for (const language of ["de", "ar"]) {
+        const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+        try {
+            await page.setContent("<!doctype html><main id='root'></main>");
+            await page.addScriptTag({ content: bundle });
+            const exits = await page.evaluate(tag => {
+                const api = window as unknown as ScreenApi & { mountExitDialog: (root: HTMLElement, exit: () => void, closed: () => void) => unknown; exits?: number };
+                api.exits = 0;
+                api.setAppLanguage(tag, api.SHIPPED_LANGUAGES, ["en-AU"]);
+                api.mountExitDialog(document.getElementById("root") as HTMLElement, () => { api.exits = (api.exits ?? 0) + 1; }, () => undefined);
+                return api.exits;
+            }, language);
+            assert.equal(exits, 0);
+            const cancel = page.locator('[data-focus="cancel-exit"]');
+            assert.equal(await cancel.innerText(), "Cancel", "English until the file lands");
+            const mark = await cancel.evaluate(node => { node.setAttribute("data-same", "yes"); return document.activeElement === node; });
+            assert.equal(mark, true, "Cancel has focus");
+            await page.keyboard.down("Enter");
+            await page.evaluate(([tag, file]) => (window as unknown as ScreenApi).registerCatalog(tag, file), [language, catalogs[language] ?? {}] as const);
+            assert.equal(await cancel.innerText(), translate("common.cancel", undefined, language), language);
+            assert.equal(await cancel.getAttribute("data-same"), "yes", "the same button, not a rebuilt one");
+            assert.equal(await cancel.getAttribute("data-pressed"), "", "the held press stays on it");
+            assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-focus")), "cancel-exit", "focus stays");
+            await page.keyboard.up("Enter");
+            await page.locator(".app-exit").waitFor({ state: "detached" });
+            assert.equal(await page.evaluate(() => (window as unknown as { exits: number }).exits), 0, "the release ran Cancel, not Exit");
+        } finally { await page.close(); }
+    }
+});
+
 test("the playback-unavailable screen's Back reads the catalog in German and Arabic, and English is unchanged", async () => {
     assert.deepEqual(await screenText("unavailablePlayer", null), { title: "Playback unavailable", buttons: ["Back"] });
     for (const language of ["de", "ar"]) assert.deepEqual(await screenText("unavailablePlayer", language), { title: "Playback unavailable", buttons: [translate("common.back", undefined, language)] }, language);
