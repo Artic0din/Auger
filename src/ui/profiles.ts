@@ -15,7 +15,7 @@ import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { actions, button, type Control, el, type Note, type Screen, ScreenHost } from "./screen.ts";
 import { menuIcon, navigationIcon } from "./navigationIcon.ts";
 import { logoutCollectedAccount } from "./signIn.ts";
-import { PASSWORD_CHANGE_REQUIRED_MESSAGE } from "./signInText.ts";
+import { passwordChangeRequiredMessage } from "./signInText.ts";
 import { MarqueeBackdrop, marqueeScene } from "./marqueeBackdrop.ts";
 import { profilePickerScreen } from "./profilePicker.ts";
 import { centredDialog } from "./confirmationDialog.ts";
@@ -479,7 +479,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
             const retryRow = actions([retry]);
             const footer = el("div", "profile-footer");
             footer.append(change.element, out.element);
-            const detail = el("p", "signin-text signin-error", PASSWORD_CHANGE_REQUIRED_MESSAGE);
+            const detail = el("p", "signin-text signin-error", passwordChangeRequiredMessage());
             detail.setAttribute("role", "alert");
             show({
                 name: "profiles-error",
