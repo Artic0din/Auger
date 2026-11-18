@@ -548,6 +548,10 @@ for (const [status, id, headline, buttons] of [
         assert.equal(await tv.page.locator(".calendar-failure .search-state-title").innerText(), headline);
         assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").allTextContents(), buttons);
         if (status === 401) {
+            // The zone is a column, so the buttons are drawn one above the other: Left and Right never need to reach a side-by-side one.
+            const boxes = await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { centre: Math.round((box.left + box.right) / 2), top: Math.round(box.top), bottom: Math.round(box.bottom) }; }));
+            assert.ok(Math.abs((boxes[0]?.centre ?? 0) - (boxes[1]?.centre ?? 1e6)) <= 1, JSON.stringify(boxes));
+            assert.ok((boxes[1]?.top ?? 0) >= (boxes[0]?.bottom ?? 1), JSON.stringify(boxes));
             await activate(tv, "sign-in");
             await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.signOutCalls) === 1, "Sign In Again signs out");
         }

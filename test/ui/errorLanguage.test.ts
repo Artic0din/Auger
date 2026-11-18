@@ -58,6 +58,12 @@ async function errorPage(tv: Tv): Promise<{ headline: string; message: string; b
     };
 }
 
+/** No recovery button's label is cut off, in any language. */
+async function assertButtonsFit(tv: Tv): Promise<void> {
+    const clipped = await tv.page.locator(".details-failure .browse-button").evaluateAll(nodes => nodes.filter(node => node.scrollWidth > node.clientWidth + 1).map(node => node.textContent));
+    assert.deepEqual(clipped, [], "labels cut off");
+}
+
 const TRY_AGAIN = (language: string): string => text("shell.errorView.tryAgain", language);
 const GO_BACK = (language: string): string => text("player.goBack", language);
 
@@ -68,6 +74,7 @@ for (const language of ["de", "ar"]) {
             await tv.page.locator(CARD).click();
             await tv.page.locator('[data-view="item:failed"]').waitFor();
             assert.deepEqual(await errorPage(tv), { headline: text("shell.errorView.notFound", language), message: text("shell.error.notFound", language), buttons: [GO_BACK(language), TRY_AGAIN(language)] });
+            await assertButtonsFit(tv);
             if (language === "ar") assert.equal(await tv.page.evaluate(() => document.documentElement.getAttribute("dir")), "rtl");
         });
     });
@@ -105,6 +112,7 @@ for (const language of ["de", "ar"]) {
                 : route.fallback());
             await tv.page.locator('[data-focus="expand:recent/12"]').click();
             assert.deepEqual(await errorPage(tv), { headline: text("shell.errorView.sessionExpired", language), message: text("shell.error.sessionExpired", language), buttons: [text("settings.accounts.signInAgain", language), TRY_AGAIN(language)] });
+            await assertButtonsFit(tv);
         });
     });
 }
