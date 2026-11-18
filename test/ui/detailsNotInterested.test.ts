@@ -118,9 +118,14 @@ test("a write the page is covered during still finishes: Home drops the card, an
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('[data-view^="item:"]:not([data-view="item:movie:m0002"])').waitFor();
     answer.release();
-    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "the answer delivered");
+    // A hold's count drops a moment after the release, so wait for nothing to be on its way, then for the page to take the answer in.
+    await tv.eventually(async () => tv.pendingReplies === 0, "the answer delivered");
+    await afterPaint(tv);
     await tv.remote(BACK);
     await tv.page.locator('[data-view="item:movie:m0002"] [data-focus="more"]').waitFor();
+    // The page re-reads when it is shown again; a late answer redraws it and would close the menu.
+    await tv.eventually(async () => tv.pendingReplies === 0, "the page's re-read delivered");
+    await afterPaint(tv);
     await tv.page.locator('[data-focus="more"]').click();
     const item = tv.page.locator('.details-more-popover [data-focus="not-interested"]');
     assert.equal((await item.innerText()).trim(), "Show in Recommendations");
