@@ -193,7 +193,12 @@ railTest("movie sections follow Apple TV's order and lower-rail radii", async (t
     await tv.page.locator('.box-set-row [data-focus="box-set-explore"]').waitFor();
     await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
     assert.deepEqual(await headings(tv), ["Cast & Crew", "Trailers & More", "Harry Potter Collection", "Related Movies", "Details"]);
-    const radius = (selector: string) => tv.page.locator(selector).first().evaluate(node => getComputedStyle(node).borderTopLeftRadius);
+    // A late answer repaints the rails; a style read of a node that has just been replaced reports an empty value, so read until it holds one.
+    const radius = async (selector: string): Promise<string> => {
+        let value = "";
+        await tv.eventually(async () => { value = await tv.page.locator(selector).first().evaluate(node => getComputedStyle(node).borderTopLeftRadius).catch(() => ""); return value !== ""; }, `${selector} radius`);
+        return value;
+    };
     assert.equal(await radius(".box-set-row .browse-card:not(.skyline-explore) .browse-art"), "12px");
     assert.equal(await radius(".box-set-row .skyline-explore .browse-art"), "12px");
     await tv.page.locator(".details-facts-table").focus();

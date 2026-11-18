@@ -1047,7 +1047,7 @@
 .collection-group-title + .discovery-collection-grid { padding-top: 0; }
 .browse .catalog-grid .collection-poster { width: calc(260px * var(--poster-scale, 1)); height: auto; padding: 0; border: 0; border-radius: 0; background: none; }
 .browse .catalog-grid .collection-poster:focus { transform: none; background: none; box-shadow: none; }
-.discovery-collection .browse-art-fallback { position: absolute; inset: 0; padding: 0; }
+.discovery-collection .browse-art-fallback, .collection-poster .browse-art-fallback { position: absolute; inset: 0; padding: 0; }
 .collection-stack { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: rgba(255,255,255,.85); }
 .collection-stack svg { width: 56px; height: 56px; }
 /* TVLibraryBrowseView.swift:188-274, on the Requests loading rules: the page outline fills the tab under the bar. */

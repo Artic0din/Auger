@@ -8,8 +8,8 @@ import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, cardItems, GRID_COLUMNS, heading, type ViewContext, zoneNode } from "./browseViews.ts";
 import { detailAction } from "./detailsActions.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { translate } from "../i18n/translate.ts";
 import { el } from "./screen.ts";
+import { translate } from "../i18n/translate.ts";
 
 const boxSetTints = new Map<string, Tints>();
 
@@ -27,7 +27,7 @@ export function boxSetView(detail: CatalogBoxSetDetail, context: ViewContext, pl
         button.element.setAttribute("aria-label", `${verb} ${next.title}`);
         actions.push(button);
     }
-    if (actions.length === 0) actions.push(actionButton("back", "Back", back));
+    if (actions.length === 0) actions.push(actionButton("back", translate("common.back"), back));
     const layout = el("div", "details-hero");
     layout.dataset.mediaType = "box-set";
     const backdrop = artworkUrl(detail.boxSet.backdropUrl, context.baseUrl) ?? "";

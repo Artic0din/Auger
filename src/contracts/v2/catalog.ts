@@ -150,6 +150,8 @@ export interface Card {
     /** `user_state.is_favorite` and `user_state.in_watchlist`; absent without a profile or on an older server. */
     readonly favorite?: boolean | undefined;
     readonly watchlist?: boolean | undefined;
+    /** `user_state.not_interested`: the profile marked the movie or series Not interested. Absent on a server that predates the mark, which then cannot be offered. */
+    readonly notInterested?: boolean | undefined;
     /** Title logo art (`logo_url`); shown only where the profile's title-art setting allows. */
     readonly logoUrl?: string | undefined;
     /** True when the poster is an episode still. Absent means unknown. */
@@ -199,13 +201,14 @@ export interface CardOverlay {
     readonly multiSub?: boolean | undefined;
 }
 
-/** The card's Favorites and Watchlist membership, which Apple's card menu reads from the row (MediaCardPersonalState). */
-function listMembership(obj: WireObject, path: string): { favorite?: boolean; watchlist?: boolean } {
+/** The card's Favorites, Watchlist and Not interested state, which Apple's card menu reads from the row (MediaCardPersonalState). */
+function listMembership(obj: WireObject, path: string): { favorite?: boolean; watchlist?: boolean; notInterested?: boolean } {
     if (obj.user_state === undefined) return {};
     const state = object(obj.user_state, `${path}.user_state`);
     const favorite = optionalBoolean(state, "is_favorite", `${path}.user_state`);
     const watchlist = optionalBoolean(state, "in_watchlist", `${path}.user_state`);
-    return { ...(favorite === undefined ? {} : { favorite }), ...(watchlist === undefined ? {} : { watchlist }) };
+    const notInterested = optionalBoolean(state, "not_interested", `${path}.user_state`);
+    return { ...(favorite === undefined ? {} : { favorite }), ...(watchlist === undefined ? {} : { watchlist }), ...(notInterested === undefined ? {} : { notInterested }) };
 }
 
 /**
@@ -309,6 +312,75 @@ export interface HomeSection {
     /** The values that key's placeholders take (`{"library": "Movies"}`). */
     readonly titleArgs?: Readonly<Record<string, string>> | undefined;
     readonly items: readonly Card[];
+    /** The cards of a row of collections (`section_type` `collection_posters`), in the row's order; every other row has none. Older fakes may omit it. */
+    readonly collections?: readonly SectionCollectionCard[] | undefined;
+}
+
+/** The section type of a row whose cards are collections rather than titles. */
+export const COLLECTION_POSTERS = "collection_posters";
+
+/** One card of a row of collections: a collection the viewer can see, which the card opens (silo-apple SectionCollectionCard). */
+export interface SectionCollectionCard {
+    readonly id: string;
+    /** `library`: a server collection, opened in `libraryId`. `user`: a personal collection, made by `creatorProfileId`. */
+    readonly source: "library" | "user";
+    readonly title: string;
+    /** The assigned poster, else the viewer's collage of the titles; absent when it has neither. */
+    readonly posterUrl: string | undefined;
+    readonly posterThumbhash: string | undefined;
+    /** A server collection's wide backdrop for the hero while the card is focused; absent for a personal one and from older servers. */
+    readonly backdropUrl: string | undefined;
+    readonly backdropThumbhash: string | undefined;
+    readonly itemCount: number;
+    readonly libraryId: string | undefined;
+    readonly creatorProfileId: string | undefined;
+}
+
+/** A row of collections: it has no titles, so it has no full page and is never the hero. */
+export function holdsCollections(section: Pick<HomeSection, "sectionType" | "collections">): boolean {
+    return section.sectionType === COLLECTION_POSTERS || (section.collections?.length ?? 0) > 0;
+}
+
+/** Whether the row has anything to show; every page leaves out a row without cards. */
+export function hasCards(section: Pick<HomeSection, "sectionType" | "collections" | "items">): boolean {
+    return holdsCollections(section) ? (section.collections?.length ?? 0) > 0 : section.items.length > 0;
+}
+
+function nonEmpty(value: unknown): string | undefined {
+    return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** Undefined for a card that cannot be opened (an unknown source, or a server collection with no library), as Apple leaves it out. */
+function decodeCollectionCard(value: unknown, path: string): SectionCollectionCard | undefined {
+    try {
+        const obj = object(value, path);
+        const source = string(obj, "source", path);
+        if (source !== "library" && source !== "user") return undefined;
+        // The API sends the library id as a string; an integer is read as the same id.
+        const libraryId = typeof obj.library_id === "number" && Number.isInteger(obj.library_id) ? String(obj.library_id) : nonEmpty(obj.library_id);
+        if (source === "library" && libraryId === undefined) return undefined;
+        return {
+            id: string(obj, "id", path),
+            source,
+            title: string(obj, "title", path),
+            posterUrl: nonEmpty(obj.poster_url),
+            posterThumbhash: nonEmpty(obj.poster_thumbhash),
+            // Optional extras: a malformed backdrop leaves the card without one rather than dropping it.
+            backdropUrl: nonEmpty(obj.backdrop_url),
+            backdropThumbhash: nonEmpty(obj.backdrop_thumbhash),
+            itemCount: obj.item_count === undefined ? 0 : integer(obj, "item_count", path),
+            libraryId: source === "library" ? libraryId : undefined,
+            creatorProfileId: source === "user" ? nonEmpty(obj.creator_profile_id) : undefined,
+        };
+    } catch (error) {
+        if (error instanceof WireError) return undefined;
+        throw error;
+    }
+}
+
+function decodeCollectionCards(value: unknown, path: string): SectionCollectionCard[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((entry, index) => decodeCollectionCard(entry, `${path}[${index}]`) ?? []);
 }
 
 /** Optional extras: a malformed key or argument map shows `title` rather than failing the row, as Apple's decoder does. */
@@ -324,10 +396,13 @@ export function decodeHomeSections(value: unknown): HomeSection[] {
     return array(obj, "sections", path).map((entry, index) => {
         const sectionPath = `${path}.sections[${index}]`;
         const section = object(entry, sectionPath);
+        const sectionType = string(section, "section_type", sectionPath);
+        const collections = decodeCollectionCards(section.collections, `${sectionPath}.collections`);
         return {
-            featured: section.featured === undefined ? false : boolean(section, "featured", sectionPath),
+            // A row of collections has no title to feature.
+            featured: section.featured === undefined ? false : boolean(section, "featured", sectionPath) && !holdsCollections({ sectionType, collections }),
             id: string(section, "id", sectionPath),
-            sectionType: string(section, "section_type", sectionPath),
+            sectionType,
             title: string(section, "title", sectionPath),
             itemLimit: section.item_limit == null ? undefined : integer(section, "item_limit", sectionPath),
             totalCount: section.total_count == null ? undefined : integer(section, "total_count", sectionPath),
@@ -336,6 +411,7 @@ export function decodeHomeSections(value: unknown): HomeSection[] {
             titleKey: typeof section.title_key === "string" ? section.title_key : undefined,
             titleArgs: titleArguments(section.title_args),
             items: array(section, "items", sectionPath).map((card, cardIndex) => decodeCard(card, `${sectionPath}.items[${cardIndex}]`)),
+            collections,
         };
     });
 }
@@ -426,6 +502,7 @@ export interface ItemDetail {
     readonly played: boolean | undefined;
     readonly favorite?: boolean | undefined;
     readonly watchlist?: boolean | undefined;
+    readonly notInterested?: boolean | undefined;
     readonly extra?: DetailExtras;
     readonly id: string;
     readonly type: CardType;

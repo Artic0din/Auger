@@ -678,7 +678,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         if (context.watchParty?.offered() === true && partyTitle !== undefined) {
             items.push(actionButton("watch-party", translate("watchParty.menu.open"), () => { state.closePanel(); context.watchParty?.open(choiceFromDetail(partyTitle)); }));
         }
-        return detailPanel(view, state, translate("detail.more"), items.length ? items : [actionButton("close-more", "Close", () => state.closePanel())], menuNotes);
+        return detailPanel(view, state, translate("detail.more"), items.length ? items : [actionButton("close-more", translate("rowPage.close"), () => state.closePanel())], menuNotes);
     }
     return view;
 }

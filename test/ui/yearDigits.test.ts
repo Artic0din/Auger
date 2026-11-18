@@ -67,6 +67,8 @@ for (const [language, shape] of [["ar", ARABIC_YEAR], [undefined, ASCII_YEAR]] a
             await tv.page.locator(MOVIE).first().click();
             const first = tv.page.locator(".details-fact").first();
             await first.waitFor();
+            // The digits follow the language, which can land after the fact row draws.
+            await tv.eventually(async () => shape.test((await first.textContent()) ?? ""), "the year in the shown language's digits");
             const text = (await first.textContent()) ?? "";
             assert.match(text, shape, `the first fact is the year: ${text}`);
             if (language === undefined) assert.equal(text, String(year));
