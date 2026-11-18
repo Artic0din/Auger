@@ -77,3 +77,27 @@ test("a per-value image is found by the English status in every language", async
     assert.ok(found.image?.includes("/overlay-images/"), `the image listed for "Returning" is used in German: ${JSON.stringify(found)}`);
     assert.equal((await ribbon("de", "ended", "Returning")).image, null, "another status does not take it");
 });
+
+/** The text of each badge on a movie that has several audio tracks and subtitle tracks, with both badges turned on. */
+async function languageBadges(language: string | null): Promise<string[]> {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    try {
+        await page.setContent(`<!doctype html><main><div id="art" style="position:relative;width:220px;height:330px"></div></main>`);
+        await page.addScriptTag({ content: bundle });
+        return await page.evaluate(([tag, files]) => {
+            const api = window as unknown as Api;
+            for (const [name, catalog] of Object.entries(files)) api.registerCatalog(name, catalog);
+            api.setAppLanguage(tag, api.SHIPPED_LANGUAGES, ["en-AU"]);
+            const prefs = { ...api.parseOverlayPrefs({ multi_audio: { enabled: true, position: "bottom-right" }, multi_sub: { enabled: true, position: "bottom-right" } }), images: new Map() };
+            const layer = api.overlayLayer({ id: "movie:1", type: "movie", title: "Film", overlay: { multiAudio: true, multiSub: true } }, prefs, "poster", 220, "https://silo.invalid");
+            return [...(layer?.querySelectorAll(".card-overlay") ?? [])].map(node => node.textContent ?? "");
+        }, [language, catalogs] as const);
+    } finally { await page.close(); }
+}
+
+test("the Multi-Audio and subtitle badges read from Apple's keys in German and Arabic, and English is unchanged", async () => {
+    assert.deepEqual(await languageBadges(null), ["Multi-Audio", "CC"]);
+    for (const language of ["de", "ar"]) {
+        assert.deepEqual(await languageBadges(language), [translate("overlays.multiAudio", undefined, language), translate("overlays.subtitles", undefined, language)], language);
+    }
+});
