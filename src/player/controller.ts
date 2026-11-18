@@ -2066,9 +2066,17 @@ export class PlaybackController implements PlayerControls {
         void (async () => {
             try {
                 // The sidecar is read like the primary's artifact. Its cues share the primary's timing origin: both come from this plan's stream.
-                const text = await this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal);
+                // A download that ends early is fetched again like the primary's (`downloadSubtitle`), the cues that arrived showing meanwhile.
+                const cues = await downloadSubtitle(this.deps.clock, abort.signal,
+                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal),
+                    text => decodeCues(text, secondaryFormat(row) ?? "", origin),
+                    partial => {
+                        if (!current()) return;
+                        attempt.secondaryCues = partial;
+                        this.showPlayback(attempt);
+                    });
                 if (!current()) return;
-                attempt.secondaryCues = decodeCues(text, secondaryFormat(row) ?? "", origin);
+                attempt.secondaryCues = cues;
             } catch {
                 // A track that cannot be read is not shown as chosen.
                 if (!current()) return;

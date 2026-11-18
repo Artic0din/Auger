@@ -3218,6 +3218,29 @@ test("Secondary reads the chosen sidecar, draws it under the primary and clears 
     r.controller.destroy();
 });
 
+test("a secondary sidecar that ends early keeps its cues on screen and is refetched after 2 s, as the primary's is", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n", cut: true });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n00:20.000 --> 00:22.000\nSecond" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "First", "the cues that arrived show while the file is fetched again");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "the track stays chosen");
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/stream/") && request.path.includes("/subtitles/4.vtt")).length, 1);
+    await r.h.clock.advance(2000);
+    r.avplay.tick(21000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "Second");
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/stream/") && request.path.includes("/subtitles/4.vtt")).length, 2);
+    r.controller.destroy();
+});
+
 test("Secondary refuses the primary's own track and a track the app cannot draw", async () => {
     const r = await secondaryRig();
     await playMovie(r);
