@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The skip-interval pickers in Settings › Playback now list only the seven choices, as on Apple TV, without the extra Use inherited default row. A stored interval is replaced by choosing another, not cleared from the picker.
 - The video skip pickers in Settings › Playback now open as "Video Skip Back" and "Video Skip Forward", as on Apple TV, and read in the language you pick.
 - A shared collection in a Home or library row of collections now reads `by Name` in the hero beside its item count, as on Apple TV, in the language you pick. The hero's line for any collection is now Apple's item count, not a synopsis.
 - Home's, For You's and the library pages' colour wash now blends into the next one over 0.7 s, as Apple TV does, so page colours drift between items while the art still swaps in 0.24 s.

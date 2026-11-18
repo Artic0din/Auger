@@ -355,7 +355,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             noLimit.element.setAttribute("aria-checked", String(current === null));
             controls.unshift(noLimit);
         }
-        if (picker !== "subtitle-language" && picker !== "subtitle-mode" && (state.scope(key) === "profile_device" || stored?.isSet)) {
+        // Apple's skip-interval pickers list only the seven choices, with no row to clear a stored one (TVPlaybackSettingsView, silo-apple 648091a7, line 556).
+        if (picker !== "subtitle-language" && picker !== "subtitle-mode" && !isSkipKey(key) && (state.scope(key) === "profile_device" || stored?.isSet)) {
             const reset = button("reset", state.scope(key) === "profile_device" ? translate("settings.profileSettings.useRow") : "Use inherited default", () => { void commit(key, undefined); });
             if (state.scope(key) === "profile_device") { reset.element.setAttribute("role", "radio"); reset.element.setAttribute("aria-checked", String(stored?.isSet !== true)); }
             controls.unshift(reset);
