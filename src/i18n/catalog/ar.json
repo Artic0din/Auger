@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "إضافة حساب",
  "changeAccount.current": "الحالي",
  "changeAccount.signInOn": "تسجيل الدخول إلى {server}",
+ "collections.card.byOwner": "من إنشاء {owner}",
  "collections.empty": "لا توجد مجموعات بعد",
  "collections.emptyBody": "ستظهر هنا المجموعات التي تُنشأ على الخادم.",
  "collections.emptyItemsBody": "لا تحتوي هذه المجموعة على أي عناصر بعد.",

@@ -79,6 +79,7 @@
  "changeAccount.addAccount": "Přidat účet",
  "changeAccount.current": "Aktuální",
  "changeAccount.signInOn": "Přihlásit se na serveru {server}",
+ "collections.card.byOwner": "Od profilu {owner}",
  "collections.empty": "Zatím žádné kolekce",
  "collections.emptyBody": "Zde se zobrazí kolekce vytvořené na serveru.",
  "collections.emptyItemsBody": "Tato kolekce zatím neobsahuje žádné položky.",
