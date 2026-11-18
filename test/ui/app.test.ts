@@ -1394,8 +1394,6 @@ for (const reduced of [false, true]) {
         await startMovie(tv);
         await tv.page.evaluate(() => window.appHarness.avplay.tick(32000));
         await tv.remote(19);
-        // The start's own reads (markers, versions) are still answering on a slow runner.
-        await tv.eventually(async () => tv.pendingReplies === 0, "playback start reads answered");
         await visibility(tv, true);
         await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.includes("suspend")), "AVPlay suspended on hide");
         const gate = tv.fake.hold("/playback/capabilities");

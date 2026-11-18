@@ -454,6 +454,8 @@ interface Attempt {
     suspendedReady: boolean;
     deferredOpen: boolean;
     restoring: boolean;
+    /** The restoreAsync that has not answered; revalidation already cleared `restoring`. Only its own answer or the close of its transport clears it. */
+    restoreOpen: object | undefined;
     /** The next open is a reconnect handoff and should say so. */
     resuming: boolean;
     recovery: PlaybackRecovery | undefined;
@@ -615,6 +617,7 @@ export class PlaybackController implements PlayerControls {
             suspendedReady: false,
             deferredOpen: false,
             restoring: false,
+            restoreOpen: undefined,
             resuming: false,
             recovery: undefined,
             recoveryPending: false,
@@ -2311,6 +2314,7 @@ export class PlaybackController implements PlayerControls {
             attempt.suspended = false;
             attempt.suspendedReady = false;
             attempt.deferredOpen = false;
+            attempt.restoreOpen = undefined;
         }
         this.startupDue = undefined;
         this.cancelStartup?.();
@@ -3238,9 +3242,15 @@ export class PlaybackController implements PlayerControls {
         const generation = attempt.resumeGeneration;
         const transport = this.transport;
         this.showLoading(attempt, "restoring");
-        return new Promise((resolve) => {
+        const open = {};
+        attempt.restoreOpen = open;
+        const close = (): void => {
+            if (attempt.restoreOpen === open) attempt.restoreOpen = undefined;
+        };
+        return new Promise<boolean>((resolve) => {
             try {
                 restore.call(this.deps.avplay, url, resumeMs, false, () => {
+                    close();
                     if (transport !== this.transport) {
                         resolve(false);
                         return;
@@ -3279,7 +3289,7 @@ export class PlaybackController implements PlayerControls {
             } catch {
                 resolve(false);
             }
-        });
+        }).finally(close);
     }
 
     private urlWithToken(plan: PlaybackPlan, token: string): string | undefined {
@@ -3364,7 +3374,8 @@ export class PlaybackController implements PlayerControls {
 
     private showPlayback(attempt: Attempt): void {
         const plan = attempt.plan;
-        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined) {
+        // A late read must not draw over the Restoring overlay; the restore itself draws the view when it ends.
+        if (this.attempt !== attempt || !attempt.live || !attempt.started || plan === undefined || attempt.restoring || attempt.restoreOpen !== undefined) {
             return;
         }
         const frozen = attempt.busy && !attempt.reporting;
