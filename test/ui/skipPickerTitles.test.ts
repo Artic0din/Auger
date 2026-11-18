@@ -1,5 +1,7 @@
-// Settings › Playback's skip-interval pickers are titled by media kind, as silo-apple TVPlaybackSettingsView.skipIntervalPickerTitle
-// does ("Video Skip Back", "Audiobook Skip Back"), in English, German and Arabic. The rows keep the short "Skip Back" and "Skip Forward".
+// Settings › Playback's skip-interval pickers are titled by media kind, as silo-apple's TVPlaybackSettingsView.skipIntervalPickerTitle does
+// ("Video Skip Back", "Audiobook Skip Back"), in English, German and Arabic. The rows keep the short "Skip Back" and "Skip Forward".
+// Source: silo-apple d49d7bd174ce46aa20979106b5f1518e931ec9ea, iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift
+// (the same four titles on main 648091a7d9b7d4fa715c1e08230de2b37861b05d); this is the source revision, not an installed Apple TV build.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
@@ -12,7 +14,7 @@ let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 
-/** The title each picker opens with, from silo-translations a0142c1 (`settings.skipIntervals.picker.*`). */
+/** The title each picker opens with, from silo-translations a0142c1a08e87b1dc84239e9ac43c5cb7cf6a929 (`settings.skipIntervals.picker.*`). */
 const TITLES = {
     en: { settings: "Settings", video: ["Video Skip Back", "Video Skip Forward"], audiobook: ["Audiobook Skip Back", "Audiobook Skip Forward"] },
     de: { settings: "Einstellungen", video: ["Video-Sprung zurück", "Video-Sprung vorwärts"], audiobook: undefined },
