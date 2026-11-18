@@ -192,6 +192,69 @@ test("a swap mid-fade bakes the blend under way into the bitmap below, so the co
     } finally { await tab.context().close(); }
 });
 
+/**
+ * Codex P2 on #674: moving across cards every 200 to 300 ms must not make the wash darken or jump on the third swap. The visible wash is the bitmap
+ * under, with the fading one over it at the opacity the fade has reached; the opacity here is the browser's own ease-in-out, read from a paused Web
+ * Animation, not the code under test. At each swap the visible wash just before and the one just after must be the same.
+ */
+test("swaps 250 ms apart never darken or jump the visible wash", async () => {
+    const tab = await page();
+    try {
+        const steps = await tab.evaluate(([tints]) => {
+            const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+            let time = 0;
+            const wash = new fixture.HeroWash({ now: () => time, schedule: () => () => undefined });
+            document.body.replaceChildren(wash.element);
+            const canvases = (): HTMLCanvasElement[] => Array.from(wash.element.querySelectorAll("canvas"));
+            const points = [[480, 270], [40, 40], [920, 500], [40, 500], [920, 40]] as const;
+            const read = (canvas: HTMLCanvasElement): number[] => points.flatMap(([x, y]) => Array.from(canvas.getContext("2d")?.getImageData(x, y, 1, 1).data ?? []).slice(0, 3));
+            // The opacity CSS ease-in-out has reached after `ms` of a 700 ms fade.
+            const reference = (ms: number): number => {
+                const probe = document.createElement("div");
+                document.body.appendChild(probe);
+                const animation = probe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 700, easing: "ease-in-out", fill: "both" });
+                animation.pause();
+                animation.currentTime = ms;
+                const value = Number(getComputedStyle(probe).opacity);
+                probe.remove();
+                return value;
+            };
+            const visible = (fadeStart: number): number[] => {
+                const [under, over] = canvases();
+                if (under === undefined) return [];
+                const base = read(under);
+                if (over === undefined) return base;
+                const top = read(over), alpha = reference(time - fadeStart);
+                return base.map((value, index) => (1 - alpha) * value + alpha * (top[index] ?? 0));
+            };
+            // Mean luminance over the sample points, so 8-bit rounding of half a level a point does not add up.
+            const luma = (values: number[]): number => values.reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index % 3]!, 0) / points.length;
+            const result: { swap: number; count: number; worst: number; darker: number }[] = [];
+            wash.show(tints[0], false);
+            let fadeStart = -1;
+            for (let swap = 1; swap <= 5; swap++) {
+                const before = visible(fadeStart);
+                wash.show(tints[swap % 3], true);
+                fadeStart = time;
+                // The new bitmap starts at opacity 0, so what shows is the bitmap under it.
+                const after = read(canvases()[0]!);
+                result.push({
+                    swap, count: canvases().length,
+                    worst: swap === 1 ? 0 : Math.max(...before.map((value, index) => Math.abs(value - (after[index] ?? 0)))),
+                    darker: swap === 1 ? 0 : luma(before) - luma(after),
+                });
+                time += 250;
+            }
+            return result;
+        }, [TINTS] as const);
+        for (const step of steps) {
+            assert.equal(step.count, 2, `swap ${step.swap}: never more than the bitmap under and the one fading in`);
+            assert.ok(step.worst <= 3, `swap ${step.swap}: the visible wash jumped by ${step.worst.toFixed(1)} levels`);
+            assert.ok(step.darker <= 1, `swap ${step.swap}: the visible wash darkened by ${step.darker.toFixed(2)}`);
+        }
+    } finally { await tab.context().close(); }
+});
+
 test("a steady roll never keeps more than two bitmaps: the one fading in and the one under it", async () => {
     const tab = await page();
     try {
