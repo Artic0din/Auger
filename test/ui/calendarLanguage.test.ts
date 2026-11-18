@@ -8,6 +8,7 @@ import { formattingLocale } from "../../src/i18n/language.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeCalendar } from "../native/support/fakeCalendar.ts";
+import { problem } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
@@ -21,7 +22,7 @@ const LEFT = 37;
 const RIGHT = 39;
 const text = (key: Parameters<typeof translate>[0], language: string, args?: Parameters<typeof translate>[1]): string => translate(key, args, language);
 
-async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar(), device?: string, tvClock?: string): Promise<void> {
+async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar) => Promise<void>, catalog = new FakeCalendar(), device?: string, tvClock?: string, offerSignOut = false): Promise<void> {
     const tv = await openTv(browser, { app: "browse", ...(device === undefined ? {} : { locale: device }),
         ...(tvClock === undefined ? {} : { prepare: async page => { await page.addInitScript(format => { Reflect.set(window, "tizen", { time: { getTimeFormat: () => format } }); }, tvClock); } }) });
     tv.fake.catalog = catalog;
@@ -38,7 +39,7 @@ async function inLanguage(language: string, body: (tv: Tv, catalog: FakeCalendar
         await tv.jump(5000);
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "signed in");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
-        await tv.page.evaluate(() => window.browseHarness.mount());
+        await tv.page.evaluate(offer => window.browseHarness.mount(offer), offerSignOut);
         await tv.page.locator('.browse[data-view="home"] .browse-card').first().waitFor();
         await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").first().innerText()) !== "Home", `${language} top bar`);
         await afterPaint(tv);
@@ -133,4 +134,16 @@ test("air times follow the TV's own clock setting over the browser's en-GB regio
             assert.equal(await card.locator(".calendar-time").textContent(), expected, `${language} on a ${clock} clock`);
         }, new FakeCalendar(), "en-GB", clock);
     }
+});
+
+test("Calendar's Session expired page shows both German buttons in full, as Apple's fixed-width capsule wraps and its text button keeps its width", async () => {
+    const catalog = new FakeCalendar();
+    catalog.calendarFailure = problem(401, "token_invalid", "Hidden");
+    await inLanguage("de", async tv => {
+        const buttons = tv.page.locator(".calendar-failure .browse-button");
+        assert.deepEqual(await buttons.allInnerTexts(), [text("settings.accounts.signInAgain", "de"), text("shell.errorView.tryAgain", "de")]);
+        const fits = await buttons.evaluateAll(nodes => nodes.map(node => ({ label: node.textContent, clipped: node.scrollWidth > node.clientWidth + 1, right: Math.round(node.getBoundingClientRect().right) })));
+        for (const button of fits) assert.equal(button.clipped, false, `"${button.label}" is cut off: ${JSON.stringify(fits)}`);
+        assert.ok(fits.every(button => button.right <= 1920), JSON.stringify(fits));
+    }, catalog, undefined, undefined, true);
 });
