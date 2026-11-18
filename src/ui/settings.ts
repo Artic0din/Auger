@@ -788,9 +788,10 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     }
                     body.appendChild(el("p", "settings-value", spoilers.footer));
                 }
-                // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair.
+                // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair. The Video help line is Android TV's
+                // `footerVideo`, not Apple TV's `footerVideoAppleTv`, which names the Siri Remote that a Samsung TV does not have.
                 const skipGroups = [
-                    { header: translate("settings.playback.tvHeader.video"), ids: ["seek-back", "seek-forward"], footer: translate("settings.skipIntervals.footerVideoAppleTv") },
+                    { header: translate("settings.playback.tvHeader.video"), ids: ["seek-back", "seek-forward"], footer: translate("settings.skipIntervals.footerVideo") },
                     { header: translate("settings.playback.tvHeader.audiobooks"), ids: ["audiobook-seek-back", "audiobook-seek-forward"], footer: translate("settings.skipIntervals.footerAudiobook") },
                 ] as const;
                 for (const group of skipGroups) {

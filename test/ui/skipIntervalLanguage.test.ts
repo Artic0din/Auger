@@ -1,6 +1,6 @@
 // Settings › Playback's skip intervals on Apple's catalog keys, as silo-apple's TVPlaybackSettingsView draws them: each interval reads
 // `player.seekInterval.choice` ("10 Sekunden", in the language's plural and digits), the Video group's help line is
-// `settings.skipIntervals.footerVideoAppleTv` and the Audiobooks group's `settings.skipIntervals.footerAudiobook`. The strings are literal here so a key a
+// `settings.skipIntervals.footerVideo` (Android TV's key: a Samsung remote has arrow keys and no Siri Remote) and the Audiobooks group's `settings.skipIntervals.footerAudiobook`. The strings are literal here so a key a
 // language lacks cannot pass by falling back to English. A picker opens focused on the stored option, or on the first when it is not offered, as
 // TVSettingsPickerSheet.focusSelection does (silo-apple 648091a7, TVSettingsComponents.swift lines 837-839).
 import assert from "node:assert/strict";
@@ -18,18 +18,18 @@ after(async () => { await browser.close(); });
 const LANGUAGES = {
     en: {
         settings: "Settings", back: "10 seconds", forward: "30 seconds", rewind45: "45 seconds",
-        videoFooter: "Used by clicks and swipes on the Siri Remote and the on-screen skip buttons. Applies to every device signed in to this profile.",
+        videoFooter: "Used by left and right presses on the remote and the on-screen skip buttons. Applies to every device signed in to this profile.",
         audiobookFooter: "Used by the audiobook player's skip buttons. Applies to every device signed in to this profile.",
     },
     de: {
         settings: "Einstellungen", back: "10 Sekunden", forward: "30 Sekunden", rewind45: "45 Sekunden",
-        videoFooter: "Betrifft Klicks und Wischgesten auf der Siri Remote sowie die Sprungtasten auf dem Bildschirm. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
+        videoFooter: "Betrifft Links und Rechts auf der Fernbedienung sowie die Sprungtasten auf dem Bildschirm. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
         audiobookFooter: "Betrifft die Sprungtasten des Hörbuch-Players. Gilt für alle Geräte, die mit diesem Profil angemeldet sind.",
     },
     // 3 to 10 take Arabic's "few" form and 11 to 99 its "many" form, each with Arabic-Indic digits.
     ar: {
         settings: "الإعدادات", back: "١٠ ثوانٍ", forward: "٣٠ ثانية", rewind45: "٤٥ ثانية",
-        videoFooter: "تستخدمها النقرات والتمريرات على Siri Remote وأزرار التخطي على الشاشة. تنطبق على كل جهاز مسجّل الدخول إلى هذا الملف الشخصي.",
+        videoFooter: "تستخدمها ضغطات اليسار واليمين على جهاز التحكم عن بُعد وأزرار التخطي على الشاشة. تنطبق على كل جهاز مسجّل الدخول إلى هذا الملف الشخصي.",
         audiobookFooter: "تستخدمها أزرار التخطي في مشغّل الكتب الصوتية. تنطبق على كل جهاز مسجّل الدخول إلى هذا الملف الشخصي.",
     },
 } as const;
