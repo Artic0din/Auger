@@ -152,6 +152,8 @@ test("in Arabic the top bar's Left press moves to the tab on its left, and Right
 
 test("in English the same Right press moves to the next tab, as before", async () => {
     await withHome({}, async tv => {
+        // The library tabs come from their own answer; without them Right from Home reaches For You.
+        await tv.page.locator('[data-focus="movies"]').waitFor();
         await tv.page.locator('[data-focus="home"]').focus();
         await tv.remote(RIGHT);
         assert.equal(await tv.focused(), "movies");
