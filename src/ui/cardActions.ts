@@ -13,6 +13,7 @@ import { translate } from "../i18n/translate.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { remoteKey } from "./keys.ts";
 import { el } from "./screen.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { heldSelect, listenSelectRelease, moveSelect, releasedSelect, swallowSelect } from "./selectRelease.ts";
 
 /** What the opener knows about the card. A field it does not know is read from the item before the menu opens. */
@@ -107,7 +108,13 @@ export class CardActions {
     private readonly host: CardActionsHost;
     private readonly stopAuthority: () => void;
 
-    constructor(container: HTMLElement, session: NativeSession, host: CardActionsHost) {
+    private readonly notInterested: NotInterestedStore;
+    /** The store's stamp when the open menu's card was taken, so a write answered while the menu is open reconciles its state. */
+    private shownStamp = 0;
+    private stopNotInterested: (() => void) | undefined;
+
+    constructor(container: HTMLElement, session: NativeSession, notInterested: NotInterestedStore, host: CardActionsHost) {
+        this.notInterested = notInterested;
         this.container = container;
         this.session = session;
         this.host = host;
@@ -124,6 +131,7 @@ export class CardActions {
 
     open(card: MenuCard, options: CardMenuOptions = {}): void {
         if (this.active) return;
+        this.shownStamp = this.notInterested.stamp();
         const anchor = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
         const known = card.played !== undefined && card.favorite !== undefined && card.watchlist !== undefined;
         const source = card;
@@ -161,9 +169,11 @@ export class CardActions {
 
     private show(card: MenuCard, options: CardMenuOptions, anchor: HTMLElement | undefined, source: MenuCard): void {
         const rows = this.menuRows(card, options, source);
+        // While the menu is shown, a Not interested write for its card being answered, from here or from the page, draws it again.
+        this.stopNotInterested ??= this.notInterested.subscribe(id => { if (id === this.shown?.card.id) this.refresh(); });
         // Apple attaches no menu to a card without actions.
         if (rows.length === 0) { this.host.closed(); return; }
-        const busy = this.writes.has(card.id) || this.host.pendingElsewhere?.() === true;
+        const busy = this.writes.has(card.id) || this.notInterested.pending(card.id) !== undefined || this.host.pendingElsewhere?.() === true;
         const scrim = el("div", "card-actions-scrim card-menu-scrim");
         for (const type of ["click", "contextmenu"]) scrim.addEventListener(type, event => {
             if (event.target !== scrim) return;
@@ -266,7 +276,8 @@ export class CardActions {
         }
         // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
         if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
-            const marked = card.notInterested;
+            // A write still out for the title, from this menu or the page, shows the state it will leave.
+            const marked = this.notInterested.state(card.id, card.notInterested, this.shownStamp);
             rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
         }
         const dismissal = options.dismissal;
@@ -279,10 +290,14 @@ export class CardActions {
     /** `landed` gives the card's state after the change, or undefined when the card leaves its row. */
     private send(id: string, spec: ReturnType<typeof detailOperations.setPersonal>, landed: (card: MenuCard) => MenuCard | undefined, source: MenuCard, accepted?: () => void): void {
         // HomeViewModel.pendingWatchedUpdates: one change per card at a time, and none beside a pending Details change.
-        if (this.writes.has(id) || this.host.pendingElsewhere?.() === true) return;
+        if (this.writes.has(id) || this.notInterested.pending(id) !== undefined || this.host.pendingElsewhere?.() === true) return;
         const controller = new AbortController();
         this.writes.set(id, controller);
+        // Not interested goes through the one per-title store, so the page and other menus see this write while it is out.
+        const target = spec.path.startsWith("/not-interested/") ? spec.method === "PUT" : undefined;
+        if (target !== undefined) this.notInterested.start(id, target);
         this.session.call({ ...spec, profileScoped: true, replayAfterRefresh: false, signal: controller.signal }).then(() => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             accepted?.();
@@ -292,6 +307,7 @@ export class CardActions {
             if (shown !== undefined && shown.card.id === id) this.redraw(landed(shown.card));
             this.host.applied(id, spec.path.startsWith("/watched/"));
         }, () => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? !target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             if (this.shown?.card.id === id) this.redraw(this.shown.card);
@@ -327,6 +343,8 @@ export class CardActions {
     }
 
     private dismiss(): void {
+        this.stopNotInterested?.();
+        this.stopNotInterested = undefined;
         this.lifted?.card.classList.remove(MENU_LIFTED_CLASS);
         this.lifted = undefined;
         this.reading?.abort();
