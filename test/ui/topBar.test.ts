@@ -7,7 +7,7 @@ import { FakeRequests } from "../native/support/fakeRequests.ts";
 import type { Reply } from "../native/support/fakeSilo.ts";
 import { PRIMARY_MENU_KEY, type PrimaryMenu } from "../../src/contracts/v2/navigation.ts";
 import { HIDDEN_KEY } from "../../src/contracts/v2/settings.ts";
-import { jumpUntil, launchBrowser, openTv, homeDetailsRead, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, homeDetailsRead, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -1100,6 +1100,9 @@ for (const anchor of ["movies", "profiles"]) test(`a ${anchor} menu the dwell op
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
+        // A late Home answer repaints the rows and drops focus from a card handed over below; start once the answers have landed and painted.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+        await afterPaint(tv);
         await tv.page.locator(`[data-focus="${anchor}"]`).focus();
         await tv.jump(250);
         assert.equal(await tv.page.locator(`[data-focus="${anchor}"]`).getAttribute("aria-expanded"), "true", "the dwell opens the menu without entering it");
