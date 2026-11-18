@@ -459,7 +459,7 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         begin();
         current = undefined;
         const lines = ["Your sign-in on this TV ended. Sign in again to continue."];
-        message("expired", "Signed out", lines, [button("signin", "Sign in again", signOut)]);
+        message("expired", "Signed out", lines, [button("signin", translate("account.signInAgain"), signOut)]);
     };
 
     /**
