@@ -1,9 +1,11 @@
+import { holdsCollections } from "../contracts/v2/catalog.ts";
 import type { CollectionSummary, LibraryCollections } from "../contracts/v2/discovery.ts";
-import { groupedCount, shownLocale } from "../i18n/format.ts";
-import { type MessageKey, translate } from "../i18n/translate.ts";
+import { groupedCount } from "../i18n/format.ts";
+import { translate } from "../i18n/translate.ts";
 import type { View, Zone } from "./browseFocus.ts";
 import { newPages, newRoute, type Route, type RouteHandlers } from "./browseRoutes.ts";
-import { actionButton, artwork, errorView, failureError, homeView, homeRows, lines, zoneNode } from "./browseViews.ts";
+import { actionButton, errorView, failureError, homeView, homeRows, lines, zoneNode } from "./browseViews.ts";
+import { collectionArt, collectionPreview, collectionRowCards, collectionSpoken, countLine } from "./collectionCards.ts";
 import { emptyState, pageOwner, recommendedLoading, type StateSymbol } from "./libraryStates.ts";
 import type { DiscoveryState, LibrarySource } from "./libraryDiscovery.ts";
 import { el } from "./screen.ts";
@@ -40,7 +42,7 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
         content.push(page);
         zones.push({ id: "page", layout: "row", up: "nav", items: [pageOwner(page, label)] });
     };
-    const rows = state.mode === "Recommended" && state.data !== undefined ? homeRows(state.data.sections.filter(section => section.featured !== true)).filter(row => row.cards.length > 0) : [];
+    const rows = state.mode === "Recommended" && state.data !== undefined ? homeRows(state.data.sections.filter(section => section.featured !== true)).filter(row => row.cards.length > 0 || (holdsCollections(row.section) && (row.section.collections?.length ?? 0) > 0)) : [];
     if (state.mode === "Recommended" && route.failure !== undefined && rows.length === 0) {
         // TVLibraryBrowseView.swift:54-56: with no rows, a failure is Apple's ErrorView. The tab is a root, so it offers no Go Back.
         return { ...errorView(`library:${route.library.id}`, failureError(route.failure, route.error), () => handlers.retry(route), undefined, handlers.signIn), back: handlers.pop };
@@ -67,6 +69,7 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
                 search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
                 library: library => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,
+                collectionCards: (collections, rowTitle) => collectionRowCards(collections, rowTitle, handlers, route.library),
             });
             content.push(...row.content);
             zones.push(...row.zones);
@@ -96,19 +99,12 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
             const item = actionButton(`collection:${collection.id}`, "", () => open(collection.title, { kind: "collection", id: collection.id, groupKind }));
             item.element.classList.add("browse-card", "discovery-collection", ...(grid ? ["collection-poster"] : []));
             item.element.setAttribute("data-collage", String(collection.posterIsCollage));
-            const fallback = el("span", "collection-stack");
-            // TVCollectionPosterCard.swift:96-98: square.stack.fill, 56pt semibold, white at 85%.
-            fallback.setAttribute("data-symbol", "square.stack.fill");
-            fallback.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="8.5" y="1.6" width="7" height="2" rx="1"/><rect x="5.8" y="4.6" width="12.4" height="2.2" rx="1.1"/><rect x="3.5" y="8" width="17" height="14.2" rx="3.2"/></svg>';
-            const art = artwork(grid ? "browse-art" : "discovery-collection-art", collection.posterUrl, handlers.context.baseUrl, fallback);
-            let hash = 2166136261;
-            for (const byte of new TextEncoder().encode(collection.id)) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
-            art.style.background = `linear-gradient(to bottom right, hsl(${hash % 360} 33.3333% 31.5%), hsl(${hash % 360} 19.0476% 18.48%))`;
-            item.element.setAttribute("aria-label", collection.itemCount > 0 ? translate("library.collectionCard.spokenCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount), name: collection.title }) : translate("library.collectionCard.spoken", { name: collection.title }));
+            const art = collectionArt(collection, grid ? "browse-art" : "discovery-collection-art", handlers.context.baseUrl);
+            item.element.setAttribute("aria-label", collectionSpoken(collection));
             item.element.append(art, el("span", grid ? "browse-card-title" : "discovery-collection-name", collection.title));
             if (!grid) item.element.append(el("span", "discovery-collection-count", translate("library.titleCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount) })));
             else if (collection.itemCount > 0) item.element.append(el("span", "browse-card-subtitle", countLine(collection.itemCount, types.get(collection.id))));
-            item.element.addEventListener("focus", () => handlers.context.preview?.({ id: collection.id, type: "movie", title: collection.title, overview: translate("library.titleCount", { count: collection.itemCount, count_text: groupedCount(collection.itemCount) }), backdropUrl: collection.posterUrl, posterUrl: collection.posterUrl, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined }, translate("library.collections")));
+            item.element.addEventListener("focus", () => handlers.context.preview?.(collectionPreview(collection), translate("library.collections")));
             return item;
         });
         if (!grid) items.push(actionButton("collections:all", "See All", () => handlers.mode(route, "Collections")));
@@ -126,33 +122,6 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
 
 function collectionCount(collections: LibraryCollections | undefined): number {
     return (collections?.collections.length ?? 0) + (collections?.groups ?? []).reduce((sum, group) => sum + group.collections.length, 0) + (collections?.ungrouped?.collections.length ?? 0);
-}
-
-/** TVCollectionPosterCard.countText: the content noun for a known type, else the neutral items, in capitals. Management types such as manual/smart use the neutral one. */
-function countLine(count: number, type: string | undefined): string {
-    const key = ((): MessageKey => {
-        switch (type?.toLowerCase()) {
-            case "movie":
-            case "movies":
-                return "library.collectionCard.movies";
-            case "series":
-            case "show":
-            case "shows":
-            case "tvshows":
-                return "library.collectionCard.shows";
-            case "album":
-            case "albums":
-                return "library.collectionCard.albums";
-            case "audiobook":
-            case "audiobooks":
-            case "book":
-            case "books":
-                return "library.collectionCard.books";
-            default:
-                return "collections.itemCount";
-        }
-    })();
-    return translate(key, { count, count_text: groupedCount(count) }).toLocaleUpperCase(shownLocale());
 }
 
 export function resultsView(route: Extract<Route, { kind: "libraryResults" }>, grid: { content: HTMLElement[]; zones: Zone[] }, handlers: RouteHandlers): View {

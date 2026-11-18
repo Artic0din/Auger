@@ -26,7 +26,7 @@ export interface FakeTitle {
     readonly lastAirDate?: string;
 }
 
-interface LibraryRow { id: string; sectionType?: string; title: string; /** The catalog key and arguments the server sends beside a title it wrote. */ titleKey?: string; titleArgs?: Record<string, string>; items: string[] }
+interface LibraryRow { id: string; sectionType?: string; title: string; /** The catalog key and arguments the server sends beside a title it wrote. */ titleKey?: string; titleArgs?: Record<string, string>; items: string[]; /** The cards of a row of collections, as the server sends them. */ collections?: Record<string, unknown>[] }
 interface Household {
     readonly libraries: { id: string; name: string; type: string; sort_order: number }[];
     hidden: number[] | null;
@@ -166,7 +166,7 @@ export class FakeCatalog implements CatalogRoutes {
             const sections = household.sections.map((section) => {
                 const dismissible = ["continue_watching", "in_progress", "next_up"].includes(section.sectionType ?? section.id);
                 const items = section.items.filter((id) => this.visible(household, id) && !(dismissible && this.homeDismissed.has(id))).map((id) => this.card(id));
-                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, ...(section.titleKey === undefined ? {} : { title_key: section.titleKey }), ...(section.titleArgs === undefined ? {} : { title_args: section.titleArgs }), total_count: items.length, items };
+                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, ...(section.titleKey === undefined ? {} : { title_key: section.titleKey }), ...(section.titleArgs === undefined ? {} : { title_args: section.titleArgs }), total_count: section.collections?.length ?? items.length, items, ...(section.collections === undefined ? {} : { collections: section.collections }) };
             });
             return { status: 200, body: { sections } };
         }
@@ -190,13 +190,13 @@ export class FakeCatalog implements CatalogRoutes {
             const rows = household.librarySections ?? (titles.length === 0 ? [] : [{ id: "library-picks", sectionType: "recently_added", title: "Library Picks", items: titles.slice(0, 24).map(title => title.id) }]);
             const sectionBody = (row: LibraryRow): Record<string, unknown> => {
                 const items = row.items.filter(item => this.visible(household, item)).map(item => this.card(item));
-                return { id: row.id, section_type: row.sectionType ?? row.id, title: row.title, total_count: items.length, items };
+                return { id: row.id, section_type: row.sectionType ?? row.id, title: row.title, total_count: row.collections?.length ?? items.length, items, ...(row.collections === undefined ? {} : { collections: row.collections }) };
             };
             if (library[3] !== undefined) {
                 const row = rows.find(item => item.id === decodeURIComponent(library[3] ?? ""));
                 return row === undefined ? problem(404, "not_found", "Not found") : { status: 200, body: sectionBody(row) };
             }
-            return { status: 200, body: { sections: rows.map(sectionBody).filter(section => arrayOf(section.items).length > 0) } };
+            return { status: 200, body: { sections: rows.map(sectionBody).filter(section => arrayOf(section.items).length > 0 || arrayOf(section.collections ?? []).length > 0) } };
         }
         if (library?.[2] === "collections" && library[3] === undefined) {
             if (titles.length === 0) return { status: 200, body: { library_id: id, collections: [], groups: [], ungrouped: { sort_order: 1, collections: [] } } };

@@ -39,6 +39,12 @@ test("a newly marked title leaves the recommendation and discovery rows, and the
     assert.equal(removingNotInterested(sections, "unknown").length, sections.length, "an id no row shows changes nothing");
 });
 
+test("a row of collections is never touched by a mark", () => {
+    const collections: HomeSection = { id: "picks", sectionType: "collection_posters", title: "Picks", items: [], collections: [{ id: "c", source: "library", title: "C", posterUrl: undefined, posterThumbhash: undefined, backdropUrl: undefined, backdropThumbhash: undefined, itemCount: 1, libraryId: "1", creatorProfileId: undefined }] };
+    assert.deepEqual(removingNotInterested([collections], "c"), [collections]);
+    assert.deepEqual(removingNotInterestedFromAll([collections], "c"), [collections]);
+});
+
 test("For You's rows are all server-filtered recommendation lists, so a mark leaves every one", () => {
     const rows = removingNotInterestedFromAll([row("recommended_for_you", "a", "b"), row("recently_added", "a"), row("popular", "c", "a")], "a");
     assert.deepEqual(rows.map(section => [section.sectionType, section.items.map(item => item.id)]), [["recommended_for_you", ["b"]], ["popular", ["c"]]]);
