@@ -314,8 +314,12 @@ export interface PlaybackDeps {
 }
 
 const PROGRESS_INTERVAL_MS = 10000;
-/** The server keeps a fresh plan 90 s, enough for a 60 s startup and the next replan (protocol v3 §2.5). */
-const STARTUP_TIMEOUT_MS = 60000;
+/**
+ * How long AVPlay may take to prepare a stream before the route counts as failed: a backstop for a prepare that hangs while the page still
+ * runs. It cannot catch a playlist that freezes the page's JavaScript, which is checked before `open` instead (`playlistUnreadable`, #650).
+ * A failed route is replanned, and the third replan that fails ends in the error page. The server keeps a fresh plan 90 s (protocol v3 §2.5).
+ */
+const STARTUP_TIMEOUT_MS = 15000;
 /** Failed routes this client replans before giving up; the protocol allows up to 8. */
 const MAX_RECOVERY_REPLANS = 3;
 /** Apple's typed failure for a track its engine could not select (AetherEngine PlaybackErrorKind). */
@@ -2120,6 +2124,17 @@ export class PlaybackController implements PlayerControls {
             attempt.deferredOpen = true;
             return;
         }
+        if (await this.playlistUnreadable(attempt, plan, url)) {
+            if (transport === this.transport && attempt.live) this.fail(attempt, { kind: "playback_failed" }, true);
+            return;
+        }
+        if (transport !== this.transport || !attempt.live) {
+            return;
+        }
+        if (attempt.hidden || attempt.restoring) {
+            attempt.deferredOpen = true;
+            return;
+        }
         const avplay = this.deps.avplay;
         try {
             avplay.open(url);
@@ -2750,6 +2765,25 @@ export class PlaybackController implements PlayerControls {
         attempt.cancelRecovery = undefined;
         this.cancelStartup?.();
         this.cancelStartup = undefined;
+    }
+
+    /**
+     * True when an HLS playlist, or the first video variant of a master, is written with `#EXT-X-DEFINE` variables (or leaves one in a
+     * segment address). The master is version 3 and clean; the define is in the variant (S95C, #650). Rendition playlists are not read. AVPlay
+     * cannot read those, and handing it such a stream stops the page's JavaScript until the TV closes Silo (#650, #314),
+     * so no timer could catch it. A playlist that cannot be read here is no verdict: AVPlay gets it as before.
+     */
+    private async playlistUnreadable(attempt: Attempt, plan: PlaybackPlan, url: string): Promise<boolean> {
+        if (plan.delivery !== "server_remux_hls" && plan.delivery !== "server_transcode_hls") return false;
+        let heads: string[];
+        try {
+            heads = await this.deps.session.http.playlistHeads(url, attempt.signal);
+        } catch {
+            return false;
+        }
+        if (!heads.some(head => /#EXT-X-DEFINE|\{\$/.test(head))) return false;
+        console.warn(`Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery ${plan.delivery})`);
+        return true;
     }
 
     private armStartup(attempt: Attempt, transport: number, deadline = this.deps.clock.now() + STARTUP_TIMEOUT_MS): void {
