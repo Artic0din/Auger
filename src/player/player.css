@@ -1111,18 +1111,56 @@
     outline: none;
 }
 
-.player-info-title {
+/* PaneColumn: a VStack(spacing: 14) of the heading and each line (TVPlayerInfoHUD.swift:314-333). */
+.player-info-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.player-info-column > .player-menu-heading,
+.player-info-column > p {
     margin: 0;
+}
+
+/* InfoPane's title lines (TVPlayerInfoHUD.swift:623-653): series 16 semibold at 60 % with 1.8 tracking, title 34
+ * semibold on two lines at most, episode 22 medium at 75 %, year and runtime 20 at 65 %, overview 20 at 75 %. */
+.player-info-series {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-info-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     font-size: 34px;
     font-weight: 600;
     line-height: 1.15;
 }
 
+.player-info-episode {
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* Year and runtime are joined by "  ·  " (InfoPane.metaBits); the doubled spaces stay. */
 .player-info-meta {
-    margin: 8px 0 0;
+    white-space: pre-wrap;
     font-size: 20px;
     color: rgba(255, 255, 255, 0.65);
     font-variant-numeric: tabular-nums;
+}
+
+.player-info-column > .player-info-overview {
+    padding-top: 4px;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .player-info-row {
@@ -1139,6 +1177,64 @@
     font-weight: 400;
     color: rgba(255, 255, 255, 0.7);
     font-variant-numeric: tabular-nums;
+}
+
+/*
+ * PlaybackStatsPanel, tvOS two-column layout (PlaybackStatsPanel.swift:33-38, :103-160): HStack(spacing: 34) of two Grids
+ * with a 1 px divider at 12 %. Each Grid has 24 px between label and value and 10 px between rows; the label column is
+ * trailing-aligned. Headings 13 semibold uppercase at 52 %, labels 20 medium at 74 %, values 20 regular white.
+ */
+.player-stats {
+    display: flex;
+    gap: 34px;
+    outline: none;
+}
+
+.player-stats-column {
+    display: grid;
+    flex: 1 1 0;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-content: start;
+    align-items: baseline;
+    gap: 10px 24px;
+    min-width: 0;
+}
+
+.player-stats-divider {
+    flex: none;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.player-stats-heading,
+.player-stats-label {
+    justify-self: end;
+    margin: 0;
+    text-align: right;
+}
+
+.player-stats-heading {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.52);
+}
+
+.player-stats-label {
+    font-size: 20px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.74);
+}
+
+/* A value of several words may take a second line (`lineLimit(2)`). */
+.player-stats-value {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
 }
 
 .player-menu-heading {

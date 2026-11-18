@@ -3319,3 +3319,22 @@ test("an inventory URL that cannot be parsed is not offered as a secondary track
     assert.deepEqual(view.tracks.secondary?.choices.map(choice => choice.id), ["file:42:subtitle:0", "file:42:subtitle:1"]);
     r.controller.destroy();
 });
+
+test("the HUD's Now playing and Stats rows name the plan's audio track and follow pause", async () => {
+    const r = await rig();
+    await playMovie(r);
+    const stats = (): NonNullable<Extract<PlaybackView, { phase: "playing" | "paused" }>["hud"]>["stats"] => {
+        const view = last(r.views);
+        assert.ok((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined);
+        return view.hud.stats;
+    };
+    // Info names the fake's file 42 track (English, EAC3, six channels); Stats gives the format the plan's recipe delivers (AAC stereo).
+    assert.equal(stats().nowPlaying.find(row => row.label === "Audio")?.value, "English · EAC3 5.1");
+    assert.equal(stats().playback.find(row => row.label === "Audio")?.value, "English · AAC Stereo");
+    assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Playing" }]);
+    assert.equal(stats().engine.find(row => row.label === "Source")?.value !== undefined, true);
+    r.controller.setPaused(true);
+    await r.h.clock.advance(0);
+    assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Paused" }]);
+    r.controller.destroy();
+});

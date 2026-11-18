@@ -15,7 +15,7 @@ import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
 import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
 import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, REMOVE_CONFLICT_MESSAGE, REMOVED_NOTICE, RequestActionGate, REQUEST_NOTICE_MS, UNCONFIRMED_CANCEL_MESSAGE, UNCONFIRMED_REMOVE_MESSAGE, visibleMineRequests } from "./requestRemoval.ts";
+import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations, type TextSearchScope } from "../api/operations.ts";
@@ -2211,7 +2211,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         if (destination.kind === "item") host.forgetVisit(`item:${destination.id}`);
         if (destination.kind === "person") host.forgetVisit(`person:${destination.id}`);
-        if (destination.kind === "audiobook") { push(newRoute({ kind: "audiobook", id: destination.id, title: destination.title, data: undefined })); return; }
+        if (destination.kind === "audiobook") { push(newRoute({ kind: "audiobook", id: destination.id, title: destination.title, ...(destination.seed === undefined ? {} : { seed: destination.seed }), data: undefined })); return; }
         push(destination.kind === "item"
             ? newRoute({ kind: "item", id: destination.id, title: destination.title, ...(destination.seriesContext === undefined ? {} : { seriesContext: destination.seriesContext }), ...(destination.seed === undefined ? {} : { seed: destination.seed }), ...(destination.fromRelated === true ? { fromRelated: true } : {}), data: undefined })
             : destination.kind === "person" ? newRoute({ kind: "person", id: destination.id, title: destination.title, data: undefined, filter: "video", pages: newPages(), pendingIndex: undefined })
@@ -2354,8 +2354,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 searchPeople(route, searchTypeFor(route, route.searchType));
                 render(host.focused());
             } });
-        // An open room is a full-screen page, as on tvOS; the entry stays under the bar.
-        const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current) || (current.kind === "watchParty" && current.watchParty.hub.state.room === undefined);
+        // Watch Party is a full-screen page, as on tvOS: Apple pushes it, and its shell draws the bar only while the stack is empty.
+        const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current);
         cancelOfflineRefresh();
         if (offlineRefreshRoute !== current) offlineRefreshAt = undefined;
         offlineRefreshRoute = current;
@@ -2371,7 +2371,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             // A marquee rest armed on remembered rows must not read their card once Home is empty.
             if (current.kind === "home" && !preview) homeDetails.suspend();
             const modal = browsing && (current.discovery?.panel !== undefined || shuffleFailure?.route === current);
-            const decorated = shell.decorate(view, selected, preview, modal ? () => { view.back?.(); } : current.kind === "personal" || isHubRoot(current) || current.kind === "watchParty" ? () => {
+            const decorated = shell.decorate(view, selected, preview, modal ? () => { view.back?.(); } : current.kind === "personal" || isHubRoot(current) ? () => {
                 if (host.focused()?.zone === "nav") pop();
                 else render(tabFocus(current));
             } : undefined, current.kind === "library" ? `library:${current.library.id}:${current.library.type}:${current.discovery?.mode ?? "Recommended"}` : undefined);
@@ -2523,7 +2523,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Neighbor focus must be taken from the pre-removal list (AGENTS.md restore by id).
         const focus = listFocusAfter(route, id, fallback);
         dropRemovedRequest(id);
-        publishRequestNotice(REMOVED_NOTICE);
+        publishRequestNotice(removedNotice());
         await settleVisibleRequests(route, focus, revision);
     };
     const runListRemove = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
@@ -2548,11 +2548,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_REMOVE_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("remove");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
-            const message = error instanceof ApiError && error.problemId === "conflict" ? REMOVE_CONFLICT_MESSAGE : writeFailureMessage(error);
+            const message = error instanceof ApiError && error.problemId === "conflict" ? removeConflictMessage() : writeFailureMessage(error);
             if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
             await settleVisibleRequests(route, origin, revision);
             requestGate.listMessage = message;
@@ -2586,7 +2586,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 requestGate.release(token);
                 const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
                 if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                if (requestGate.held.has(record.id)) requestGate.holdMessage("cancel");
                 showVisibleRequestList(route, focus, revision);
                 return;
             }
@@ -2718,7 +2718,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (unconfirmed && cancelId !== undefined) {
                     requestGate.hold(cancelId);
                     releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.listMessage = UNCONFIRMED_CANCEL_MESSAGE;
+                    if (requestGate.held.has(cancelId)) requestGate.holdMessage("cancel");
                 } else {
                     releaseGate();
                 }

@@ -1,3 +1,4 @@
+import { translate } from "../i18n/translate.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import type { FocusItem } from "./browseFocus.ts";
 import { remoteKey } from "./keys.ts";
@@ -70,8 +71,8 @@ export class RequestRecordMenu {
         const options = this.options;
         if (options === undefined) return;
         const items: FocusItem[] = [];
-        if (options.cancel !== undefined) items.push(actionButton("cancel-request", "Cancel Request", () => this.choose(options.cancel)));
-        if (options.remove !== undefined) items.push(actionButton("remove-request", "Remove Request", () => this.showConfirmation()));
+        if (options.cancel !== undefined) items.push(actionButton("cancel-request", translate("requests.action.cancel"), () => this.choose(options.cancel)));
+        if (options.remove !== undefined) items.push(actionButton("remove-request", translate("requests.row.removeRequest"), () => this.showConfirmation()));
         this.present(options.title, undefined, items, items[0]?.key);
     }
 
@@ -79,9 +80,9 @@ export class RequestRecordMenu {
     private showConfirmation(): void {
         const options = this.options;
         if (options === undefined) return;
-        const remove = actionButton("confirm-remove", "Remove request", () => this.choose(options.remove));
-        const keep = actionButton("keep-request", "Keep request", () => this.close());
-        this.present("Remove this request?", `Your failed request for \u201C${options.title}\u201D will be deleted. You can request the title again later.`, [remove, keep], "keep-request");
+        const remove = actionButton("confirm-remove", translate("requests.remove.confirm"), () => this.choose(options.remove));
+        const keep = actionButton("keep-request", translate("requests.remove.keep"), () => this.close());
+        this.present(translate("requests.remove.title"), translate("requests.remove.body", { title: options.title }), [remove, keep], "keep-request");
     }
 
     private choose(action: (() => void) | undefined): void {

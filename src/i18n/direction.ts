@@ -50,9 +50,40 @@ export function applyLayoutDirection(root: DirectionRoot | undefined = globalThi
     else root.removeAttribute("dir");
 }
 
-/** Leaves the screens that are still English, sign-in among them, with the default `lang` and reading left to right. */
+/**
+ * Gives a screen that draws its own text the language and direction of that text, whatever the page says: Change Account and the
+ * profile screens can open with no browse page under them (which sets the document's), and over one they follow it.
+ */
+export function applyScreenDirection(screen: Element, language: string = textLanguage()): void {
+    screen.setAttribute("lang", language);
+    screen.setAttribute("dir", language !== SOURCE_LANGUAGE && isRightToLeft(language) ? "rtl" : "ltr");
+}
+
+/** Leaves the screens that are still English, the profile picker among them, with the default `lang` and reading left to right. */
 export function clearLayoutDirection(): void {
     applyLayoutDirection(undefined, SOURCE_LANGUAGE);
+}
+
+/**
+ * `AppLanguage.isolated`: a name or title joined into a sentence is wrapped in first-strong isolates when the language reads
+ * right to left, so text of the other direction keeps its neighbours' punctuation in place. Left to right keeps its bytes.
+ */
+export function isolated(value: string, language: string = textLanguage()): string {
+    return language !== SOURCE_LANGUAGE && isRightToLeft(language) ? `\u2068${value}\u2069` : value;
+}
+
+const RIGHT_TO_LEFT_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * Text with no catalog key is English in every language. In a right-to-left page a line with no right-to-left letter in it takes the page's
+ * direction and moves its closing punctuation to the front, so the line is marked as the English it is: its own language and direction.
+ * Every helper that shows a message from the session core or the screens' own literals does this, so a call site never has to.
+ */
+export function markEnglishOnly(node: HTMLElement, text: string): void {
+    if (isRightToLeft(textLanguage()) && !RIGHT_TO_LEFT_LETTER.test(text)) {
+        node.setAttribute("lang", SOURCE_LANGUAGE);
+        node.setAttribute("dir", "ltr");
+    }
 }
 
 /** True while the document reads right to left: Left and Right on the remote then follow the mirrored layout. */

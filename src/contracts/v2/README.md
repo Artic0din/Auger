@@ -127,12 +127,13 @@ Apple behavior is read from `AudiobookPlaybackContext.swift`, `AudiobookProgress
 | `queryCatalogItems` as `queryAudiobooks` | `natural_idempotent` (`profile_scoped`) | Scoped by `library_id` with no `type`, as Apple omits it for audiobook libraries; the author, narrator or series filter is one `match: any` group of `is` rules |
 | `syncProgress` | `non_retryable` (`profile_scoped`) | The only durable resume point; whole-book milliseconds with `force_overwrite`; never resent, so the caller passes `replayAfterRefresh: false` and the next sample carries a fresh position |
 
-Library gating: `listUserLibraries` reports `type: "audiobooks"`, and `audiobookLibraries` drops hidden ones.
+Library gating: `listUserLibraries` reports `type: "audiobooks"` (the decoder also reads `audiobook`, trimmed and case-folded, as silo-apple `isAudiobookLibrary` does, because the server documents the type as free-form), and `audiobookLibraries` drops hidden ones.
 `nav.show_audiobooks` is `client_local` and defaults to false in the manifest, so the opt-in is stored per profile on the device and is never read from or written to the server.
 There is no server capability flag for audiobooks; a server without audiobook libraries simply lists none.
 `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9); this change only names them.
 
 Parts follow Apple: a version is a part when `presentation_kind` is `audiobook_part` or it carries `codec_audio` or `duration`, ordered by `presentation_part_index` and then numerically by `file_id`.
+A part keeps `file_name`; a book without chapters lists its parts in the picker by that name, or "Part N" when it is empty or absent, as `TVAudiobookChaptersView.partTitle` does.
 Part offsets and chapter starts are summed onto one whole-book timeline; the playback API only knows files.
 The total is the larger of the stitched length and `audiobook.total_duration_seconds`. The resume position never passes a known total (an unknown total of 0 leaves it as the server sent it, where Apple clamps it to 0), and a seek never passes the end of its file.
 One deliberate difference from Apple: a part with no `duration` is sized by its furthest chapter `end_seconds`, never by a chapter start, and a multi-part book with any unknown part length is rejected rather than stitched on a guess.

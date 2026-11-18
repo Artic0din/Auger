@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ExperimentalFeatures } from "../../src/session/experimentalFeatures.ts";
 import { decodePlaybackCapabilities, type PlaybackCapabilities } from "../../src/contracts/v2/playback.ts";
 import { decodeRoomAccess, decodeWatchTogetherCapabilities, type RoomAccess, type WatchTogetherCapabilities } from "../../src/contracts/v2/watchTogether.ts";
-import { supportsSynchronizedParty, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
+import { noticeText, supportsSynchronizedParty, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
 import { MemoryPublicStorage } from "./support/keyManager.ts";
 import { unusedLobbyOperations, offline } from "./support/watchPartyApi.ts";
 import { fixture } from "./support/fakeSilo.ts";
@@ -111,7 +111,7 @@ test("a failed support check keeps the last answer and says why", async () => {
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.check();
     assert.equal(hub.state.supported, true);
-    assert.equal(hub.state.error, "Could not check Watch Party support. Down for maintenance.");
+    assert.equal(noticeText(hub.state.error ?? ""), "Could not check Watch Party support. Down for maintenance.");
     assert.equal(hub.state.checking, false);
 });
 
@@ -145,7 +145,7 @@ test("create and join check support again first and refuse an unsupported server
     const { api, calls } = fakeApi({ playbackCapabilities: async () => decodePlaybackCapabilities(fixture("playback_capability_available")) });
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.create("host_pick");
-    assert.equal(hub.state.error, "This server needs an update to support synchronized Watch Party playback safely on this profile.");
+    assert.equal(noticeText(hub.state.error ?? ""), "This server needs an update to support synchronized Watch Party playback safely on this profile.");
     assert.equal(hub.state.supported, false);
     assert.deepEqual(calls.create, []);
     await hub.join("K7M2QX");
@@ -166,9 +166,9 @@ test("an empty code and an invite link get Apple's messages without a request", 
     const { api, calls } = fakeApi();
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.join("   ");
-    assert.equal(hub.state.error, "Enter a party code or invitation link.");
+    assert.equal(noticeText(hub.state.error ?? ""), "Enter a party code or invitation link.");
     await hub.join("https://silo.example.test/rooms/join?token=abc");
-    assert.equal(hub.state.error, "This Watch Party invitation is invalid.");
+    assert.equal(noticeText(hub.state.error ?? ""), "This Watch Party invitation is invalid.");
     assert.deepEqual(calls.names, []);
 });
 
@@ -176,7 +176,7 @@ test("a refused join shows the server's reason and stays on the hub", async () =
     const { api } = fakeApi({ joinByCode: async () => { throw problem(409, "That party code was not found."); } });
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.join("NOPE00");
-    assert.equal(hub.state.error, "That party code was not found.");
+    assert.equal(noticeText(hub.state.error ?? ""), "That party code was not found.");
     assert.equal(hub.state.room, undefined);
     assert.equal(hub.state.busy, false);
 });
@@ -185,7 +185,7 @@ test("a wrong code shows the server's own text, as Apple's localizedDescription 
     const { api } = fakeApi({ joinByCode: async () => { throw problem(404, "That party code was not found."); } });
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.join("NOPE00");
-    assert.equal(hub.state.error, "That party code was not found.");
+    assert.equal(noticeText(hub.state.error ?? ""), "That party code was not found.");
     assert.equal(hub.state.room, undefined);
 });
 
@@ -193,7 +193,7 @@ test("a forbidden create shows the server's own text", async () => {
     const { api } = fakeApi({ createRoom: async () => { throw problem(403, "Guests cannot host a party."); } });
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.create("host_pick");
-    assert.equal(hub.state.error, "Guests cannot host a party.");
+    assert.equal(noticeText(hub.state.error ?? ""), "Guests cannot host a party.");
 });
 
 test("a 404 or 403 with no detail shows the problem title, then the shared wording only without a problem", async () => {
@@ -202,12 +202,12 @@ test("a 404 or 403 with no detail shows the problem title, then the shared wordi
         const { api } = fakeApi({ joinByCode: async () => { throw blank(status); } });
         const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
         await hub.join("NOPE00");
-        assert.equal(hub.state.error, "Party not found", String(status));
+        assert.equal(noticeText(hub.state.error ?? ""), "Party not found", String(status));
     }
     const { api } = fakeApi({ joinByCode: async () => { throw new ApiError({ kind: "http", status: 404, retryAfterSeconds: undefined }); } });
     const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
     await hub.join("NOPE00");
-    assert.equal(hub.state.error, "We couldn't find what you were looking for. It may have been removed or moved.");
+    assert.equal(noticeText(hub.state.error ?? ""), "We couldn't find what you were looking for. It may have been removed or moved.");
 });
 
 test("a second tap while a request runs is ignored", async () => {

@@ -156,7 +156,7 @@ When an answer differs from what is shown, or Settings changes it, one path hand
 - A row with no key, such as an admin's own name or a recommendation row's subject, stays as sent.
 - The sign-out confirmation's title and message read from `shell.signOut.titleNamed`, `account.signOut.leaves` and `account.signOut.leavesRemovingServer`, with `{device}` filled as "TV". Settings, Accounts and the profile picker share that copy, so they read the same.
 - Spoken names follow Apple's: a libraries panel is `Movies libraries`, and a single library's section list is `{library} sections`. The top bar's `Main navigation` label and the Silo wordmark have no Apple key and stay English.
-- Not moved yet, still English: search, Details and the player, the Watchlist, Favorites and History pages, a Home row's Explore all page, and server error text. They follow in later #571 pull requests.
+- Not moved yet, still English: search, Details and the player, a Home row's Explore all page, and server error text. They follow in later #571 pull requests.
 
 ### Card, For You and library text
 
