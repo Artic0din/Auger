@@ -40,7 +40,8 @@ export type AppearanceMember = "fontSize" | "fontFamily" | "fontColor" | "textOp
 
 /** TVPlayerInfoHUD.delayLabel: `LocaleFormat.integer`, so the digits are the shown language's. */
 export function delayLabel(milliseconds: number): string {
-    return `${milliseconds > 0 ? "+" : ""}${integerText(milliseconds)} ms`;
+    // `+ 0` turns -0 into 0: Intl keeps the sign of a negative zero, Swift's Int has none.
+    return `${milliseconds > 0 ? "+" : ""}${integerText(milliseconds + 0)} ms`;
 }
 
 export function delayOptions(current: number): readonly LabeledChoice[] {

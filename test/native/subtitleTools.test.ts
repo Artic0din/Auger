@@ -62,6 +62,7 @@ test("delay, size, position and appearance use Apple's picker values and write s
         assert.equal(delayLabel(-200), "\u061C-٢٠٠ ms", "the Arabic letter mark keeps the minus on the number");
     } finally { setAppLanguage(null); }
     assert.equal(delayLabel(2500), "+2500 ms");
+    assert.equal(delayLabel(-0), "0 ms", "a negative zero (a delay stepped back to zero) shows no minus");
     const options = delayOptions(2500);
     assert.equal(options[0]?.id, "-2000");
     assert.equal(options.at(-2)?.id, "2000");

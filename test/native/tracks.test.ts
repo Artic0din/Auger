@@ -2509,6 +2509,23 @@ function landGerman(): void {
 }
 const audioLabels = (view: TrackView): string[] => view.audio.state === "ready" ? view.audio.choices.map(choice => `${choice.label} | ${choice.detail}`) : [];
 
+test("refreshView sends the subtitles again in the order an Arabic catalog sorts them (#695)", async () => {
+    const r = await rig();
+    try {
+        await playMovie(r);
+        r.controller.setPaused(true);
+        await settle(r);
+        const ids = (): string[] => tracks(r).subtitles.map(choice => choice.id);
+        const english = ids();
+        setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+        registerCatalog("ar", JSON.parse(readFileSync(new URL("../../src/i18n/catalog/ar.json", import.meta.url), "utf8")) as Record<string, string>);
+        r.controller.refreshView();
+        const arabic = ids();
+        assert.deepEqual([...arabic].sort(), [...english].sort(), "the same tracks");
+        assert.notDeepEqual(arabic, english, `the order follows Arabic collation: ${english.join(",")} -> ${arabic.join(",")}`);
+    } finally { setAppLanguage(null); r.controller.destroy(); }
+});
+
 test("refreshView sends a paused view again in the shown language, and only when the screen asks", async () => {
     const r = await rig();
     try {

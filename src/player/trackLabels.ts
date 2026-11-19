@@ -326,8 +326,8 @@ export interface SubtitleOrderKey {
 }
 
 /**
- * The in-player subtitle order (SubtitleDisplayOrder.order): the preferred language first, the rest A to Z by display
- * name, no usable language last; within a language by format, then full before forced before SDH, then default,
+ * The in-player subtitle order (SubtitleDisplayOrder.order): the preferred language first, the rest by display name in
+ * the shown language's collation (case-insensitive), no usable language last; within a language by format, then full before forced before SDH, then default,
  * then incoming order. Display only: rows are chosen by id.
  */
 export function orderSubtitles<T>(items: readonly T[], preferredLanguage: string | undefined, key: (item: T) => SubtitleOrderKey): T[] {
