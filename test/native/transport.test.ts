@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { discoverServer } from "../../src/api/discovery.ts";
 import { ApiError } from "../../src/api/errors.ts";
-import { NativeHttp } from "../../src/api/http.ts";
+import { NativeHttp, SubtitleTruncated } from "../../src/api/http.ts";
 import { operations } from "../../src/api/operations.ts";
 import { isPermittedUrl, parseServerUrl, plainHttpFallbacks } from "../../src/api/serverUrl.ts";
 import { ManualClock } from "./support/clock.ts";
@@ -169,7 +169,7 @@ test("a request that outlives its timeout fails as timeout; a caller abort fails
 });
 
 /** A sidecar whose body the test writes chunk by chunk, erroring like a real fetch when its request aborts. */
-function streamedSubtitle(): { fetch: (url: string, init: RequestInit) => Promise<Response>; push: (text: string) => void; end: () => void; cancelled: () => boolean } {
+function streamedSubtitle(): { fetch: (url: string, init: RequestInit) => Promise<Response>; push: (text: string) => void; end: () => void; cut: () => void; cancelled: () => boolean } {
     let sink: ReadableStreamDefaultController<Uint8Array> | undefined;
     let cancelled = false;
     const body = new ReadableStream<Uint8Array>({ start(controller) { sink = controller; }, cancel() { cancelled = true; } });
@@ -180,6 +180,7 @@ function streamedSubtitle(): { fetch: (url: string, init: RequestInit) => Promis
         },
         push: text => sink?.enqueue(new TextEncoder().encode(text)),
         end: () => sink?.close(),
+        cut: () => sink?.error(new TypeError("network error")),
         cancelled: () => cancelled,
     };
 }
@@ -243,4 +244,62 @@ test("a streamed subtitle stops at 4 MiB", async () => {
     const failure = await pending;
     assert.ok(failure instanceof Error && /too large/.test(failure.message));
     assert.equal(extract.cancelled(), true);
+});
+
+test("a download the origin breaks off hands back what arrived", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
+    extract.push("WEBVTT\n\n00:01.000 --> 00:02.000\nOne\n\n");
+    await clock.advance(10);
+    extract.cut();
+    const failure = await pending;
+    assert.ok(failure instanceof SubtitleTruncated);
+    assert.equal(failure.text, "WEBVTT\n\n00:01.000 --> 00:02.000\nOne\n\n");
+});
+
+test("a download that goes quiet for 60 s after its first bytes counts as cut", async () => {
+    const { clock, http } = setup();
+    const extract = streamedSubtitle();
+    const streaming = new NativeHttp(http.base, device, extract.fetch, clock);
+    const pending = streaming.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
+    extract.push("WEBVTT\n\n");
+    await clock.advance(60000);
+    const failure = await pending;
+    assert.ok(failure instanceof SubtitleTruncated);
+    assert.equal(failure.text, "WEBVTT\n\n");
+});
+
+test("leaving, the size limit and a refused answer are not cuts", async () => {
+    const { clock, http } = setup();
+    const leaving = streamedSubtitle();
+    const leave = new AbortController();
+    const gone = new NativeHttp(http.base, device, leaving.fetch, clock).subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, leave.signal).then(() => undefined, (error: unknown) => error);
+    leaving.push("WEBVTT\n\n");
+    await clock.advance(10);
+    leave.abort();
+    assert.ok(!((await gone) instanceof SubtitleTruncated));
+    const large = streamedSubtitle();
+    const big = new NativeHttp(http.base, device, large.fetch, clock).subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
+    large.push("x".repeat(4 * 1024 * 1024 + 1));
+    assert.ok(!((await big) instanceof SubtitleTruncated));
+    const refused = new NativeHttp(http.base, device, async () => new Response("", { status: 502 }), clock).subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
+    assert.ok(!((await refused) instanceof SubtitleTruncated));
+});
+
+test("a playlist check reads only the head, stays on permitted origins and sends no headers (#650)", async () => {
+    const { clock, http } = setup();
+    let pulled = 0;
+    const big = (_url: string, init: RequestInit): Promise<Response> => {
+        assert.equal(init.headers, undefined, "AVPlay sends none, so the check sends none");
+        assert.equal(init.redirect, "error");
+        const line = new TextEncoder().encode(`#EXT-X-DEFINE:NAME="silo_query",VALUE="x"\n${"#EXTINF:2.0,\nsegment/seg.ts?{$silo_query}\n".repeat(1000)}`);
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ pull(stream) { pulled++; stream.enqueue(line); } }), { status: 200 }));
+    };
+    const reader = new NativeHttp(http.base, device, big, clock);
+    const [head] = await reader.playlistHeads(`${http.base.baseUrl}/api/v2/stream/s?st=1`, new AbortController().signal);
+    assert.match(head ?? "", /^#EXT-X-DEFINE/);
+    assert.ok(pulled <= 3, `a long playlist is not read to its end (${pulled} reads)`);
+    await assert.rejects(reader.playlistHeads("http://silo.example.test/api/v2/stream/s", new AbortController().signal), /Invalid playlist URL/);
 });

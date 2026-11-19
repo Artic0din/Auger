@@ -7,7 +7,7 @@ import { FakeRequests } from "../native/support/fakeRequests.ts";
 import type { Reply } from "../native/support/fakeSilo.ts";
 import { PRIMARY_MENU_KEY, type PrimaryMenu } from "../../src/contracts/v2/navigation.ts";
 import { HIDDEN_KEY } from "../../src/contracts/v2/settings.ts";
-import { jumpUntil, launchBrowser, openTv, homeDetailsRead, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, homeDetailsRead, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -728,6 +728,13 @@ test("fifty libraries: the Movies menu shows six rows at a time as Apple does, s
         await tv.jump(250);
         const rows = '.skyline-selector:not(.skyline-flyout) [role="menuitemradio"]';
         assert.equal(await tv.page.locator(rows).count(), household.libraries.filter(library => library.type === "movies").length, "every library is a menu row");
+        // A request leaves the page before the fake records it, so take the count once a settled turn sends nothing more.
+        await tv.eventually(async () => {
+            const requests = tv.fake.requests.length;
+            await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+            await afterPaint(tv);
+            return tv.fake.requests.length === requests;
+        }, "no further reads");
         const reads = tv.fake.requests.length;
         const geometry = (): Promise<{ bottom: number; visible: number; focusInside: boolean; offCentre: number; scrollTop: number; maximum: number; headerTop: number }> => tv.page.evaluate((selector) => {
             const panel = document.querySelector<HTMLElement>(".skyline-selector:not(.skyline-flyout)");
@@ -956,6 +963,9 @@ for (const reduced of [false, true]) test(`the avatar keeps its white 18% disc o
     try {
         if (reduced) await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await start(tv);
+        // A late answer redraws the top bar; a style read of the replaced avatar comes back empty.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home's answers delivered");
+        await afterPaint(tv);
         const avatar = tv.page.locator('[data-focus="profiles"]');
         const look = () => avatar.evaluate(node => {
             for (const animation of document.getAnimations()) animation.finish();
@@ -1100,6 +1110,9 @@ for (const anchor of ["movies", "profiles"]) test(`a ${anchor} menu the dwell op
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
+        // A late Home answer repaints the rows and drops focus from a card handed over below; start once the answers have landed and painted.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+        await afterPaint(tv);
         await tv.page.locator(`[data-focus="${anchor}"]`).focus();
         await tv.jump(250);
         assert.equal(await tv.page.locator(`[data-focus="${anchor}"]`).getAttribute("aria-expanded"), "true", "the dwell opens the menu without entering it");

@@ -31,11 +31,15 @@ interface HomeOptions {
     readonly holdLanguage?: boolean;
     /** Offers Switch Server in the profile menu. */
     readonly switchServer?: boolean;
+    /** Gives every title a backdrop, so Home's marquee draws artwork. */
+    readonly backdrops?: boolean;
 }
 
 async function withHome(options: HomeOptions, body: (tv: Tv, releaseLanguage: () => void) => Promise<void>): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
-    tv.fake.catalog = new FakeHome();
+    const catalog = new FakeHome();
+    if (options.backdrops === true) for (const [id, title] of [...catalog.titles]) catalog.titles.set(id, { ...title, backdrop: `/art/bd-${encodeURIComponent(id)}.svg` });
+    tv.fake.catalog = catalog;
     let held: { release(): void }[] = [];
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
@@ -49,7 +53,8 @@ async function withHome(options: HomeOptions, body: (tv: Tv, releaseLanguage: ()
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
-        if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        // Hold the language read by key: holding the first eight effective reads held whichever came first, and the language answer could slip through.
+        if (options.holdLanguage === true) held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
         if (options.switchServer === true) await tv.page.evaluate(() => { window.browseHarness.offerSwitchServer = true; });
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
@@ -148,6 +153,8 @@ test("in Arabic the top bar's Left press moves to the tab on its left, and Right
 
 test("in English the same Right press moves to the next tab, as before", async () => {
     await withHome({}, async tv => {
+        // The library tabs come from their own answer; without them Right from Home reaches For You.
+        await tv.page.locator('[data-focus="movies"]').waitFor();
         await tv.page.locator('[data-focus="home"]').focus();
         await tv.remote(RIGHT);
         assert.equal(await tv.focused(), "movies");
@@ -443,6 +450,28 @@ for (const [language, options] of [["ar", { stored: "ar" }], ["en", {}]] as cons
         });
     });
 }
+
+test("a language answer that turns the page right to left redraws the backdrop already shown, so its placeholder fades toward the text", async () => {
+    await withHome({ cached: "en", stored: "ar", holdLanguage: true, backdrops: true }, async (tv, releaseLanguage) => {
+        const art = ".skyline-marquee-art:not(.skyline-outgoing)";
+        await tv.eventually(async () => await tv.page.locator(`${art} .skyline-art-frame`).getAttribute("data-art") === "loaded", "the backdrop shown while the language answer is out");
+        // The placeholder bitmap is opaque on the text side.
+        const textSide = (): Promise<string> => tv.page.locator(`${art} canvas.hero-art-bitmap`).evaluate(node => {
+            const canvas = node as HTMLCanvasElement;
+            const copy = document.createElement("canvas");
+            copy.width = canvas.width;
+            copy.height = canvas.height;
+            const reader = copy.getContext("2d", { willReadFrequently: true });
+            reader?.drawImage(canvas, 0, 0);
+            const alpha = (x: number): number => reader?.getImageData(x, Math.floor(canvas.height / 2), 1, 1).data[3] ?? -1;
+            return alpha(2) > 235 ? "left" : alpha(canvas.width - 3) > 235 ? "right" : "none";
+        });
+        assert.equal(await textSide(), "right");
+        releaseLanguage();
+        await waitForDirection(tv, "rtl");
+        await tv.eventually(async () => await textSide() === "left", "the backdrop's placeholder is drawn again for the mirrored page");
+    });
+});
 
 test("in Arabic every layer of the hero artwork fades toward the text, which is on the right, and in English toward the left", async () => {
     await withHome({ stored: "ar" }, async tv => {

@@ -75,6 +75,7 @@ const controls: PlayerControls = {
     saveSeriesSubtitle: () => commands.push("saveSeriesSubtitle"),
     startSubtitleAI: (kind, language) => commands.push(`startSubtitleAI ${kind} ${language ?? ""}`),
     selectAIResult: id => commands.push(`selectAIResult ${id}`),
+    selectSecondarySubtitle: id => commands.push(`selectSecondarySubtitle ${id ?? "off"}`),
     subtitleTool: action => commands.push(`subtitleTool ${JSON.stringify(action)}`),
     seekThumbnail: async () => undefined,
     selectBufferingPrimary: () => commands.push("selectBufferingPrimary"),
