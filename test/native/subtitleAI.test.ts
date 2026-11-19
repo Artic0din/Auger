@@ -408,3 +408,22 @@ test("a quota read that fails after a job ends keeps the job's own reason on the
         ai.destroy();
     }
 });
+
+test("a quota read that fails after a job drops the old balance, so transcription waits for a good read", async () => {
+    const { h, ai } = await setup();
+    assert.equal(ai.view?.quota?.remaining, 3);
+    h.fake.scripted.delete("/subtitles/ai/quota");
+    h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => problem(500, "internal", "Internal")));
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("pending") });
+    h.fake.script("/subtitles/ai/jobs/opaque-job", { status: 200, body: job("completed", { result_subtitle_id: null }) });
+    await ai.start(request);
+    await h.clock.advance(2000);
+    await h.clock.advance(0);
+    assert.equal(ai.view?.quota, undefined, "a balance that could not be read again is not shown as current");
+    assert.equal(ai.view?.message, "AI job completed without a subtitle result.", "the job's reason stays");
+    ai.acknowledge();
+    const creates = h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length;
+    await ai.start({ ...request, kind: "transcribe", source_index: 0, source_language: "", target_language: "" });
+    assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length, creates, "no transcription is sent against an unknown balance");
+    ai.destroy();
+});

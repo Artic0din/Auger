@@ -117,7 +117,13 @@ export class SubtitleAI {
         try {
             const quota = await this.call(operations.subtitleAIQuota());
             if (!this.abort.signal.aborted) { this.quota = quota; this.changed(); }
-        } catch { if (report) this.notice("Could not read transcription quota. Playback continues."); }
+        } catch {
+            // An unread balance is unknown, not the last one seen: the menu says unavailable and transcription waits for a good read.
+            if (this.abort.signal.aborted) return;
+            this.quota = undefined;
+            if (report) this.notice("Could not read transcription quota. Playback continues.");
+            else this.changed();
+        }
     }
 
     async start(request: SubtitleAIRequest): Promise<void> {
