@@ -3269,13 +3269,53 @@ test("Sync to Audio reads the new timing and fetches the shown track's cues agai
     assert.equal(view.tracks.syncTiming?.inProgress, true);
     await r.h.clock.advance(3000);
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").length, 2, "the cues are read again once the timing changed");
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache), [undefined, "no-store"], "the cues are read again once the timing changed, past the HTTP cache");
     r.avplay.tick(10000);
     view = last(r.views);
     assert.ok(view.phase === "playing");
     assert.equal(view.captions?.text, "New timing");
     assert.equal(view.tracks.syncTiming?.inProgress, false);
     r.controller.destroy();
+});
+
+test("Reset Timing writes the identity behind the read's validator and reads the shown cues again", async () => {
+    const r = await rig();
+    scriptSync(r, syncState({ timing: { offset_ms: -3000, scale: 1 } }));
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    r.h.fake.script("/captions?token=synthetic", ...Array.from({ length: 2 }, () => ({ status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nSynced timing" })), { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOriginal timing" });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`, { status: 200, headers: { ETag: "\"v3\"" }, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 } }) } });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}/timing`, { status: 200, body: { subtitle: syncState() } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.syncTiming?.canReset, true);
+    r.controller.resetSubtitleTiming(SYNC_KEY);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const put = r.h.fake.requests.find(request => request.method === "PUT" && request.path === `/subtitles/42/sync/${SYNC_KEY}/timing`);
+    assert.equal(put?.headers["if-match"], "\"v3\"");
+    assert.deepEqual(put?.body, { offset_ms: 0, scale: 1 });
+    r.avplay.tick(12500);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.syncTiming?.canReset, false);
+    assert.equal(view.captions?.text, "Original timing");
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").at(-1)?.cache, "no-store");
+    r.controller.destroy();
+});
+
+test("leaving playback stops following a running sync job", async () => {
+    const r = await rig();
+    scriptSync(r, syncState({ sync: syncJob("running", { phase: "analyzing", progress: 0.4 }) }));
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`, ...Array.from({ length: 50 }, () => ({ status: 200, body: { subtitle: syncState({ sync: syncJob("running", { phase: "analyzing", progress: 0.4 }) }) } })));
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(3000);
+    const polls = (): number => r.h.fake.requests.filter(request => request.method === "GET" && request.path === `/subtitles/42/sync/${SYNC_KEY}`).length;
+    assert.equal(polls(), 1, "the job is followed while playing");
+    r.controller.destroy();
+    await r.h.clock.advance(30000);
+    assert.equal(polls(), 1, "no sync read after playback ends");
 });
 
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {
