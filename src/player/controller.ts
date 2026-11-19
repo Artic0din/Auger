@@ -200,6 +200,8 @@ export interface TrackView {
     readonly reporting?: boolean;
     readonly notices: readonly string[];
     readonly subtitleTools?: { readonly search: SubtitleSearchView; readonly display?: SubtitleDisplayView; readonly overlay: boolean };
+    /** SECONDARY: other text tracks the app can draw under the primary one; present only while the app draws the primary. */
+    readonly secondary?: { readonly choices: readonly TrackChoice[]; readonly selectedId: string | undefined } | undefined;
 }
 
 export type SubtitleToolAction =
@@ -244,7 +246,7 @@ export type PlaybackView =
           readonly seekIntervals: { readonly backward: number; readonly forward: number };
           readonly previewKey?: string | undefined;
           /** `status`, `cueCount` and `instant` expose why the layer is empty: no sidecar, still loading, failed, or ready at this clock reading. */
-          readonly captions?: { readonly text: string; readonly appearance: SubtitleAppearance; readonly status?: "none" | "loading" | "failed" | "ready"; readonly cueCount?: number; readonly instant?: number } | undefined;
+          readonly captions?: { readonly text: string; /** The second line, from Secondary. */ readonly secondaryText?: string; readonly appearance: SubtitleAppearance; readonly status?: "none" | "loading" | "failed" | "ready"; readonly cueCount?: number; readonly instant?: number } | undefined;
           readonly skipMarker?: SkipMarker | undefined;
           readonly undoSkipSeconds?: number | undefined;
       } & BufferingOverlay)
@@ -286,6 +288,8 @@ export interface PlayerControls {
     startSubtitleAI(kind: "translate" | "transcribe", language?: string): void;
     selectAIResult(id: string): void;
     subtitleTool(action: SubtitleToolAction): void;
+    /** SECONDARY: undefined turns the second line off. */
+    selectSecondarySubtitle(trackId: string | undefined): void;
     seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined>;
     /** Select on the buffering pill: Lower quality on the prompt, Restore quality on the undo. */
     selectBufferingPrimary(): void;
@@ -398,6 +402,13 @@ interface Attempt {
     appearance: SubtitleAppearance;
     subtitleSync: number;
     cues: readonly SubtitleCue[];
+    /** SECONDARY: the inventory row drawn under the primary, and its cues. */
+    secondaryId: string | undefined;
+    secondaryCues: readonly SubtitleCue[];
+    /** The primary artifact's timing origin, and the sidecar URL, the cues were read with. */
+    secondaryOrigin: number;
+    secondaryUrl: string | undefined;
+    secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
     captionPreferenceNotice: string;
@@ -580,7 +591,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1819,6 +1830,7 @@ export class PlaybackController implements PlayerControls {
             try {
                 avplay.setSilentSubtitle(true);
                 attempt.captionAbort?.abort();
+                this.clearSecondary(attempt);
                 attempt.captionKey = undefined;
                 attempt.cues = [];
                 attempt.captionNotice = "";
@@ -1840,6 +1852,7 @@ export class PlaybackController implements PlayerControls {
         try {
             avplay.setSelectTrack("TEXT", index);
             attempt.captionAbort?.abort();
+            this.clearSecondary(attempt);
             attempt.captionKey = undefined;
             attempt.cues = [];
             attempt.captionNotice = "";
@@ -2011,9 +2024,84 @@ export class PlaybackController implements PlayerControls {
         void this.open(attempt, plan);
     }
 
+    /** SECONDARY follows its primary: it ends with the primary's artifact, or when the primary becomes the same track. */
+    private reconcileSecondary(attempt: Attempt, plan: PlaybackPlan): void {
+        if (attempt.secondaryId === undefined) return;
+        const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
+        const row = secondaryRows(plan).find(candidate => candidate.trackId === attempt.secondaryId && candidate.trackId !== plan.subtitle.trackId);
+        if (artifact === undefined || row === undefined) this.clearSecondary(attempt);
+        // A replan that moved the primary's timing origin moves where the second track's cues belong, and one that gave the row a new session URL leaves the old read against a dead session.
+        else if (artifact.origin !== attempt.secondaryOrigin || row.url !== attempt.secondaryUrl) this.startSecondary(attempt, row, artifact.origin);
+    }
+
+    private clearSecondary(attempt: Attempt): void {
+        attempt.secondaryAbort?.abort();
+        attempt.secondaryId = undefined;
+        attempt.secondaryCues = [];
+    }
+
+    selectSecondarySubtitle(trackId: string | undefined): void {
+        const attempt = this.active();
+        const plan = attempt?.plan;
+        if (attempt === undefined || plan === undefined || attempt.hidden || attempt.restoring) return;
+        if (trackId === undefined) {
+            this.clearSecondary(attempt);
+            this.showPlayback(attempt);
+            return;
+        }
+        const artifact = plan.subtitle.artifact;
+        const row = secondaryRows(plan).find(candidate => candidate.trackId === trackId);
+        if (attempt.captionKey === undefined || artifact === undefined || row === undefined || row.trackId === plan.subtitle.trackId) return;
+        this.startSecondary(attempt, row, artifact.origin);
+        this.showPlayback(attempt);
+    }
+
+    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number): void {
+        this.clearSecondary(attempt);
+        attempt.secondaryId = row.trackId;
+        attempt.secondaryOrigin = origin;
+        attempt.secondaryUrl = row.url;
+        const abort = new AbortController();
+        attempt.secondaryAbort = abort;
+        const cancel = (): void => abort.abort();
+        attempt.signal.addEventListener("abort", cancel, { once: true });
+        abort.signal.addEventListener("abort", () => attempt.signal.removeEventListener("abort", cancel), { once: true });
+        const current = (): boolean => attempt.live && !abort.signal.aborted;
+        void (async () => {
+            try {
+                // The sidecar is read like the primary's artifact. Its cues share the primary's timing origin: both come from this plan's stream.
+                // A download that ends early is fetched again like the primary's (`downloadSubtitle`), the cues that arrived showing meanwhile.
+                const cues = await downloadSubtitle(this.deps.clock, abort.signal,
+                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal),
+                    text => decodeCues(text, secondaryFormat(row) ?? "", origin),
+                    partial => {
+                        if (!current()) return;
+                        attempt.secondaryCues = partial;
+                        this.showPlayback(attempt);
+                    });
+                if (!current()) return;
+                attempt.secondaryCues = cues;
+            } catch {
+                // A track that cannot be read is not shown as chosen.
+                if (!current()) return;
+                attempt.secondaryId = undefined;
+            }
+            if (current()) this.showPlayback(attempt);
+        })();
+    }
+
+    /** A subtitle URL with the account's media token, since AVPlay and the app's own reads send no header for it. */
+    private async captionUrl(raw: string, signal: AbortSignal): Promise<string> {
+        const base = this.deps.session.http.base;
+        const url = new URL(raw.startsWith("/") ? base.baseUrl + raw : raw);
+        if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(signal));
+        return url.href;
+    }
+
     private readCaptions(attempt: Attempt, plan: PlaybackPlan): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
         const key = artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
+        this.reconcileSecondary(attempt, plan);
         if (key !== undefined && key === attempt.captionKey) return;
         attempt.captionKey = key;
         attempt.captionAbort?.abort();
@@ -2029,7 +2117,6 @@ export class PlaybackController implements PlayerControls {
         const current = (): boolean => attempt.live && !abort.signal.aborted && attempt.captionAbort === abort;
         void (async () => {
             try {
-                const base = this.deps.session.http.base;
                 const show = (cues: readonly SubtitleCue[]): void => {
                     if (!current()) return;
                     attempt.cues = cues;
@@ -2037,10 +2124,9 @@ export class PlaybackController implements PlayerControls {
                     this.showPlayback(attempt);
                 };
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
-                    const url = new URL(artifact.url.startsWith("/") ? base.baseUrl + artifact.url : artifact.url);
-                    if (url.origin === base.origin && !url.searchParams.has("token")) url.searchParams.set("token", await this.deps.session.mediaToken(abort.signal));
+                    const url = await this.captionUrl(artifact.url, abort.signal);
                     if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                    return this.deps.session.http.subtitleText(url.href, abort.signal);
+                    return this.deps.session.http.subtitleText(url, abort.signal);
                 }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
                 attempt.cues = cues;
@@ -2048,6 +2134,8 @@ export class PlaybackController implements PlayerControls {
             } catch {
                 if (!current()) return;
                 attempt.captionKey = undefined;
+                // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
+                this.clearSecondary(attempt);
                 attempt.captionNotice = CAPTION_FAILED;
             }
             if (current()) this.showPlayback(attempt);
@@ -2686,6 +2774,7 @@ export class PlaybackController implements PlayerControls {
         attempt.search?.destroy();
         attempt.display?.destroy();
         attempt.captionAbort?.abort();
+        attempt.secondaryAbort?.abort();
         if (!attempt.live) {
             return;
         }
@@ -3457,7 +3546,7 @@ export class PlaybackController implements PlayerControls {
             seekIntervals: attempt.seekIntervals,
             previewKey: frozen ? undefined : attempt.planAttemptId,
             // The offset moves cues this overlay draws. Text AVPlay selects itself is not shifted: AVPlay has no subtitle-offset call, and a TV has to confirm whether its TEXT track can move.
-            captions: attempt.hidden || attempt.restoring || frozen ? undefined : { text: attempt.cues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), appearance: attempt.appearance, status: attempt.captionNotice === CAPTION_LOADING ? "loading" : attempt.captionNotice === CAPTION_FAILED ? "failed" : attempt.cues.length > 0 ? "ready" : "none", cueCount: attempt.cues.length, instant: captionTime },
+            captions: attempt.hidden || attempt.restoring || frozen ? undefined : { text: attempt.cues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), secondaryText: attempt.secondaryCues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), appearance: attempt.appearance, status: attempt.captionNotice === CAPTION_LOADING ? "loading" : attempt.captionNotice === CAPTION_FAILED ? "failed" : attempt.cues.length > 0 ? "ready" : "none", cueCount: attempt.cues.length, instant: captionTime },
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
@@ -3757,6 +3846,14 @@ function sameStart(attempt: Attempt): PlayRequest {
     return { ...request, startSeconds: attempt.sourceSeconds };
 }
 
+/** SECONDARY is offered while the app draws the primary subtitle, which stays in the list dimmed. */
+function secondaryView(attempt: Attempt, plan: PlaybackPlan): Pick<TrackView, "secondary"> {
+    if (attempt.captionKey === undefined || shownSubtitle(attempt, plan) === undefined) return {};
+    const rows = orderedInventory(secondaryRows(plan), attempt.orderingLanguage);
+    if (rows.length === 0) return {};
+    return { secondary: { choices: rows.map(row => ({ ...subtitleChoice(row, undefined), ...(row.trackId === shownSubtitle(attempt, plan) ? { unavailable: true } : {}) })), selectedId: attempt.secondaryId } };
+}
+
 /** The selected tracks, speed, phase and media host the Stats and Info rows need beside the plan. */
 function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string): LiveStats {
     const fileId = plan.effectiveMediaFileId;
@@ -3811,6 +3908,7 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         change: attempt.change,
         reporting: attempt.reporting,
         notices,
+        ...(secondaryView(attempt, plan)),
         ...(attempt.search === undefined ? {} : { subtitleTools: { search: attempt.search.view, ...(attempt.display?.view === undefined ? {} : { display: attempt.display.view }), overlay: subtitleOverlay(attempt, plan) } }),
     };
 }
@@ -3842,6 +3940,23 @@ function audioChoices(attempt: Attempt, plan: PlaybackPlan): TrackChoice[] {
 /** The shown subtitle; `off` means none even when the plan still names a track. */
 function selectedSubtitle(plan: PlaybackPlan): string | undefined {
     return plan.subtitle.mode === "off" ? undefined : plan.subtitle.trackId;
+}
+
+/** The format a sidecar's URL names, when the app can draw it. */
+function secondaryFormat(row: SubtitleTrack): string | undefined {
+    if (row.url === undefined) return undefined;
+    try {
+        const extension = new URL(row.url, "https://sidecar.invalid").pathname.split(".").pop()?.toLowerCase();
+        return extension === "vtt" || extension === "srt" || extension === "ass" || extension === "ssa" ? extension : undefined;
+    } catch {
+        // The inventory is the server's; a URL that cannot be parsed is not a track the app can draw.
+        return undefined;
+    }
+}
+
+/** Text sidecars the app can draw as the second line, primary included (it is listed dimmed, as Apple lists it). */
+function secondaryRows(plan: PlaybackPlan): readonly SubtitleTrack[] {
+    return plan.subtitle.inventory.filter(row => row.delivery === "sidecar" && row.unplayable !== true && textSubtitle(row.codec) && secondaryFormat(row) !== undefined);
 }
 
 function textSubtitle(codec: string | undefined): boolean {

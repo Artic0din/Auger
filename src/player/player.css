@@ -29,7 +29,8 @@
 }
 .player-next-deck[hidden] { display: none; }
 
-.player-captions {
+.player-captions,
+.player-captions-secondary {
     position: absolute;
     left: 8%;
     right: 8%;
@@ -78,7 +79,8 @@
     display: none;
 }
 
-.player-captions span {
+.player-captions span,
+.player-captions-secondary span {
     padding: 4px 12px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
@@ -1354,4 +1356,15 @@
         scroll-behavior: auto;
     }
     .player-spinner-mark { animation: none; }
+}
+
+/* SubtitlesPane: the SECONDARY heading is 14pt semibold, tracked 1.6, white at 45%, padded 20 above, 4 below and 14 leading. */
+.player-menu-heading-secondary {
+    margin: 0;
+    padding: 20px 0 4px 14px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-captions-secondary[hidden] {
+    display: none;
 }

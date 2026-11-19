@@ -3434,6 +3434,93 @@ test("an unavailable AI result says why, stays focusable and Select does nothing
     } finally { await page.close(); }
 });
 
+// SubtitlesPane.trackRows (TVPlayerInfoHUD.swift, silo-apple main): SECONDARY follows the tracks, with Off and the same rows, the primary's own disabled.
+const openSubtitleOptions = async (page: Page, view: TrackView): Promise<void> => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await show(page, playing(view));
+    await openPanel(page);
+    await nextTab(page, 4);
+};
+const SECONDARY: NonNullable<TrackView["secondary"]> = {
+    choices: [
+        { id: "file:42:subtitle:0", label: "English", unavailable: true },
+        { id: "file:42:subtitle:1", label: "English (Signs) · Forced" },
+        { id: "file:42:subtitle:4", label: "Spanish", detail: "SRT" },
+    ],
+    selectedId: undefined,
+};
+
+test("SECONDARY follows the tracks with Off and the other text tracks, the primary's own dimmed", async () => {
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: SECONDARY });
+        const column = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-column-tracks .player-menu-column-rows > *")).map(node => [node.tagName, node.getAttribute("data-focus") ?? node.textContent, node.getAttribute("aria-disabled"), node.getAttribute("aria-pressed")]));
+        const heading = column.findIndex(row => row[1] === "SECONDARY");
+        assert.ok(heading > 0, "a SECONDARY heading follows the tracks");
+        assert.deepEqual(column.slice(heading, heading + 5), [["H2", "SECONDARY", null, null], ["BUTTON", "secondary-off", "false", "true"], ["BUTTON", "secondary:file:42:subtitle:0", "true", "false"], ["BUTTON", "secondary:file:42:subtitle:1", "false", "false"], ["BUTTON", "secondary:file:42:subtitle:4", "false", "false"]]);
+        assert.equal(await text(page, '[data-focus="secondary-off"]'), "Off");
+        assert.equal(await page.locator('[data-focus="secondary:file:42:subtitle:0"]').evaluate(node => getComputedStyle(node).opacity), "0.35");
+        const style = await page.locator(".player-menu-column-tracks h2", { hasText: "SECONDARY" }).evaluate(node => { const css = getComputedStyle(node); return [css.fontSize, css.fontWeight, css.letterSpacing, css.paddingTop, css.marginTop]; });
+        assert.deepEqual(style.slice(0, 3), ["14px", "600", "1.6px"]);
+        await show(page, playing({ ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: { ...SECONDARY, selectedId: "file:42:subtitle:4" } }));
+        assert.equal(await page.locator('[data-focus="secondary-off"]').getAttribute("aria-pressed"), "false");
+        assert.equal(await page.locator('[data-focus="secondary:file:42:subtitle:4"]').getAttribute("aria-pressed"), "true");
+        await show(page, playing({ ...TRACKS, selectedSubtitleId: "file:42:subtitle:0" }));
+        assert.equal(await page.locator(".player-menu-column-tracks h2", { hasText: "SECONDARY" }).count(), 0, "no list when the app is not drawing the subtitle");
+    } finally { await page.close(); }
+});
+
+test("Select on a SECONDARY row chooses it, Off clears it, and the dimmed primary does nothing", async () => {
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: SECONDARY });
+        for (const id of ["secondary:file:42:subtitle:4", "secondary-off", "secondary:file:42:subtitle:0"]) {
+            await page.locator(`[data-focus="${id}"]`).focus();
+            await remote(page, ENTER);
+        }
+        assert.deepEqual(await commands(page), ["selectSecondarySubtitle file:42:subtitle:4", "selectSecondarySubtitle off"]);
+    } finally { await page.close(); }
+});
+
+test("Up and Down skip the dimmed primary row in SECONDARY, as Apple's disabled row is skipped", async () => {
+    // HUDTrackRow: `.disabled(isDisabled)` with the primary's own row disabled (TVPlayerInfoHUD.swift:2146, :1776).
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: SECONDARY });
+        await page.locator('[data-focus="secondary-off"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "secondary:file:42:subtitle:1", "Down passes the dimmed row");
+        await remote(page, UP);
+        assert.equal(await focused(page), "secondary-off", "Up passes it too");
+        await page.locator('[data-focus="secondary:file:42:subtitle:1"]').focus();
+        await remote(page, UP);
+        assert.equal(await focused(page), "secondary-off", "from the row below, Up passes it as well");
+        assert.deepEqual(await commands(page), []);
+    } finally { await page.close(); }
+});
+
+test("the second line draws under the primary at Apple's offsets for each position", async () => {
+    const { page } = await open();
+    try {
+        const view = (position: "bottom" | "lower-third" | "top") => ({ ...playing(TRACKS), captions: { text: "Primary", secondaryText: "Secondary", appearance: { ...DEFAULT_APPEARANCE, position } } });
+        const offsets = async () => page.evaluate(() => {
+            const read = (selector: string): [string, string] => { const node = document.querySelector<HTMLElement>(selector)!; return [node.style.top, node.style.bottom]; };
+            return [read(".player-captions"), read(".player-captions-secondary")];
+        });
+        await show(page, view("bottom"));
+        assert.deepEqual(await offsets(), [["auto", "8%"], ["auto", "17%"]]);
+        await show(page, view("lower-third"));
+        assert.deepEqual(await offsets(), [["auto", "25%"], ["auto", "36%"]]);
+        await show(page, view("top"));
+        assert.deepEqual(await offsets(), [["8%", "auto"], ["17%", "auto"]]);
+        assert.equal(await text(page, ".player-captions-secondary"), "Secondary");
+        const boxes = await page.evaluate(() => ["player-captions", "player-captions-secondary"].map(name => document.querySelector(`.${name} span`)!.getBoundingClientRect().top));
+        assert.ok((boxes[1] ?? 0) > (boxes[0] ?? 0), "at the top the second line sits below the first");
+        await show(page, { ...view("bottom"), captions: { text: "Primary", secondaryText: "", appearance: DEFAULT_APPEARANCE } });
+        assert.equal(await page.locator(".player-captions-secondary").isHidden(), true);
+    } finally { await page.close(); }
+});
+
 test("the player keeps its left-to-right layout and the remote's physical keys when the page reads right to left", async () => {
     const { page } = await open();
     try {
