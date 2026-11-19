@@ -58,7 +58,7 @@ test("Apple's text for 'this Apple TV' reads 'this TV' in every language", () =>
     // The keys whose English names Apple TV: each is read through translateTv, which this list pins.
     const appleTvKeys = [...used].filter(key => /Apple TV/i.test(english[key as MessageKey])).sort();
     assert.deepEqual(appleTvKeys, [
-        "profiles.rememberOffer.bodyAppleTv", "profiles.tile.appleTvUser", "profiles.tile.pairedAppleTvUser",
+        "player.hud.onlyOnThisAppleTv", "profiles.rememberOffer.bodyAppleTv", "profiles.tile.appleTvUser", "profiles.tile.pairedAppleTvUser",
         "servers.accounts.blurbAppleTv", "settings.accounts.footerAppleTv", "settings.blurb.generalAppleTv", "settings.blurb.playbackAppleTv", "settings.blurb.serverAppleTv", "settings.general.appleTvUserHeaderTv",
         "settings.general.pairingSharedAskEveryTime", "settings.general.pairingShared", "settings.general.themeMusicFooterTv", "settings.general.titleArtAllOffTv",
         "settings.general.titleArtAllOnTv", "settings.general.titleArtThisAppleTv", "settings.profileLaunch.automatic.detailAppleTv", "settings.profileSettings.resetFooterAppleTv",

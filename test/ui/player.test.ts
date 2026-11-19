@@ -612,6 +612,8 @@ test("autoplay countdown and Cancel are remote-operable without losing manual Pl
     try {
         await show(page, view);
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
+        assert.equal(await text(page, ".player-error-text"), "Playing next in 10 seconds", "Apple's upNext.playingNextIn");
+        assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
         assert.equal(await focused(page), "cancel-autoplay");
         await show(page, { ...view, countdown: 9 });
@@ -909,10 +911,10 @@ test("series subtitle save stays focused while its write is pending", async () =
 });
 
 const AI_VIEW: NonNullable<TrackView["ai"]> = { available: { translate: true, transcribe: true }, languages: ["fr", "de"], preferred: "fr", quota: { limited: true, remaining: 3, period: "month", used: 2, limit: 5 }, busy: false, message: "", results: [], phase: "idle", kind: undefined, progress: undefined, held: false };
-const AI_MENU = {
+const AI_MENU: NonNullable<TrackView["aiMenu"]> = {
     menu: {
         detected: undefined,
-        suggested: [{ code: "fr", label: "French", hint: "Preferred", disabled: false }],
+        suggested: [{ code: "fr", label: "French", hint: "subtitleSearch.preferred", disabled: false }],
         other: [{ code: "de", label: "German", hint: undefined, disabled: false }, { code: "es", label: "Spanish", hint: undefined, disabled: true }],
     },
     quota: "2 of 5 used / month",
@@ -971,7 +973,7 @@ test("the AI menu shows the transcription quota and, when it is used up, why a l
 test("the Spoken language row leads the suggestions when the spoken language is unknown", async () => {
     const { page } = await open();
     try {
-        const menu = { ...AI_MENU, menu: { ...AI_MENU.menu, detected: { code: "ai-detected-spoken-language", label: "Spoken language", hint: "Detected from the audio", disabled: false } } };
+        const menu = { ...AI_MENU, menu: { ...AI_MENU.menu, detected: { code: "ai-detected-spoken-language", label: "Spoken language", hint: "player.aiTranslate.detectedFromAudio" as const, disabled: false } } };
         await show(page, playing(aiTracks({}, menu)));
         await openAudio(page);
         await nextTab(page, 1);

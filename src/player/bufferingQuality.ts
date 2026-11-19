@@ -13,6 +13,7 @@
 // suppression (cooldown, re-offer) expires or the undo pill leaves the screen. Until a plan of the
 // attempt has played, the trigger acts only on evidence that the plan's media arrived more slowly
 // than its delivered bitrate (`measuredThroughputKbps`, else `arrivalLowerBoundKbps`).
+import { translate } from "../i18n/translate.ts";
 
 export type BufferingQualityMode = "never" | "ask" | "always";
 
@@ -34,16 +35,17 @@ export const MIN_ESTIMATE_KBPS = 100;
 /** The `quality_preference` and plan quality for Auto. */
 export const AUTO_QUALITY = "auto";
 
+/** The pill's text in the shown language, read when it is drawn (Apple's `bufferingQuality.*` and `buffering.*` keys). */
 export const COPY = {
-    promptTitle: "Playback keeps buffering",
-    promptDetail: "Try a lower quality to keep watching",
-    lowerAction: "Lower quality",
-    keepAction: "Keep quality",
-    undoCaption: "Quality lowered to stop buffering",
-    undoAction: "Restore quality",
-    lowered: "Quality lowered to stop buffering",
-    cantLower: "Can't lower quality for this video",
-} as const;
+    get promptTitle(): string { return translate("bufferingQuality.prompt.title"); },
+    get promptDetail(): string { return translate("buffering.promptMessage"); },
+    get lowerAction(): string { return translate("bufferingQuality.prompt.lower"); },
+    get keepAction(): string { return translate("bufferingQuality.prompt.keep"); },
+    get undoCaption(): string { return translate("buffering.undoCaption"); },
+    get undoAction(): string { return translate("bufferingQuality.restore"); },
+    get lowered(): string { return translate("bufferingQuality.lowered"); },
+    get cantLower(): string { return translate("bufferingQuality.cantLower"); },
+};
 
 const PROMPT_MS = PROMPT_SECONDS * 1000;
 

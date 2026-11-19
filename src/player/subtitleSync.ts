@@ -4,18 +4,18 @@ import type { RequestSpec } from "../api/http.ts";
 import { subtitleOperations as operations } from "../api/subtitleOperations.ts";
 import { isIdentityTiming, jobInProgress, type SubtitleSyncJob, type SubtitleSyncState, type SubtitleTiming } from "../contracts/v2/subtitleSync.ts";
 import type { NativeSession } from "../session/session.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 
 // SubtitleSyncModel and SubtitleSyncLabel (silo-apple main, SubtitleSync.swift). Words are `player.subtitleSync.*` and `player.tracks.*`.
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_LIMIT_MS = 5 * 60000;
 
-const FORBIDDEN = "This server doesn't allow changing subtitle timing.";
-const FORMAT_UNSUPPORTED = "This format can't be synced.";
-const SUBTITLE_CHANGED = "The subtitle changed. Try again.";
-const SYNC_FAILED_RETRY = "Couldn't sync this subtitle. Try again.";
-const RESET_FAILED = "Couldn't reset the timing. Try again.";
-const SYNCING = "Syncing…";
+const FORBIDDEN: MessageKey = "player.subtitleSync.forbiddenServer";
+const FORMAT_UNSUPPORTED: MessageKey = "player.subtitleSync.formatUnsupported";
+const SUBTITLE_CHANGED: MessageKey = "player.subtitleSync.subtitleChanged";
+const SYNC_FAILED_RETRY: MessageKey = "player.subtitleSync.syncFailedRetry";
+const RESET_FAILED: MessageKey = "player.subtitleSync.resetFailed";
 
 /** A tie that printf's `%.1f` rounds to even and `toFixed` rounds up: a quarter second, e.g. 250 ms. */
 function tenths(offsetMs: number): string {
@@ -37,7 +37,7 @@ export function scaleText(scale: number): string | undefined {
     for (const from of FRAME_RATES) {
         for (const to of FRAME_RATES) if (from !== to && Math.abs(from / to - scale) <= 1e-6) return `${from}→${to} fps`;
     }
-    return `×${Math.round(scale * 10000) / 10000} speed`;
+    return translate("player.subtitleSync.speedFactor", { rate: String(Math.round(scale * 10000) / 10000) });
 }
 
 /** "+2.3 s · 25→23.976 fps": a correction in a few characters. */
@@ -54,18 +54,18 @@ export function syncPercent(job: SubtitleSyncJob): number | undefined {
 export function phaseText(job: SubtitleSyncJob): string | undefined {
     if (!jobInProgress(job)) return undefined;
     switch (job.phase) {
-        case "matching": return "Matching lines to speech…";
-        case "analyzing": return "Listening to the audio…";
-        default: return "Waiting to start…";
+        case "matching": return translate("player.subtitleSync.phaseMatching");
+        case "analyzing": return translate("player.subtitleSync.phaseAnalyzing");
+        default: return translate("player.subtitleSync.phaseWaiting");
     }
 }
 
 export function failureText(failure: string | undefined): string {
     switch (failure) {
-        case "subtitle_changed": return "The subtitle changed while it was syncing. Try again.";
-        case "no_audio": return "This video has no audio Silo can read.";
-        case "unavailable": return "The server is busy. Try again in a few minutes.";
-        default: return "Sync failed. Try again.";
+        case "subtitle_changed": return translate("player.subtitleSync.failureSubtitleChanged");
+        case "no_audio": return translate("player.subtitleSync.failureNoAudio");
+        case "unavailable": return translate("player.subtitleSync.failureUnavailable");
+        default: return translate("player.subtitleSync.failureGeneric");
     }
 }
 
@@ -75,35 +75,35 @@ export function syncStatusLabel(timing: SubtitleTiming, job: SubtitleSyncJob | u
         case "pending":
         case "running": {
             const percent = job === undefined ? 0 : syncPercent(job) ?? 0;
-            return percent > 0 ? `${SYNCING} ${percent}%` : SYNCING;
+            return percent > 0 ? translate("player.subtitleSync.statusSyncingPercent", { percent: String(percent) }) : translate("player.tracks.syncing");
         }
-        case "no_match": return "Doesn't match this video";
-        case "failed": return "Sync failed";
+        case "no_match": return translate("player.subtitleSync.statusNoMatch");
+        case "failed": return translate("player.subtitleSync.statusFailed");
         case "already_synced":
-            if (isIdentityTiming(timing)) return "Already in sync";
+            if (isIdentityTiming(timing)) return translate("player.subtitleSync.statusAlreadyInSync");
             break;
         case "synced":
-            if (isIdentityTiming(timing)) return "Original timing";
-            if (job?.result !== undefined && job.result.offsetMs === timing.offsetMs && job.result.scale === timing.scale) return `Synced ${describeTiming(timing)}`;
+            if (isIdentityTiming(timing)) return translate("player.subtitleSync.statusOriginal");
+            if (job?.result !== undefined && job.result.offsetMs === timing.offsetMs && job.result.scale === timing.scale) return translate("player.subtitleSync.statusSynced", { timing: describeTiming(timing) });
             break;
         default: break;
     }
-    return isIdentityTiming(timing) ? undefined : `Timing adjusted ${describeTiming(timing)}`;
+    return isIdentityTiming(timing) ? undefined : translate("player.subtitleSync.statusAdjusted", { timing: describeTiming(timing) });
 }
 
 /** The last finished job's result, for the selected track's timing controls. */
 export function syncResult(timing: SubtitleTiming, job: SubtitleSyncJob | undefined): { readonly text: string; readonly warning: boolean } | undefined {
     switch (job?.status) {
-        case "synced": return isIdentityTiming(timing) ? undefined : { text: `Synced to the audio: ${describeTiming(timing)}`, warning: false };
-        case "already_synced": return { text: "Already matches the audio.", warning: false };
-        case "no_match": return { text: "Doesn't match this video's audio; probably for another release.", warning: true };
+        case "synced": return isIdentityTiming(timing) ? undefined : { text: translate("player.subtitleSync.resultSynced", { timing: describeTiming(timing) }), warning: false };
+        case "already_synced": return { text: translate("player.subtitleSync.resultAlreadyMatches"), warning: false };
+        case "no_match": return { text: translate("player.subtitleSync.resultNoMatch"), warning: true };
         case "failed": return { text: failureText(job.failure), warning: true };
         default: return undefined;
     }
 }
 
 export function syncActionNote(external: boolean): string {
-    return external ? "Matches the timing to the audio for everyone. The file itself isn't changed." : "Matches the timing to the audio for everyone watching.";
+    return translate(external ? "player.subtitleSync.actionNoteExternal" : "player.subtitleSync.actionNote");
 }
 
 export interface SyncNote { readonly text: string; readonly tone: "error" | "warning" | "plain" | "hint" }
@@ -137,7 +137,8 @@ interface Entry {
     forbidden: boolean;
     /** The subtitle's format cannot be synced (422). */
     unsupported: boolean;
-    error: string | undefined;
+    /** Kept as a key so a language that lands later reads the note in it. */
+    error: MessageKey | undefined;
     /** Polling gave up; pressing Sync to Audio again re-arms it. */
     pollExpired: boolean;
 }
@@ -219,7 +220,7 @@ export class SubtitleSync {
         const canSync = this.canSync(entry);
         const result = !inProgress && entry.error === undefined ? syncResult(state.timing, state.job) : undefined;
         let note: SyncNote | undefined;
-        if (entry.error !== undefined) note = { text: entry.error, tone: "error" };
+        if (entry.error !== undefined) note = { text: translate(entry.error), tone: "error" };
         else if (result !== undefined) note = { text: result.text, tone: result.warning ? "warning" : "plain" };
         else if (canSync && !inProgress) note = { text: syncActionNote(state.external), tone: "hint" };
         const job = state.job;
@@ -229,7 +230,7 @@ export class SubtitleSync {
             canReset: !isIdentityTiming(state.timing),
             busy: entry.busy,
             inProgress,
-            forbidden: entry.forbidden ? FORBIDDEN : undefined,
+            forbidden: entry.forbidden ? translate(FORBIDDEN) : undefined,
             progress: inProgress && job !== undefined ? { percent: syncPercent(job) ?? 0, phase: phaseText(job) ?? "" } : undefined,
             note,
         };
@@ -338,7 +339,7 @@ export class SubtitleSync {
         this.changed();
     }
 
-    private fail(entry: Entry, error: unknown, fallback: string): void {
+    private fail(entry: Entry, error: unknown, fallback: MessageKey): void {
         entry.busy = false;
         const status = error instanceof ApiError ? error.status : undefined;
         if (status === 403) {

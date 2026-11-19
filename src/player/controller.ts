@@ -21,6 +21,7 @@
 // a burn-in still reopens. A refused change leaves the current plan playing.
 // On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
+import { translate } from "../i18n/translate.ts";
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import { abortedError, type RequestSpec } from "../api/http.ts";
@@ -128,12 +129,18 @@ export interface TrackChoice {
     readonly unavailable?: boolean;
 }
 
-export const UNSUPPORTED_FORMAT = "Unsupported format";
+/** Apple's `PlayerTrack.unsupportedFormatLabel`. */
+export const unsupportedFormat = (): string => translate("detail.trackUnsupported");
 
 /** An inventory row the plan lists, minus the ones its `unplayable` flag says the server cannot show. */
 const CAPTION_LOADING = "Loading subtitles…";
-/** Apple's `player.subtitles.dataLoadFailed`. Turning the track off and on fetches it again. */
-export const CAPTION_FAILED = "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry.";
+/** Kept in `captionNotice` as an id; `captionNoticeText` gives its words. Turning the track off and on fetches it again. */
+const CAPTION_FAILED = "caption-failed";
+
+/** A caption notice as the menu shows it: the failure is Apple's `player.subtitles.dataLoadFailed`. */
+function captionNoticeText(notice: string): string {
+    return notice === CAPTION_FAILED ? translate("player.subtitles.dataLoadFailed") : notice;
+}
 
 function selectableSubtitle(plan: PlaybackPlan, trackId: string): boolean {
     return plan.subtitle.inventory.some((entry) => entry.trackId === trackId && entry.unplayable !== true);
@@ -210,7 +217,7 @@ function startingDefault(request: PlayRequest, plan: PlaybackPlan): string | und
 function subtitleChoice(entry: SubtitleTrack, generated: string | undefined): TrackChoice {
     const choice: TrackChoice = generated === undefined ? { id: entry.trackId, ...subtitleRow(entry, entry.combinedIndex) } : { id: entry.trackId, label: generated };
     if (entry.unplayable !== true) return choice;
-    return { ...choice, detail: choice.detail === undefined || choice.detail === "" ? UNSUPPORTED_FORMAT : `${choice.detail} · ${UNSUPPORTED_FORMAT}`, unavailable: true };
+    return { ...choice, detail: choice.detail === undefined || choice.detail === "" ? unsupportedFormat() : `${choice.detail} · ${unsupportedFormat()}`, unavailable: true };
 }
 
 export type AudioTracks = { readonly state: "loading" } | { readonly state: "failed" } | { readonly state: "ready"; readonly choices: readonly TrackChoice[] };
@@ -347,6 +354,8 @@ export interface PlayerControls {
     dismissBufferingPill(): boolean;
     /** A skip pill is on screen: a buffering pill waits for it, as Apple's does. */
     setSkipPillShown(shown: boolean): void;
+    /** A language landed: send the current playback view again, so the names built into it read in that language. */
+    refreshView(): void;
 }
 
 export interface PlaybackDeps {
@@ -618,6 +627,15 @@ export class PlaybackController implements PlayerControls {
             this.show({ phase: "closed" });
             deps.exits.onEnd("authority_changed");
         });
+    }
+
+    /**
+     * Track names, flags and Up Next's words are built into each view, so a language that lands while playback is paused has to send the view again.
+     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is.
+     */
+    refreshView(): void {
+        const attempt = this.attempt;
+        if (attempt !== undefined && (this.current.phase === "playing" || this.current.phase === "paused")) this.showPlayback(attempt);
     }
 
     /** Starts a new attempt; one already running is stopped and never plays. */
@@ -2841,7 +2859,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request.shuffleId, attempt.request.contentId, quality);
-                show("ready", next, false, next === undefined ? "Finished" : "Up Next at Random");
+                show("ready", next, false, next === undefined ? translate("upNext.headingFinished") : translate("upNext.headingShuffle"));
                 if (current() && next !== undefined && attempt.autoNext) this.startAutoplay(completion);
                 return;
             }
@@ -2852,7 +2870,7 @@ export class PlaybackController implements PlayerControls {
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, fileId, attempt.request.seriesTitle, quality) : undefined;
             if (next !== undefined) {
-                show("ready", next, false, "Playing Next");
+                show("ready", next, false, translate("upNext.headingEnded"));
                 this.loadPresentation(next, abort.signal, enriched => {
                     if (current() && this.current.phase === "completion" && this.current.next === next) this.show({ ...this.current, next: enriched });
                 });
@@ -2872,10 +2890,10 @@ export class PlaybackController implements PlayerControls {
                 if (!current()) throw abortedError();
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, items => {
-                show("ready", items[0], false, "Up Next", items);
+                show("ready", items[0], false, translate("upNext.heading"), items);
             }, quality);
             if (!current()) return;
-            this.show({ phase: "completion", title: deck.length === 0 ? "Finished" : "Up Next", state: "ready", next: deck[0], deck, retryable: false });
+            this.show({ phase: "completion", title: deck.length === 0 ? translate("upNext.headingFinished") : translate("upNext.heading"), state: "ready", next: deck[0], deck, retryable: false });
         } catch (error) {
             const missingSession = error instanceof ApiError && error.status === 404 && !attempt.stopped;
             const forbidden = missingSession || (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed"));
@@ -3645,7 +3663,7 @@ export class PlaybackController implements PlayerControls {
             ...(attempt.prompt === undefined ? {} : { upNext: {
                 next: this.shownNext(attempt.prompt.next), deck: attempt.prompt.deck.map(item => this.shownNext(item) ?? item),
                 countdown: this.promptCountdown(attempt, plan),
-                status: attempt.prompt.loading === true || attempt.prompt.next !== undefined ? "Up Next" : "More To Watch",
+                status: attempt.prompt.loading === true || attempt.prompt.next !== undefined ? translate("upNext.heading") : translate("upNext.headingNothing"),
                 ...(attempt.prompt.loading === true ? { loading: true as const } : {}),
                 ...(attempt.prompt.failed === true ? { failed: true as const } : {}),
             } }),
@@ -4003,7 +4021,7 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         }
     }
     if (plan.subtitle.mode === "render" || plan.subtitle.mode === "convert") {
-        if (attempt.captionNotice) notices.push(attempt.captionNotice);
+        if (attempt.captionNotice) notices.push(captionNoticeText(attempt.captionNotice));
         if (attempt.captionPreferenceNotice) notices.push(attempt.captionPreferenceNotice);
     }
     const sync = attempt.sync?.view;
@@ -4052,7 +4070,7 @@ function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
 
 function qualityChoices(plan: PlaybackPlan): TrackChoice[] {
     const offered = plan.availableQualities.filter((quality) => quality.label !== "original" && quality.label !== "auto");
-    return offered.length === 0 ? [] : [{ id: "auto", label: "Auto" }, ...offered.map((quality) => ({ id: quality.label, label: qualityMenuLabel(quality) }))];
+    return offered.length === 0 ? [] : [{ id: "auto", label: translate("options.auto") }, ...offered.map((quality) => ({ id: quality.label, label: qualityMenuLabel(quality) }))];
 }
 
 /** The effective edition's audio tracks; empty until the versions read answers. */
