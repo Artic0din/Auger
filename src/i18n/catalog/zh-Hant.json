@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, other {已輸入 {filled} 位數，共 # 位數}}",
  "pin.prompt": "輸入你的 PIN",
  "pin.wrong": "PIN 錯誤。請再試一次。",
+ "player.aiTranslate.openMenu": "AI 字幕……",
  "player.aspect.fit": "符合畫面",
  "player.aspect.stretch": "延展",
  "player.audio.close": "關閉播放器",

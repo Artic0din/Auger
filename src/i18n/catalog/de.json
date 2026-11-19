@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} von # Ziffer eingegeben} other {{filled} von # Ziffern eingegeben}}",
  "pin.prompt": "Gib deine PIN ein",
  "pin.wrong": "Falsche PIN. Versuche es erneut.",
+ "player.aiTranslate.openMenu": "KI-Untertitel …",
  "player.aspect.fit": "Einpassen",
  "player.aspect.stretch": "Strecken",
  "player.audio.close": "Player schließen",

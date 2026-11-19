@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} af # ciffer indtastet} other {{filled} af # cifre indtastet}}",
  "pin.prompt": "Indtast din PIN-kode",
  "pin.wrong": "Forkert PIN-kode. Prøv igen.",
+ "player.aiTranslate.openMenu": "AI-undertekster…",
  "player.aspect.fit": "Tilpas",
  "player.aspect.stretch": "Stræk",
  "player.audio.close": "Luk afspiller",

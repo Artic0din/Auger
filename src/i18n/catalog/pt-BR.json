@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} de # dígito digitado} many {{filled} de # de dígitos digitados} other {{filled} de # dígitos digitados}}",
  "pin.prompt": "Digite seu PIN",
  "pin.wrong": "PIN incorreto. Tente novamente.",
+ "player.aiTranslate.openMenu": "Legendas com IA…",
  "player.aspect.fit": "Ajustar",
  "player.aspect.stretch": "Esticar",
  "player.audio.close": "Fechar player",

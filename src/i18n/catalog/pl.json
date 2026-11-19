@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {Wpisano {filled} z # cyfry} few {Wpisano {filled} z # cyfr} many {Wpisano {filled} z # cyfr} other {Wpisano {filled} z # cyfry}}",
  "pin.prompt": "Wpisz swój PIN",
  "pin.wrong": "Błędny PIN. Spróbuj ponownie.",
+ "player.aiTranslate.openMenu": "Napisy AI…",
  "player.aspect.fit": "Dopasuj",
  "player.aspect.stretch": "Rozciągnij",
  "player.audio.close": "Zamknij odtwarzacz",

@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {Zadáno {filled} z # číslice} few {Zadáno {filled} z # číslic} many {Zadáno {filled} z # číslice} other {Zadáno {filled} z # číslic}}",
  "pin.prompt": "Zadejte PIN",
  "pin.wrong": "Nesprávný PIN. Zkuste to znovu.",
+ "player.aiTranslate.openMenu": "AI titulky…",
  "player.aspect.fit": "Přizpůsobit",
  "player.aspect.stretch": "Roztáhnout",
  "player.audio.close": "Zavřít přehrávač",

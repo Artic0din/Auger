@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, zero {تم إدخال {filled} من # رقم} one {تم إدخال {filled} من رقم واحد} two {تم إدخال {filled} من رقمين} few {تم إدخال {filled} من # أرقام} many {تم إدخال {filled} من # رقمًا} other {تم إدخال {filled} من # رقم}}",
  "pin.prompt": "أدخل رمز PIN",
  "pin.wrong": "رمز PIN خاطئ. حاول مرة أخرى.",
+ "player.aiTranslate.openMenu": "ترجمة بالذكاء الاصطناعي…",
  "player.aspect.fit": "ملاءمة",
  "player.aspect.stretch": "تمديد",
  "player.audio.close": "إغلاق المشغّل",

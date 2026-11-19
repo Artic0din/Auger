@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} av # siffra angiven} other {{filled} av # siffror angivna}}",
  "pin.prompt": "Ange din PIN-kod",
  "pin.wrong": "Fel PIN-kod. Försök igen.",
+ "player.aiTranslate.openMenu": "AI-undertexter…",
  "player.aspect.fit": "Anpassa",
  "player.aspect.stretch": "Sträck ut",
  "player.audio.close": "Stäng spelaren",

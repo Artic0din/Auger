@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled}/# rakam girildi} other {{filled}/# rakam girildi}}",
  "pin.prompt": "PIN’inizi girin",
  "pin.wrong": "Yanlış PIN. Tekrar deneyin.",
+ "player.aiTranslate.openMenu": "Yapay zeka altyazıları…",
  "player.aspect.fit": "Sığdır",
  "player.aspect.stretch": "Uzat",
  "player.audio.close": "Oynatıcıyı kapat",

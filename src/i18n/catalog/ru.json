@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {Введено цифр: {filled} из #} few {Введено цифр: {filled} из #} many {Введено цифр: {filled} из #} other {Введено цифр: {filled} из #}}",
  "pin.prompt": "Введите PIN",
  "pin.wrong": "Неверный PIN. Повторите попытку.",
+ "player.aiTranslate.openMenu": "ИИ-субтитры…",
  "player.aspect.fit": "Вписать",
  "player.aspect.stretch": "Растянуть",
  "player.audio.close": "Закрыть плеер",

@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} van # cijfer ingevoerd} other {{filled} van # cijfers ingevoerd}}",
  "pin.prompt": "Voer je PIN in",
  "pin.wrong": "Verkeerde PIN. Probeer het opnieuw.",
+ "player.aiTranslate.openMenu": "AI-ondertitels…",
  "player.aspect.fit": "Passend",
  "player.aspect.stretch": "Uitrekken",
  "player.audio.close": "Speler sluiten",

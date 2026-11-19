@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, other {#자리 중 {filled}자리 입력됨}}",
  "pin.prompt": "PIN을 입력하세요",
  "pin.wrong": "PIN이 틀렸어요. 다시 시도해 주세요.",
+ "player.aiTranslate.openMenu": "AI 자막…",
  "player.aspect.fit": "맞추기",
  "player.aspect.stretch": "늘이기",
  "player.audio.close": "플레이어 닫기",

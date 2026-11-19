@@ -500,6 +500,7 @@
  "pin.progress.digits": "{total, plural, other {#桁中{filled}桁入力済み}}",
  "pin.prompt": "PINを入力してください",
  "pin.wrong": "PINが違います。もう一度お試しください。",
+ "player.aiTranslate.openMenu": "AI字幕…",
  "player.aspect.fit": "フィット",
  "player.aspect.stretch": "ストレッチ",
  "player.audio.close": "プレーヤーを閉じる",

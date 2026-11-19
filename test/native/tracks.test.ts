@@ -2412,14 +2412,15 @@ test("a downloaded subtitle the plan flags unplayable is reported as saved but n
 
 test("an AI result whose stored track is unplayable is marked unavailable", async () => {
     const r = await rig();
-    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
     r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, remaining: 2, period: "month" } })));
     r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }] } } } });
     r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "completed", result_subtitle_id: "opaque-result" } } });
     const file = r.server.file("42");
     r.server.files.set("42", { ...file, inventory: file.inventory.map((entry, index) => index === 4 ? { ...entry, sync_key: "stored-opaque-result", unplayable: true } : entry) });
     await playMovie(r);
-    r.controller.startSubtitleAI("transcribe");
+    await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("en");
     await r.h.clock.advance(0);
     const result = tracks(r).ai?.results[0];
     assert.equal(result?.id, "opaque-result");
@@ -2433,12 +2434,13 @@ test("an AI result whose stored track is unplayable is marked unavailable", asyn
 
 test("a pending AI result the refreshed plan flags unplayable is reported as saved but not turned on", async () => {
     const r = await rig();
-    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
     r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, remaining: 2, period: "month" } })));
     r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }] } } } });
     r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "completed", result_subtitle_id: "opaque-result" } } });
     await playMovie(r);
-    r.controller.startSubtitleAI("transcribe");
+    await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("en");
     await r.h.clock.advance(0);
     assert.equal(tracks(r).ai?.results[0]?.id, "opaque-result");
     const file = r.server.file("42");
