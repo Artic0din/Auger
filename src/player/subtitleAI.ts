@@ -212,12 +212,20 @@ export class SubtitleAI {
         // An answer for a job the viewer cancelled must not touch the panel, nor a job started since.
         if (this.abort.signal.aborted || generation !== this.generation) return;
         this.jobId = job.id;
-        if (job.status === "completed") {
+        const resultId = job.resultId;
+        if (job.status === "completed" && resultId === undefined) {
+            // Apple closes the menu on any completion. With nothing to select, the reason stays on the failure panel until Dismiss instead.
+            this.busy = false;
+            this.failed = true;
+            this.progress = undefined;
+            this.notice("AI job completed without a subtitle result.");
+            void this.refreshQuota();
+        } else if (job.status === "completed") {
             this.busy = false;
             this.completed = true;
             this.progress = undefined;
-            if (job.resultId !== undefined && !this.results.some(result => result.id === job.resultId)) this.results.push({ id: job.resultId, label: `${job.kind === "translate" ? "AI-translated" : "AI-transcribed"}${job.language ? ` · ${job.language.toUpperCase()}` : ""}` });
-            this.notice(job.resultId === undefined ? "AI job completed without a subtitle result." : "AI subtitles are ready to select.");
+            if (resultId !== undefined && !this.results.some(result => result.id === resultId)) this.results.push({ id: resultId, label: `${job.kind === "translate" ? "AI-translated" : "AI-transcribed"}${job.language ? ` · ${job.language.toUpperCase()}` : ""}` });
+            this.notice("AI subtitles are ready to select.");
             void this.refreshQuota();
         } else if (job.status === "failed" || job.status === "cancelled") {
             this.busy = false;

@@ -376,3 +376,18 @@ test("a cancelled create whose hold was discarded cannot take the hold back when
     assert.equal(ai.view?.results.length, 1);
     ai.destroy();
 });
+
+test("a job that completes without a subtitle result stays on the failure panel with its reason until dismissed", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("pending") });
+    h.fake.script("/subtitles/ai/jobs/opaque-job", { status: 200, body: job("completed", { result_subtitle_id: null }) });
+    await ai.start(request);
+    await h.clock.advance(2000);
+    assert.equal(ai.view?.phase, "failed", "not completed: the screen closes a completed menu and clears its notice");
+    assert.equal(ai.view?.message, "AI job completed without a subtitle result.");
+    assert.deepEqual(ai.view?.results, []);
+    assert.equal(ai.view?.busy, false);
+    ai.acknowledge();
+    assert.equal(ai.view?.phase, "idle");
+    ai.destroy();
+});
