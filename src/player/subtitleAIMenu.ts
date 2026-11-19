@@ -68,9 +68,9 @@ export function fillAIMenu(list: HTMLElement, tracks: TrackView): void {
         progress.setAttribute("aria-valuemin", "0");
         progress.setAttribute("aria-valuemax", "100");
         progress.setAttribute("aria-valuenow", String(ai.progress?.percent ?? 0));
-        const track = el("span", "player-sync-track");
-        const fill = el("span", "player-sync-fill");
-        fill.style.width = `${ai.progress?.percent ?? 0}%`;
+        const track = el("span", "player-ai-track");
+        const fill = el("span", "player-ai-fill");
+        fill.style.width = `${Math.min(100, Math.max(0, ai.progress?.percent ?? 0))}%`;
         track.append(fill);
         progress.append(el("p", "player-ai-job", jobTitle(ai.kind)), track);
         if (ai.progress !== undefined && ai.progress.message !== "") progress.append(el("p", "player-ai-progress-message", ai.progress.message));

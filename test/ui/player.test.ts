@@ -997,6 +997,17 @@ test("a running AI job shows its title, progress and message with Cancel, and th
         assert.equal(await text(page, ".player-ai-subtitle"), "Preparing your subtitles");
         assert.equal(await text(page, ".player-ai-job"), "Transcribing & translating…");
         assert.equal(await page.locator(".player-ai-progress").getAttribute("aria-valuenow"), "40");
+        // SubtitleTranslateMenu.progressPanel: a linear ProgressView, drawn like the sync bar (8 px, white over a 20% white track).
+        const bar = await page.evaluate(() => {
+            const track = document.querySelector(".player-ai-track")!;
+            const fill = document.querySelector(".player-ai-fill")!;
+            const box = track.getBoundingClientRect();
+            return { height: box.height, width: box.width, filled: fill.getBoundingClientRect().width / box.width, track: getComputedStyle(track).backgroundColor, fill: getComputedStyle(fill).backgroundColor };
+        });
+        assert.equal(bar.height, 8);
+        assert.ok(bar.width > 200, `the bar spans the panel, not ${bar.width} px`);
+        assert.ok(Math.abs(bar.filled - 0.4) < 0.01, `the bar is 40% full, not ${bar.filled}`);
+        assert.deepEqual([bar.track, bar.fill], ["rgba(255, 255, 255, 0.2)", "rgba(255, 255, 255, 0.85)"]);
         assert.equal(await text(page, ".player-ai-progress-message"), "Listening to the audio");
         assert.equal(await page.locator(".player-ai-menu [data-focus^='ai-language:']").count(), 0, "no language rows while a job runs");
         assert.equal(await focused(page), "ai-cancel", "focus moves to Cancel when the languages go");

@@ -1451,6 +1451,21 @@
     padding: 8px 12px;
 }
 
+/* ProgressView(.linear) is system-drawn on tvOS: the same estimate as the Subtitles tab's sync bar, 8 px of white at 85% over a 20% white track. */
+.player-ai-track {
+    display: block;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.player-ai-fill {
+    display: block;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+}
+
 .player-ai-job {
     margin: 0;
     font-size: 29px;
