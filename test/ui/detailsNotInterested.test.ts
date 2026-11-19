@@ -42,6 +42,9 @@ test("a movie and a series page from a server that sends the mark offer Not Inte
     await afterPaint(tv);
     await card(tv, RECOMMENDED, "movie:m0002").click();
     await tv.page.locator('[data-view="item:movie:m0002"] [data-focus="more"]').waitFor();
+    // More lists what the page's details say; a late answer is what removes the offer for a server that predates the mark.
+    await tv.eventually(async () => tv.pendingReplies === 0, "the page's reads answered");
+    await afterPaint(tv);
     await tv.page.locator('[data-focus="more"]').click();
     assert.ok(!(await shownItems(tv)).includes("Not Interested"), "a server that predates the mark cannot be offered it");
 }));
