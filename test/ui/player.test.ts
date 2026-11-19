@@ -612,6 +612,8 @@ test("autoplay countdown and Cancel are remote-operable without losing manual Pl
     try {
         await show(page, view);
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
+        assert.equal(await text(page, ".player-error-text"), "Playing next in 10 seconds", "Apple's upNext.playingNextIn");
+        assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
         assert.equal(await focused(page), "cancel-autoplay");
         await show(page, { ...view, countdown: 9 });
