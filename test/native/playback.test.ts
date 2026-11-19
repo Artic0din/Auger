@@ -3252,7 +3252,7 @@ test("Sync to Audio reads the new timing and fetches the shown track's cues agai
     const r = await rig();
     scriptSync(r, syncState());
     r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
-    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+    r.h.fake.script("/captions?token=synthetic", ...Array.from({ length: 2 }, () => ({ status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" })), { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
     r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
         { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
         { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
@@ -3269,7 +3269,7 @@ test("Sync to Audio reads the new timing and fetches the shown track's cues agai
     assert.equal(view.tracks.syncTiming?.inProgress, true);
     await r.h.clock.advance(3000);
     await r.h.clock.advance(0);
-    assert.deepEqual(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache), [undefined, "no-store"], "the cues are read again once the timing changed, past the HTTP cache");
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache), [undefined, "no-store", "no-store"], "once for the first listing, then again once the timing changed, past the HTTP cache");
     r.avplay.tick(10000);
     view = last(r.views);
     assert.ok(view.phase === "playing");
@@ -3301,6 +3301,30 @@ test("Reset Timing writes the identity behind the read's validator and reads the
     assert.equal(view.tracks.syncTiming?.canReset, false);
     assert.equal(view.captions?.text, "Original timing");
     assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").at(-1)?.cache, "no-store");
+    r.controller.destroy();
+});
+
+test("cues read before the first sync listing are read again whatever timing it shows, then only when it changes", async () => {
+    // The plan names no timing, so the cues playback reads may predate the first listing: here they carry a retime another device then reset.
+    const r = await rig();
+    scriptSync(r, syncState());
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nRetimed" }, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOriginal" });
+    const hold = r.h.fake.hold("/subtitles/sync/status");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    hold.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const reads = (): (RequestCache | undefined)[] => r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache);
+    assert.deepEqual(reads(), [undefined, "no-store"], "the first listing, at the original timing, still rereads cues read before it");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Original");
+    r.h.fake.script("/subtitles/42/sync", { status: 200, body: { subtitles: [syncState()] } });
+    r.controller.selectSubtitle("file:42:subtitle:0");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.deepEqual(reads(), [undefined, "no-store"], "an unchanged timing reads nothing more");
     r.controller.destroy();
 });
 

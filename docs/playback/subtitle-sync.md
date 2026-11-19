@@ -25,7 +25,8 @@ All calls go through `src/api/subtitleOperations.ts`. A subtitle's sync key is t
 - Each track's row ends with its sync status after its attributes. An unsupported format shows that instead.
 - Focus: if the focused Sync or Reset row disappears, focus moves to the other timing row, then Delay, then the tracks.
 - When a timing change reaches a subtitle the app is drawing, as the primary or as the SECONDARY line, its cues are read again without the HTTP cache.
-- A subtitle first listed with timing other than the original is read again the same way, since playback may have read its cues before that timing arrived. One poll runs at a time, so a late answer cannot undo a newer one.
+- Each subtitle's timing has a version, raised on its first listing and on each change, and each cue read remembers the version it started under. The plan names no timing, so cues read before the first listing are read again once it arrives (one extra read at playback start for a shown track that has a sync key); after that, cues are read again only when the timing changes.
+- One poll runs at a time, and a list or poll answer sent before a newer answer for the same subtitle landed is dropped, so a late answer cannot end or revive a job.
 
 Sync rows do not depend on the overlay: the server's timing applies to the file's subtitle whoever draws it.
 A track AVPlay draws itself or that is burned in keeps its old timing on screen until the next plan.

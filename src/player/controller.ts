@@ -416,6 +416,9 @@ interface Attempt {
     /** The primary artifact's timing origin, and the sidecar URL, the cues were read with. */
     secondaryOrigin: number;
     secondaryUrl: string | undefined;
+    /** The sync timing versions the primary's and the secondary's cue reads started under. */
+    captionTiming: number;
+    secondaryTiming: number;
     secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
@@ -599,7 +602,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -2061,13 +2064,19 @@ export class PlaybackController implements PlayerControls {
         if (plan === undefined) return;
         const retimed = (trackId: string | undefined): boolean => trackId !== undefined && plan.subtitle.inventory.find(track => track.trackId === trackId)?.syncKey === key;
         // The same track can be retimed while it shows as SECONDARY; its URL and origin stay, so reconcileSecondary would keep the old cues.
-        const secondary = retimed(attempt.secondaryId) ? secondaryRows(plan).find(row => row.trackId === attempt.secondaryId) : undefined;
+        // A read that started under the current timing version already has these cues.
+        const version = attempt.sync?.timingVersion(key) ?? 0;
+        const secondary = retimed(attempt.secondaryId) && attempt.secondaryTiming < version ? secondaryRows(plan).find(row => row.trackId === attempt.secondaryId) : undefined;
         if (secondary !== undefined) this.startSecondary(attempt, secondary, attempt.secondaryOrigin, true);
-        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId)) {
+        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId) && attempt.captionTiming < version) {
             attempt.captionKey = undefined;
             this.readCaptions(attempt, plan, true);
         }
         this.showPlayback(attempt);
+    }
+
+    private timingVersionOf(attempt: Attempt, key: string | undefined): number {
+        return key === undefined || key === "" ? 0 : attempt.sync?.timingVersion(key) ?? 0;
     }
 
     /** SECONDARY follows its primary: it ends with the primary's artifact, or when the primary becomes the same track. */
@@ -2107,6 +2116,7 @@ export class PlaybackController implements PlayerControls {
         attempt.secondaryId = row.trackId;
         attempt.secondaryOrigin = origin;
         attempt.secondaryUrl = row.url;
+        attempt.secondaryTiming = this.timingVersionOf(attempt, row.syncKey);
         const abort = new AbortController();
         attempt.secondaryAbort = abort;
         const cancel = (): void => abort.abort();
@@ -2150,6 +2160,7 @@ export class PlaybackController implements PlayerControls {
         this.reconcileSecondary(attempt, plan);
         if (key !== undefined && key === attempt.captionKey) return;
         attempt.captionKey = key;
+        attempt.captionTiming = this.timingVersionOf(attempt, plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey);
         attempt.captionAbort?.abort();
         const abort = new AbortController();
         attempt.captionAbort = abort;

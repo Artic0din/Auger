@@ -165,7 +165,8 @@ test("Sync to Audio starts once, shows progress, polls to the result and reports
     assert.equal(sync.view.timing[KEY]?.progress, undefined);
     assert.equal(sync.view.status[KEY], "Synced −3.0 s");
     assert.deepEqual(sync.view.timing[KEY]?.note, { text: "Synced to the audio: −3.0 s", tone: "plain" });
-    assert.deepEqual(changed, [KEY], "the changed timing asks for the cues again, once");
+    assert.deepEqual(changed, [KEY, KEY], "the first listing, then the changed timing once");
+    assert.equal(sync.timingVersion(KEY), 2);
     const reads = h.fake.requests.length;
     await h.clock.advance(60000);
     assert.equal(h.fake.requests.length, reads, "polling stops once the job ends");
@@ -320,9 +321,41 @@ test("a list read during a slow poll does not start a second poll whose late ans
     sync.destroy();
 });
 
-test("a subtitle first listed with a changed timing asks for its cues again, an unchanged one does not", async () => {
+test("each subtitle's timing has a version: the first sight and each change raise it, an unchanged answer does not", async () => {
     const synced = state({ timing: { offset_ms: -3000, scale: 1 }, sync: job("synced", { result: { offset_ms: -3000, scale: 1 } }) });
-    const { sync, changed } = await setup(available, [synced, state({}, "stored-8")]);
-    assert.deepEqual(changed, [KEY], "the cues read with playback may predate the timing");
+    const { h, sync, changed } = await setup(available, [synced, state({}, "stored-8")]);
+    assert.deepEqual(changed, [KEY, "stored-8"], "cues read before the first listing may predate either timing, the original one included");
+    assert.deepEqual([sync.timingVersion(KEY), sync.timingVersion("stored-8"), sync.timingVersion("unlisted")], [1, 1, 0]);
+    h.fake.script(`/subtitles/${FILE}/sync`, { status: 200, body: { subtitles: [synced, state({ timing: { offset_ms: 500, scale: 1 } }, "stored-8")] } });
+    sync.reload();
+    await h.clock.advance(0);
+    assert.deepEqual([sync.timingVersion(KEY), sync.timingVersion("stored-8")], [1, 2]);
+    assert.deepEqual(changed, [KEY, "stored-8", "stored-8"]);
+    sync.destroy();
+});
+
+test("a poll answer overtaken by a newer answer for the same subtitle is dropped, so a new job keeps being followed", async () => {
+    const running = state({ sync: job("running", { phase: "matching", progress: 0.5 }) });
+    const { h, sync } = await setup(available, [running]);
+    const path = `/subtitles/${FILE}/sync/${KEY}`;
+    const finished = state({ timing: { offset_ms: -3000, scale: 1 }, sync: job("synced", { result: { offset_ms: -3000, scale: 1 } }) });
+    h.fake.script(path, { status: 200, body: { subtitle: finished } });
+    const slow = h.fake.hold(path);
+    await h.clock.advance(3000);
+    h.fake.script(`/subtitles/${FILE}/sync`, { status: 200, body: { subtitles: [finished] } });
+    sync.reload();
+    await h.clock.advance(0);
+    assert.equal(sync.view.timing[KEY]?.inProgress, false, "the listing saw the first job finish");
+    h.fake.script(path,
+        { status: 202, body: { subtitle: state({ timing: { offset_ms: -3000, scale: 1 }, sync: job("pending", { id: "job-2", phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: state({ timing: { offset_ms: -2500, scale: 1 }, sync: job("synced", { id: "job-2", result: { offset_ms: -2500, scale: 1 } }) }) } });
+    await sync.request(KEY);
+    assert.equal(sync.view.timing[KEY]?.inProgress, true);
+    slow.release();
+    await h.clock.advance(0);
+    assert.equal(sync.view.timing[KEY]?.inProgress, true, "the old poll's answer does not end the new job");
+    await h.clock.advance(3000);
+    assert.equal(sync.view.timing[KEY]?.inProgress, false, "the new job is still followed to its end");
+    assert.equal(sync.view.status[KEY], "Synced −2.5 s");
     sync.destroy();
 });

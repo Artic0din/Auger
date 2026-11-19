@@ -158,8 +158,10 @@ export class SubtitleSync {
     private external = false;
     private readonly entries = new Map<string, Entry>();
     private readonly pollStarted = new Map<string, number>();
-    /** Counts the answers recorded for a subtitle, so a list read that left before one arrived cannot overwrite it. */
+    /** Counts the answers recorded for a subtitle: a list or poll answer sent before another one landed is stale and dropped. */
     private readonly versions = new Map<string, number>();
+    /** Rises on the first sight of a subtitle's timing and on each change: cues read under a lower one may be out of date. */
+    private readonly timingVersions = new Map<string, number>();
 
     constructor(session: NativeSession, clock: Clock, fileId: string, changed: () => void, onTimingChanged: (key: string) => void) {
         this.session = session;
@@ -253,6 +255,11 @@ export class SubtitleSync {
         this.changed();
     }
 
+    /** 0 until the subtitle is first listed. */
+    timingVersion(key: string): number {
+        return this.timingVersions.get(key) ?? 0;
+    }
+
     knows(key: string): boolean {
         return this.entries.has(key);
     }
@@ -275,9 +282,11 @@ export class SubtitleSync {
             this.pollStarted.delete(state.key);
             current.pollExpired = false;
         }
-        // Playback reads the cues while the first listing is on its way, so a first sight of a changed timing may be newer than those cues.
-        const changedTiming = previous === undefined ? !isIdentityTiming(state.timing) : previous.offsetMs !== state.timing.offsetMs || previous.scale !== state.timing.scale;
-        if (changedTiming) this.onTimingChanged(state.key);
+        // The plan names no timing, so the first sight of one, the original included, may be newer than cues already read.
+        if (previous === undefined || previous.offsetMs !== state.timing.offsetMs || previous.scale !== state.timing.scale) {
+            this.timingVersions.set(state.key, this.timingVersion(state.key) + 1);
+            this.onTimingChanged(state.key);
+        }
     }
 
     private entry(key: string): Entry | undefined {
@@ -377,9 +386,10 @@ export class SubtitleSync {
                 continue;
             }
             try {
+                const sent = this.versions.get(key);
                 const state = await this.call(operations.subtitleSyncRead(this.fileId, key));
                 if (this.abort.signal.aborted) return;
-                this.observe(state, key);
+                if (this.versions.get(key) === sent) this.observe(state, key);
             } catch (error) {
                 if (this.abort.signal.aborted) return;
                 // A lost or unreadable subtitle stops its poll; any other failure is tried again at the next tick.
