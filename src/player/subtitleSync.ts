@@ -385,13 +385,14 @@ export class SubtitleSync {
                 entry.pollExpired = true;
                 continue;
             }
+            // An answer or a failure sent before another answer for this subtitle landed is about an older state, so it is dropped.
+            const sent = this.versions.get(key);
             try {
-                const sent = this.versions.get(key);
                 const state = await this.call(operations.subtitleSyncRead(this.fileId, key));
                 if (this.abort.signal.aborted) return;
                 if (this.versions.get(key) === sent) this.observe(state, key);
             } catch (error) {
-                if (this.abort.signal.aborted) return;
+                if (this.abort.signal.aborted || this.versions.get(key) !== sent) continue;
                 // A lost or unreadable subtitle stops its poll; any other failure is tried again at the next tick.
                 const status = error instanceof ApiError ? error.status : undefined;
                 if (status === 401 || status === 403 || status === 404 || status === 410) entry.pollExpired = true;
