@@ -94,8 +94,10 @@ export function aiMenu(inputs: AIInputs, languages: readonly string[], preferred
         return key === undefined ? undefined : languages.find(candidate => canonicalLanguageKey(candidate) === key);
     };
     const preferredCode = listed(preferred);
-    const originalCode = listed(spokenCode);
-    const choices = languageChoices(catalog, preferredCode);
+    // The catalog lists the server's translation targets. With translation off, the spoken language's row only transcribes, which needs
+    // no target, so it is offered even when unlisted, as SubtitleLanguageChoices always offers the original language.
+    const originalCode = listed(spokenCode) ?? (inputs.translateEnabled || canonicalLanguageKey(spokenCode) === undefined ? undefined : spokenCode);
+    const choices = languageChoices(originalCode !== undefined && listed(originalCode) === undefined ? [...catalog, { code: originalCode }] : catalog, preferredCode);
     const suggested = choices.suggested.map(choice => row(choice.code, choice.label, choice.hint));
     const rest = choices.other.filter(choice => choice.code !== originalCode);
     if (originalCode !== undefined && !suggested.some(item => item.code === originalCode)) {

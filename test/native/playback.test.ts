@@ -3271,6 +3271,56 @@ test("an empty language catalog still offers the Spoken language row when transl
     r.controller.destroy();
 });
 
+test("a failed audio versions read still offers transcription of the plan's selected audio", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/catalog/items/movie-1/versions", ...Array.from({ length: 4 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.ok(r.h.fake.requests.some(request => request.path === "/catalog/items/movie-1/versions"), "the versions read was made and failed");
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.aiMenu?.menu.detected && [view.tracks.aiMenu.menu.detected.code, view.tracks.aiMenu.menu.detected.disabled], ["ai-detected-spoken-language", false], "the menu stays, with the spoken-language row");
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.deepEqual(only(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate")).body, { media_file_id: "42", kind: "transcribe", source_index: 0, source_language: "", target_language: "", start_position: 12.5 }, "the plan's selected audio is transcribed");
+    r.controller.destroy();
+});
+
+test("opening AI Subtitles after a failed quota read brings the balance back to the menu", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", problem(500, "internal", "Internal"), { status: 200, body: { limited: true, limit: 5, used: 1, remaining: 4, period: "month" } });
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "en" }, { value: "fr" }] } } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.quota, undefined, "the first read failed");
+    r.controller.subtitleAIAction("open");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.quota?.remaining, 4, "the menu's open read the balance again");
+    r.controller.destroy();
+});
+
+test("a quota with no used count shows what remains, not zero used", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "en" }] } } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.aiMenu?.quota, "2 remaining", "2 of 5 left, so never \"0 of 5 used\"");
+    r.controller.destroy();
+});
+
 test("an empty language catalog with nothing else to offer shows no AI Subtitles… row", async () => {
     const r = await rig();
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
