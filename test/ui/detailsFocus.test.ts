@@ -491,8 +491,13 @@ test("a focused episode's read leaves before the dwell repaints Details", async 
         await tv.jump(2000);
         await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').focus();
         await tv.jump(2000);
+        // The focused episode's own read answers late and repaints Details, which would drop the marker set below.
+        await tv.eventually(async () => tv.pendingReplies === 0, "the focused episode's answer delivered");
+        await afterPaint(tv);
         await tv.page.evaluate(() => { window.episodeReadPainted = []; });
         await pauseTvClock(tv);
+        // pauseAt runs the timers due in its margin, and the reads they start answer late; none may repaint Details inside the window below.
+        await tv.eventually(async () => tv.pendingReplies === 0, "the timers' reads answered");
         await tv.remote(39);
         assert.equal(await tv.focused(), "episode:s1e13");
         // Marks the screen the focus move painted; the dwell's repaint replaces it.

@@ -94,7 +94,8 @@ export class ScreenHost {
         }
     }
 
-    private focusedKey(): string | undefined {
+    /** The key of the control that holds focus, for a redraw that must not move it. */
+    focusedKey(): string | undefined {
         const active = document.activeElement;
         return this.current?.controls.find((control) => control.element === active)?.key;
     }

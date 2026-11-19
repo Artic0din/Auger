@@ -69,6 +69,7 @@ export function marqueeTitle(card: Card): string {
 
 /** `year · genre · runtime` or `S2 E7 · episode title · 45m`; Continue Watching trails `23m left` after the rating. */
 export function marqueeMeta(card: Card, continuing: boolean): { lead: string[]; trailing: string[] } {
+    if (card.metaParts !== undefined) return { lead: [...card.metaParts], trailing: [] };
     const lead: string[] = [];
     if (card.type === "episode") {
         const token = episodeToken(card.seasonNumber, card.episodeNumber);

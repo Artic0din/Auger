@@ -9,7 +9,7 @@ import { decodePeople } from "../../src/contracts/v2/details.ts";
 import { detailOperations } from "../../src/api/detailOperations.ts";
 import { searchRequestCatalogId } from "../../src/ui/globalSearch.ts";
 import { artworkUrl, requestPosterUrl } from "../../src/ui/browseModel.ts";
-import { errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied } from "../../src/ui/browseRoutes.ts";
+import { errorHeadline, errorMessage, errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied } from "../../src/ui/browseRoutes.ts";
 import { ApiError } from "../../src/api/errors.ts";
 import { SessionError } from "../../src/session/session.ts";
 
@@ -161,5 +161,8 @@ test("errorState follows Apple's ErrorState copy and ErrorView headline", () => 
         // UpdateRequirement.app: only the client_upgrade_required problem; a bare 410 is not an update prompt.
         [problem(410, "client_upgrade_required", "Hidden"), { headline: "Update required", message: "Update Silo to keep using this server.", signIn: false }],
         [http(410), { headline: wrong, message: "Something went wrong while talking to the server.", signIn: false }],
-    ] as const) assert.deepEqual(errorState(error), expected);
+    ] as const) {
+        const shown = errorState(error);
+        assert.deepEqual({ headline: errorHeadline(shown), message: errorMessage(shown), signIn: shown.signIn }, expected);
+    }
 });

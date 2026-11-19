@@ -273,7 +273,7 @@ export function waitText(seconds: number): string {
  * `ErrorState.passwordChangeRequiredMessage` on tvOS (`ErrorState.swift`). Apple TV has no
  * password change, so the profile picker shows this instead of the server's protocol detail.
  */
-export const PASSWORD_CHANGE_REQUIRED_MESSAGE = "Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back.";
+export const passwordChangeRequiredMessage = (): string => translate("profiles.error.passwordReset");
 
 // The Apple TV app's password screen (TVLoginView, LoginViewModel), word for word.
 export const passwordTitle = (): string => translate("signIn.headline");

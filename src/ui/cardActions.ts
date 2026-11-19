@@ -13,10 +13,11 @@ import { translate } from "../i18n/translate.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { remoteKey } from "./keys.ts";
 import { el } from "./screen.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { heldSelect, listenSelectRelease, moveSelect, releasedSelect, swallowSelect } from "./selectRelease.ts";
 
 /** What the opener knows about the card. A field it does not know is read from the item before the menu opens. */
-export type MenuCard = Pick<Card, "id" | "title" | "type"> & Partial<Pick<Card, "played" | "favorite" | "watchlist" | "positionSeconds" | "seriesId">> & {
+export type MenuCard = Pick<Card, "id" | "title" | "type"> & Partial<Pick<Card, "played" | "favorite" | "watchlist" | "notInterested" | "positionSeconds" | "seriesId">> & {
     /** A Details season pill, whose menu is Apple's season-only Mark Season Watched or Unwatched. */
     readonly seasonPill?: boolean;
 };
@@ -28,11 +29,15 @@ export interface CardMenuOptions {
     readonly dismissal?: HomeDismissal | undefined;
     /** Home injects its watched handler into every row, so its cards always get the watched row. */
     readonly home?: boolean | undefined;
+    /** A wide still in a thumbnail row: Apple draws it as EpisodeThumbCard, whose menu has no Not Interested row. */
+    readonly wide?: boolean | undefined;
 }
 
 export interface CardActionsHost {
     /** A change was applied; reread what shows it. `watched` is true for a landed watched change. */
     readonly applied: (id: string, watched: boolean) => void;
+    /** The server accepted a new Not interested mark; drop the title from the rows that suggest it before the reread, as HomeViewModel.removeNotInterested does. */
+    readonly markedNotInterested?: (card: MenuCard) => void;
     /** A Home dismissal was accepted; drop the card from the playback rows before the reread, as HomeViewModel does. */
     readonly dismissed?: (card: MenuCard) => void;
     /** The menu or alert took the screen; remember where focus returns. */
@@ -61,6 +66,8 @@ const ICONS = {
     "heart.slash": '<path d="M12 20.3S3.5 15.1 3.5 9.1A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 8.5 2.5c0 6-8.5 11.2-8.5 11.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m3.5 3.5 17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
     "bookmark": '<path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
     "bookmark.slash": '<path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m3.5 3.5 17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    "hand.thumbsup": '<path d="M3.5 10.5h4v9.5h-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 10.5 11 4.2c.5-.9 1.6-1.1 2.3-.5.5.4.7 1 .6 1.6l-.6 3.7h5c1.2 0 2.1 1.1 1.8 2.3l-1.3 6c-.2.9-1 1.6-2 1.6H7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>',
+    "hand.thumbsdown": '<g transform="rotate(180 12 12)"><path d="M3.5 10.5h4v9.5h-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 10.5 11 4.2c.5-.9 1.6-1.1 2.3-.5.5.4.7 1 .6 1.6l-.6 3.7h5c1.2 0 2.1 1.1 1.8 2.3l-1.3 6c-.2.9-1 1.6-2 1.6H7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></g>',
     "info.circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.25" fill="currentColor"/>',
     "xmark.circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.6 8.6 6.8 6.8m0-6.8-6.8 6.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 } as const;
@@ -94,14 +101,20 @@ export class CardActions {
      * Changes the server accepted, keyed by the row's own card object. Until a reread replaces that object, reopening
      * its menu shows the accepted state rather than the row's stale one; fresh rows bring the server's state instead.
      */
-    private readonly accepted = new WeakMap<MenuCard, Pick<MenuCard, "played" | "favorite" | "watchlist">>();
+    private readonly accepted = new WeakMap<MenuCard, Pick<MenuCard, "played" | "favorite" | "watchlist" | "notInterested">>();
     private readonly writes = new Map<string, AbortController>();
     private readonly container: HTMLElement;
     private readonly session: NativeSession;
     private readonly host: CardActionsHost;
     private readonly stopAuthority: () => void;
 
-    constructor(container: HTMLElement, session: NativeSession, host: CardActionsHost) {
+    private readonly notInterested: NotInterestedStore;
+    /** The store's stamp when the open menu's card was taken, so a write answered while the menu is open reconciles its state. */
+    private shownStamp = 0;
+    private stopNotInterested: (() => void) | undefined;
+
+    constructor(container: HTMLElement, session: NativeSession, notInterested: NotInterestedStore, host: CardActionsHost) {
+        this.notInterested = notInterested;
         this.container = container;
         this.session = session;
         this.host = host;
@@ -118,6 +131,7 @@ export class CardActions {
 
     open(card: MenuCard, options: CardMenuOptions = {}): void {
         if (this.active) return;
+        this.shownStamp = this.notInterested.stamp();
         const anchor = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
         const known = card.played !== undefined && card.favorite !== undefined && card.watchlist !== undefined;
         const source = card;
@@ -145,7 +159,7 @@ export class CardActions {
             if (this.reading !== controller) return;
             settle();
             if (detail.id !== card.id || detail.type !== card.type) { this.alert(); return; }
-            this.show({ ...card, played: detail.played, favorite: detail.favorite, watchlist: detail.watchlist }, options, anchor, source);
+            this.show({ ...card, played: detail.played, favorite: detail.favorite, watchlist: detail.watchlist, notInterested: detail.notInterested }, options, anchor, source);
         }, () => {
             if (this.reading !== controller) return;
             settle();
@@ -155,9 +169,11 @@ export class CardActions {
 
     private show(card: MenuCard, options: CardMenuOptions, anchor: HTMLElement | undefined, source: MenuCard): void {
         const rows = this.menuRows(card, options, source);
+        // While the menu is shown, a Not interested write for its card being answered, from here or from the page, draws it again.
+        this.stopNotInterested ??= this.notInterested.subscribe(id => { if (id === this.shown?.card.id) this.refresh(); });
         // Apple attaches no menu to a card without actions.
         if (rows.length === 0) { this.host.closed(); return; }
-        const busy = this.writes.has(card.id) || this.host.pendingElsewhere?.() === true;
+        const busy = this.writes.has(card.id) || this.notInterested.pending(card.id) !== undefined || this.host.pendingElsewhere?.() === true;
         const scrim = el("div", "card-actions-scrim card-menu-scrim");
         for (const type of ["click", "contextmenu"]) scrim.addEventListener(type, event => {
             if (event.target !== scrim) return;
@@ -258,6 +274,12 @@ export class CardActions {
             const watchlist = card.watchlist;
             rows.push({ change: true, key: "watchlist", label: watchlist ? "Remove from Watchlist" : "Add to Watchlist", icon: watchlist ? "bookmark.slash" : "bookmark", run: () => this.send(card.id, detailOperations.setPersonal("watchlist", card.id, !watchlist), menu => ({ ...menu, watchlist: !watchlist }), source) });
         }
+        // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
+        if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
+            // A write still out for the title, from this menu or the page, shows the state it will leave.
+            const marked = this.notInterested.state(card.id, card.notInterested, this.shownStamp);
+            rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
+        }
         const dismissal = options.dismissal;
         if (dismissal !== undefined) {
             rows.push({ change: true, key: "remove", label: translate(dismissal.surface === "next_up" ? "cardMenu.removeNextUp" : "cardMenu.removeContinueWatching"), icon: "xmark.circle", destructive: true, run: () => this.send(card.id, detailOperations.dismissHomeItem(card.id, dismissal), () => undefined, source, () => this.host.dismissed?.(card)) });
@@ -268,19 +290,24 @@ export class CardActions {
     /** `landed` gives the card's state after the change, or undefined when the card leaves its row. */
     private send(id: string, spec: ReturnType<typeof detailOperations.setPersonal>, landed: (card: MenuCard) => MenuCard | undefined, source: MenuCard, accepted?: () => void): void {
         // HomeViewModel.pendingWatchedUpdates: one change per card at a time, and none beside a pending Details change.
-        if (this.writes.has(id) || this.host.pendingElsewhere?.() === true) return;
+        if (this.writes.has(id) || this.notInterested.pending(id) !== undefined || this.host.pendingElsewhere?.() === true) return;
         const controller = new AbortController();
         this.writes.set(id, controller);
+        // Not interested goes through the one per-title store, so the page and other menus see this write while it is out.
+        const target = spec.path.startsWith("/not-interested/") ? spec.method === "PUT" : undefined;
+        if (target !== undefined) this.notInterested.start(id, target);
         this.session.call({ ...spec, profileScoped: true, replayAfterRefresh: false, signal: controller.signal }).then(() => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             accepted?.();
             const now = landed({ ...source, ...this.accepted.get(source) });
-            if (now !== undefined) this.accepted.set(source, { played: now.played, favorite: now.favorite, watchlist: now.watchlist });
+            if (now !== undefined) this.accepted.set(source, { played: now.played, favorite: now.favorite, watchlist: now.watchlist, notInterested: now.notInterested });
             const shown = this.shown;
             if (shown !== undefined && shown.card.id === id) this.redraw(landed(shown.card));
             this.host.applied(id, spec.path.startsWith("/watched/"));
         }, () => {
+            if (target !== undefined) this.notInterested.finish(id, this.writes.get(id) === controller ? !target : undefined);
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             if (this.shown?.card.id === id) this.redraw(this.shown.card);
@@ -316,6 +343,8 @@ export class CardActions {
     }
 
     private dismiss(): void {
+        this.stopNotInterested?.();
+        this.stopNotInterested = undefined;
         this.lifted?.card.classList.remove(MENU_LIFTED_CLASS);
         this.lifted = undefined;
         this.reading?.abort();

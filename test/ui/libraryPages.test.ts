@@ -465,6 +465,9 @@ async function browseReady(tv: Tv): Promise<void> {
 
 page("Sort and Filter panels use the top-bar panel chrome and fade in and out", async tv => {
     await browseReady(tv);
+    // A late answer redraws Browse and replaces the open panel's nodes, which then carry no fade.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Browse's answers delivered");
+    await afterPaint(tv);
     await tv.page.locator('[data-focus="sort"]').focus();
     await tv.page.keyboard.press("Enter");
     const panel = tv.page.locator(".browse .browse-sort-panel");
@@ -836,6 +839,9 @@ page("a series library lists Apple's 17 sorts in a panel 720 tall, and focus scr
     await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
     await selectLibraryMode(tv, "Browse");
     await tv.page.locator(".catalog-grid .browse-card").first().waitFor();
+    // A late answer redraws Browse and replaces the open panel, whose box then reads as null.
+    await tv.eventually(async () => tv.pendingReplies === 0, "Browse's answers delivered");
+    await afterPaint(tv);
     await openSort(tv);
     const keys = await sortKeys(tv);
     assert.deepEqual(keys, ["title", "added_at", "release_date", "last_air_date", "latest_episode_added", "year", "content_rating", "runtime", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "resolution", "bitrate", "progress", "date_viewed", "plays"]);

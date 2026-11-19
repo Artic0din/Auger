@@ -28,6 +28,12 @@ const SCOPE_PLATFORM = "apple";
 const EXCLUDED_PREFIX = "apple.infoPlist.";
 /** Home section titles: the server sends the key (`home.section.recentlyAddedIn`) with the title it wrote. */
 const SERVER_KEY_PREFIXES: readonly string[] = ["home.section."];
+/**
+ * Keys vendored although silo-translations does not list `apple` for them. Settings › Playback's Video help line takes Android TV's
+ * `settings.skipIntervals.footerVideo` ("left and right presses on the remote"), because Apple TV's own line names the Siri Remote,
+ * which a Samsung TV does not have.
+ */
+export const PLATFORM_EXCEPTIONS: readonly string[] = ["settings.skipIntervals.footerVideo"];
 
 type ArbEntry = string | { readonly description?: string; readonly "x-platforms"?: readonly string[] };
 
@@ -43,7 +49,7 @@ export function scopeCatalog(arb: Readonly<Record<string, ArbEntry>>, englishKey
         if (englishKeys === undefined) {
             const meta = arb[`@${key}`];
             const platforms = typeof meta === "object" ? meta["x-platforms"] : undefined;
-            if (platforms !== undefined && !platforms.includes(SCOPE_PLATFORM)) continue;
+            if (platforms !== undefined && !platforms.includes(SCOPE_PLATFORM) && !PLATFORM_EXCEPTIONS.includes(key)) continue;
         } else if (!englishKeys.has(key)) {
             continue;
         }

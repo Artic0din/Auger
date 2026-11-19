@@ -70,6 +70,7 @@ const controls: PlayerControls = {
     selectAIResult: id => commands.push(`selectAIResult ${id}`),
     syncSubtitle: key => commands.push(`syncSubtitle ${key}`),
     resetSubtitleTiming: key => commands.push(`resetSubtitleTiming ${key}`),
+    selectSecondarySubtitle: id => commands.push(`selectSecondarySubtitle ${id ?? "off"}`),
     subtitleTool: action => commands.push(`subtitleTool ${JSON.stringify(action)}`),
     seekThumbnail: async () => undefined,
     selectBufferingPrimary: () => commands.push("selectBufferingPrimary"),

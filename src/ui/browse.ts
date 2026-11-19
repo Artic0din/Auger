@@ -23,8 +23,9 @@ import { ShowAudiobooks } from "./audiobookPreference.ts";
 import { detailOperations } from "../api/detailOperations.ts";
 import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
-import type { ItemDetail, UserLibrary } from "../contracts/v2/catalog.ts";
+import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import { DetailsState } from "./detailsState.ts";
+import { NotInterestedStore } from "./notInterestedStore.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
 import { SeriesEpisodes } from "./seriesEpisodes.ts";
@@ -36,9 +37,10 @@ import { Skyline } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
-import { errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
+import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
-import { homeRows, removingDismissed, type ViewContext } from "./browseViews.ts";
+import { collectionRowPreview } from "./collectionCards.ts";
+import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, withNotInterested, type ViewContext } from "./browseViews.ts";
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
@@ -231,11 +233,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let shownOverlays: CardOverlayPrefs | undefined = presentation.cardOverlays;
     let episodeSpoilers: EpisodeSpoilerPreferences | undefined;
     const previews = new WeakMap<Route, () => void>();
-    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured) => {
+    const context: ViewContext = { baseUrl: server.server.http.base.baseUrl, ownerName: creator => creator === undefined || creator === session.activeProfile?.id ? undefined : ownerNames?.get(creator), titleArt: () => presentation.showsTitleArt, cardOverlays: () => presentation.cardOverlays, posterScale: () => presentation.posterScale, spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false }, savedFileOverlay: card => homeDetails.savedFile(card)?.overlay, open: (destination) => open(destination), preview: (card, row, continuing, featured, title) => {
         const current = top();
         const preview = (): void => {
             // The read is armed first, so a row change the marquee reports during preview starts this card's read.
-            if (enrichedScene()) homeDetails.rest(card, continuing === true);
+            if (enrichedScene()) { if (title === false) homeDetails.leave(); else homeDetails.rest(card, continuing === true); }
             shell.preview(card, row, continuing ?? false, featured === true);
         };
         if (current !== undefined) previews.set(current, preview);
@@ -320,8 +322,32 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cache.discard(operations.listSeriesSeasons(id));
         return visitedDetails.delete(id);
     };
+    /** HomeViewModel.removeNotInterested and RecommendationsViewModel.removeNotInterested: a newly marked title leaves Home's recommendation rows and every For You row. */
+    const dropNotInterested = (id: string): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingNotInterested(entry.data.sections, id);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = removingNotInterestedFromAll(entry.data, id);
+        }
+    };
+    // The one per-title Not interested record of this session, used by the card menu and the title page, which each subscribe to its answers while shown.
+    const notInterestedStore = new NotInterestedStore();
+    /** The store's stamp when each route's latest read began; a write answered since is not undone by that read. */
+    const readStamps = new WeakMap<Route, number>();
+    /** A Not interested change the server accepted from a title page: retained cards read the new state, a new mark leaves the rows that suggest it, and the cached reads and covered routes are read again. */
+    const noteNotInterested = (id: string, marked: boolean): void => {
+        for (const entry of new Set([...roots.values(), ...stack])) {
+            if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = withNotInterested(entry.data.sections, id, marked);
+            else if (entry.kind === "for_you" && entry.data !== undefined) entry.data = withNotInterested(entry.data, id, marked);
+        }
+        if (marked) dropNotInterested(id);
+        cache.invalidate();
+        const current = top();
+        for (const entry of new Set([...roots.values(), ...stack])) if (entry !== current) entry.stale = true;
+        // The answer can land after Back has shown Home again: its cards were built from the rows before the change.
+        if (!torn && !playing && !cardActions.active && settingsScreen === undefined && (current?.kind === "home" || current?.kind === "for_you")) showRoute(current, host.focused());
+    };
     const personalPending = (): boolean => detailWork?.pending === true || cardActions.pending;
-    const cardActions = new CardActions(container, session, {
+    const cardActions = new CardActions(container, session, notInterestedStore, {
         applied: (id, watched) => {
             visitedDetails.delete(id);
             // MediaCardWatchedSync.swift:15 refreshes Apple's cached page, which picks its season again; favorites keep it.
@@ -341,6 +367,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (entry.kind === "home" && entry.data !== undefined) entry.data.sections = removingDismissed(entry.data.sections, { id: card.id, type: card.type, seriesId: card.seriesId });
             }
         },
+        markedNotInterested: card => dropNotInterested(card.id),
         opened: () => {
             const current = top();
             if (current === undefined) return;
@@ -927,6 +954,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelSlow();
         const controller = new AbortController();
         loading = controller;
+        readStamps.set(current, notInterestedStore.stamp());
         const entryRevision = inputRevision;
         const enterResults = !quiet && (current.kind === "personal" || (current.kind === "requests" && current.requests.data === undefined && current.requests.source.kind !== "search") || (current.kind === "library" && host.focused()?.key !== "sort"));
         current.slow = false;
@@ -1008,9 +1036,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     return;
                 }
                 current.failure = text ?? "Something went wrong. Try again.";
-                current.error = errorState(error);
+                // A generic error keeps Apple's keyed message so a late language redraws it; a route's own wording (no key) replaces it.
+                const state = errorState(error);
+                const body = error instanceof CalendarTimezoneError ? undefined : failureBody(error, current);
+                current.error = body === undefined ? state : { ...state, route: body };
                 // Apple BoxSetDetailViewModel.errorState: a 404 keeps Not found but says why a box set can be missing.
-                if (current.kind === "boxSet" && current.error.headline === "Not found" && text !== undefined) current.error = { ...current.error, message: text };
+                if (current.kind === "boxSet" && current.error.kind === "notFound" && text !== undefined) current.error = { ...current.error, body: { key: "boxSets.unavailableMessage" } };
                 // SearchViewModel.performSearch: a failed new search clears its titles, people and box sets; a failed next page keeps them behind the error.
                 if (current.kind === "search" && current.appending !== true) {
                     current.pages = newPages();
@@ -1019,7 +1050,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (current.supplement !== undefined) Object.assign(current.supplement, { people: [], peoplePending: false, boxSets: [], boxSetsPending: false });
                 }
                 if (current.kind === "search") current.appending = false;
-                if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? { headline: "Something went wrong", message: error.message, signIn: false } : errorState(error);
+                if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? failureState(error.message) : errorState(error);
                 if (current.kind === "requests") { current.requests.error = errorState(error); if (!current.requests.unconfirmed && !current.requests.writing) current.requests.action = undefined; }
                 if (current.kind === "requests" && error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
                 if (top() === current) {
@@ -1130,7 +1161,26 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             render(host.focused());
         }
     }, (fn, ms) => clock.schedule(fn, ms));
+    // CollectionOwnerName: another profile's shared collection names its owner from this login's profile list, read once when a row needs it
+    // (not on focus), and the shown hero is drawn again when it lands. A failed read leaves the cards without a by line (Apple's `try?` reads nil) until this screen is opened again.
+    let ownerNames: ReadonlyMap<string, string> | undefined;
+    let ownerNamesRequested = false;
+    const readOwnerNames = (sections: readonly { readonly collections?: readonly SectionCollectionCard[] | undefined }[]): void => {
+        if (ownerNames !== undefined || ownerNamesRequested) return;
+        const acting = session.activeProfile?.id;
+        if (!sections.some(section => section.collections?.some(card => card.creatorProfileId !== undefined && card.creatorProfileId !== acting) === true)) return;
+        ownerNamesRequested = true;
+        void server.profiles.list().then(list => {
+            if (torn) return;
+            ownerNames = new Map(list.map(profile => [profile.id, profile.name]));
+            render(host.focused());
+            // A hero left showing a collection (focus has moved to the top bar) is built again with the name; no card focus is needed, and nothing is read.
+            const shown = shell.shownPreview();
+            if (shown?.card.collection !== undefined && !playing) context.preview?.(collectionRowPreview(shown.card.collection, context.ownerName?.(shown.card.collection.creatorProfileId)), shown.row, false, false, false);
+        }, () => undefined);
+    };
     const presentEnrichment = (sections: Parameters<typeof homeRows>[0], prewarmRatings: boolean): void => {
+        readOwnerNames(sections);
         homeDetails.present(homeRows(sections).map(row => ({ cards: row.cards, continuing: row.continuing })), prewarmRatings);
     };
 
@@ -1194,6 +1244,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             detailsChanged(current, audioClosed);
         }, (value, signal) => refreshWatched(current, value, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), artwork);
         details.presentsAlerts = true;
+        details.onNotInterested = noteNotInterested;
+        details.notInterestedStore = notInterestedStore;
+        details.readStamp = readStamps.get(current) ?? 0;
         resolutionCap.ensure();
         return details;
     };
@@ -1633,6 +1686,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                         const detail = offline ? previous.detail : data.detail;
                         if (!offline) cachedDetailOwners.delete(previous);
                         previous.acceptDetail(detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (detail.played !== undefined) previous.values.set("watched", detail.played);
                         if (detail.type === "series") {
                             const series = previous.series;
@@ -1717,6 +1771,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     }
                     if (previous !== undefined && data.detail !== undefined) {
                         previous.acceptDetail(data.detail);
+                        previous.readStamp = readStamps.get(current) ?? previous.readStamp;
                         if (data.detail.played !== undefined) previous.values.set("watched", data.detail.played);
                         current.data = { ...data, details: previous };
                         detailWork = previous;
@@ -1728,6 +1783,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (data.detail !== undefined) {
                         const details = new DetailsState(data.detail, session, (audioClosed) => detailsChanged(current, audioClosed), (detail, signal) => refreshWatched(current, detail, signal), personalPending, translations, () => resolutionCap.quality, signal => resolutionCap.ready(signal), data.artwork);
                         details.presentsAlerts = true;
+                        details.onNotInterested = noteNotInterested;
+                        details.notInterestedStore = notInterestedStore;
+                        details.readStamp = readStamps.get(current) ?? 0;
                         resolutionCap.ensure();
                         details.restore(previous);
                         current.data.details = details;
@@ -2102,6 +2160,19 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stack.push(next);
         showRoute(next, focus);
     };
+    /** A personal collection's page is read by collection id alone, so no library stands behind it. */
+    const NO_LIBRARY: UserLibrary = { id: "", name: "", type: "unknown", sortOrder: 0 };
+    /**
+     * A card of a row of collections (TVCollectionsRow.swift): a server collection opens in its library, the page's own when it has one, so
+     * a library page's Movies or Series tab keeps narrowing it; a personal collection opens its own page, read without a library.
+     * The page reads its titles by collection id, so a library the viewer cannot list stands in by id alone.
+     */
+    const openCollection = (card: SectionCollectionCard, page: UserLibrary | undefined): void => {
+        const personal = card.source === "user";
+        const libraryId = card.libraryId ?? "";
+        const library: UserLibrary = personal ? NO_LIBRARY : page?.id === libraryId ? page : serverLibrary(libraryId) ?? { id: libraryId, name: "", type: "unknown", sortOrder: 0 };
+        push(newRoute({ kind: "libraryResults", library, title: card.title, source: { kind: "collection", id: card.id, groupKind: personal ? "user_collections" : "admin" }, pages: newPages() }));
+    };
 
     /** push() without keeping the top page: Back from the new page returns to the one beneath. */
     const replaceTop = (next: Route): void => {
@@ -2317,7 +2388,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loading?.abort(); loading = undefined; cancelSlow();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2755,7 +2826,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
     const calendarHandlers = (current: Extract<Route, { kind: "calendar" }>): CalendarHandlers => ({
         now: clock.now(), busy: loading !== undefined, failure: current.failure, context,
-        focus: target => render(target), retry: () => retry(current), back: pop,
+        focus: target => render(target), retry: () => retry(current), signIn: options.onSignOut, back: pop,
         change: value => {
             try { prepareCalendar(current); }
             catch (error) { current.failure = error instanceof Error ? error.message : "Could not read this TV’s timezone."; render(); return; }

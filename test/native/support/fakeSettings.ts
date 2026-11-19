@@ -1,10 +1,13 @@
 import type { FakeSilo, Reply } from "./fakeSilo.ts";
 import { fixture, problem } from "./fakeSilo.ts";
-import { AUDIO_KEY, HDR_KEY, QUALITY_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SETTINGS_KEYS, SHOW_FORCED_KEY, SPOILER_IMAGE_KEY, SPOILER_OVERVIEW_KEY, THEME_MUSIC_ENABLED_KEY, THEME_MUSIC_LOOP_KEY, APP_LANGUAGE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, type SettingsKey, type SettingValue } from "../../../src/contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, HDR_KEY, QUALITY_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SETTINGS_KEYS, SHOW_FORCED_KEY, SPOILER_IMAGE_KEY, SPOILER_OVERVIEW_KEY, THEME_MUSIC_ENABLED_KEY, THEME_MUSIC_LOOP_KEY, APP_LANGUAGE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, type SettingsKey, type SettingValue } from "../../../src/contracts/v2/settings.ts";
 const BUFFERING_MODE_KEY = "playback.buffering_quality_mode";
 const DOLBY_VISION_KEY = "player.dolby_vision_enabled";
 const SEEK_CACHE_KEY = "player.seek_cache_enabled";
 const TITLE = "ui.title_art" as SettingsKey;
+/** Video and audiobook skip intervals are profile-only enums, 10 back and 30 forward by default. */
+const SKIP_BACK: readonly SettingsKey[] = [SEEK_BACK_KEY, AUDIOBOOK_SEEK_BACK_KEY];
+const SKIP_FORWARD: readonly SettingsKey[] = [SEEK_FORWARD_KEY, AUDIOBOOK_SEEK_FORWARD_KEY];
 
 export class FakeSettings {
     readonly rows = new Map<string, Map<SettingsKey, SettingValue>>();
@@ -119,11 +122,11 @@ export class FakeSettings {
                         ...(source === "default" ? {} : { scope: source, profile_id: profile, ...(source === "profile_device" ? { device_id: device } : {}), source_context: { profile_id: profile, ...(source === "profile_device" ? { device_id: device } : {}) } }) };
                 }
                 if (typed === "ui.card_presentation" && familyRows.has(typed) && !deviceRows.has(typed)) return { key, value: familyRows.get(typed), source: "profile_client", definition_revision: this.revision };
-                const deviceOverride = typed !== SEEK_BACK_KEY && typed !== SEEK_FORWARD_KEY && deviceRows.has(typed);
+                const deviceOverride = !SKIP_BACK.includes(typed) && !SKIP_FORWARD.includes(typed) && deviceRows.has(typed);
                 const override = this.overrides.has(typed) || deviceOverride;
                 const defaults = fixture("settings_rows_216").definitions;
                 const fallback = typed === SPOILER_IMAGE_KEY || typed === SPOILER_OVERVIEW_KEY || typed === THEME_MUSIC_ENABLED_KEY || typed === THEME_MUSIC_LOOP_KEY ? false : Array.isArray(defaults) ? defaults.find(def => def.key === key)?.default_value : undefined;
-                const value = this.overrides.has(typed) ? this.overrides.get(typed) : deviceOverride ? deviceRows.get(typed) : profileRows.has(typed) ? profileRows.get(typed) : key === "ui.card_presentation" ? { poster_size: "standard", caption: "title_metadata" } : typed === QUALITY_KEY ? "auto" : typed === SEEK_BACK_KEY ? 10 : typed === SEEK_FORWARD_KEY ? 30 : typed === SUBTITLE_MODE_KEY ? "auto" : typed === SHOW_FORCED_KEY || typed === HDR_KEY ? true : key === BUFFERING_MODE_KEY ? "always" : fallback ?? null;
+                const value = this.overrides.has(typed) ? this.overrides.get(typed) : deviceOverride ? deviceRows.get(typed) : profileRows.has(typed) ? profileRows.get(typed) : key === "ui.card_presentation" ? { poster_size: "standard", caption: "title_metadata" } : typed === QUALITY_KEY ? "auto" : SKIP_BACK.includes(typed) ? 10 : SKIP_FORWARD.includes(typed) ? 30 : typed === SUBTITLE_MODE_KEY ? "auto" : typed === SHOW_FORCED_KEY || typed === HDR_KEY ? true : key === BUFFERING_MODE_KEY ? "always" : fallback ?? null;
                 return { key, value, source: override ? "profile_device" : rows.has(typed) ? "profile" : "default", definition_revision: this.revision, ...(this.constrained && typed === AUDIO_KEY ? { constrained: true, requested_value: rows.get(typed) ?? null, permitted_values: [null, "en"] } : {}) };
             });
             return { status: 200, body: { items, revision: this.revision } };

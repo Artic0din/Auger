@@ -199,6 +199,17 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         if (track.unavailable === true) row.setAttribute("data-unavailable", "true");
         trackColumn.rows.appendChild(row);
     }
+    if (tracks.secondary !== undefined) {
+        // SubtitlesPane.trackRows: a SECONDARY heading, then Off and the same rows, the primary's own dimmed.
+        trackColumn.rows.appendChild(el("h2", "player-menu-heading player-menu-heading-secondary", "SECONDARY"));
+        trackColumn.rows.appendChild(choice("secondary-off", "Off", tracks.secondary.selectedId === undefined));
+        for (const track of tracks.secondary.choices) {
+            const row = choice(`secondary:${track.id}`, track.label, track.id === tracks.secondary.selectedId, track.detail);
+            // HUDTrackRow is `.disabled(isDisabled)` for the primary's own row, so the focus engine skips it (TVPlayerInfoHUD.swift:2146, :1776).
+            if (track.unavailable === true) { row.setAttribute("data-unavailable", "true"); row.setAttribute("data-focus-skip", "true"); }
+            trackColumn.rows.appendChild(row);
+        }
+    }
     if (tracks.seriesSubtitle !== undefined) {
         const save = choice(SERIES_SUBTITLE, tracks.selectedSubtitleId === undefined ? "Keep subtitles off for this series" : "Use this subtitle choice for this series", false);
         save.setAttribute("aria-disabled", String(tracks.seriesSubtitle.busy));
@@ -631,7 +642,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
                     const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
                     const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
-                    const blocked = tracks.change.state === "changing" || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || (id === "ai-transcribe" && (quota === undefined || (quota.limited && quota.remaining <= 0))) || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true);
+                    const blocked = tracks.change.state === "changing" || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || (id === "ai-transcribe" && (quota === undefined || (quota.limited && quota.remaining <= 0))) || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true);
                     button.setAttribute("aria-disabled", String(blocked));
                 }
             }
@@ -1224,6 +1235,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
      * Left and Right cross between a pane's columns (each a `focusSection` in SubtitlesPane and VideoPane) and land on the
      * row nearest the focused one's height, as the tvOS focus engine does. Past the last column they switch panes.
      */
+    /** Rows the arrow keys can land on: a row the focus engine skips (a disabled Apple row) stays out unless it already holds focus. */
+    const landable = (rows: HTMLElement[]): HTMLElement[] => rows.filter(row => row === document.activeElement || row.getAttribute("data-focus-skip") !== "true");
     const crossColumn = (direction: -1 | 1): boolean => {
         const from = document.activeElement;
         const own = from?.closest<HTMLElement>(".player-menu-column");
@@ -1232,7 +1245,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const middle = (node: Element): number => { const box = node.getBoundingClientRect(); return box.top + box.height / 2; };
         const height = middle(from);
         for (let index = columns.indexOf(own) + direction; index >= 0 && index < columns.length; index += direction) {
-            const rows = Array.from(columns[index]!.querySelectorAll<HTMLElement>("[data-focus]"));
+            const rows = landable(Array.from(columns[index]!.querySelectorAll<HTMLElement>("[data-focus]")));
             const nearest = rows.reduce<HTMLElement | undefined>((best, row) => best === undefined || Math.abs(middle(row) - height) < Math.abs(middle(best) - height) ? row : best, undefined);
             if (nearest !== undefined) { nearest.focus(); return true; }
         }
@@ -1261,7 +1274,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         // Up and Down stay inside the focused column of a two-column pane.
         const columnScope = document.activeElement?.closest<HTMLElement>(".player-menu-column");
-        const all = columnScope ? Array.from(columnScope.querySelectorAll<HTMLElement>("[data-focus]")) : buttons(column);
+        const all = landable(columnScope ? Array.from(columnScope.querySelectorAll<HTMLElement>("[data-focus]")) : buttons(column));
         const at = all.findIndex((button) => button === document.activeElement);
         const atTab = tabs.findIndex(tab => tab === document.activeElement);
         const infoPane = lists[column];
@@ -1320,6 +1333,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else if (id === "auto-next") controls.toggleAutoNext();
             else if (id === RETRY) {
                 controls.retryTrackInfo();
+            } else if (id === "secondary-off") {
+                controls.selectSecondarySubtitle(undefined);
+            } else if (id?.startsWith("secondary:")) {
+                controls.selectSecondarySubtitle(id.slice("secondary:".length));
             } else if (id === OFF) {
                 controls.selectSubtitle(undefined);
             } else if (id === SERIES_SUBTITLE) {
