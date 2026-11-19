@@ -1142,6 +1142,73 @@
     color: rgba(0, 0, 0, 0.55);
 }
 
+/*
+ * timingRows (TVPlayerInfoHUD.swift): the running job's bar is SubtitleSyncProgressBar, an HStack(spacing: 14) of a linear
+ * ProgressView tinted white at 85% and a 20pt monospaced-digit percent in a 60pt trailing slot, padded 14 by 8, with the
+ * phase under it at 17pt and 55%. tvOS draws the ProgressView itself, so the bar's 8 px thickness and 20% white track are
+ * estimates until they are measured on an Apple TV capture (PR #574); source gives only the tint.
+ */
+.player-sync-progress {
+    padding: 8px 14px;
+}
+
+.player-sync-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.player-sync-track {
+    flex: 1;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.player-sync-fill {
+    display: block;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.player-sync-percent {
+    min-width: 60px;
+    text-align: right;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: var(--silo-secondary);
+}
+
+.player-sync-phase {
+    margin: 6px 0 0;
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* The line under the rows: padded 14 by 4 and 10, 17pt. Error is (1, 0.55, 0.55), warning siloWarning at 90%. */
+.player-sync-note {
+    margin: 0;
+    padding: 4px 14px 10px;
+    font-size: 17px;
+}
+
+.player-sync-note-error {
+    color: #ff8c8c;
+}
+
+.player-sync-note-warning {
+    color: rgba(255, 193, 7, 0.9);
+}
+
+.player-sync-note-plain {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.player-sync-note-hint {
+    color: rgba(255, 255, 255, 0.45);
+}
+
 .player-info {
     display: grid;
     grid-template-columns: 1fr 1fr;

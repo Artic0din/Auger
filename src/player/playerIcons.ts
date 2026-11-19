@@ -85,3 +85,13 @@ export function sparklesIcon(): string {
     };
     return svg(`<path fill="currentColor" d="${star(9.5, 13.5, 8)}${star(18.5, 5.5, 3.6)}${star(19, 18, 2.6)}"/>`);
 }
+
+/** `waveform`: the Sync to Audio row's symbol. Six rounded bars. */
+export function waveformIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M3.5 10v4M7.5 6.5v11M11.5 3.5v17M15.5 7.5v9M19.5 9.5v5"/>`);
+}
+
+/** `arrow.uturn.backward`: the Reset Timing row's symbol. */
+export function uturnBackwardIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.5 4 4 8.5 8.5 13M4 8.5h10a5 5 0 0 1 0 10.5H9"/>`);
+}

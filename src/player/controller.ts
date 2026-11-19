@@ -49,6 +49,7 @@ import { NEXT_UP_KEY } from "../contracts/v2/settings.ts";
 import { BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { nextShuffle, nextShufflePart } from "./nextShuffle.ts";
 import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
+import { SubtitleSync, type SyncTimingView } from "./subtitleSync.ts";
 import { type AppearanceMember } from "./subtitleAppearance.ts";
 import { SubtitleDisplay, type SubtitleDisplayView } from "./subtitleDisplay.ts";
 import { STORED, SubtitleSearch, type SubtitleSearchView } from "./subtitleSearch.ts";
@@ -209,6 +210,8 @@ export interface TrackView {
     readonly reporting?: boolean;
     readonly notices: readonly string[];
     readonly subtitleTools?: { readonly search: SubtitleSearchView; readonly display?: SubtitleDisplayView; readonly overlay: boolean };
+    /** The selected subtitle's Sync to Audio and Reset Timing state, when the server can retime it. */
+    readonly syncTiming?: SyncTimingView | undefined;
     /** SECONDARY: other text tracks the app can draw under the primary one; present only while the app draws the primary. */
     readonly secondary?: { readonly choices: readonly TrackChoice[]; readonly selectedId: string | undefined } | undefined;
 }
@@ -297,6 +300,10 @@ export interface PlayerControls {
     startSubtitleAI(kind: "translate" | "transcribe", language?: string): void;
     selectAIResult(id: string): void;
     subtitleTool(action: SubtitleToolAction): void;
+    /** Sync to Audio for the subtitle with this sync key. */
+    syncSubtitle(key: string): void;
+    /** Reset Timing for the subtitle with this sync key. */
+    resetSubtitleTiming(key: string): void;
     /** SECONDARY: undefined turns the second line off. */
     selectSecondarySubtitle(trackId: string | undefined): void;
     seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined>;
@@ -405,6 +412,7 @@ interface Attempt {
     pendingSkipUndo: number | undefined;
     ai: SubtitleAI | undefined;
     search: SubtitleSearch | undefined;
+    sync: SubtitleSync | undefined;
     display: SubtitleDisplay | undefined;
     readonly aiBlockedFiles: Set<string>;
     pendingAIResult: string | undefined;
@@ -419,6 +427,9 @@ interface Attempt {
     /** The primary artifact's timing origin, and the sidecar URL, the cues were read with. */
     secondaryOrigin: number;
     secondaryUrl: string | undefined;
+    /** The sync timing versions the primary's and the secondary's cue reads started under. */
+    captionTiming: number;
+    secondaryTiming: number;
     secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
@@ -612,9 +623,9 @@ export class PlaybackController implements PlayerControls {
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
-            ai: undefined, search: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
+            ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1093,6 +1104,14 @@ export class PlaybackController implements PlayerControls {
         if (kind === "transcribe" && sourceIndex === undefined) { attempt.ai?.notice("Could not identify the audio track to transcribe. Playback continues."); return; }
         if (sourceIndex === undefined || sourceIndex < 0 || (kind === "translate" && !textSubtitle(subtitle?.codec))) return;
         void attempt.ai?.start({ media_file_id: plan.effectiveMediaFileId, kind, source_index: sourceIndex, source_language: kind === "translate" ? subtitle?.language ?? "" : "", target_language: language, start_position: attempt.sourceSeconds });
+    }
+
+    syncSubtitle(key: string): void {
+        void this.active()?.sync?.request(key);
+    }
+
+    resetSubtitleTiming(key: string): void {
+        void this.active()?.sync?.reset(key);
     }
 
     selectAIResult(id: string): void {
@@ -1821,6 +1840,8 @@ export class PlaybackController implements PlayerControls {
         const presented = attempt.presented;
         this.readCaptions(attempt, plan);
         attempt.plan = plan;
+        // A subtitle the kept stream gained (a download, an AI result) needs its sync state too.
+        this.adoptSync(attempt, plan);
         attempt.hud.read(this.deps.session, attempt.request.contentId, plan.effectiveMediaFileId, attempt.signal, () => this.showPlayback(attempt));
         attempt.serverFeatures = serverFeatures;
         attempt.planAttemptId = this.newId();
@@ -2009,6 +2030,7 @@ export class PlaybackController implements PlayerControls {
             attempt.search = new SubtitleSearch(this.deps.session, plan.effectiveMediaFileId, id => this.attachDownloaded(attempt, id), () => this.showPlayback(attempt));
             void attempt.search.refresh();
         }
+        this.adoptSync(attempt, plan);
         if (attempt.display === undefined && attempt.profileId !== undefined) {
             const profileId = attempt.profileId;
             attempt.display = new SubtitleDisplay(this.deps.session, profileId, (appearance, sync) => {
@@ -2047,6 +2069,36 @@ export class PlaybackController implements PlayerControls {
         void this.open(attempt, plan);
     }
 
+    /** Sync waits for a plan whose inventory names a syncable subtitle. A replan that adds one (a download, an AI result) lists them again. */
+    private adoptSync(attempt: Attempt, plan: PlaybackPlan): void {
+        const keys = plan.subtitle.inventory.flatMap(track => track.syncKey === undefined || track.syncKey === "" ? [] : [track.syncKey]);
+        if (attempt.sync !== undefined && attempt.sync.fileId !== plan.effectiveMediaFileId) {
+            attempt.sync.destroy();
+            attempt.sync = undefined;
+        }
+        if (keys.length === 0) return;
+        if (attempt.sync === undefined) attempt.sync = new SubtitleSync(this.deps.session, this.deps.clock, plan.effectiveMediaFileId, () => this.showPlayback(attempt), key => this.refetchCaptions(attempt, key));
+        else if (keys.some(key => !attempt.sync?.knows(key))) attempt.sync.reload();
+    }
+
+    /** The server retimed a subtitle: the track's URL serves the new timing, but the cues already read are the old ones. */
+    private refetchCaptions(attempt: Attempt, key: string): void {
+        const plan = attempt.plan;
+        if (plan === undefined) return;
+        const retimed = (trackId: string | undefined): boolean => trackId !== undefined && plan.subtitle.inventory.find(track => track.trackId === trackId)?.syncKey === key;
+        // The same track can be retimed while it shows as SECONDARY; its URL and origin stay, so reconcileSecondary would keep the old cues.
+        // A read that started under the current timing version already has these cues.
+        const version = attempt.sync?.timingVersion(key) ?? 0;
+        const secondary = retimed(attempt.secondaryId) && attempt.secondaryTiming < version ? secondaryRows(plan).find(row => row.trackId === attempt.secondaryId) : undefined;
+        if (secondary !== undefined) this.startSecondary(attempt, secondary, attempt.secondaryOrigin, true);
+        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId) && attempt.captionTiming < version) this.readCaptions(attempt, plan, true);
+        this.showPlayback(attempt);
+    }
+
+    private timingVersionOf(attempt: Attempt, key: string | undefined): number {
+        return key === undefined || key === "" ? 0 : attempt.sync?.timingVersion(key) ?? 0;
+    }
+
     /** SECONDARY follows its primary: it ends with the primary's artifact, or when the primary becomes the same track. */
     private reconcileSecondary(attempt: Attempt, plan: PlaybackPlan): void {
         if (attempt.secondaryId === undefined) return;
@@ -2079,11 +2131,16 @@ export class PlaybackController implements PlayerControls {
         this.showPlayback(attempt);
     }
 
-    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number): void {
-        this.clearSecondary(attempt);
+    /** `refresh` rereads the shown secondary after a timing change, keeping its line and its selection unless new cues load. */
+    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number, refresh = false): void {
+        const shownTiming = attempt.secondaryTiming;
+        const keep = refresh && attempt.secondaryId === row.trackId;
+        if (keep) attempt.secondaryAbort?.abort();
+        else this.clearSecondary(attempt);
         attempt.secondaryId = row.trackId;
         attempt.secondaryOrigin = origin;
         attempt.secondaryUrl = row.url;
+        attempt.secondaryTiming = this.timingVersionOf(attempt, row.syncKey);
         const abort = new AbortController();
         attempt.secondaryAbort = abort;
         const cancel = (): void => abort.abort();
@@ -2095,18 +2152,22 @@ export class PlaybackController implements PlayerControls {
                 // The sidecar is read like the primary's artifact. Its cues share the primary's timing origin: both come from this plan's stream.
                 // A download that ends early is fetched again like the primary's (`downloadSubtitle`), the cues that arrived showing meanwhile.
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal,
-                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal),
+                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal, keep),
                     text => decodeCues(text, secondaryFormat(row) ?? "", origin),
                     partial => {
-                        if (!current()) return;
+                        if (!current() || keep) return;
                         attempt.secondaryCues = partial;
                         this.showPlayback(attempt);
                     });
                 if (!current()) return;
                 attempt.secondaryCues = cues;
             } catch {
-                // A track that cannot be read is not shown as chosen.
                 if (!current()) return;
+                // A reread that fails leaves the line it replaced; with none loaded yet, or a track that cannot be read at all, it is not shown as chosen.
+                if (keep && attempt.secondaryCues.length > 0) {
+                    attempt.secondaryTiming = shownTiming;
+                    return;
+                }
                 attempt.secondaryId = undefined;
             }
             if (current()) this.showPlayback(attempt);
@@ -2121,27 +2182,32 @@ export class PlaybackController implements PlayerControls {
         return url.href;
     }
 
-    private readCaptions(attempt: Attempt, plan: PlaybackPlan): void {
+    /** `refresh` rereads the shown track past the HTTP cache after a timing change: its cues stay on screen until the new ones load, and stay if that fails. */
+    private readCaptions(attempt: Attempt, plan: PlaybackPlan, refresh = false): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
         const key = artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
         this.reconcileSecondary(attempt, plan);
-        if (key !== undefined && key === attempt.captionKey) return;
+        if (!refresh && key !== undefined && key === attempt.captionKey) return;
+        const shownTiming = attempt.captionTiming;
         attempt.captionKey = key;
+        attempt.captionTiming = this.timingVersionOf(attempt, plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey);
         attempt.captionAbort?.abort();
         const abort = new AbortController();
         attempt.captionAbort = abort;
         const cancel = (): void => abort.abort();
         attempt.signal.addEventListener("abort", cancel, { once: true });
         abort.signal.addEventListener("abort", () => attempt.signal.removeEventListener("abort", cancel), { once: true });
-        attempt.cues = [];
-        attempt.captionNotice = "";
+        if (!refresh) {
+            attempt.cues = [];
+            attempt.captionNotice = "";
+        }
         if (artifact === undefined) return;
-        attempt.captionNotice = CAPTION_LOADING;
+        if (!refresh) attempt.captionNotice = CAPTION_LOADING;
         const current = (): boolean => attempt.live && !abort.signal.aborted && attempt.captionAbort === abort;
         void (async () => {
             try {
                 const show = (cues: readonly SubtitleCue[]): void => {
-                    if (!current()) return;
+                    if (!current() || refresh) return;
                     attempt.cues = cues;
                     attempt.captionNotice = "";
                     this.showPlayback(attempt);
@@ -2149,13 +2215,18 @@ export class PlaybackController implements PlayerControls {
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
                     const url = await this.captionUrl(artifact.url, abort.signal);
                     if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                    return this.deps.session.http.subtitleText(url, abort.signal);
+                    return this.deps.session.http.subtitleText(url, abort.signal, refresh);
                 }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
                 attempt.cues = cues;
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
+                // Cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again. With none loaded yet, fail as usual.
+                if (refresh && attempt.cues.length > 0) {
+                    attempt.captionTiming = shownTiming;
+                    return;
+                }
                 attempt.captionKey = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary(attempt);
@@ -2795,6 +2866,7 @@ export class PlaybackController implements PlayerControls {
     private leave(attempt: Attempt, how: "stop" | "abandon"): void {
         attempt.ai?.destroy();
         attempt.search?.destroy();
+        attempt.sync?.destroy();
         attempt.display?.destroy();
         attempt.captionAbort?.abort();
         attempt.secondaryAbort?.abort();
@@ -3909,6 +3981,8 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         if (attempt.captionNotice) notices.push(captionNoticeText(attempt.captionNotice));
         if (attempt.captionPreferenceNotice) notices.push(attempt.captionPreferenceNotice);
     }
+    const sync = attempt.sync?.view;
+    const shownKey = plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan))?.syncKey;
     return {
         ai: aiView(attempt, plan),
         aiTranslate: textSubtitle(plan.subtitle.inventory.find(track => track.trackId === shownSubtitle(attempt, plan))?.codec),
@@ -3924,13 +3998,17 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
         // SubtitleDisplayOrder: display position only; every row keeps the id it selects.
         subtitles: orderedInventory(plan.subtitle.inventory, attempt.orderingLanguage).map((entry) => {
             const generated = attempt.ai?.view?.results.find(result => entry.syncKey === `stored-${result.id}`)?.label;
-            return subtitleChoice(entry, generated);
+            const choice = subtitleChoice(entry, generated);
+            // HUDTrackRow's attributes, then the track's sync status ("Syncing… 40%", "Synced −3.0 s"); an unsupported format says so instead.
+            const status = entry.unplayable === true || entry.syncKey === undefined ? undefined : sync?.status[entry.syncKey];
+            return status === undefined ? choice : { ...choice, detail: choice.detail === undefined || choice.detail === "" ? status : `${choice.detail} · ${status}` };
         }),
         selectedSubtitleId: shownSubtitle(attempt, plan),
         subtitleMode: shownSubtitle(attempt, plan) === undefined ? "off" : plan.subtitle.mode === "off" ? "render" : plan.subtitle.mode,
         change: attempt.change,
         reporting: attempt.reporting,
         notices,
+        ...(shownKey === undefined || sync?.timing[shownKey] === undefined ? {} : { syncTiming: sync.timing[shownKey] }),
         ...(secondaryView(attempt, plan)),
         ...(attempt.search === undefined ? {} : { subtitleTools: { search: attempt.search.view, ...(attempt.display?.view === undefined ? {} : { display: attempt.display.view }), overlay: subtitleOverlay(attempt, plan) } }),
     };
