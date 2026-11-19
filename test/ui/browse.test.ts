@@ -2499,11 +2499,35 @@ browseTest("Recommended shares Skyline rows and expands through a tile", async t
     assert.equal(await tv.focused(), "expand:library-picks");
 });
 
+// Apple SectionRow.showsWholeSection: a Continue Watching row shorter than its limit whose total is no more than it shows has no Explore all.
+for (const [label, totalCount, expands] of [["a complete", undefined, false], ["a partial", 5, true]] as const) {
+    const resumeCatalog = new FakeCatalog();
+    const household = resumeCatalog.households.get("p-owner");
+    assert.ok(household);
+    const resume = { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"], ...(totalCount === undefined ? {} : { totalCount }) };
+    const recent = { id: "recently_added", sectionType: "recently_added", title: "Recently Added", items: ["movie:m0002", "movie:m0004"] };
+    household.sections = [resume, recent];
+    household.librarySections = [resume, recent];
+    browseTest(`${label} Continue Watching row on Home and Movies ${expands ? "keeps" : "has no"} Explore all`, async tv => {
+        for (const page of ["home", "movies"]) {
+            if (page === "movies") {
+                await tv.page.locator('[data-focus="movies"]').click();
+                await showing(tv, "library:12");
+            }
+            const row = tv.page.locator('[data-section="continue_watching"]');
+            await row.locator('[data-focus="episode:s1e12"]').waitFor();
+            assert.equal(await row.locator('[data-focus="expand:continue_watching"]').count(), expands ? 1 : 0, `${page} Continue Watching`);
+            assert.equal(await tv.page.locator('[data-section="recently_added"] [data-focus="expand:recently_added"]').count(), 1, `${page} Recently Added keeps its card`);
+        }
+    }, { catalog: resumeCatalog });
+}
+
 browseTest("Movies Continue Watching and other library headings open without a catalog overlay", async (tv, catalog) => {
     const household = catalog.households.get("p-owner");
     assert.ok(household);
     household.librarySections = [
-        { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"] },
+        // A partial row, so Continue Watching has an Explore all card to open.
+        { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"], totalCount: 5 },
         { id: "recently_added", sectionType: "recently_added", title: "Recently Added", items: ["movie:m0002", "movie:m0004"] },
     ];
     await tv.page.locator('[data-focus="movies"]').click();

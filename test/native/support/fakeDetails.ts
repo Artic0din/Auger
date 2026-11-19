@@ -16,6 +16,8 @@ export class FakeDetails extends FakeCatalog {
     capability = true;
     /** Home and catalog cards carry `user_state` and, while in progress, `progress_updated_at`, as the server sends them. */
     cardUserState = false;
+    /** Cards carry `user_state.not_interested`, as a server that has the mark sends it; off, they read as an older server's, so a card menu offers no Not Interested row. */
+    sendsNotInterested = false;
     empty = false;
     extras: readonly Record<string, unknown>[] = [];
     videos: readonly Record<string, unknown>[] = [];
@@ -50,7 +52,7 @@ export class FakeDetails extends FakeCatalog {
         const card = super.card(id);
         if (!this.cardUserState) return card;
         return { ...card, ...(card.position_seconds === undefined ? {} : { progress_updated_at: "2026-11-01T10:00:00.123456Z" }),
-            user_state: { played: this.playedFor(id, "p-owner"), is_favorite: this.personalMembers("p-owner", "favorites").has(id), in_watchlist: this.personalMembers("p-owner", "watchlist").has(id), not_interested: false } };
+            user_state: { played: this.playedFor(id, "p-owner"), is_favorite: this.personalMembers("p-owner", "favorites").has(id), in_watchlist: this.personalMembers("p-owner", "watchlist").has(id), ...(this.sendsNotInterested ? { not_interested: false } : {}) } };
     }
 
     private playedFor(id: string, profileId: string | undefined): boolean {

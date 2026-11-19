@@ -15,6 +15,9 @@ async function mount(options: { stills: boolean; images?: boolean; overviews?: b
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new FakeCatalog();
     catalog.episodeStills = options.stills;
+    // A partial Continue Watching row, so it has an Explore all card to open.
+    const resume = catalog.households.get("p-owner")?.sections.find(row => row.id === "continue_watching");
+    if (resume !== undefined) resume.totalCount = 5;
     tv.fake.catalog = options.gridEpisode ? { route: (method, path, profile, body) => {
         if (path.split("?")[0] === "/catalog/query") return { status: 200, body: {
             items: [{ content_id: "episode:s1e12", type: "episode", title: "Harbor Lights chapter 1.2", series_id: "series:s1", season_number: 1, episode_number: 2,
@@ -167,7 +170,7 @@ test("Playback saves the image switch for the profile", async () => {
         await tv.page.locator('[data-focus="playback"]').click();
         const swatch = tv.page.locator('[data-focus="spoiler-images"][aria-disabled="false"]');
         await swatch.waitFor();
-        assert.deepEqual(await tv.page.locator(".settings-pane .settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "RESET"]);
+        assert.deepEqual(await tv.page.locator(".settings-pane .settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS", "RESET"]);
         assert.equal(await tv.page.locator('[data-focus="spoiler-images"] .settings-row-value').innerText(), "Off");
         assert.equal(await tv.page.locator('[data-focus="spoiler-overviews"] .settings-row-value').innerText(), "Off");
         assert.match(await tv.page.getByText("Blur an episode's thumbnail until you start watching it, so the image does not give away the story.", { exact: false }).innerText(), /Blur an episode's thumbnail until you start watching it/);

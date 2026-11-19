@@ -438,6 +438,11 @@ export class Skyline {
         if (badges !== null) replaceNodes(badges as HTMLElement, (details.badges ?? marqueeBadges(card.overlay)).map(badge => el("span", "skyline-chip", badge)));
     }
 
+    /** The card the marquee shows now, with its row. */
+    shownPreview(): { readonly card: Card; readonly row: string } | undefined {
+        return this.shown === undefined ? undefined : { card: this.shown.card, row: this.shown.row };
+    }
+
     /**
      * TVFocusMarquee.preview (silo-apple 85679e7 `tvOS/Components/TVFocusMarquee.swift:779-816`): the title, meta and
      * synopsis follow focus at once with no animation (`:1249`, `:1262-1264`); only the backdrop waits.
@@ -552,7 +557,8 @@ export class Skyline {
         const seriesArt = marqueeUsesSeriesArt(card, settings);
         const background = hidesMarqueeBackdrop(card, settings) ? undefined : artworkUrl(seriesArt ? card.seriesBackdropUrl : card.backdropUrl, this.baseUrl);
         const thumbhash = seriesArt ? undefined : card.backdropThumbhash;
-        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null]);
+        // The direction is part of what is drawn: the placeholder bitmap fades toward the text side.
+        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, documentIsRightToLeft()]);
         // A failed image is not kept: the next preview of the same artwork asks for it again.
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");

@@ -5,7 +5,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { encode } from "uqr";
 import { FAKE_PASSWORD, fixture, problem, type Reply } from "../native/support/fakeSilo.ts";
-import { jumpUntil, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const IME_DONE = 65376;
@@ -1272,7 +1272,9 @@ tvTest("a server that turned password sign-in off shows no password button", asy
     await connectTo(tv);
     await codeScreen(tv);
     await tv.eventually(async () => tv.fake.paths().includes("GET /auth/providers"), "discovery");
-    await tv.page.evaluate(() => undefined);
+    // The password button shows until discovery's answer lands and the page redraws.
+    await tv.eventually(async () => tv.pendingReplies === 0, "the discovery answer");
+    await afterPaint(tv);
     assert.equal(await tv.page.getByRole("button", { name: "Sign in with a password" }).count(), 0);
     assert.equal(await tv.focused(), "change");
 });

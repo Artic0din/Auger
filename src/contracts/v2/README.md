@@ -6,7 +6,7 @@
 which contain the selected Settings manifest subsets consumed by this client, and `request_status_ok.json`.
 `request_status_ok.json` is copied unchanged from [`request_status_ok.json`](https://github.com/Silo-Server/silo-server/blob/6e8c68d036fd32c4ec7fe1d328f8286d4a164e60/contracts/api/v2/fixtures/request_status_ok.json) at `6e8c68d036fd32c4ec7fe1d328f8286d4a164e60`, which is newer than `SOURCE` and is the fixture that carries `remove_failed_supported`.
 The sync script keeps that file until `SOURCE` includes it and its name moves into `SELECTED`.
-That documented exception selects seven definitions unchanged from `contracts/settings/v1/manifest.json` at `SOURCE` (v1, revision 24): `ui.disabled_library_ids`, `playback.audio_language`, `playback.preferred_quality`, `playback.max_bitrate_kbps`, `player.video_skip_back_seconds`, `player.video_skip_forward_seconds` and `ui.title_art`, plus the unchanged `playback_audio_languages` option set.
+That documented exception selects nine definitions unchanged from `contracts/settings/v1/manifest.json` at `SOURCE` (v1, revision 24): `ui.disabled_library_ids`, `playback.audio_language`, `playback.preferred_quality`, `playback.max_bitrate_kbps`, `player.video_skip_back_seconds`, `player.video_skip_forward_seconds`, `player.audiobook_skip_back_seconds`, `player.audiobook_skip_forward_seconds` and `ui.title_art`, plus the unchanged `playback_audio_languages` option set.
 `player.hdr_enabled` is accepted from a live contract when the device-only boolean definition matches. `player.dolby_vision_enabled` is not read or written. Neither key is in this vendored subset.
 The source manifest SHA-256 is `95b716c8b34974e4b97ee96f5c644135c437e09f4a6f2285fb263e3351e6c6ea`.
 `scripts/sync-apiv2-fixtures.sh <server-ref>`, with `SILO_SERVER_REPO` set to a silo-server checkout, re-vendors the fixtures and both Settings subsets from `git show <commit>:<path>` and rewrites `SOURCE`; the Settings subsets are written in manifest order.
@@ -130,7 +130,7 @@ Apple behavior is read from `AudiobookPlaybackContext.swift`, `AudiobookProgress
 Library gating: `listUserLibraries` reports `type: "audiobooks"` (the decoder also reads `audiobook`, trimmed and case-folded, as silo-apple `isAudiobookLibrary` does, because the server documents the type as free-form), and `audiobookLibraries` drops hidden ones.
 `nav.show_audiobooks` is `client_local` and defaults to false in the manifest, so the opt-in is stored per profile on the device and is never read from or written to the server.
 There is no server capability flag for audiobooks; a server without audiobook libraries simply lists none.
-`player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9); this change only names them.
+`player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9), decoded and gated exactly as the video pair is; Settings › Playback lists them under Audiobooks.
 
 Parts follow Apple: a version is a part when `presentation_kind` is `audiobook_part` or it carries `codec_audio` or `duration`, ordered by `presentation_part_index` and then numerically by `file_id`.
 A part keeps `file_name`; a book without chapters lists its parts in the picker by that name, or "Part N" when it is empty or absent, as `TVAudiobookChaptersView.partTitle` does.
