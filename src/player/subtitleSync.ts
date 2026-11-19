@@ -152,6 +152,8 @@ export class SubtitleSync {
     private readonly abort = new AbortController();
     private readonly stopAuthority: () => void;
     private cancelPoll: (() => void) | undefined;
+    /** A poll's reads are in flight: a list read meanwhile must not start another, whose answers could land in either order. */
+    private ticking = false;
     private available = false;
     private external = false;
     private readonly entries = new Map<string, Entry>();
@@ -273,7 +275,9 @@ export class SubtitleSync {
             this.pollStarted.delete(state.key);
             current.pollExpired = false;
         }
-        if (previous !== undefined && (previous.offsetMs !== state.timing.offsetMs || previous.scale !== state.timing.scale)) this.onTimingChanged(state.key);
+        // Playback reads the cues while the first listing is on its way, so a first sight of a changed timing may be newer than those cues.
+        const changedTiming = previous === undefined ? !isIdentityTiming(state.timing) : previous.offsetMs !== state.timing.offsetMs || previous.scale !== state.timing.scale;
+        if (changedTiming) this.onTimingChanged(state.key);
     }
 
     private entry(key: string): Entry | undefined {
@@ -342,7 +346,7 @@ export class SubtitleSync {
     }
 
     private schedulePoll(): void {
-        if (this.cancelPoll !== undefined || this.abort.signal.aborted || this.polling().length === 0) return;
+        if (this.cancelPoll !== undefined || this.ticking || this.abort.signal.aborted || this.polling().length === 0) return;
         this.cancelPoll = this.clock.schedule(() => {
             this.cancelPoll = undefined;
             void this.tick();
@@ -351,6 +355,18 @@ export class SubtitleSync {
 
     /** One poll of every running job. */
     private async tick(): Promise<void> {
+        this.ticking = true;
+        try {
+            await this.pollEach();
+        } finally {
+            this.ticking = false;
+        }
+        if (this.abort.signal.aborted) return;
+        this.changed();
+        this.schedulePoll();
+    }
+
+    private async pollEach(): Promise<void> {
         for (const entry of this.polling()) {
             const key = entry.state.key;
             const started = this.pollStarted.get(key) ?? this.clock.now();
@@ -371,7 +387,5 @@ export class SubtitleSync {
                 if (status === 401 || status === 403 || status === 404 || status === 410) entry.pollExpired = true;
             }
         }
-        this.changed();
-        this.schedulePoll();
     }
 }
