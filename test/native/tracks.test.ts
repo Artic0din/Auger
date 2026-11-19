@@ -1018,6 +1018,19 @@ test("the ordered inventory is sorted once per inventory and language, not on ev
     assert.equal(orderedInventory([...inventory], "ja").length, inventory.length, "a new inventory is sorted afresh");
 });
 
+test("the ordered inventory sorts again when the shown language changes, so a late Arabic catalog reorders the tracks (#695)", () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = decision.plan.subtitle.inventory.slice(0, 2).map((entry, index) => ({ ...entry, language: index === 0 ? "de" : "es" }));
+    assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["de", "es"], "English: German, then Spanish");
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["es", "de"], "Arabic: Spanish, then German, from the same inventory");
+    } finally { setAppLanguage(null); }
+    assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["de", "es"], "and back to English");
+});
+
 function scriptWatch(r: Rig, body: Record<string, unknown>): void {
     r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], ...body } });
 }
@@ -2495,6 +2508,23 @@ function landGerman(): void {
     registerCatalog("de", JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>);
 }
 const audioLabels = (view: TrackView): string[] => view.audio.state === "ready" ? view.audio.choices.map(choice => `${choice.label} | ${choice.detail}`) : [];
+
+test("refreshView sends the subtitles again in the order an Arabic catalog sorts them (#695)", async () => {
+    const r = await rig();
+    try {
+        await playMovie(r);
+        r.controller.setPaused(true);
+        await settle(r);
+        const ids = (): string[] => tracks(r).subtitles.map(choice => choice.id);
+        const english = ids();
+        setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+        registerCatalog("ar", JSON.parse(readFileSync(new URL("../../src/i18n/catalog/ar.json", import.meta.url), "utf8")) as Record<string, string>);
+        r.controller.refreshView();
+        const arabic = ids();
+        assert.deepEqual([...arabic].sort(), [...english].sort(), "the same tracks");
+        assert.notDeepEqual(arabic, english, `the order follows Arabic collation: ${english.join(",")} -> ${arabic.join(",")}`);
+    } finally { setAppLanguage(null); r.controller.destroy(); }
+});
 
 test("refreshView sends a paused view again in the shown language, and only when the screen asks", async () => {
     const r = await rig();

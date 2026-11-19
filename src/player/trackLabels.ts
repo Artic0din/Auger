@@ -6,6 +6,7 @@
 // (`Locale.localizedString(forLanguageCode:)`, then `LocaleFormat.capitalizedName`).
 
 import { SOURCE_LANGUAGE, shownLanguage } from "../i18n/language.ts";
+import { shownLocale } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 
@@ -325,8 +326,8 @@ export interface SubtitleOrderKey {
 }
 
 /**
- * The in-player subtitle order (SubtitleDisplayOrder.order): the preferred language first, the rest A to Z by display
- * name, no usable language last; within a language by format, then full before forced before SDH, then default,
+ * The in-player subtitle order (SubtitleDisplayOrder.order): the preferred language first, the rest by display name in
+ * the shown language's collation (case-insensitive), no usable language last; within a language by format, then full before forced before SDH, then default,
  * then incoming order. Display only: rows are chosen by id.
  */
 export function orderSubtitles<T>(items: readonly T[], preferredLanguage: string | undefined, key: (item: T) => SubtitleOrderKey): T[] {
@@ -335,9 +336,11 @@ export function orderSubtitles<T>(items: readonly T[], preferredLanguage: string
     const preferred = canonicalLanguageKey(preferredLanguage);
     const names = new Map<string, string>();
     for (const entry of annotated) if (entry.group !== undefined && !names.has(entry.group)) names.set(entry.group, languageName(entry.group) ?? entry.group.toUpperCase());
+    // Apple compares in `AppLanguage.formattingLocale`, `.caseInsensitive`: the shown language's collation, accents still counted.
+    const collator = new Intl.Collator(shownLocale(), { sensitivity: "accent" });
     const ranked = [...names.keys()].sort((left, right) => {
         if (preferred !== undefined && left !== right && (left === preferred || right === preferred)) return left === preferred ? -1 : 1;
-        const byName = names.get(left)!.localeCompare(names.get(right)!, "en", { sensitivity: "accent" });
+        const byName = collator.compare(names.get(left)!, names.get(right)!);
         return byName !== 0 ? byName : left < right ? -1 : left > right ? 1 : 0;
     });
     const rank = (entry: { readonly group: string | undefined }): number => entry.group === undefined ? ranked.length : ranked.indexOf(entry.group);
