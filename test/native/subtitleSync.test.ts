@@ -249,6 +249,30 @@ test("a read answered without a validator never sends the reset", async () => {
     sync.destroy();
 });
 
+test("a poll that fails late for an older job does not stop following the newer one", async () => {
+    const running = state({ sync: job("running", { phase: "matching", progress: 0.5 }) });
+    const { h, sync } = await setup(available, [running]);
+    const path = `/subtitles/${FILE}/sync/${KEY}`;
+    h.fake.script(path, problem(404, "not_found", "Not found"));
+    const slow = h.fake.hold(path);
+    await h.clock.advance(3000);
+    const finished = state({ timing: { offset_ms: -3000, scale: 1 }, sync: job("synced", { result: { offset_ms: -3000, scale: 1 } }) });
+    h.fake.script(`/subtitles/${FILE}/sync`, { status: 200, body: { subtitles: [finished] } });
+    sync.reload();
+    await h.clock.advance(0);
+    h.fake.script(path,
+        { status: 202, body: { subtitle: state({ timing: { offset_ms: -3000, scale: 1 }, sync: job("pending", { id: "job-2", phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: state({ timing: { offset_ms: -2500, scale: 1 }, sync: job("synced", { id: "job-2", result: { offset_ms: -2500, scale: 1 } }) }) } });
+    await sync.request(KEY);
+    assert.equal(sync.view.timing[KEY]?.inProgress, true);
+    slow.release();
+    await h.clock.advance(0);
+    assert.equal(sync.view.timing[KEY]?.inProgress, true, "the old poll's 404 does not end the new job");
+    await h.clock.advance(3000);
+    assert.equal(sync.view.status[KEY], "Synced −2.5 s", "the new job is still followed to its end");
+    sync.destroy();
+});
+
 test("destroying the model stops polling", async () => {
     const { h, sync } = await setup(available, [state({ sync: job("running", { progress: 0.1 }) })]);
     h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, ...Array.from({ length: 5 }, () => ({ status: 200, body: { subtitle: state({ sync: job("running", { progress: 0.1 }) }) } })));

@@ -44,6 +44,8 @@ export class SubtitleAI {
     private languages: readonly string[] = [];
     private preferred: string | undefined;
     private quota: SubtitleAIQuota | undefined;
+    /** Numbers each quota read: reads overlap (a job's end, the menu opening), and only the latest one's answer or failure applies. */
+    private quotaRead = 0;
     private failed = false;
     private completed = false;
     private jobId: string | undefined;
@@ -114,12 +116,13 @@ export class SubtitleAI {
 
     /** After a job the panel already holds that job's reason, and the menu's quota line covers a balance it cannot read, so only the first read reports a failure. */
     private async refreshQuota(report = false): Promise<void> {
+        const read = ++this.quotaRead;
         try {
             const quota = await this.call(operations.subtitleAIQuota());
-            if (!this.abort.signal.aborted) { this.quota = quota; this.changed(); }
+            if (!this.abort.signal.aborted && read === this.quotaRead) { this.quota = quota; this.changed(); }
         } catch {
             // An unread balance is unknown, not the last one seen: the menu says unavailable and transcription waits for a good read.
-            if (this.abort.signal.aborted) return;
+            if (this.abort.signal.aborted || read !== this.quotaRead) return;
             this.quota = undefined;
             if (report) this.notice("Could not read transcription quota. Playback continues.");
             else this.changed();
@@ -168,6 +171,8 @@ export class SubtitleAI {
 
     /** Dismiss: the viewer has seen a failure or a finished job, so the menu reopens on its languages. */
     acknowledge(): void {
+        // Apple's acknowledgeFailure: a held request may have started a job, so its failure and reason stay until Discard.
+        if (this.uncertain) return;
         if (this.failed || this.completed) {
             this.failed = false;
             this.completed = false;
