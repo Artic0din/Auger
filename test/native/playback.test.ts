@@ -3314,6 +3314,42 @@ test("while the audio versions read is still loading, the spoken language is not
     r.controller.destroy();
 });
 
+test("Audio Retry while a transcription runs keeps the AI menu and its Cancel, and still starts nothing new", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/catalog/items/movie-1/versions", ...Array.from({ length: 4 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    r.h.fake.script("/subtitles/ai/jobs/opaque-job", ...Array.from({ length: 20 }, () => ({ status: 200, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running", progress: 0.3 } } })));
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: [] });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.phase, "busy");
+    r.h.fake.scripted.delete("/catalog/items/movie-1/versions");
+    const reload = r.h.fake.hold("/catalog/items/movie-1/versions");
+    r.controller.retryTrackInfo();
+    await r.h.clock.advance(0);
+    r.avplay.tick(13000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.audio.state, "loading");
+    assert.notEqual(view.tracks.aiMenu, undefined, "the running job's menu, and its Cancel, stay while the audio list reloads");
+    const creates = r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length;
+    r.controller.subtitleAIAction("cancel");
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length, creates, "no new request while the audio is unknown");
+    reload.release();
+    r.controller.destroy();
+});
+
 test("opening AI Subtitles after a failed quota read brings the balance back to the menu", async () => {
     const r = await rig();
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
