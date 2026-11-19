@@ -240,6 +240,22 @@ test("a Shuffle pick with no later part advances the Shuffle", async () => {
     r.controller.destroy();
 });
 
+test("a Shuffle working out its next pick reads Up Next at Random over Picking at random, from the controller", async () => {
+    const r = await rig();
+    scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
+    const advance = r.h.fake.hold("/shuffles/sh1/advance");
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "the next pick is being read");
+    assert.equal(completion(r).state, "resolving");
+    assert.equal(completion(r).status, "upNext.headingShuffle", "Apple's statusLabel for a Shuffle, not Playing Next");
+    assert.equal(completion(r).shuffle, true, "so the title reads Picking at random");
+    advance.release();
+    r.controller.destroy();
+});
+
 test("a failed read of the pick's parts offers a retry that plays the next part, not the shuffle advance", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1", problem(500, "server_error", "Unavailable"));
