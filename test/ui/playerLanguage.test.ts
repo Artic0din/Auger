@@ -182,9 +182,14 @@ for (const language of ["de", "ar"]) {
             await show(page, playing({ upNext: { next, deck: [next], countdown: 30, status: text("upNext.heading", language) } }));
             assert.equal(await page.locator('[data-focus="keep-watching"]').textContent(), text("upNext.keepWatching", language));
             assert.equal(await page.locator('[data-focus="play-next"]').textContent(), text("upNext.playNow", language));
-            assert.equal(await page.locator('[data-focus="back"]').textContent(), text("common.back", language));
+            // PlayerView.swift:1466-1477 (silo-apple b54fefb1): Up Next's dismiss button is upNext.close, its countdown upNext.playingNextIn.
+            assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
+            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 30 }));
             assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
             assert.equal(await page.locator('[data-focus="cancel-autoplay"]').textContent(), "Cancel autoplay", "no Apple key: English");
+            await show(page, { phase: "completion", title: "The Movie", state: "ready", retryable: false, next, countdown: 1 });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 1 }));
+            assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
             await show(page, playing({ skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25 }));
             assert.equal(await page.locator(".player-skip-label").textContent(), text("introSkip.pill.skip", language));
             await show(page, playing({ skipMarker: { kind: "credits", startSeconds: 7000, endSeconds: 7200 }, positionSeconds: 7010 }));

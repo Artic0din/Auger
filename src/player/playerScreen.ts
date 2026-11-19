@@ -865,7 +865,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         mark.hidden = view.phase !== "error";
-        back.textContent = view.phase === "error" ? translate("player.goBack") : translate("common.back");
+        back.textContent = view.phase === "error" ? translate("player.goBack") : translate("upNext.close");
         if (view.phase === "completion" || prompt !== undefined) {
             cancelScrub();
             closeMenu();
@@ -923,7 +923,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
                 failureTitle.textContent = loading ? translate("upNext.finding") : candidate?.title ?? translate("upNext.almostFinished");
-                failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : seconds === undefined ? "" : `Playing in ${seconds}s`;
+                failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : seconds === undefined ? "" : translate("upNext.playingNextIn", { seconds });
                 if (!failure.contains(document.activeElement)) (next.hidden ? keep : next).focus();
                 spinner.hidden = true;
                 status.hidden = true;
@@ -934,7 +934,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             retry.hidden = view.state !== "failed" || !view.retryable;
             failureTitle.textContent = candidate?.title ?? (view.state === "ready" ? translate("upNext.endOfPlayback") : view.title);
             failureText.textContent = view.state === "finalizing" ? "Ending playback…" : view.state === "resolving" ? "Finding the next episode…" : view.state === "failed" ? "Could not confirm playback or load the next episode." : view.next?.title ?? "No more playable episodes.";
-            if (view.countdown !== undefined) failureText.textContent = `Playing in ${view.countdown}s`;
+            if (view.countdown !== undefined) failureText.textContent = translate("upNext.playingNextIn", { seconds: view.countdown });
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
                 (!next.hidden ? next : !retry.hidden ? retry : back).focus();
             }
