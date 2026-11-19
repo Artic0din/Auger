@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, other {已輸入 {filled} 位數，共 # 位數}}",
  "pin.prompt": "輸入你的 PIN",
  "pin.wrong": "PIN 錯誤。請再試一次。",
+ "player.aiTranslate.openMenu": "AI 字幕……",
  "player.goBack": "返回",
  "player.hud.qualitySwitching": "正在切換……",
  "player.seekInterval.choice": "{seconds, plural, other {# 秒}}",

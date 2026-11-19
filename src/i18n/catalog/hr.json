@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {Uneseno {filled} od # znamenke} few {Uneseno {filled} od # znamenke} other {Uneseno {filled} od # znamenaka}}",
  "pin.prompt": "Unesite svoj PIN",
  "pin.wrong": "Pogrešan PIN. Pokušajte ponovno.",
+ "player.aiTranslate.openMenu": "AI titlovi…",
  "player.goBack": "Natrag",
  "player.hud.qualitySwitching": "Prebacivanje…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunda} few {# sekunde} other {# sekundi}}",

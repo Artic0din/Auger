@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, other {#자리 중 {filled}자리 입력됨}}",
  "pin.prompt": "PIN을 입력하세요",
  "pin.wrong": "PIN이 틀렸어요. 다시 시도해 주세요.",
+ "player.aiTranslate.openMenu": "AI 자막…",
  "player.goBack": "돌아가기",
  "player.hud.qualitySwitching": "전환 중…",
  "player.seekInterval.choice": "{seconds, plural, other {#초}}",

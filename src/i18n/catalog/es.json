@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} de # dígito escrito} many {{filled} de # de dígitos escritos} other {{filled} de # dígitos escritos}}",
  "pin.prompt": "Escribe tu PIN",
  "pin.wrong": "PIN incorrecto. Vuelve a intentarlo.",
+ "player.aiTranslate.openMenu": "Subtítulos con IA…",
  "player.goBack": "Volver",
  "player.hud.qualitySwitching": "Cambiando…",
  "player.seekInterval.choice": "{seconds, plural, one {# segundo} many {# de segundos} other {# segundos}}",

@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} av # siffra angiven} other {{filled} av # siffror angivna}}",
  "pin.prompt": "Ange din PIN-kod",
  "pin.wrong": "Fel PIN-kod. Försök igen.",
+ "player.aiTranslate.openMenu": "AI-undertexter…",
  "player.goBack": "Gå tillbaka",
  "player.hud.qualitySwitching": "Byter…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekund} other {# sekunder}}",

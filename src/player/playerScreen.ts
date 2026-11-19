@@ -20,6 +20,7 @@ import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
 import type { AVPlay } from "./avplay.ts";
 import { type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, UNSUPPORTED_FORMAT } from "./controller.ts";
+import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
@@ -81,6 +82,8 @@ function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
 const OFF = "subtitles-off";
 const SERIES_SUBTITLE = "series-subtitles";
 const RETRY = "audio-retry";
+/** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
+const AI_JOB_ACTIONS: readonly string[] = ["ai-cancel", "ai-dismiss", "ai-discard"];
 
 function changeText(tracks: TrackView): string {
     switch (tracks.change.state) {
@@ -178,10 +181,8 @@ function pickerAction(field: string, id: string): SubtitleToolAction | undefined
 
 function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, pane: SubtitlePane = { kind: "tracks" }): void {
     const ai = tracks.ai;
-    if (languages && ai !== undefined) {
-        list.appendChild(el("h2", "player-menu-heading", "TRACKS"));
-        list.appendChild(choice("ai-language-back", "Back to subtitles", false));
-        for (const language of ai.languages) list.appendChild(choice(`ai-language:${language}`, `Translate to ${language.toUpperCase()}`, false));
+    if (languages && ai !== undefined && tracks.aiMenu !== undefined) {
+        fillAIMenu(list, tracks);
         return;
     }
     const searching = tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed";
@@ -221,9 +222,9 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
             if (result.unavailable === true) row.setAttribute("data-unavailable", "true");
             trackColumn.rows.appendChild(row);
         }
-        if (ai.available.translate && tracks.aiTranslate && ai.languages.length > 0) source.push(settingRow("ai-translate", "Translate current subtitles", "", { icon: sparklesIcon() }));
-        if (ai.available.transcribe) source.push(settingRow("ai-transcribe", "Transcribe current audio", "", { chevron: false, icon: sparklesIcon() }));
     }
+    // `player.aiTranslate.openMenu`: one row that opens the menu, where the languages and the method are chosen.
+    if (tracks.aiMenu !== undefined) source.push(settingRow("ai-menu", "AI Subtitles…", "", { icon: sparklesIcon() }));
     columns.append(trackColumn.column, optionColumn(tracks, source));
     list.appendChild(columns);
 }
@@ -594,7 +595,16 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         list.appendChild(body);
     };
 
+    let aiPhase: string | undefined;
     const drawMenu = (tracks: TrackView): void => {
+        // A job that finishes while its menu is open returns to the tracks, where the result is; the finished job is dismissed so the menu reopens on its languages.
+        if (aiLanguages && aiPhase === "busy" && tracks.ai?.phase === "completed") {
+            aiLanguages = false;
+            menuRestoreFocus = "ai-menu";
+            controls.subtitleAIAction("dismiss");
+        }
+        aiPhase = tracks.ai?.phase;
+        if (aiLanguages && tracks.aiMenu === undefined) aiLanguages = false;
         const identity = view.phase === "playing" || view.phase === "paused" ? [view.title, view.durationSeconds, view.hud, currentChapter(view.hud?.chapters ?? [], view.positionSeconds)] : [];
         const key = JSON.stringify([tracks, aiLanguages, subtitlePane, videoPicker, identity]);
         if (key !== drawn) {
@@ -610,7 +620,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 list.textContent = "";
                 const name = tabNames[index];
                 const hud = view.phase === "playing" || view.phase === "paused" ? view.hud : undefined;
-                const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && !tracks.aiTranslate && !tracks.ai?.available.transcribe && tracks.subtitleTools?.search.offered !== true;
+                const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && tracks.aiMenu === undefined && tracks.subtitleTools?.search.offered !== true;
                 list.style.display = hidden ? "none" : "";
                 if (hidden) continue;
                 if (name === "Info") fillInfo(list);
@@ -632,8 +642,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 }
                 for (const button of buttons(index)) {
                     const id = button.getAttribute("data-focus") ?? "";
-                    const aiAction = id === "ai-translate" || id === "ai-transcribe" || id.startsWith("ai-language:");
-                    const quota = tracks.ai?.quota;
+                    const aiAction = id.startsWith("ai-language:");
+                    // Cancel, Dismiss and Discard act on the job itself, so a running job or a track change never locks them.
+                    const aiPanel = AI_JOB_ACTIONS.includes(id);
+                    const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
                     const downloading = tracks.subtitleTools?.search.downloadingKey;
                     const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
                     const subtitlePick = name === "Subtitles" && id !== SERIES_SUBTITLE && !id.startsWith("ai-");
@@ -642,18 +654,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
                     const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
                     const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
-                    const blocked = tracks.change.state === "changing" || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || (id === "ai-transcribe" && (quota === undefined || (quota.limited && quota.remaining <= 0))) || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true);
+                    const blocked = !aiPanel && (tracks.change.state === "changing" || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
                     button.setAttribute("aria-disabled", String(blocked));
                 }
             }
-            const quota = tracks.ai?.quota;
-            const quotaText = tracks.ai?.available.transcribe !== true ? "" : quota === undefined ? "Transcription quota unavailable." : quota.limited ? `Transcription quota: ${Math.max(0, quota.remaining)} remaining (${quota.period}).${quota.remaining <= 0 ? " Quota exhausted." : ""}` : "Transcription quota: unlimited.";
-            menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, quotaText, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
+            menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
             const choices = buttons(column);
             // SubtitlesPane hands a vanished Sync or Reset row's focus to a neighbour: the other timing row, then Delay.
             const timingNeighbour = keep === "subtitle-sync" || keep === "subtitle-reset-timing" ? ["subtitle-sync", "subtitle-reset-timing", "subtitle-delay"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) : undefined;
             const same = (returnFocus === undefined ? undefined : choices.find(button => button.getAttribute("data-focus") === returnFocus))
                 ?? (keep === null ? undefined : choices.find(button => button.getAttribute("data-focus") === keep))
+                // The AI menu swaps its languages for a job's Cancel or a failure's Dismiss, and back.
+                ?? (aiLanguages ? AI_JOB_ACTIONS.map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) ?? choices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu)) : undefined)
                 ?? timingNeighbour;
             if (heldTab !== undefined && lists[tabs.indexOf(heldTab)]?.style.display !== "none") {
                 heldTab.focus();
@@ -1256,7 +1268,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (key === "back") {
             // An open picker closes first (its `onExitCommand`, TVPlayerInfoHUD.swift:1092).
             if (openPicker() !== undefined) { restoreSubtitlePicker(); return; }
-            if (aiLanguages) { aiLanguages = false; return; }
+            if (aiLanguages) { aiLanguages = false; menuRestoreFocus = "ai-menu"; return; }
             if (subtitlePane.kind !== "tracks") {
                 subtitlePane = { kind: "tracks" };
                 menuRestoreFocus = "subtitle-appearance";
@@ -1316,10 +1328,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             crossColumn(key === "left" ? -1 : 1);
         } else if (key === "enter") {
             if (document.activeElement?.getAttribute("aria-disabled") === "true") return;
-            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing") {
+            const id = focusedId();
+            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing" && !AI_JOB_ACTIONS.includes(id ?? "")) {
                 return;
             }
-            const id = focusedId();
             const picker = openPicker();
             if (id?.startsWith("chapter:") && (view.phase === "playing" || view.phase === "paused")) {
                 const chapter = view.hud?.chapters[Number(id.slice(8))];
@@ -1341,15 +1353,19 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 controls.selectSubtitle(undefined);
             } else if (id === SERIES_SUBTITLE) {
                 controls.saveSeriesSubtitle();
-            } else if (id === "ai-translate") {
+            } else if (id === "ai-menu") {
                 aiLanguages = true;
+                controls.subtitleAIAction("open");
+                const menu = view.phase === "playing" || view.phase === "paused" ? view.tracks.aiMenu : undefined;
+                menuRestoreFocus = firstServiceableLanguage(menu);
             } else if (id === "ai-language-back") {
                 aiLanguages = false;
-            } else if (id === "ai-transcribe") {
-                controls.startSubtitleAI("transcribe");
+                menuRestoreFocus = "ai-menu";
+            } else if (id === "ai-cancel" || id === "ai-dismiss" || id === "ai-discard") {
+                controls.subtitleAIAction(id.slice("ai-".length) as "cancel" | "dismiss" | "discard");
             } else if (id?.startsWith("ai-language:")) {
-                controls.startSubtitleAI("translate", id.slice("ai-language:".length));
-                aiLanguages = false;
+                // The job's own panel replaces the languages when the controller reports it.
+                controls.startSubtitleAI(id.slice("ai-language:".length));
             } else if (id?.startsWith("ai-result:")) {
                 controls.selectAIResult(id.slice("ai-result:".length));
             } else if (id === "subtitle-search") {

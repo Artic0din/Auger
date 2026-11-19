@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {Введено {filled} з # цифри} few {Введено {filled} з # цифр} many {Введено {filled} з # цифр} other {Введено {filled} з # цифри}}",
  "pin.prompt": "Введіть PIN-код",
  "pin.wrong": "Неправильний PIN-код. Спробуйте ще раз.",
+ "player.aiTranslate.openMenu": "ШІ-субтитри…",
  "player.goBack": "Назад",
  "player.hud.qualitySwitching": "Перемикання…",
  "player.seekInterval.choice": "{seconds, plural, one {# секунда} few {# секунди} many {# секунд} other {# секунди}}",

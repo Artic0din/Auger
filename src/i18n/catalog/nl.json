@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} van # cijfer ingevoerd} other {{filled} van # cijfers ingevoerd}}",
  "pin.prompt": "Voer je PIN in",
  "pin.wrong": "Verkeerde PIN. Probeer het opnieuw.",
+ "player.aiTranslate.openMenu": "AI-ondertitels…",
  "player.goBack": "Terug",
  "player.hud.qualitySwitching": "Wisselen…",
  "player.seekInterval.choice": "{seconds, plural, one {# seconde} other {# seconden}}",

@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {{filled}/# rakam girildi} other {{filled}/# rakam girildi}}",
  "pin.prompt": "PIN’inizi girin",
  "pin.wrong": "Yanlış PIN. Tekrar deneyin.",
+ "player.aiTranslate.openMenu": "Yapay zeka altyazıları…",
  "player.goBack": "Geri dön",
  "player.hud.qualitySwitching": "Değiştiriliyor…",
  "player.seekInterval.choice": "{seconds, plural, one {# saniye} other {# saniye}}",

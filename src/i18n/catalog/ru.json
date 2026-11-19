@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {Введено цифр: {filled} из #} few {Введено цифр: {filled} из #} many {Введено цифр: {filled} из #} other {Введено цифр: {filled} из #}}",
  "pin.prompt": "Введите PIN",
  "pin.wrong": "Неверный PIN. Повторите попытку.",
+ "player.aiTranslate.openMenu": "ИИ-субтитры…",
  "player.goBack": "Назад",
  "player.hud.qualitySwitching": "Переключение…",
  "player.seekInterval.choice": "{seconds, plural, one {# секунда} few {# секунды} many {# секунд} other {# секунды}}",

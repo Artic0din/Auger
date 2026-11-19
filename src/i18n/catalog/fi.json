@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {Annettu {filled}/# numero} other {Annettu {filled}/# numeroa}}",
  "pin.prompt": "Anna PIN-koodisi",
  "pin.wrong": "Väärä PIN-koodi. Yritä uudelleen.",
+ "player.aiTranslate.openMenu": "Tekoälytekstitys…",
  "player.goBack": "Palaa",
  "player.hud.qualitySwitching": "Vaihdetaan…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunti} other {# sekuntia}}",

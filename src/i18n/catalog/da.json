@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {{filled} af # ciffer indtastet} other {{filled} af # cifre indtastet}}",
  "pin.prompt": "Indtast din PIN-kode",
  "pin.wrong": "Forkert PIN-kode. Prøv igen.",
+ "player.aiTranslate.openMenu": "AI-undertekster…",
  "player.goBack": "Gå tilbage",
  "player.hud.qualitySwitching": "Skifter…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekund} other {# sekunder}}",

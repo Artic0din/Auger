@@ -471,6 +471,7 @@
  "pin.progress.digits": "{total, plural, one {Zadáno {filled} z # číslice} few {Zadáno {filled} z # číslic} many {Zadáno {filled} z # číslice} other {Zadáno {filled} z # číslic}}",
  "pin.prompt": "Zadejte PIN",
  "pin.wrong": "Nesprávný PIN. Zkuste to znovu.",
+ "player.aiTranslate.openMenu": "AI titulky…",
  "player.goBack": "Zpět",
  "player.hud.qualitySwitching": "Přepínání…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunda} few {# sekundy} many {# sekundy} other {# sekund}}",
