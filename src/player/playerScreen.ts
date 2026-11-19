@@ -229,7 +229,7 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         }
     }
     // `player.aiTranslate.openMenu`: one row that opens the menu, where the languages and the method are chosen.
-    if (tracks.aiMenu !== undefined) source.push(settingRow("ai-menu", "AI Subtitles…", "", { icon: sparklesIcon() }));
+    if (tracks.aiMenu !== undefined) source.push(settingRow("ai-menu", translate("player.aiTranslate.openMenu"), "", { icon: sparklesIcon() }));
     columns.append(trackColumn.column, optionColumn(tracks, source));
     list.appendChild(columns);
 }

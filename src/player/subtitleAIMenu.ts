@@ -1,12 +1,12 @@
+import { translate } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
+import { heading } from "./headings.ts";
 import type { TrackView } from "./controller.ts";
 import { chevronForwardIcon, globeIcon, starFillIcon, waveformIcon } from "./playerIcons.ts";
 import { DETECTED_LANGUAGE, type AIMenuRow } from "./subtitleAIRoute.ts";
 
 // SubtitleTranslateMenu's tvOS panel (silo-apple main): a title and one line under it, then the languages, a running job's progress,
 // or a failure. The TV draws it in the Subtitles pane, as it does Search, rather than in a floating dialog.
-
-const QUOTA_NOTE = "You've used all your transcription credits for this period. Translating an existing subtitle track still works.";
 
 function button(id: string, label: string): HTMLButtonElement {
     const row = el("button", "player-choice");
@@ -22,11 +22,11 @@ function languageRow(row: AIMenuRow): HTMLButtonElement {
     button.type = "button";
     button.setAttribute("data-focus", `ai-language:${row.code}`);
     const glyph = el("span", "player-setting-glyph");
-    glyph.innerHTML = row.code === DETECTED_LANGUAGE ? waveformIcon() : row.hint === "Preferred" ? starFillIcon() : globeIcon();
+    glyph.innerHTML = row.code === DETECTED_LANGUAGE ? waveformIcon() : row.hint === "subtitleSearch.preferred" ? starFillIcon() : globeIcon();
     glyph.setAttribute("aria-hidden", "true");
     const copy = el("span", "player-choice-copy");
     copy.append(el("span", "player-setting-label", row.label));
-    if (row.hint !== undefined) copy.append(el("span", "player-choice-detail", row.hint));
+    if (row.hint !== undefined) copy.append(el("span", "player-choice-detail", translate(row.hint)));
     const chevron = el("span", "player-setting-chevron");
     chevron.innerHTML = chevronForwardIcon();
     button.append(glyph, copy, chevron);
@@ -36,9 +36,9 @@ function languageRow(row: AIMenuRow): HTMLButtonElement {
 
 function jobTitle(kind: string | undefined): string {
     switch (kind) {
-        case "transcribe": return "Transcribing audio…";
-        case "transcribe_translate": return "Transcribing & translating…";
-        default: return "Translating subtitles…";
+        case "transcribe": return translate("player.aiTranslate.transcribingAudio");
+        case "transcribe_translate": return translate("player.aiTranslate.transcribingTranslating");
+        default: return translate("player.aiTranslate.translatingSubtitles");
     }
 }
 
@@ -60,8 +60,8 @@ export function fillAIMenu(list: HTMLElement, tracks: TrackView): void {
     if (ai === undefined || aiMenu === undefined) return;
     const phase = ai.phase === "completed" ? "idle" : ai.phase;
     const box = el("div", "player-ai-menu");
-    box.append(el("h2", "player-ai-title", "AI Subtitles"), el("p", "player-ai-subtitle", phase === "busy" ? "Preparing your subtitles" : phase === "failed" ? "AI subtitles could not finish" : "Choose a language. Silo translates existing subtitles or transcribes the audio."));
-    box.append(button("ai-language-back", "Back to Subtitles"));
+    box.append(el("h2", "player-ai-title", translate("player.aiTranslate.aiSubtitles")), el("p", "player-ai-subtitle", translate(phase === "busy" ? "player.aiTranslate.preparing" : phase === "failed" ? "player.aiTranslate.failedTitle" : "player.aiTranslate.explainerShort")));
+    box.append(button("ai-language-back", translate("player.tracks.backToSubtitles")));
     if (phase === "busy") {
         const progress = el("div", "player-ai-progress");
         progress.setAttribute("role", "progressbar");
@@ -74,23 +74,23 @@ export function fillAIMenu(list: HTMLElement, tracks: TrackView): void {
         track.append(fill);
         progress.append(el("p", "player-ai-job", jobTitle(ai.kind)), track);
         if (ai.progress !== undefined && ai.progress.message !== "") progress.append(el("p", "player-ai-progress-message", ai.progress.message));
-        box.append(progress, button("ai-cancel", "Cancel"));
+        box.append(progress, button("ai-cancel", translate("common.cancel")));
     } else if (phase === "failed") {
-        box.append(el("p", "player-ai-failure", ai.message !== "" ? ai.message : "Subtitle translation failed."), button("ai-dismiss", "Dismiss"));
-        if (ai.held) box.append(button("ai-discard", "Discard held request"));
+        box.append(el("p", "player-ai-failure", ai.message !== "" ? ai.message : translate("player.aiTranslate.failed")), button("ai-dismiss", translate("player.aiTranslate.dismiss")));
+        if (ai.held) box.append(button("ai-discard", translate("player.aiTranslate.discardHeldRequest")));
     } else {
         if (aiMenu.quota !== undefined) {
             const quota = el("p", aiMenu.quotaExhausted ? "player-ai-quota player-ai-quota-exhausted" : "player-ai-quota", aiMenu.quota);
             box.append(quota);
-            if (aiMenu.quotaExhausted) box.append(el("p", "player-ai-quota-note", QUOTA_NOTE));
+            if (aiMenu.quotaExhausted) box.append(el("p", "player-ai-quota-note", translate("player.aiTranslate.quotaExhaustedNote")));
         }
         const { detected, suggested, other } = aiMenu.menu;
         if (detected !== undefined || suggested.length > 0) {
-            box.append(el("h2", "player-menu-heading", "SUGGESTED LANGUAGES"));
+            box.append(el("h2", "player-menu-heading", heading("player.aiTranslate.suggestedHeader")));
             if (detected !== undefined) box.append(languageRow(detected));
             for (const row of suggested) box.append(languageRow(row));
         }
-        box.append(el("h2", "player-menu-heading", detected === undefined && suggested.length === 0 ? "LANGUAGE" : "ALL LANGUAGES"));
+        box.append(el("h2", "player-menu-heading", heading(detected === undefined && suggested.length === 0 ? "subtitleSearch.languageHeader" : "subtitleSearch.allLanguagesHeader")));
         for (const row of other) box.append(languageRow(row));
     }
     list.appendChild(box);

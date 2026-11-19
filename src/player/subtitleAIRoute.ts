@@ -1,6 +1,8 @@
 import { canonicalLanguageKey } from "./trackLabels.ts";
 import { languageChoices } from "./subtitleAppearance.ts";
 import type { SubtitleAIQuota } from "../contracts/v2/subtitleAI.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 
 // SubtitleTranslateMenu (silo-apple main): the viewer picks one language and the menu picks the method. It translates an existing
 // text subtitle when one is in another language, else transcribes the spoken audio, and translates the transcript when the
@@ -28,7 +30,7 @@ export interface AIRoute {
     readonly targetLanguage: string;
 }
 
-export interface AIMenuRow { readonly code: string; readonly label: string; readonly hint: string | undefined; readonly disabled: boolean }
+export interface AIMenuRow { readonly code: string; readonly label: string; readonly hint: MessageKey | undefined; readonly disabled: boolean }
 export interface AIMenu {
     /** Transcribe in whatever language the server detects: offered when translation is off and the spoken language is unknown. */
     readonly detected: AIMenuRow | undefined;
@@ -86,7 +88,7 @@ function needsTranscription(inputs: AIInputs, target: string): boolean {
 }
 
 export function aiMenu(inputs: AIInputs, languages: readonly string[], preferred: string | undefined): AIMenu {
-    const row = (code: string, label: string, hint: string | undefined): AIMenuRow => ({ code, label, hint, disabled: aiRoute(inputs, code) === undefined });
+    const row = (code: string, label: string, hint: MessageKey | undefined): AIMenuRow => ({ code, label, hint, disabled: aiRoute(inputs, code) === undefined });
     const catalog = languages.map(code => ({ code }));
     const spokenCode = spoken(inputs)?.language;
     const listed = (code: string | undefined): string | undefined => {
@@ -100,10 +102,10 @@ export function aiMenu(inputs: AIInputs, languages: readonly string[], preferred
     const rest = choices.other.filter(choice => choice.code !== originalCode);
     if (originalCode !== undefined && !suggested.some(item => item.code === originalCode)) {
         const original = choices.other.find(choice => choice.code === originalCode);
-        if (original !== undefined) suggested.push(row(original.code, original.label, "Original language"));
+        if (original !== undefined) suggested.push(row(original.code, original.label, "subtitleSearch.originalLanguage"));
     }
     return {
-        detected: offersDetected(inputs) ? { code: DETECTED_LANGUAGE, label: "Spoken language", hint: "Detected from the audio", disabled: aiRoute(inputs, DETECTED_LANGUAGE) === undefined } : undefined,
+        detected: offersDetected(inputs) ? { code: DETECTED_LANGUAGE, label: translate("player.aiTranslate.spokenLanguage"), hint: "player.aiTranslate.detectedFromAudio", disabled: aiRoute(inputs, DETECTED_LANGUAGE) === undefined } : undefined,
         suggested,
         other: rest.map(choice => row(choice.code, choice.label, undefined)),
     };
@@ -117,8 +119,11 @@ export function relyOnTranscription(inputs: AIInputs, languages: readonly string
 /** `player.aiTranslate.quota*`; the period is the server's own token, shown as sent. */
 export function quotaText(quota: (Pick<SubtitleAIQuota, "limited" | "remaining" | "period"> & { readonly used?: number | undefined; readonly limit?: number | undefined }) | undefined): string | undefined {
     if (quota === undefined || !quota.limited) return undefined;
-    if (quota.remaining <= 0) return "Transcription limit reached";
-    const used = quota.used ?? 0;
-    if (quota.limit !== undefined) return quota.period === "" ? `${used} of ${quota.limit} used` : `${used} of ${quota.limit} used / ${quota.period}`;
-    return `${quota.remaining} remaining`;
+    if (quota.remaining <= 0) return translate("player.aiTranslate.quotaReached");
+    const used = integerText(quota.used ?? 0);
+    if (quota.limit !== undefined) {
+        const limit = integerText(quota.limit);
+        return quota.period === "" ? translate("player.aiTranslate.quotaUsed", { used, limit }) : translate("player.aiTranslate.quotaUsedPeriod", { used, limit, period: quota.period });
+    }
+    return translate("player.aiTranslate.quotaRemaining", { remaining: integerText(quota.remaining) });
 }

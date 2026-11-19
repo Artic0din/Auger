@@ -174,6 +174,44 @@ for (const language of ["de", "ar"]) {
         } finally { await page.close(); }
     });
 
+    // SubtitleTranslateMenu's tvOS panel (silo-apple main 9dabb62): title, subtitle, Back, headings, hints, quota, then a job or a failure.
+    test(`the AI Subtitles menu reads in ${language}`, async () => {
+        const page = await open(language);
+        try {
+            assert.notEqual(text("player.aiTranslate.aiSubtitles", language), "AI Subtitles", `the ${language} file carries the AI keys`);
+            const ai: NonNullable<TrackView["ai"]> = { available: { translate: true, transcribe: true }, languages: ["fr", "de"], preferred: "fr", quota: { limited: true, remaining: 0, period: "", used: 5, limit: 5 }, busy: false, message: "", results: [], phase: "idle", kind: undefined, progress: undefined, held: false };
+            const aiMenu: NonNullable<TrackView["aiMenu"]> = {
+                menu: { detected: { code: "__detected__", label: "Spoken language", hint: "player.aiTranslate.detectedFromAudio", disabled: false }, suggested: [{ code: "fr", label: "French", hint: "subtitleSearch.preferred", disabled: false }], other: [{ code: "de", label: "German", hint: undefined, disabled: false }] },
+                quota: "Transcription limit reached", quotaExhausted: true,
+            };
+            const menu = async (state: Partial<NonNullable<TrackView["ai"]>>): Promise<void> => {
+                await show(page, playing({ tracks: { ...TRACKS, ai: { ...ai, ...state }, aiMenu } }));
+                if (await page.locator(".player-ai-menu").count() > 0) return;
+                await page.locator('[data-focus="ai-menu"]').focus();
+                await remote(page, ENTER);
+            };
+            await show(page, playing({ tracks: { ...TRACKS, ai, aiMenu } }));
+            await openPanel(page, 4);
+            assert.equal(await page.locator('[data-focus="ai-menu"] .player-setting-label').textContent(), text("player.aiTranslate.openMenu", language));
+            await menu({});
+            assert.equal(await page.locator(".player-ai-title").textContent(), text("player.aiTranslate.aiSubtitles", language));
+            assert.equal(await page.locator(".player-ai-subtitle").textContent(), text("player.aiTranslate.explainerShort", language));
+            assert.equal(await page.locator('[data-focus="ai-language-back"]').textContent(), text("player.tracks.backToSubtitles", language));
+            assert.equal(await page.locator(".player-ai-quota-note").textContent(), text("player.aiTranslate.quotaExhaustedNote", language));
+            assert.deepEqual(await texts(page, ".player-ai-menu .player-menu-heading"), [upper(text("player.aiTranslate.suggestedHeader", language), language), upper(text("subtitleSearch.allLanguagesHeader", language), language)]);
+            assert.deepEqual(await texts(page, ".player-ai-menu .player-choice-detail"), [text("player.aiTranslate.detectedFromAudio", language), text("subtitleSearch.preferred", language)]);
+            await menu({ phase: "busy", kind: "transcribe", progress: { percent: 40, message: "" } });
+            assert.equal(await page.locator(".player-ai-subtitle").textContent(), text("player.aiTranslate.preparing", language));
+            assert.equal(await page.locator(".player-ai-job").textContent(), text("player.aiTranslate.transcribingAudio", language));
+            assert.equal(await page.locator('[data-focus="ai-cancel"]').textContent(), text("common.cancel", language));
+            await menu({ phase: "failed", held: true });
+            assert.equal(await page.locator(".player-ai-subtitle").textContent(), text("player.aiTranslate.failedTitle", language));
+            assert.equal(await page.locator(".player-ai-failure").textContent(), text("player.aiTranslate.failed", language));
+            assert.equal(await page.locator('[data-focus="ai-dismiss"]').textContent(), text("player.aiTranslate.dismiss", language));
+            assert.equal(await page.locator('[data-focus="ai-discard"]').textContent(), text("player.aiTranslate.discardHeldRequest", language));
+        } finally { await page.close(); }
+    });
+
     test(`Up Next, Keep Watching and the skip pill read in ${language}`, async () => {
         const page = await open(language);
         try {

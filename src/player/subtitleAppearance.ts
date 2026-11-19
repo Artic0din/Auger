@@ -206,7 +206,7 @@ export function languageLabel(code: string, catalogLabel?: string): string {
     return code.toUpperCase();
 }
 
-export interface LanguageChoice { readonly code: string; readonly label: string; readonly hint?: string }
+export interface LanguageChoice { readonly code: string; readonly label: string; readonly hint?: MessageKey }
 
 export function languageChoices(catalog: readonly { readonly code: string; readonly label?: string }[], preferred: string | undefined): { readonly suggested: readonly LanguageChoice[]; readonly other: readonly LanguageChoice[] } {
     const seen = new Set<string>();
@@ -215,7 +215,7 @@ export function languageChoices(catalog: readonly { readonly code: string; reado
     if (preferredCode) {
         const identity = languageIdentity(preferredCode);
         const known = catalog.find(item => languageIdentity(item.code) === identity);
-        suggested.push({ code: known?.code ?? preferredCode, label: languageLabel(known?.code ?? preferredCode, known?.label), hint: "Preferred" });
+        suggested.push({ code: known?.code ?? preferredCode, label: languageLabel(known?.code ?? preferredCode, known?.label), hint: "subtitleSearch.preferred" });
         seen.add(identity);
     }
     const other = catalog.filter(item => item.code.trim() !== "" && !seen.has(languageIdentity(item.code)))
