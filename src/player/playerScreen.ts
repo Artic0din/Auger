@@ -947,8 +947,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             next.hidden = view.state !== "ready" || view.next === undefined;
             next.textContent = translate("upNext.playNow");
             retry.hidden = view.state !== "failed" || !view.retryable;
-            failureTitle.textContent = candidate?.title ?? (view.state === "ready" ? translate("upNext.endOfPlayback") : view.title);
-            failureText.textContent = view.state === "finalizing" ? "Ending playback…" : view.state === "resolving" ? "Finding the next episode…" : view.state === "failed" ? "Could not confirm playback or load the next episode." : view.next?.title ?? "No more playable episodes.";
+            // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
+            // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failure takes Apple's lookupFailedAlone.
+            const working = view.state === "finalizing" || view.state === "resolving";
+            failureTitle.textContent = working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : candidate?.title ?? translate("upNext.endOfPlayback");
+            failureText.textContent = working ? "" : view.state === "failed" ? translate("upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
             if (view.countdown !== undefined) failureText.textContent = translate("upNext.playingNextIn", { seconds: view.countdown });
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
                 (!next.hidden ? next : !retry.hidden ? retry : back).focus();

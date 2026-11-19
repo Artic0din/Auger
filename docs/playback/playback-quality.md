@@ -115,7 +115,8 @@ Authorization, installation and administrator refusals cannot create a successor
 
 A valid STOP receipt is a teardown barrier, not proof that progress or watch-history side effects succeeded.
 Fresh watch reads follow the receipt and precede any next offer.
-The panel says Playback ended even when fresh played state remains false or the contract's optional progress is absent.
+The panel says End of playback even when fresh played state remains false or the contract's optional progress is absent.
+Its words are Apple TV's (`PlayerView`, under the `upNext.*` keys), in every shipped language. While the session ends and the next item is worked out it reads Playing Next (Up Next at Random in a Shuffle) over Finding the next episode (Picking at random); Apple has no separate stage for ending the session, so the TV's old Ending playback… is gone. With nothing to follow it reads Finished over End of playback and No next episode is available. (in a Shuffle, Nothing else in this shuffle can play.). A failure reads Couldn't load the next episode. Go back to choose something else., Apple's wording for a card with no On Deck row.
 No separate mark-watched write is sent.
 Failed or malformed reads show Retry and Back rather than reporting exhaustion or a saved state.
 

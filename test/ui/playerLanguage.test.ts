@@ -110,6 +110,31 @@ const texts = (page: Page, selector: string): Promise<string[]> => page.locator(
 const label = (page: Page, key: string): Promise<string | null> => page.locator(`[data-focus="${key}"]`).first().getAttribute("aria-label");
 
 for (const language of ["de", "ar"]) {
+    // PlayerView (silo-apple main 9dabb621): loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message, and
+    // finishedContent shows upNextEndOfPlayback over finishedMessage (upNextNoNext, upNextShuffleDone, a lookup failure).
+    test(`the end-of-playback card reads Apple's words in ${language} in every state`, async () => {
+        const page = await open(language);
+        const card = async (): Promise<[string | null, string | null, string | null]> => [await page.locator(".player-next-eyebrow").textContent(), await page.locator(".player-next-up .player-title").textContent(), await page.locator(".player-next-up .player-error-text").textContent()];
+        const completion = (state: "finalizing" | "resolving" | "ready" | "failed", title: string, shuffle = false): PlaybackView => ({ phase: "completion", title, state, next: undefined, retryable: state === "failed", ...(shuffle ? { shuffle: true as const } : {}) });
+        try {
+            for (const state of ["finalizing", "resolving"] as const) {
+                await show(page, completion(state, text("upNext.headingEnded", language)));
+                assert.deepEqual(await card(), [text("upNext.headingEnded", language), text("upNext.finding", language), ""], `${state}: Apple's loading card, no separate ending stage`);
+            }
+            await show(page, completion("resolving", text("upNext.headingShuffle", language), true));
+            assert.deepEqual(await card(), [text("upNext.headingShuffle", language), text("upNext.picking", language), ""]);
+            await show(page, completion("failed", text("upNext.headingFinished", language)));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.lookupFailedAlone", language)]);
+            await show(page, completion("ready", text("upNext.headingFinished", language)));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.noNext", language)]);
+            await show(page, completion("ready", text("upNext.headingFinished", language), true));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.shuffleDone", language)]);
+            for (const key of ["upNext.finding", "upNext.picking", "upNext.endOfPlayback", "upNext.lookupFailedAlone", "upNext.noNext", "upNext.shuffleDone"] as const) {
+                assert.notEqual(catalog(language)[key], undefined, `${key} ships in ${language}`);
+            }
+        } finally { await page.close(); }
+    });
+
     test(`the transport and its labels read in ${language}`, async () => {
         const page = await open(language);
         try {

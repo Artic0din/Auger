@@ -282,7 +282,8 @@ export interface BufferingOverlay {
 }
 
 export type PlaybackView =
-    | { readonly phase: "completion"; readonly title: string; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[] }
+    /** `title` is the card's status line (Apple's statusLabel); `shuffle` words the card for a Shuffle, as Apple's does. */
+    | { readonly phase: "completion"; readonly title: string; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true }
     | ({ readonly phase: "loading"; readonly title: string; readonly detail?: "reconnecting" | "restoring"; /** A different file of a Shuffle pick follows: the screen forgets the last file's skip decisions. */ readonly nextPart?: true } & BufferingOverlay)
     | ({
           readonly phase: "playing" | "paused";
@@ -2820,8 +2821,12 @@ export class PlaybackController implements PlayerControls {
     private async finishCompletion(completion: NonNullable<PlaybackController["completion"]>): Promise<void> {
         const { attempt, abort } = completion;
         const current = (): boolean => this.completion === completion && this.attempt === attempt && !abort.signal.aborted && !attempt.signal.aborted && attempt.signal === this.deps.session.authoritySignal;
-        const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, title = "Playback ended", deck?: readonly PlayRequest[]): void => {
-            if (current()) this.show({ phase: "completion", title, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }) });
+        const shuffle = attempt.request.shuffleId !== undefined;
+        // PlayerView.statusLabel: while the next item is worked out, an ended video reads Playing Next (Up Next at Random in a Shuffle);
+        // with nothing to follow it reads Finished. Apple has no separate stage for ending the session.
+        const working = translate(shuffle ? "upNext.headingShuffle" : "upNext.headingEnded");
+        const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, title = state === "finalizing" || state === "resolving" ? working : translate("upNext.headingFinished"), deck?: readonly PlayRequest[]): void => {
+            if (current()) this.show({ phase: "completion", title, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}) });
         };
         // Apple's playShufflePart loads the next part with a plain loading state, not the end screen.
         if (attempt.request.shuffleId === undefined) show("finalizing");

@@ -248,6 +248,8 @@ test("a failed read of the pick's parts offers a retry that plays the next part,
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "failed");
+    assert.equal(completion(r).title, "Finished", "nothing follows: Apple's upNext.headingFinished");
+    assert.equal(completion(r).shuffle, true, "the card words a Shuffle's end as Apple's does");
     r.controller.retryCompletion();
     await r.h.clock.advance(0);
     assert.equal(bodies(r.h, "/start")[1]?.file_id, "43");
@@ -2497,6 +2499,9 @@ test("episode EOF orders held progress, final STOP, fresh watch and exactly one 
     await r.h.clock.advance(0);
     r.controller.playNext();
     assert.equal(completion(r).state, "finalizing");
+    // PlayerView.statusLabel: an ended episode still working out what follows reads Playing Next, as Apple's loading card does.
+    assert.equal(completion(r).title, "Playing Next");
+    assert.equal(completion(r).shuffle, undefined);
     assert.equal(bodies(r.h, "/start").length, 1);
 assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.path.includes("?")).length, 0);
     progress.release();
@@ -2509,6 +2514,7 @@ assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.pa
     stop.release();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "resolving");
+    assert.equal(completion(r).title, "Playing Next");
     r.controller.playNext();
     assert.equal(bodies(r.h, "/start").length, 1);
     watch.release();
