@@ -3269,7 +3269,7 @@ test("Sync to Audio reads the new timing and fetches the shown track's cues agai
     assert.equal(view.tracks.syncTiming?.inProgress, true);
     await r.h.clock.advance(3000);
     await r.h.clock.advance(0);
-    assert.deepEqual(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache), [undefined, "no-store", "no-store"], "once for the first listing, then again once the timing changed, past the HTTP cache");
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache), [undefined, "reload", "reload"], "once for the first listing, then again once the timing changed, past the HTTP cache");
     r.avplay.tick(10000);
     view = last(r.views);
     assert.ok(view.phase === "playing");
@@ -3300,7 +3300,7 @@ test("Reset Timing writes the identity behind the read's validator and reads the
     assert.ok(view.phase === "playing");
     assert.equal(view.tracks.syncTiming?.canReset, false);
     assert.equal(view.captions?.text, "Original timing");
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").at(-1)?.cache, "no-store");
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").at(-1)?.cache, "reload");
     r.controller.destroy();
 });
 
@@ -3316,15 +3316,17 @@ test("cues read before the first sync listing are read again whatever timing it 
     hold.release();
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
     const reads = (): (RequestCache | undefined)[] => r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").map(request => request.cache);
-    assert.deepEqual(reads(), [undefined, "no-store"], "the first listing, at the original timing, still rereads cues read before it");
+    assert.deepEqual(reads(), [undefined, "reload"], "the first listing, at the original timing, still rereads cues read before it");
     r.avplay.tick(12500);
     const view = last(r.views);
     assert.ok(view.phase === "playing");
     assert.equal(view.captions?.text, "Original");
-    r.h.fake.script("/subtitles/42/sync", { status: 200, body: { subtitles: [syncState()] } });
-    r.controller.selectSubtitle("file:42:subtitle:0");
+    // Sync to Audio answers at once with the timing already in place: a newer answer, unchanged.
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`, { status: 200, body: { subtitle: syncState({ sync: syncJob("already_synced", { result: { offset_ms: 0, scale: 1 } }) }) } });
+    r.controller.syncSubtitle(SYNC_KEY);
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
-    assert.deepEqual(reads(), [undefined, "no-store"], "an unchanged timing reads nothing more");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "POST" && request.path === `/subtitles/42/sync/${SYNC_KEY}`).length, 1, "the newer answer arrived");
+    assert.deepEqual(reads(), [undefined, "reload"], "an unchanged timing reads nothing more");
     r.controller.destroy();
 });
 
@@ -3361,6 +3363,33 @@ test("a timing reread keeps the shown cues until the new ones load, and a failed
     r.controller.destroy();
 });
 
+test("a timing reread that arrives in parts keeps the shown cues until the whole file is in", async () => {
+    const r = await rig();
+    scriptSync(r, syncState());
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    r.h.fake.script("/captions?token=synthetic",
+        { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" },
+        { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNew first\n\n", cut: true },
+        { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNew first\n\n00:20.000 --> 00:22.000\nNew second" });
+    const hold = r.h.fake.hold("/subtitles/sync/status");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    hold.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Old timing", "a part of the reread does not replace the shown cues");
+    await r.h.clock.advance(2000);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").length, 3);
+    r.avplay.tick(12600);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "New first", "the whole reread replaces them");
+    r.controller.destroy();
+});
+
 test("a timing reread that fails before any cues loaded takes the normal failure path, not an endless Loading", async () => {
     const r = await rig();
     scriptSync(r, syncState());
@@ -3372,7 +3401,7 @@ test("a timing reread that fails before any cues loaded takes the normal failure
     for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
     first.release();
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
-    assert.ok(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic" && request.cache === "no-store").length >= 1, "the first listing started a reread while the first download was held");
+    assert.ok(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic" && request.cache === "reload").length >= 1, "the first listing started a reread while the first download was held");
     r.avplay.tick(12500);
     const view = last(r.views);
     assert.ok(view.phase === "playing");
@@ -3445,7 +3474,7 @@ test("Sync to Audio on a track shown as Secondary reads that track's cues again"
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
     const reads = r.h.fake.requests.filter(request => request.path === SECONDARY_PATH);
     assert.equal(reads.length, 2, "the secondary track is read again once its timing changed");
-    assert.deepEqual(reads.map(request => request.cache), [undefined, "no-store"], "the second read skips the HTTP cache");
+    assert.deepEqual(reads.map(request => request.cache), [undefined, "reload"], "the second read skips the HTTP cache");
     assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").length, 1, "the primary, not retimed, is not read again");
     r.avplay.tick(10000);
     view = last(r.views);

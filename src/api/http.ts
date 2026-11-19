@@ -144,7 +144,7 @@ export class NativeHttp {
         return text + decoder.decode();
     }
 
-    /** `fresh` skips the HTTP cache: the same URL serves new cues after the server retimed the subtitle. */
+    /** `fresh` reads past the HTTP cache and stores the answer there ("reload", not "no-store"), so a later ordinary read of the same URL gets the retimed cues too. */
     async subtitleText(url: string, signal: AbortSignal, fresh = false): Promise<string> {
         const address = new URL(url);
         if (!isPermittedUrl(address, this.base.baseUrl) || address.username || address.password) throw new Error("Invalid subtitle URL");
@@ -158,7 +158,7 @@ export class NativeHttp {
             timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
         };
         try {
-            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", headers: { "Accept-Language": shownLanguage() }, ...(fresh ? { cache: "no-store" as const } : {}) });
+            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", headers: { "Accept-Language": shownLanguage() }, ...(fresh ? { cache: "reload" as const } : {}) });
             if (!response.ok || Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle download failed");
             if (response.body === null) return "";
             const reader = response.body.getReader();

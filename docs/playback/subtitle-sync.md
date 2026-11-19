@@ -24,7 +24,7 @@ All calls go through `src/api/subtitleOperations.ts`. A subtitle's sync key is t
 - A 403 swaps Sync to Audio for a dimmed row that holds the server's message and cannot take focus. A 422 says the format can't be synced.
 - Each track's row ends with its sync status after its attributes. An unsupported format shows that instead.
 - Focus: if the focused Sync or Reset row disappears, focus moves to the other timing row, then Delay, then the tracks.
-- When a timing change reaches a subtitle the app is drawing, as the primary or as the SECONDARY line, its cues are read again without the HTTP cache.
+- When a timing change reaches a subtitle the app is drawing, as the primary or as the SECONDARY line, its cues are read again from the server, and the answer replaces the HTTP cache's copy (`cache: "reload"`), so choosing the track again later gets the new timing too.
 - Each subtitle's timing has a version, raised on its first listing and on each change, and each cue read remembers the version it started under. The plan names no timing, so cues read before the first listing are read again once it arrives (one extra read at playback start for a shown track that has a sync key); after that, cues are read again only when the timing changes. A reread keeps the shown cues, and the SECONDARY choice, until the new cues have fully loaded; if it fails they stay, and the next timing change tries again.
 - One poll runs at a time, and a list or poll answer sent before a newer answer for the same subtitle landed is dropped, so a late answer cannot end or revive a job.
 
