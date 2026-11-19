@@ -359,3 +359,15 @@ test("a poll answer overtaken by a newer answer for the same subtitle is dropped
     assert.equal(sync.view.status[KEY], "Synced −2.5 s");
     sync.destroy();
 });
+
+test("a scale-only timing counts as a timing: first listed and changed, it raises the version", async () => {
+    const { h, sync, changed } = await setup(available, [state({ timing: { offset_ms: 0, scale: 1.04271 } })]);
+    assert.deepEqual(changed, [KEY]);
+    assert.equal(sync.view.timing[KEY]?.canReset, true, "a frame-rate conversion alone can be reset");
+    h.fake.script(`/subtitles/${FILE}/sync`, { status: 200, body: { subtitles: [state({ timing: { offset_ms: 0, scale: 0.95904 } })] } });
+    sync.reload();
+    await h.clock.advance(0);
+    assert.deepEqual(changed, [KEY, KEY], "a change of scale alone asks for the cues again");
+    assert.equal(sync.timingVersion(KEY), 2);
+    sync.destroy();
+});

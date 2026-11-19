@@ -3328,6 +3328,66 @@ test("cues read before the first sync listing are read again whatever timing it 
     r.controller.destroy();
 });
 
+test("a timing reread keeps the shown cues until the new ones load, and a failed one keeps them and the secondary", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    // The primary (track 0) has the sync key; track 4 is the secondary.
+    scriptSync(r, syncState());
+    r.h.fake.scripted.delete("/captions?token=synthetic");
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nShown cues" }, { status: 500 }, { status: 500 }, { status: 500 });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    const statusHold = r.h.fake.hold("/subtitles/sync/status");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const refresh = r.h.fake.hold("/captions?token=synthetic");
+    statusHold.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Shown cues", "the cues stay while the reread is on its way");
+    refresh.release();
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
+    r.avplay.tick(12600);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Shown cues", "a failed reread keeps the cues on screen");
+    assert.notEqual(view.captions?.status, "failed");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "and the secondary stays chosen");
+    assert.equal(view.captions?.secondaryText, "Secondary line");
+    r.controller.destroy();
+});
+
+test("a failed timing reread of the secondary keeps its line and its selection", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+    scriptSync(r, syncState());
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" }, ...Array.from({ length: 4 }, () => ({ status: 500 })));
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+        { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.syncSubtitle(SYNC_KEY);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(3000);
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
+    assert.ok(r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length >= 2, "the reread was tried");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4");
+    assert.equal(view.captions?.secondaryText, "Secondary line");
+    r.controller.destroy();
+});
+
 test("leaving playback stops following a running sync job", async () => {
     const r = await rig();
     scriptSync(r, syncState({ sync: syncJob("running", { phase: "analyzing", progress: 0.4 }) }));

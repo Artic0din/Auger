@@ -2068,10 +2068,7 @@ export class PlaybackController implements PlayerControls {
         const version = attempt.sync?.timingVersion(key) ?? 0;
         const secondary = retimed(attempt.secondaryId) && attempt.secondaryTiming < version ? secondaryRows(plan).find(row => row.trackId === attempt.secondaryId) : undefined;
         if (secondary !== undefined) this.startSecondary(attempt, secondary, attempt.secondaryOrigin, true);
-        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId) && attempt.captionTiming < version) {
-            attempt.captionKey = undefined;
-            this.readCaptions(attempt, plan, true);
-        }
+        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId) && attempt.captionTiming < version) this.readCaptions(attempt, plan, true);
         this.showPlayback(attempt);
     }
 
@@ -2111,8 +2108,12 @@ export class PlaybackController implements PlayerControls {
         this.showPlayback(attempt);
     }
 
-    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number, fresh = false): void {
-        this.clearSecondary(attempt);
+    /** `refresh` rereads the shown secondary after a timing change, keeping its line and its selection unless new cues load. */
+    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number, refresh = false): void {
+        const shownTiming = attempt.secondaryTiming;
+        const keep = refresh && attempt.secondaryId === row.trackId;
+        if (keep) attempt.secondaryAbort?.abort();
+        else this.clearSecondary(attempt);
         attempt.secondaryId = row.trackId;
         attempt.secondaryOrigin = origin;
         attempt.secondaryUrl = row.url;
@@ -2128,18 +2129,22 @@ export class PlaybackController implements PlayerControls {
                 // The sidecar is read like the primary's artifact. Its cues share the primary's timing origin: both come from this plan's stream.
                 // A download that ends early is fetched again like the primary's (`downloadSubtitle`), the cues that arrived showing meanwhile.
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal,
-                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal, fresh),
+                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal, keep),
                     text => decodeCues(text, secondaryFormat(row) ?? "", origin),
                     partial => {
-                        if (!current()) return;
+                        if (!current() || keep) return;
                         attempt.secondaryCues = partial;
                         this.showPlayback(attempt);
                     });
                 if (!current()) return;
                 attempt.secondaryCues = cues;
             } catch {
-                // A track that cannot be read is not shown as chosen.
                 if (!current()) return;
+                // A reread that fails leaves the line it replaced; a track that cannot be read at all is not shown as chosen.
+                if (keep) {
+                    attempt.secondaryTiming = shownTiming;
+                    return;
+                }
                 attempt.secondaryId = undefined;
             }
             if (current()) this.showPlayback(attempt);
@@ -2154,11 +2159,13 @@ export class PlaybackController implements PlayerControls {
         return url.href;
     }
 
-    private readCaptions(attempt: Attempt, plan: PlaybackPlan, fresh = false): void {
+    /** `refresh` rereads the shown track past the HTTP cache after a timing change: its cues stay on screen until the new ones load, and stay if that fails. */
+    private readCaptions(attempt: Attempt, plan: PlaybackPlan, refresh = false): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
         const key = artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
         this.reconcileSecondary(attempt, plan);
-        if (key !== undefined && key === attempt.captionKey) return;
+        if (!refresh && key !== undefined && key === attempt.captionKey) return;
+        const shownTiming = attempt.captionTiming;
         attempt.captionKey = key;
         attempt.captionTiming = this.timingVersionOf(attempt, plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey);
         attempt.captionAbort?.abort();
@@ -2167,15 +2174,17 @@ export class PlaybackController implements PlayerControls {
         const cancel = (): void => abort.abort();
         attempt.signal.addEventListener("abort", cancel, { once: true });
         abort.signal.addEventListener("abort", () => attempt.signal.removeEventListener("abort", cancel), { once: true });
-        attempt.cues = [];
-        attempt.captionNotice = "";
+        if (!refresh) {
+            attempt.cues = [];
+            attempt.captionNotice = "";
+        }
         if (artifact === undefined) return;
-        attempt.captionNotice = CAPTION_LOADING;
+        if (!refresh) attempt.captionNotice = CAPTION_LOADING;
         const current = (): boolean => attempt.live && !abort.signal.aborted && attempt.captionAbort === abort;
         void (async () => {
             try {
                 const show = (cues: readonly SubtitleCue[]): void => {
-                    if (!current()) return;
+                    if (!current() || refresh) return;
                     attempt.cues = cues;
                     attempt.captionNotice = "";
                     this.showPlayback(attempt);
@@ -2183,13 +2192,18 @@ export class PlaybackController implements PlayerControls {
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal, async () => {
                     const url = await this.captionUrl(artifact.url, abort.signal);
                     if (!attempt.captionPreferencesRead) this.readCaptionPreferences(attempt);
-                    return this.deps.session.http.subtitleText(url, abort.signal, fresh);
+                    return this.deps.session.http.subtitleText(url, abort.signal, refresh);
                 }, text => decodeCues(text, artifact.format, artifact.origin), show);
                 if (!current()) return;
                 attempt.cues = cues;
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
+                // The cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again.
+                if (refresh) {
+                    attempt.captionTiming = shownTiming;
+                    return;
+                }
                 attempt.captionKey = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary(attempt);
