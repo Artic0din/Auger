@@ -3642,6 +3642,39 @@ test("leaving playback stops following a running sync job", async () => {
     assert.equal(polls(), 1, "no sync read after playback ends");
 });
 
+test("a track retimed while it is not shown is read again when chosen, not served from cues kept in memory", async () => {
+    // #701.1: the client keeps no cues for a track it is not drawing, and the server sends retimeable subtitles as private, no-cache with no
+    // validator, so choosing the track again reads the new timing. This pins the client's half.
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+    scriptSync(r, syncState());
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+        { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.syncSubtitle(SYNC_KEY);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle(undefined);
+    await r.h.clock.advance(3000);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const reads = (): number => r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length;
+    assert.equal(reads(), 1, "the retime landed while the track was not shown, so nothing was reread then");
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(reads(), 2, "choosing it again reads it");
+    r.avplay.tick(10000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "New timing");
+    r.controller.destroy();
+});
+
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {
     const r = await secondaryRig();
     const file = r.server.files.get("42");
