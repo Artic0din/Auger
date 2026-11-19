@@ -3,7 +3,8 @@ import { el } from "../ui/screen.ts";
 import { heading } from "./headings.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
-import { chevronForwardIcon, magnifyingGlassIcon } from "./playerIcons.ts";
+import type { SyncTimingView } from "./subtitleSync.ts";
+import { chevronForwardIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
 import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
 
 /** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
@@ -157,6 +158,47 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
     }
 }
 
+/** The running job: ProgressView beside its whole percentage, with the phase under it. Neither takes focus. */
+function syncProgress(progress: NonNullable<SyncTimingView["progress"]>): HTMLElement {
+    const block = el("div", "player-sync-progress");
+    block.setAttribute("role", "progressbar");
+    block.setAttribute("aria-label", "Subtitle sync progress");
+    block.setAttribute("aria-valuemin", "0");
+    block.setAttribute("aria-valuemax", "100");
+    block.setAttribute("aria-valuenow", String(progress.percent));
+    const track = el("span", "player-sync-track");
+    const fill = el("span", "player-sync-fill");
+    fill.style.width = `${Math.min(100, Math.max(0, progress.percent))}%`;
+    track.append(fill);
+    const bar = el("div", "player-sync-bar");
+    bar.append(track, el("span", "player-sync-percent", `${progress.percent}%`));
+    block.append(bar);
+    if (progress.phase !== "") block.append(el("p", "player-sync-phase", progress.phase));
+    return block;
+}
+
+/**
+ * SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main): Sync to Audio, the running job's progress, Reset Timing,
+ * then the note. The rows stay enabled while a request runs so focus never lands on a row that just went inert; a refusal
+ * swaps Sync to Audio for a dimmed row that cannot hold focus.
+ */
+function syncRows(timing: SyncTimingView | undefined): HTMLElement[] {
+    if (timing === undefined) return [];
+    if (timing.forbidden !== undefined) {
+        const row = settingRow("subtitle-sync", "Sync to Audio", "", { chevron: false, detail: timing.forbidden, icon: waveformIcon() });
+        row.removeAttribute("data-focus");
+        row.disabled = true;
+        row.setAttribute("data-unavailable", "true");
+        return [row];
+    }
+    const rows: HTMLElement[] = [];
+    if (timing.canSync) rows.push(settingRow("subtitle-sync", timing.inProgress ? "Syncing…" : "Sync to Audio", "", { chevron: false, icon: waveformIcon() }));
+    if (timing.progress !== undefined) rows.push(syncProgress(timing.progress));
+    if (timing.canReset) rows.push(settingRow("subtitle-reset-timing", "Reset Timing", "", { chevron: false, icon: uturnBackwardIcon() }));
+    if (timing.note !== undefined) rows.push(el("p", `player-sync-note player-sync-note-${timing.note.tone}`, timing.note.text));
+    return rows;
+}
+
 function group(heading: string, rows: readonly HTMLElement[]): HTMLElement[] {
     if (rows.length === 0) return [];
     const box = el("section", "player-menu-group");
@@ -168,7 +210,7 @@ function group(heading: string, rows: readonly HTMLElement[]): HTMLElement[] {
 
 /**
  * SubtitlesPane.optionRows (TVPlayerInfoHUD.swift, silo-apple main e958f58): one scrolling column of OPTIONS (what supplies subtitles:
- * `source`, then Search), TIMING (Delay) and STYLE (Appearance, then the device switch). A group with no row is left out, and a column with
+ * `source`, then Search), TIMING (Delay, then Sync to Audio and Reset Timing) and STYLE (Appearance, then the device switch). A group with no row is left out, and a column with
  * none has no heading. Delay and style act on overlay cues only, so they wait for `overlay`.
  */
 export function optionColumn(tracks: TrackView, source: readonly HTMLElement[]): HTMLElement {
@@ -176,7 +218,7 @@ export function optionColumn(tracks: TrackView, source: readonly HTMLElement[]):
     const display = tools?.overlay === true ? tools.display : undefined;
     const options = [...source];
     if (tools?.search.offered === true) options.push(settingRow("subtitle-search", translate("options.searchSubtitles"), "", { icon: magnifyingGlassIcon() }));
-    const timing = display?.delay === true ? [settingRow("subtitle-delay", translate("player.hud.delay"), delayLabel(display.delayMs))] : [];
+    const timing = [...(display?.delay === true ? [settingRow("subtitle-delay", translate("player.hud.delay"), delayLabel(display.delayMs))] : []), ...syncRows(tracks.syncTiming)];
     const style: HTMLElement[] = [];
     if (display?.styling === true) {
         style.push(settingRow("subtitle-appearance", translate("player.hud.subtitleAppearance"), "", { detail: appearanceSummary(display.appearance), glyph: "Aa" }));

@@ -691,6 +691,8 @@ test("a long authored menu cannot add roots and Search and the avatar remain fix
         for (const shortcut of shortcuts) household.libraries.push({ id: String(shortcut.library_id), name: shortcut.label, type: "movies", sort_order: 100 + shortcut.library_id });
         await start(tv, { items: [{ type: "builtin", destination: "home" }, ...shortcuts] }, catalog);
         assert.equal(await tv.page.locator('.skyline-roots [data-focus^="library:"]').count(), 0);
+        // Movies and Series come from the libraries read, which can land after the first draw; four presses reach Calendar only with all five tabs.
+        await tv.eventually(async () => await tv.page.locator(".skyline-roots [data-focus]").count() === 5, "the library tabs");
         await tv.page.locator('[data-focus="home"]').focus();
         const reads = tv.fake.requests.length;
         for (let i = 0; i < 4; i++) await tv.remote(39);

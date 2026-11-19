@@ -30,6 +30,11 @@ Create, cancel, follow and unfollow use the same retry class, including naturall
 `remove_failed_supported` is optional on status. Missing means the server cannot remove a failed request. A non-boolean value is a contract break. The flag is ignored unless requests are available.
 See [Requests](../../../docs/features/requests.md) for capability and navigation behavior.
 
+`subtitleSync.ts` consumes `getSubtitleSyncStatus`, `listSubtitleSync`, `getSubtitleSync`, `startSubtitleSync` and `setSubtitleTiming` at `SOURCE`.
+Sync is offered only when the status is `available` and `allowed`; sidecar files also need `external`. The status's `external` member is required, so a server that predates sync keys reads as sync unavailable.
+Start and the timing write use `retry: never`. Reset Timing reads the subtitle first and sends its `ETag` as `If-Match` on the identity timing (`offset_ms: 0`, `scale: 1`); a missing validator sends nothing.
+See [Subtitle sync](../../../docs/playback/subtitle-sync.md).
+
 `calendar.ts` consumes `getCalendar` from the pinned OpenAPI schema without converting events to catalog cards.
 The weekly query includes the device IANA timezone and an inclusive seven-day window.
 Server day groups, event order, release metadata and all returned events are retained; there is no Calendar pagination or local access filtering.
