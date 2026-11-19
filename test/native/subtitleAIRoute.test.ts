@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiMenu, aiRoute, DETECTED_LANGUAGE, hasActionableSource, quotaText, type AIInputs } from "../../src/player/subtitleAIRoute.ts";
+import { aiMenu, aiRoute, DETECTED_LANGUAGE, hasActionableSource, quotaText, relyOnTranscription, type AIInputs } from "../../src/player/subtitleAIRoute.ts";
 
 // SubtitleTranslateMenu (silo-apple main): one language choice picks translate, transcribe or transcribe and translate.
 const base: AIInputs = {
@@ -55,6 +55,7 @@ test("with translation off, a spoken language the catalog does not list is still
     assert.deepEqual(aiRoute(transcribeOnly, "ja"), { kind: "transcribe", sourceIndex: 0, sourceLanguage: "", targetLanguage: "" });
     assert.deepEqual(aiMenu(base, ["en", "fr"], undefined).suggested, [], "with translation on, the server's list still decides: the row could translate to a target it cannot serve");
     assert.deepEqual(aiMenu(transcribeOnly, ["en", "ja"], undefined).suggested.map(row => row.code), ["ja"], "a listed one is not added twice");
+    assert.equal(relyOnTranscription(transcribeOnly, []), true, "its row spends quota, so the quota line shows, even with an empty catalog");
 });
 
 test("transcription refuses what the server cannot serve", () => {

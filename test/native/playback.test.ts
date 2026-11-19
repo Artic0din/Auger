@@ -3290,6 +3290,30 @@ test("a failed audio versions read still offers transcription of the plan's sele
     r.controller.destroy();
 });
 
+test("while the audio versions read is still loading, the spoken language is not guessed, so no translation goes out in its place", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: false, remaining: 0, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "ja" }] } } } });
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    // No text track to translate from, and the spoken audio is Japanese.
+    r.server.files.set("42", { ...file, inventory: [], audio: file.audio.map((track, index) => index === 0 ? { ...track, language: "ja" } : track) });
+    const versions = r.h.fake.hold("/catalog/items/movie-1/versions");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ja");
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length, 0, "nothing goes out before the spoken language is known");
+    versions.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ja");
+    await r.h.clock.advance(0);
+    assert.deepEqual(only(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate")).body, { media_file_id: "42", kind: "transcribe", source_index: 0, source_language: "", target_language: "", start_position: 12.5 }, "once known, Japanese is transcribed, not transcribed and translated");
+    r.controller.destroy();
+});
+
 test("opening AI Subtitles after a failed quota read brings the balance back to the menu", async () => {
     const r = await rig();
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });

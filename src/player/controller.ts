@@ -152,8 +152,9 @@ function aiInputs(attempt: Attempt, plan: PlaybackPlan): AIInputs | undefined {
         transcribeEnabled: view.available.transcribe,
         // The inventory carries no default flag.
         sources: plan.subtitle.inventory.filter(track => textSubtitle(track.codec) && track.combinedIndex >= 0).map(track => ({ index: track.combinedIndex, language: track.language, selected: track.trackId === shown, isDefault: false })),
-        // Without the versions read, the plan's selected audio is still known, only its language is not: a missing label must not disable transcription.
-        audio: version === undefined ? (selectedAudio === undefined ? [] : [{ index: selectedAudio, language: "", selected: true, isDefault: false }]) : version.audio.map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
+        // Once the versions read has failed, or answered without this file, the plan's selected audio is still known, only its language is not:
+        // a missing label must not disable transcription. While it loads, nothing is guessed, so a spoken language is never mistaken for another.
+        audio: version === undefined ? (selectedAudio === undefined || tracks === undefined || tracks.state === "loading" ? [] : [{ index: selectedAudio, language: "", selected: true, isDefault: false }]) : version.audio.map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
         quotaKnown: view.quota !== undefined,
         quotaExhausted: view.quota?.limited === true && view.quota.remaining <= 0,
     };
