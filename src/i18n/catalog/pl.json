@@ -508,6 +508,7 @@
  "player.audio.play": "Odtwórz",
  "player.controls.scrubber": "Pasek postępu",
  "player.controls.showUpNext": "Pokaż panel Następnie",
+ "player.error.connectionLost": "Utracono połączenie\nAplikacji Silo nie udało się ponownie połączyć z serwerem. Sprawdź połączenie i spróbuj ponownie, aby kontynuować od miejsca, w którym przerwano.",
  "player.goBack": "Wróć",
  "player.hud.aspect": "Proporcje",
  "player.hud.audio": "Dźwięk",

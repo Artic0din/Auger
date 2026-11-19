@@ -196,11 +196,13 @@ for (const language of ["de", "ar"]) {
         } finally { await page.close(); }
     });
 
-    test(`the error wall's buttons read in ${language}; a message Apple has no key for stays English`, async () => {
+    test(`the error wall reads a lost connection in ${language}, as Apple's give-up does; a message Apple has no key for stays English`, async () => {
         const page = await open(language);
         try {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
-            assert.equal(await page.locator(".player-error-text").textContent(), "Can't reach the server. Check the TV's connection, then try again.");
+            assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("player.goBack", language));
             assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.retry", language));
         } finally { await page.close(); }
@@ -376,6 +378,15 @@ for (const language of [undefined, "ar"]) {
             const goBack = await center(page, '[data-focus="back"]');
             assert.equal(retry < goBack, language === undefined, "Retry leads the row");
             assert.equal(await direction(page, ".player-error"), language === undefined ? "ltr" : "rtl");
+            // An English message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            const [first, stop] = await page.locator(".player-error-text").evaluate(node => [0, (node.textContent ?? "").length - 1].map(at => {
+                const range = document.createRange();
+                range.setStart(node.firstChild!, at);
+                range.setEnd(node.firstChild!, at + 1);
+                return range.getBoundingClientRect().left;
+            }));
+            assert.ok((first ?? 0) < (stop ?? 0), `the first letter (${first}) sits left of the full stop (${stop})`);
         } finally { await page.close(); }
     });
 }

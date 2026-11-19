@@ -508,6 +508,7 @@
  "player.audio.play": "Afspil",
  "player.controls.scrubber": "Tidslinje",
  "player.controls.showUpNext": "Vis Næste",
+ "player.error.connectionLost": "Forbindelsen blev afbrudt\nSilo kunne ikke genoprette forbindelsen til serveren. Tjek din forbindelse, og prøv så igen for at fortsætte, hvor du slap.",
  "player.goBack": "Gå tilbage",
  "player.hud.aspect": "Billedformat",
  "player.hud.audio": "Lyd",

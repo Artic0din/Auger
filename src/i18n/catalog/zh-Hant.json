@@ -508,6 +508,7 @@
  "player.audio.play": "播放",
  "player.controls.scrubber": "時間軸",
  "player.controls.showUpNext": "顯示即將播放",
+ "player.error.connectionLost": "連線中斷\nSilo 無法重新連線至伺服器。請檢查你的連線，然後再試一次，從上次中斷的地方繼續觀看。",
  "player.goBack": "返回",
  "player.hud.aspect": "長寬比",
  "player.hud.audio": "音訊",

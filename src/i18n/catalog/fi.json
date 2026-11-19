@@ -508,6 +508,7 @@
  "player.audio.play": "Toista",
  "player.controls.scrubber": "Aikajana",
  "player.controls.showUpNext": "Näytä Seuraavaksi",
+ "player.error.connectionLost": "Yhteys katkesi\nSilo ei saanut yhteyttä palvelimeen uudelleen. Tarkista yhteys ja yritä sitten uudelleen jatkaaksesi siitä, mihin jäit.",
  "player.goBack": "Palaa",
  "player.hud.aspect": "Kuvasuhde",
  "player.hud.audio": "Ääni",

@@ -741,6 +741,9 @@
     font-size: 30px;
     line-height: 1.35;
     color: var(--silo-error-ink);
+    /* Apple's connection-lost message is a title line and a body line; an English message keeps its own direction in Arabic. */
+    white-space: pre-line;
+    unicode-bidi: plaintext;
 }
 
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.

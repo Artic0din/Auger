@@ -950,6 +950,8 @@ test("translate-only AI shows no transcription quota line", async () => {
     } finally { await page.close(); }
 });
 const text = (page: Page, selector: string): Promise<string> => page.locator(selector).innerText();
+// PlayerViewModel.connectionLostMessage (silo-apple b54fefb1): Apple's give-up after a lost connection, drawn on two lines.
+const CONNECTION_LOST = "Connection lost\nSilo couldn't reconnect to the server. Check your connection, then try again to continue where you left off.";
 
 const INTRO = { kind: "intro" as const, startSeconds: 20, endSeconds: 60 };
 const RECAP = { kind: "recap" as const, startSeconds: 0, endSeconds: 15 };
@@ -2134,7 +2136,7 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
     const { page, logs } = await open();
     try {
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" } });
-        assert.equal(await text(page, ".player-error-text"), "Can't reach the server. Check the TV's connection, then try again.");
+        assert.equal(await text(page, ".player-error-text"), CONNECTION_LOST);
         assert.equal(await page.locator(".player-overlay").isVisible(), false);
         assert.equal(await focused(page), "back");
         await capture(page, "player-error");
@@ -2590,7 +2592,7 @@ test("hiding suspends playback and showing restores it, without a restart notice
         await hold();
         await capture(page, "player-reconnecting");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
-        assert.equal(await text(page, ".player-error-text"), "Can't reach the server. Check the TV's connection, then try again.");
+        assert.equal(await text(page, ".player-error-text"), CONNECTION_LOST);
         assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).isVisible(), true);
         await hold();
         await capture(page, "player-connection-lost");

@@ -508,6 +508,7 @@
  "player.audio.play": "Wiedergeben",
  "player.controls.scrubber": "Zeitleiste",
  "player.controls.showUpNext": "Als Nächstes anzeigen",
+ "player.error.connectionLost": "Verbindung verloren\nSilo konnte keine neue Verbindung zum Server herstellen. Prüfe deine Verbindung und versuche es dann erneut, um dort weiterzuschauen, wo du aufgehört hast.",
  "player.goBack": "Zurück",
  "player.hud.aspect": "Seitenverhältnis",
  "player.hud.audio": "Audio",

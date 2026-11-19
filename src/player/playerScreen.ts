@@ -55,7 +55,8 @@ export function errorText(error: PlaybackError): string {
         case "playback_failed":
             return "This video can't play on this TV.";
         case "network":
-            return "Can't reach the server. Check the TV's connection, then try again.";
+            // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
+            return translate("player.error.connectionLost");
         case "session_expired":
             return "The server ended playback. Try again.";
         case "installation_changed":

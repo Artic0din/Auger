@@ -508,6 +508,7 @@
  "player.audio.play": "再生",
  "player.controls.scrubber": "タイムライン",
  "player.controls.showUpNext": "次に再生を表示",
+ "player.error.connectionLost": "接続が切断されました\nSiloはサーバーに再接続できませんでした。接続を確認してから、もう一度お試しください。中断したところから再開します。",
  "player.goBack": "戻る",
  "player.hud.aspect": "アスペクト比",
  "player.hud.audio": "オーディオ",
