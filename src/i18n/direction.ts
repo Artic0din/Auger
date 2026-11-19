@@ -27,6 +27,11 @@ export function isRightToLeft(tag: string, Locale: new (tag: string) => Directio
     }
 }
 
+/** True when the text on screen reads right to left: the shown language once its file has landed, English until then. */
+export function textIsRightToLeft(language: string = textLanguage()): boolean {
+    return language !== SOURCE_LANGUAGE && isRightToLeft(language);
+}
+
 /** The part of the document root the direction lands on. */
 export interface DirectionRoot {
     getAttribute(name: string): string | null;
@@ -44,7 +49,7 @@ export function applyLayoutDirection(root: DirectionRoot | undefined = globalThi
     if (root === undefined) return;
     // Settings and Browse both call this on every repaint; an unchanged value must not restyle the page.
     if (root.getAttribute("lang") !== language) root.setAttribute("lang", language);
-    const rightToLeft = language !== SOURCE_LANGUAGE && isRightToLeft(language);
+    const rightToLeft = textIsRightToLeft(language);
     if (rightToLeft === (root.getAttribute("dir") === "rtl")) return;
     if (rightToLeft) root.setAttribute("dir", "rtl");
     else root.removeAttribute("dir");
@@ -56,7 +61,7 @@ export function applyLayoutDirection(root: DirectionRoot | undefined = globalThi
  */
 export function applyScreenDirection(screen: Element, language: string = textLanguage()): void {
     screen.setAttribute("lang", language);
-    screen.setAttribute("dir", language !== SOURCE_LANGUAGE && isRightToLeft(language) ? "rtl" : "ltr");
+    screen.setAttribute("dir", textIsRightToLeft(language) ? "rtl" : "ltr");
 }
 
 /** Leaves the screens that are still English, the profile picker among them, with the default `lang` and reading left to right. */
@@ -69,7 +74,7 @@ export function clearLayoutDirection(): void {
  * right to left, so text of the other direction keeps its neighbours' punctuation in place. Left to right keeps its bytes.
  */
 export function isolated(value: string, language: string = textLanguage()): string {
-    return language !== SOURCE_LANGUAGE && isRightToLeft(language) ? `\u2068${value}\u2069` : value;
+    return textIsRightToLeft(language) ? `\u2068${value}\u2069` : value;
 }
 
 const RIGHT_TO_LEFT_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;

@@ -527,6 +527,7 @@
  "player.audio.play": "Riproduci",
  "player.controls.scrubber": "Barra di avanzamento",
  "player.controls.showUpNext": "Mostra A seguire",
+ "player.error.connectionLost": "Connessione persa\nImpossibile riconnettersi al server. Controlla la connessione, poi riprova per continuare da dove avevi interrotto.",
  "player.goBack": "Torna indietro",
  "player.hud.aspect": "Proporzioni",
  "player.hud.audio": "Audio",

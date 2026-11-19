@@ -527,6 +527,7 @@
  "player.audio.play": "Reproduzir",
  "player.controls.scrubber": "Barra de progresso",
  "player.controls.showUpNext": "Mostrar A seguir",
+ "player.error.connectionLost": "Conexão perdida\nNão foi possível reconectar o Silo ao servidor. Verifique sua conexão e tente novamente para continuar de onde parou.",
  "player.goBack": "Voltar",
  "player.hud.aspect": "Proporção",
  "player.hud.audio": "Áudio",

@@ -1,7 +1,9 @@
 // The player in German and Arabic (silo-apple tvOS Screens/Player: TVPlayerInfoHUD.swift, TVPlayerTransportCluster.swift,
 // TVIntroSkipPill.swift, upNext.* keys): the transport, the Info, Stats, Video, Audio and Subtitles panes, Up Next, the skip
 // pill and the error wall read from the catalog under Apple's keys. Text Apple has no key for stays English, and the server's
-// titles and track names are never translated. The player keeps its left-to-right layout and physical keys.
+// titles and track names are never translated. In Arabic the panel, Up Next, the buffering card and the error page mirror, as in
+// Apple's player; only the transport, the scrubber and its time row stay left to right (`.mediaLayoutDirection()`,
+// TVPlayerControls.swift lines 325, 555, 557 and 575), with the remote's physical keys.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
@@ -21,6 +23,7 @@ const HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>
 <style>#sibling { position: absolute; inset: 0; background: #000; }</style></head>
 <body><main id="root"></main><script src="harness.js"></script></body></html>`;
 const ENTER = 13;
+const LEFT = 37;
 const RIGHT = 39;
 const UP = 38;
 const DOWN = 40;
@@ -64,8 +67,15 @@ before(async () => {
 });
 after(async () => { await browser.close(); });
 
+const shown = new WeakMap<Page, string | undefined>();
+/** The key that moves toward the end of a mirrored row: Left in Arabic, Right otherwise. */
+const toEnd = (page: Page): number => shown.get(page) === "ar" ? LEFT : RIGHT;
+/** The key that moves back toward the start of a mirrored row. */
+const toStart = (page: Page): number => shown.get(page) === "ar" ? RIGHT : LEFT;
+
 async function open(language: string | undefined): Promise<Page> {
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    shown.set(page, language);
     await page.route("**/*", async route => {
         const path = new URL(route.request().url()).pathname;
         if (path === "/fonts/InterVariable.woff2") { await route.fulfill({ status: 200, contentType: "font/woff2", body: readFileSync(new URL("../../app/fonts/InterVariable.woff2", import.meta.url)) }); return; }
@@ -85,10 +95,10 @@ const remote = (page: Page, keyCode: number): Promise<void> => page.evaluate(cod
     target.dispatchEvent(new KeyboardEvent("keyup", { keyCode: code, bubbles: true, cancelable: true }));
 }, keyCode);
 const show = (page: Page, view: PlaybackView): Promise<void> => page.evaluate(next => window.player.show(next), view);
-/** Up to the tabs, Right `steps` tabs along, Down into that pane. */
+/** Up to the tabs, `steps` tabs along the rail (Right, or Left in Arabic), Down into that pane. */
 async function nextTab(page: Page, steps: number): Promise<void> {
     await remote(page, UP);
-    for (let step = 0; step < steps; step++) await remote(page, RIGHT);
+    for (let step = 0; step < steps; step++) await remote(page, toEnd(page));
     await remote(page, DOWN);
 }
 /** Down, then Right twice and Enter opens the panel on Info; `tab` more tabs along. */
@@ -238,30 +248,204 @@ for (const language of ["de", "ar"]) {
         } finally { await page.close(); }
     });
 
-    test(`the error wall's buttons read in ${language}; a message Apple has no key for stays English`, async () => {
+    test(`the error wall reads a lost connection in ${language}, as Apple's give-up does; a message Apple has no key for stays English`, async () => {
         const page = await open(language);
         try {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
-            assert.equal(await page.locator(".player-error-text").textContent(), "Can't reach the server. Check the TV's connection, then try again.");
+            assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("player.goBack", language));
             assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.retry", language));
         } finally { await page.close(); }
     });
 }
 
-test("the player stays left to right in Arabic, server text takes its own direction, and the keys stay physical", async () => {
+const center = (page: Page, selector: string): Promise<number> => page.locator(selector).first().evaluate(node => { const box = node.getBoundingClientRect(); return box.left + box.width / 2; });
+const direction = (page: Page, selector: string): Promise<string> => page.locator(selector).first().evaluate(node => getComputedStyle(node).direction);
+const MIDDLE = 960;
+const NEXT = { contentId: "next", fileId: "43", title: "Nächste Folge", startSeconds: 0, episode: true as const };
+const promptView = (): Extract<PlaybackView, { phase: "playing" | "paused" }> => playing({ upNext: { next: NEXT, deck: [NEXT], countdown: 30, status: "Up Next" } });
+const PROMPT = { kind: "prompt" as const, remainingMs: 15_000, totalMs: 15_000, running: true, revision: 1 };
+
+test("in Arabic the player mirrors, and only the transport, the scrubber and its time row stay left to right", async () => {
     const page = await open("ar");
     try {
-        await show(page, playing({ seriesTitle: "مسلسل" }));
-        assert.equal(await page.locator("section.player").getAttribute("dir"), "ltr");
+        await show(page, playing({ seriesTitle: "مسلسل", skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25, bufferingPill: PROMPT, buffering: false }));
+        assert.equal(await page.locator("section.player").getAttribute("dir"), "rtl");
+        assert.equal(await page.locator("section.player").getAttribute("lang"), "ar");
+        assert.equal(await direction(page, "section.player"), "rtl");
+        for (const selector of [".player-transport", ".player-bar", ".player-time"]) assert.equal(await direction(page, selector), "ltr", selector);
+        assert.ok(await center(page, '[data-focus="backward"]') < await center(page, '[data-focus="pause"]') && await center(page, '[data-focus="pause"]') < await center(page, '[data-focus="forward"]'), "the transport reads backward, pause, forward from the left");
+        assert.ok(await center(page, ".player-time-elapsed") < await center(page, ".player-time-remaining"), "elapsed on the left, remaining on the right");
+        assert.ok(await center(page, ".player-skip") < MIDDLE, "the skip pill takes the bottom-leading corner, on the left");
+        assert.ok(await center(page, ".player-buffering") < MIDDLE, "the buffering card takes the top-leading corner, on the left");
         for (const selector of [".player-title", ".player-series"]) assert.equal(await page.locator(selector).first().evaluate(node => getComputedStyle(node).unicodeBidi), "plaintext", selector);
-        await openPanel(page);
-        await nextTab(page, 1);
-        assert.equal(await page.locator(".player-tab[aria-selected=true]").textContent(), text("options.tabStats", "ar"), "Right is the next tab, as on the screen");
-        await nextTab(page, 2);
-        assert.equal(await page.locator(".player-menu-audio .player-choice-label").first().evaluate(node => getComputedStyle(node).unicodeBidi), "plaintext", "a track name");
     } finally { await page.close(); }
 });
+
+test("a cue takes its own direction from its text, not from an Arabic interface: English dialogue keeps its punctuation, Arabic dialogue reads right to left", async () => {
+    const page = await open("ar");
+    try {
+        const order = async (cue: string, layer = ".player-captions"): Promise<{ first: number; last: number }> => {
+            await show(page, playing({ captions: { text: layer === ".player-captions" ? cue : "Primary", secondaryText: layer === ".player-captions" ? "" : cue, appearance: DEFAULT_APPEARANCE } }));
+            return page.locator(`${layer} span`).evaluate(node => {
+                const text = node.firstChild as Text;
+                const at = (index: number): number => { const range = document.createRange(); range.setStart(text, index); range.setEnd(text, index + 1); return range.getBoundingClientRect().left; };
+                return { first: at(0), last: at(text.length - 1) };
+            });
+        };
+        const english = await order("Hello!");
+        assert.ok(english.first < english.last, "Hello! reads H first on the left, ! last on the right");
+        const arabic = await order("مرحبا!");
+        assert.ok(arabic.first > arabic.last, "an Arabic cue reads from the right, its ! on the left");
+        const secondary = await order("Hello!", ".player-captions-secondary");
+        assert.ok(secondary.first < secondary.last, "an English secondary cue reads H first too");
+        const secondaryArabic = await order("مرحبا!", ".player-captions-secondary");
+        assert.ok(secondaryArabic.first > secondaryArabic.last, "an Arabic secondary cue reads from the right");
+    } finally { await page.close(); }
+});
+
+test("English keeps the corners: the skip pill and the buffering card on the right, the transport and the scrubber left to right", async () => {
+    const page = await open(undefined);
+    try {
+        await show(page, playing({ skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25, bufferingPill: PROMPT, buffering: false }));
+        assert.equal(await direction(page, "section.player"), "ltr");
+        assert.ok(await center(page, ".player-skip") > MIDDLE);
+        assert.ok(await center(page, ".player-buffering") > MIDDLE);
+        assert.ok(await center(page, '[data-focus="backward"]') < await center(page, '[data-focus="forward"]'));
+    } finally { await page.close(); }
+});
+
+test("the transport, the scrubber and a held seek keep the remote's physical keys in Arabic", async () => {
+    const page = await open("ar");
+    try {
+        await show(page, playing());
+        await page.locator('[data-focus="pause"]').focus();
+        await remote(page, RIGHT);
+        assert.equal(await focusedId(page), "forward", "Right is the next button to the right, as on the screen");
+        await remote(page, LEFT);
+        await remote(page, LEFT);
+        assert.equal(await focusedId(page), "backward");
+        await page.locator('[data-focus="position"]').focus();
+        await page.evaluate(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { keyCode: 39, bubbles: true, cancelable: true })));
+        await page.clock.fastForward(1500);
+        assert.equal(await page.locator(".player-bar-preview").count(), 1, "a held Right opens the scrub preview");
+        assert.ok(Number(await page.getByRole("slider").getAttribute("aria-valuenow")) > 754, "and moves it forward, left to right");
+    } finally { await page.close(); }
+});
+
+test("the options panel reads from the right in Arabic: the tab rail, the rows, the chevrons and the columns", async () => {
+    const page = await open("ar");
+    try {
+        await show(page, playing());
+        await openPanel(page);
+        assert.ok(await center(page, ".player-tab:nth-child(1)") > await center(page, ".player-tab:nth-child(2)"), "Info is the right-most tab");
+        const info = await page.locator(".player-menu-info .player-info-row").first().evaluate(row => {
+            const label = row.querySelector(".player-info-label")?.getBoundingClientRect();
+            const value = row.querySelector(".player-info-value")?.getBoundingClientRect();
+            return { label: (label?.left ?? 0) + (label?.width ?? 0) / 2, value: (value?.left ?? 0) + (value?.width ?? 0) / 2 };
+        });
+        assert.ok(info.label > info.value, "the label starts on the right, the value on the left");
+        await remote(page, UP);
+        assert.equal(await page.locator(".player-tab[aria-selected=true]").textContent(), text("options.tabInfo", "ar"));
+        await remote(page, RIGHT);
+        assert.equal(await page.locator(".player-tab[aria-selected=true]").textContent(), text("options.tabInfo", "ar"), "Right is toward the start of the rail: nothing before Info");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-tab[aria-selected=true]").textContent(), text("options.tabStats", "ar"), "Left is the next tab, as on the screen");
+        await remote(page, LEFT);
+        await remote(page, DOWN);
+        assert.equal(await page.locator(".player-tab[aria-selected=true]").textContent(), text("options.tabVideo", "ar"));
+        const chevron = page.locator('[data-focus="video-aspect"] .player-setting-chevron svg');
+        assert.equal(await chevron.evaluate(node => getComputedStyle(node).transform), "matrix(-1, 0, 0, 1, 0, 0)", "chevron.forward points left");
+        const row = await page.locator('[data-focus="video-aspect"]').evaluate(node => {
+            const value = node.querySelector(".player-setting-value")?.getBoundingClientRect();
+            const mark = node.querySelector(".player-setting-chevron")?.getBoundingClientRect();
+            return { value: value?.left ?? 0, chevron: mark?.left ?? 0 };
+        });
+        assert.ok(row.chevron < row.value, "the chevron ends the row on the left");
+    } finally { await page.close(); }
+});
+
+for (const language of [undefined, "ar"]) {
+    test(`Left and Right cross a pane's columns by the layout (${language ?? "en"})`, async () => {
+        const page = await open(language);
+        try {
+            await show(page, playing());
+            await openPanel(page, 4);
+            const columns = page.locator(".player-menu-subtitles .player-menu-column");
+            assert.ok(await columns.count() >= 2, "Subtitles has two columns");
+            const first = await columns.nth(0).evaluate(node => node.getBoundingClientRect().left);
+            const second = await columns.nth(1).evaluate(node => node.getBoundingClientRect().left);
+            assert.equal(first < second, language === undefined, "the first column is on the left in English, on the right in Arabic");
+            assert.equal(await columns.nth(0).locator(":focus").count(), 1, "the pane opens in its first column");
+            await remote(page, toEnd(page));
+            assert.equal(await columns.nth(1).locator(":focus").count(), 1, "toward the end of the row is the second column");
+            await remote(page, toStart(page));
+            assert.equal(await columns.nth(0).locator(":focus").count(), 1);
+        } finally { await page.close(); }
+    });
+
+    test(`Up Next reads from its leading side and Left and Right step its buttons by the layout (${language ?? "en"})`, async () => {
+        const page = await open(language);
+        try {
+            await show(page, promptView());
+            const next = await center(page, '[data-focus="play-next"]');
+            const keep = await center(page, '[data-focus="keep-watching"]');
+            assert.equal(next < keep, language === undefined, "Play Now leads the row");
+            assert.equal(await center(page, ".player-next-up .player-title") > MIDDLE, language === undefined, "the panel is on the right in English, on the left in Arabic");
+            const captions = await page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
+            assert.ok(captions.startsWith(`translate(${language === undefined ? 180 : 980}px, 112px)`), `the caption box follows the preview: ${captions}`);
+            await page.locator('[data-focus="play-next"]').focus();
+            await remote(page, toEnd(page));
+            assert.equal(await focusedId(page), "keep-watching");
+            await remote(page, toStart(page));
+            assert.equal(await focusedId(page), "play-next");
+        } finally { await page.close(); }
+    });
+
+    test(`the buffering card's two buttons mirror and Left and Right choose by the layout (${language ?? "en"})`, async () => {
+        const page = await open(language);
+        try {
+            await show(page, playing({ bufferingPill: PROMPT, buffering: false }));
+            const primary = await center(page, '[data-focus="buffering-primary"]');
+            const keep = await center(page, '[data-focus="buffering-keep"]');
+            assert.equal(primary < keep, language === undefined, "Lower quality leads");
+            assert.equal(await focusedId(page), "buffering-primary");
+            await remote(page, toEnd(page));
+            assert.equal(await focusedId(page), "buffering-keep", "toward the end of the row");
+            await remote(page, toStart(page));
+            assert.equal(await focusedId(page), "buffering-primary");
+            await show(page, playing({ bufferingPill: PROMPT, buffering: false }));
+            await page.clock.runFor(6000);
+            assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "the controls are hidden");
+            await remote(page, toEnd(page));
+            assert.equal(await page.locator(".player-buffering-lit").innerText(), text("bufferingQuality.prompt.keep", language ?? "en"), "with the controls hidden, the button the press moves toward is lit");
+            await remote(page, toStart(page));
+            assert.equal(await page.locator(".player-buffering-lit").innerText(), text("bufferingQuality.prompt.lower", language ?? "en"));
+        } finally { await page.close(); }
+    });
+
+    test(`the error page's two buttons mirror (${language ?? "en"})`, async () => {
+        const page = await open(language);
+        try {
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
+            const retry = await center(page, '[data-focus="settings-retry"]');
+            const goBack = await center(page, '[data-focus="back"]');
+            assert.equal(retry < goBack, language === undefined, "Retry leads the row");
+            assert.equal(await direction(page, ".player-error"), language === undefined ? "ltr" : "rtl");
+            // An English message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            const [first, stop] = await page.locator(".player-error-text").evaluate(node => [0, (node.textContent ?? "").length - 1].map(at => {
+                const range = document.createRange();
+                range.setStart(node.firstChild!, at);
+                range.setEnd(node.firstChild!, at + 1);
+                return range.getBoundingClientRect().left;
+            }));
+            assert.ok((first ?? 0) < (stop ?? 0), `the first letter (${first}) sits left of the full stop (${stop})`);
+        } finally { await page.close(); }
+    });
+}
 
 test("English is unchanged", async () => {
     const page = await open(undefined);
@@ -282,6 +466,22 @@ test("a German catalog that lands while the player is up redraws it in German", 
         await page.waitForFunction(expected => document.querySelector('[data-focus="backward"]')?.getAttribute("aria-label") === expected, text("player.skip.back", "de", { seconds: 10 }));
         await openPanel(page);
         assert.equal(await page.locator(".player-tab").nth(1).textContent(), text("options.tabStats", "de"));
+    } finally { await page.close(); }
+});
+
+test("an Arabic catalog that lands while Up Next is up mirrors the panel and moves the caption box with it", async () => {
+    const page = await open(undefined);
+    const box = (): Promise<string> => page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
+    try {
+        await show(page, promptView());
+        assert.equal(await direction(page, "section.player"), "ltr");
+        assert.ok(await center(page, ".player-next-up .player-title") > MIDDLE, "English: the panel is on the right");
+        assert.ok((await box()).startsWith("translate(180px, 112px)"), "English: the caption box sits over the preview on the left");
+        await page.evaluate(strings => window.player.setLanguage("ar", strings), catalog("ar"));
+        await page.waitForFunction(() => document.querySelector("section.player")?.getAttribute("dir") === "rtl");
+        assert.equal(await direction(page, ".player-next-up"), "rtl");
+        assert.ok(await center(page, ".player-next-up .player-title") < MIDDLE, "Arabic: the panel moves to the left");
+        assert.ok((await box()).startsWith("translate(980px, 112px)"), `Arabic: the caption box moves with the preview to the right: ${await box()}`);
     } finally { await page.close(); }
 });
 

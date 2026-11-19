@@ -61,6 +61,8 @@ import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, star
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
 import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
+import { textIsRightToLeft } from "../i18n/direction.ts";
+import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 
 /** What browse hands over: one file of one catalog item. */
@@ -631,11 +633,14 @@ export class PlaybackController implements PlayerControls {
 
     /**
      * Track names, flags and Up Next's words are built into each view, so a language that lands while playback is paused has to send the view again.
-     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is.
+     * The screen asks, once no Select is held; a loading, restoring, completion or error view is left as it is. It also puts the Up Next preview rectangle where the language now reads.
      */
     refreshView(): void {
         const attempt = this.attempt;
-        if (attempt !== undefined && (this.current.phase === "playing" || this.current.phase === "paused")) this.showPlayback(attempt);
+        if (attempt === undefined || (this.current.phase !== "playing" && this.current.phase !== "paused")) return;
+        // The Up Next preview sits on the side the language reads from, so a direction that changes moves the video with the panel.
+        if (attempt.prompt !== undefined) this.paintRect(attempt);
+        this.showPlayback(attempt);
     }
 
     /** Starts a new attempt; one already running is stopped and never plays. */
@@ -3874,7 +3879,7 @@ export class PlaybackController implements PlayerControls {
 
     private setDisplayRect(attempt: Attempt): void {
         // tvOS standard-card column: 4 × 360 + 3 × 40; preview spans two cards.
-        if (attempt.prompt !== undefined) this.deps.avplay.setDisplayRect(180, 112, 760, Math.round(760 * 9 / 16));
+        if (attempt.prompt !== undefined) this.deps.avplay.setDisplayRect(upNextPreviewLeft(SCREEN.width, textIsRightToLeft()), UP_NEXT_PREVIEW.top, UP_NEXT_PREVIEW.width, UP_NEXT_PREVIEW.height);
         else this.deps.avplay.setDisplayRect(0, 0, SCREEN.width, SCREEN.height);
     }
 

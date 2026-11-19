@@ -527,6 +527,7 @@
  "player.audio.play": "Відтворити",
  "player.controls.scrubber": "Шкала відтворення",
  "player.controls.showUpNext": "Показати «Далі»",
+ "player.error.connectionLost": "З’єднання втрачено\nSilo не вдалося знову під’єднатися до сервера. Перевірте з’єднання й спробуйте ще раз, щоб продовжити з того самого місця.",
  "player.goBack": "Назад",
  "player.hud.aspect": "Пропорції",
  "player.hud.audio": "Аудіо",

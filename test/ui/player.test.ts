@@ -1087,6 +1087,8 @@ test("Back leaves the AI menu for the AI Subtitles… row, and no AI row shows w
     } finally { await page.close(); }
 });
 const text = (page: Page, selector: string): Promise<string> => page.locator(selector).innerText();
+// PlayerViewModel.connectionLostMessage (silo-apple b54fefb1): Apple's give-up after a lost connection, drawn on two lines.
+const CONNECTION_LOST = "Connection lost\nSilo couldn't reconnect to the server. Check your connection, then try again to continue where you left off.";
 
 const INTRO = { kind: "intro" as const, startSeconds: 20, endSeconds: 60 };
 const RECAP = { kind: "recap" as const, startSeconds: 0, endSeconds: 15 };
@@ -2271,7 +2273,7 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
     const { page, logs } = await open();
     try {
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" } });
-        assert.equal(await text(page, ".player-error-text"), "Can't reach the server. Check the TV's connection, then try again.");
+        assert.equal(await text(page, ".player-error-text"), CONNECTION_LOST);
         assert.equal(await page.locator(".player-overlay").isVisible(), false);
         assert.equal(await focused(page), "back");
         await capture(page, "player-error");
@@ -2727,7 +2729,7 @@ test("hiding suspends playback and showing restores it, without a restart notice
         await hold();
         await capture(page, "player-reconnecting");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
-        assert.equal(await text(page, ".player-error-text"), "Can't reach the server. Check the TV's connection, then try again.");
+        assert.equal(await text(page, ".player-error-text"), CONNECTION_LOST);
         assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).isVisible(), true);
         await hold();
         await capture(page, "player-connection-lost");
@@ -3778,13 +3780,13 @@ test("the second line draws under the primary at Apple's offsets for each positi
     } finally { await page.close(); }
 });
 
-test("the player keeps its left-to-right layout and the remote's physical keys when the page reads right to left", async () => {
+test("the player takes its layout from the language it shows, not from a page that reads right to left", async () => {
     const { page } = await open();
     try {
         await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
         await show(page, playing(TRACKS));
         assert.equal(await page.locator('[data-screen="player"]').evaluate(node => getComputedStyle(node).direction), "ltr");
-        // Down to the transport, Right twice to Options, Select, Down into the pane: the same keys as in English.
+        // English on a page marked right to left: the keys are the same as in English.
         await openPanel(page);
         assert.equal(await focused(page), "info");
         await page.locator('[data-focus="info"]').focus();

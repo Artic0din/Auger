@@ -527,6 +527,7 @@
  "player.audio.play": "Spela upp",
  "player.controls.scrubber": "Tidslinje",
  "player.controls.showUpNext": "Visa Härnäst",
+ "player.error.connectionLost": "Anslutningen bröts\nSilo kunde inte återansluta till servern. Kontrollera anslutningen och försök sedan igen för att fortsätta där du slutade.",
  "player.goBack": "Gå tillbaka",
  "player.hud.aspect": "Bildformat",
  "player.hud.audio": "Ljud",

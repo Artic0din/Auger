@@ -527,6 +527,7 @@
  "player.audio.play": "Afspelen",
  "player.controls.scrubber": "Tijdlijn",
  "player.controls.showUpNext": "Hierna tonen",
+ "player.error.connectionLost": "Verbinding verbroken\nSilo kan niet opnieuw verbinden met de server. Controleer je verbinding en probeer het opnieuw om verder te gaan waar je gebleven was.",
  "player.goBack": "Terug",
  "player.hud.aspect": "Beeldverhouding",
  "player.hud.audio": "Audio",

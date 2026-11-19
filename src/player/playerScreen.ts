@@ -10,12 +10,13 @@
 // switch, say) is never erased.
 
 import type { Clock } from "../api/clock.ts";
+import { applyScreenDirection } from "../i18n/direction.ts";
 import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import { blurEpisodeStill, type EpisodeSpoilerSettings } from "../ui/episodeSpoilers.ts";
-import { physicalKey } from "../ui/keys.ts";
+import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
@@ -55,7 +56,8 @@ export function errorText(error: PlaybackError): string {
         case "playback_failed":
             return "This video can't play on this TV.";
         case "network":
-            return "Can't reach the server. Check the TV's connection, then try again.";
+            // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
+            return translate("player.error.connectionLost");
         case "session_expired":
             return "The server ended playback. Try again.";
         case "installation_changed":
@@ -274,8 +276,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const section = el("section", "player");
     const renderSubtitles = mountSubtitles(section);
     section.setAttribute("data-screen", "player");
-    // Media transport reads left to right in every language, and the player's menus are not mirrored yet (#571): the screen keeps its layout and physical keys.
-    section.setAttribute("dir", "ltr");
+    // The screen reads in the direction of its text, as Apple's player does; only the transport, the scrubber and its time row below stay left to right.
+    applyScreenDirection(section);
     const surface = document.createElement("object");
     surface.type = "application/avplayer";
     surface.className = "player-video";
@@ -384,7 +386,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const rateValue = el("span", "player-rate-value");
     rate.append(rateValue);
     bar.append(track, puck, rate);
+    // `.mediaLayoutDirection()` (TVPlayerControls.swift lines 325, 555, 557 and 575): media timelines and transport read left to right in every language.
+    bar.setAttribute("dir", "ltr");
     const time = el("p", "player-time");
+    time.setAttribute("dir", "ltr");
     const elapsed = el("span", "player-time-elapsed");
     const remaining = el("span", "player-time-remaining");
     time.append(elapsed, remaining);
@@ -405,6 +410,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     closeButton.firstElementChild?.setAttribute("aria-hidden", "true");
     closeButton.addEventListener("click", () => controls.back());
     const transport = el("div", "player-transport");
+    transport.setAttribute("dir", "ltr");
     const primaryGroup = el("div", "player-transport-group");
     const secondaryGroup = el("div", "player-transport-group player-transport-secondary");
     const backward = el("button", "player-button");
@@ -1488,6 +1494,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (key === undefined || view.phase === "closed") {
             return;
         }
+        // The transport, the scrubber and a held seek read `key`, the remote's own Left and Right; Up Next, the buffering card and the panel read `layout`, which follows the screen's mirrored layout.
+        const layout = remoteKey(event, section) ?? key;
         event.preventDefault();
         // tvOS runs Select on release: a fresh press waits for onKeyUp, and its repeats change nothing.
         if (key === "enter" && !released) {
@@ -1511,8 +1519,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (key === "stop") controls.back();
             else if (key === "back") controls.keepWatching();
             else if (key === "enter") (buttons[index] ?? buttons[0])?.click();
-            else if (key === "up" || key === "left") buttons[Math.max(0, index - 1)]?.focus();
-            else if (key === "down" || key === "right") buttons[Math.min(buttons.length - 1, index + 1)]?.focus();
+            else if (layout === "up" || layout === "left") buttons[Math.max(0, index - 1)]?.focus();
+            else if (layout === "down" || layout === "right") buttons[Math.min(buttons.length - 1, index + 1)]?.focus();
             return;
         }
         if (view.phase === "error") {
@@ -1536,7 +1544,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             }
             if (at >= 0) {
                 if (key === "enter") pillButtons[at]?.click();
-                else if (key === "left" || key === "right") pillButtons[Math.max(0, Math.min(pillButtons.length - 1, at + (key === "left" ? -1 : 1)))]?.focus();
+                else if (layout === "left" || layout === "right") pillButtons[Math.max(0, Math.min(pillButtons.length - 1, at + (layout === "left" ? -1 : 1)))]?.focus();
                 else if (key === "down") pause.focus();
                 if (key === "enter" || key === "left" || key === "right" || key === "down") {
                     render();
@@ -1546,7 +1554,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 (bufferingTarget === "secondary" && prompt ? bufferingKeep : bufferingPrimary).click();
                 return;
             } else if ((hiddenPrompt || view.phase === "loading") && prompt && (key === "left" || key === "right")) {
-                bufferingTarget = key === "left" ? "primary" : "secondary";
+                // Apple reads the prompt's press through the layout (PlayerView.swift line 869): its buttons mirror.
+                bufferingTarget = layout === "left" ? "primary" : "secondary";
                 render();
                 return;
             }
@@ -1573,7 +1582,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (menuOpen) {
-            menuKey(key);
+            menuKey(layout);
             render();
             return;
         }
@@ -1752,6 +1761,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         // The controller's view carries track names and Up Next words built in the old language: it sends them again first, so the picker below is rebuilt from the new view.
         controls.refreshView();
         labelStatics();
+        applyScreenDirection(section);
         if (videoPicker !== undefined) videoPicker = rebuiltPicker(videoPicker);
         if (subtitlePane.kind === "picker") subtitlePane = rebuiltPicker(subtitlePane);
         drawn = undefined;

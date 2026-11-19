@@ -1,6 +1,7 @@
 /* Native player, 1920x1080, Chromium 108. */
 
-/* Server text (titles, overviews, chapter and track names) takes its base direction from its own first letter, so an Arabic title in this left-to-right player is not reordered by the words around it. */
+/* Server text (titles, overviews, chapter and track names) takes its base direction from its own first letter, so an Arabic title is not reordered by the words around it. */
+/* The player reads in the direction of its text (`dir` on `.player`); the transport, the scrubber and its time row pin `dir="ltr"`. Offsets are logical so the rest mirrors, as Apple's SwiftUI layout does. */
 .player-title,
 .player-series,
 .player-info-title,
@@ -9,19 +10,24 @@
 .player-choice-label,
 .player-choice-detail,
 .player-next-synopsis,
-.player-next-card { unicode-bidi: plaintext; }
+.player-next-card,
+/* A cue reads in its own direction whatever the interface language is: Apple's subtitle Text takes its direction from its content, and the overlay is not under `.mediaLayoutDirection()`. */
+.player-captions,
+.player-captions-secondary { unicode-bidi: plaintext; }
 
 .player-error.player-next-up {
-    padding: 112px 180px 260px 980px;
+    padding: 112px 0 260px;
+    padding-inline: 980px 180px;
     overflow-y: auto;
     background: transparent;
 }
 .player-next-up .player-title { font-size: 42px; }
 .player-next-eyebrow { font-size: 18px; text-transform: uppercase; opacity: .52; }
 .player-next-synopsis { font-size: 22px; line-height: 1.4; }
-.player-next-up .player-button { margin: 18px 20px 0 0; }
+.player-next-up .player-button { margin: 18px 0 0; margin-inline-end: 20px; }
 .player-next-deck {
-    margin: 34px 0 0 -800px;
+    margin: 34px 0 0;
+    margin-inline-start: -800px;
     display: flex;
     gap: 40px;
     overflow-x: auto;
@@ -163,7 +169,7 @@
  */
 .player-button.player-skip {
     position: absolute;
-    right: 160px;
+    inset-inline-end: 160px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -224,6 +230,11 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.24);
 }
 
+.player[dir="rtl"] .player-skip.player-skip-segment:focus,
+.player[dir="rtl"] .player-skip.player-skip-segment.player-skip-lit {
+    transform-origin: left bottom;
+}
+
 /* With the controls hidden, or the options panel up (Apple's isHUDPresented), both pills drop to the corner. */
 .player-overlay-hidden ~ .player-skip.player-skip-intro,
 .player-overlay-hidden ~ .player-skip.player-skip-segment,
@@ -247,6 +258,10 @@
     transform: scaleX(0);
     transform-origin: left center;
     animation: player-skip-fill 5000ms linear forwards;
+}
+
+.player[dir="rtl"] .player-skip-fill {
+    transform-origin: right center;
 }
 
 .player-skip.player-skip-intro:focus .player-skip-fill,
@@ -280,7 +295,7 @@
 /* The muted confirmation above the Watch Intro pill. A sibling of the pill so the focus scale leaves it alone (VStack spacing 10, trailing 24). */
 .player-skip-caption {
     position: absolute;
-    right: 184px;
+    inset-inline-end: 184px;
     bottom: 542px;
     transition: bottom 220ms ease-out;
     color: rgba(255, 255, 255, 0.72);
@@ -308,7 +323,7 @@
 .player-alerts {
     position: absolute;
     top: 112px;
-    right: 80px;
+    inset-inline-end: 80px;
     z-index: 3;
     display: flex;
     flex-direction: column;
@@ -443,6 +458,10 @@
     animation: player-buffering-drain 15000ms linear forwards;
 }
 
+.player[dir="rtl"] .player-buffering-fill {
+    transform-origin: right center;
+}
+
 @keyframes player-buffering-drain {
     from { transform: scaleX(1); }
     to { transform: scaleX(0); }
@@ -487,7 +506,7 @@
 .player-status {
     position: absolute;
     top: 64px;
-    right: 80px;
+    inset-inline-end: 80px;
     z-index: 3;
     margin: 0;
     font-size: 20px;
@@ -723,6 +742,9 @@
     font-size: 30px;
     line-height: 1.35;
     color: var(--silo-error-ink);
+    /* Apple's connection-lost message is a title line and a body line; an English message keeps its own direction in Arabic. */
+    white-space: pre-line;
+    unicode-bidi: plaintext;
 }
 
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
@@ -1084,7 +1106,7 @@
 .player-setting-value {
     flex: 0 1 auto;
     min-width: 0;
-    margin-left: 32px;
+    margin-inline-start: 32px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1098,13 +1120,18 @@
     flex: none;
     width: 11px;
     height: 15px;
-    margin-left: -4px;
+    margin-inline-start: -4px;
     color: rgba(255, 255, 255, 0.45);
 }
 
 .player-setting-chevron svg {
     width: 100%;
     height: 100%;
+}
+
+/* chevron.forward points the way the row reads: left in a right-to-left layout. */
+.player[dir="rtl"] .player-setting-chevron svg {
+    transform: scaleX(-1);
 }
 
 .player-setting:focus .player-setting-value {
@@ -1343,7 +1370,7 @@
     font: inherit;
     font-size: 22px;
     font-weight: 500;
-    text-align: left;
+    text-align: start;
     transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out;
 }
 
@@ -1407,7 +1434,7 @@
 .player-menu-status {
     position: absolute;
     top: 100%;
-    left: 28px;
+    inset-inline-start: 28px;
     box-sizing: border-box;
     width: max-content;
     max-width: 1044px;
