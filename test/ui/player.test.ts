@@ -1020,7 +1020,7 @@ test("a running AI job shows its title, progress and message with Cancel, and th
         await show(page, playing(aiTracks({ phase: "completed", results: [{ id: "opaque-result", label: "AI-translated · FR" }] })));
         assert.equal(await page.locator(".player-ai-menu").count(), 0, "the menu closes when the job finishes");
         assert.equal(await focused(page), "ai-menu", "focus returns to the AI Subtitles… row");
-        assert.deepEqual(await commands(page), ["subtitleAIAction cancel", "subtitleAIAction dismiss"], "the finished job is dismissed so reopening shows languages");
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction dismiss"], "the finished job is dismissed so reopening shows languages");
     } finally { await page.close(); }
 });
 
