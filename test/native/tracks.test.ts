@@ -1018,6 +1018,19 @@ test("the ordered inventory is sorted once per inventory and language, not on ev
     assert.equal(orderedInventory([...inventory], "ja").length, inventory.length, "a new inventory is sorted afresh");
 });
 
+test("the ordered inventory sorts again when the shown language changes, so a late Arabic catalog reorders the tracks (#695)", () => {
+    const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.equal(decision.outcome, "playable");
+    if (decision.outcome !== "playable") return;
+    const inventory = decision.plan.subtitle.inventory.slice(0, 2).map((entry, index) => ({ ...entry, language: index === 0 ? "de" : "es" }));
+    assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["de", "es"], "English: German, then Spanish");
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["es", "de"], "Arabic: Spanish, then German, from the same inventory");
+    } finally { setAppLanguage(null); }
+    assert.deepEqual(orderedInventory(inventory, undefined).map(entry => entry.language), ["de", "es"], "and back to English");
+});
+
 function scriptWatch(r: Rig, body: Record<string, unknown>): void {
     r.h.fake.script("/watch/movie-1?file_id=42", { status: 200, body: { content_id: "movie-1", versions: [{ file_id: "42", audio_tracks: r.server.files.get("42")?.audio }], ...body } });
 }
