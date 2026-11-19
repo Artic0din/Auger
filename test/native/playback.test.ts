@@ -3409,6 +3409,32 @@ test("a timing reread that fails before any cues loaded takes the normal failure
     r.controller.destroy();
 });
 
+test("a secondary timing reread that fails before any cues loaded clears the secondary, as a first read that fails does", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+    scriptSync(r, syncState());
+    const statusHold = r.h.fake.hold("/subtitles/sync/status");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const first = r.h.fake.hold(SECONDARY_PATH);
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNever shown" }, ...Array.from({ length: 4 }, () => ({ status: 500 })));
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    statusHold.release();
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
+    first.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.ok(r.h.fake.requests.filter(request => request.path === SECONDARY_PATH && request.cache === "reload").length >= 1, "the first listing started a reread while the first download was held");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary?.selectedId, undefined, "no secondary is left chosen with no line");
+    assert.equal(view.captions?.secondaryText, "");
+    r.controller.destroy();
+});
+
 test("a failed timing reread of the secondary keeps its line and its selection", async () => {
     const r = await secondaryRig();
     const file = r.server.files.get("42");

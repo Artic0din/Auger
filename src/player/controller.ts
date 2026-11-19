@@ -2140,8 +2140,8 @@ export class PlaybackController implements PlayerControls {
                 attempt.secondaryCues = cues;
             } catch {
                 if (!current()) return;
-                // A reread that fails leaves the line it replaced; a track that cannot be read at all is not shown as chosen.
-                if (keep) {
+                // A reread that fails leaves the line it replaced; with none loaded yet, or a track that cannot be read at all, it is not shown as chosen.
+                if (keep && attempt.secondaryCues.length > 0) {
                     attempt.secondaryTiming = shownTiming;
                     return;
                 }
