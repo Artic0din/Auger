@@ -391,3 +391,20 @@ test("a job that completes without a subtitle result stays on the failure panel 
     assert.equal(ai.view?.phase, "idle");
     ai.destroy();
 });
+
+test("a quota read that fails after a job ends keeps the job's own reason on the panel", async () => {
+    for (const [status, reason] of [["completed", "AI job completed without a subtitle result."], ["failed", "Translation backend timed out"]] as const) {
+        const { h, ai } = await setup();
+        h.fake.scripted.delete("/subtitles/ai/quota");
+        h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => problem(500, "internal", "Internal")));
+        h.fake.script("/subtitles/ai/translate", { status: 202, body: job("pending") });
+        h.fake.script("/subtitles/ai/jobs/opaque-job", { status: 200, body: job(status, status === "completed" ? { result_subtitle_id: null } : { error_message: reason }) });
+        await ai.start(request);
+        await h.clock.advance(2000);
+        await h.clock.advance(0);
+        assert.ok(h.fake.requests.filter(row => row.path === "/subtitles/ai/quota").length >= 2, `${status}: the balance is read again after the job`);
+        assert.equal(ai.view?.phase, "failed");
+        assert.equal(ai.view?.message, reason, `${status}: the quota failure does not replace the reason`);
+        ai.destroy();
+    }
+});

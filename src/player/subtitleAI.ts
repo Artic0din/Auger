@@ -104,7 +104,7 @@ export class SubtitleAI {
             this.changed();
             await Promise.all([
                 this.call(operations.subtitleAILanguages()).then(languages => { if (!this.abort.signal.aborted) this.languages = languages; }, () => this.notice("Could not load translation languages.")),
-                this.refreshQuota(),
+                this.refreshQuota(true),
                 // The menu is usable without it; the preferred row is only a shortcut.
                 this.call(subtitleSearchOperations.preferredLanguage()).then(preferred => { if (!this.abort.signal.aborted) this.preferred = preferred; }, () => undefined),
             ]);
@@ -112,11 +112,12 @@ export class SubtitleAI {
         } catch { /* Unsupported AI is omitted; it never gates playback. */ }
     }
 
-    private async refreshQuota(): Promise<void> {
+    /** After a job the panel already holds that job's reason, and the menu's quota line covers a balance it cannot read, so only the first read reports a failure. */
+    private async refreshQuota(report = false): Promise<void> {
         try {
             const quota = await this.call(operations.subtitleAIQuota());
             if (!this.abort.signal.aborted) { this.quota = quota; this.changed(); }
-        } catch { this.notice("Could not read transcription quota. Playback continues."); }
+        } catch { if (report) this.notice("Could not read transcription quota. Playback continues."); }
     }
 
     async start(request: SubtitleAIRequest): Promise<void> {
