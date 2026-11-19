@@ -981,7 +981,7 @@ test("the Spoken language row leads the suggestions when the spoken language is 
         assert.deepEqual(first, ["ai-language:ai-detected-spoken-language", "Detected from the audio"]);
         assert.equal(await focused(page), "ai-language:ai-detected-spoken-language", "focus starts on the Spoken language row");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["startSubtitleAI ai-detected-spoken-language"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "startSubtitleAI ai-detected-spoken-language"]);
     } finally { await page.close(); }
 });
 
@@ -1016,7 +1016,7 @@ test("a running AI job shows its title, progress and message with Cancel, and th
             assert.equal(await text(page, ".player-ai-job"), title);
         }
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["subtitleAIAction cancel"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel"]);
         await show(page, playing(aiTracks({ phase: "completed", results: [{ id: "opaque-result", label: "AI-translated · FR" }] })));
         assert.equal(await page.locator(".player-ai-menu").count(), 0, "the menu closes when the job finishes");
         assert.equal(await focused(page), "ai-menu", "focus returns to the AI Subtitles… row");
@@ -1043,7 +1043,7 @@ test("a failed AI job says so with Dismiss, and a held request adds Discard held
         assert.equal(await page.locator('[data-focus="ai-discard"] .player-choice-label').textContent(), "Discard held request");
         await page.locator('[data-focus="ai-discard"]').focus();
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["subtitleAIAction dismiss", "subtitleAIAction discard"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
     } finally { await page.close(); }
 });
 
@@ -1064,7 +1064,7 @@ test("Cancel, Dismiss and Discard act while a track change is pending, as Apple'
         await remote(page, ENTER);
         await page.locator('[data-focus="ai-discard"]').focus();
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["subtitleAIAction cancel", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
     } finally { await page.close(); }
 });
 
@@ -3379,7 +3379,7 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, BACK);
         assert.equal(await focused(page), "video-speed", "Back closes the open picker before the background AI language list");
         assert.equal(await page.locator('.player-menu-subtitles [data-focus="ai-language-back"]').count(), 1);
-        assert.deepEqual(await commands(page), []);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open"], "only the menu's opening: Back and the pickers send nothing");
     } finally { await page.close(); }
 });
 
