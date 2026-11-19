@@ -326,7 +326,8 @@ export interface PlayerControls {
     /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
     startSubtitleAI(language: string): void;
     /** Cancel stops the running job, Dismiss clears a failure or a finished job, Discard lets a request go out after one whose outcome is unknown. */
-    subtitleAIAction(action: "cancel" | "dismiss" | "discard"): void;
+    /** `open`: the viewer opened AI Subtitles…. */
+    subtitleAIAction(action: "open" | "cancel" | "dismiss" | "discard"): void;
     selectAIResult(id: string): void;
     subtitleTool(action: SubtitleToolAction): void;
     /** SECONDARY: undefined turns the second line off. */
@@ -1112,9 +1113,10 @@ export class PlaybackController implements PlayerControls {
         void attempt.ai?.start({ media_file_id: plan.effectiveMediaFileId, kind: route.kind, source_index: route.sourceIndex, source_language: route.sourceLanguage, target_language: route.targetLanguage, start_position: attempt.sourceSeconds });
     }
 
-    subtitleAIAction(action: "cancel" | "dismiss" | "discard"): void {
+    subtitleAIAction(action: "open" | "cancel" | "dismiss" | "discard"): void {
         const ai = this.active()?.ai;
-        if (action === "cancel") void ai?.cancel();
+        if (action === "open") ai?.menuOpened();
+        else if (action === "cancel") void ai?.cancel();
         else if (action === "dismiss") ai?.acknowledge();
         else ai?.discardHeld();
     }

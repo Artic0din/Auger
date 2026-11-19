@@ -17,9 +17,11 @@ async function setup(remaining = 3, enabled = true, blocked = new Set<string>())
     h.fake.script("/subtitles/ai/status", { status: 200, body: { enabled, transcribe_enabled: enabled, allowed: true, state: "available", revision: "opaque" } });
     h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 5 - remaining, remaining, period: "month" } })));
     h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "fr" }, { value: "en" }] } } } });
-    const ai = new SubtitleAI(h.core.session, h.clock, "42", () => undefined, blocked);
+    // What the menu would be redrawn with: each change callback's view.
+    const seen: SubtitleAI["view"][] = [];
+    const ai: SubtitleAI = new SubtitleAI(h.core.session, h.clock, "42", () => seen.push(ai.view), blocked);
     await h.clock.advance(0);
-    return { h, ai };
+    return { h, ai, seen };
 }
 
 test("AI gates translation and transcription independently and treats unknown states as unavailable", () => {
@@ -410,7 +412,7 @@ test("a quota read that fails after a job ends keeps the job's own reason on the
 });
 
 test("a quota read that fails after a job drops the old balance, so transcription waits for a good read", async () => {
-    const { h, ai } = await setup();
+    const { h, ai, seen } = await setup();
     assert.equal(ai.view?.quota?.remaining, 3);
     h.fake.scripted.delete("/subtitles/ai/quota");
     h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => problem(500, "internal", "Internal")));
@@ -420,10 +422,33 @@ test("a quota read that fails after a job drops the old balance, so transcriptio
     await h.clock.advance(2000);
     await h.clock.advance(0);
     assert.equal(ai.view?.quota, undefined, "a balance that could not be read again is not shown as current");
+    assert.ok(seen.length > 0 && seen.at(-1)?.quota === undefined, "and the menu is told, so it redraws without the old balance");
     assert.equal(ai.view?.message, "AI job completed without a subtitle result.", "the job's reason stays");
     ai.acknowledge();
     const creates = h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length;
     await ai.start({ ...request, kind: "transcribe", source_index: 0, source_language: "", target_language: "" });
     assert.equal(h.fake.requests.filter(row => row.path === "/subtitles/ai/translate").length, creates, "no transcription is sent against an unknown balance");
+    ai.destroy();
+});
+
+test("opening AI Subtitles with the balance unknown reads it again, and with it known reads nothing", async () => {
+    const { h, ai } = await setup();
+    const reads = (): number => h.fake.requests.filter(row => row.path === "/subtitles/ai/quota").length;
+    const before = reads();
+    ai.menuOpened();
+    await h.clock.advance(0);
+    assert.equal(reads(), before, "a known balance is not read on every open");
+    h.fake.scripted.delete("/subtitles/ai/quota");
+    h.fake.script("/subtitles/ai/quota", problem(500, "internal", "Internal"), { status: 200, body: { limited: true, limit: 5, used: 1, remaining: 4, period: "month" } });
+    h.fake.script("/subtitles/ai/translate", { status: 202, body: job("pending") });
+    h.fake.script("/subtitles/ai/jobs/opaque-job", { status: 200, body: job("completed") });
+    await ai.start(request);
+    await h.clock.advance(2000);
+    await h.clock.advance(0);
+    const remaining = (): number | undefined => ai.view?.quota?.remaining;
+    assert.equal(remaining(), undefined);
+    ai.menuOpened();
+    await h.clock.advance(0);
+    assert.equal(remaining(), 4, "the server answered again, so transcription can run");
     ai.destroy();
 });

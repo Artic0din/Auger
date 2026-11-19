@@ -944,7 +944,7 @@ test("AI Subtitles… opens a language menu with Apple's headings and hints, and
         await remote(page, DOWN);
         assert.equal(await focused(page), "ai-language:es");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["startSubtitleAI fr"], "a disabled row dispatches nothing");
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "startSubtitleAI fr"], "opening the menu tells the controller, and a disabled row dispatches nothing");
     } finally { await page.close(); }
 });
 

@@ -1352,6 +1352,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 controls.saveSeriesSubtitle();
             } else if (id === "ai-menu") {
                 aiLanguages = true;
+                controls.subtitleAIAction("open");
                 const menu = view.phase === "playing" || view.phase === "paused" ? view.tracks.aiMenu : undefined;
                 menuRestoreFocus = firstServiceableLanguage(menu);
             } else if (id === "ai-language-back") {

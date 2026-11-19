@@ -160,6 +160,12 @@ export class SubtitleAI {
         }
     }
 
+    /** The viewer opened AI Subtitles…: a balance that could not be read is tried again, so a recovered server lets transcription run. */
+    menuOpened(): void {
+        if (this.abort.signal.aborted || this.quota !== undefined || this.available?.transcribe !== true) return;
+        void this.refreshQuota();
+    }
+
     /** Dismiss: the viewer has seen a failure or a finished job, so the menu reopens on its languages. */
     acknowledge(): void {
         if (this.failed || this.completed) {
