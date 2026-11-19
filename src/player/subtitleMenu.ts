@@ -162,7 +162,7 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
 function syncProgress(progress: NonNullable<SyncTimingView["progress"]>): HTMLElement {
     const block = el("div", "player-sync-progress");
     block.setAttribute("role", "progressbar");
-    block.setAttribute("aria-label", "Subtitle sync progress");
+    block.setAttribute("aria-label", translate("player.subtitleSync.progressLabel"));
     block.setAttribute("aria-valuemin", "0");
     block.setAttribute("aria-valuemax", "100");
     block.setAttribute("aria-valuenow", String(progress.percent));
@@ -185,16 +185,16 @@ function syncProgress(progress: NonNullable<SyncTimingView["progress"]>): HTMLEl
 function syncRows(timing: SyncTimingView | undefined): HTMLElement[] {
     if (timing === undefined) return [];
     if (timing.forbidden !== undefined) {
-        const row = settingRow("subtitle-sync", "Sync to Audio", "", { chevron: false, detail: timing.forbidden, icon: waveformIcon() });
+        const row = settingRow("subtitle-sync", translate("player.tracks.syncToAudioButton"), "", { chevron: false, detail: timing.forbidden, icon: waveformIcon() });
         row.removeAttribute("data-focus");
         row.disabled = true;
         row.setAttribute("data-unavailable", "true");
         return [row];
     }
     const rows: HTMLElement[] = [];
-    if (timing.canSync) rows.push(settingRow("subtitle-sync", timing.inProgress ? "Syncing…" : "Sync to Audio", "", { chevron: false, icon: waveformIcon() }));
+    if (timing.canSync) rows.push(settingRow("subtitle-sync", translate(timing.inProgress ? "player.tracks.syncing" : "player.tracks.syncToAudioButton"), "", { chevron: false, icon: waveformIcon() }));
     if (timing.progress !== undefined) rows.push(syncProgress(timing.progress));
-    if (timing.canReset) rows.push(settingRow("subtitle-reset-timing", "Reset Timing", "", { chevron: false, icon: uturnBackwardIcon() }));
+    if (timing.canReset) rows.push(settingRow("subtitle-reset-timing", translate("player.tracks.resetTimingButton"), "", { chevron: false, icon: uturnBackwardIcon() }));
     if (timing.note !== undefined) rows.push(el("p", `player-sync-note player-sync-note-${timing.note.tone}`, timing.note.text));
     return rows;
 }

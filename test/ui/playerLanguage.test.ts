@@ -162,6 +162,15 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-setting-label').textContent(), text("player.hud.subtitleAppearance", language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-device"] .player-setting-label').textContent(), translateTv("player.hud.onlyOnThisAppleTv", undefined, language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-choice-detail').textContent(), [text("player.subtitles.size.large", language), text("player.subtitles.background.box", language), text("player.subtitles.position.bottom", language)].join(" · "));
+            // SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main 9dabb62): Sync to Audio, its progress and Reset Timing.
+            const timing = { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: false, forbidden: undefined, progress: undefined, note: undefined };
+            assert.notEqual(text("player.tracks.syncToAudioButton", language), "Sync to Audio", `the ${language} file carries the sync keys`);
+            await show(page, playing({ tracks: { ...TRACKS, syncTiming: timing } }));
+            assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-sync"] .player-setting-label').textContent(), text("player.tracks.syncToAudioButton", language));
+            assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-reset-timing"] .player-setting-label').textContent(), text("player.tracks.resetTimingButton", language));
+            await show(page, playing({ tracks: { ...TRACKS, syncTiming: { ...timing, inProgress: true, progress: { percent: 40, phase: "" } } } }));
+            assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-sync"] .player-setting-label').textContent(), text("player.tracks.syncing", language));
+            assert.equal(await page.locator(".player-sync-progress").getAttribute("aria-label"), text("player.subtitleSync.progressLabel", language));
         } finally { await page.close(); }
     });
 
