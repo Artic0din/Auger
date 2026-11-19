@@ -3944,7 +3944,7 @@ function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
 
 function qualityChoices(plan: PlaybackPlan): TrackChoice[] {
     const offered = plan.availableQualities.filter((quality) => quality.label !== "original" && quality.label !== "auto");
-    return offered.length === 0 ? [] : [{ id: "auto", label: "Auto" }, ...offered.map((quality) => ({ id: quality.label, label: qualityMenuLabel(quality) }))];
+    return offered.length === 0 ? [] : [{ id: "auto", label: translate("options.auto") }, ...offered.map((quality) => ({ id: quality.label, label: qualityMenuLabel(quality) }))];
 }
 
 /** The effective edition's audio tracks; empty until the versions read answers. */
