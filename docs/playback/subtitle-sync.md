@@ -24,7 +24,7 @@ All calls go through `src/api/subtitleOperations.ts`. A subtitle's sync key is t
 - A 403 swaps Sync to Audio for a dimmed row that holds the server's message and cannot take focus. A 422 says the format can't be synced.
 - Each track's row ends with its sync status after its attributes. An unsupported format shows that instead.
 - Focus: if the focused Sync or Reset row disappears, focus moves to the other timing row, then Delay, then the tracks.
-- When a timing change reaches the subtitle the app is drawing, its cues are read again without the HTTP cache.
+- When a timing change reaches a subtitle the app is drawing, as the primary or as the SECONDARY line, its cues are read again without the HTTP cache.
 
 Sync rows do not depend on the overlay: the server's timing applies to the file's subtitle whoever draws it.
 A track AVPlay draws itself or that is burned in keeps its old timing on screen until the next plan.

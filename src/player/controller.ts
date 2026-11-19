@@ -2058,9 +2058,15 @@ export class PlaybackController implements PlayerControls {
     /** The server retimed a subtitle: the track's URL serves the new timing, but the cues already read are the old ones. */
     private refetchCaptions(attempt: Attempt, key: string): void {
         const plan = attempt.plan;
-        if (plan === undefined || attempt.captionKey === undefined || plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey !== key) return;
-        attempt.captionKey = undefined;
-        this.readCaptions(attempt, plan, true);
+        if (plan === undefined) return;
+        const retimed = (trackId: string | undefined): boolean => trackId !== undefined && plan.subtitle.inventory.find(track => track.trackId === trackId)?.syncKey === key;
+        // The same track can be retimed while it shows as SECONDARY; its URL and origin stay, so reconcileSecondary would keep the old cues.
+        const secondary = retimed(attempt.secondaryId) ? secondaryRows(plan).find(row => row.trackId === attempt.secondaryId) : undefined;
+        if (secondary !== undefined) this.startSecondary(attempt, secondary, attempt.secondaryOrigin, true);
+        if (attempt.captionKey !== undefined && retimed(plan.subtitle.trackId)) {
+            attempt.captionKey = undefined;
+            this.readCaptions(attempt, plan, true);
+        }
         this.showPlayback(attempt);
     }
 
@@ -2096,7 +2102,7 @@ export class PlaybackController implements PlayerControls {
         this.showPlayback(attempt);
     }
 
-    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number): void {
+    private startSecondary(attempt: Attempt, row: SubtitleTrack, origin: number, fresh = false): void {
         this.clearSecondary(attempt);
         attempt.secondaryId = row.trackId;
         attempt.secondaryOrigin = origin;
@@ -2112,7 +2118,7 @@ export class PlaybackController implements PlayerControls {
                 // The sidecar is read like the primary's artifact. Its cues share the primary's timing origin: both come from this plan's stream.
                 // A download that ends early is fetched again like the primary's (`downloadSubtitle`), the cues that arrived showing meanwhile.
                 const cues = await downloadSubtitle(this.deps.clock, abort.signal,
-                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal),
+                    async () => this.deps.session.http.subtitleText(await this.captionUrl(row.url ?? "", abort.signal), abort.signal, fresh),
                     text => decodeCues(text, secondaryFormat(row) ?? "", origin),
                     partial => {
                         if (!current()) return;

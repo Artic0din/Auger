@@ -3278,6 +3278,40 @@ test("Sync to Audio reads the new timing and fetches the shown track's cues agai
     r.controller.destroy();
 });
 
+test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+    scriptSync(r, syncState());
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+        { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "Old timing");
+    r.controller.syncSubtitle(SYNC_KEY);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(3000);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const reads = r.h.fake.requests.filter(request => request.path === SECONDARY_PATH);
+    assert.equal(reads.length, 2, "the secondary track is read again once its timing changed");
+    assert.deepEqual(reads.map(request => request.cache), [undefined, "no-store"], "the second read skips the HTTP cache");
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic").length, 1, "the primary, not retimed, is not read again");
+    r.avplay.tick(10000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "New timing");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4");
+    r.controller.destroy();
+});
+
 // SECONDARY (silo-apple main, TVPlayerInfoHUD SubtitlesPane): a second text track under the primary, where the app draws subtitles itself.
 const SECONDARY_PATH = "/stream/11111111-1111-4111-8111-111111111111/subtitles/4.vtt?file_id=42&token=synthetic";
 async function secondaryRig(): Promise<Rig> {

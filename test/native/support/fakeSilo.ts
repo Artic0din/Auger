@@ -22,6 +22,7 @@ export interface RecordedRequest {
     readonly headers: Readonly<Record<string, string>>;
     readonly body: Record<string, unknown> | undefined;
     readonly redirect: RequestRedirect | undefined;
+    readonly cache: RequestCache | undefined;
 }
 
 interface DeviceRequest {
@@ -192,7 +193,7 @@ export class FakeSilo {
         });
         const body = typeof init.body === "string" ? toRecord(JSON.parse(init.body)) : undefined;
         const method = init.method ?? "GET";
-        this.requests.push({ method, path, headers, body, redirect: init.redirect });
+        this.requests.push({ method, path, headers, body, redirect: init.redirect, cache: init.cache });
 
         const signal = init.signal ?? undefined;
         if (signal?.aborted) {
