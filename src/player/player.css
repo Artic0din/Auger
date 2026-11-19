@@ -12,7 +12,8 @@
 .player-next-synopsis,
 .player-next-card,
 /* A cue reads in its own direction whatever the interface language is: Apple's subtitle Text takes its direction from its content, and the overlay is not under `.mediaLayoutDirection()`. */
-.player-captions { unicode-bidi: plaintext; }
+.player-captions,
+.player-captions-secondary { unicode-bidi: plaintext; }
 
 .player-error.player-next-up {
     padding: 112px 0 260px;
