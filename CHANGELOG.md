@@ -124,6 +124,10 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- In AI Subtitles…, Dismiss now closes the menu, as on Apple TV. A request whose outcome is unknown keeps its warning until you discard it, instead of leaving a panel that said only "Subtitle translation failed." and could not be closed.
+- AI Subtitles… now stays usable when the TV cannot read the audio track names, transcribing the selected audio. The quota line no longer reads "0 of 5 used" when the server sends no used count, and an older quota check that answers late no longer overwrites a newer one.
+- With translation off, AI Subtitles… now offers the spoken language even when the server's language list leaves it out.
+- Sync to Audio keeps following a new sync when an older check answers late with "not found".
 - A Continue Watching row on Home or a library's Recommended page that already shows everything you are watching no longer ends with an Explore all card, as on Apple TV. A row with more titles than it shows keeps the card (#691).
 
 - A video whose HLS playlist uses variables the TV cannot read (the long transcoded streams, #314) no longer freezes Silo until the TV closes it. Silo reads the start of the playlist, and of the first video stream it lists, before handing it over and, when it finds one, shows the playback error page straight away.

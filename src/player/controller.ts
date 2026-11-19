@@ -161,7 +161,9 @@ function aiInputs(attempt: Attempt, plan: PlaybackPlan): AIInputs | undefined {
         transcribeEnabled: view.available.transcribe,
         // The inventory carries no default flag.
         sources: plan.subtitle.inventory.filter(track => textSubtitle(track.codec) && track.combinedIndex >= 0).map(track => ({ index: track.combinedIndex, language: track.language, selected: track.trackId === shown, isDefault: false })),
-        audio: (version?.audio ?? []).map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
+        // Once the versions read has failed, or answered without this file, the plan's selected audio is still known, only its language is not:
+        // a missing label must not disable transcription. While it loads, nothing is guessed, so a spoken language is never mistaken for another.
+        audio: version === undefined ? (selectedAudio === undefined || tracks === undefined || tracks.state === "loading" ? [] : [{ index: selectedAudio, language: "", selected: true, isDefault: false }]) : version.audio.map((track, ordinal) => ({ index: ordinal, language: track.language, selected: ordinal === selectedAudio, isDefault: track.isDefault })),
         quotaKnown: view.quota !== undefined,
         quotaExhausted: view.quota?.limited === true && view.quota.remaining <= 0,
     };
@@ -172,16 +174,22 @@ let cachedAIMenu: { readonly key: string; readonly menu: AIMenu } | undefined;
 function aiMenuView(attempt: Attempt, plan: PlaybackPlan): TrackView["aiMenu"] {
     const inputs = aiInputs(attempt, plan);
     const view = attempt.ai?.view;
-    if (inputs === undefined || view === undefined || !hasActionableSource(inputs)) return undefined;
+    if (inputs === undefined || view === undefined) return undefined;
+    // A running or failed job's panel (Cancel, Dismiss, Discard) stays reachable while the audio list reloads; with no audio known,
+    // the menu offers no language, so nothing new can start.
+    const jobPanel = view.phase === "busy" || view.phase === "failed";
+    if (!hasActionableSource(inputs)) return jobPanel ? { menu: { detected: undefined, suggested: [], other: [] }, quota: undefined, quotaExhausted: inputs.quotaExhausted } : undefined;
     // The view is rebuilt on every playback tick and every language label is an Intl lookup: build the menu once per input.
     const key = JSON.stringify([inputs, view.languages, view.preferred]);
     if (cachedAIMenu?.key !== key) cachedAIMenu = { key, menu: aiMenu(inputs, view.languages, view.preferred) };
     const menu = cachedAIMenu.menu;
     // The Spoken language row needs no catalog, so an empty or failed one hides the menu only when no row is left.
-    if (menu.detected === undefined && menu.suggested.length === 0 && menu.other.length === 0) return undefined;
+    if (menu.detected === undefined && menu.suggested.length === 0 && menu.other.length === 0 && !jobPanel) return undefined;
     // An unreadable balance blocks transcription, so the menu says that instead of showing nothing.
     const relies = relyOnTranscription(inputs, view.languages);
-    return { menu, quota: relies ? quotaText(view.quota) ?? (inputs.quotaKnown ? undefined : "Transcription quota unavailable.") : undefined, quotaExhausted: inputs.quotaExhausted };
+    // "used of limit" needs both numbers; without the used count, quotaText falls back to what remains.
+    const quota = view.quota?.used === undefined && view.quota !== undefined ? { ...view.quota, limit: undefined } : view.quota;
+    return { menu, quota: relies ? quotaText(quota) ?? (inputs.quotaKnown ? undefined : "Transcription quota unavailable.") : undefined, quotaExhausted: inputs.quotaExhausted };
 }
 
 /** Marks an AI result whose stored track the plan cannot show, so its row says why instead of doing nothing. */

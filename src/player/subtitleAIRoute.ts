@@ -72,6 +72,17 @@ function bestSource(inputs: AIInputs, target: string): AISource | undefined {
 }
 
 /** What the language choice sends, or undefined when the server cannot serve it now. */
+/**
+ * The catalog lists the server's translation targets. With translation off, the spoken language's row only transcribes, which needs no
+ * target, so the menu offers it even when unlisted, as SubtitleLanguageChoices always offers the original language.
+ */
+function unlistedSpoken(inputs: AIInputs, languages: readonly string[]): string | undefined {
+    const code = spoken(inputs)?.language;
+    const key = canonicalLanguageKey(code);
+    if (inputs.translateEnabled || key === undefined || languages.some(candidate => canonicalLanguageKey(candidate) === key)) return undefined;
+    return code;
+}
+
 export function aiRoute(inputs: AIInputs, target: string): AIRoute | undefined {
     const source = target === DETECTED_LANGUAGE ? undefined : bestSource(inputs, target);
     if (source !== undefined) return { kind: "translate", sourceIndex: source.index, sourceLanguage: source.language ?? "", targetLanguage: target };
@@ -96,8 +107,9 @@ export function aiMenu(inputs: AIInputs, languages: readonly string[], preferred
         return key === undefined ? undefined : languages.find(candidate => canonicalLanguageKey(candidate) === key);
     };
     const preferredCode = listed(preferred);
-    const originalCode = listed(spokenCode);
-    const choices = languageChoices(catalog, preferredCode);
+    const unlisted = unlistedSpoken(inputs, languages);
+    const originalCode = listed(spokenCode) ?? unlisted;
+    const choices = languageChoices(unlisted === undefined ? catalog : [...catalog, { code: unlisted }], preferredCode);
     const suggested = choices.suggested.map(choice => row(choice.code, choice.label, choice.hint));
     const rest = choices.other.filter(choice => choice.code !== originalCode);
     if (originalCode !== undefined && !suggested.some(item => item.code === originalCode)) {
@@ -113,7 +125,9 @@ export function aiMenu(inputs: AIInputs, languages: readonly string[], preferred
 
 /** Whether any listed language, or the detected row, relies on transcription: then the quota is worth showing. */
 export function relyOnTranscription(inputs: AIInputs, languages: readonly string[]): boolean {
-    return inputs.transcribeEnabled && inputs.audio.length > 0 && (offersDetected(inputs) || languages.some(code => needsTranscription(inputs, code)));
+    const unlisted = unlistedSpoken(inputs, languages);
+    const offered = unlisted === undefined ? languages : [...languages, unlisted];
+    return inputs.transcribeEnabled && inputs.audio.length > 0 && (offersDetected(inputs) || offered.some(code => needsTranscription(inputs, code)));
 }
 
 /** `player.aiTranslate.quota*`; the period is the server's own token, shown as sent. */

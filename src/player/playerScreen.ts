@@ -1380,6 +1380,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 aiLanguages = false;
                 menuRestoreFocus = "ai-menu";
             } else if (id === "ai-cancel" || id === "ai-dismiss" || id === "ai-discard") {
+                // SubtitleTranslateMenu.progressPanel: Dismiss is onDismiss, which closes the menu; a held failure stays for the next open.
+                if (id === "ai-dismiss") {
+                    aiLanguages = false;
+                    menuRestoreFocus = "ai-menu";
+                }
                 controls.subtitleAIAction(id.slice("ai-".length) as "cancel" | "dismiss" | "discard");
             } else if (id?.startsWith("ai-language:")) {
                 // The job's own panel replaces the languages when the controller reports it.

@@ -452,3 +452,40 @@ test("opening AI Subtitles with the balance unknown reads it again, and with it 
     assert.equal(remaining(), 4, "the server answered again, so transcription can run");
     ai.destroy();
 });
+
+test("Dismiss on a failure that holds a request keeps the reason and the hold, as Apple's acknowledgeFailure does; Discard lets it go", async () => {
+    const { h, ai } = await setup();
+    h.fake.script("/subtitles/ai/translate", problem(503, "unavailable", "Try later"));
+    await ai.start(request);
+    const shown = { phase: ai.view?.phase, message: ai.view?.message, held: ai.view?.held };
+    assert.equal(shown.phase, "failed");
+    assert.equal(shown.held, true);
+    assert.notEqual(shown.message, "");
+    ai.acknowledge();
+    assert.deepEqual({ phase: ai.view?.phase, message: ai.view?.message, held: ai.view?.held }, shown, "the panel still says why and still offers Discard");
+    ai.discardHeld();
+    assert.equal(ai.view?.phase, "idle");
+    assert.equal(ai.view?.held, false);
+    ai.destroy();
+});
+
+test("an older quota read that answers last does not undo a newer one, whether it failed or succeeded", async () => {
+    for (const late of [problem(500, "internal", "Internal"), { status: 200, body: { limited: true, limit: 5, used: 4, remaining: 1, period: "month" } }] as const) {
+        const { h, ai } = await setup();
+        h.fake.scripted.delete("/subtitles/ai/quota");
+        h.fake.script("/subtitles/ai/quota", late, { status: 200, body: { limited: true, limit: 5, used: 1, remaining: 4, period: "month" } });
+        h.fake.script("/subtitles/ai/translate", { status: 202, body: job("completed") }, { status: 202, body: job("completed", { id: "second-job", result_subtitle_id: "second-result" }) });
+        const older = h.fake.hold("/subtitles/ai/quota");
+        await ai.start(request);
+        await h.clock.advance(0);
+        ai.acknowledge();
+        await ai.start(request);
+        await h.clock.advance(0);
+        const remaining = (): number | undefined => ai.view?.quota?.remaining;
+        assert.equal(remaining(), 4, "the newer read answered");
+        older.release();
+        await h.clock.advance(0);
+        assert.equal(remaining(), 4, `the older read's late ${"status" in late ? late.status : "answer"} is dropped`);
+        ai.destroy();
+    }
+});

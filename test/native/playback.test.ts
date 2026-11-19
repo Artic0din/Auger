@@ -3313,6 +3313,116 @@ test("an empty language catalog still offers the Spoken language row when transl
     r.controller.destroy();
 });
 
+test("a failed audio versions read still offers transcription of the plan's selected audio", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/catalog/items/movie-1/versions", ...Array.from({ length: 4 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.ok(r.h.fake.requests.some(request => request.path === "/catalog/items/movie-1/versions"), "the versions read was made and failed");
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.aiMenu?.menu.detected && [view.tracks.aiMenu.menu.detected.code, view.tracks.aiMenu.menu.detected.disabled], ["ai-detected-spoken-language", false], "the menu stays, with the spoken-language row");
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.deepEqual(only(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate")).body, { media_file_id: "42", kind: "transcribe", source_index: 0, source_language: "", target_language: "", start_position: 12.5 }, "the plan's selected audio is transcribed");
+    r.controller.destroy();
+});
+
+test("while the audio versions read is still loading, the spoken language is not guessed, so no translation goes out in its place", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: false, remaining: 0, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "ja" }] } } } });
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    // No text track to translate from, and the spoken audio is Japanese.
+    r.server.files.set("42", { ...file, inventory: [], audio: file.audio.map((track, index) => index === 0 ? { ...track, language: "ja" } : track) });
+    const versions = r.h.fake.hold("/catalog/items/movie-1/versions");
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ja");
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length, 0, "nothing goes out before the spoken language is known");
+    versions.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ja");
+    await r.h.clock.advance(0);
+    assert.deepEqual(only(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate")).body, { media_file_id: "42", kind: "transcribe", source_index: 0, source_language: "", target_language: "", start_position: 12.5 }, "once known, Japanese is transcribed, not transcribed and translated");
+    r.controller.destroy();
+});
+
+test("Audio Retry while a transcription runs keeps the AI menu and its Cancel, and still starts nothing new", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/catalog/items/movie-1/versions", ...Array.from({ length: 4 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running" } } });
+    r.h.fake.script("/subtitles/ai/jobs/opaque-job", ...Array.from({ length: 20 }, () => ({ status: 200, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "running", progress: 0.3 } } })));
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: [] });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.phase, "busy");
+    r.h.fake.scripted.delete("/catalog/items/movie-1/versions");
+    const reload = r.h.fake.hold("/catalog/items/movie-1/versions");
+    r.controller.retryTrackInfo();
+    await r.h.clock.advance(0);
+    r.avplay.tick(13000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.audio.state, "loading");
+    assert.notEqual(view.tracks.aiMenu, undefined, "the running job's menu, and its Cancel, stay while the audio list reloads");
+    const creates = r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length;
+    r.controller.subtitleAIAction("cancel");
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length, creates, "no new request while the audio is unknown");
+    reload.release();
+    r.controller.destroy();
+});
+
+test("opening AI Subtitles after a failed quota read brings the balance back to the menu", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", problem(500, "internal", "Internal"), { status: 200, body: { limited: true, limit: 5, used: 1, remaining: 4, period: "month" } });
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "en" }, { value: "fr" }] } } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.quota, undefined, "the first read failed");
+    r.controller.subtitleAIAction("open");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.quota?.remaining, 4, "the menu's open read the balance again");
+    r.controller.destroy();
+});
+
+test("a quota with no used count shows what remains, not zero used", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [{ value: "en" }] } } } });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.aiMenu?.quota, "2 remaining", "2 of 5 left, so never \"0 of 5 used\"");
+    r.controller.destroy();
+});
+
 test("an empty language catalog with nothing else to offer shows no AI Subtitles… row", async () => {
     const r = await rig();
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
@@ -3608,6 +3718,39 @@ test("leaving playback stops following a running sync job", async () => {
     r.controller.destroy();
     await r.h.clock.advance(30000);
     assert.equal(polls(), 1, "no sync read after playback ends");
+});
+
+test("a track retimed while it is not shown is read again when chosen, not served from cues kept in memory", async () => {
+    // #701.1: the client keeps no cues for a track it is not drawing, and the server sends retimeable subtitles as private, no-cache with no
+    // validator, so choosing the track again reads the new timing. This pins the client's half.
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+    scriptSync(r, syncState());
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+    r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+        { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+        { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.syncSubtitle(SYNC_KEY);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle(undefined);
+    await r.h.clock.advance(3000);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    const reads = (): number => r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length;
+    assert.equal(reads(), 1, "the retime landed while the track was not shown, so nothing was reread then");
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(reads(), 2, "choosing it again reads it");
+    r.avplay.tick(10000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "New timing");
+    r.controller.destroy();
 });
 
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {

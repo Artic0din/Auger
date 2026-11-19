@@ -1040,12 +1040,20 @@ test("a failed AI job says so with Dismiss, and a held request adds Discard held
         assert.equal(await page.locator('[data-focus="ai-discard"]').count(), 0);
         assert.equal(await focused(page), "ai-dismiss");
         await remote(page, ENTER);
-        await show(page, playing(aiTracks({ phase: "failed", message: "", held: true })));
-        assert.equal(await text(page, ".player-ai-failure"), "Subtitle translation failed.");
+        // SubtitleTranslateMenu.progressPanel: Dismiss is onDismiss, which closes the menu; acknowledgeFailure runs as it goes.
+        assert.equal(await page.locator(".player-ai-menu").count(), 0, "Dismiss leaves the panel");
+        assert.equal(await focused(page), "ai-menu", "focus returns to the AI Subtitles… row");
+        // A held request keeps its failure: reopening shows it again, now with Discard.
+        await show(page, playing(aiTracks({ phase: "failed", message: "AI subtitles could not start: unavailable. Playback continues.", held: true })));
+        await remote(page, ENTER);
+        assert.equal(await text(page, ".player-ai-failure"), "AI subtitles could not start: unavailable. Playback continues.");
         assert.equal(await page.locator('[data-focus="ai-discard"] .player-choice-label').textContent(), "Discard held request");
+        await remote(page, ENTER);
+        assert.equal(await page.locator(".player-ai-menu").count(), 0, "Dismiss leaves a held failure too");
+        await remote(page, ENTER);
         await page.locator('[data-focus="ai-discard"]').focus();
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction dismiss", "subtitleAIAction open", "subtitleAIAction dismiss", "subtitleAIAction open", "subtitleAIAction discard"]);
     } finally { await page.close(); }
 });
 
@@ -1062,11 +1070,12 @@ test("Cancel, Dismiss and Discard act while a track change is pending, as Apple'
         assert.equal(await focused(page), "ai-cancel");
         await remote(page, ENTER);
         await show(page, playing(changing({ phase: "failed", message: "Provider could not decode the source track.", held: true })));
-        assert.equal(await focused(page), "ai-dismiss");
-        await remote(page, ENTER);
         await page.locator('[data-focus="ai-discard"]').focus();
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+        await show(page, playing(changing({ phase: "failed", message: "Provider could not decode the source track." })));
+        assert.equal(await focused(page), "ai-dismiss");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction discard", "subtitleAIAction dismiss"]);
     } finally { await page.close(); }
 });
 
