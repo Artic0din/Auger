@@ -910,45 +910,180 @@ test("series subtitle save stays focused while its write is pending", async () =
     } finally { await page.close(); }
 });
 
-test("AI language, quota and result actions stay remote-reachable without stopping playback", async () => {
+const AI_VIEW: NonNullable<TrackView["ai"]> = { available: { translate: true, transcribe: true }, languages: ["fr", "de"], preferred: "fr", quota: { limited: true, remaining: 3, period: "month", used: 2, limit: 5 }, busy: false, message: "", results: [], phase: "idle", kind: undefined, progress: undefined, held: false };
+const AI_MENU: NonNullable<TrackView["aiMenu"]> = {
+    menu: {
+        detected: undefined,
+        suggested: [{ code: "fr", label: "French", hint: "subtitleSearch.preferred", disabled: false }],
+        other: [{ code: "de", label: "German", hint: undefined, disabled: false }, { code: "es", label: "Spanish", hint: undefined, disabled: true }],
+    },
+    quota: "2 of 5 used / month",
+    quotaExhausted: false,
+};
+const aiTracks = (ai: Partial<NonNullable<TrackView["ai"]>> = {}, menu: NonNullable<TrackView["aiMenu"]> = AI_MENU): TrackView => ({ ...TRACKS, ai: { ...AI_VIEW, ...ai }, aiMenu: menu });
+
+// SubtitleTranslateMenu (silo-apple main): AI Subtitles… is one row; the menu offers languages and the controller picks the method.
+test("AI Subtitles… opens a language menu with Apple's headings and hints, and a language starts one job without stopping playback", async () => {
     const { page } = await open();
-    const ai = { available: { translate: true, transcribe: true }, languages: ["fr"], quota: { limited: true, remaining: 0, period: "month" }, busy: false, message: "AI subtitles are ready to select.", results: [{ id: "opaque-result", label: "AI-translated · FR" }] };
     try {
-        await show(page, playing({ ...TRACKS, ai, aiTranslate: true }));
-        // Old path was Down then Right, from an Audio panel. Info is the first tab now.
+        await show(page, playing(aiTracks({ results: [{ id: "opaque-result", label: "AI-translated · FR" }] })));
         await openAudio(page);
         await nextTab(page, 1);
-        // AI actions sit in OPTIONS; AI results are tracks.
         await remote(page, RIGHT);
-        assert.equal(await focused(page), "ai-translate");
+        assert.equal(await focused(page), "ai-menu");
+        assert.equal(await page.locator('[data-focus="ai-menu"] .player-setting-label').textContent(), "AI Subtitles…");
+        await remote(page, ENTER);
+        assert.equal(await focused(page), "ai-language:fr", "focus starts on the first language you can use");
+        assert.equal(await text(page, ".player-ai-title"), "AI Subtitles");
+        assert.equal(await text(page, ".player-ai-subtitle"), "Choose a language. Silo translates existing subtitles or transcribes the audio.");
+        assert.equal(await page.locator('[data-focus="ai-language-back"] .player-choice-label').textContent(), "Back to Subtitles");
+        const headings = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-pane-active .player-ai-menu .player-menu-heading")).map(node => node.textContent));
+        assert.deepEqual(headings, ["SUGGESTED LANGUAGES", "ALL LANGUAGES"]);
+        const rows = await page.evaluate(() => Array.from(document.querySelectorAll(".player-ai-menu [data-focus^='ai-language:']")).map(row => [row.getAttribute("data-focus"), row.querySelector(".player-setting-label")?.textContent, row.querySelector(".player-choice-detail")?.textContent ?? null, row.getAttribute("aria-disabled"), row.querySelectorAll(".player-setting-chevron").length]));
+        assert.deepEqual(rows, [["ai-language:fr", "French", "Preferred", "false", 1], ["ai-language:de", "German", null, "false", 1], ["ai-language:es", "Spanish", null, "true", 1]]);
         await remote(page, ENTER);
         await remote(page, DOWN);
-        assert.equal(await focused(page), "ai-language:fr");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["startSubtitleAI translate fr"]);
-        await remote(page, RIGHT);
         await remote(page, DOWN);
-        assert.equal(await focused(page), "ai-transcribe");
+        assert.equal(await focused(page), "ai-language:es");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["startSubtitleAI translate fr"], "exhausted quota does not dispatch transcription");
-        assert.match(await page.locator(".player-menu-status").innerText(), /Quota exhausted/);
-        await remote(page, LEFT);
-        assert.equal(await focused(page), "file:42:subtitle:0", "Left lands on the track row level with the focused option");
-        for (let index = 0; index < TRACKS.subtitles.length; index++) await remote(page, DOWN);
-        assert.equal(await focused(page), "ai-result:opaque-result");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["startSubtitleAI translate fr", "selectAIResult opaque-result"]);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "startSubtitleAI fr"], "opening the menu tells the controller, and a disabled row dispatches nothing");
     } finally { await page.close(); }
 });
 
-test("translate-only AI shows no transcription quota line", async () => {
+test("the AI menu shows the transcription quota and, when it is used up, why a language is dimmed", async () => {
     const { page } = await open();
-    const ai = { available: { translate: true, transcribe: false }, languages: ["fr"], quota: undefined, busy: false, message: "", results: [] };
     try {
-        await show(page, playing({ ...TRACKS, ai, aiTranslate: true }));
-        // Old path was Down, which opened the panel.
-        await openPanel(page);
-        assert.doesNotMatch(await page.locator(".player-menu-status").innerText(), /Transcription quota/);
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        assert.equal(await text(page, ".player-ai-quota"), "2 of 5 used / month");
+        assert.equal(await page.locator(".player-ai-quota-note").count(), 0);
+        const exhausted = { ...AI_MENU, quota: "Transcription limit reached", quotaExhausted: true };
+        await show(page, playing(aiTracks({}, exhausted)));
+        assert.equal(await text(page, ".player-ai-quota"), "Transcription limit reached");
+        assert.equal(await page.locator(".player-ai-quota").evaluate(node => getComputedStyle(node).color), "rgb(255, 193, 7)");
+        assert.equal(await text(page, ".player-ai-quota-note"), "You've used all your transcription credits for this period. Translating an existing subtitle track still works.");
+        await show(page, playing(aiTracks({}, { ...AI_MENU, quota: undefined })));
+        assert.equal(await page.locator(".player-ai-quota").count(), 0, "no line when no language relies on transcription");
+    } finally { await page.close(); }
+});
+
+test("the Spoken language row leads the suggestions when the spoken language is unknown", async () => {
+    const { page } = await open();
+    try {
+        const menu = { ...AI_MENU, menu: { ...AI_MENU.menu, detected: { code: "ai-detected-spoken-language", label: "Spoken language", hint: "player.aiTranslate.detectedFromAudio" as const, disabled: false } } };
+        await show(page, playing(aiTracks({}, menu)));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        const first = await page.locator(".player-ai-menu [data-focus^='ai-language:']").first().evaluate(row => [row.getAttribute("data-focus"), row.querySelector(".player-choice-detail")?.textContent]);
+        assert.deepEqual(first, ["ai-language:ai-detected-spoken-language", "Detected from the audio"]);
+        assert.equal(await focused(page), "ai-language:ai-detected-spoken-language", "focus starts on the Spoken language row");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "startSubtitleAI ai-detected-spoken-language"]);
+    } finally { await page.close(); }
+});
+
+test("a running AI job shows its title, progress and message with Cancel, and the menu returns to the tracks when it finishes", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        await show(page, playing(aiTracks({ busy: true, phase: "busy", kind: "transcribe_translate", progress: { percent: 40, message: "Listening to the audio" } })));
+        assert.equal(await text(page, ".player-ai-subtitle"), "Preparing your subtitles");
+        assert.equal(await text(page, ".player-ai-job"), "Transcribing & translating…");
+        assert.equal(await page.locator(".player-ai-progress").getAttribute("aria-valuenow"), "40");
+        // SubtitleTranslateMenu.progressPanel: a linear ProgressView, drawn like the sync bar (8 px, white over a 20% white track).
+        const bar = await page.evaluate(() => {
+            const track = document.querySelector(".player-ai-track")!;
+            const fill = document.querySelector(".player-ai-fill")!;
+            const box = track.getBoundingClientRect();
+            return { height: box.height, width: box.width, filled: fill.getBoundingClientRect().width / box.width, track: getComputedStyle(track).backgroundColor, fill: getComputedStyle(fill).backgroundColor };
+        });
+        assert.equal(bar.height, 8);
+        assert.ok(bar.width > 200, `the bar spans the panel, not ${bar.width} px`);
+        assert.ok(Math.abs(bar.filled - 0.4) < 0.01, `the bar is 40% full, not ${bar.filled}`);
+        assert.deepEqual([bar.track, bar.fill], ["rgba(255, 255, 255, 0.2)", "rgba(255, 255, 255, 0.85)"]);
+        assert.equal(await text(page, ".player-ai-progress-message"), "Listening to the audio");
+        assert.equal(await page.locator(".player-ai-menu [data-focus^='ai-language:']").count(), 0, "no language rows while a job runs");
+        assert.equal(await focused(page), "ai-cancel", "focus moves to Cancel when the languages go");
+        for (const [kind, title] of [["transcribe", "Transcribing audio…"], ["translate", "Translating subtitles…"]] as const) {
+            await show(page, playing(aiTracks({ busy: true, phase: "busy", kind, progress: { percent: 0, message: "" } })));
+            assert.equal(await text(page, ".player-ai-job"), title);
+        }
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel"]);
+        await show(page, playing(aiTracks({ phase: "completed", results: [{ id: "opaque-result", label: "AI-translated · FR" }] })));
+        assert.equal(await page.locator(".player-ai-menu").count(), 0, "the menu closes when the job finishes");
+        assert.equal(await focused(page), "ai-menu", "focus returns to the AI Subtitles… row");
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction dismiss"], "the finished job is dismissed so reopening shows languages");
+    } finally { await page.close(); }
+});
+
+test("a failed AI job says so with Dismiss, and a held request adds Discard held request", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        await show(page, playing(aiTracks({ phase: "failed", message: "Provider could not decode the source track." })));
+        assert.equal(await text(page, ".player-ai-subtitle"), "AI subtitles could not finish");
+        assert.equal(await text(page, ".player-ai-failure"), "Provider could not decode the source track.");
+        assert.equal(await page.locator('[data-focus="ai-discard"]').count(), 0);
+        assert.equal(await focused(page), "ai-dismiss");
+        await remote(page, ENTER);
+        await show(page, playing(aiTracks({ phase: "failed", message: "", held: true })));
+        assert.equal(await text(page, ".player-ai-failure"), "Subtitle translation failed.");
+        assert.equal(await page.locator('[data-focus="ai-discard"] .player-choice-label').textContent(), "Discard held request");
+        await page.locator('[data-focus="ai-discard"]').focus();
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+    } finally { await page.close(); }
+});
+
+test("Cancel, Dismiss and Discard act while a track change is pending, as Apple's job panel is not disabled by one", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        const changing = (ai: Partial<NonNullable<TrackView["ai"]>>): TrackView => ({ ...aiTracks(ai), change: { state: "changing" } });
+        await show(page, playing(changing({ busy: true, phase: "busy", kind: "translate", progress: { percent: 10, message: "" } })));
+        assert.equal(await focused(page), "ai-cancel");
+        await remote(page, ENTER);
+        await show(page, playing(changing({ phase: "failed", message: "Provider could not decode the source track.", held: true })));
+        assert.equal(await focused(page), "ai-dismiss");
+        await remote(page, ENTER);
+        await page.locator('[data-focus="ai-discard"]').focus();
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open", "subtitleAIAction cancel", "subtitleAIAction dismiss", "subtitleAIAction discard"]);
+    } finally { await page.close(); }
+});
+
+test("Back leaves the AI menu for the AI Subtitles… row, and no AI row shows without anything to run", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(aiTracks()));
+        await openAudio(page);
+        await nextTab(page, 1);
+        await remote(page, RIGHT);
+        await remote(page, ENTER);
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-ai-menu").count(), 0);
+        assert.equal(await focused(page), "ai-menu");
+        assert.equal(await page.locator(".player-menu").isVisible(), true, "Back closed only the menu");
+        await show(page, playing({ ...TRACKS, ai: { ...AI_VIEW } }));
+        assert.equal(await page.locator('[data-focus="ai-menu"]').count(), 0, "the server offers it but nothing here can run");
     } finally { await page.close(); }
 });
 const text = (page: Page, selector: string): Promise<string> => page.locator(selector).innerText();
@@ -3015,13 +3150,12 @@ test("Subtitles shows an OPTIONS, TIMING or STYLE group only when it has a row, 
 
 test("the AI actions sit in OPTIONS ahead of Search, and the device switch follows Appearance in STYLE", async () => {
     const { page } = await open();
-    const ai = { available: { translate: true, transcribe: true }, languages: ["fr"], quota: { limited: false, remaining: 0, period: "month" }, busy: false, message: "", results: [] };
     try {
-        await show(page, playing({ ...TRACKS, ai, aiTranslate: true, subtitleTools: ALL_TOOLS }));
+        await show(page, playing({ ...aiTracks(), subtitleTools: ALL_TOOLS }));
         await openPanel(page);
         await nextTab(page, 4);
         const groups = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-pane-active .player-menu-group")).map(group => [group.querySelector(".player-menu-heading")?.textContent, Array.from(group.querySelectorAll("[data-focus]")).map(row => row.getAttribute("data-focus"))]));
-        assert.deepEqual(groups, [["OPTIONS", ["ai-translate", "ai-transcribe", "subtitle-search"]], ["TIMING", ["subtitle-delay"]], ["STYLE", ["subtitle-appearance", "subtitle-device"]]]);
+        assert.deepEqual(groups, [["OPTIONS", ["ai-menu", "subtitle-search"]], ["TIMING", ["subtitle-delay"]], ["STYLE", ["subtitle-appearance", "subtitle-device"]]]);
     } finally { await page.close(); }
 });
 
@@ -3108,10 +3242,9 @@ test("a menu update or picker round trip keeps the unfocused column's scroll pos
 
 test("pickers float over the dimmed pane, track rows carry only a checkmark, and Search and AI rows carry Apple's symbols", async () => {
     const { page } = await open();
-    const ai = { available: { translate: true, transcribe: true }, languages: ["fr"], quota: { limited: false, remaining: 0, period: "month" }, busy: false, message: "", results: [] };
     try {
         await page.emulateMedia({ reducedMotion: "reduce" });
-        await show(page, playing({ ...TRACKS, ai, aiTranslate: true, subtitleTools: ALL_TOOLS }));
+        await show(page, playing({ ...aiTracks(), subtitleTools: ALL_TOOLS }));
         await page.evaluate(() => document.fonts.ready);
         await openPanel(page);
         await nextTab(page, 4);
@@ -3122,12 +3255,12 @@ test("pickers float over the dimmed pane, track rows carry only a checkmark, and
             return {
                 offWash: getComputedStyle(off).backgroundColor,
                 offMark: getComputedStyle(off, "::after").webkitMaskImage.startsWith("url("),
-                search: glyph("subtitle-search"), translate: glyph("ai-translate"), transcribe: glyph("ai-transcribe"),
+                search: glyph("subtitle-search"), menu: glyph("ai-menu"),
             };
         });
         assert.equal(rows.offWash, "rgba(0, 0, 0, 0)", "HUDTrackRow has no selected wash");
         assert.equal(rows.offMark, true, "the checkmark is a drawn symbol, not a font glyph");
-        assert.deepEqual([rows.search, rows.translate, rows.transcribe], [22, 22, 22]);
+        assert.deepEqual([rows.search, rows.menu], [22, 22]);
         await capture(page, "player-subtitles-two-columns");
         await page.locator('[data-focus="subtitle-delay"]').focus();
         await remote(page, ENTER);
@@ -3209,10 +3342,9 @@ test("the S95C findings: checkmark, column height, setting rows and glass follow
 
 test("a Video picker closes first on Back and leaves the Subtitles pane as it was", async () => {
     const { page } = await open();
-    const ai = { available: { translate: true, transcribe: false }, languages: ["fr"], quota: undefined, busy: false, message: "", results: [] };
     const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
     try {
-        await show(page, { ...playing({ ...TRACKS, ai, aiTranslate: true, subtitleTools: ALL_TOOLS }), hud });
+        await show(page, { ...playing({ ...aiTracks(), subtitleTools: ALL_TOOLS }), hud });
         await openPanel(page);
         await nextTab(page, 4);
         await page.locator('[data-focus="subtitle-appearance"]').focus();
@@ -3236,10 +3368,11 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, RIGHT);
         await remote(page, DOWN);
         await remote(page, BACK);
-        for (let step = 0; step < 10 && await focused(page) !== "ai-translate"; step += 1) await remote(page, UP);
-        assert.equal(await focused(page), "ai-translate");
+        for (let step = 0; step < 10 && await focused(page) !== "ai-menu"; step += 1) await remote(page, UP);
+        assert.equal(await focused(page), "ai-menu");
         await remote(page, ENTER);
-        assert.equal(await focused(page), "ai-language-back");
+        assert.equal(await focused(page), "ai-language:fr");
+        await remote(page, UP);
         await remote(page, UP);
         await remote(page, LEFT);
         await remote(page, LEFT);
@@ -3250,7 +3383,7 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, BACK);
         assert.equal(await focused(page), "video-speed", "Back closes the open picker before the background AI language list");
         assert.equal(await page.locator('.player-menu-subtitles [data-focus="ai-language-back"]').count(), 1);
-        assert.deepEqual(await commands(page), []);
+        assert.deepEqual(await commands(page), ["subtitleAIAction open"], "only the menu's opening: Back and the pickers send nothing");
     } finally { await page.close(); }
 });
 
@@ -3423,7 +3556,7 @@ test("an unavailable subtitle row says why, stays focusable and Select does noth
 
 test("an unavailable AI result says why, stays focusable and Select does nothing", async () => {
     const { page } = await open();
-    const ai = { available: { translate: false, transcribe: false }, languages: [], quota: undefined, busy: false, message: "", results: [{ id: "opaque-result", label: "AI-transcribed", unavailable: true }] };
+    const ai = { ...AI_VIEW, available: { translate: false, transcribe: false }, languages: [], quota: undefined, results: [{ id: "opaque-result", label: "AI-transcribed", unavailable: true }] };
     try {
         await show(page, playing({ ...TRACKS, ai }));
         await openAudio(page);

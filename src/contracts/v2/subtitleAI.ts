@@ -1,7 +1,7 @@
 import { boolean, integer, object, string } from "./wire.ts";
 
 export interface SubtitleAIStatus { readonly translate: boolean; readonly transcribe: boolean }
-export interface SubtitleAIQuota { readonly limited: boolean; readonly remaining: number; readonly period: string }
+export interface SubtitleAIQuota { readonly limited: boolean; readonly remaining: number; readonly period: string; readonly used: number | undefined; readonly limit: number | undefined }
 export interface SubtitleAIJob {
     readonly id: string;
     readonly fileId: string;
@@ -11,6 +11,9 @@ export interface SubtitleAIJob {
     readonly status: string;
     readonly resultId: string | undefined;
     readonly error: string | undefined;
+    /** 0...1 while running. */
+    readonly progress: number | undefined;
+    readonly progressMessage: string | undefined;
 }
 export function decodeAIStatus(value: unknown): SubtitleAIStatus {
     const row = object(value, "subtitle_ai_status");
@@ -20,13 +23,14 @@ export function decodeAIStatus(value: unknown): SubtitleAIStatus {
 }
 export function decodeAIQuota(value: unknown): SubtitleAIQuota {
     const row = object(value, "quota");
-    return { limited: boolean(row, "limited", "quota"), remaining: integer(row, "remaining", "quota"), period: string(row, "period", "quota") };
+    const count = (key: string): number | undefined => (row[key] === undefined ? undefined : integer(row, key, "quota"));
+    return { limited: boolean(row, "limited", "quota"), remaining: integer(row, "remaining", "quota"), period: string(row, "period", "quota"), used: count("used"), limit: count("limit") };
 }
 export function decodeAIJob(value: unknown): SubtitleAIJob {
     const row = object(object(value, "ai_job").job, "job");
     const result = row.result_subtitle_id;
     if (result !== null && result !== undefined && (typeof result !== "string" || result === "")) throw new Error("Invalid AI result identity");
-    return { id: string(row, "id", "job"), fileId: string(row, "media_file_id", "job"), kind: string(row, "kind", "job"), sourceIndex: integer(row, "source_index", "job"), language: string(row, "target_language", "job"), status: string(row, "status", "job"), resultId: typeof result === "string" ? result : undefined, error: typeof row.error_message === "string" ? row.error_message : undefined };
+    return { id: string(row, "id", "job"), fileId: string(row, "media_file_id", "job"), kind: string(row, "kind", "job"), sourceIndex: integer(row, "source_index", "job"), language: string(row, "target_language", "job"), status: string(row, "status", "job"), resultId: typeof result === "string" ? result : undefined, error: typeof row.error_message === "string" ? row.error_message : undefined, progress: typeof row.progress === "number" && Number.isFinite(row.progress) ? row.progress : undefined, progressMessage: typeof row.progress_message === "string" ? row.progress_message : undefined };
 }
 export function decodeAILanguages(value: unknown): readonly string[] {
     const options = object(object(object(value, "contract").option_sets, "option_sets").playback_subtitle_languages, "languages").options;
