@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Retirer de la liste à voir",
  "detail.writer": "Scénariste",
  "detail.writtenBy": "Écrit par",
+ "errors.apple.playback.invalidSample": "Impossible d’enregistrer la progression de la lecture.",
  "filters.allFilters": "Tous les filtres",
  "filters.any": "Indifférent",
  "filters.clearFacet": "Effacer : {facet}",

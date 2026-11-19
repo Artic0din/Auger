@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Remover da lista para assistir",
  "detail.writer": "Roteiro",
  "detail.writtenBy": "Escrito por",
+ "errors.apple.playback.invalidSample": "Não foi possível registrar o progresso da reprodução.",
  "filters.allFilters": "Todos os filtros",
  "filters.any": "Qualquer",
  "filters.clearFacet": "Limpar {facet}",

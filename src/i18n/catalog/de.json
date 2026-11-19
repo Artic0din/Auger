@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Von der Merkliste entfernen",
  "detail.writer": "Drehbuch",
  "detail.writtenBy": "Geschrieben von",
+ "errors.apple.playback.invalidSample": "Der Wiedergabefortschritt konnte nicht erfasst werden.",
  "filters.allFilters": "Alle Filter",
  "filters.any": "Beliebig",
  "filters.clearFacet": "{facet} leeren",

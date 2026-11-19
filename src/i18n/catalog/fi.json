@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Poista katselulistalta",
  "detail.writer": "Käsikirjoittaja",
  "detail.writtenBy": "Käsikirjoittanut",
+ "errors.apple.playback.invalidSample": "Toiston edistymistä ei voitu tallentaa.",
  "filters.allFilters": "Kaikki suodattimet",
  "filters.any": "Mikä tahansa",
  "filters.clearFacet": "Tyhjennä luokka {facet}",

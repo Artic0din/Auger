@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Quitar de la lista para ver",
  "detail.writer": "Guion",
  "detail.writtenBy": "Guion de",
+ "errors.apple.playback.invalidSample": "No se pudo registrar el progreso de reproducción.",
  "filters.allFilters": "Todos los filtros",
  "filters.any": "Cualquiera",
  "filters.clearFacet": "Borrar filtro: {facet}",

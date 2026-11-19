@@ -21,7 +21,7 @@
 // a burn-in still reopens. A refused change leaves the current plan playing.
 // On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
-import { translate } from "../i18n/translate.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import { abortedError, type RequestSpec } from "../api/http.ts";
@@ -282,8 +282,11 @@ export interface BufferingOverlay {
 }
 
 export type PlaybackView =
-    /** `title` is the card's status line (Apple's statusLabel); `shuffle` words the card for a Shuffle, as Apple's does. */
-    | { readonly phase: "completion"; readonly title: string; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true }
+    /**
+     * `status` is the card's status line (Apple's statusLabel) as a catalog key, so a language change redraws it; `shuffle` words the card
+     * for a Shuffle, as Apple's does; `failure: "session"` marks a failed state that came from ending the session, before any lookup.
+     */
+    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session" }
     | ({ readonly phase: "loading"; readonly title: string; readonly detail?: "reconnecting" | "restoring"; /** A different file of a Shuffle pick follows: the screen forgets the last file's skip decisions. */ readonly nextPart?: true } & BufferingOverlay)
     | ({
           readonly phase: "playing" | "paused";
@@ -2824,9 +2827,11 @@ export class PlaybackController implements PlayerControls {
         const shuffle = attempt.request.shuffleId !== undefined;
         // PlayerView.statusLabel: while the next item is worked out, an ended video reads Playing Next (Up Next at Random in a Shuffle);
         // with nothing to follow it reads Finished. Apple has no separate stage for ending the session.
-        const working = translate(shuffle ? "upNext.headingShuffle" : "upNext.headingEnded");
-        const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, title = state === "finalizing" || state === "resolving" ? working : translate("upNext.headingFinished"), deck?: readonly PlayRequest[]): void => {
-            if (current()) this.show({ phase: "completion", title, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}) });
+        const working: MessageKey = shuffle ? "upNext.headingShuffle" : "upNext.headingEnded";
+        // A failure while the session ends (the final progress or STOP) is not a failed lookup: nothing was looked up yet.
+        let stage: "session" | "lookup" = "session";
+        const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
+            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}) });
         };
         // Apple's playShufflePart loads the next part with a plain loading state, not the end screen.
         if (attempt.request.shuffleId === undefined) show("finalizing");
@@ -2834,6 +2839,7 @@ export class PlaybackController implements PlayerControls {
         try {
             await this.stopSession(attempt);
             if (!current()) return;
+            stage = "lookup";
             if (this.nextStart !== undefined) {
                 const request = this.nextStart;
                 this.cancelCompletion();
@@ -2877,7 +2883,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request.shuffleId, attempt.request.contentId, quality);
-                show("ready", next, false, next === undefined ? translate("upNext.headingFinished") : translate("upNext.headingShuffle"));
+                show("ready", next, false, next === undefined ? "upNext.headingFinished" : "upNext.headingShuffle");
                 if (current() && next !== undefined && attempt.autoNext) this.startAutoplay(completion);
                 return;
             }
@@ -2888,7 +2894,7 @@ export class PlaybackController implements PlayerControls {
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, fileId, attempt.request.seriesTitle, quality) : undefined;
             if (next !== undefined) {
-                show("ready", next, false, translate("upNext.headingEnded"));
+                show("ready", next, false, "upNext.headingEnded");
                 this.loadPresentation(next, abort.signal, enriched => {
                     if (current() && this.current.phase === "completion" && this.current.next === next) this.show({ ...this.current, next: enriched });
                 });
@@ -2908,10 +2914,10 @@ export class PlaybackController implements PlayerControls {
                 if (!current()) throw abortedError();
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, items => {
-                show("ready", items[0], false, translate("upNext.heading"), items);
+                show("ready", items[0], false, "upNext.heading", items);
             }, quality);
             if (!current()) return;
-            this.show({ phase: "completion", title: deck.length === 0 ? translate("upNext.headingFinished") : translate("upNext.heading"), state: "ready", next: deck[0], deck, retryable: false });
+            this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false });
         } catch (error) {
             const missingSession = error instanceof ApiError && error.status === 404 && !attempt.stopped;
             const forbidden = missingSession || (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed"));

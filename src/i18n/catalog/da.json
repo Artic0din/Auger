@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Fjern fra huskeliste",
  "detail.writer": "Manuskriptforfatter",
  "detail.writtenBy": "Skrevet af",
+ "errors.apple.playback.invalidSample": "Afspilningsstatus kunne ikke registreres.",
  "filters.allFilters": "Alle filtre",
  "filters.any": "Alle",
  "filters.clearFacet": "Ryd {facet}",

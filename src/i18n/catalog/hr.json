@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Ukloni s popisa za gledanje",
  "detail.writer": "Scenarij",
  "detail.writtenBy": "Scenarij",
+ "errors.apple.playback.invalidSample": "Napredak reprodukcije nije moguće zabilježiti.",
  "filters.allFilters": "Svi filtri",
  "filters.any": "Bilo koje",
  "filters.clearFacet": "Očisti: {facet}",

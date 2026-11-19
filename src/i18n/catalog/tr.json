@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "İzleme listesinden kaldır",
  "detail.writer": "Senarist",
  "detail.writtenBy": "Yazan",
+ "errors.apple.playback.invalidSample": "Oynatma ilerlemesi kaydedilemedi.",
  "filters.allFilters": "Tüm filtreler",
  "filters.any": "Herhangi",
  "filters.clearFacet": "Temizle: {facet}",

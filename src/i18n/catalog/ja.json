@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "ウォッチリストから削除",
  "detail.writer": "脚本",
  "detail.writtenBy": "脚本",
+ "errors.apple.playback.invalidSample": "再生の進捗を記録できませんでした。",
  "filters.allFilters": "すべてのフィルター",
  "filters.any": "指定なし",
  "filters.clearFacet": "{facet}をクリア",

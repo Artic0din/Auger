@@ -889,7 +889,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const candidate = view.phase === "completion" ? view.next : prompt?.next;
             const cards = view.phase === "completion" ? view.deck ?? [] : prompt?.deck ?? [];
             const seconds = view.phase === "completion" ? view.countdown : prompt?.countdown;
-            const nextStatus = view.phase === "completion" ? view.title : prompt?.status ?? translate("upNext.heading");
+            const nextStatus = view.phase === "completion" ? translate(view.status) : prompt?.status ?? translate("upNext.heading");
             failure.classList.add("player-next-up");
             eyebrow.textContent = nextStatus;
             synopsis.textContent = candidate?.overview ?? "";
@@ -948,10 +948,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             next.textContent = translate("upNext.playNow");
             retry.hidden = view.state !== "failed" || !view.retryable;
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
-            // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failure takes Apple's lookupFailedAlone.
+            // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
+            // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
             const working = view.state === "finalizing" || view.state === "resolving";
             failureTitle.textContent = working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : candidate?.title ?? translate("upNext.endOfPlayback");
-            failureText.textContent = working ? "" : view.state === "failed" ? translate("upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
+            failureText.textContent = working ? "" : view.state === "failed" ? translate(view.failure === "session" ? "errors.apple.playback.invalidSample" : "upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
             if (view.countdown !== undefined) failureText.textContent = translate("upNext.playingNextIn", { seconds: view.countdown });
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
                 (!next.hidden ? next : !retry.hidden ? retry : back).focus();

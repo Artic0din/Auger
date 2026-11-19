@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "從待看清單移除",
  "detail.writer": "編劇",
  "detail.writtenBy": "編劇",
+ "errors.apple.playback.invalidSample": "無法記錄播放進度。",
  "filters.allFilters": "所有篩選條件",
  "filters.any": "不限",
  "filters.clearFacet": "清除{facet}",

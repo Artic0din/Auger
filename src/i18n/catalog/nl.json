@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Verwijderen uit kijklijst",
  "detail.writer": "Schrijver",
  "detail.writtenBy": "Geschreven door",
+ "errors.apple.playback.invalidSample": "De afspeelvoortgang kan niet worden vastgelegd.",
  "filters.allFilters": "Alle filters",
  "filters.any": "Alle",
  "filters.clearFacet": "{facet} wissen",

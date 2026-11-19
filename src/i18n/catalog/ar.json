@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "إزالة من قائمة المشاهدة",
  "detail.writer": "الكاتب",
  "detail.writtenBy": "تأليف",
+ "errors.apple.playback.invalidSample": "تعذّر تسجيل تقدم التشغيل.",
  "filters.allFilters": "كل عوامل التصفية",
  "filters.any": "أي",
  "filters.clearFacet": "مسح {facet}",

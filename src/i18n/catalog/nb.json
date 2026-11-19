@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Fjern fra huskelisten",
  "detail.writer": "Manusforfatter",
  "detail.writtenBy": "Skrevet av",
+ "errors.apple.playback.invalidSample": "Avspillingsfremdriften kunne ikke registreres.",
  "filters.allFilters": "Alle filtre",
  "filters.any": "Alle",
  "filters.clearFacet": "Tøm {facet}",

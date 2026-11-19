@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Rimuovi dalla lista Da guardare",
  "detail.writer": "Sceneggiatura",
  "detail.writtenBy": "Scritto da",
+ "errors.apple.playback.invalidSample": "Impossibile registrare l’avanzamento della riproduzione.",
  "filters.allFilters": "Tutti i filtri",
  "filters.any": "Qualsiasi",
  "filters.clearFacet": "Cancella {facet}",

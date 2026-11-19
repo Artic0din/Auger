@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Ta bort från bevakningslistan",
  "detail.writer": "Manus",
  "detail.writtenBy": "Manus av",
+ "errors.apple.playback.invalidSample": "Uppspelningsförloppet kunde inte registreras.",
  "filters.allFilters": "Alla filter",
  "filters.any": "Alla",
  "filters.clearFacet": "Rensa {facet}",

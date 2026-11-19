@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Вилучити зі списку перегляду",
  "detail.writer": "Сценарист",
  "detail.writtenBy": "Сценарій",
+ "errors.apple.playback.invalidSample": "Не вдалося записати прогрес відтворення.",
  "filters.allFilters": "Усі фільтри",
  "filters.any": "Будь-які",
  "filters.clearFacet": "Очистити: {facet}",

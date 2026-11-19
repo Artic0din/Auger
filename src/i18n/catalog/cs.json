@@ -228,6 +228,7 @@
  "detail.watchlistRemove": "Odebrat ze seznamu ke zhlédnutí",
  "detail.writer": "Scénář",
  "detail.writtenBy": "Scénář",
+ "errors.apple.playback.invalidSample": "Průběh přehrávání se nepodařilo zaznamenat.",
  "filters.allFilters": "Všechny filtry",
  "filters.any": "Libovolné",
  "filters.clearFacet": "Vymazat: {facet}",
