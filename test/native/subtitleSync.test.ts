@@ -4,6 +4,11 @@ import { decodeSyncState, decodeSyncStatus } from "../../src/contracts/v2/subtit
 import { describeTiming, failureText, phaseText, scaleText, SubtitleSync, syncActionNote, syncPercent, syncResult, syncStatusLabel } from "../../src/player/subtitleSync.ts";
 import { connected, signIn } from "./support/harness.ts";
 import { problem } from "./support/fakeSilo.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { type MessageKey, translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const FILE = "42";
 const KEY = "stored-7";
@@ -394,4 +399,49 @@ test("a scale-only timing counts as a timing: first listed and changed, it raise
     assert.deepEqual(changed, [KEY, KEY], "a change of scale alone asks for the cues again");
     assert.equal(sync.timingVersion(KEY), 2);
     sync.destroy();
+});
+
+// SubtitleSyncLabel and SubtitleSyncModel (silo-apple main 9dabb62) read player.subtitleSync.* and player.tracks.*: each line follows the shown language.
+test("every sync line reads in the shown language, with English as before", async () => {
+    const de = (key: MessageKey, args?: Parameters<typeof translate>[1]): string => translate(key, args, "de");
+    const at = (offsetMs: number, scale = 1) => ({ offsetMs, scale });
+    const finished = (status: string, extra: Record<string, unknown> = {}) => ({ id: "j", status, trigger: "manual", phase: undefined, progress: undefined, failure: undefined, result: undefined, ...extra });
+    const running = (progress: number, phase?: "queued" | "analyzing" | "matching") => ({ ...finished("running"), phase, progress });
+    assert.notEqual(de("player.subtitleSync.statusFailed"), "Sync failed", "the German file carries the sync keys");
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(syncStatusLabel(at(0), running(0.4)), de("player.subtitleSync.statusSyncingPercent", { percent: "40" }));
+        assert.equal(syncStatusLabel(at(0), running(0)), de("player.tracks.syncing"));
+        assert.equal(syncStatusLabel(at(0), finished("no_match")), de("player.subtitleSync.statusNoMatch"));
+        assert.equal(syncStatusLabel(at(0), finished("failed")), de("player.subtitleSync.statusFailed"));
+        assert.equal(syncStatusLabel(at(0), finished("already_synced")), de("player.subtitleSync.statusAlreadyInSync"));
+        assert.equal(syncStatusLabel(at(0), finished("synced")), de("player.subtitleSync.statusOriginal"));
+        assert.equal(syncStatusLabel(at(-3000), finished("synced", { result: at(-3000) })), de("player.subtitleSync.statusSynced", { timing: "−3.0 s" }));
+        assert.equal(syncStatusLabel(at(2300), undefined), de("player.subtitleSync.statusAdjusted", { timing: "+2.3 s" }));
+        assert.equal(phaseText(running(0, "matching")), de("player.subtitleSync.phaseMatching"));
+        assert.equal(phaseText(running(0, "analyzing")), de("player.subtitleSync.phaseAnalyzing"));
+        assert.equal(phaseText(running(0)), de("player.subtitleSync.phaseWaiting"));
+        assert.equal(failureText("subtitle_changed"), de("player.subtitleSync.failureSubtitleChanged"));
+        assert.equal(failureText("no_audio"), de("player.subtitleSync.failureNoAudio"));
+        assert.equal(failureText("unavailable"), de("player.subtitleSync.failureUnavailable"));
+        assert.equal(failureText(undefined), de("player.subtitleSync.failureGeneric"));
+        assert.deepEqual(syncResult(at(-3000), finished("synced")), { text: de("player.subtitleSync.resultSynced", { timing: "−3.0 s" }), warning: false });
+        assert.deepEqual(syncResult(at(0), finished("already_synced")), { text: de("player.subtitleSync.resultAlreadyMatches"), warning: false });
+        assert.deepEqual(syncResult(at(0), finished("no_match")), { text: de("player.subtitleSync.resultNoMatch"), warning: true });
+        assert.equal(syncActionNote(false), de("player.subtitleSync.actionNote"));
+        assert.equal(syncActionNote(true), de("player.subtitleSync.actionNoteExternal"));
+        assert.equal(scaleText(1.0042), de("player.subtitleSync.speedFactor", { rate: "1.0042" }));
+    } finally { setAppLanguage(null); }
+    // A refusal recorded in English reads in German once German is shown: the model keeps the key, not the sentence.
+    const refused = await setup();
+    refused.h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, problem(403, "forbidden", "Forbidden"));
+    await refused.sync.request(KEY);
+    const broken = await setup();
+    broken.h.fake.script(`/subtitles/${FILE}/sync/${KEY}`, problem(500, "internal", "Internal"));
+    await broken.sync.request(KEY);
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(refused.sync.view.timing[KEY]?.forbidden, de("player.subtitleSync.forbiddenServer"));
+        assert.deepEqual(broken.sync.view.timing[KEY]?.note, { text: de("player.subtitleSync.syncFailedRetry"), tone: "error" });
+    } finally { setAppLanguage(null); refused.sync.destroy(); broken.sync.destroy(); }
 });

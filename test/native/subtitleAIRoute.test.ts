@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { aiMenu, aiRoute, DETECTED_LANGUAGE, hasActionableSource, quotaText, relyOnTranscription, type AIInputs } from "../../src/player/subtitleAIRoute.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { type MessageKey, translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+import { integerText } from "../../src/i18n/numbers.ts";
+
+registerSourceCatalogs();
 
 // SubtitleTranslateMenu (silo-apple main): one language choice picks translate, transcribe or transcribe and translate.
 const base: AIInputs = {
@@ -51,7 +57,7 @@ test("with no text source the audio is transcribed, and translated unless the ta
 test("with translation off, a spoken language the catalog does not list is still suggested as the original language", () => {
     const transcribeOnly = { ...base, translateEnabled: false };
     const menu = aiMenu(transcribeOnly, ["en", "fr"], undefined);
-    assert.deepEqual(menu.suggested.map(row => [row.code, row.hint, row.disabled]), [["ja", "Original language", false]], "transcription needs no catalog language");
+    assert.deepEqual(menu.suggested.map(row => [row.code, row.hint, row.disabled]), [["ja", "subtitleSearch.originalLanguage", false]], "transcription needs no catalog language");
     assert.deepEqual(aiRoute(transcribeOnly, "ja"), { kind: "transcribe", sourceIndex: 0, sourceLanguage: "", targetLanguage: "" });
     assert.deepEqual(aiMenu(base, ["en", "fr"], undefined).suggested, [], "with translation on, the server's list still decides: the row could translate to a target it cannot serve");
     assert.deepEqual(aiMenu(transcribeOnly, ["en", "ja"], undefined).suggested.map(row => row.code), ["ja"], "a listed one is not added twice");
@@ -78,11 +84,11 @@ test("an unknown spoken language offers one Spoken language row when translation
 
 test("the menu lists Spoken language, the preferred and original languages first, then every language by name", () => {
     const menu = aiMenu(base, ["fr", "ja", "en", "de"], "fr");
-    assert.deepEqual(menu.suggested.map(row => [row.code, row.label, row.hint, row.disabled]), [["fr", "French", "Preferred", false], ["ja", "Japanese", "Original language", false]]);
+    assert.deepEqual(menu.suggested.map(row => [row.code, row.label, row.hint, row.disabled]), [["fr", "French", "subtitleSearch.preferred", false], ["ja", "Japanese", "subtitleSearch.originalLanguage", false]]);
     assert.deepEqual(menu.other.map(row => row.label), ["English", "German"]);
     assert.equal(menu.detected, undefined);
     const unknown = aiMenu({ ...base, translateEnabled: false, audio: [{ index: 0, language: undefined, selected: true, isDefault: true }] }, ["fr", "en"], undefined);
-    assert.deepEqual(unknown.detected, { code: DETECTED_LANGUAGE, label: "Spoken language", hint: "Detected from the audio", disabled: false });
+    assert.deepEqual(unknown.detected, { code: DETECTED_LANGUAGE, label: "Spoken language", hint: "player.aiTranslate.detectedFromAudio", disabled: false });
     assert.deepEqual(aiMenu(base, ["fr"], "pt").suggested, [], "a preferred or spoken language the server does not list is not offered");
 });
 
@@ -108,4 +114,18 @@ test("a quota that cannot be read blocks transcription like an exhausted one, an
     assert.equal(aiRoute(unknown, "ja"), undefined);
     assert.equal(aiRoute({ ...unknown, sources: [source(1, "fr")] }, "en")?.kind, "translate");
     assert.equal(aiMenu(unknown, ["en"], undefined).other[0]?.disabled, true);
+});
+
+// SubtitleTranslateMenu.quotaText and the rows' hints (silo-apple main 9dabb62) read player.aiTranslate.* and subtitleSearch.* in the shown language.
+test("the quota line and the row hints read in the shown language", () => {
+    const de = (key: MessageKey, args?: Parameters<typeof translate>[1]): string => translate(key, args, "de");
+    assert.notEqual(de("player.aiTranslate.quotaReached"), "Transcription limit reached", "the German file carries the AI keys");
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(quotaText({ limited: true, remaining: 0, period: "" }), de("player.aiTranslate.quotaReached"));
+        assert.equal(quotaText({ limited: true, remaining: 3, period: "", used: 2, limit: 5 }), de("player.aiTranslate.quotaUsed", { used: "2", limit: "5" }));
+        assert.equal(quotaText({ limited: true, remaining: 3, period: "month", used: 2, limit: 5 }), de("player.aiTranslate.quotaUsedPeriod", { used: "2", limit: "5", period: "month" }));
+        assert.equal(quotaText({ limited: true, remaining: 1200, period: "" }), de("player.aiTranslate.quotaRemaining", { remaining: integerText(1200, "de") }));
+    } finally { setAppLanguage(null); }
+    assert.equal(quotaText({ limited: true, remaining: 12, period: "" }), "12 remaining", "English reads as before");
 });

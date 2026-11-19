@@ -12,6 +12,9 @@ import { orderedInventory, PlaybackController, type PlaybackView, type PlayReque
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { operations } from "../../src/api/operations.ts";
+import { readFileSync } from "node:fs";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { FakePlayback } from "./support/fakePlayback.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { connected, type Harness, signIn } from "./support/harness.ts";
@@ -2483,5 +2486,53 @@ test("a sidecar that fails to download reports failed with no cues", async () =>
         const view = r.views[r.views.length - 1];
         assert.ok(view?.phase === "playing");
         assert.deepEqual({ text: view.captions?.text, status: view.captions?.status, cueCount: view.captions?.cueCount }, { text: "", status: "failed", cueCount: 0 });
+    } finally { r.controller.destroy(); }
+});
+
+/** A German catalog landing: the language is shown and the file registered, as `loadShownLanguage` does. */
+function landGerman(): void {
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    registerCatalog("de", JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>);
+}
+const audioLabels = (view: TrackView): string[] => view.audio.state === "ready" ? view.audio.choices.map(choice => `${choice.label} | ${choice.detail}`) : [];
+
+test("refreshView sends a paused view again in the shown language, and only when the screen asks", async () => {
+    const r = await rig();
+    try {
+        await playMovie(r);
+        r.controller.setPaused(true);
+        await settle(r);
+        assert.deepEqual(audioLabels(tracks(r)).slice(0, 2), ["English | EAC3 · 5.1 · Default", "Japanese | AAC · Stereo"]);
+        const before = r.views.length;
+        landGerman();
+        assert.equal(r.views.length, before, "a landing catalog sends nothing by itself: the screen asks once no Select is held");
+        r.controller.refreshView();
+        assert.equal(r.views.length, before + 1);
+        assert.deepEqual(audioLabels(tracks(r)).slice(0, 2), [`Englisch | EAC3 · 5.1 · ${translate("detail.trackDefault", undefined, "de")}`, `Japanisch | AAC · ${translate("detail.stereo", undefined, "de")}`]);
+    } finally { setAppLanguage(null); r.controller.destroy(); }
+});
+
+// ApplePlaybackQuality.swift:63 (silo-apple b54fefb1) labels the automatic choice with Apple's options.auto.
+test("the quality picker's Auto choice reads in the shown language", async () => {
+    const r = await rig();
+    try {
+        r.server.next.push({ availableQualities: QUALITIES });
+        await playMovie(r);
+        landGerman();
+        r.controller.refreshView();
+        assert.deepEqual(tracks(r).quality?.choices[0], { id: "auto", label: "Automatisch" });
+    } finally { setAppLanguage(null); r.controller.destroy(); }
+});
+
+test("refreshView leaves a loading view alone: a restore in progress is not replaced by playback controls", async () => {
+    const r = await rig();
+    try {
+        await playMovie(r);
+        r.controller.suspend();
+        r.controller.restore();
+        assert.deepEqual(last(r.views), { phase: "loading", title: "Movie", detail: "restoring" });
+        const before = r.views.length;
+        r.controller.refreshView();
+        assert.equal(r.views.length, before, "nothing is sent while the stream is being restored");
     } finally { r.controller.destroy(); }
 });

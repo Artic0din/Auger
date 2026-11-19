@@ -2,6 +2,7 @@ import type { PlayerChapter } from "../contracts/v2/chapters.ts";
 import type { AudioTrackInfo, PlaybackPlan, SubtitleTrack } from "../contracts/v2/playback.ts";
 import { audioInfoLine, audioStatsLine, subtitleSingleLine, subtitleStatsLine } from "./trackLabels.ts";
 import type { ItemDetail } from "../contracts/v2/catalog.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 
 export function currentChapter(chapters: readonly PlayerChapter[], seconds: number): number {
     for (let index = chapters.length - 1; index >= 0; index--) if (chapters[index]!.seconds <= seconds) return index;
@@ -10,6 +11,23 @@ export function currentChapter(chapters: readonly PlayerChapter[], seconds: numb
 
 export const DISPLAY_MODES = { Fit: "PLAYER_DISPLAY_MODE_LETTER_BOX", Stretch: "PLAYER_DISPLAY_MODE_FULL_SCREEN" } as const;
 export type PlayerAspect = keyof typeof DISPLAY_MODES;
+
+const ASPECT_KEYS = { Fit: "player.aspect.fit", Stretch: "player.aspect.stretch" } as const satisfies Readonly<Record<PlayerAspect, MessageKey>>;
+/** The aspect's name in the shown language; `Fit` and `Stretch` stay the ids the screen and AVPlay use. */
+export function aspectLabel(aspect: PlayerAspect): string {
+    return translate(ASPECT_KEYS[aspect]);
+}
+
+const STAT_KEYS: Readonly<Record<string, MessageKey>> = {
+    Video: "player.hud.video", Audio: "player.hud.audio", Subtitles: "player.hud.subtitles", Playback: "player.hud.playback",
+    "Dynamic range": "player.stats.dynamicRange", "Playback rate": "player.stats.playbackRate", "Playback status": "player.stats.playbackStatus",
+    Delivery: "player.stats.delivery", Source: "player.stats.source",
+};
+/** A stats or Info row's label in the shown language where Apple has the same text; the rest keep their English. */
+export function statLabel(label: string): string {
+    const key = STAT_KEYS[label];
+    return key === undefined ? label : translate(key);
+}
 
 export function videoOptions(speed: boolean, aspect: boolean, protocol: string | undefined): { speeds: readonly number[]; aspects: readonly PlayerAspect[] } {
     return { speeds: speed && protocol === "http_progressive" ? [1, 2] : [], aspects: aspect ? ["Fit", "Stretch"] : [] };
@@ -56,7 +74,7 @@ export interface LiveStats {
 }
 
 // AetherPlaybackStatsSourceMetadata.playMethodLabel and deliveryLabel.
-const PLAY_METHODS: Readonly<Record<PlaybackPlan["delivery"], string | undefined>> = { original_http: "Direct play", server_remux_progressive: "Remuxed by the server", server_remux_hls: "Remuxed by the server", server_transcode_hls: "Transcoded by the server", unknown: undefined };
+const PLAY_METHODS: Readonly<Record<PlaybackPlan["delivery"], MessageKey | undefined>> = { original_http: "player.stats.playMethodDirectPlay", server_remux_progressive: "player.stats.playMethodRemuxed", server_remux_hls: "player.stats.playMethodRemuxed", server_transcode_hls: "player.stats.playMethodTranscoded", unknown: undefined };
 const DELIVERIES: Readonly<Record<PlaybackPlan["delivery"], string | undefined>> = { original_http: "Original HTTP", server_remux_progressive: "Server Remux", server_remux_hls: "Server Remux HLS", server_transcode_hls: "Server Transcode HLS", unknown: undefined };
 const RANGES: Readonly<Record<string, string>> = { sdr: "SDR", hdr10: "HDR10", hdr10_plus: "HDR10+", "hdr10+": "HDR10+", hlg: "HLG", dolby_vision: "Dolby Vision" };
 const VIDEO_CODECS: Readonly<Record<string, string>> = { hevc: "HEVC", h265: "HEVC", hvc1: "HEVC", hev1: "HEVC", h264: "H.264", avc: "H.264", avc1: "H.264", avc3: "H.264", av1: "AV1", av01: "AV1", vp9: "VP9", vp09: "VP9", mpeg2video: "MPEG-2", mpeg2: "MPEG-2", mpeg4: "MPEG-4", vc1: "VC-1" };
@@ -93,7 +111,8 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const height = recipe?.height ?? source.height ?? 0;
     const picture = width > 0 && height > 0;
     const output = recipe?.dynamicRange ?? source.dynamicRange;
-    const playMethod = PLAY_METHODS[plan.delivery];
+    const methodKey = PLAY_METHODS[plan.delivery];
+    const playMethod = methodKey === undefined ? undefined : translate(methodKey);
     // A transcode names its output codec; a copy leaves the file's.
     const codec = recipe?.videoCodec ?? source.videoCodec;
     const frameRate = recipe?.frameRate ?? source.frameRate;
@@ -113,8 +132,8 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     // Apple reads the decoded stream's track: the selected track's language with the format the recipe delivers. A recipe
     // without a channel count leaves the layout out rather than borrow the source's.
     const audioStats = live.audio === undefined ? undefined : audioStatsLine(recipe === undefined ? live.audio.track : { ...live.audio.track, codec: recipe.audioCodec, channels: recipe.audioChannels });
-    const subtitleInfo = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleSingleLine(live.subtitle.entry, live.subtitle.entry.combinedIndex);
-    const subtitleStats = live.subtitle === undefined ? "Off" : live.subtitle.generated ?? subtitleStatsLine(live.subtitle.entry);
+    const subtitleInfo = live.subtitle === undefined ? translate("player.tracks.subtitlesOff") : live.subtitle.generated ?? subtitleSingleLine(live.subtitle.entry, live.subtitle.entry.combinedIndex);
+    const subtitleStats = live.subtitle === undefined ? translate("player.tracks.subtitlesOff") : live.subtitle.generated ?? subtitleStatsLine(live.subtitle.entry);
     const container = source.container === undefined ? undefined : CONTAINERS[source.container.toLowerCase()] ?? source.container;
     const reason = plan.decisionReason?.replaceAll("_", " ");
     // The reason and the warnings share one label; only the first row carries it.

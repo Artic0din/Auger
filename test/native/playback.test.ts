@@ -336,7 +336,7 @@ test("the AI Subtitles… menu lists languages from the file's tracks and a lang
     await r.h.clock.advance(0);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.deepEqual(view.tracks.aiMenu?.menu.suggested.map(row => [row.code, row.hint]), [["en", "Original language"]], "the spoken language is suggested");
+    assert.deepEqual(view.tracks.aiMenu?.menu.suggested.map(row => [row.code, row.hint]), [["en", "subtitleSearch.originalLanguage"]], "the spoken language is suggested");
     assert.deepEqual(view.tracks.aiMenu?.menu.other.map(row => row.code), ["fr", "ja"]);
     assert.equal(view.tracks.aiMenu?.quota, undefined, "every language has a text track to translate, so none spends transcription quota");
     r.controller.startSubtitleAI("fr");

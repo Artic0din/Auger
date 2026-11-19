@@ -1,5 +1,16 @@
 /* Native player, 1920x1080, Chromium 108. */
 
+/* Server text (titles, overviews, chapter and track names) takes its base direction from its own first letter, so an Arabic title in this left-to-right player is not reordered by the words around it. */
+.player-title,
+.player-series,
+.player-info-title,
+.player-info-meta,
+.player-info-value,
+.player-choice-label,
+.player-choice-detail,
+.player-next-synopsis,
+.player-next-card { unicode-bidi: plaintext; }
+
 .player-error.player-next-up {
     padding: 112px 180px 260px 980px;
     overflow-y: auto;

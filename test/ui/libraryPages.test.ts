@@ -280,7 +280,8 @@ page("Browse's loading-more indicator spins under the grid", async tv => {
         await tv.page.locator(".catalog-grid .browse-card").last().focus();
         const spinner = tv.page.locator(".section-catalog-loading");
         await spinner.waitFor();
-        assert.ok(await spinner.evaluate(node => node.getAnimations({ subtree: true }).length > 0), "the indicator animates");
+        // A late answer can redraw the grid and replace the indicator; read the live node each time.
+        await tv.eventually(() => spinner.evaluate(node => node.getAnimations({ subtree: true }).length > 0), "the indicator animates");
     } finally { held.release(); }
 }, catalog => { for (let i = 61; i <= 160; i++) catalog.add({ id: `movie:x${i}`, type: "movie", title: `Extra ${i}`, libraryId: "12" }); });
 
@@ -378,7 +379,8 @@ page("an empty library's Browse grid uses Apple's empty state and leaves focus o
     assert.equal(await empty.locator(".library-empty-body").innerText(), "There is nothing in this library yet.");
     assert.equal(await empty.locator(".library-empty-icon").count(), 1);
     assert.deepEqual(await empty.locator(".library-empty-title").evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), [capped(28), "600"]);
-    assert.ok(((await tv.page.locator(".browse-empty-state").boundingBox())?.height ?? 0) >= 400);
+    // The box reads null while a late answer is replacing the node; read it until it is there.
+    await tv.eventually(async () => ((await tv.page.locator(".browse-empty-state").boundingBox())?.height ?? 0) >= 400, "the empty state fills the page");
     assert.equal(await tv.focused(), "sort");
 });
 

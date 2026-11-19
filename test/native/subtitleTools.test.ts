@@ -77,7 +77,7 @@ test("delay, size, position and appearance use Apple's picker values and write s
 test("language rows float the preferred language and sort the rest by name", () => {
     const choices = languageChoices([{ code: "fr", label: "French" }, { code: "en", label: "English" }, { code: "ja" }], "en");
     assert.deepEqual(choices.suggested.map(choice => choice.code), ["en"]);
-    assert.equal(choices.suggested[0]?.hint, "Preferred");
+    assert.equal(choices.suggested[0]?.hint, "subtitleSearch.preferred");
     assert.deepEqual(choices.other.map(choice => choice.code), ["fr", "ja"]);
     assert.equal(choices.other.find(choice => choice.code === "ja")?.label, "Japanese");
 });
