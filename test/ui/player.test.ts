@@ -3434,6 +3434,8 @@ test("an unavailable AI result says why, stays focusable and Select does nothing
     } finally { await page.close(); }
 });
 
+// SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main): Sync to Audio, the running job's progress, Reset Timing, then the note.
+const SYNC_TIMING: NonNullable<TrackView["syncTiming"]> = { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: false, forbidden: undefined, progress: undefined, note: undefined };
 // SubtitlesPane.trackRows (TVPlayerInfoHUD.swift, silo-apple main): SECONDARY follows the tracks, with Off and the same rows, the primary's own disabled.
 const openSubtitleOptions = async (page: Page, view: TrackView): Promise<void> => {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -3441,6 +3443,126 @@ const openSubtitleOptions = async (page: Page, view: TrackView): Promise<void> =
     await openPanel(page);
     await nextTab(page, 4);
 };
+const timingRows = (page: Page): Promise<(string | null)[][]> => page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-pane-active .player-menu-group")).filter(group => group.querySelector(".player-menu-heading")?.textContent === "TIMING").map(group => Array.from(group.querySelectorAll("[data-focus]")).map(row => row.getAttribute("data-focus"))));
+
+test("TIMING lists Delay, Sync to Audio and Reset Timing in Apple's order, with the result under them", async () => {
+    const { page } = await open();
+    try {
+        const note = { text: "Synced to the audio: −3.0 s", tone: "plain" as const };
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, note } });
+        assert.deepEqual(await timingRows(page), [["subtitle-delay", "subtitle-sync", "subtitle-reset-timing"]]);
+        assert.equal(await page.locator('[data-focus="subtitle-sync"] .player-setting-label').textContent(), "Sync to Audio");
+        assert.equal(await page.locator('[data-focus="subtitle-reset-timing"] .player-setting-label').textContent(), "Reset Timing");
+        for (const id of ["subtitle-sync", "subtitle-reset-timing"]) assert.equal(await page.locator(`[data-focus="${id}"] .player-setting-chevron`).count(), 0, `${id} opens nothing`);
+        const order = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-group:nth-child(2) > .player-menu-group-rows > *")).map(node => node.getAttribute("data-focus") ?? node.className));
+        assert.deepEqual(order, ["subtitle-delay", "subtitle-sync", "subtitle-reset-timing", "player-sync-note player-sync-note-plain"]);
+        assert.equal(await text(page, ".player-sync-note"), "Synced to the audio: −3.0 s");
+        assert.equal(await page.locator(".player-sync-note").evaluate(node => getComputedStyle(node).color), "rgba(255, 255, 255, 0.55)");
+        assert.deepEqual(await page.evaluate(() => ["subtitle-sync", "subtitle-reset-timing"].map(id => document.querySelector(`[data-focus="${id}"] .player-setting-glyph svg`)?.getBoundingClientRect().width)), [22, 22]);
+    } finally { await page.close(); }
+});
+
+test("the note under TIMING takes Apple's colours: error, warning, result and the Sync to Audio hint", async () => {
+    const { page } = await open();
+    try {
+        const cases = [["error", "rgb(255, 140, 140)"], ["warning", "rgba(255, 193, 7, 0.9)"], ["plain", "rgba(255, 255, 255, 0.55)"], ["hint", "rgba(255, 255, 255, 0.45)"]] as const;
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: SYNC_TIMING });
+        for (const [tone, colour] of cases) {
+            await show(page, playing({ ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, note: { text: `A ${tone} note`, tone } } }));
+            assert.equal(await text(page, ".player-sync-note"), `A ${tone} note`);
+            assert.equal(await page.locator(".player-sync-note").evaluate(node => getComputedStyle(node).color), colour, tone);
+        }
+    } finally { await page.close(); }
+});
+
+test("Select on Sync to Audio and Reset Timing sends the selected track's key, and does nothing while a request or job runs", async () => {
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: SYNC_TIMING });
+        await page.locator('[data-focus="subtitle-sync"]').focus();
+        await remote(page, ENTER);
+        await page.locator('[data-focus="subtitle-reset-timing"]').focus();
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["syncSubtitle stored-7", "resetSubtitleTiming stored-7"]);
+        for (const running of [{ busy: true }, { inProgress: true, progress: { percent: 40, phase: "Listening to the audio…" } }]) {
+            await show(page, playing({ ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, ...running } }));
+            for (const id of ["subtitle-sync", "subtitle-reset-timing"]) {
+                const row = page.locator(`[data-focus="${id}"]`);
+                assert.equal(await row.getAttribute("aria-disabled"), "false", "a row never goes inert under focus");
+                await row.focus();
+                await remote(page, ENTER);
+            }
+        }
+        assert.deepEqual(await commands(page), ["syncSubtitle stored-7", "resetSubtitleTiming stored-7"]);
+    } finally { await page.close(); }
+});
+
+test("a running sync renames the row, shows the progress bar and phase, and neither takes focus", async () => {
+    const { page } = await open();
+    try {
+        const syncTiming = { ...SYNC_TIMING, inProgress: true, progress: { percent: 40, phase: "Listening to the audio…" }, note: undefined };
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming });
+        assert.equal(await page.locator('[data-focus="subtitle-sync"] .player-setting-label').textContent(), "Syncing…");
+        assert.equal(await text(page, ".player-sync-percent"), "40%");
+        assert.equal(await text(page, ".player-sync-phase"), "Listening to the audio…");
+        assert.equal(await page.locator('.player-sync-progress[role="progressbar"]').getAttribute("aria-valuenow"), "40");
+        assert.equal(await page.locator('.player-sync-progress[role="progressbar"]').getAttribute("aria-label"), "Subtitle sync progress");
+        const filled = await page.locator(".player-sync-fill").evaluate(node => node.getBoundingClientRect().width / node.parentElement!.getBoundingClientRect().width);
+        assert.ok(Math.abs(filled - 0.4) < 0.01, `the bar is 40% full, not ${filled}`);
+        assert.equal(await page.locator(".player-sync-note").count(), 0, "no hint while it runs");
+        assert.equal(await page.locator(".player-sync-progress [data-focus]").count(), 0);
+        await page.locator('[data-focus="subtitle-sync"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "subtitle-reset-timing", "Down passes the progress block");
+        await remote(page, UP);
+        assert.equal(await focused(page), "subtitle-sync");
+    } finally { await page.close(); }
+});
+
+test("a refusal leaves one dimmed Sync to Audio row with the server's message, and nothing to focus", async () => {
+    const { page } = await open();
+    try {
+        const forbidden = "This server doesn't allow changing subtitle timing.";
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, forbidden, canReset: true } });
+        assert.deepEqual(await timingRows(page), [["subtitle-delay"]]);
+        const row = page.locator(".player-menu-column-options .player-setting[disabled]");
+        assert.equal(await row.count(), 1);
+        assert.equal(await row.locator(".player-setting-label").textContent(), "Sync to Audio");
+        assert.equal(await row.locator(".player-choice-detail").textContent(), forbidden);
+        assert.equal(await row.evaluate(node => getComputedStyle(node).opacity), "0.35");
+        assert.equal(await page.locator(".player-sync-note").count(), 0);
+    } finally { await page.close(); }
+});
+
+test("TIMING holds the sync rows without Delay, and the Subtitles tab shows them without subtitle tools", async () => {
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: { search: { ...CLOSED_SEARCH, offered: false }, overlay: false }, syncTiming: SYNC_TIMING });
+        assert.deepEqual(await paneHeadings(page), ["TRACKS", "TIMING"]);
+        assert.deepEqual(await timingRows(page), [["subtitle-sync", "subtitle-reset-timing"]]);
+        await show(page, playing({ ...TRACKS, syncTiming: { ...SYNC_TIMING, canReset: false } }));
+        assert.deepEqual(await timingRows(page), [["subtitle-sync"]]);
+    } finally { await page.close(); }
+});
+
+test("focus moves to a neighbour only when its Sync or Reset row disappears", async () => {
+    const { page } = await open();
+    try {
+        await openSubtitleOptions(page, { ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: SYNC_TIMING });
+        await page.locator('[data-focus="subtitle-reset-timing"]').focus();
+        await show(page, playing({ ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, note: { text: "Doesn't match", tone: "warning" } } }));
+        assert.equal(await focused(page), "subtitle-reset-timing", "an update that keeps the row keeps focus");
+        await show(page, playing({ ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, canReset: false } }));
+        assert.equal(await focused(page), "subtitle-sync", "Reset Timing goes: Sync to Audio takes focus");
+        await show(page, playing({ ...TRACKS, subtitleTools: ALL_TOOLS, syncTiming: { ...SYNC_TIMING, canReset: false, forbidden: "This server doesn't allow changing subtitle timing." } }));
+        assert.equal(await focused(page), "subtitle-delay", "a refusal hands focus to Delay");
+        await show(page, playing({ ...TRACKS, subtitleTools: { search: { ...CLOSED_SEARCH, offered: false }, overlay: false }, syncTiming: SYNC_TIMING }));
+        await page.locator('[data-focus="subtitle-sync"]').focus();
+        await show(page, playing({ ...TRACKS, subtitleTools: { search: { ...CLOSED_SEARCH, offered: false }, overlay: false }, syncTiming: { ...SYNC_TIMING, forbidden: "x" } }));
+        assert.equal(await focused(page), "subtitles-off", "with no Delay, focus returns to the tracks");
+    } finally { await page.close(); }
+});
+
 const SECONDARY: NonNullable<TrackView["secondary"]> = {
     choices: [
         { id: "file:42:subtitle:0", label: "English", unavailable: true },
