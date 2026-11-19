@@ -469,6 +469,22 @@ test("a German catalog that lands while the player is up redraws it in German", 
     } finally { await page.close(); }
 });
 
+test("an Arabic catalog that lands while Up Next is up mirrors the panel and moves the caption box with it", async () => {
+    const page = await open(undefined);
+    const box = (): Promise<string> => page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
+    try {
+        await show(page, promptView());
+        assert.equal(await direction(page, "section.player"), "ltr");
+        assert.ok(await center(page, ".player-next-up .player-title") > MIDDLE, "English: the panel is on the right");
+        assert.ok((await box()).startsWith("translate(180px, 112px)"), "English: the caption box sits over the preview on the left");
+        await page.evaluate(strings => window.player.setLanguage("ar", strings), catalog("ar"));
+        await page.waitForFunction(() => document.querySelector("section.player")?.getAttribute("dir") === "rtl");
+        assert.equal(await direction(page, ".player-next-up"), "rtl");
+        assert.ok(await center(page, ".player-next-up .player-title") < MIDDLE, "Arabic: the panel moves to the left");
+        assert.ok((await box()).startsWith("translate(980px, 112px)"), `Arabic: the caption box moves with the preview to the right: ${await box()}`);
+    } finally { await page.close(); }
+});
+
 test("a catalog that lands while Select is held on a panel choice waits for the release, so the press is not cut off", async () => {
     const page = await open(undefined);
     try {
