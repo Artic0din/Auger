@@ -7,6 +7,7 @@ import { SubtitleDisplay, subtitleSettingsScope } from "../../src/player/subtitl
 import { SubtitleSearch } from "../../src/player/subtitleSearch.ts";
 import { decodeProviderStatus, decodeSearchResponse } from "../../src/contracts/v2/subtitleSearch.ts";
 import { connected, signIn } from "./support/harness.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { fixture, problem } from "./support/fakeSilo.ts";
 
 const FILE = "42";
@@ -53,6 +54,14 @@ test("delay, size, position and appearance use Apple's picker values and write s
     assert.equal(delayLabel(0), "0 ms");
     assert.equal(delayLabel(100), "+100 ms");
     assert.equal(delayLabel(-200), "-200 ms");
+    // TVPlayerInfoHUD.swift:979-982 (silo-apple main 9dabb62): LocaleFormat.integer, in the shown language's digits, never grouped (#695).
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(delayLabel(0), "٠ ms");
+        assert.equal(delayLabel(2500), "+٢٥٠٠ ms");
+        assert.equal(delayLabel(-200), "\u061C-٢٠٠ ms", "the Arabic letter mark keeps the minus on the number");
+    } finally { setAppLanguage(null); }
+    assert.equal(delayLabel(2500), "+2500 ms");
     const options = delayOptions(2500);
     assert.equal(options[0]?.id, "-2000");
     assert.equal(options.at(-2)?.id, "2000");

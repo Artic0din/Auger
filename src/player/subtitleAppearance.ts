@@ -5,6 +5,7 @@
 // Settings page; this player writes the same key and the same profile / profile_device scope.
 
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import { decodeSettingsCapabilities } from "../contracts/v2/settings.ts";
 import { integer, object, string, WireError } from "../contracts/v2/wire.ts";
@@ -37,9 +38,9 @@ export interface SubtitleControlSupport {
 
 export type AppearanceMember = "fontSize" | "fontFamily" | "fontColor" | "textOpacity" | "textOutline" | "textOutlineColor" | "backgroundStyle" | "backgroundOpacity" | "backgroundColor" | "position";
 
+/** TVPlayerInfoHUD.delayLabel: `LocaleFormat.integer`, so the digits are the shown language's. */
 export function delayLabel(milliseconds: number): string {
-    if (milliseconds === 0) return "0 ms";
-    return `${milliseconds > 0 ? "+" : ""}${milliseconds} ms`;
+    return `${milliseconds > 0 ? "+" : ""}${integerText(milliseconds)} ms`;
 }
 
 export function delayOptions(current: number): readonly LabeledChoice[] {
