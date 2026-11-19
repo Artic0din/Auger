@@ -3361,6 +3361,25 @@ test("a timing reread keeps the shown cues until the new ones load, and a failed
     r.controller.destroy();
 });
 
+test("a timing reread that fails before any cues loaded takes the normal failure path, not an endless Loading", async () => {
+    const r = await rig();
+    scriptSync(r, syncState());
+    r.server.next.push({ subtitle: 0, subtitleArtifact: syncArtifact(r) });
+    const first = r.h.fake.hold("/captions?token=synthetic");
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNever shown" }, ...Array.from({ length: 4 }, () => ({ status: 500 })));
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
+    first.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.ok(r.h.fake.requests.filter(request => request.path === "/captions?token=synthetic" && request.cache === "no-store").length >= 1, "the first listing started a reread while the first download was held");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.status, "failed", "the viewer is told the subtitle could not load");
+    r.controller.destroy();
+});
+
 test("a failed timing reread of the secondary keeps its line and its selection", async () => {
     const r = await secondaryRig();
     const file = r.server.files.get("42");

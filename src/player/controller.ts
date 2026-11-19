@@ -2199,8 +2199,8 @@ export class PlaybackController implements PlayerControls {
                 attempt.captionNotice = "";
             } catch {
                 if (!current()) return;
-                // The cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again.
-                if (refresh) {
+                // Cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again. With none loaded yet, fail as usual.
+                if (refresh && attempt.cues.length > 0) {
                     attempt.captionTiming = shownTiming;
                     return;
                 }
