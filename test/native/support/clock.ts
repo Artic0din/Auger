@@ -14,6 +14,11 @@ export class ManualClock implements Clock {
         return this.time;
     }
 
+    /** Timers still waiting, so a test can hold that a stopped feature left none behind. */
+    get scheduled(): number {
+        return this.timers.length;
+    }
+
     schedule(fn: () => void, ms: number): () => void {
         const id = this.nextId++;
         this.timers.push({ id, at: this.time + Math.max(0, ms), fn });

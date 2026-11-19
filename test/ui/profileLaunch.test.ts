@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { pressPin } from "./support/pin.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 async function picker(tv: Tv): Promise<void> {
     await tv.page.fill("#signin-address", "silo.example.test");
@@ -216,6 +216,9 @@ test("Switch Profile during an outage keeps root Back and the remembered profile
         await tv.page.locator('[data-screen="remember-profile"]').waitFor();
         await tv.page.keyboard.press("Enter");
         await tv.page.locator('[data-view="home"] .browse-card').first().waitFor();
+        // A late Home answer rewrites the stored snapshot; take it once the answers have landed so the outage cannot be blamed for that write.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+        await afterPaint(tv);
         const snapshot = await tv.page.evaluate(() => window.appHarness.storage.getItem("silo.browseSnapshots.v1"));
         assert.match(snapshot ?? "", /\/home\/sections/);
         const devices = tv.fake.devices.size;

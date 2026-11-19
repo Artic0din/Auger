@@ -1,4 +1,6 @@
 import { mountApp, type SiloApp } from "../../src/app.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { registerCatalog } from "../../src/i18n/translate.ts";
 import { FakeAVPlay } from "../native/support/fakeAVPlay.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
 
@@ -50,6 +52,9 @@ const harness = {
     failExit() { exitFails = true; },
     mount,
     destroy() { app?.destroy(); },
+    /** The shown language, whose file has not landed yet, and the file landing later. */
+    showLanguage(tag: string | null) { setAppLanguage(tag, SHIPPED_LANGUAGES, ["en-AU"]); },
+    landLanguage(tag: string, catalog: Record<string, string>) { registerCatalog(tag, catalog); },
 };
 
 declare global {

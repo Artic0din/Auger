@@ -121,6 +121,17 @@ export class HomeEnrichment {
         this.pump(ids.map(id => ({ id, revision: undefined })), prewarm.signal, FOR_YOU_PREWARM_CONCURRENCY);
     }
 
+    /** A focused card that is no title (a collection): it has no detail to read, and the previous card's wait and read end, so a late answer cannot land on it. */
+    leave(): void {
+        this.cancelRest();
+        this.cancelRest = () => undefined;
+        this.pendingRead = undefined;
+        this.focusController?.abort();
+        this.focusController = undefined;
+        this.focusedId = undefined;
+        this.focusRevision = undefined;
+    }
+
     /**
      * The focused card. A cached detail fills the marquee now. An uncached one waits out the rest
      * delay, and a newer focus cancels both the wait and the read so the late answer cannot land.
@@ -350,7 +361,11 @@ function selectedAudioTrack(file: MarqueeFile): MarqueeAudioTrack | undefined {
     return tracks.find(track => track.isDefault === true) ?? tracks[0];
 }
 
-function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
+/**
+ * The saved file's audio layout, which doubles as the overlay's value key (a per-value image is looked up by it), so it stays the
+ * English text in every language: translating it would stop an image configured under `Stereo` from matching.
+ */
+export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
     if (track === undefined) return undefined;
     const layout = nonEmpty(track.layout);
     if (layout !== undefined) {

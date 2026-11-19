@@ -1,7 +1,7 @@
-import { translate } from "../i18n/translate.ts";
 import { remoteKey } from "./keys.ts";
 import { listenSelectRelease, releasedSelect, swallowSelect } from "./selectRelease.ts";
 import { actions, button, el } from "./screen.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
 
 export interface ExitDialog { destroy(): void; }
 
@@ -25,6 +25,7 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
             window.removeEventListener("keydown", onKey, true);
             window.removeEventListener("keyup", onRelease, true);
             document.removeEventListener("focusin", onFocus, true);
+            stopCatalog();
             overlay.remove();
             closed();
         }
@@ -45,6 +46,8 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
     };
     const yes = button("exit", "Exit", confirm);
     const no = button("cancel-exit", translate("common.cancel"), cancel);
+    // A cold launch can open this before the shown language's file lands: the label is rewritten on the same button, so focus and a held press stay.
+    const stopCatalog = onCatalogLoaded(() => { no.element.textContent = translate("common.cancel"); });
     let focused = no.element;
     const onFocus = (event: FocusEvent): void => {
         if (event.target instanceof HTMLElement) {

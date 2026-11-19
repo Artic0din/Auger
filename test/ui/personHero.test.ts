@@ -328,6 +328,8 @@ async function upFromColumns(tv: Tv, columns: number, selected: string): Promise
         for (let step = 0; step < column; step += 1) await tv.page.keyboard.press("ArrowRight");
         const card = await tv.focused();
         assert.match(card ?? "", /^(movie|series):/, `column ${column} kept a card`);
+        // The chip that just lost focus is still scaling back; mid-transition it is wider than at rest and can reach the card's left edge.
+        await tv.page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition).map(animation => animation.finished.catch(() => undefined))); });
         await tv.page.keyboard.press("ArrowUp");
         // Replaces `assert.equal(landed, column <= 1 ? selected : card, "column ${column} used to return to the focused Movies chip")`.
         // That followed the selected filter, which matches column 0 only while All is selected.

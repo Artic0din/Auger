@@ -39,7 +39,8 @@ interface Hold {
     readonly released: Promise<void>;
 }
 
-export type Reply = { status: number; body?: unknown; text?: string; headers?: Record<string, string> };
+/** `cut` sends `text`, then breaks the connection the way a dropped download does. */
+export type Reply = { status: number; body?: unknown; text?: string; headers?: Record<string, string>; cut?: boolean };
 
 /** Answers the browse reads once the caller's bearer and profile proof are checked. */
 export interface CatalogRoutes {
@@ -83,6 +84,8 @@ export class FakeSilo {
     private readonly dropped: string[] = [];
     /** Further operations, e.g. playback; answered before the 404 fallback. */
     readonly extraRoutes: ((method: string, path: string, headers: Record<string, string>, body: Record<string, unknown> | undefined) => Reply | undefined)[] = [];
+    /** Answers GET /stream/... without sign-in, as a media URL carries its own token. Unset, it falls through to the 404. */
+    streamPlaylist: Reply | ((path: string) => Reply) | undefined;
     /** Browse reads (test/native/support/fakeCatalog.ts); unset, they answer 404. */
     catalog: CatalogRoutes | undefined;
     /** The household GET /profiles returns: the fixture's owner and a PIN-locked child. */
@@ -218,6 +221,13 @@ export class FakeSilo {
         if (reply.body !== undefined && !responseHeaders.has("Content-Type")) {
             responseHeaders.set("Content-Type", "application/json");
         }
+        if (reply.cut === true) {
+            const sent = new TextEncoder().encode(reply.text ?? "");
+            let pulls = 0;
+            // Erroring a stream drops its queue, so the text goes out on the first read and the break on the next.
+            const cutBody = new ReadableStream<Uint8Array>({ pull(stream) { if (pulls++ === 0) stream.enqueue(sent); else stream.error(new TypeError("network error")); } });
+            return new Response(cutBody, { status: reply.status, headers: responseHeaders });
+        }
         return new Response(reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body)), { status: reply.status, headers: responseHeaders });
     };
 
@@ -253,6 +263,9 @@ export class FakeSilo {
                 this.revokedSessions.add(session);
                 return { status: 204 };
             }
+        }
+        if (method === "GET" && path.startsWith("/stream/") && this.streamPlaylist !== undefined) {
+            return typeof this.streamPlaylist === "function" ? this.streamPlaylist(path) : this.streamPlaylist;
         }
         // Until the password changes, the session may only log out (auth-api.md, temporary passwords).
         const denied = this.denyUnauthenticated(headers);

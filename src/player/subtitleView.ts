@@ -16,6 +16,13 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     const text = document.createElement("span");
     layer.appendChild(text);
     viewport.appendChild(layer);
+    // SECONDARY: the second line, in the primary's style, further from the edge it hugs.
+    const secondaryLayer = document.createElement("div");
+    secondaryLayer.className = "player-captions-secondary";
+    secondaryLayer.setAttribute("aria-live", "off");
+    const secondaryText = document.createElement("span");
+    secondaryLayer.appendChild(secondaryText);
+    viewport.appendChild(secondaryLayer);
     // ASSSubtitleLayer.status: the failure stays over the video until the track loads or changes.
     const status = document.createElement("div");
     status.className = "player-caption-status";
@@ -32,14 +39,18 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
         layer.dataset.cues = String(captions?.cueCount ?? 0);
         layer.dataset.at = captions?.instant === undefined ? "" : captions.instant.toFixed(1);
         status.hidden = captions?.status !== "failed";
+        secondaryText.textContent = captions?.secondaryText ?? "";
+        secondaryLayer.hidden = !captions?.secondaryText;
         if (captions === undefined) return;
         applySubtitleAppearance(layer, text, captions.appearance);
+        applySubtitleAppearance(secondaryLayer, secondaryText, captions.appearance, true);
     };
 }
 
-export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance): void {
-        layer.style.top = style.position === "top" ? "8%" : "auto";
-        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? "25%" : "8%";
+export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false): void {
+        // AetherSubtitleOverlay.defaultPlacement: the second line's inset is 17% at the top and bottom and 36% in the lower third.
+        layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
+        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? (secondary ? "36%" : "25%") : secondary ? "17%" : "8%";
         // AetherSubtitleOverlay draws the generic families semibold and a named family at its own weight.
         // Samsung's generic sans-serif face has no semibold, so sans-serif uses the bundled Inter (theme.css).
         const bundledSans = style.fontFamily === "sans-serif";

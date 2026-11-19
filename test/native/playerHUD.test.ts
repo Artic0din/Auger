@@ -7,6 +7,10 @@ import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import type { PlaybackPlan } from "../../src/contracts/v2/playback.ts";
 import { decodePlaybackDecision } from "../../src/contracts/v2/playback.ts";
 import { fixture } from "./support/fakeSilo.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 test("video settings validate before calling AVPlay, retain confirmed values on failure and restore after reopen", () => {
     const decision = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
@@ -166,4 +170,21 @@ test("with no source range, Dynamic range names what the recipe delivers", () =>
     });
     const stats = planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined });
     assert.equal(stats.playback.find(row => row.label === "Dynamic range")?.value, "HDR10");
+});
+
+// AetherPlaybackStatsProjection.playMethodLabel (silo-apple b54fefb1): the play method reads Apple's player.stats.playMethod* keys.
+test("the play method reads in the shown language, as Apple's playMethodLabel does", () => {
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const methods = (["original_http", "server_remux_hls", "server_remux_progressive", "server_transcode_hls"] as const).map(delivery => {
+            const stats = planStats(planWith(plan => { plan.delivery = delivery; }), { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined });
+            return [stats.nowPlaying.at(-1)?.value, stats.playback[0]?.value];
+        });
+        assert.deepEqual(methods, [
+            ["Direktwiedergabe", "Direktwiedergabe · MP4"],
+            ["Vom Server neu verpackt", "Vom Server neu verpackt · MP4"],
+            ["Vom Server neu verpackt", "Vom Server neu verpackt · MP4"],
+            ["Vom Server transcodiert", "Vom Server transcodiert · MP4"],
+        ]);
+    } finally { setAppLanguage(null); }
 });

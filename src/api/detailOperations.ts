@@ -48,5 +48,7 @@ export const detailOperations = {
         retry: "never",
         decode: () => undefined,
     }),
+    /** Marks or clears Not interested on a movie or series; the server refuses episodes and seasons with 422 (silo-apple `setNotInterested`). */
+    setNotInterested: (id: string, marked: boolean): RequestSpec<undefined> => ({ method: marked ? "PUT" : "DELETE", path: `/not-interested/${encodeURIComponent(id)}`, retry: "never", decode: () => undefined }),
     setPersonal: (kind: PersonalAction, id: string, enabled: boolean): RequestSpec<undefined> => ({ method: enabled ? kind === "watched" ? "POST" : "PUT" : "DELETE", path: `/${kind}/${encodeURIComponent(id)}`, retry: "never", decode: () => undefined }),
 };

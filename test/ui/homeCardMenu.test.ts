@@ -50,7 +50,7 @@ class HomeMenuFake extends FakeDetails {
             .filter(card => !hidden(card) && !(section.section_type === "continue_watching" && watched(String(card.content_id))))
             .map(card => ({ ...card,
                 ...(section.section_type === "continue_watching" && card.position_seconds !== undefined ? { progress_updated_at: PROGRESS_STAMP } : {}),
-                user_state: { played: watched(String(card.content_id)), is_favorite: this.personalMembers(profileId, "favorites").has(String(card.content_id)), in_watchlist: this.personalMembers(profileId, "watchlist").has(String(card.content_id)), not_interested: false } })) }))
+                user_state: { played: watched(String(card.content_id)), is_favorite: this.personalMembers(profileId, "favorites").has(String(card.content_id)), in_watchlist: this.personalMembers(profileId, "watchlist").has(String(card.content_id)) } })) }))
             .filter(section => section.items.length > 0) } };
     }
 }

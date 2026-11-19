@@ -3,7 +3,7 @@
 // requests and source positions, not only what the player shows.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { type PlaybackDeps, type PlaybackError, PlaybackController, type PlaybackView, type PlayRequest } from "../../src/player/controller.ts";
 import type { EpisodeSpoilerSettings } from "../../src/ui/episodeSpoilers.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -402,6 +402,31 @@ test("sidecar subtitles apply profile appearance and timing without blocking pla
         }
         r.controller.destroy();
     }
+});
+
+test("a sidecar that ends early keeps its cues on screen, is refetched after 2 s and never shows the failure", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 0, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n", cut: true });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n00:20.000 --> 00:22.000\nSecond" });
+    await playMovie(r);
+    r.avplay.tick(13000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "First", "the cues that arrived show while the file is fetched again");
+    assert.equal(view.captions?.status, "ready");
+    assert.ok(!view.tracks.notices.some(notice => /Subtitle data|Loading subtitles/.test(notice)));
+    assert.equal(view.captions?.cueCount, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/captions")).length, 1);
+    await r.h.clock.advance(2000);
+    r.avplay.tick(21000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Second");
+    assert.equal(view.captions?.cueCount, 2);
+    assert.ok(!view.tracks.notices.some(notice => /Subtitle data|Loading subtitles/.test(notice)));
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/captions")).length, 2);
+    r.controller.destroy();
 });
 
 test("an audio replan with the same subtitle artifact keeps cues and preferences without refetching", async () => {
@@ -1169,11 +1194,11 @@ test("a codec-route failure replans once per failed plan with echoed opaque keys
     assert.equal(only(bodies(r.h, "/progress")).position, 12.5, "its time is not the new transport's");
 });
 
-test("a prepare that hangs is a failed route after 60 s; its late success cannot touch the replacement", async () => {
+test("a prepare that hangs is a failed route after 15 s, before the TV gives up on the app; its late success cannot touch the replacement", async () => {
     const r = await rig();
     r.controller.play(MOVIE);
     await r.h.clock.advance(0);
-    await r.h.clock.advance(59999);
+    await r.h.clock.advance(14999);
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(1);
     assert.deepEqual(only(bodies(r.h, "/replan")).failure, { classification: "avplay_startup_timeout" });
@@ -1189,6 +1214,35 @@ test("a prepare that hangs is a failed route after 60 s; its late success cannot
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
     assert.equal(r.avplay.state, "PLAYING");
+});
+
+test("prepares that hang end in the playback error page within a bounded time, with AVPlay closed and nothing left running (#650)", async () => {
+    // AVPlay never answers prepareAsync (an HLS transcode it cannot open): the app must show the error page rather than wait until the TV closes it.
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    for (let hang = 0; hang < 4; hang++) {
+        await r.h.clock.advance(15000);
+    }
+    const replans = bodies(r.h, "/replan");
+    assert.deepEqual(replans.map((body) => (body.failure as { classification?: string }).classification), ["avplay_startup_timeout", "avplay_startup_timeout", "avplay_startup_timeout"]);
+    const view = last(r.views);
+    assert.equal(view.phase, "error");
+    assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.avplay.state, "NONE", "AVPlay is closed, not left in its half-open state");
+    assert.equal(r.avplay.calls.filter((call) => call.startsWith("open ")).length, 4, "one open per route tried");
+    assert.equal(r.avplay.calls.filter((call) => call === "close").length >= 4, true, "every hung route was closed");
+    assert.equal(ops(r.h)[ops(r.h).length - 1], "DELETE /playback/S1", "the server session is stopped");
+    assert.equal(r.h.clock.scheduled, 0, "no timer is left behind");
+    // Nothing keeps reporting for a session that never played: the keep-alive posts made while it hung are the last.
+    const progressWhileHung = bodies(r.h, "/progress").length;
+    const before = playbackRequests(r.h).length;
+    await r.h.clock.advance(120000);
+    assert.equal(playbackRequests(r.h).length, before, "no progress or other request after the error");
+    assert.equal(bodies(r.h, "/progress").length, progressWhileHung, "reporting stopped with the error page");
+    assert.deepEqual(r.exits, [], "the app is not closed");
+    r.controller.dismissError();
+    assert.deepEqual(r.exits, ["error:playback_failed"]);
 });
 
 test("failure replans are bounded; then playback ends with an error and a stop", async () => {
@@ -3189,6 +3243,202 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
     r.controller.destroy();
 });
 
+// SECONDARY (silo-apple main, TVPlayerInfoHUD SubtitlesPane): a second text track under the primary, where the app draws subtitles itself.
+const SECONDARY_PATH = "/stream/11111111-1111-4111-8111-111111111111/subtitles/4.vtt?file_id=42&token=synthetic";
+async function secondaryRig(): Promise<Rig> {
+    const r = await rig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: `${String(track.url)}&token=synthetic` } : track) });
+    r.server.next.push({ subtitle: 0, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    return r;
+}
+
+test("Secondary lists the file's other text sidecars while an app-drawn subtitle is shown, the primary dimmed", async () => {
+    const r = await secondaryRig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:0");
+    assert.deepEqual(view.tracks.secondary?.choices.map(choice => [choice.id, choice.unavailable === true]), [["file:42:subtitle:0", true], ["file:42:subtitle:1", false], ["file:42:subtitle:4", false]], "bitmap and burn-in-only rows are not offered");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("Secondary reads the chosen sidecar, draws it under the primary and clears on Off", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.text, "Primary line");
+    assert.equal(view.captions?.secondaryText, "Secondary line");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4");
+    r.controller.selectSecondarySubtitle(undefined);
+    r.avplay.tick(12600);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("a secondary sidecar that ends early keeps its cues on screen and is refetched after 2 s, as the primary's is", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n", cut: true });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nFirst\n\n00:20.000 --> 00:22.000\nSecond" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "First", "the cues that arrived show while the file is fetched again");
+    assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "the track stays chosen");
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/stream/") && request.path.includes("/subtitles/4.vtt")).length, 1);
+    await r.h.clock.advance(2000);
+    r.avplay.tick(21000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "Second");
+    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/stream/") && request.path.includes("/subtitles/4.vtt")).length, 2);
+    r.controller.destroy();
+});
+
+test("Secondary refuses the primary's own track and a track the app cannot draw", async () => {
+    const r = await secondaryRig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const reads = r.h.fake.requests.length;
+    for (const id of ["file:42:subtitle:0", "file:42:subtitle:2", "file:42:subtitle:3", "file:42:subtitle:99"]) r.controller.selectSecondarySubtitle(id);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.length, reads);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary?.selectedId, undefined);
+    r.controller.destroy();
+});
+
+test("turning the primary off, or choosing it as secondary's track, drops the secondary", async () => {
+    const r = await secondaryRig();
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.selectSubtitle(undefined);
+    for (let step = 0; step < 5; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary, undefined, "no list without a primary");
+    r.controller.destroy();
+});
+
+test("no Secondary list shows when the shown subtitle is not drawn by the app", async () => {
+    const r = await rig();
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.secondary, undefined);
+    r.controller.destroy();
+});
+
+test("a replan that moves the primary's timing origin reads the secondary track again at the new origin", async () => {
+    const r = await secondaryRig();
+    const artifact = (origin: number) => ({ url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: origin });
+    r.server.next.length = 0;
+    r.server.next.push({ subtitle: 0, subtitleArtifact: artifact(0) }, { subtitle: 0, subtitleArtifact: artifact(5) });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" }, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" }, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    r.controller.selectAudio("file:42:audio:1");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length, 2, "read again for the new origin");
+    r.avplay.tick(17500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "Secondary line", "placed 5 s later, with the primary");
+    r.controller.destroy();
+});
+
+test("a primary subtitle load that fails takes the chosen secondary with it, so no caption is left without its control", async () => {
+    const r = await secondaryRig();
+    r.h.fake.scripted.delete("/captions?token=synthetic");
+    const hold = r.h.fake.hold("/captions?token=synthetic");
+    r.h.fake.script("/captions?token=synthetic", { status: 404 });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nSecondary line" });
+    await playMovie(r);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    hold.release();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.status, "failed");
+    assert.equal(view.tracks.secondary, undefined, "no list without a drawn primary");
+    assert.equal(view.captions?.secondaryText, "", "and no second line drawn without its control");
+    r.controller.destroy();
+});
+
+test("a replan that gives the secondary track a new session URL reads it again from that URL", async () => {
+    const r = await secondaryRig();
+    const artifact = { url: `${r.h.fake.origin}/api/v2/captions?token=synthetic`, format: "vtt", timing_origin_seconds: 0 };
+    r.server.next.length = 0;
+    r.server.next.push({ subtitle: 0, subtitleArtifact: artifact }, { subtitle: 0, subtitleArtifact: artifact });
+    r.h.fake.script("/captions?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nPrimary line" });
+    r.h.fake.script(SECONDARY_PATH, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld session" });
+    const moved = SECONDARY_PATH.replace("token=synthetic", "token=synthetic2");
+    r.h.fake.script(moved, { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nNew session" });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+    await r.h.clock.advance(0);
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: String(track.url).replace("token=synthetic", "token=synthetic2") } : track) });
+    r.controller.selectAudio("file:42:audio:1");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === moved).length, 1, "read from the new session's URL");
+    r.avplay.tick(12500);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.captions?.secondaryText, "New session");
+    r.controller.destroy();
+});
+
+test("an inventory URL that cannot be parsed is not offered as a secondary track and never breaks playback updates", async () => {
+    const r = await secondaryRig();
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: file.inventory.map((track, index) => index === 4 ? { ...track, url: "http://[bad" } : track) });
+    await playMovie(r);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.deepEqual(view.tracks.secondary?.choices.map(choice => choice.id), ["file:42:subtitle:0", "file:42:subtitle:1"]);
+    r.controller.destroy();
+});
+
 test("the HUD's Now playing and Stats rows name the plan's audio track and follow pause", async () => {
     const r = await rig();
     await playMovie(r);
@@ -3205,5 +3455,205 @@ test("the HUD's Now playing and Stats rows name the plan's audio track and follo
     r.controller.setPaused(true);
     await r.h.clock.advance(0);
     assert.deepEqual(stats().stream, [{ label: "Playback status", value: "Paused" }]);
+    r.controller.destroy();
+});
+
+// --- HLS playlists AVPlay cannot read (#650): the check runs before the blocking open and prepare ---
+
+const DEFINE_PLAYLIST = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:8",
+    '#EXT-X-DEFINE:NAME="silo_query",VALUE="st=abc&token=xyz"',
+    "#EXT-X-TARGETDURATION:2",
+    "#EXTINF:2.000,",
+    "segment/seg_0.ts?{$silo_query}",
+    "#EXT-X-ENDLIST",
+].join("\n");
+
+const PLAIN_PLAYLIST = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:2",
+    "#EXTINF:2.000,",
+    "segment/seg_0.ts?st=abc",
+    "#EXT-X-ENDLIST",
+].join("\n");
+
+const PLAYLIST_REPLY = (text: string) => ({ status: 200, text, headers: { "Content-Type": "application/vnd.apple.mpegurl" } });
+
+function opens(r: Rig): string[] {
+    return r.avplay.calls.filter(call => call.startsWith("open "));
+}
+
+async function playHls(r: Rig, delivery = "server_transcode_hls"): Promise<void> {
+    r.server.next.push({ delivery, protocol: "hls", container: "mpegts", url: (id: string) => `/api/v2/stream/${id}?st=signed` });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+}
+
+test("an HLS playlist that needs variable substitution is refused before AVPlay opens it (#650)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+        await playHls(r);
+        assert.deepEqual(opens(r), [], "AVPlay is never given the stream");
+        assert.deepEqual(r.avplay.calls.filter(call => call !== "close"), [], "nothing reaches AVPlay but the cleanup close");
+        const view = last(r.views);
+        assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+        assert.equal(ops(r.h).at(-1), "DELETE /playback/S1", "the session is stopped");
+        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
+        assert.equal(r.h.clock.scheduled, 0);
+        r.controller.dismissError();
+        assert.deepEqual(r.exits, ["error:playback_failed"]);
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a segment address that still holds a variable is refused even without the define line (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST.replace("st=abc", "{$silo_query}"));
+    await playHls(r, "server_remux_hls");
+    assert.deepEqual(opens(r), []);
+    const view = last(r.views);
+    assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+    r.controller.destroy();
+});
+
+test("an HLS playlist AVPlay can read is opened as before, with the same address the check read (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
+    await playHls(r);
+    const read = r.h.fake.requests.find(request => request.path.startsWith("/stream/"));
+    assert.ok(read !== undefined);
+    assert.equal(read.redirect, "error");
+    assert.equal(read.headers.authorization, undefined, "the media token is in the address, as AVPlay would send it");
+    assert.match(read.path, /\?st=signed&token=/);
+    assert.equal(opens(r).length, 1);
+    assert.equal(opens(r)[0], `open ${r.h.fake.origin}/api/v2${read.path}`);
+    r.controller.destroy();
+});
+
+for (const [name, reply] of [["answers 404", { status: 404, text: "" }], ["answers 503", { status: 503, text: "" }]] as const) test(`a playlist the check cannot read (${name}) is left to AVPlay (#650)`, async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = reply;
+    await playHls(r);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a playlist that never answers is left to AVPlay after five seconds (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+    r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000");
+    await playHls(r);
+    assert.deepEqual(opens(r), []);
+    await r.h.clock.advance(4999);
+    assert.deepEqual(opens(r), []);
+    await r.h.clock.advance(1);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("direct play reads no playlist (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+    await playMovie(r);
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path.startsWith("/stream/")), []);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("leaving while the playlist is being read opens nothing (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
+    const held = r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000", true);
+    await playHls(r);
+    r.controller.back();
+    held.release();
+    await r.h.clock.advance(0);
+    assert.deepEqual(opens(r), []);
+    r.controller.destroy();
+});
+
+// The real shape (S95C, 20 Nov): a version 3 master with no define, 31 subtitle renditions, and a version 8 video variant with the define on line 3.
+const MASTER_PATH = (id: string): string => `/api/v2/stream/${id}/master.m3u8?st=signed`;
+const VARIANT_URI = "master.m3u8?silo_rendition=video&st=signed";
+
+function masterPlaylist(): string {
+    const subtitles = Array.from({ length: 31 }, (_, index) => `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Track ${index}",LANGUAGE="en",URI="master.m3u8?silo_rendition=subtitles&silo_track=${index}&st=signed"`);
+    return ["#EXTM3U", "#EXT-X-VERSION:3", ...subtitles, '#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x800,SUBTITLES="subs"', VARIANT_URI].join("\n");
+}
+
+function streams(variant: string, master = masterPlaylist()): (path: string) => { status: number; text: string } {
+    return path => path.includes("silo_rendition=video") ? { status: 200, text: variant } : path.includes("silo_rendition=") ? { status: 200, text: "#EXTM3U\n#EXT-X-VERSION:3\n" } : { status: 200, text: master };
+}
+
+async function playMaster(r: Rig): Promise<void> {
+    r.server.next.push({ delivery: "server_transcode_hls", protocol: "hls", container: "mpegts", url: MASTER_PATH });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+}
+
+function streamReads(r: Rig): string[] {
+    return r.h.fake.requests.filter(request => request.path.startsWith("/stream/")).map(request => request.path.replace(/&token=.*$/, ""));
+}
+
+test("a define that is only in the video variant is refused, reading the master and that one variant (#650)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        r.h.fake.streamPlaylist = streams(DEFINE_PLAYLIST);
+        await playMaster(r);
+        assert.deepEqual(opens(r), []);
+        const view = last(r.views);
+        assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
+        const id = sessionIds(r.server)[0] ?? "";
+        assert.deepEqual(streamReads(r), [`/stream/${id}/master.m3u8?st=signed`, `/stream/${id}/master.m3u8?silo_rendition=video&st=signed`], "the master, then its first video variant; no subtitle rendition");
+        assert.equal(warnings.mock.calls.length, 1);
+        assert.equal(r.h.clock.scheduled, 0);
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a master whose video variant is plain is opened after those two reads (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = streams(PLAIN_PLAYLIST);
+    await playMaster(r);
+    assert.equal(streamReads(r).length, 2);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a variant the check cannot read is left to AVPlay (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = path => path.includes("silo_rendition=video") ? { status: 404, text: "" } : { status: 200, text: masterPlaylist() };
+    await playMaster(r);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("a variant on another origin is not read (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = { status: 200, text: masterPlaylist().replace(VARIANT_URI, "http://other.example.test/video.m3u8") };
+    await playMaster(r);
+    assert.equal(streamReads(r).length, 1);
+    assert.equal(opens(r).length, 1);
+    r.controller.destroy();
+});
+
+test("the master and the variant share one five-second budget (#650)", async () => {
+    const r = await rig();
+    r.h.fake.streamPlaylist = streams(DEFINE_PLAYLIST);
+    r.h.fake.hold("/stream/5e550001-0000-4000-8000-000000000000/master.m3u8?silo_rendition=video&st=signed");
+    await playMaster(r);
+    await r.h.clock.advance(4999);
+    assert.deepEqual(opens(r), [], "the held variant read is still waiting");
+    await r.h.clock.advance(1);
+    assert.equal(opens(r).length, 1, "five seconds in all, then AVPlay gets it");
     r.controller.destroy();
 });

@@ -7,6 +7,7 @@ import { feedGrid } from "./catalogFeed.ts";
 import { personHero } from "./browseDetails.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
+import { errorHeadline, errorMessage } from "./errorState.ts";
 import { el } from "./screen.ts";
 
 const PERSON_PAGE_SIZE = 60;
@@ -46,11 +47,11 @@ export function personFilmographyView(route: Extract<Route, { kind: "person" }>,
     if (route.failure !== undefined && empty) {
         // Apple ErrorView(state:onRetry:) in the Filmography area, at least 420pt tall (PersonDetailView.swift:414-416).
         const error = failureError(route.failure, route.error);
-        const state = searchState(error.headline, error.message, "details-failure person-filmography-failure", FAILURE_ICON);
+        const state = searchState(errorHeadline(error), errorMessage(error), "details-failure person-filmography-failure", FAILURE_ICON);
         state.setAttribute("role", "alert");
         state.style.minHeight = `${MIN_FILMOGRAPHY_HEIGHT_PX}px`;
-        const actions = recoveryActions(error, actionButton("retry", "Try Again", () => handlers.retry(route)), actionButton("go-back", "Go Back", handlers.pop),
-            handlers.signIn === undefined ? undefined : actionButton("sign-in", "Sign In Again", handlers.signIn));
+        const actions = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), () => handlers.retry(route)), actionButton("go-back", translate("player.goBack"), handlers.pop),
+            handlers.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), handlers.signIn));
         state.appendChild(zoneNode("browse-actions", actions));
         content.push(state);
         zones.push({ id: "status", layout: "column", items: actions });

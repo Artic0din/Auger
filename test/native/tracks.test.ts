@@ -2510,6 +2510,18 @@ test("refreshView sends a paused view again in the shown language, and only when
     } finally { setAppLanguage(null); r.controller.destroy(); }
 });
 
+// ApplePlaybackQuality.swift:63 (silo-apple b54fefb1) labels the automatic choice with Apple's options.auto.
+test("the quality picker's Auto choice reads in the shown language", async () => {
+    const r = await rig();
+    try {
+        r.server.next.push({ availableQualities: QUALITIES });
+        await playMovie(r);
+        landGerman();
+        r.controller.refreshView();
+        assert.deepEqual(tracks(r).quality?.choices[0], { id: "auto", label: "Automatisch" });
+    } finally { setAppLanguage(null); r.controller.destroy(); }
+});
+
 test("refreshView leaves a loading view alone: a restore in progress is not replaced by playback controls", async () => {
     const r = await rig();
     try {

@@ -108,6 +108,7 @@ test("browse fixtures decode with the production decoders", () => {
         originalLanguage: undefined,
         studios: undefined,
         networks: undefined,
+        notInterested: false,
         showStatus: undefined,
         lastAirDate: undefined,
     });
