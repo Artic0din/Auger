@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canonicalLanguageKey, formatRank, orderSubtitles } from "../../src/player/trackLabels.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 
 interface Track {
     readonly id: number;
@@ -98,4 +99,15 @@ test("canonicalLanguageKey folds three-letter codes and drops und", () => {
     assert.equal(canonicalLanguageKey("und"), undefined);
     assert.equal(canonicalLanguageKey(""), undefined);
     assert.equal(canonicalLanguageKey(undefined), undefined);
+});
+
+// SubtitleDisplayOrder.swift:58-74 (silo-apple main 9dabb62) compares names in AppLanguage.formattingLocale, case-insensitively: in Arabic,
+// whose collation reads the hamza forms of alif as one letter, Spanish (الإسبانية) sorts before German (الألمانية) (#695).
+test("languages sort by the shown language's collation, the preferred one first", () => {
+    const tracks: Track[] = [{ id: 0, language: "de" }, { id: 1, language: "en" }, { id: 2, language: "es" }, { id: 3, language: "nl" }, { id: 4, language: "it" }, { id: 5, language: "is" }];
+    assert.deepEqual(order(tracks, "nl"), [3, 1, 0, 5, 4, 2], "English: Dutch, then English, German, Icelandic, Italian, Spanish");
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.deepEqual(order(tracks, "nl"), [3, 2, 0, 1, 5, 4], "Arabic: Dutch, then Spanish, German, English, Icelandic, Italian, as on Apple TV");
+    } finally { setAppLanguage(null); }
 });

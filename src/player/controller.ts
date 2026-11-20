@@ -21,6 +21,7 @@
 // a burn-in still reopens. A refused change leaves the current plan playing.
 // On an original file, AVPlay then plays the plan's audio ordinal (client_selected_audio_track_v1, #507).
 
+import { shownLocale } from "../i18n/format.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import { type Clock, sleep } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
@@ -199,14 +200,15 @@ function aiView(attempt: Attempt, plan: PlaybackPlan): SubtitleAIView | undefine
     return { ...view, results: view.results.map(result => plan.subtitle.inventory.some(entry => entry.syncKey === `stored-${result.id}` && entry.unplayable === true) ? { ...result, unavailable: true } : result) };
 }
 
-const orderedInventories = new WeakMap<readonly SubtitleTrack[], { readonly language: string | undefined; readonly ordered: readonly SubtitleTrack[] }>();
+const orderedInventories = new WeakMap<readonly SubtitleTrack[], { readonly language: string | undefined; readonly locale: string; readonly ordered: readonly SubtitleTrack[] }>();
 
-/** The plan's subtitle rows in display order, sorted once per inventory and language: the view is rebuilt on every playback tick. The inventory carries no default flag. */
+/** The plan's subtitle rows in display order, sorted once per inventory, preferred language and shown locale (names collate in it): the view is rebuilt on every playback tick. The inventory carries no default flag. */
 export function orderedInventory(inventory: readonly SubtitleTrack[], language: string | undefined): readonly SubtitleTrack[] {
     const cached = orderedInventories.get(inventory);
-    if (cached !== undefined && cached.language === language) return cached.ordered;
+    const locale = shownLocale();
+    if (cached !== undefined && cached.language === language && cached.locale === locale) return cached.ordered;
     const ordered = orderSubtitles(inventory, language, entry => ({ language: entry.language, codec: entry.codec, forced: entry.forced, hearingImpaired: entry.hearingImpaired, isDefault: false }));
-    orderedInventories.set(inventory, { language, ordered });
+    orderedInventories.set(inventory, { language, locale, ordered });
     return ordered;
 }
 
