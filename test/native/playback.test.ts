@@ -3810,14 +3810,27 @@ test("the fake's HTTP cache keeps abort, holds and the request log: an aborted G
     assert.equal(answered, false, "a hold delays a cache hit like any read");
     hold.release();
     assert.equal(await held, "cached", "and it is still the cached copy, with the scripted replies untouched");
-    assert.deepEqual(r.h.fake.requests.filter(request => request.path === path).map(request => request.fromCache === true), [false, true, true], "every read is logged; cache hits are marked");
+    assert.equal(r.h.fake.requests.filter(request => request.path === path).length, 1, "only the first read reached the network");
+    assert.deepEqual(r.h.fake.cacheHits.filter(request => request.path === path).map(request => request.method), ["GET", "GET"], "the aborted and the held reads were cache hits, logged apart");
+    // Browser rules: a no-cache answer is stored but never reused unrevalidated, and with no validator it goes to the network; a
+    // force-cache or only-if-cached read takes any stored copy, fresh or not; reload goes to the network and replaces the copy.
+    const stale = "/cache-probe-no-cache";
+    const staleUrl = `${r.h.fake.origin}/api/v2${stale}`;
+    r.h.fake.script(stale, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "first" }, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "second" }, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "third" });
+    assert.equal(await (await r.h.fake.fetch(staleUrl, {})).text(), "first");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, {})).text(), "second", "default mode does not reuse a no-cache copy");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "force-cache" })).text(), "second", "force-cache reads the stored copy, stale or not");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "only-if-cached", mode: "same-origin" })).text(), "second", "so does only-if-cached");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "reload" })).text(), "third", "reload goes to the network");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "force-cache" })).text(), "third", "and replaces the stored copy");
+    await assert.rejects(r.h.fake.fetch(`${r.h.fake.origin}/api/v2/cache-probe-empty`, { cache: "only-if-cached", mode: "same-origin" }), TypeError, "only-if-cached with nothing stored fails, as in a browser");
     r.controller.destroy();
 });
 
 test("a hidden track's retime is not served from a stale cached copy: the server's no-cache sends the reread to the network", async () => {
-    // The fake keeps a browser-style HTTP cache here: a stored answer is reused, with no network read, only when the request's cache
-    // mode and the answer's Cache-Control allow it. The server sends retimeable subtitles as private, no-cache with no validator
-    // (silo-server internal/api/handlers/stream.go), which is what keeps the reread fresh; the max-age run shows the cached copy is real.
+    // The fake keeps a browser-style HTTP cache here (its rules are pinned by the cache probe test above). The server sends retimeable
+    // subtitles as private, no-cache with no validator (silo-server internal/api/handlers/stream.go): the old cues stay stored, so a
+    // client that read from the cache (force-cache, only-if-cached) would show them; the default mode goes to the network.
     // The new timing's cue is at 9 to 11 s, the old one at 12 to 14 s: the line at each time says which copy is drawn.
     const retimeHidden = async (cacheControl: string): Promise<{ reads: number; at10: string | undefined; at12: string | undefined }> => {
         const r = await secondaryRig();
@@ -3847,12 +3860,11 @@ test("a hidden track's retime is not served from a stale cached copy: the server
             const view = last(r.views);
             return view.phase === "playing" ? view.captions?.secondaryText : undefined;
         };
-        const result = { reads: r.h.fake.requests.filter(request => request.path === SECONDARY_PATH && request.fromCache !== true).length, at10: lineAt(10000), at12: lineAt(12500) };
+        const result = { reads: r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length, at10: lineAt(10000), at12: lineAt(12500) };
         r.controller.destroy();
         return result;
     };
-    assert.deepEqual(await retimeHidden("private, no-cache"), { reads: 2, at10: "New timing", at12: "" }, "the server's header: the reread reaches the network and shows the new timing");
-    assert.deepEqual(await retimeHidden("private, max-age=3600"), { reads: 1, at10: "", at12: "Old timing" }, "a cacheable answer would have been reused, stale, from the cache rather than the network");
+    assert.deepEqual(await retimeHidden("private, no-cache"), { reads: 2, at10: "New timing", at12: "" }, "the reread reaches the network past the stored old cues and shows the new timing");
 });
 
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {

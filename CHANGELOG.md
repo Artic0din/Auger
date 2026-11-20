@@ -124,6 +124,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Added native tests that a subtitle retimed while hidden is read again from the server when chosen, past a stored copy of its old cues (the test server now keeps a browser-style HTTP cache, off by default), and that a failed AI Subtitles job keeps its panel and Dismiss while Audio Retry reloads the audio list. Nothing visible changes (#706).
 - In the player's Subtitles tab, the Delay value and its picker now use the digits of the language you pick (`٠ ms` in Arabic), and subtitle languages sort the way that language orders its words, as on Apple TV. In Arabic, Spanish now comes before German. The Details page's subtitle list follows the same order. English reads and sorts exactly as before (#695).
 - In AI Subtitles…, Dismiss now closes the menu, as on Apple TV. A request whose outcome is unknown keeps its warning until you discard it, instead of leaving a panel that said only "Subtitle translation failed." and could not be closed.
 - AI Subtitles… now stays usable when the TV cannot read the audio track names, transcribing the selected audio. The quota line no longer reads "0 of 5 used" when the server sends no used count, and an older quota check that answers late no longer overwrites a newer one.
