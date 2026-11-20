@@ -473,6 +473,23 @@ test("Show Up Next is in the transport and its panel names the next episode", as
     } finally { await page.close(); }
 });
 
+test("a focused Show Up Next that hides never leaves focus on the page: the scrubber takes it, or the overlay during a load (#698)", async () => {
+    const { page } = await open();
+    try {
+        const view = playing(TRACKS);
+        for (const [next, expected] of [[{ ...view, episodes: false }, "position"], [{ phase: "loading", title: "The Movie" }, "player"]] as const) {
+            await show(page, { ...view, episodes: true });
+            // With the controls shown, as a viewer reaches the button.
+            await remote(page, DOWN);
+            await remote(page, RIGHT);
+            await remote(page, RIGHT);
+            assert.equal(await focused(page), "up-next");
+            await show(page, next);
+            assert.equal(await focused(page), expected, "a hidden button takes no space, so focus moves to a control the remote can reach");
+        }
+    } finally { await page.close(); }
+});
+
 test("hiding Close focus makes Select enter the scrubber instead of closing playback", async () => {
     const { page } = await open();
     try {
