@@ -1548,7 +1548,7 @@ for (const reduced of [false, true]) {
         const deck = tv.fake.hold("/home/sections");
         const deckReads = tv.fake.requests.filter(r => r.path.startsWith("/home/sections")).length;
         await tv.page.evaluate(() => { window.appHarness.avplay.tick(5399000); window.appHarness.avplay.listener?.onstreamcompleted(); });
-        await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+        await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
         assert.equal(await tv.focused(), "back");
         assert.equal(tv.fake.requests.filter(r => r.path.startsWith("/watch/")).length, watchReads, "EOF must wait for STOP before reading the next episode");
         stop.release();
@@ -1585,7 +1585,7 @@ appTest("Back during EOF STOP restores Browse and late answers cannot show conti
     assert.ok(id !== undefined);
     const stop = tv.fake.hold(`/playback/${id}`, true);
     await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-    await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+    await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
     stop.release();
@@ -1605,9 +1605,9 @@ for (const reduced of [false, true]) {
         playback.sessions.delete(id);
         await tv.jump(10000);
         await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-        await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+        await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
         progress.release();
-        await tv.page.getByText("Could not confirm playback or load the next episode.", { exact: true }).waitFor();
+        await tv.page.getByText("Playback progress could not be recorded.", { exact: true }).waitFor();
         assert.equal(await tv.page.getByRole("button", { name: "Retry", exact: true }).count(), 0);
         assert.equal(await tv.page.getByRole("button", { name: "Play Now", exact: true }).count(), 0);
         assert.equal(await tv.focused(), "back");
@@ -1627,7 +1627,7 @@ for (const reduced of [false, true]) {
         assert.ok(id !== undefined);
         playback.sessions.delete(id);
         await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-        await tv.page.getByText("Could not confirm playback or load the next episode.", { exact: true }).waitFor();
+        await tv.page.getByText("Playback progress could not be recorded.", { exact: true }).waitFor();
         assert.equal(await tv.page.getByRole("button", { name: "Retry", exact: true }).count(), 0);
         assert.equal(await tv.page.getByRole("button", { name: "Play Now", exact: true }).count(), 0);
         assert.equal(await tv.focused(), "back");
