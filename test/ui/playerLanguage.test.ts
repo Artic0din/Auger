@@ -12,7 +12,7 @@ import { type Browser, chromium, type Page } from "playwright";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "../../src/player/upNextPreview.ts";
-import { translate, translateTv } from "../../src/i18n/translate.ts";
+import { type MessageKey, translate, translateTv } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 
 registerSourceCatalogs();
@@ -111,6 +111,33 @@ const texts = (page: Page, selector: string): Promise<string[]> => page.locator(
 const label = (page: Page, key: string): Promise<string | null> => page.locator(`[data-focus="${key}"]`).first().getAttribute("aria-label");
 
 for (const language of ["de", "ar"]) {
+    // PlayerView (silo-apple main 9dabb621): loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message, and
+    // finishedContent shows upNextEndOfPlayback over finishedMessage (upNextNoNext, upNextShuffleDone, a lookup failure).
+    test(`the end-of-playback card reads Apple's words in ${language} in every state`, async () => {
+        const page = await open(language);
+        const card = async (): Promise<[string | null, string | null, string | null]> => [await page.locator(".player-next-eyebrow").textContent(), await page.locator(".player-next-up .player-title").textContent(), await page.locator(".player-next-up .player-error-text").textContent()];
+        const completion = (state: "finalizing" | "resolving" | "ready" | "failed", status: MessageKey, extra: { shuffle?: true; failure?: "session" } = {}): PlaybackView => ({ phase: "completion", status, state, next: undefined, retryable: state === "failed", ...extra });
+        try {
+            for (const state of ["finalizing", "resolving"] as const) {
+                await show(page, completion(state, "upNext.headingEnded"));
+                assert.deepEqual(await card(), [text("upNext.headingEnded", language), text("upNext.finding", language), ""], `${state}: Apple's loading card, no separate ending stage`);
+            }
+            await show(page, completion("resolving", "upNext.headingShuffle", { shuffle: true }));
+            assert.deepEqual(await card(), [text("upNext.headingShuffle", language), text("upNext.picking", language), ""]);
+            await show(page, completion("failed", "upNext.headingFinished"));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.lookupFailedAlone", language)]);
+            await show(page, completion("failed", "upNext.headingFinished", { failure: "session" }));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("errors.apple.playback.invalidSample", language)], "a failed STOP says the progress was not recorded, not that a lookup failed");
+            await show(page, completion("ready", "upNext.headingFinished"));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.noNext", language)]);
+            await show(page, completion("ready", "upNext.headingFinished", { shuffle: true }));
+            assert.deepEqual(await card(), [text("upNext.headingFinished", language), text("upNext.endOfPlayback", language), text("upNext.shuffleDone", language)]);
+            for (const key of ["upNext.finding", "upNext.picking", "upNext.endOfPlayback", "upNext.lookupFailedAlone", "upNext.noNext", "upNext.shuffleDone", "errors.apple.playback.invalidSample"] as const) {
+                assert.notEqual(catalog(language)[key], undefined, `${key} ships in ${language}`);
+            }
+        } finally { await page.close(); }
+    });
+
     test(`the transport and its labels read in ${language}`, async () => {
         const page = await open(language);
         try {
@@ -235,7 +262,7 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 30 }));
             assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
             assert.equal(await page.locator('[data-focus="cancel-autoplay"]').textContent(), "Cancel autoplay", "no Apple key: English");
-            await show(page, { phase: "completion", title: "The Movie", state: "ready", retryable: false, next, countdown: 1 });
+            await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 1 });
             assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 1 }));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
             await show(page, playing({ skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25 }));
@@ -467,6 +494,18 @@ test("a German catalog that lands while the player is up redraws it in German", 
         await page.waitForFunction(expected => document.querySelector('[data-focus="backward"]')?.getAttribute("aria-label") === expected, text("player.skip.back", "de", { seconds: 10 }));
         await openPanel(page);
         assert.equal(await page.locator(".player-tab").nth(1).textContent(), text("options.tabStats", "de"));
+    } finally { await page.close(); }
+});
+
+test("a German catalog that lands while the end-of-playback card is up redraws its status line too", async () => {
+    // The view carries the status line's key, not English text, so the card's late redraw reads it in the new language.
+    const page = await open(undefined);
+    try {
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", next: undefined, retryable: false });
+        assert.equal(await page.locator(".player-next-eyebrow").textContent(), "Finished");
+        await page.evaluate(strings => window.player.setLanguage("de", strings), catalog("de"));
+        await page.waitForFunction(expected => document.querySelector(".player-next-up .player-title")?.textContent === expected, text("upNext.endOfPlayback", "de"));
+        assert.equal(await page.locator(".player-next-eyebrow").textContent(), text("upNext.headingFinished", "de"));
     } finally { await page.close(); }
 });
 
