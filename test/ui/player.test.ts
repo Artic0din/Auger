@@ -435,6 +435,22 @@ test("hidden Down opens Info and hidden Right returns to scrubber", async () => 
     } finally { await page.close(); }
 });
 
+// TVPlayerTransportCluster.swift:69-75 (silo-apple main f70e16a): with nothing to show next, the button is not drawn at all (#698).
+test("a hidden Show Up Next draws nothing in the transport, so the options button starts its group", async () => {
+    const { page } = await open();
+    try {
+        const box = (): Promise<{ display: string; width: number }> => page.locator('[data-focus="up-next"]').evaluate(node => ({ display: getComputedStyle(node).display, width: node.getBoundingClientRect().width }));
+        // The group is right-aligned (margin-left: auto): a drawn ring sits left of the options button inside it.
+        const lead = (): Promise<number> => page.locator('[data-focus="tracks"]').evaluate(node => node.getBoundingClientRect().left - (node.parentElement as HTMLElement).getBoundingClientRect().left);
+        await show(page, { ...playing(TRACKS), episodes: true });
+        assert.deepEqual(await box(), { display: "flex", width: 66 }, "shown: Apple's 66 px circle");
+        assert.ok(await lead() >= 66, "shown: the ring comes before the options button");
+        await show(page, { ...playing(TRACKS), episodes: false });
+        assert.deepEqual(await box(), { display: "none", width: 0 }, "hidden: no empty ring");
+        assert.equal(await lead(), 0, "hidden: the options button starts the group");
+    } finally { await page.close(); }
+});
+
 test("Show Up Next is in the transport and its panel names the next episode", async () => {
     const { page } = await open();
     try {
