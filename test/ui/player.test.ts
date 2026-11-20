@@ -486,6 +486,8 @@ test("a focused Show Up Next that hides never leaves focus on the page: the scru
             assert.equal(await focused(page), "up-next");
             await show(page, next);
             assert.equal(await focused(page), expected, "a hidden button takes no space, so focus moves to a control the remote can reach");
+            const drawn = await page.locator('[data-focus="up-next"]').evaluate(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height }; });
+            assert.deepEqual(drawn, { width: 0, height: 0 }, "and no empty ring is left where it was");
         }
     } finally { await page.close(); }
 });
