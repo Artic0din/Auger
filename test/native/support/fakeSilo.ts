@@ -65,9 +65,21 @@ export function problem(status: number, id: string, title: string, headers?: Rec
 export class FakeSilo {
     readonly origin: string;
     readonly serverId: string;
+    /** Network reads only; a cache hit goes to `cacheHits`, so a count per path is a count of server answers. */
     readonly requests: RecordedRequest[] = [];
+    /** Reads answered from the modelled HTTP cache, with no network read. */
+    readonly cacheHits: RecordedRequest[] = [];
     /** Replies that replace the next answer for a path, first in first out. */
     readonly scripted = new Map<string, Reply[]>();
+    /**
+     * A browser-style HTTP cache, off by default. Every 200 GET answer is stored unless the request or the answer says no-store. A
+     * default-mode read reuses a fresh copy (a max-age and no no-cache) with no network read; a no-cache copy needs revalidation, and
+     * with no validator (the server sends none for retimeable subtitles) that is a network read. "force-cache" and "only-if-cached"
+     * take any stored copy, fresh or not, and "only-if-cached" fails with none; "reload" and "no-cache" go to the network, "reload"
+     * replacing the copy. Copies never expire, and a cache hit can still be held or dropped like any read.
+     */
+    modelHttpCache = false;
+    private readonly httpCache = new Map<string, Reply & { readonly fresh: boolean }>();
     readonly devices = new Map<string, DeviceRequest>();
     /** refresh token -> session id; access token -> session id. */
     private readonly refreshTokens = new Map<string, number>();
@@ -193,15 +205,19 @@ export class FakeSilo {
         });
         const body = typeof init.body === "string" ? toRecord(JSON.parse(init.body)) : undefined;
         const method = init.method ?? "GET";
-        this.requests.push({ method, path, headers, body, redirect: init.redirect, cache: init.cache });
+        // A cache hit is logged apart, checked for abort and held or dropped like any read; only its answer comes from the stored copy.
+        const stored = this.modelHttpCache && method === "GET" ? this.httpCache.get(path) : undefined;
+        const anyCopy = init.cache === "force-cache" || init.cache === "only-if-cached";
+        const cached = stored !== undefined && (anyCopy || ((init.cache === undefined || init.cache === "default") && stored.fresh)) ? stored : undefined;
+        if (this.modelHttpCache && init.cache === "only-if-cached" && cached === undefined) throw new TypeError("Failed to fetch");
+        (cached === undefined ? this.requests : this.cacheHits).push({ method, path, headers, body, redirect: init.redirect, cache: init.cache });
 
         const signal = init.signal ?? undefined;
         if (signal?.aborted) {
             throw new DOMException("The operation was aborted.", "AbortError");
         }
         // The server acts at once; a held answer is only delayed on its way back.
-        const scripted = this.scripted.get(path)?.shift();
-        const reply = scripted ?? this.route(method, path, headers, body);
+        const reply = cached ?? this.scripted.get(path)?.shift() ?? this.route(method, path, headers, body);
         const dropIndex = this.dropped.indexOf(path);
         if (dropIndex !== -1) {
             this.dropped.splice(dropIndex, 1);
@@ -229,7 +245,14 @@ export class FakeSilo {
             const cutBody = new ReadableStream<Uint8Array>({ pull(stream) { if (pulls++ === 0) stream.enqueue(sent); else stream.error(new TypeError("network error")); } });
             return new Response(cutBody, { status: reply.status, headers: responseHeaders });
         }
-        return new Response(reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body)), { status: reply.status, headers: responseHeaders });
+        const text = reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body));
+        const control = responseHeaders.get("Cache-Control") ?? "";
+        if (this.modelHttpCache && method === "GET" && cached === undefined && init.cache !== "no-store" && reply.status === 200 && text !== null) {
+            const maxAge = Number(/max-age=(\d+)/.exec(control)?.[1] ?? "0");
+            if (/no-store/.test(control)) this.httpCache.delete(path);
+            else this.httpCache.set(path, { status: reply.status, text, headers: Object.fromEntries(responseHeaders.entries()), fresh: maxAge > 0 && !/no-cache/.test(control) });
+        }
+        return new Response(text, { status: reply.status, headers: responseHeaders });
     };
 
     private route(method: string, path: string, headers: Record<string, string>, body: Record<string, unknown> | undefined): Reply {

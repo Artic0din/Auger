@@ -3417,6 +3417,46 @@ test("Audio Retry while a transcription runs keeps the AI menu and its Cancel, a
     r.controller.destroy();
 });
 
+test("Audio Retry after a transcription fails keeps the failed panel and its Dismiss, and still starts nothing new", async () => {
+    const r = await rig();
+    r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: false, transcribe_enabled: true } });
+    r.h.fake.script("/subtitles/ai/quota", ...Array.from({ length: 3 }, () => ({ status: 200, body: { limited: true, limit: 5, used: 3, remaining: 2, period: "month" } })));
+    r.h.fake.script("/settings/contract", { status: 200, body: { option_sets: { playback_subtitle_languages: { options: [] } } } });
+    r.h.fake.script("/catalog/items/movie-1/versions", ...Array.from({ length: 4 }, () => problem(500, "internal", "Internal")));
+    r.h.fake.script("/subtitles/ai/translate", { status: 202, body: { job: { id: "opaque-job", media_file_id: "42", kind: "transcribe", source_index: 0, target_language: "", status: "failed", error_message: "Provider could not decode the audio." } } });
+    const file = r.server.files.get("42");
+    assert.ok(file);
+    r.server.files.set("42", { ...file, inventory: [] });
+    await playMovie(r);
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.phase, "failed");
+    r.h.fake.scripted.delete("/catalog/items/movie-1/versions");
+    const reload = r.h.fake.hold("/catalog/items/movie-1/versions");
+    r.controller.retryTrackInfo();
+    await r.h.clock.advance(0);
+    r.avplay.tick(13000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.audio.state, "loading");
+    assert.notEqual(view.tracks.aiMenu, undefined, "the failed job's panel, and its Dismiss, stay while the audio list reloads");
+    assert.equal(view.tracks.ai?.message, "Provider could not decode the audio.", "with its reason");
+    const creates = r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length;
+    r.controller.startSubtitleAI("ai-detected-spoken-language");
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/subtitles/ai/translate").length, creates, "no new request while the audio is unknown");
+    r.controller.subtitleAIAction("dismiss");
+    r.avplay.tick(13500);
+    view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.tracks.ai?.phase, "idle", "Dismiss still acts on the job");
+    reload.release();
+    r.controller.destroy();
+});
+
 test("opening AI Subtitles after a failed quota read brings the balance back to the menu", async () => {
     const r = await rig();
     r.h.fake.script("/subtitles/ai/status", { status: 200, body: { state: "available", allowed: true, enabled: true, transcribe_enabled: true } });
@@ -3776,6 +3816,80 @@ test("a track retimed while it is not shown is read again when chosen, not serve
     assert.ok(view.phase === "playing");
     assert.equal(view.captions?.secondaryText, "New timing");
     r.controller.destroy();
+});
+
+test("the fake's HTTP cache keeps abort, holds and the request log: an aborted GET rejects even with a cached answer", async () => {
+    const r = await rig();
+    r.h.fake.modelHttpCache = true;
+    const path = "/cache-probe";
+    const url = `${r.h.fake.origin}/api/v2${path}`;
+    r.h.fake.script(path, { status: 200, headers: { "Cache-Control": "max-age=60" }, text: "cached" });
+    assert.equal(await (await r.h.fake.fetch(url, {})).text(), "cached");
+    const aborted = new AbortController();
+    aborted.abort();
+    await assert.rejects(r.h.fake.fetch(url, { signal: aborted.signal }), (error: unknown) => error instanceof DOMException && error.name === "AbortError", "a cache hit still honours an aborted signal");
+    const hold = r.h.fake.hold(path);
+    let answered = false;
+    const held = r.h.fake.fetch(url, {}).then(response => { answered = true; return response.text(); });
+    await r.h.clock.advance(0);
+    assert.equal(answered, false, "a hold delays a cache hit like any read");
+    hold.release();
+    assert.equal(await held, "cached", "and it is still the cached copy, with the scripted replies untouched");
+    assert.equal(r.h.fake.requests.filter(request => request.path === path).length, 1, "only the first read reached the network");
+    assert.deepEqual(r.h.fake.cacheHits.filter(request => request.path === path).map(request => request.method), ["GET", "GET"], "the aborted and the held reads were cache hits, logged apart");
+    // Browser rules: a no-cache answer is stored but never reused unrevalidated, and with no validator it goes to the network; a
+    // force-cache or only-if-cached read takes any stored copy, fresh or not; reload goes to the network and replaces the copy.
+    const stale = "/cache-probe-no-cache";
+    const staleUrl = `${r.h.fake.origin}/api/v2${stale}`;
+    r.h.fake.script(stale, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "first" }, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "second" }, { status: 200, headers: { "Cache-Control": "private, no-cache" }, text: "third" });
+    assert.equal(await (await r.h.fake.fetch(staleUrl, {})).text(), "first");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, {})).text(), "second", "default mode does not reuse a no-cache copy");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "force-cache" })).text(), "second", "force-cache reads the stored copy, stale or not");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "only-if-cached", mode: "same-origin" })).text(), "second", "so does only-if-cached");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "reload" })).text(), "third", "reload goes to the network");
+    assert.equal(await (await r.h.fake.fetch(staleUrl, { cache: "force-cache" })).text(), "third", "and replaces the stored copy");
+    await assert.rejects(r.h.fake.fetch(`${r.h.fake.origin}/api/v2/cache-probe-empty`, { cache: "only-if-cached", mode: "same-origin" }), TypeError, "only-if-cached with nothing stored fails, as in a browser");
+    r.controller.destroy();
+});
+
+test("a hidden track's retime is not served from a stale cached copy: the server's no-cache sends the reread to the network", async () => {
+    // The fake keeps a browser-style HTTP cache here (its rules are pinned by the cache probe test above). The server sends retimeable
+    // subtitles as private, no-cache with no validator (silo-server internal/api/handlers/stream.go): the old cues stay stored, so a
+    // client that read from the cache (force-cache, only-if-cached) would show them; the default mode goes to the network.
+    // The new timing's cue is at 9 to 11 s, the old one at 12 to 14 s: the line at each time says which copy is drawn.
+    const retimeHidden = async (cacheControl: string): Promise<{ reads: number; at10: string | undefined; at12: string | undefined }> => {
+        const r = await secondaryRig();
+        r.h.fake.modelHttpCache = true;
+        const file = r.server.files.get("42");
+        assert.ok(file);
+        r.server.files.set("42", { ...file, inventory: file.inventory.map(({ sync_key: _unused, ...track }, index) => index === 4 ? { ...track, sync_key: SYNC_KEY } : track) });
+        scriptSync(r, syncState());
+        const headers = { "Cache-Control": cacheControl };
+        r.h.fake.script(SECONDARY_PATH, { status: 200, headers, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nOld timing" }, { status: 200, headers, text: "WEBVTT\n\n00:09.000 --> 00:11.000\nNew timing" });
+        r.h.fake.script(`/subtitles/42/sync/${SYNC_KEY}`,
+            { status: 202, body: { subtitle: syncState({ sync: syncJob("pending", { phase: "queued", progress: 0 }) }) } },
+            { status: 200, body: { subtitle: syncState({ timing: { offset_ms: -3000, scale: 1 }, sync: syncJob("synced", { result: { offset_ms: -3000, scale: 1 } }) }) } });
+        await playMovie(r);
+        await r.h.clock.advance(0);
+        r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+        await r.h.clock.advance(0);
+        r.controller.syncSubtitle(SYNC_KEY);
+        await r.h.clock.advance(0);
+        r.controller.selectSecondarySubtitle(undefined);
+        await r.h.clock.advance(3000);
+        for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        r.controller.selectSecondarySubtitle("file:42:subtitle:4");
+        for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        const lineAt = (ms: number): string | undefined => {
+            r.avplay.tick(ms);
+            const view = last(r.views);
+            return view.phase === "playing" ? view.captions?.secondaryText : undefined;
+        };
+        const result = { reads: r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length, at10: lineAt(10000), at12: lineAt(12500) };
+        r.controller.destroy();
+        return result;
+    };
+    assert.deepEqual(await retimeHidden("private, no-cache"), { reads: 2, at10: "New timing", at12: "" }, "the reread reaches the network past the stored old cues and shows the new timing");
 });
 
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {
