@@ -68,6 +68,13 @@ export class FakeSilo {
     readonly requests: RecordedRequest[] = [];
     /** Replies that replace the next answer for a path, first in first out. */
     readonly scripted = new Map<string, Reply[]>();
+    /**
+     * A browser-style HTTP cache, off by default. A GET answer with a max-age and neither no-cache nor no-store is stored, and a later
+     * request in the default cache mode reuses it with no network read. "reload" goes to the network and replaces the copy; "no-store"
+     * neither reads nor stores. Revalidation is not modelled: the server sends retimeable subtitles with no validator.
+     */
+    modelHttpCache = false;
+    private readonly httpCache = new Map<string, { readonly status: number; readonly text: string; readonly headers: Headers }>();
     readonly devices = new Map<string, DeviceRequest>();
     /** refresh token -> session id; access token -> session id. */
     private readonly refreshTokens = new Map<string, number>();
@@ -193,6 +200,8 @@ export class FakeSilo {
         });
         const body = typeof init.body === "string" ? toRecord(JSON.parse(init.body)) : undefined;
         const method = init.method ?? "GET";
+        const cached = this.modelHttpCache && method === "GET" && (init.cache === undefined || init.cache === "default") ? this.httpCache.get(path) : undefined;
+        if (cached !== undefined) return new Response(cached.text, { status: cached.status, headers: cached.headers });
         this.requests.push({ method, path, headers, body, redirect: init.redirect, cache: init.cache });
 
         const signal = init.signal ?? undefined;
@@ -229,7 +238,14 @@ export class FakeSilo {
             const cutBody = new ReadableStream<Uint8Array>({ pull(stream) { if (pulls++ === 0) stream.enqueue(sent); else stream.error(new TypeError("network error")); } });
             return new Response(cutBody, { status: reply.status, headers: responseHeaders });
         }
-        return new Response(reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body)), { status: reply.status, headers: responseHeaders });
+        const text = reply.text ?? (reply.body === undefined ? null : JSON.stringify(reply.body));
+        const control = responseHeaders.get("Cache-Control") ?? "";
+        if (this.modelHttpCache && method === "GET" && init.cache !== "no-store" && reply.status === 200 && text !== null) {
+            const maxAge = Number(/max-age=(\d+)/.exec(control)?.[1] ?? "0");
+            if (maxAge > 0 && !/no-cache|no-store/.test(control)) this.httpCache.set(path, { status: reply.status, text, headers: responseHeaders });
+            else this.httpCache.delete(path);
+        }
+        return new Response(text, { status: reply.status, headers: responseHeaders });
     };
 
     private route(method: string, path: string, headers: Record<string, string>, body: Record<string, unknown> | undefined): Reply {
