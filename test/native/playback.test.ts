@@ -3793,6 +3793,27 @@ test("a track retimed while it is not shown is read again when chosen, not serve
     r.controller.destroy();
 });
 
+test("the fake's HTTP cache keeps abort, holds and the request log: an aborted GET rejects even with a cached answer", async () => {
+    const r = await rig();
+    r.h.fake.modelHttpCache = true;
+    const path = "/cache-probe";
+    const url = `${r.h.fake.origin}/api/v2${path}`;
+    r.h.fake.script(path, { status: 200, headers: { "Cache-Control": "max-age=60" }, text: "cached" });
+    assert.equal(await (await r.h.fake.fetch(url, {})).text(), "cached");
+    const aborted = new AbortController();
+    aborted.abort();
+    await assert.rejects(r.h.fake.fetch(url, { signal: aborted.signal }), (error: unknown) => error instanceof DOMException && error.name === "AbortError", "a cache hit still honours an aborted signal");
+    const hold = r.h.fake.hold(path);
+    let answered = false;
+    const held = r.h.fake.fetch(url, {}).then(response => { answered = true; return response.text(); });
+    await r.h.clock.advance(0);
+    assert.equal(answered, false, "a hold delays a cache hit like any read");
+    hold.release();
+    assert.equal(await held, "cached", "and it is still the cached copy, with the scripted replies untouched");
+    assert.deepEqual(r.h.fake.requests.filter(request => request.path === path).map(request => request.fromCache === true), [false, true, true], "every read is logged; cache hits are marked");
+    r.controller.destroy();
+});
+
 test("a hidden track's retime is not served from a stale cached copy: the server's no-cache sends the reread to the network", async () => {
     // The fake keeps a browser-style HTTP cache here: a stored answer is reused, with no network read, only when the request's cache
     // mode and the answer's Cache-Control allow it. The server sends retimeable subtitles as private, no-cache with no validator
@@ -3826,12 +3847,12 @@ test("a hidden track's retime is not served from a stale cached copy: the server
             const view = last(r.views);
             return view.phase === "playing" ? view.captions?.secondaryText : undefined;
         };
-        const result = { reads: r.h.fake.requests.filter(request => request.path === SECONDARY_PATH).length, at10: lineAt(10000), at12: lineAt(12500) };
+        const result = { reads: r.h.fake.requests.filter(request => request.path === SECONDARY_PATH && request.fromCache !== true).length, at10: lineAt(10000), at12: lineAt(12500) };
         r.controller.destroy();
         return result;
     };
     assert.deepEqual(await retimeHidden("private, no-cache"), { reads: 2, at10: "New timing", at12: "" }, "the server's header: the reread reaches the network and shows the new timing");
-    assert.deepEqual(await retimeHidden("private, max-age=3600"), { reads: 1, at10: "", at12: "Old timing" }, "a cacheable answer would have been reused, stale, with no network read");
+    assert.deepEqual(await retimeHidden("private, max-age=3600"), { reads: 1, at10: "", at12: "Old timing" }, "a cacheable answer would have been reused, stale, from the cache rather than the network");
 });
 
 test("Sync to Audio on a track shown as Secondary reads that track's cues again", async () => {

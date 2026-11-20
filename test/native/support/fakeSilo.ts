@@ -23,6 +23,8 @@ export interface RecordedRequest {
     readonly body: Record<string, unknown> | undefined;
     readonly redirect: RequestRedirect | undefined;
     readonly cache: RequestCache | undefined;
+    /** Answered from the modelled HTTP cache, with no network read. */
+    readonly fromCache?: true;
 }
 
 interface DeviceRequest {
@@ -74,7 +76,7 @@ export class FakeSilo {
      * neither reads nor stores. Revalidation is not modelled: the server sends retimeable subtitles with no validator.
      */
     modelHttpCache = false;
-    private readonly httpCache = new Map<string, { readonly status: number; readonly text: string; readonly headers: Headers }>();
+    private readonly httpCache = new Map<string, Reply>();
     readonly devices = new Map<string, DeviceRequest>();
     /** refresh token -> session id; access token -> session id. */
     private readonly refreshTokens = new Map<string, number>();
@@ -200,17 +202,16 @@ export class FakeSilo {
         });
         const body = typeof init.body === "string" ? toRecord(JSON.parse(init.body)) : undefined;
         const method = init.method ?? "GET";
+        // A cache hit is logged, checked for abort and held or dropped like any read; only its answer comes from the stored copy.
         const cached = this.modelHttpCache && method === "GET" && (init.cache === undefined || init.cache === "default") ? this.httpCache.get(path) : undefined;
-        if (cached !== undefined) return new Response(cached.text, { status: cached.status, headers: cached.headers });
-        this.requests.push({ method, path, headers, body, redirect: init.redirect, cache: init.cache });
+        this.requests.push({ method, path, headers, body, redirect: init.redirect, cache: init.cache, ...(cached === undefined ? {} : { fromCache: true as const }) });
 
         const signal = init.signal ?? undefined;
         if (signal?.aborted) {
             throw new DOMException("The operation was aborted.", "AbortError");
         }
         // The server acts at once; a held answer is only delayed on its way back.
-        const scripted = this.scripted.get(path)?.shift();
-        const reply = scripted ?? this.route(method, path, headers, body);
+        const reply = cached ?? this.scripted.get(path)?.shift() ?? this.route(method, path, headers, body);
         const dropIndex = this.dropped.indexOf(path);
         if (dropIndex !== -1) {
             this.dropped.splice(dropIndex, 1);
@@ -242,7 +243,7 @@ export class FakeSilo {
         const control = responseHeaders.get("Cache-Control") ?? "";
         if (this.modelHttpCache && method === "GET" && init.cache !== "no-store" && reply.status === 200 && text !== null) {
             const maxAge = Number(/max-age=(\d+)/.exec(control)?.[1] ?? "0");
-            if (maxAge > 0 && !/no-cache|no-store/.test(control)) this.httpCache.set(path, { status: reply.status, text, headers: responseHeaders });
+            if (maxAge > 0 && !/no-cache|no-store/.test(control)) this.httpCache.set(path, { status: reply.status, text, headers: Object.fromEntries(responseHeaders.entries()) });
             else this.httpCache.delete(path);
         }
         return new Response(text, { status: reply.status, headers: responseHeaders });
