@@ -473,22 +473,44 @@ test("Show Up Next is in the transport and its panel names the next episode", as
     } finally { await page.close(); }
 });
 
-test("a focused Show Up Next that hides never leaves focus on the page: the scrubber takes it, or the overlay during a load (#698)", async () => {
+const reachUpNext = async (page: Page): Promise<void> => {
+    await show(page, { ...playing(TRACKS), episodes: true });
+    // With the controls shown, as a viewer reaches the button.
+    await remote(page, DOWN);
+    await remote(page, RIGHT);
+    await remote(page, RIGHT);
+    assert.equal(await focused(page), "up-next");
+};
+
+// AGENTS.md (TV focus): focus is never lost. Desktop Chromium empties focus the moment a node gets the hidden attribute, and the screen's
+// later "focus outside the transport" fallback then catches it. A TV engine need not empty it, so the screen must move focus itself. The test
+// stands in for such an engine: while the button hides, document.activeElement keeps reporting it whenever the browser has emptied focus.
+test("a focused Show Up Next that hides during playback hands focus to the scrubber itself, and draws nothing (#698)", async () => {
     const { page } = await open();
     try {
-        const view = playing(TRACKS);
-        for (const [next, expected] of [[{ ...view, episodes: false }, "position"], [{ phase: "loading", title: "The Movie" }, "player"]] as const) {
-            await show(page, { ...view, episodes: true });
-            // With the controls shown, as a viewer reaches the button.
-            await remote(page, DOWN);
-            await remote(page, RIGHT);
-            await remote(page, RIGHT);
-            assert.equal(await focused(page), "up-next");
-            await show(page, next);
-            assert.equal(await focused(page), expected, "a hidden button takes no space, so focus moves to a control the remote can reach");
-            const drawn = await page.locator('[data-focus="up-next"]').evaluate(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height }; });
-            assert.deepEqual(drawn, { width: 0, height: 0 }, "and no empty ring is left where it was");
-        }
+        await reachUpNext(page);
+        const active = await page.evaluate(next => {
+            const held = document.activeElement as HTMLElement;
+            const real = Object.getOwnPropertyDescriptor(Document.prototype, "activeElement")!.get!;
+            Object.defineProperty(document, "activeElement", { configurable: true, get(this: Document) { const focusedNode = real.call(this) as Element | null; return focusedNode === null || focusedNode === this.body ? held : focusedNode; } });
+            try {
+                window.player.show(next);
+                return document.activeElement?.getAttribute("data-focus") ?? null;
+            } finally { delete (document as unknown as Record<string, unknown>).activeElement; }
+        }, { ...playing(TRACKS), episodes: false });
+        assert.equal(active, "position", "the screen moved focus to the scrubber, though the engine still reported the hidden button");
+        const drawn = await page.locator('[data-focus="up-next"]').evaluate(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height }; });
+        assert.deepEqual(drawn, { width: 0, height: 0 }, "and the CSS leaves no empty ring where it was");
+    } finally { await page.close(); }
+});
+
+// A guard, not a check of this PR's CSS: a load already focuses the overlay, before and after #698.
+test("guard: a load that hides a focused Show Up Next focuses the overlay", async () => {
+    const { page } = await open();
+    try {
+        await reachUpNext(page);
+        await show(page, { phase: "loading", title: "The Movie" });
+        assert.equal(await focused(page), "player");
     } finally { await page.close(); }
 });
 
