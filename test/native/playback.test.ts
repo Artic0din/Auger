@@ -2554,47 +2554,81 @@ assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.pa
     await r.h.clock.advance(0);
 });
 
-test("a lost EOF STOP answer retries the identical body and identity before resolving", async () => {
+test("a lost EOF STOP answer lets the advance go on and resends the identical body and identity in the background", async () => {
     const r = await episodeRig();
     const id = await playMovie(r, EPISODE);
     r.h.fake.dropNextAnswer(`/playback/${id}`);
     r.avplay.tick(5399000);
     r.avplay.listener?.onstreamcompleted();
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).state, "finalizing");
-assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.path.includes("?")).length, 0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready", "the advance does not wait for the lost STOP");
+    assert.equal(bodies(r.h, `/playback/${id}`).length, 1, "the resend waits its first retry delay");
     await r.h.clock.advance(1000);
     const stops = bodies(r.h, `/playback/${id}`);
     assert.equal(stops.length, 2);
     assert.deepEqual(stops[0], stops[1]);
     assert.equal(stops[0]?.sequence, 1);
     assert.equal(stops[0]?.position, 5399);
-    assert.equal(completion(r).state, "ready");
-    assert.equal(r.server.session(id).receipt?.stop_id, stops[0]?.stop_id);
+    assert.equal(r.server.session(id).receipt?.stop_id, stops[0]?.stop_id, "the old session still ends, with the same STOP");
     r.controller.destroy();
 });
 
-test("EOF STOP failures retain the same body on explicit Retry and honor Retry-After", async () => {
+test("a STOP that times out at EOF does not keep the known next episode from starting, as on Apple TV", async () => {
+    // PlaybackSessionBridge.stopSession (silo-apple main 71a3beb9): a failed DELETE is logged and the next load goes on; the server
+    // times the old session out. On 20 Nov the S95C instead waited out three 15 s STOP timeouts and showed the failure card (#709).
+    const r = await autoplayRig(true);
+    const id = await playMovie(r, EPISODE);
+    r.h.fake.hold(`/playback/${id}`);
+    r.avplay.tick(5399000);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "finalizing");
+    await r.h.clock.advance(15000);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready", "one timed-out STOP, and the next episode is offered, not the failure card");
+    assert.equal(completion(r).next?.contentId, "episode:s1e13");
+    for (let step = 0; step < 20 && bodies(r.h, "/start").length < 2; step++) await r.h.clock.advance(1000);
+    assert.equal(bodies(r.h, "/start").length, 2, "the countdown starts the next episode");
+    const stops = bodies(r.h, `/playback/${id}`);
+    assert.ok(stops.length >= 2 && stops.every(stop => JSON.stringify(stop) === JSON.stringify(stops[0])), "the identical STOP kept trying in the background, so the old session still ends");
+    assert.equal(r.server.session(id).receipt?.stop_id, stops[0]?.stop_id, "and it did end");
+    r.controller.destroy();
+});
+
+test("refusals at EOF STOP still end the advance: no successor starts without the session's authority", async () => {
+    // A 401 refreshes the token and sends the STOP again, so it is not a refusal here; an expired session is its own test below.
+    for (const refusal of [problem(403, "forbidden", "Forbidden"), problem(410, "gone", "Gone")]) {
+        const r = await autoplayRig(true);
+        const id = await playMovie(r, EPISODE);
+        r.h.fake.script(`/playback/${id}`, refusal);
+        r.avplay.tick(5399000);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "failed", `${refusal.status}: the card says the session could not end`);
+        assert.equal(completion(r).failure, "session");
+        await r.h.clock.advance(30000);
+        assert.equal(bodies(r.h, "/start").length, 1, `${refusal.status}: nothing new starts`);
+        r.controller.destroy();
+    }
+});
+
+test("an EOF STOP refused with 503 lets the advance go on, and the background resend keeps the same body and honors Retry-After", async () => {
     const r = await episodeRig();
     const id = await playMovie(r, EPISODE);
-    r.h.fake.script(`/playback/${id}`, ...[1, 2, 3].map(() => ({ status: 503, headers: { "Retry-After": "4" }, body: {} })));
+    r.h.fake.script(`/playback/${id}`, { status: 503, headers: { "Retry-After": "4" }, body: {} });
     r.avplay.tick(111250);
     r.avplay.listener?.onstreamcompleted();
-    await r.h.clock.advance(8000);
-    assert.equal(completion(r).state, "failed");
-    assert.equal(completion(r).failure, "session", "STOP failed: no next item was looked up");
-    assert.equal(completion(r).retryable, true);
-    r.controller.retryCompletion();
-    r.controller.retryCompletion();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready", "a STOP that may clear later does not end the advance");
+    assert.equal(completion(r).failure, undefined);
     await r.h.clock.advance(3999);
-    assert.equal(bodies(r.h, `/playback/${id}`).length, 3);
-    assert.equal(bodies(r.h, "/start").length, 1);
+    assert.equal(bodies(r.h, `/playback/${id}`).length, 1, "Retry-After holds the resend back");
     await r.h.clock.advance(1);
     const stops = bodies(r.h, `/playback/${id}`);
-    assert.equal(stops.length, 4);
+    assert.equal(stops.length, 2);
     assert.ok(stops.every(stop => JSON.stringify(stop) === JSON.stringify(stops[0])));
     assert.equal(stops[0]?.position, 111.25);
-    assert.equal(completion(r).state, "ready");
+    assert.equal(r.server.session(id).receipt?.stop_id, stops[0]?.stop_id);
     r.controller.destroy();
 });
 
@@ -2892,11 +2926,13 @@ test("authority loss while STOP awaits retry prevents old-scope resends and next
     for (const action of ["profile", "account"]) {
         const r = await episodeRig();
         const id = await playMovie(r, EPISODE);
-        r.h.fake.dropNextAnswer(`/playback/${id}`);
+        // The authority goes while the STOP is out, so its answer arrives under no authority at all.
+        const stop = r.h.fake.hold(`/playback/${id}`);
         r.avplay.listener?.onstreamcompleted();
         await r.h.clock.advance(0);
         if (action === "profile") r.h.core.profiles.clear();
         else await r.h.core.session.logout();
+        stop.release();
         await r.h.clock.advance(10000);
         r.controller.retryCompletion();
         r.controller.playNext();

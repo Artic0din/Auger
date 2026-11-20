@@ -106,14 +106,13 @@ This source candidate does not close #104, #137 or #177.
 Issue #12's bounded first slice offers Play next and Back only after a natural episode EOF.
 PlaybackController retires the transport and waits for an in-flight progress request before sending STOP with a newer sequence and the last observed source position.
 The adopted plan's effective file and source timeline identify the completed edition; unknown or different durations and early EOF never manufacture a full-duration sample.
-Uncertain STOP answers retry the identical installation ID, stop ID, sequence, position and body, preserving Retry-After.
-An explicit Retry after exhausted transient retries retains that same request.
+At an episode's natural end the STOP is sent once, as Apple's `PlaybackSessionBridge.stopSession` sends it: a failure that may clear (a timeout, no answer, a rate limit or a server error) is left to the background and the advance goes on, so a slow server no longer keeps a known next episode from starting (#709). The background resend repeats the identical installation ID, stop ID, sequence, position and body, waits at least its first retry delay and honors Retry-After, so the old session still ends once the server answers; otherwise the server times it out. A refusal or an expired session still ends the advance.
 An expired session during final progress or STOP reporting offers Back without an unusable Retry.
 Fresh watch-read failures remain retryable after STOP is confirmed.
 EOF during a pending track or quality change is retained when a refusal keeps the original transport; adopting a replacement discards that predecessor's EOF.
 Authorization, installation and administrator refusals cannot create a successor session.
 
-A valid STOP receipt is a teardown barrier, not proof that progress or watch-history side effects succeeded.
+A valid STOP receipt, or a STOP left to the background after a failure that may clear, lets the advance go on; neither is proof that progress or watch-history side effects succeeded.
 Fresh watch reads follow the receipt and precede any next offer.
 The panel says End of playback even when fresh played state remains false or the contract's optional progress is absent.
 Its words are Apple TV's (`PlayerView`, under the `upNext.*` keys), in every shipped language. While the session ends and the next item is worked out it reads Playing Next (Up Next at Random in a Shuffle) over Finding the next episode (Picking at random); Apple has no separate stage for ending the session, so the TV's old Ending playback… is gone. With nothing to follow it reads Finished over End of playback and No next episode is available. (in a Shuffle, Nothing else in this shuffle can play.). A failed lookup reads Couldn't load the next episode. Go back to choose something else., Apple's wording for a card with no On Deck row. A failure while the session ends (the final progress or STOP), before anything is looked up, reads Playback progress could not be recorded. (Apple's `errors.apple.playback.invalidSample`) instead.
