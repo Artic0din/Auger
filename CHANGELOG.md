@@ -124,6 +124,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Added native tests that a subtitle retimed while hidden is read again from the server when chosen, past a stored copy of its old cues (the test server now keeps a browser-style HTTP cache, off by default), and that a failed AI Subtitles job keeps its panel and Dismiss while Audio Retry reloads the audio list. Nothing visible changes (#706).
 - The card at the end of a video now uses Apple TV's words, in the language you pick: Finding the next episode while it works out what comes next, End of playback with No next episode is available. when nothing follows, and Apple's message when the next episode cannot be loaded. The separate Ending playback… step is gone, as on Apple TV.
 - In the player's Subtitles tab, the Delay value and its picker now use the digits of the language you pick (`٠ ms` in Arabic), and subtitle languages sort the way that language orders its words, as on Apple TV. In Arabic, Spanish now comes before German. The Details page's subtitle list follows the same order. English reads and sorts exactly as before (#695).
 - In AI Subtitles…, Dismiss now closes the menu, as on Apple TV. A request whose outcome is unknown keeps its warning until you discard it, instead of leaving a panel that said only "Subtitle translation failed." and could not be closed.
