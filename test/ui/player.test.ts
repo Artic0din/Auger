@@ -641,7 +641,7 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
 
 test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
     const { page } = await open();
-    const view: PlaybackView = { phase: "completion", title: "Playback ended", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
+    const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
     try {
         await show(page, view);
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
@@ -751,7 +751,7 @@ for (const complete of [false, true]) {
         const first = { contentId: "first", fileId: "43", title: "First", startSeconds: 0, episode: true as const };
         const second = { ...first, contentId: "second", title: "Second" };
         const view = (deck: readonly typeof first[]): PlaybackView => complete
-            ? { phase: "completion", title: "Up Next", state: "ready", retryable: false, next: first, deck }
+            ? { phase: "completion", status: "upNext.heading", state: "ready", retryable: false, next: first, deck }
             : { ...playing(TRACKS), upNext: { next: first, deck, countdown: 30, status: "Up Next" } };
         try {
             await show(page, view([first]));

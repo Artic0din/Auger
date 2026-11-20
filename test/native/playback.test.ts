@@ -240,6 +240,22 @@ test("a Shuffle pick with no later part advances the Shuffle", async () => {
     r.controller.destroy();
 });
 
+test("a Shuffle working out its next pick reads Up Next at Random over Picking at random, from the controller", async () => {
+    const r = await rig();
+    scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
+    const advance = r.h.fake.hold("/shuffles/sh1/advance");
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "the next pick is being read");
+    assert.equal(completion(r).state, "resolving");
+    assert.equal(completion(r).status, "upNext.headingShuffle", "Apple's statusLabel for a Shuffle, not Playing Next");
+    assert.equal(completion(r).shuffle, true, "so the title reads Picking at random");
+    advance.release();
+    r.controller.destroy();
+});
+
 test("a failed read of the pick's parts offers a retry that plays the next part, not the shuffle advance", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1", problem(500, "server_error", "Unavailable"));
@@ -248,6 +264,9 @@ test("a failed read of the pick's parts offers a retry that plays the next part,
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "failed");
+    assert.equal(completion(r).status, "upNext.headingFinished", "nothing follows: Apple's upNext.headingFinished");
+    assert.equal(completion(r).failure, undefined, "the session ended; reading what follows failed");
+    assert.equal(completion(r).shuffle, true, "the card words a Shuffle's end as Apple's does");
     r.controller.retryCompletion();
     await r.h.clock.advance(0);
     assert.equal(bodies(r.h, "/start")[1]?.file_id, "43");
@@ -2313,7 +2332,7 @@ test("movies retain up to twelve distinct On Deck cards and never autoplay anoth
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(15000);
     const done = completion(r);
-    assert.equal(done.title, "Up Next");
+    assert.equal(done.status, "upNext.heading");
     assert.equal(done.deck?.length, 12);
     assert.equal(done.deck?.[0]?.contentId, "movie:m0002");
     assert.equal(done.countdown, undefined);
@@ -2390,7 +2409,7 @@ test("an exhausted series offers the first On Deck title and does not count down
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(15000);
     const done = completion(r);
-    assert.equal(done.title, "Up Next");
+    assert.equal(done.status, "upNext.heading");
     assert.equal(done.next?.contentId, "movie:m0001");
     assert.equal(done.next?.fileId, "f-movie:m0001");
     assert.equal(done.next?.episode, undefined);
@@ -2414,7 +2433,7 @@ test("autoplay stops at the series end and never starts after failed resolution"
         if (mode === "end") {
             // Old series end left `next` undefined. On Deck is offered and does not start.
             assert.equal(completion(r).next?.contentId, "movie:m0001");
-            assert.equal(completion(r).title, "Up Next");
+            assert.equal(completion(r).status, "upNext.heading");
         } else {
             assert.equal(completion(r).next, undefined);
         }
@@ -2497,6 +2516,9 @@ test("episode EOF orders held progress, final STOP, fresh watch and exactly one 
     await r.h.clock.advance(0);
     r.controller.playNext();
     assert.equal(completion(r).state, "finalizing");
+    // PlayerView.statusLabel: an ended episode still working out what follows reads Playing Next, as Apple's loading card does.
+    assert.equal(completion(r).status, "upNext.headingEnded");
+    assert.equal(completion(r).shuffle, undefined);
     assert.equal(bodies(r.h, "/start").length, 1);
 assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.path.includes("?")).length, 0);
     progress.release();
@@ -2509,6 +2531,7 @@ assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.pa
     stop.release();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "resolving");
+    assert.equal(completion(r).status, "upNext.headingEnded");
     r.controller.playNext();
     assert.equal(bodies(r.h, "/start").length, 1);
     watch.release();
@@ -2559,6 +2582,7 @@ test("EOF STOP failures retain the same body on explicit Retry and honor Retry-A
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(8000);
     assert.equal(completion(r).state, "failed");
+    assert.equal(completion(r).failure, "session", "STOP failed: no next item was looked up");
     assert.equal(completion(r).retryable, true);
     r.controller.retryCompletion();
     r.controller.retryCompletion();
@@ -2622,7 +2646,7 @@ test("fresh unchanged played:false is authoritative and still permits a neutral 
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "ready");
     // Old completion title was "Playback ended". A series successor reads Playing Next.
-    assert.equal(completion(r).title, "Playing Next");
+    assert.equal(completion(r).status, "upNext.headingEnded");
     assert.equal(r.catalog.playbackWatched.has(EPISODE.contentId), false);
     assert.equal(r.catalog.progress.has(EPISODE.contentId), false);
     r.controller.destroy();
@@ -2694,6 +2718,7 @@ test("an expired pending progress answer at EOF offers Back without an impossibl
     progress.release();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "failed");
+    assert.equal(completion(r).failure, "session", "the final progress was refused before any lookup");
     assert.equal(completion(r).retryable, false);
     assert.equal(completion(r).next, undefined);
     r.controller.playNext();
