@@ -579,6 +579,8 @@ interface Attempt {
     cancelTimer: (() => void) | undefined;
     stopSpec: RequestSpec<PlaybackMutation> | undefined;
     stopped: boolean;
+    /** The advance may go on: the session stopped, or its STOP failed in a way that may clear and is left to the background (#709). */
+    ended: boolean;
     stopRetryAt: number;
     progressRefusal: unknown;
 }
@@ -747,6 +749,7 @@ export class PlaybackController implements PlayerControls {
             cancelTimer: undefined,
             stopSpec: undefined,
             stopped: false,
+            ended: false,
             stopRetryAt: 0,
             progressRefusal: undefined,
         };
@@ -2677,7 +2680,8 @@ export class PlaybackController implements PlayerControls {
         );
     }
 
-    private async stopSession(attempt: Attempt): Promise<void> {
+    /** `once` sends the STOP a single time instead of retrying a failure that may clear; `sent` counts the sends already made. */
+    private async stopSession(attempt: Attempt, once = false, sent = 0): Promise<void> {
         if (attempt.stopped) return;
         const sessionId = attempt.sessionId;
         const installationId = attempt.installationId;
@@ -2696,18 +2700,20 @@ export class PlaybackController implements PlayerControls {
         });
         attempt.stopSpec = spec;
         if (attempt.stopRetryAt > this.deps.clock.now()) await sleep(this.deps.clock, attempt.stopRetryAt - this.deps.clock.now(), attempt.signal, abortedError);
-        const receipt = await this.resend(attempt, async () => {
+        const send = async () => {
             try {
                 return await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.signal });
             } catch (error) {
                 if (error instanceof ApiError) attempt.stopRetryAt = this.deps.clock.now() + (error.retryAfterSeconds ?? 0) * 1000;
                 throw error;
             }
-        });
+        };
+        const receipt = once ? await send() : await this.resend(attempt, send, sent);
         if ((receipt.outcome !== "stopped" && receipt.outcome !== "replayed") || (receipt.stopId !== undefined && receipt.stopId !== spec.body?.stop_id)) {
             throw new ApiError({ kind: "invalid_response", path: "playback_stop.receipt" });
         }
         attempt.stopped = true;
+        attempt.ended = true;
     }
 
     retryCompletion(): void {
@@ -2768,7 +2774,7 @@ export class PlaybackController implements PlayerControls {
             this.nextStart = request;
             return;
         }
-        if (view.phase !== "completion" || view.state !== "ready" || view.next === undefined || this.completion?.attempt.stopped !== true) return;
+        if (view.phase !== "completion" || view.state !== "ready" || view.next === undefined || this.completion?.attempt.ended !== true) return;
         const request = selected ?? view.next;
         if (request !== view.next && !view.deck?.includes(request)) return;
         this.cancelCompletion();
@@ -2802,7 +2808,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt?.live === true) {
             this.cancelAutoplay();
             this.setPaused(false);
-        } else if (attempt?.stopped === true && this.completion !== undefined) {
+        } else if (attempt?.ended === true && this.completion !== undefined) {
             const request = { ...attempt.request, startSeconds: Math.max(0, (attempt.plan?.durationSeconds ?? attempt.sourceSeconds) - 10) };
             this.cancelCompletion();
             this.play(request);
@@ -2814,7 +2820,7 @@ export class PlaybackController implements PlayerControls {
         const deadline = this.deps.clock.now() + 10000;
         const tick = (): void => {
             const view = this.current;
-            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.stopped || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
             if (remaining === 0) { this.playNext(); return; }
             this.show({ ...view, countdown: remaining });
@@ -2832,6 +2838,7 @@ export class PlaybackController implements PlayerControls {
         const working: MessageKey = shuffle ? "upNext.headingShuffle" : "upNext.headingEnded";
         // A failure while the session ends (the final progress or STOP) is not a failed lookup: nothing was looked up yet.
         let stage: "session" | "lookup" = "session";
+        const refused = (error: unknown): boolean => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed");
         const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
             if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}) });
         };
@@ -2839,7 +2846,34 @@ export class PlaybackController implements PlayerControls {
         if (attempt.request.shuffleId === undefined) show("finalizing");
         else if (current()) this.show({ phase: "loading", title: attempt.request.title, nextPart: true });
         try {
-            await this.stopSession(attempt);
+            // PlaybackSessionBridge.stopSession: one STOP, and a failure that may clear is logged and the advance goes on, the server timing
+            // the old session out. The identical STOP keeps trying in the background, so the session still ends when the server can answer.
+            // A refusal or an expired session still ends the advance: no successor starts without the session's authority.
+            // A Retry after a failed lookup finds the session ended already, and sends no STOP of its own.
+            if (!attempt.ended) try {
+                await this.stopSession(attempt, true);
+            } catch (error) {
+                if (!(error instanceof ApiError && error.transient)) throw error;
+                // Not at once: the first resend waits the first retry delay, or longer when the server asked (Retry-After). With the
+                // first send counted, the STOP goes out as many times in all as a resent STOP does elsewhere.
+                attempt.stopRetryAt = Math.max(attempt.stopRetryAt, this.deps.clock.now() + (RESEND_DELAYS_MS[0] ?? 0));
+                attempt.ended = true;
+                void this.stopSession(attempt, false, 1).catch((failure: unknown) => {
+                    if (failure instanceof ApiError && failure.aborted) return;
+                    // A resend refused like a first send ends the advance while it is still on screen. A 404 after a failure that may
+                    // clear most likely means the first STOP landed, so it is only logged, as Apple logs a failed stop and goes on.
+                    if (refused(failure) && current()) {
+                        // As after a refused first send, the session never ended: Keep Watching and Back leave instead of replaying.
+                        attempt.ended = false;
+                        this.cancelAutoplay();
+                        stage = "session";
+                        show("failed");
+                        abort.abort();
+                        return;
+                    }
+                    console.warn("Silo playback: the session did not stop; the server will time it out", failure);
+                });
+            }
             if (!current()) return;
             stage = "lookup";
             if (this.nextStart !== undefined) {
@@ -2854,7 +2888,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request, attempt.plan?.effectiveMediaFileId ?? attempt.request.fileId).catch((error: unknown) => {
-                    // The session is already stopped, so a missing item cannot be retried: the Shuffle moves on.
+                    // A next part that no longer exists cannot be retried: the Shuffle moves on.
                     if (error instanceof ApiError && error.status === 404) return undefined;
                     throw error;
                 });
@@ -2921,8 +2955,9 @@ export class PlaybackController implements PlayerControls {
             if (!current()) return;
             this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false });
         } catch (error) {
-            const missingSession = error instanceof ApiError && error.status === 404 && !attempt.stopped;
-            const forbidden = missingSession || (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed"));
+            // Only the session's own end can find the session missing; a 404 after that is a lookup that Retry may yet answer.
+            const missingSession = error instanceof ApiError && error.status === 404 && stage === "session";
+            const forbidden = missingSession || refused(error);
             show("failed", undefined, !forbidden);
         } finally {
             completion.pending = false;
@@ -3290,7 +3325,7 @@ export class PlaybackController implements PlayerControls {
             const decision = await this.deps.session.call({ ...operations.startPlayback(body), profileScoped: true, signal: attempt.signal });
             if (!attempt.live && decision.outcome === "playable") {
                 // A late replacement owns a separate session and cannot reuse the retired STOP.
-                const retired: Attempt = { ...attempt, playbackAttemptId: body.playback_attempt_id, sessionId: decision.sessionId, sequence: 0, stopped: false, stopSpec: undefined, stopRetryAt: 0, progress: undefined, progressRefusal: undefined };
+                const retired: Attempt = { ...attempt, playbackAttemptId: body.playback_attempt_id, sessionId: decision.sessionId, sequence: 0, stopped: false, ended: false, stopSpec: undefined, stopRetryAt: 0, progress: undefined, progressRefusal: undefined };
                 void this.stopSession(retired).catch(() => undefined);
                 return;
             }
@@ -3312,6 +3347,7 @@ export class PlaybackController implements PlayerControls {
             attempt.sessionId = decision.sessionId;
             attempt.sequence = 0;
             attempt.stopped = false;
+            attempt.ended = false;
             attempt.stopSpec = undefined;
             attempt.progress = undefined;
             attempt.progressRefusal = undefined;
@@ -3649,8 +3685,8 @@ export class PlaybackController implements PlayerControls {
     }
 
     /** Resends the identical request after no answer or a transient refusal; the contract replays it. */
-    private async resend<T>(attempt: Attempt, send: () => Promise<T>): Promise<T> {
-        for (let index = 0; ; index++) {
+    private async resend<T>(attempt: Attempt, send: () => Promise<T>, sent = 0): Promise<T> {
+        for (let index = sent; ; index++) {
             try {
                 return await send();
             } catch (error) {
