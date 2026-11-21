@@ -72,6 +72,13 @@ test("Search uses Apple's points times the cap scale", async () => {
         await signedIn(tv);
         await tv.page.locator('[data-focus="search"]').first().click();
         await tv.page.fill("#browse-search", "Movie");
+        // With the keyboard up the filters sit unfocused under the field; Apple keeps them at 29 pt (#749 probe).
+        // The Samsung keyboard's top edge, as browse.test.ts raises it, puts Search in its keyboard-up layout.
+        await tv.page.setViewportSize({ width: 1920, height: 568 });
+        await tv.page.locator(".search-scene.search-keyboard-up .search-filters .browse-button").first().waitFor();
+        assert.deepEqual(await tv.page.evaluate(unscaledText, ".search-filters"), [], "keyboard up");
+        await tv.page.setViewportSize({ width: 1920, height: 1080 });
+        await tv.page.locator(".search-scene:not(.search-keyboard-up)").waitFor();
         await tv.remote(IME_DONE);
         await tv.jump(3000);
         await tv.page.locator('[data-view="search"] .browse-card').first().waitFor();

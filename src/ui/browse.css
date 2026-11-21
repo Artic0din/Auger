@@ -344,7 +344,8 @@
    c0fd4ff8): left-aligned TvFilterChips Spacing.sm under the field and above the results, at 2 px per dp: 8dp gaps, 14sp/18sp text, 22dp x 8dp padding,
    12dp apart; Compose draws the 1dp border inside the chip. */
 .search-scene.search-keyboard-up .search-filters { width: auto; height: auto; margin: 16px 162px; padding: 0; gap: 24px; border: 0; border-radius: 0; background: transparent; }
-.search-scene.search-keyboard-up .search-filters .browse-button { flex: none; height: auto; min-height: 0; padding: 14px 42px; border: 2px solid rgba(255,255,255,.12); font-size: 28px; line-height: 36px; }
+/* With the keyboard up the filters keep Apple's 29 pt segment labels (#749 probe); only the layout changes. */
+.search-scene.search-keyboard-up .search-filters .browse-button { flex: none; height: auto; min-height: 0; padding: 14px 42px; border: 2px solid rgba(255,255,255,.12); font-size: calc(29px * var(--silo-sf-cap-scale)); line-height: 36px; }
 .search-scene.search-keyboard-up .search-filters .browse-button[aria-pressed="true"], .search-scene.search-keyboard-up .search-filters .browse-button:focus { border-color: transparent; background-clip: border-box; }
 .search-scene .search-count { margin: 0 162px 24px; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 27px; }
 /* The first poster sits at x 238: the tvOS safe area 80, SearchView's 110 and SiloTheme.padding 48 (SearchView.swift:52, :64, :337). */
