@@ -3871,6 +3871,42 @@ browseTest("Browse keeps Down in the final grid row while the next page is pendi
     assert.equal(await tv.focused(), "movie:m0106");
 }, { catalog: new FakeCatalog(260) });
 
+// #27: one remote journey that keeps focus and context through paging, loading, a failure, playback and Back.
+browseTest("remote navigation keeps focus and context through Browse paging, a failed Details load, playback and Back (#27)", async tv => {
+    await tv.page.locator('[data-focus="movies"]').click();
+    await showing(tv, "library:12");
+    await selectLibraryMode(tv, "Browse");
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 100, "first Browse page");
+    // Paging: the last row asks for the next page, and Down then lands on it.
+    await tv.page.locator('.catalog-grid .browse-card').last().focus();
+    await press(tv, "ArrowLeft", "ArrowRight"); await tv.jump(300);
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 200, "second Browse page");
+    await press(tv, "ArrowDown");
+    const card = await tv.focused();
+    assert.equal(card, "movie:m0106", "focus is on the second page");
+    // Loading, then failure: the title's Details read cannot reach the server, and its failure page takes focus on Try Again.
+    const details = `**/api/v2/catalog/items/${encodeURIComponent(card ?? "")}?**`;
+    await tv.page.route(details, route => route.abort("connectionrefused"));
+    await press(tv, "Enter");
+    await tv.jump(35000);
+    await tv.page.locator(".details-failure").waitFor();
+    assert.equal(await tv.focused(), "retry", "the failure page takes focus on its retry");
+    await tv.page.unroute(details);
+    await press(tv, "Enter");
+    await tv.eventually(async () => await tv.focused() === "play", "Details loads with Play focused");
+    // Playback and its return land on the same control.
+    await press(tv, "Enter");
+    await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.plays.length === 1), "Play starts playback");
+    await tv.page.evaluate(() => window.browseHarness.resume());
+    await showing(tv, `item:${card}`);
+    await tv.eventually(async () => await tv.focused() === "play", "returning from playback restores Play");
+    // Back returns to Browse with both pages and the same card focused.
+    await tv.remote(BACK);
+    await showing(tv, "library:12");
+    await tv.eventually(async () => await tv.focused() === card, "Back restores the second-page card");
+    assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 200, "both pages are kept");
+}, { catalog: new FakeCatalog(260) });
+
 let browsePosterAnswer: { release(): void };
 browseTest("a late larger Browse poster answer repaints retained cards and reveals the same focus", async tv => {
     await tv.page.locator('[data-focus="movies"]').click();
