@@ -1632,7 +1632,7 @@ for (const late of [false, true]) test(`an embedded track whose extracted file i
     } finally { r.controller.destroy(); }
 });
 
-test("returning to the artifact track through AVPlay keeps overlay-only tools hidden: AVPlay draws it now", async () => {
+test("choosing an embedded subtitle on direct play loads its file for the app to draw, not AVPlay's copy (#538)", async () => {
     const r = await rig();
     frenchInventory(r);
     r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
@@ -1640,24 +1640,76 @@ test("returning to the artifact track through AVPlay keeps overlay-only tools hi
     try {
         await playMovie(r, { ...MOVIE, startSeconds: 0 });
         await settle(r);
-        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
         r.controller.selectSubtitle("file:42:subtitle:5");
-        r.controller.selectSubtitle("file:42:subtitle:1");
         await settle(r);
-        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2", "AVPlay draws the track again");
-        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
-        assert.equal(tracks(r).subtitleTools?.overlay, false);
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay's own French track is not used");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(last(r.views).phase === "playing" || last(r.views).phase === "paused" ? (last(r.views) as { captions?: { text: string } }).captions?.text : undefined, "Bonjour", "the app draws the French file");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "so Delay and Appearance stay");
     } finally { r.controller.destroy(); }
 });
 
-test("a native subtitle selected from an Off plan hides overlay-only tools", async () => {
+test("an AVPlay row at the track's stream index in another language is not used for the fallback (#538)", async () => {
+    const r = await rig();
+    r.avplay.tracks = [
+        { index: 24, type: "TEXT", extra_info: JSON.stringify({ track_num: "21", track_lang: "fre", subtitle_type: "0", fourCC: "TTML" }) },
+        { index: 27, type: "TEXT", extra_info: JSON.stringify({ track_num: "24", track_lang: "nld", subtitle_type: "0", fourCC: "TTML" }) },
+    ];
+    const file = r.server.file("42");
+    const embedded = file.inventory[1];
+    assert.ok(embedded !== undefined);
+    r.server.files.set("42", { ...file, inventory: [...file.inventory, {
+        ...embedded, track_id: "file:42:subtitle:5", combined_index: 5, codec: "subrip", language: "dut", label: "Dutch", forced: false, stream_index: 24,
+        url: "/api/v2/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24",
+    }] });
+    r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24", { status: 503, text: "unavailable" });
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 27", "French at index 24 is refused; the one Dutch row (nld, the same language as dut) is used");
+    } finally { r.controller.destroy(); }
+});
+
+test("returning to the first embedded track on direct play loads its file again, not AVPlay's copy (#538)", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    const forced = { delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } } as const;
+    r.server.next.push(forced);
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" }, { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const opens = r.avplay.urls.length;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.server.next.push(forced);
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay draws neither track");
+        assert.equal(r.avplay.urls.length, opens, "the open stream is kept");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+    } finally { r.controller.destroy(); }
+});
+
+test("an embedded subtitle chosen from an Off plan on direct play loads its file, so Delay and Appearance show (#538)", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
     r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
     await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     r.controller.selectSubtitle("file:42:subtitle:1");
-    assert.equal(r.avplay.calls.includes("setSelectTrack TEXT 4"), true);
-    assert.equal(tracks(r).subtitleTools?.overlay, false);
+    await settle(r);
+    assert.equal(r.avplay.calls.includes("setSelectTrack TEXT 4"), false);
+    assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    assert.equal(tracks(r).subtitleTools?.overlay, true);
     r.controller.destroy();
 });
 
@@ -2127,18 +2179,20 @@ test("an original-file embedded text switch clears sidecar captions", async () =
     r.controller.destroy();
 });
 
-test("an original-file embedded text track selects the open TEXT row and does not replan", async () => {
+test("an original-file embedded text track is loaded as a file through one replan that keeps the open stream (#538)", async () => {
     const r = await rig();
     r.server.next.push({ timeline: STREAM_TIMELINE });
     await playMovie(r, { ...MOVIE, startSeconds: 0 });
     r.avplay.tracks = [
         { index: 4, type: "TEXT", extra_info: "{\"track_num\":\"0\",\"track_lang\":\"eng\",\"subtitle_type\":\"0\",\"fourCC\":\"TTML\"}" },
     ];
+    r.server.next.push({ timeline: STREAM_TIMELINE, subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     const calls = r.avplay.calls.length;
     r.controller.selectSubtitle("file:42:subtitle:1");
     await settle(r);
-    assert.deepEqual(r.avplay.calls.slice(calls), ["getTotalTrackInfo", "setSelectTrack TEXT 4"]);
-    assert.equal(replans(r.h).length, 0);
+    assert.equal(r.avplay.calls.slice(calls).some(call => call.startsWith("open") || call.startsWith("setSelectTrack TEXT")), false, "no reopen and no AVPlay text");
+    assert.equal(replans(r.h).length, 1);
     assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
     assert.equal(last(r.views).phase, "playing");
     r.controller.destroy();

@@ -60,7 +60,7 @@ import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleC
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
-import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
+import { audioRow, canonicalLanguageKey, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
@@ -1118,7 +1118,7 @@ export class PlaybackController implements PlayerControls {
             const latest = reporting.pendingSubtitle;
             if (trackId === (latest === undefined ? shownSubtitle(reporting, plan) : latest.id)) return;
             if (trackId !== undefined && !selectableSubtitle(plan, trackId)) return;
-            const applied = this.applyStreamSubtitle(reporting, trackId);
+            const applied = !loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(reporting, trackId);
             if (applied) reporting.subtitleOverride = { id: trackId };
             reporting.pendingSubtitle = { id: trackId, applied };
             this.showPlayback(reporting);
@@ -1133,7 +1133,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const previous = shownSubtitle(attempt, plan);
-        if (this.applyStreamSubtitle(attempt, trackId)) {
+        if (!loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(attempt, trackId)) {
             attempt.subtitleOverride = { id: trackId };
             this.showPlayback(attempt);
             if (renditionSwitch(plan, trackId)) this.reportSubtitle(attempt, plan, trackId, previous);
@@ -4252,6 +4252,13 @@ function renditionSwitch(plan: PlaybackPlan, trackId: string | undefined): boole
     return plan.subtitle.inventory.find((row) => row.trackId === trackId)?.hlsRendition !== undefined;
 }
 
+/** Direct play asks for embedded text as files the app draws (#538), so choosing one replans for its file; AVPlay's copy is only the fallback when the file fails. */
+function loadsEmbeddedFile(plan: PlaybackPlan, trackId: string | undefined): boolean {
+    if (trackId === undefined || plan.delivery !== "original_http" || plan.streamProtocol === "hls") return false;
+    const row = plan.subtitle.inventory.find(entry => entry.trackId === trackId);
+    return row !== undefined && inStreamCandidate(plan, row);
+}
+
 function inStreamCandidate(plan: PlaybackPlan, row: SubtitleTrack): boolean {
     if (row.delivery === "burn_in_only" || row.source === "external" || row.source === "downloaded") return false;
     if (plan.streamProtocol === "hls") return row.hlsRendition !== undefined;
@@ -4265,13 +4272,15 @@ function textTrackIndex(tracks: readonly AVPlayTrackInfo[], row: SubtitleTrack, 
     if (!languageOnly && published !== undefined) return published.index;
     // An original file's TEXT rows are numbered by the file's stream index, which the server publishes as `stream_index`
     // (the S95C selected English SDH, artifact 9.vtt, as TEXT 12 after one video and two audio streams). A file can hold several tracks in one language.
+    const language = canonicalLanguageKey(row.language);
     if (languageOnly && row.streamIndex !== undefined) {
         const stream = text.find(track => track.index === row.streamIndex);
-        if (stream !== undefined) return stream.index;
+        // A row in another known language means AVPlay numbers this file differently: match by language instead.
+        const other = stream === undefined ? undefined : canonicalLanguageKey(trackLanguage(stream));
+        if (stream !== undefined && (language === undefined || other === undefined || other === language)) return stream.index;
     }
-    const language = row.language?.toLowerCase();
-    if (language !== undefined && language !== "") {
-        const matches = text.filter((track) => trackLanguage(track) === language);
+    if (language !== undefined) {
+        const matches = text.filter((track) => canonicalLanguageKey(trackLanguage(track)) === language);
         const match = matches.length === 1 ? matches[0] : undefined;
         if (match !== undefined) return match.index;
     }
