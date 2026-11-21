@@ -1968,6 +1968,86 @@ test("Off chosen during an embedded subtitle switch turns subtitles off once it 
     } finally { r.controller.destroy(); }
 });
 
+// #745 review (Codex): while a switch is unresolved and drawn locally, a local seek owns `busy`; its pause and queued seeks must behave as usual.
+test("Pause during a local seek while a switch is unresolved is applied when the seek ends (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.controller.setPaused(true);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.equal(r.avplay.state, "PAUSED", "the pause is not lost");
+    } finally { r.controller.destroy(); }
+});
+
+test("a replay that fails during a local seek does not release the seek, so a second seek waits for it (#738)", async () => {
+    const { r, id } = await lostSwitchRig();
+    try {
+        r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4, "the replay went out and its answer was lost");
+        const seeks = (): number => r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+        const before = seeks();
+        r.controller.seekToSeconds(200);
+        await settle(r);
+        assert.equal(seeks(), before, "the second seek waits for the first");
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.equal(seeks(), before + 1, "and goes once the first settles");
+    } finally { r.controller.destroy(); }
+});
+
+// #745 stand-in review: a replayed answer waits for every local seek, including one queued behind it, before hiding AVPlay's subtitles.
+test("a replayed switch waits through a second seek queued during the first before hiding AVPlay's subtitles (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4, "the replay is answered while the seek is out");
+        r.controller.seekToSeconds(200);
+        await settle(r);
+        const silent = (): string[] => r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle true"));
+        const before = silent().length;
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).at(-1), "seekTo 200000", "the queued seek goes");
+        assert.equal(silent().length, before, "AVPlay is not told to hide its subtitles mid-seek");
+        r.avplay.finishSeek();
+        await settle(r);
+        await settle(r);
+        assert.equal(r.avplay.silentSubtitle, true, "then it is, once no seek is out");
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+    } finally { r.controller.destroy(); }
+});
+
+test("a replayed switch adopted around a suspend hides AVPlay's subtitles again on restore (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        r.controller.suspend();
+        r.avplay.finishSeek();
+        await settle(r);
+        await settle(r);
+        r.controller.restore();
+        await settle(r);
+        if (r.avplay.calls.some(call => call.startsWith("restore"))) { r.avplay.finishRestore(); await settle(r); }
+        await settle(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(r.avplay.silentSubtitle, true, "AVPlay's own text stays hidden after restore");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
 test("while a lost embedded subtitle switch is unresolved, other track changes wait for its answer (#738)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {

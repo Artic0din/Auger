@@ -509,6 +509,8 @@ interface Attempt {
     captionNotice: string;
     /** An embedded track whose file failed before AVPlay could list its tracks: AVPlay draws it at the first frame. */
     captionFallback: string | undefined;
+    /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
+    switchLocal: boolean;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -707,7 +709,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -855,7 +857,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         // AVPlay rejects play and pause while seekTo is outstanding. Keep the request and apply it when the seek ends.
-        if (attempt.busy && this.pending.seek !== undefined && attempt.change.state !== "changing") {
+        if (attempt.busy && this.pending.seek !== undefined && !changeHoldsBusy(attempt)) {
             attempt.pauseAfterSeek = paused;
             this.showPlayback(attempt);
             return;
@@ -926,7 +928,7 @@ export class PlaybackController implements PlayerControls {
         const duration = plan.durationSeconds;
         const target = Math.max(0, Math.min(seconds, duration ?? Number.MAX_VALUE));
         if (attempt.busy) {
-            if (this.pending.seek !== undefined && attempt.change.state !== "changing" && !attempt.hidden && !attempt.restoring) {
+            if (this.pending.seek !== undefined && !changeHoldsBusy(attempt) && !attempt.hidden && !attempt.restoring) {
                 attempt.queuedSeekSeconds = target;
                 attempt.queuedSkips = undefined;
             }
@@ -1511,8 +1513,8 @@ export class PlaybackController implements PlayerControls {
             started: attempt.started && !attempt.suspended && !attempt.suspendedReady,
             buffering: attempt.buffering,
             // A replan that reloads the stream is a reload; any other busy time is a seek, local or re-anchored.
-            seekInFlight: attempt.busy && attempt.change.state !== "changing" && !attempt.reporting,
-            reloadInProgress: attempt.restoring || attempt.suspended || attempt.suspendedReady || attempt.resuming || attempt.recovery?.active === true || (attempt.busy && (attempt.change.state === "changing" || attempt.reporting)),
+            seekInFlight: attempt.busy && !changeHoldsBusy(attempt) && !attempt.reporting,
+            reloadInProgress: attempt.restoring || attempt.suspended || attempt.suspendedReady || attempt.resuming || attempt.recovery?.active === true || (attempt.busy && (changeHoldsBusy(attempt) || attempt.reporting)),
             reachedEnd: this.completion !== undefined || attempt.endedDuringChange,
             playheadMs: Math.round(attempt.sourceSeconds * 1000),
             suspended: attempt.hidden,
@@ -1780,7 +1782,8 @@ export class PlaybackController implements PlayerControls {
             this.changeSettled(attempt, { state: "refused", message: decision.terminal.message });
             return;
         }
-        attempt.busy = false;
+        // Drawn locally, the switch no longer holds `busy`: a local seek may.
+        if (!attempt.switchLocal) attempt.busy = false;
         if (decision.outcome === "playable") {
             if (decision.sessionId !== sessionId) {
                 this.fail(attempt, { kind: "server" }, true);
@@ -1809,8 +1812,8 @@ export class PlaybackController implements PlayerControls {
             }
             if (operation === "track_change" && attempt.plan !== undefined && sameDirectTransport(attempt.plan, decision.plan, selected)) {
                 // A replayed switch can land during a local seek, when AVPlay refuses to hide its subtitles: adopt it once the seek settles.
-                const seek = this.pending.seek;
-                if (seek !== undefined) {
+                // Every seek, including one queued behind another, must settle; adoption then runs with no await before it.
+                for (let seek = this.pending.seek; seek !== undefined; seek = this.pending.seek) {
                     await seek.catch(() => undefined);
                     if (!current() || attempt.plan === undefined) return;
                 }
@@ -1851,7 +1854,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (attempt.busy) {
-            if (attempt.change.state === "changing" || attempt.reporting) {
+            if (changeHoldsBusy(attempt) || attempt.reporting) {
                 attempt.changeFailure = attempt.changeFailure ?? classification;
             } else if (this.pending.seek !== undefined && attempt.seekFailure === undefined) {
                 attempt.seekFailure = classification;
@@ -2103,7 +2106,8 @@ export class PlaybackController implements PlayerControls {
             attempt.pendingDownloadId = undefined;
             attempt.search?.reportUnselected();
         }
-        attempt.busy = false;
+        if (!attempt.switchLocal || this.pending.seek === undefined) attempt.busy = false;
+        attempt.switchLocal = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
             this.beginCompletion(attempt);
@@ -2427,7 +2431,7 @@ export class PlaybackController implements PlayerControls {
                 // A new play, a lost session or a replaced transport ends the replays; the caller settles the change.
                 if (!(error instanceof ApiError) || !unanswered(error) || error.aborted || !current()) throw error;
                 const quick = RESEND_DELAYS_MS[index];
-                if (quick === undefined && attempt.busy) this.drawSwitchLocally(attempt, plan, selected);
+                if (quick === undefined && !attempt.switchLocal) this.drawSwitchLocally(attempt, plan, selected);
                 if (!noted && this.deps.clock.now() - sentAt >= SWITCH_NOTE_AFTER_MS) {
                     noted = true;
                     attempt.captionNotice = CAPTION_FAILED;
@@ -2447,6 +2451,7 @@ export class PlaybackController implements PlayerControls {
             try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
             attempt.subtitleOverride = { id };
         }
+        attempt.switchLocal = true;
         attempt.busy = false;
         // The stream ended while the switch held playback frozen: end it now rather than leave completion waiting for the answer.
         if (attempt.endedDuringChange) {
@@ -2454,6 +2459,12 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.showPlayback(attempt);
+    }
+
+    /** While the app draws the shown subtitle's file, AVPlay's own subtitles stay hidden. */
+    private hideNativeUnderOverlay(attempt: Attempt): void {
+        if (attempt.captionKey === undefined || attempt.subtitleOverride !== undefined) return;
+        try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* The next switch or reopen hides them again. */ }
     }
 
     /** The first frame's half of `nativeCaptionFallback`. */
@@ -2685,7 +2696,7 @@ export class PlaybackController implements PlayerControls {
             },
             oncurrentplaytime: (milliseconds) => {
                 const plan = attempt.plan;
-                if (current() && attempt.started && (!attempt.busy || attempt.change.state === "changing" || attempt.reporting) && plan !== undefined) {
+                if (current() && attempt.started && (!attempt.busy || changeHoldsBusy(attempt) || attempt.reporting) && plan !== undefined) {
                     attempt.sourceSeconds = milliseconds / 1000 + plan.timeline.timelineOffsetSeconds;
                     const marker = markerAt(attempt.markers?.segments ?? [], attempt.sourceSeconds);
                     if (!attempt.busy && marker !== undefined && !attempt.skippedMarkers.has(marker) && ((marker.kind === "intro" && attempt.introMode === "always") || (marker.kind === "credits" && attempt.skipCredits))) {
@@ -2705,7 +2716,7 @@ export class PlaybackController implements PlayerControls {
             onstreamcompleted: () => {
                 if (!current() || !attempt.started) return;
                 if (attempt.busy) {
-                    if (attempt.change.state === "changing" || attempt.reporting) attempt.endedDuringChange = true;
+                    if (changeHoldsBusy(attempt) || attempt.reporting) attempt.endedDuringChange = true;
                     return;
                 }
                 this.beginCompletion(attempt);
@@ -3647,6 +3658,8 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             if (restored) {
+                // A kept subtitle adopted while the player was suspended may not have hidden AVPlay's own text (#738).
+                this.hideNativeUnderOverlay(attempt);
                 this.restartProgress(attempt);
                 return;
             }
@@ -4386,6 +4399,11 @@ function renditionSwitch(plan: PlaybackPlan, trackId: string | undefined): boole
 }
 
 /** Direct play asks for embedded text as files the app draws (#538), so choosing one replans for its file; AVPlay's copy is only the fallback when the file fails. */
+/** A track change holds `busy`: true while its replan is out, but not once a subtitle switch is drawn locally and a seek may hold it. */
+function changeHoldsBusy(attempt: Attempt): boolean {
+    return attempt.change.state === "changing" && !attempt.switchLocal;
+}
+
 /** A direct-play subtitle-only switch to an embedded track's file is in flight. */
 function subtitleSwitchOut(attempt: Attempt): boolean {
     return attempt.change.state === "changing" && attempt.change.kind === "subtitle";
