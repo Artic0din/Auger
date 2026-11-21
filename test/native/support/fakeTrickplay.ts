@@ -7,6 +7,7 @@ export class FakeTrickplay {
     readonly manifests: Reply[] = [];
     readonly clock: Clock;
     manifestReads = 0;
+    /** Watch reads for a file (`?file_id=`): chapters, the subtitle policy and preview availability. Up Next's title-only On Deck read is not one. */
     watchReads = 0;
 
     constructor(fake: FakeSilo, clock: Clock) {
@@ -18,7 +19,7 @@ export class FakeTrickplay {
             if (headers["x-profile-id"] === undefined) return problem(422, "validation_failed", "Profile required");
             const fileId = url.searchParams.get("file_id");
             if (!url.pathname.endsWith("/trickplay")) {
-                this.watchReads++;
+                if (fileId !== null) this.watchReads++;
                 return { status: 200, body: { ...fixture("get_watch_state_ok"), versions: [...this.files].map(([id, available]) => ({ file_id: id, trickplay_available: available })) } };
             }
             this.manifestReads++;

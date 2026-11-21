@@ -128,6 +128,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A film now offers Show Up Next in the transport bar while it plays when there is something On Deck, as on Apple TV. The next episode and On Deck are looked up when playback starts, not only near the end (#698).
 - Rewind or Fast Forward pressed while a skip is still under way now adds to where that skip is going, as on Apple TV, instead of jumping from where playback was before it. Fast Forward then a quick Rewind now lands 20 seconds after where you started, where Rewind could take you back past that point or to the start (#724).
 - On a Details page for a title with only one version, the Versions button is now greyed out and Right from Play skips over it, as on Apple TV, instead of opening a picker with nothing to choose (#720).
 - Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).

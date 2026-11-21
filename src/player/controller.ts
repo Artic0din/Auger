@@ -451,6 +451,8 @@ interface Attempt {
         episode: PlayRequest | undefined;
         deckSettled: boolean;
         deckFailed: boolean;
+        episodeWindowRetried: boolean;
+        deckWindowRetried: boolean;
         deck: PlayRequest[];
         /** Successor whose catalog presentation was requested. Ticks must not read it again. */
         presentationFor: string | undefined;
@@ -682,7 +684,7 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
@@ -2481,6 +2483,8 @@ export class PlaybackController implements PlayerControls {
                 this.scheduleProgress(attempt);
             }
             if (!this.alignOpenStream(attempt, plan)) return;
+            // Apple reads the next episode and On Deck once the item loads (PlayerViewModel.swift:6604-6607), so Show Up Next is offered from the start.
+            this.beginDiscovery(attempt);
             this.updatePrompt(attempt);
             this.showPlayback(attempt);
             this.applyPreparedSubtitleChoices(attempt, plan);
@@ -3812,7 +3816,20 @@ export class PlaybackController implements PlayerControls {
         }
         if (attempt.promptDismissed || attempt.hidden || attempt.busy) return;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
-        else this.publishOffer(attempt);
+        else {
+            // Discovery starts at the first frame (#698), so a read that failed then is read once more when the window opens.
+            // Each read is retried once on its own: one may still be out when the other's retry starts.
+            const offer = attempt.offer;
+            if (!offer.episodeWindowRetried && offer.episodeFailed && !offer.episodeLoading) {
+                offer.episodeWindowRetried = true;
+                this.retryEpisode(attempt);
+            }
+            if (!offer.deckWindowRetried && offer.deckFailed && !offer.deckLoading) {
+                offer.deckWindowRetried = true;
+                this.retryDeck(attempt);
+            }
+            this.publishOffer(attempt);
+        }
     }
 
     private beginDiscovery(attempt: Attempt): void {
