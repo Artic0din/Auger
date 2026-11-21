@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Barra de progresso",
  "player.controls.showUpNext": "Mostrar A seguir",
  "player.error.connectionLost": "Conexão perdida\nNão foi possível reconectar o Silo ao servidor. Verifique sua conexão e tente novamente para continuar de onde parou.",
+ "player.eyebrow.episode": "T{season}:E{episode}",
  "player.goBack": "Voltar",
  "player.hud.aspect": "Proporção",
  "player.hud.audio": "Áudio",
