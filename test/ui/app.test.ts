@@ -1523,6 +1523,21 @@ appTest("natural episode EOF offers manual Play Now and Stop returns to origin",
     assert.equal(await tv.focused(), "episode:s1e12");
 }, true);
 
+/**
+ * Up Next's lookup starts at the first frame, as Apple's does (#698). It is a chain of reads, and between two of them none is pending, so
+ * wait until none is pending and none has followed for 25 polls before a test counts the reads the end of playback makes.
+ */
+async function settleUpNextLookup(tv: Tv): Promise<void> {
+    let seen = -1;
+    let quiet = 0;
+    await tv.eventually(async () => {
+        const count = tv.fake.requests.length;
+        quiet = tv.pendingReplies === 0 && count === seen ? quiet + 1 : 0;
+        seen = count;
+        return quiet >= 25 && tv.fake.requests.some(r => r.path.startsWith("/home/sections"));
+    }, "Up Next lookup at the first frame");
+}
+
 async function startEpisode(tv: Tv, playback: FakePlayback, catalog: FakeCatalog, id = "episode:s1e12"): Promise<void> {
     catalog.fileIds.set(id, "42");
     catalog.fileIds.set("episode:s1e13", "43");
@@ -1535,6 +1550,7 @@ async function startEpisode(tv: Tv, playback: FakePlayback, catalog: FakeCatalog
     await tv.page.locator(`.skyline-continue[data-focus="${id}"]`).first().focus();
     await tv.remote(415);
     await prepare(tv);
+    await settleUpNextLookup(tv);
 }
 
 for (const reduced of [false, true]) {
@@ -2085,6 +2101,7 @@ for (const [command, state] of [[415, "PLAYING"], [19, "PAUSED"], [10252, "PAUSE
 appTest("the composed remote seeks and changes audio through the real playback owner", async (tv, playback) => {
     await signIn(tv);
     await startMovie(tv);
+    await settleUpNextLookup(tv);
     await pauseTvClock(tv);
     await tv.page.evaluate(() => window.appHarness.avplay.tick(90000));
     await tv.page.keyboard.press("ArrowLeft");
@@ -2092,10 +2109,13 @@ appTest("the composed remote seeks and changes audio through the real playback o
     await tv.page.keyboard.press("Enter");
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.positionMs), 80000);
-    // Old Down opened the panel on Audio. Down focuses Play/Pause; Options opens Info, and Audio is the next tab.
+    // Old Down opened the panel on Audio. Down focuses Play/Pause; Options opens Info, and Audio is the next tab. With On Deck items a movie
+    // also shows Show Up Next before Options, as Apple's transport does (#698), so Options is one press further.
     await tv.page.keyboard.press("ArrowDown");
     await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("ArrowRight");
+    await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "tracks");
     await tv.page.keyboard.press("Enter");
     for (let index = 0; index < 3; index++) await tv.page.keyboard.press("ArrowRight");
     const id = [...playback.sessions.keys()][0];
@@ -2111,10 +2131,13 @@ appTest("the composed remote seeks and changes audio through the real playback o
     const change = tv.fake.requests.filter((request) => request.path.endsWith("/replan")).pop();
     assert.equal(change?.body?.operation, "track_change");
     assert.equal(change?.body?.position_seconds, 80);
-    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info.
+    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info. Show Up Next still
+    // sits before Options (#698), so Options is a third press.
     await tv.page.keyboard.press("ArrowDown");
     await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("ArrowRight");
+    await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "tracks");
     await tv.page.keyboard.press("Enter");
     await tv.page.keyboard.press("ArrowRight");
     assert.equal(await tv.page.locator('.player-menu [data-focus="file:42:audio:1"]').getAttribute("aria-pressed"), "true");
