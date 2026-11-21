@@ -309,6 +309,25 @@ function countdownRing(): { readonly element: HTMLElement; set(seconds: number |
     };
 }
 
+/**
+ * HUDScrollablePane.handleMove (silo-apple 71a3beb TVPlayerInfoHUD.swift:396-420): Down and Up step through the pane's scroll targets
+ * (its top, a section marked `data-page-target`, then its end) and bring each to the top. False when there is no further target that way,
+ * so Up from the first returns to the tab and Down from the last reaches a row below.
+ */
+function pageScrollPane(pane: HTMLElement, key: "up" | "down"): boolean {
+    const end = Math.max(0, pane.scrollHeight - pane.clientHeight);
+    // Layout offsets, not client rects: the focused pane is scaled to 1.01.
+    const offset = (node: HTMLElement): number => { let y = 0; for (let at: HTMLElement | null = node; at !== null && at !== pane; at = at.offsetParent as HTMLElement | null) y += at.offsetTop; return y; };
+    const sections = Array.from(pane.querySelectorAll<HTMLElement>("[data-page-target]"), section => Math.min(end, offset(section)));
+    const targets = [0, ...sections, end];
+    const index = Number(pane.dataset.page ?? "0");
+    const next = key === "down" ? Math.min(index + 1, targets.length - 1) : index - 1;
+    if (next < 0 || next === index) return false;
+    pane.dataset.page = String(next);
+    pane.scrollTop = targets[next] ?? 0;
+    return true;
+}
+
 export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, clock: Clock = systemClock, baseUrl = location.origin): PlayerScreen {
     const section = el("section", "player");
     const renderSubtitles = mountSubtitles(section);
@@ -619,6 +638,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         return all.find((button) => button.className.indexOf("player-choice-current") !== -1) ?? all[0];
     };
     const showPane = (index: number): void => {
+        // A pane opens at its first scroll target, as Apple's HUDScrollablePane is rebuilt with its tab.
+        if (index !== column) { const pane = lists[index]; if (pane !== undefined) { pane.scrollTop = 0; delete pane.dataset.page; } }
         column = index;
         for (const [pane, list] of lists.entries()) {
             list.classList.toggle("player-menu-pane-active", pane === index);
@@ -1399,11 +1420,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const all = landable(columnScope ? Array.from(columnScope.querySelectorAll<HTMLElement>("[data-focus]")) : buttons(column));
         const at = all.findIndex((button) => button === document.activeElement);
         const atTab = tabs.findIndex(tab => tab === document.activeElement);
-        const infoPane = lists[column];
-        // Info and Stats are each one HUDScrollablePane: Up scrolls back to the top before it reaches the tab.
+        // Info and Stats are each one HUDScrollablePane, which pages over its scroll targets before Up reaches the tab.
         const scrollPane = focusedId() === "info" && tabNames[column] === "Info" || focusedId() === "stats" && tabNames[column] === "Stats";
-        const infoCanScrollUp = key === "up" && scrollPane && infoPane !== undefined && infoPane.scrollTop > 1;
-        if (key === "up" && at <= 0 && !infoCanScrollUp) {
+        const pane = lists[column];
+        if (scrollPane && pane !== undefined && (key === "up" || key === "down") && pageScrollPane(pane, key)) return;
+        if (key === "up" && at <= 0) {
             // An open picker takes the rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1709-1712).
             if (openPicker() === undefined) tabs[column]?.focus();
             return;
@@ -1424,14 +1445,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (key === "up" || key === "down") {
-            const pane = lists[column];
-            if (scrollPane && pane !== undefined && pane.scrollHeight > pane.clientHeight) {
-                const end = pane.scrollHeight - pane.clientHeight;
-                if (key === "down" && pane.scrollTop < end - 1 || key === "up" && pane.scrollTop > 1) {
-                    pane.scrollTop = Math.max(0, Math.min(end, pane.scrollTop + (key === "down" ? 1 : -1) * pane.clientHeight * 0.8));
-                    return;
-                }
-            }
             all[Math.max(0, Math.min(all.length - 1, at + (key === "up" ? -1 : 1)))]?.focus();
         } else if (key === "left" || key === "right") {
             // Inside a pane Left/Right only cross its columns; panes change on the tab rail (TVPlayerInfoHUD.swift:9-16).

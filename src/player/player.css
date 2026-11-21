@@ -987,6 +987,25 @@
 }
 
 /*
+ * HUDScrollablePane's focus (TVPlayerInfoHUD.swift:361-375): a 2 pt stroke at 86 % white, 10 pt outside the pane's 18 pt
+ * continuous rounded rectangle, and the pane scaled to 1.01, easeOut fastDuration. The ring sits on the scroll container,
+ * so its own overflow cannot clip it.
+ */
+.player-menu-info,
+.player-menu-stats {
+    border-radius: 18px;
+    outline: 2px solid transparent;
+    outline-offset: 10px;
+    transition: transform var(--silo-fast) ease-out, outline-color var(--silo-fast) ease-out;
+}
+
+.player-menu-info:has(> [data-focus="info"]:focus),
+.player-menu-stats:has(> [data-focus="stats"]:focus) {
+    outline-color: rgba(255, 255, 255, 0.86);
+    transform: scale(1.01);
+}
+
+/*
  * HUDPickerDialog (TVPlayerInfoHUD.swift:1042-1104): 620 wide, 34/28 padding, 28 corner, 18% stroke, centred over the
  * pane it opened from, which dims to 28%. It spans the panel's padded content, so the status line sits behind it too.
  */

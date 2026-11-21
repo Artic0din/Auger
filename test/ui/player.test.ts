@@ -76,7 +76,9 @@ test("Info Retry remains visible when Down is pressed on its focused action", as
     } finally { await page.close(); }
 });
 
-test("Up scrolls a long Info overview before returning to its tab", async () => {
+// HUDScrollablePane (silo-apple 71a3beb TVPlayerInfoHUD.swift:396-420, InfoPane :611-617): Info's scroll targets are its top and bottom.
+// Down pages to the next target's top, Up to the previous one, and Up from the first returns to the tab.
+test("Info pages Down to its end and Up to its top, then Up returns to its tab (#556)", async () => {
     const { page } = await open();
     try {
         await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "ready", overview: "Long overview. ".repeat(400), stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
@@ -86,16 +88,74 @@ test("Up scrolls a long Info overview before returning to its tab", async () => 
         await page.emulateMedia({ reducedMotion: "reduce" });
         assert.equal(await focused(page), "info");
         const pane = page.locator(".player-menu-info");
-        const before = await pane.evaluate(node => {
-            node.scrollTop = node.scrollHeight;
-            return { scroll: node.scrollTop, overflow: node.scrollHeight > node.clientHeight };
-        });
-        assert.equal(before.overflow, true);
-        assert.ok(before.scroll > 1);
-        await remote(page, UP);
-        const after = await pane.evaluate(node => node.scrollTop);
-        assert.ok(after < before.scroll, `scroll stayed at ${before.scroll}`);
+        const scroll = (): Promise<{ top: number; end: number }> => pane.evaluate(node => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
+        const start = await scroll();
+        assert.ok(start.end > 1000, "the overview is far taller than the pane");
+        await remote(page, DOWN);
+        assert.equal((await scroll()).top, start.end, "one Down pages to the bottom target, not 80 % of the pane");
+        await remote(page, DOWN);
+        assert.equal((await scroll()).top, start.end);
         assert.equal(await focused(page), "info");
+        await remote(page, UP);
+        assert.equal((await scroll()).top, 0, "Up pages back to the top target");
+        assert.equal(await focused(page), "info");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Info", "Up from the first target returns to the tab");
+    } finally { await page.close(); }
+});
+
+// HUDScrollablePane's ring (TVPlayerInfoHUD.swift:361-375): a 2 pt stroke at 86 % white, 10 pt outside the 18 pt rounded pane, scaled to 1.01.
+test("a focused Info or Stats pane draws Apple's ring outside it and grows to 1.01 (#556)", async () => {
+    const { page } = await open();
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "ready", stats: STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await openPanel(page);
+        const ring = (selector: string): Promise<{ outline: string; offset: string; radius: string; transform: string }> => page.locator(selector).evaluate(node => {
+            const style = getComputedStyle(node);
+            return { outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`, offset: style.outlineOffset, radius: style.borderTopLeftRadius, transform: style.transform };
+        });
+        const focusedRing = { outline: "solid 2px rgba(255, 255, 255, 0.86)", offset: "10px", radius: "18px", transform: "matrix(1.01, 0, 0, 1.01, 0, 0)" };
+        assert.equal(await focused(page), "info");
+        assert.deepEqual(await ring(".player-menu-info"), focusedRing);
+        await remote(page, UP);
+        assert.equal((await ring(".player-menu-info")).transform, "none", "the tab holds focus, so the pane has no ring");
+        assert.match((await ring(".player-menu-info")).outline, /rgba\(0, 0, 0, 0\)$/, "a clear stroke, as Apple's Color.clear");
+        await nextTab(page, 1);
+        assert.equal(await focused(page), "stats");
+        assert.deepEqual(await ring(".player-menu-stats"), focusedRing);
+    } finally { await page.close(); }
+});
+
+// StatsPane's scroll targets (TVPlayerInfoHUD.swift:772-787): top, the Engine section when it has rows, then bottom.
+test("Stats pages Down from the top to Engine to the bottom and back, then Up returns to its tab (#556)", async () => {
+    const { page } = await open();
+    const tall = { ...STATS, playback: Array.from({ length: 30 }, (_, index) => ({ label: `Row ${index + 1}`, value: "value" })), engine: Array.from({ length: 4 }, (_, index) => ({ label: `Engine ${index + 1}`, value: "value" })) };
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, { ...playing(TRACKS), hud: { chapters: [], chapterState: "ready", stats: tall, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await openPanel(page);
+        await nextTab(page, 1);
+        assert.equal(await focused(page), "stats");
+        const pane = page.locator(".player-menu-stats");
+        const at = (): Promise<{ top: number; end: number; engine: number }> => pane.evaluate(node => {
+            const engine = Array.from(node.querySelectorAll(".player-stats-heading")).find(heading => heading.textContent === "Engine");
+            // The pane is the heading's offset parent; client rects would include the focused pane's 1.01 scale.
+            return { top: node.scrollTop, end: node.scrollHeight - node.clientHeight, engine: engine instanceof HTMLElement && engine.offsetParent === node ? engine.offsetTop : NaN };
+        });
+        const start = await at();
+        assert.ok(start.end > start.engine && start.engine > 0, `Engine (${start.engine}) sits above the end (${start.end})`);
+        await remote(page, DOWN);
+        assert.equal((await at()).top, start.engine, "the first Down brings Engine to the top");
+        await remote(page, DOWN);
+        assert.equal((await at()).top, start.end, "the next reaches the bottom");
+        await remote(page, UP);
+        assert.equal((await at()).top, start.engine);
+        await remote(page, UP);
+        assert.equal((await at()).top, 0);
+        assert.equal(await focused(page), "stats");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Stats");
     } finally { await page.close(); }
 });
 
@@ -3695,6 +3755,9 @@ test("Info shows Apple's TITLE column and a NOW PLAYING column of one row per fa
         await capture(page, "player-info");
         await remote(page, DOWN);
         assert.equal(await focused(page), "info", "the pane is the one focus target");
+        // Down moved to Info's bottom target (InfoPane's [top, bottom]), so the first Up pages back to the top and the second reaches the tab.
+        await remote(page, UP);
+        assert.equal(await focused(page), "info");
         await remote(page, UP);
         assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Info");
         await show(page, { ...playing(TRACKS), hud: { ...hud, metadata: item({ type: "movie", year: 1995, seriesTitle: undefined }) } });
@@ -3728,6 +3791,9 @@ test("Stats lays out PLAYBACK beside STREAM and ENGINE with one row per fact, fo
         await remote(page, DOWN);
         assert.equal(await focused(page), "stats");
         await capture(page, "player-stats-last-row");
+        // Down moved to the Engine target, so the first Up pages back to the top and the second reaches the tab.
+        await remote(page, UP);
+        assert.equal(await focused(page), "stats");
         await remote(page, UP);
         assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Stats");
         await show(page, { ...playing(TRACKS), hud: { ...hud, stats: { ...STATS, stream: [] } } });
