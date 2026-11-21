@@ -51,8 +51,9 @@ async function openMovie(setup: (catalog: FakeDetails) => void, body: (tv: Tv) =
 test("a movie with no progress shows Apple's six controls, focuses Play and keeps Watchlist's label", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
     assert.deepEqual((await row(tv)).map(({ key, label, disabled }) => ({ key, label, disabled })), [
         { key: "play", label: "Play", disabled: false },
-        { key: "version", label: "Versions", disabled: false },
-        { key: "audio", label: "Audio Tracks", disabled: false },
+        // TVPlaybackSelectorRow's detail.version and detail.audio (silo-apple 71a3beb9, :112, :147).
+        { key: "version", label: "Version", disabled: false },
+        { key: "audio", label: "Audio", disabled: false },
         { key: "subtitles", label: "Subtitles", disabled: false },
         { key: "watchlist", label: "Watchlist", disabled: false },
         { key: "more", label: "More", disabled: false },

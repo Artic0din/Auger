@@ -128,6 +128,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The Details pills for the version and audio choices now read Version and Audio in the language you pick, as on Apple TV, instead of Versions and Audio Tracks in English (#728).
 - The Up Next card now treats an empty episode still link from the server as no still, and shows the episode's backdrop instead of blank art (#731).
 - On a film, Show Up Next now disappears when What's On Deck can't be loaded even after a second try, as on Apple TV, instead of staying for the whole film and opening an empty panel (#736).
 - The player's Info and Stats panes now show Apple TV's focus ring and grow slightly when focused, and Down and Up page through them as on Apple TV: Info from its top to its end, Stats from its top to its Engine section to its end, instead of scrolling part of a page at a time (#556).

@@ -87,7 +87,7 @@ The sign-in screens (server address, TV code, password, server not ready, the pl
 
 Apple has no key for these, or they belong to a later row of the plan.
 
-- Tizen-only Details text: the circle buttons' `Versions` and `Audio Tracks`, `Seasons`, `Unknown language`, `Special N`, preference-save notes (`Saving audio preference…`), the unplayable-file notes, `Loading extra…`, the personal-action retry notes, and the held-change alert.
+- Tizen-only Details text: `Seasons`, `Unknown language`, `Special N`, preference-save notes (`Saving audio preference…`), the unplayable-file notes, `Loading extra…`, the personal-action retry notes, and the held-change alert.
 - The season view's `45 min` line.
 - Home's original-language overlay (`cardOverlays.languageName`) and the card menu's Play, Resume, Mark as Watched, Add to Favorites and Add to Watchlist rows: Apple builds those as plain strings, so they stay English; the Not Interested and Show in Recommendations rows read the catalog (see [settings.md](settings.md#card-for-you-and-library-text)).
 - Box set cards and the error screen's headline and buttons (`Something went wrong`, `Try Again`, `Go Back`, `Sign In Again`): collections and error rows of the plan.
