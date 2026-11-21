@@ -6,7 +6,6 @@ Implements the tvOS source check described in CONTRIBUTING.md ("Port from the tv
 reviewers still judge that.
 """
 
-import fnmatch
 import os
 import re
 import subprocess
@@ -20,6 +19,13 @@ CITATION = re.compile(r"[\w./-]+\.swift:\d+(?:-\d+)?")
 # AGENTS.md "Parity delivery gates" asks for the source revision, so the section also names a silo-apple commit.
 REVISION = re.compile(r"\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
 FENCE = re.compile(r"^[ \t>]*(`{3,}|~{3,})[^`\n]*\n.*?^[ \t>]*\1\1?[`~]*[ \t]*$", re.DOTALL | re.MULTILINE)
+
+
+def matches(path: str, pattern: str) -> bool:
+    # Path-aware glob: "*" stays within one folder and "**" crosses folders, so src/*.ts doesn't match src/api/http.ts.
+    regex = "".join(".*" if part == "**" else "[^/]*" if part == "*" else "[^/]" if part == "?" else re.escape(part)
+                    for part in re.split(r"(\*\*|\*|\?)", pattern))
+    return re.fullmatch(regex, path) is not None
 
 
 def git(*arguments: str) -> str:
@@ -72,7 +78,7 @@ def main() -> int:
         return 0
     patterns = required_patterns(env["BASE"])
     changed = [path for path in git("diff", "-z", "--no-renames", "--name-only", f"{env['BASE']}...{env['HEAD']}").split("\0") if path]
-    touched = [path for path in changed if any(fnmatch.fnmatch(path, pattern) for pattern in patterns)]
+    touched = [path for path in changed if any(matches(path, pattern) for pattern in patterns)]
     if not touched:
         print("tvOS source not required: no changed path matches .github/tvos-source.yml")
         return 0

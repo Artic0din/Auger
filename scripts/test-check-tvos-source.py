@@ -40,7 +40,8 @@ class CheckTvosSourceTest(unittest.TestCase):
                               capture_output=True, text=True, timeout=30)
 
     def test_skips_changes_outside_the_interface(self):
-        result = self.check(self.commit({"src/api/http.ts": "export {};\n", "docs/notes.md": "text\n"}))
+        result = self.check(self.commit({"src/api/http.ts": "export {};\n", "src/session/core.ts": "export {};\n",
+                                          "docs/notes.md": "text\n"}))
         self.assertEqual(0, result.returncode, result.stdout)
         self.assertIn("tvOS source not required", result.stdout)
 
