@@ -2680,8 +2680,8 @@ export class PlaybackController implements PlayerControls {
         );
     }
 
-    /** `once` sends the STOP a single time instead of retrying a failure that may clear. */
-    private async stopSession(attempt: Attempt, once = false): Promise<void> {
+    /** `once` sends the STOP a single time instead of retrying a failure that may clear; `sent` counts the sends already made. */
+    private async stopSession(attempt: Attempt, once = false, sent = 0): Promise<void> {
         if (attempt.stopped) return;
         const sessionId = attempt.sessionId;
         const installationId = attempt.installationId;
@@ -2708,7 +2708,7 @@ export class PlaybackController implements PlayerControls {
                 throw error;
             }
         };
-        const receipt = once ? await send() : await this.resend(attempt, send);
+        const receipt = once ? await send() : await this.resend(attempt, send, sent);
         if ((receipt.outcome !== "stopped" && receipt.outcome !== "replayed") || (receipt.stopId !== undefined && receipt.stopId !== spec.body?.stop_id)) {
             throw new ApiError({ kind: "invalid_response", path: "playback_stop.receipt" });
         }
@@ -2848,14 +2848,18 @@ export class PlaybackController implements PlayerControls {
             // PlaybackSessionBridge.stopSession: one STOP, and a failure that may clear is logged and the advance goes on, the server timing
             // the old session out. The identical STOP keeps trying in the background, so the session still ends when the server can answer.
             // A refusal or an expired session still ends the advance: no successor starts without the session's authority.
-            try {
+            // A Retry after a failed lookup finds the session ended already, and sends no STOP of its own.
+            if (!attempt.ended) try {
                 await this.stopSession(attempt, true);
             } catch (error) {
                 if (!(error instanceof ApiError && error.transient)) throw error;
-                // Not at once: the first resend waits the first retry delay, or longer when the server asked (Retry-After).
+                // Not at once: the first resend waits the first retry delay, or longer when the server asked (Retry-After). With the
+                // first send counted, the STOP goes out as many times in all as a resent STOP does elsewhere.
                 attempt.stopRetryAt = Math.max(attempt.stopRetryAt, this.deps.clock.now() + (RESEND_DELAYS_MS[0] ?? 0));
                 attempt.ended = true;
-                void this.stopSession(attempt).catch(() => undefined);
+                void this.stopSession(attempt, false, 1).catch((failure: unknown) => {
+                    if (!(failure instanceof ApiError && failure.aborted)) console.warn("Silo playback: the session did not stop; the server will time it out", failure);
+                });
             }
             if (!current()) return;
             stage = "lookup";
@@ -2871,7 +2875,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request, attempt.plan?.effectiveMediaFileId ?? attempt.request.fileId).catch((error: unknown) => {
-                    // The session is already stopped, so a missing item cannot be retried: the Shuffle moves on.
+                    // A next part that no longer exists cannot be retried: the Shuffle moves on.
                     if (error instanceof ApiError && error.status === 404) return undefined;
                     throw error;
                 });
@@ -2938,7 +2942,8 @@ export class PlaybackController implements PlayerControls {
             if (!current()) return;
             this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false });
         } catch (error) {
-            const missingSession = error instanceof ApiError && error.status === 404 && !attempt.stopped;
+            // Only the session's own end can find the session missing; a 404 after that is a lookup that Retry may yet answer.
+            const missingSession = error instanceof ApiError && error.status === 404 && stage === "session";
             const forbidden = missingSession || (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed"));
             show("failed", undefined, !forbidden);
         } finally {
@@ -3667,8 +3672,8 @@ export class PlaybackController implements PlayerControls {
     }
 
     /** Resends the identical request after no answer or a transient refusal; the contract replays it. */
-    private async resend<T>(attempt: Attempt, send: () => Promise<T>): Promise<T> {
-        for (let index = 0; ; index++) {
+    private async resend<T>(attempt: Attempt, send: () => Promise<T>, sent = 0): Promise<T> {
+        for (let index = sent; ; index++) {
             try {
                 return await send();
             } catch (error) {

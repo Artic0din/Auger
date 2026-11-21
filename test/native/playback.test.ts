@@ -2322,6 +2322,23 @@ test("pre-end progress keeps ten-second cadence and Back after EOF replays the l
     r.controller.destroy();
 });
 
+test("Keep Watching after a lost EOF STOP answer replays the last ten seconds of the same file", async () => {
+    const r = await autoplayRig(false);
+    const id = await playMovie(r, EPISODE);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    r.h.fake.dropNextAnswer(`/playback/${id}`);
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    r.controller.keepWatching();
+    await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "the end card does not just go Back");
+    assert.equal(bodies(r.h, "/start")[1]?.start_position, view.durationSeconds! - 10);
+    assert.equal(bodies(r.h, "/start")[1]?.file_id, EPISODE.fileId);
+    r.controller.destroy();
+});
+
 test("movies retain up to twelve distinct On Deck cards and never autoplay another title", async () => {
     const r = await autoplayRig(true);
     const household = [...r.catalog.households.values()][0]!;
@@ -2632,6 +2649,66 @@ test("an EOF STOP refused with 503 lets the advance go on, and the background re
     r.controller.destroy();
 });
 
+test("Retry after a failed lookup sends no STOP of its own while the background resend runs, and a missing title stays retryable", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await episodeRig();
+        const id = await playMovie(r, EPISODE);
+        r.h.fake.dropNextAnswer(`/playback/${id}`);
+        r.catalog.removed.add(EPISODE.contentId);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "failed");
+        assert.equal(completion(r).failure, undefined, "the lookup failed, not the session");
+        assert.equal(completion(r).retryable, true, "a 404 lookup is not a missing session while the STOP is still being resent");
+        r.catalog.removed.delete(EPISODE.contentId);
+        r.controller.retryCompletion();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "ready");
+        await r.h.clock.advance(10000);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 2, "the first STOP and one background resend; Retry adds none");
+        assert.equal(r.server.session(id).receipt?.stop_id, bodies(r.h, `/playback/${id}`)[0]?.stop_id);
+    } finally { warnings.mock.restore(); }
+});
+
+test("an EOF STOP that keeps failing is sent three times in all, as before, and the last failure is logged", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await episodeRig();
+        const id = await playMovie(r, EPISODE);
+        const unavailable = { status: 503, body: {} };
+        r.h.fake.script(`/playback/${id}`, unavailable, unavailable, unavailable, unavailable);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "ready");
+        await r.h.clock.advance(1000);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 2);
+        await r.h.clock.advance(2000);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 3);
+        await r.h.clock.advance(30000);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 3, "no fourth STOP");
+        assert.equal(warnings.mock.callCount(), 1, "the failed background STOP is logged once, as PlaybackSessionBridge does");
+        r.controller.destroy();
+    } finally { warnings.mock.restore(); }
+});
+
+test("authority loss while the background STOP resend waits sends no old-scope resend", async () => {
+    for (const action of ["profile", "account"]) {
+        const r = await episodeRig();
+        const id = await playMovie(r, EPISODE);
+        r.h.fake.dropNextAnswer(`/playback/${id}`);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
+        if (action === "profile") r.h.core.profiles.clear();
+        else await r.h.core.session.logout();
+        await r.h.clock.advance(10000);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 1, `${action}: the resend never goes out`);
+        assert.equal(bodies(r.h, "/start").length, 1, `${action}: nothing new starts`);
+        r.controller.destroy();
+    }
+});
+
 test("Back, background, teardown and profile loss cancel EOF resolution despite late answers", async () => {
     for (const action of ["back", "background", "destroy", "profile"] as const) {
         const r = await episodeRig();
@@ -2922,7 +2999,7 @@ test("EOF arriving during a pending backward seek cannot become episode continua
     await r.h.clock.advance(0);
 });
 
-test("authority loss while STOP awaits retry prevents old-scope resends and next starts", async () => {
+test("authority loss while the EOF STOP is out prevents old-scope resends and next starts", async () => {
     for (const action of ["profile", "account"]) {
         const r = await episodeRig();
         const id = await playMovie(r, EPISODE);
