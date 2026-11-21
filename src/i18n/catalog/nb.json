@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Tidslinje",
  "player.controls.showUpNext": "Vis Neste",
  "player.error.connectionLost": "Mistet tilkoblingen\nSilo kunne ikke koble til serveren igjen. Sjekk tilkoblingen, og prøv deretter igjen for å fortsette der du slapp.",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Gå tilbake",
  "player.hud.aspect": "Bildeformat",
  "player.hud.audio": "Lyd",

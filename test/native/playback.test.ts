@@ -1878,6 +1878,9 @@ test("Up Next appears at Apple's default 30 seconds and Keep Watching suppresses
     r.avplay.tick((duration - 30) * 1000);
     await r.h.clock.advance(0);
     assert.ok("upNext" in last(r.views), "panel should appear before EOF");
+    const shown = last(r.views);
+    assert.ok(shown.phase === "playing");
+    assert.deepEqual([shown.upNext?.countdown, shown.upNext?.countdownTotal], [30, 30], "the ring runs over the prompt's 30 seconds (Apple's nextUpPromptSeconds)");
     r.controller.cancelAutoplay();
     r.avplay.tick((duration - 10) * 1000);
     await r.h.clock.advance(0);
@@ -1962,6 +1965,7 @@ test("Show Up Next opens the manual panel on the next episode without a countdow
     assert.equal(view.upNext?.failed, undefined);
     assert.equal(view.upNext?.status, "Up Next");
     assert.equal(view.upNext?.countdown, undefined);
+    assert.equal(view.upNext?.countdownTotal, 100, "opened by hand, the ring would run over Apple's 100-second HUD threshold");
     assert.equal(view.upNext?.next?.contentId, "episode:s1e13");
     assert.equal(view.upNext?.next?.title, "Harbor Lights chapter 1.3");
     r.controller.playNext();

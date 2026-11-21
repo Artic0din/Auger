@@ -606,13 +606,55 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
     } finally { await page.close(); }
 });
 
+// PlayerView.metadata(for:) and CountdownRing (PlayerView.swift:1348-1395, :1777, silo-apple main f70e16a): the series line, the S·E code
+// before the title, the synopsis, and the countdown as a ring of seconds left over the countdown's length beside Play Now (#697).
+test("Up Next names the series and the episode code, shows the synopsis and counts down in a ring beside Play Now", async () => {
+    const { page } = await open();
+    try {
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Harbor Lights chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor.", backdropUrl: "/images/harbor-113.jpg" };
+        const backdrop = (): Promise<{ image: string; filter: string; opacity: string; clip: string } | undefined> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-next-backdrop");
+            if (node === null || node.hidden) return undefined;
+            const css = getComputedStyle(node.querySelector(".player-next-backdrop-art")!);
+            return { image: css.backgroundImage, filter: css.filter, opacity: css.opacity, clip: getComputedStyle(node).clipPath };
+        });
+        const ring = (): Promise<{ label: string | null; seconds: string; filled: number; afterPlayNow: boolean }> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-countdown")!;
+            const progress = node.querySelector<SVGCircleElement>(".player-countdown-progress")!;
+            const length = Number(progress.getAttribute("stroke-dasharray"));
+            return { label: node.getAttribute("aria-label"), seconds: node.querySelector(".player-countdown-seconds")!.textContent ?? "", filled: Math.round((1 - Number(progress.getAttribute("stroke-dashoffset")) / length) * 100) / 100, afterPlayNow: node.previousElementSibling?.getAttribute("data-focus") === "play-next" };
+        });
+        await show(page, { ...playing(TRACKS), upNext: { next: episode, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        assert.equal(await text(page, ".player-next-series"), "Harbor Lights");
+        assert.equal(await text(page, ".player-next-up .player-title .player-next-code"), "S1:E13");
+        assert.equal(await page.locator(".player-next-up .player-title").evaluate(node => node.lastChild?.textContent), "Harbor Lights chapter 1.3");
+        assert.equal(await text(page, ".player-next-synopsis"), "A storm closes the harbor.");
+        assert.deepEqual(await ring(), { label: "Playing next in 12 seconds", seconds: "12", filled: 0.4, afterPlayNow: true });
+        assert.equal(await page.locator(".player-next-up .player-error-text").textContent(), "", "the ring replaces the countdown sentence");
+        // PlayerView.backgroundImage: the next still, blurred 44 and scaled 1.12 at 0.18 opacity under 0.78 black. The live video plays
+        // under the page on a TV, so the layer leaves a hole over the preview while it plays.
+        const shown = await backdrop();
+        assert.ok(shown !== undefined && shown.image.includes("/images/harbor-113.jpg"), `the next still is drawn behind the card: ${JSON.stringify(shown)}`);
+        assert.deepEqual([shown.filter, shown.opacity], ["blur(44px)", "0.18"]);
+        assert.ok(shown.clip.includes("evenodd") && shown.clip.includes("180px 112px"), `with a hole over the preview: ${shown.clip}`);
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal(await page.locator(".player-next-series").isHidden(), true, "a movie has no series line");
+        assert.equal(await page.locator(".player-next-up .player-title .player-next-code").count(), 0, "nor an episode code");
+        assert.equal(await page.locator(".player-countdown").isHidden(), true, "no countdown, no ring");
+        assert.equal(await backdrop(), undefined, "no still, no background");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: episode, countdown: 9 });
+        assert.deepEqual(await ring(), { label: "Playing next in 9 seconds", seconds: "9", filled: 0.9, afterPlayNow: true }, "after the end, the ring runs over Apple's 10 seconds");
+        assert.equal((await backdrop())?.clip, "none", "after the end there is no video to leave room for");
+    } finally { await page.close(); }
+});
+
 test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
     const { page } = await open();
     const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
     try {
         await show(page, view);
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
-        assert.equal(await text(page, ".player-error-text"), "Playing next in 10 seconds", "Apple's upNext.playingNextIn");
+        assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), "Playing next in 10 seconds", "the ring speaks Apple's upNext.playingNextIn");
         assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
         assert.equal(await focused(page), "cancel-autoplay");

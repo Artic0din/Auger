@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Barre de lecture",
  "player.controls.showUpNext": "Afficher À suivre",
  "player.error.connectionLost": "Connexion perdue\nSilo n’a pas pu se reconnecter au serveur. Vérifiez votre connexion, puis réessayez pour reprendre là où vous vous étiez arrêté.",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Revenir",
  "player.hud.aspect": "Format d’image",
  "player.hud.audio": "Audio",

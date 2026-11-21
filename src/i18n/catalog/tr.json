@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Zaman çubuğu",
  "player.controls.showUpNext": "Sıradaki’ni göster",
  "player.error.connectionLost": "Bağlantı kesildi\nSilo sunucuya yeniden bağlanamadı. Bağlantınızı kontrol edin, ardından kaldığınız yerden devam etmek için tekrar deneyin.",
+ "player.eyebrow.episode": "S{season}:B{episode}",
  "player.goBack": "Geri dön",
  "player.hud.aspect": "En boy oranı",
  "player.hud.audio": "Ses",

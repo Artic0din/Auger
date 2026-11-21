@@ -214,3 +214,14 @@ test("an On Deck title ranks its files by the Resolution cap", async () => {
     assert.equal((await onDeckPlay(read, CURRENT, "1080p"))?.fileId, "fhd");
     assert.equal((await onDeckPlay(read, CURRENT))?.fileId, "uhd");
 });
+
+// Apple's PlayerNextUpEpisode takes the overview and still from the episode list it already read (PlayerViewModel.swift:119-135,
+// silo-apple main f70e16a), so its card has the synopsis as soon as it has the title, without a second read (#697).
+test("the next episode carries the season row's overview and still", async () => {
+    const r = rig(1, 9);
+    r.data.set(seasonPath(1), { items: [{ ...row(NEXT, 1, 10), overview: "A storm closes the harbor.", still_url: "/images/next-still.jpg" }, row(CURRENT, 1, 9)] });
+    r.data.set(watchPath(NEXT), watch(NEXT, 1, 10));
+    const result = await nextEpisode(r.read, CURRENT, "effective");
+    assert.equal(result?.overview, "A storm closes the harbor.");
+    assert.equal(result?.backdropUrl, "/images/next-still.jpg");
+});

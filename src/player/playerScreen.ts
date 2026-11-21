@@ -10,7 +10,9 @@
 // switch, say) is never erased.
 
 import type { Clock } from "../api/clock.ts";
-import { applyScreenDirection } from "../i18n/direction.ts";
+import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
 import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
@@ -21,7 +23,7 @@ import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from ".
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
 import type { AVPlay } from "./avplay.ts";
-import { type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
+import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
@@ -272,6 +274,31 @@ export function clockText(seconds: number): string {
     return hours > 0 ? `${hours}:${two(minutes)}:${two(secs)}` : `${minutes}:${two(secs)}`;
 }
 
+const RING_RADIUS = 27.5;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/** CountdownRing (PlayerView.swift:1777): the seconds left in the language's digits inside a ring of what is left of the countdown. */
+function countdownRing(): { readonly element: HTMLElement; set(seconds: number | undefined, total: number | undefined): void } {
+    const element = el("div", "player-countdown");
+    element.setAttribute("role", "img");
+    element.innerHTML = `<svg viewBox="0 0 58 58" aria-hidden="true"><circle class="player-countdown-track" cx="29" cy="29" r="${RING_RADIUS}"/><circle class="player-countdown-progress" cx="29" cy="29" r="${RING_RADIUS}" stroke-dasharray="${RING_LENGTH}" transform="rotate(-90 29 29)"/></svg>`;
+    const progress = element.querySelector("circle.player-countdown-progress")!;
+    const seconds = el("span", "player-countdown-seconds");
+    element.append(seconds);
+    element.hidden = true;
+    return {
+        element,
+        set(left, total) {
+            element.hidden = left === undefined;
+            if (left === undefined) return;
+            element.setAttribute("aria-label", translate("upNext.playingNextIn", { seconds: left }));
+            seconds.textContent = integerText(left);
+            const filled = total === undefined || total <= 0 ? 1 : Math.max(0, Math.min(1, left / total));
+            progress.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - filled)));
+        },
+    };
+}
+
 export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, clock: Clock = systemClock, baseUrl = location.origin): PlayerScreen {
     const section = el("section", "player");
     const renderSubtitles = mountSubtitles(section);
@@ -461,6 +488,27 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const failureTitle = el("h1", "player-title");
     const eyebrow = el("p", "player-next-eyebrow");
     const synopsis = el("p", "player-next-synopsis");
+    const nextSeries = el("p", "player-next-series");
+    nextSeries.hidden = true;
+    // PlayerView.backgroundImage: the next still behind the whole page, blurred and dimmed.
+    const nextBackdrop = el("div", "player-next-backdrop");
+    const nextBackdropArt = el("div", "player-next-backdrop-art");
+    nextBackdrop.append(nextBackdropArt);
+    nextBackdrop.hidden = true;
+    const ring = countdownRing();
+    /** PlayerView.metadata(for:): an episode heads with its series and puts its code before the title; anything else is its title alone. */
+    const nextTitle = (candidate: PlayRequest | undefined, fallback: string): void => {
+        const code = candidate?.episode === true && candidate.seasonNumber !== undefined && candidate.episodeNumber !== undefined
+            ? translate("player.eyebrow.episode", { season: String(candidate.seasonNumber), episode: String(candidate.episodeNumber) })
+            : undefined;
+        nextSeries.textContent = code === undefined ? "" : candidate?.seriesTitle ?? "";
+        nextSeries.hidden = nextSeries.textContent === "";
+        failureTitle.classList.toggle("player-next-episode-title", code !== undefined);
+        if (candidate === undefined) failureTitle.textContent = fallback;
+        else if (code === undefined) failureTitle.textContent = candidate.title;
+        // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
+        else failureTitle.replaceChildren(el("span", "player-next-code", code), document.createTextNode(" "), document.createTextNode(candidate.title));
+    };
     const deck = el("div", "player-next-deck");
     const keep = el("button", "player-button");
     keep.type = "button";
@@ -486,8 +534,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     cancelAutoplay.type = "button";
     cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
     cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
-    actions.append(next, keep, cancelAutoplay, retry, back);
-    failure.append(eyebrow, failureTitle, mark, failureText, synopsis, actions, deck);
+    actions.append(next, ring.element, keep, cancelAutoplay, retry, back);
+    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, mark, failureText, synopsis, actions, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -879,6 +927,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         cancelAutoplay.hidden = view.phase !== "completion" || view.countdown === undefined;
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
+        nextSeries.hidden = true;
+        nextBackdrop.hidden = true;
+        failureTitle.classList.remove("player-next-episode-title");
+        ring.set(undefined, undefined);
         mark.hidden = view.phase !== "error";
         back.textContent = view.phase === "error" ? translate("player.goBack") : translate("upNext.close");
         if (view.phase === "completion" || prompt !== undefined) {
@@ -893,6 +945,16 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             failure.classList.add("player-next-up");
             eyebrow.textContent = nextStatus;
             synopsis.textContent = candidate?.overview ?? "";
+            const still = candidate?.hideBackdrop === true ? undefined : artworkUrl(candidate?.backdropUrl, baseUrl) ?? artworkUrl(cards.find(card => card.hideBackdrop !== true)?.backdropUrl, baseUrl);
+            nextBackdrop.hidden = still === undefined;
+            if (still !== undefined) {
+                nextBackdropArt.style.backgroundImage = `url("${still}")`;
+                // The video plays under the page, so while it does the layer leaves the preview clear (Apple draws it above).
+                const left = upNextPreviewLeft(UP_NEXT_SCREEN.width, textIsRightToLeft());
+                const right = left + UP_NEXT_PREVIEW.width;
+                const bottom = UP_NEXT_PREVIEW.top + UP_NEXT_PREVIEW.height;
+                nextBackdrop.style.clipPath = view.phase === "completion" ? "none" : `polygon(evenodd, 0px 0px, ${UP_NEXT_SCREEN.width}px 0px, ${UP_NEXT_SCREEN.width}px ${UP_NEXT_SCREEN.height}px, 0px ${UP_NEXT_SCREEN.height}px, 0px 0px, ${left}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${UP_NEXT_PREVIEW.top}px)`;
+            }
             const identity = cards.map(card => `${card.contentId}:${card.hideBackdrop === true ? "1" : "0"}`).join("|");
             if (deck.dataset.items !== identity) {
                 const focusedCard = deck.contains(document.activeElement) ? document.activeElement?.getAttribute("data-focus") : undefined;
@@ -937,8 +999,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 next.textContent = translate("upNext.playNow");
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
-                failureTitle.textContent = loading ? translate("upNext.finding") : candidate?.title ?? translate("upNext.almostFinished");
-                failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : seconds === undefined ? "" : translate("upNext.playingNextIn", { seconds });
+                nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
+                failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
+                ring.set(loading || failed || candidate === undefined ? undefined : seconds, prompt?.countdownTotal);
                 if (!failure.contains(document.activeElement)) (next.hidden ? keep : next).focus();
                 spinner.hidden = true;
                 status.hidden = true;
@@ -951,9 +1014,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
             const working = view.state === "finalizing" || view.state === "resolving";
-            failureTitle.textContent = working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : candidate?.title ?? translate("upNext.endOfPlayback");
+            nextTitle(working ? undefined : candidate, working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : translate("upNext.endOfPlayback"));
             failureText.textContent = working ? "" : view.state === "failed" ? translate(view.failure === "session" ? "errors.apple.playback.invalidSample" : "upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
-            if (view.countdown !== undefined) failureText.textContent = translate("upNext.playingNextIn", { seconds: view.countdown });
+            if (view.countdown !== undefined) failureText.textContent = "";
+            ring.set(view.countdown, AUTOPLAY_COUNTDOWN_SECONDS);
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
                 (!next.hidden ? next : !retry.hidden ? retry : back).focus();
             }

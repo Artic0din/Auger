@@ -258,11 +258,12 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('[data-focus="play-next"]').textContent(), text("upNext.playNow", language));
             // PlayerView.swift:1466-1477 (silo-apple b54fefb1): Up Next's dismiss button is upNext.close, its countdown upNext.playingNextIn.
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
-            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 30 }));
+            assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 30 }));
+            assert.equal(await page.locator(".player-countdown-seconds").textContent(), language === "ar" ? "٣٠" : "30", "the ring writes the seconds in the language's digits");
             assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
             assert.equal(await page.locator('[data-focus="cancel-autoplay"]').textContent(), "Cancel autoplay", "no Apple key: English");
             await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 1 });
-            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 1 }));
+            assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 1 }));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
             await show(page, playing({ skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25 }));
             assert.equal(await page.locator(".player-skip-label").textContent(), text("introSkip.pill.skip", language));

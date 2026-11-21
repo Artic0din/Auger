@@ -529,6 +529,7 @@
  "player.controls.scrubber": "进度条",
  "player.controls.showUpNext": "显示即将播放",
  "player.error.connectionLost": "连接已断开\nSilo无法重新连接到服务器。请检查你的网络连接，然后重试，从上次离开的位置继续播放。",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "返回",
  "player.hud.aspect": "画面比例",
  "player.hud.audio": "音频",

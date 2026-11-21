@@ -24,6 +24,24 @@
 .player-next-up .player-title { font-size: 42px; }
 .player-next-eyebrow { font-size: 18px; text-transform: uppercase; opacity: .52; }
 .player-next-synopsis { font-size: 22px; line-height: 1.4; }
+/* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
+.player-next-series { margin: 0; font-size: 34px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-next-series[hidden] { display: none; }
+.player-next-up .player-title.player-next-episode-title { font-size: 25px; font-weight: 600; }
+.player-next-code { margin-inline-end: 4px; opacity: .62; }
+/* CountdownRing: 58 px, a 3 px track at 12% white and the remaining part in white with round ends, the seconds at 24 bold rounded. */
+.player-countdown { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin: 18px 0 0; margin-inline-end: 20px; vertical-align: top; }
+.player-countdown[hidden] { display: none; }
+.player-countdown svg { position: absolute; inset: 0; width: 58px; height: 58px; }
+.player-countdown circle { fill: none; stroke-width: 3; }
+.player-countdown-track { stroke: rgba(255, 255, 255, 0.12); }
+.player-countdown-progress { stroke: #ffffff; stroke-linecap: round; }
+.player-countdown-seconds { position: relative; font-size: 24px; font-weight: 700; font-family: ui-rounded, var(--silo-font, sans-serif); color: #ffffff; }
+/* PlayerView.backgroundImage: the still fills the page, blurred 44 and scaled 1.12 at 0.18, under 0.78 black. */
+.player-next-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.player-next-backdrop[hidden] { display: none; }
+.player-next-backdrop-art { position: absolute; inset: 0; background-size: cover; background-position: center; transform: scale(1.12); filter: blur(44px); opacity: 0.18; }
+.player-next-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.78); }
 .player-next-up .player-button { margin: 18px 0 0; margin-inline-end: 20px; }
 .player-next-deck {
     margin: 34px 0 0;
