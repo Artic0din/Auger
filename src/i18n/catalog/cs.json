@@ -1055,6 +1055,7 @@
  "topBar.series": "Seriály",
  "tvSignIn.action.newCode": "Zobrazit nový kód",
  "tvSignIn.action.password": "Přihlásit se heslem",
+ "tvSignIn.addAccountTitle": "Přidat účet na serveru {server}",
  "tvSignIn.appleTv.lead": "Naskenujte kód fotoaparátem telefonu nebo přejděte na {page} a zadejte ho. Schvalte přihlášení v telefonu a Apple TV se přihlásí automaticky.",
  "tvSignIn.appleTv.leadNoPage": "Naskenujte kód fotoaparátem telefonu nebo přejděte na stránku /activate vašeho serveru a zadejte ho. Schvalte přihlášení v telefonu a Apple TV se přihlásí automaticky.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Když vyberete pole, na iPhonech a iPadech v okolí se zobrazí oznámení s klávesnicí. Pište na nich místo dálkového ovladače.",

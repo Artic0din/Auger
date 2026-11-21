@@ -30,6 +30,8 @@ export interface SignInOptions {
     readonly onChangeAccount?: () => void;
     /** Started from Change Account, so leaving returns there (AccountSignInRequest.returnsToChangeAccount). */
     readonly returnToAccounts?: boolean;
+    /** Started from Change Account to add an account, not to renew a saved one (AccountSignInRequest with no renewingAccountId). */
+    readonly addingAccount?: boolean;
     /** The session just expired. The code screen explains it (LoginNotice.sessionExpired). */
     readonly sessionExpired?: boolean;
     readonly onCancel?: () => void;
@@ -692,7 +694,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             for (const node of Array.from(root.querySelectorAll<HTMLElement>(".marquee-server-name"))) node.textContent = name;
             for (const node of Array.from(root.querySelectorAll<HTMLElement>(".marquee-server-mark"))) setServerMark(node, name, current.markUrl);
             const title = root.querySelector<HTMLElement>("[data-server-headline]");
-            if (title !== null) title.textContent = text.signInTitle(name);
+            if (title !== null) title.textContent = text.signInTitle(name, options.addingAccount === true);
             const expiry = root.querySelector<HTMLElement>(`[data-note="${EXPIRY_NOTE}"] span`);
             if (expiry !== null) expiry.textContent = text.sessionExpiredNotice(name);
             if (current.credentials) {
@@ -973,6 +975,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                 status: now.status,
                 code: now.code,
                 serverName: current.serverName ?? text.serverHost(base),
+                addingAccount: options.addingAccount === true,
                 host: text.serverHost(base),
                 secure: base.startsWith("https:"),
                 markUrl: current.markUrl,
