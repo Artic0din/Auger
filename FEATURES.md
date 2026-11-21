@@ -1,7 +1,7 @@
 # Silo Tizen: Feature List
 
 Inventory of what the Samsung TV client does today, and a tracker for parity with the Apple TV (tvOS) and Android TV apps.
-Maintainer's rule: no build goes to Samsung TV Seller Office until the app reaches Apple TV parity ([Releasing](docs/releasing.md#store-release)).
+The app ships by sideloading and through Apps2Samsung, not the Samsung TV store ([Releasing](docs/releasing.md)).
 
 Checked against the code on 3 Nov 2026; update a row in the pull request that changes it.
 
@@ -205,9 +205,9 @@ File pointers are repository-relative.
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
 | Tizen 8.0+ web app (`.wgt`), AVPlay, `internet` / `tv.inputdevice` / `productinfo` privileges | ✅ | ➖ | ➖ | Apple ships a native tvOS app. Android ships a native APK (`androidTvApp`) |
-| Signed tester builds on GitHub, Promote workflow for store drafts | ✅ | ✅ | ✅ | Apple: TestFlight. Android: Release workflow publishes Play beta and GitHub prerelease APKs; Promote workflow creates the production draft |
+| Signed builds on GitHub Releases | ✅ | ✅ | ✅ | Apple: TestFlight. Android: Release workflow publishes Play beta and GitHub prerelease APKs; Promote workflow creates the production draft |
 | Samsung TV hardware beta | 🟡 | ✅ | ✅ | One S95C (Tizen 9) checked; Tizen 8.0 hardware open (#14). Android: Play beta track and sideload beta APKs |
-| Samsung store certification and release | 🚧 | ✅ | 🟡 | Deferred until parity (#15). Android: Promote drafts a Play production release, but no store release has shipped (`docs/releasing.md`) |
+| Samsung store certification and release | ➖ | ✅ | 🟡 | Not pursued: the app ships by sideloading and through Apps2Samsung (#732). Android: Promote drafts a Play production release, but no store release has shipped (`docs/releasing.md`) |
 | Remote keys (arrows, Enter, Back, media keys), Reduced Motion | ✅ | ✅ | 🟡 | Focus rules in [TV focus](docs/tv-focus.md). Android: D-pad and media keys handled (`TvPlayerRemoteKeyBridge`); Reduced Motion not found |
 
 ---

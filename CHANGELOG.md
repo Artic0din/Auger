@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Added a tvOS source check: a pull request that changes the TV interface must cite the silo-apple tvOS source it ports, file and line range, under a "tvOS source" heading.
 - Added a screen test that follows one remote journey through Browse paging, a failed Details load and its retry, playback and the return from it, and Back to the same second-page card (#27).
 - The Up Next card now looks like Apple TV's: the series name heads it, the episode's code (`S1:E13`, `S2:F1` in German) comes before its title, the countdown is a ring beside Play Now showing the seconds left, and the next episode's still shows blurred and dimmed behind the page, leaving the video preview clear (#697).
 - The player now mirrors in Arabic, as on Apple TV: the options panel's tabs, panes and chevrons, Up Next with its video preview, the buffering card and its two buttons, the skip pill and the error page read from the right, and Left and Right on the remote follow that layout. The transport, the scrubber and its time row stay left to right and keep the remote's own Left and Right, Subtitle cues keep their own direction, so English dialogue under Arabic keeps its punctuation. A lost connection now ends on Apple TV's message in the language you pick (English: "Connection lost" over "Silo couldn't reconnect to the server. Check your connection, then try again to continue where you left off.", where it read "Can't reach the server. Check the TV's connection, then try again."); the other player error messages stay English and keep their own direction in Arabic. Other English reads exactly as before (#571, #628).
@@ -79,6 +80,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The README and release docs now describe installing by sideloading or through Apps2Samsung. The Samsung TV store path is dropped: the app will not be submitted to it (#732).
 - The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
 - Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.
 - Split the CI UI tests across three parallel shards (`node --test --test-shard`), with the build and native tests in their own job, so the run no longer grows toward its time limit as tests are added; passing runs took 15 to 26 minutes in one job against a 30-minute limit. The `test` check now passes when every part passes (#646).
@@ -130,6 +132,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - When an episode has no next episode and its On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode. Pick something from On Deck, or go back." under an On Deck row that wasn't there (#744).
+- Adding an account from Change Account now titles the code screen "Add an account on {server}", as on Apple TV, in the language you pick. A first sign-in and renewing a saved account keep "Sign in to {server}" (#754).
 - Switching to another embedded subtitle during a video on direct play now loads that subtitle's file, so Delay, Appearance and Only on this TV stay, as on Apple TV, without restarting the video. If the server refuses the switch, or its answer is slow to arrive, the TV's player shows the subtitle meanwhile. Pause, play and seeking keep working while the switch is answered (#738).
 - The Details pills for the version and audio choices now read Version and Audio in the language you pick, as on Apple TV, instead of Versions and Audio Tracks in English (#728).
 - When a film's On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode". An episode whose next episode can't be found keeps that line (#741).

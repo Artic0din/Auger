@@ -1055,6 +1055,7 @@
  "topBar.series": "剧集",
  "tvSignIn.action.newCode": "显示新代码",
  "tvSignIn.action.password": "使用密码登录",
+ "tvSignIn.addAccountTitle": "在{server}上添加账户",
  "tvSignIn.appleTv.lead": "用手机相机扫描代码，或前往{page}输入代码。在手机上批准后，这台Apple TV会自动登录。",
  "tvSignIn.appleTv.leadNoPage": "用手机相机扫描代码，或前往你的服务器的/activate页面输入代码。在手机上批准后，这台Apple TV会自动登录。",
  "tvSignIn.appleTv.typeOnPhoneBody": "选择字段时，附近的iPhone和iPad上会出现键盘通知。可以在那里输入，而不必使用遥控器。",
