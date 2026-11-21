@@ -80,6 +80,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The README and release docs now describe installing by sideloading or through Apps2Samsung. The Samsung TV store path is dropped: the app will not be submitted to it (#732).
 - The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
 - Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.
 - Split the CI UI tests across three parallel shards (`node --test --test-shard`), with the build and native tests in their own job, so the run no longer grows toward its time limit as tests are added; passing runs took 15 to 26 minutes in one job against a 30-minute limit. The `test` check now passes when every part passes (#646).
