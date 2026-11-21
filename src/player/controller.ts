@@ -511,6 +511,8 @@ interface Attempt {
     captionFallback: string | undefined;
     /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
     switchLocal: boolean;
+    /** Ends an unresolved switch's wait between replays, so a route failure resolves it at once (#750). */
+    wakeSwitch: (() => void) | undefined;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -713,7 +715,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1879,6 +1881,15 @@ export class PlaybackController implements PlayerControls {
             }
             return;
         }
+        // An unresolved switch may have replaced the plan this recovery would name: resolve it now, and recover from its answer (#750).
+        // The failed transport stays open until then, as the switch's replay belongs to it; the recovery closes it.
+        if (subtitleSwitchOut(attempt)) {
+            attempt.changeFailure = attempt.changeFailure ?? classification;
+            attempt.busy = true;
+            this.show({ phase: "loading", title: attempt.request.title });
+            attempt.wakeSwitch?.();
+            return;
+        }
         this.closeTransport();
         if (attempt.recoveries >= MAX_RECOVERY_REPLANS) {
             this.fail(attempt, { kind: "playback_failed" }, true);
@@ -2463,7 +2474,12 @@ export class PlaybackController implements PlayerControls {
                 }
                 const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
                 const lease = error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0;
-                await sleep(this.deps.clock, Math.max(backoff, lease, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError);
+                const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
+                try {
+                    await Promise.race([sleep(this.deps.clock, Math.max(backoff, lease, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError), woken]);
+                } finally {
+                    attempt.wakeSwitch = undefined;
+                }
             }
         }
     }

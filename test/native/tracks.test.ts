@@ -2303,8 +2303,8 @@ test("a subtitle chosen during an unresolved switch survives a refusal that land
     } finally { r.controller.destroy(); }
 });
 
-test("an AVPlay error during a local seek while a switch is unresolved is a seek failure, not a switch failure (#738)", async () => {
-    const { r } = await lostSwitchRig();
+test("an AVPlay error during a local seek while a switch is unresolved recovers against the plan the server is on (#750)", async () => {
+    const { r, id } = await lostSwitchRig();
     try {
         r.controller.seekToSeconds(120);
         await settle(r);
@@ -2312,12 +2312,20 @@ test("an AVPlay error during a local seek while a switch is unresolved is a seek
         await settle(r);
         r.avplay.finishSeek();
         await settle(r);
-        await r.h.clock.advance(1000);
         await settle(r);
+        // The switch is resolved first, at once rather than after its backoff: its replay is answered with the committed plan.
         const operations = replans(r.h).map(body => body.operation);
-        // The seek's failure is routed as a seek failure: a route recovery goes out, rather than the switch recording a change failure.
-        // That recovery still carries the plan identity the unresolved switch may have replaced (follow-up issue).
-        assert.deepEqual(operations, ["track_change", "track_change", "track_change", "failure_recovery"]);
+        assert.deepEqual(operations, ["track_change", "track_change", "track_change", "track_change", "failure_recovery"]);
+        // The server answers a stale identity with 409 stale_playback_plan, so the recovery reaching AVPlay shows it named the current plan.
+        const recovery = replans(r.h).at(-1);
+        assert.notEqual(recovery?.failed_plan_id, replans(r.h)[0]?.failed_plan_id, "not the plan the switch replaced");
+        assert.equal(r.server.session(id).receipt, undefined, "the session is still live");
+        const opens = r.avplay.urls.length;
+        await playReplacement(r);
+        assert.equal(r.avplay.urls.length, opens, "no reopen beyond the recovery's own");
+        assert.equal(last(r.views).phase, "playing");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
     } finally { r.controller.destroy(); }
 });
 
