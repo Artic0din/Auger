@@ -2290,6 +2290,30 @@ test("an episode whose next-episode lookup fails still shows Up Next as failed",
     r.controller.destroy();
 });
 
+test("an episode with no next episode and a failed On Deck read keeps today's failure line", async () => {
+    const r = await autoplayRig(false);
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    const seasonsPath = "/catalog/series/series%3As1/seasons?image_size=small";
+    const episodesPath = "/catalog/series/series%3As1/seasons/1/episodes?image_size=small";
+    const seasons = r.catalog.route("GET", seasonsPath, "p-owner")?.body as { items: { season_number: number }[] };
+    const episodes = r.catalog.route("GET", episodesPath, "p-owner")?.body as { items: { content_id: string }[] };
+    await playMovieWith(r, EPISODE, () => {
+        // The series ends at this episode, so the lookup succeeds with nothing next; On Deck fails on both reads.
+        const lastSeason = { ...seasons, items: seasons.items.filter(season => season.season_number === 1) };
+        const toHere = { ...episodes, items: episodes.items.slice(0, episodes.items.findIndex(item => item.content_id === EPISODE.contentId) + 1) };
+        r.h.fake.script(seasonsPath, { status: 200, body: lastSeason }, { status: 200, body: lastSeason });
+        r.h.fake.script(episodesPath, { status: 200, body: toHere }, { status: 200, body: toHere });
+        r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable);
+    });
+    r.controller.showUpNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.upNext?.next, undefined, "no next episode");
+    assert.equal(view.upNext?.failed, true, "an episode keeps the failure line when its On Deck read fails (#741)");
+    r.controller.destroy();
+});
+
 test("prompt discovery discarded during a local seek retries after the seek settles", async () => {
     const r = await autoplayRig(false);
     await playMovie(r, EPISODE);
