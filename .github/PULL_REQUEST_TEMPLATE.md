@@ -27,13 +27,9 @@ the diff.
 ## tvOS source
 
 - `tvOS/Screens/.../View.swift:NN-NN`: what this change ports from it
-<!-- Required when this change touches src/ui or src/player. Read the matching
-silo-apple tvOS source on upstream main before writing code, and cite each Swift
-file and line range this change ports: layout, strings and catalog keys, focus,
-sizes and states. Screenshots verify the port; they do not replace the source.
-A maintainer adds the tvos-source-not-needed label when the change has no tvOS
-counterpart, such as AVPlay-only behaviour. See "Port from the tvOS source" in
-CONTRIBUTING.md. -->
+<!-- Required when this change touches src/ui or src/player: cite each Swift file
+and line range this change ports, read before writing code (AGENTS.md "Parity
+delivery gates"). See "Port from the tvOS source" in CONTRIBUTING.md. -->
 
 ## Validation
 
