@@ -153,7 +153,10 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
             zones.push({ id: "status", layout: "row", items: [{ key: "calendar-page", element: page }] });
         }
     }
-    const empty = state.data !== undefined && !busy && failure === undefined && shelves.every(shelf => shelf.items.length === 0);
+    // CalendarViewModel.load: a failed server read sets its error only while no week is shown, so a refresh that fails over a retained
+    // week draws that week as a success would. A failure of this TV's own (its timezone, its dates) keeps its note and Try Again.
+    const quietRefresh = failure !== undefined && state.data !== undefined && state.error !== undefined;
+    const empty = state.data !== undefined && !busy && (failure === undefined || quietRefresh) && shelves.every(shelf => shelf.items.length === 0);
     if (empty) {
         const copy = state.filter === "following" ? [translate("calendar.empty.following"), translate("calendar.empty.followingBody")] : state.filter === "trending" ? [translate("calendar.empty.trending"), translate("calendar.empty.trendingBody")] : [translate("calendar.empty.everything"), translate("calendar.empty.everythingBody")];
         const panel = searchState(copy[0] ?? "", copy[1] ?? "", "calendar-empty", CALENDAR_ICON);
@@ -184,8 +187,7 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         content.push(section);
         zones.push({ id: shelf.date, layout: "row", items: shelf.items, spatial: true });
     }
-    if (failure !== undefined && state.data !== undefined) {
-        // A failed quiet refresh retains its cards, as CalendarViewModel.load does.
+    if (failure !== undefined && state.data !== undefined && !quietRefresh) {
         const action = actionButton("retry", translate("shell.errorView.tryAgain"), retry);
         status.setAttribute("role", "alert");
         const note = el("p", "browse-text", state.error === undefined ? failure : errorMessage(state.error));

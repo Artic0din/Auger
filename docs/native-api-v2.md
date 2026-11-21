@@ -370,7 +370,7 @@ Empty weeks show the filter-specific Apple copy and links to the other two filte
 The existing shell, focus host, artwork fallback, session invalidation and remote Back chain retain ownership.
 Loading has a blank focusable 320-pixel placeholder; empty weeks have a calendar icon and light primary filter links, without an extra Back button.
 Errors without retained data use the shared error mapping and placeholder builder: triangle, headline, message and a 200-pixel Try Again button.
-As in Apple, a quiet refresh retains cached events rather than replacing them with a loading page.
+As in Apple, a quiet refresh retains cached events rather than replacing them with a loading page, and a refresh the server fails over a retained week shows nothing more (`CalendarViewModel.load` sets its error only while `days.isEmpty`); the next Calendar visit reads the week again. A failure of the TV's own, such as its timezone or date formatting, still shows its note and Try Again.
 Today updates the week and selected date without requesting filter focus; Tizen keeps a valid focus target on the selected strip day when Today disappears.
 The bundled Inter font and SVG symbol substitutes still require native comparison against SF Pro and SF Symbols.
 Desktop UI checks cover remote behavior and both motion settings; signed Samsung, matched Apple captures and physical-TV calibration remain separate acceptance gates.
