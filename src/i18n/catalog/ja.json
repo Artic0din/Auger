@@ -1055,6 +1055,7 @@
  "topBar.series": "シリーズ",
  "tvSignIn.action.newCode": "新しいコードを表示",
  "tvSignIn.action.password": "パスワードでサインイン",
+ "tvSignIn.addAccountTitle": "{server}にアカウントを追加",
  "tvSignIn.appleTv.lead": "スマートフォンのカメラでコードをスキャンするか、{page}にアクセスしてコードを入力してください。スマートフォンで承認すると、このApple TVが自動的にサインインします。",
  "tvSignIn.appleTv.leadNoPage": "スマートフォンのカメラでコードをスキャンするか、サーバーの/activateページにアクセスしてコードを入力してください。スマートフォンで承認すると、このApple TVが自動的にサインインします。",
  "tvSignIn.appleTv.typeOnPhoneBody": "フィールドを選択すると、近くのiPhoneやiPadにキーボードの通知が表示されます。リモコンの代わりにそちらで入力してください。",

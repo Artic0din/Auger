@@ -47,9 +47,9 @@ function urlProblem(problem: ServerUrlProblem): string {
 // The Apple TV app's question before anything is sent over plain HTTP, word for word.
 export const cleartextTitle = (): string => translate("setup.cleartext.title");
 
-/** TVLoginView's headline: the server's name, isolated in a right-to-left sentence. */
-export function signInTitle(serverName: string): string {
-    return translate("tvSignIn.title", { server: isolated(serverName) });
+/** TVLoginView.signInHeadline: the server's name, isolated in a right-to-left sentence. Adding an account from Change Account reads "Add an account on". */
+export function signInTitle(serverName: string, addingAccount = false): string {
+    return translate(addingAccount ? "tvSignIn.addAccountTitle" : "tvSignIn.title", { server: isolated(serverName) });
 }
 
 export function cleartextWarning(host: string): string {

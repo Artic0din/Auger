@@ -15,6 +15,8 @@ export interface CodeView {
     /** The code to show; only while the status keeps one on screen (QRLoginViewModel.showsCode). */
     readonly code: DeviceCodeView | undefined;
     readonly serverName: string;
+    /** Started from Change Account to add an account: the headline reads "Add an account on …". */
+    readonly addingAccount: boolean;
     /** host[:port], for the server card and "Can't reach …". */
     readonly host: string;
     readonly secure: boolean;
@@ -78,7 +80,7 @@ export function codeScreen(view: CodeView): CodeScreen {
     }
     cardContent.push(status);
 
-    const title = headline(signInTitle(view.serverName));
+    const title = headline(signInTitle(view.serverName, view.addingAccount));
     title.setAttribute("data-server-headline", "");
     const copy = [
         ...noteChips(view.notes),
