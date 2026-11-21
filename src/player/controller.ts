@@ -1988,7 +1988,8 @@ export class PlaybackController implements PlayerControls {
         try {
             avplay.setSelectTrack("TEXT", index);
             // Selecting a TEXT track does not unhide subtitles that Off or a sidecar silenced; AVPlay draws this one, so show it.
-            avplay.setSilentSubtitle(false);
+            // The track is already switched, so a refused unhide keeps the switch rather than reopening the stream.
+            try { avplay.setSilentSubtitle(false); } catch { /* The next switch or reopen unhides again. */ }
             attempt.captionAbort?.abort();
             this.clearSecondary(attempt);
             attempt.captionKey = undefined;

@@ -1598,6 +1598,32 @@ test("choosing a subtitle after Off on a rendition stream turns AVPlay's subtitl
     } finally { r.controller.destroy(); }
 });
 
+test("a refused unhide keeps the subtitle AVPlay already switched to, with no replan", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.server.next.push(renditionPlan(1, "English Signs", 1));
+    await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    r.avplay.tracks = [
+        { index: 2, type: "TEXT", extra_info: "{\"track_num\":\"0\",\"track_lang\":\"eng\",\"subtitle_type\":\"0\",\"fourCC\":\"TTML\"}" },
+    ];
+    try {
+        r.server.next.push({ ...renditionPlan(1, "English Signs", 1), clearSubtitle: true });
+        r.controller.selectSubtitle(undefined);
+        await settle(r);
+        const silence = r.avplay.setSilentSubtitle.bind(r.avplay);
+        r.avplay.setSilentSubtitle = (hidden: boolean): void => { if (!hidden) throw new Error("InvalidStateError"); silence(hidden); };
+        const opens = r.avplay.urls.length;
+        const before = replans(r.h).length;
+        r.server.next.push(renditionPlan(1, "English Signs", 1));
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2");
+        assert.equal(r.avplay.urls.length, opens, "no reopen");
+        assert.equal(replans(r.h).length - before, 1, "only the choice's own report, no fallback replan for the stream");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
 test("a native subtitle selected from an Off plan hides overlay-only tools", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
