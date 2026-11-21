@@ -1419,11 +1419,18 @@ appTest("remote navigation keeps focus and context through Browse paging, a fail
     await selectLibraryMode(tv, "Browse");
     await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 100, "first Browse page");
     // Paging: the last row asks for the next page, and Down then lands on it.
+    const pageTwo = tv.fake.hold("/catalog/query", true);
+    const edge = await tv.page.locator('.catalog-grid .browse-card').last().getAttribute("data-focus");
     await tv.page.locator('.catalog-grid .browse-card').last().focus();
     await tv.remote(37);
     await tv.remote(39);
     await tv.jump(300);
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && request.body?.cursor !== undefined), "the second page is asked for");
+    assert.equal(await tv.focused(), edge, "the edge card keeps focus while the next page is out");
+    assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 100);
+    pageTwo.release();
     await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 200, "second Browse page");
+    assert.equal(await tv.focused(), edge, "the edge card keeps focus when the page lands");
     await tv.remote(40);
     assert.equal(await tv.focused(), card, "focus is on the second page");
     // Loading: the title's Details read is refused, but its answer is held, so the loading page holds focus.
