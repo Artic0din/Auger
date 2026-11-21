@@ -315,17 +315,37 @@ function countdownRing(): { readonly element: HTMLElement; set(seconds: number |
  * so Up from the first returns to the tab and Down from the last reaches a row below.
  */
 function pageScrollPane(pane: HTMLElement, key: "up" | "down"): boolean {
-    const end = Math.max(0, pane.scrollHeight - pane.clientHeight);
-    // Layout offsets, not client rects: the focused pane is scaled to 1.01.
-    const offset = (node: HTMLElement): number => { let y = 0; for (let at: HTMLElement | null = node; at !== null && at !== pane; at = at.offsetParent as HTMLElement | null) y += at.offsetTop; return y; };
-    const sections = Array.from(pane.querySelectorAll<HTMLElement>("[data-page-target]"), section => Math.min(end, offset(section)));
-    const targets = [0, ...sections, end];
-    const index = Number(pane.dataset.page ?? "0");
+    const targets = scrollTargets(pane);
+    const index = Math.min(Number(pane.dataset.page ?? "0"), targets.length - 1);
     const next = key === "down" ? Math.min(index + 1, targets.length - 1) : index - 1;
     if (next < 0 || next === index) return false;
     pane.dataset.page = String(next);
     pane.scrollTop = targets[next] ?? 0;
     return true;
+}
+
+/**
+ * The pane's scroll targets as offsets: its top, each `data-page-target` section, then its end. A target at the same offset as the one before
+ * it moves nothing, so it is dropped: in a pane that fits, Down goes straight to a row below (Info's Retry) and Up straight to the tab.
+ */
+function scrollTargets(pane: HTMLElement): number[] {
+    const end = Math.max(0, pane.scrollHeight - pane.clientHeight);
+    // Layout offsets, not client rects: the focused pane is scaled to 1.01.
+    const offset = (node: HTMLElement): number => { let y = 0; for (let at: HTMLElement | null = node; at !== null && at !== pane; at = at.offsetParent as HTMLElement | null) y += at.offsetTop; return y; };
+    const sections = Array.from(pane.querySelectorAll<HTMLElement>("[data-page-target]"), section => Math.min(end, offset(section)));
+    return [0, ...sections, end].filter((target, index, all) => index === 0 || target !== all[index - 1]);
+}
+
+/** Puts a paged pane back on its current target after its contents are rebuilt, or on its top when `reset`. */
+function settlePage(pane: HTMLElement, reset: boolean): void {
+    if (reset) delete pane.dataset.page;
+    const targets = scrollTargets(pane);
+    const index = Math.min(Number(pane.dataset.page ?? "0"), targets.length - 1);
+    if (index > 0) pane.dataset.page = String(index);
+    else delete pane.dataset.page;
+    pane.style.scrollBehavior = "auto";
+    pane.scrollTop = targets[index] ?? 0;
+    pane.style.scrollBehavior = "";
 }
 
 export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, clock: Clock = systemClock, baseUrl = location.origin): PlayerScreen {
@@ -637,9 +657,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const all = buttons(index);
         return all.find((button) => button.className.indexOf("player-choice-current") !== -1) ?? all[0];
     };
-    const showPane = (index: number): void => {
-        // A pane opens at its first scroll target, as Apple's HUDScrollablePane is rebuilt with its tab.
-        if (index !== column) { const pane = lists[index]; if (pane !== undefined) { pane.scrollTop = 0; delete pane.dataset.page; } }
+    const pagedPane = (index: number): boolean => tabNames[index] === "Info" || tabNames[index] === "Stats";
+    /** `keepPage` is for a redraw of the pane already shown; every other show opens a paged pane at its top, as Apple rebuilds HUDScrollablePane with its tab. */
+    const showPane = (index: number, keepPage = false): void => {
+        const pane = lists[index];
+        if (!keepPage && pane !== undefined && pagedPane(index)) settlePage(pane, true);
         column = index;
         for (const [pane, list] of lists.entries()) {
             list.classList.toggle("player-menu-pane-active", pane === index);
@@ -737,6 +759,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     fillVideoPane(list, hud, tracks);
                     if (videoPicker !== undefined) overlayPicker(list, videoPicker);
                 } else fillHUDPane(list, name ?? "", hud, view.phase === "playing" || view.phase === "paused" ? view.positionSeconds : 0, choice, clockText);
+                // A rebuilt Info or Stats pane returns to the target it was paged to, recomputed for its new contents.
+                if (pagedPane(index)) settlePage(list, false);
                 for (const column of list.querySelectorAll<HTMLElement>(".player-menu-column")) {
                     const rows = column.lastElementChild;
                     const top = columnScroll.get(`${index} ${column.className}`);
@@ -779,7 +803,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             } else if (!focusList(column)) {
                 if (!focusList(0)) focusList(1);
             }
-            showPane(column);
+            showPane(column, true);
         }
     };
 

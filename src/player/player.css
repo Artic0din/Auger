@@ -1005,6 +1005,13 @@
     transform: scale(1.01);
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .player-menu-info,
+    .player-menu-stats {
+        transition: none;
+    }
+}
+
 /*
  * HUDPickerDialog (TVPlayerInfoHUD.swift:1042-1104): 620 wide, 34/28 padding, 28 corner, 18% stroke, centred over the
  * pane it opened from, which dims to 28%. It spans the panel's padded content, so the status line sits behind it too.
