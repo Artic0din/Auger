@@ -75,6 +75,11 @@ class CheckTvosSourceTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stdout)
                 self.assertIn("tvOS source cited", result.stdout)
 
+    def test_fails_an_uncited_nested_interface_change(self):
+        result = self.check(self.commit({"src/ui/components/card.ts": "export {};\n"}), "")
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertIn("changes src/ui/components/card.ts", result.stdout)
+
     def test_fails_an_uncited_player_change(self):
         result = self.check(self.commit({"src/player/controller.ts": "export {};\n"}), "## tvOS source\n\nPending.\n")
         self.assertEqual(1, result.returncode, result.stdout)
