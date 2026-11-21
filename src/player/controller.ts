@@ -413,6 +413,8 @@ const SWITCH_REPLAY_DELAYS_MS = [5000, 10000, 15000, 30000];
 const REPLAN_LEASE_MS = 15000;
 /** A switch still unanswered this long after it was sent shows the subtitle failure note; on the S95C replans took 10 to 28 s (#738). */
 const SWITCH_NOTE_AFTER_MS = 60000;
+/** How long a failed transport waits for a switch's answer before playback shows its retryable error (#750). */
+const SWITCH_FAILURE_DEADLINE_MS = 30000;
 /** AVPlay's display coordinates are in the app's 1920x1080 space. */
 const SCREEN = { width: 1920, height: 1080 };
 /** Apple tvOS `nextUpHUDCountdownThresholdSeconds`: a manual panel counts down only inside this. */
@@ -513,6 +515,8 @@ interface Attempt {
     switchLocal: boolean;
     /** Ends an unresolved switch's wait between replays, so a route failure resolves it at once (#750). */
     wakeSwitch: (() => void) | undefined;
+    /** When a route failure began waiting for an unresolved switch's answer; the wait ends at SWITCH_FAILURE_DEADLINE_MS. */
+    switchFailedAt: number | undefined;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -715,7 +719,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1885,6 +1889,7 @@ export class PlaybackController implements PlayerControls {
         // The failed transport stays open until then, as the switch's replay belongs to it; the recovery closes it.
         if (subtitleSwitchOut(attempt)) {
             attempt.changeFailure = attempt.changeFailure ?? classification;
+            attempt.switchFailedAt = attempt.switchFailedAt ?? this.deps.clock.now();
             attempt.busy = true;
             this.show({ phase: "loading", title: attempt.request.title });
             attempt.wakeSwitch?.();
@@ -2137,6 +2142,7 @@ export class PlaybackController implements PlayerControls {
         }
         if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
+        attempt.switchFailedAt = undefined;
         attempt.change = change;
         if (attempt.endedDuringChange) {
             this.beginCompletion(attempt);
@@ -2465,21 +2471,31 @@ export class PlaybackController implements PlayerControls {
             } catch (error) {
                 // A new play, a lost session or a replaced transport ends the replays; the caller settles the change.
                 if (!(error instanceof ApiError) || !unanswered(error) || error.aborted || !current()) throw error;
+                // A failed transport does not wait on the server for ever: past the deadline it shows the retryable error.
+                if (attempt.switchFailedAt !== undefined && this.deps.clock.now() - attempt.switchFailedAt >= SWITCH_FAILURE_DEADLINE_MS) {
+                    this.fail(attempt, { kind: "playback_failed" }, true);
+                    throw error;
+                }
                 const quick = RESEND_DELAYS_MS[index];
                 if (quick === undefined && !attempt.switchLocal) this.drawSwitchLocally(attempt, plan, selected);
                 if (!noted && this.deps.clock.now() - sentAt >= SWITCH_NOTE_AFTER_MS) {
                     noted = true;
                     attempt.captionNotice = CAPTION_FAILED;
-                    this.showPlayback(attempt);
+                    if (attempt.switchFailedAt === undefined) this.showPlayback(attempt);
                 }
                 const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
-                const lease = error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0;
-                const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
+                // The server's lease and Retry-After hold even when a route failure wakes the replay; only our own backoff is skipped.
+                const serverWait = Math.max(error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0, (error.retryAfterSeconds ?? 0) * 1000);
+                const serverReady = this.deps.clock.now() + serverWait;
+                let woke = false;
+                const woken = new Promise<void>(resolve => { attempt.wakeSwitch = () => { woke = true; resolve(); }; });
                 try {
-                    await Promise.race([sleep(this.deps.clock, Math.max(backoff, lease, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError), woken]);
+                    await Promise.race([sleep(this.deps.clock, Math.max(backoff, serverWait), attempt.signal, abortedError), woken]);
                 } finally {
                     attempt.wakeSwitch = undefined;
                 }
+                const rest = serverReady - this.deps.clock.now();
+                if (woke && rest > 0) await sleep(this.deps.clock, rest, attempt.signal, abortedError);
             }
         }
     }
@@ -2492,6 +2508,8 @@ export class PlaybackController implements PlayerControls {
             attempt.subtitleOverride = { id };
         }
         attempt.switchLocal = true;
+        // A failed transport waiting for this switch's answer keeps its loading screen.
+        if (attempt.switchFailedAt !== undefined) return;
         // The stream ended while the switch held playback frozen: end it now rather than leave completion waiting for the answer.
         if (attempt.endedDuringChange) {
             this.changeSettled(attempt, { state: "idle" });
