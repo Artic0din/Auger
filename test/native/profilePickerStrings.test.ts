@@ -30,7 +30,7 @@ test("English reads exactly as before, and this TV stands in for Apple TV in the
     assert.equal(translate("profiles.signedInAs", { name: "Laura" }), "Signed in as Laura");
     assert.equal(translateTv("profiles.tile.appleTvUser"), "TV user");
     assert.equal(translateTv("profiles.tile.pairedAppleTvUser"), "Paired with this TV user");
-    assert.equal(translateTv("profiles.rememberOffer.bodyAppleTv"), "Silo can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
+    assert.equal(translateTv("profiles.rememberOffer.bodyAppleTv"), "Auger can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
     assert.equal(translate("launch.offer.title", { name: "Laura" }), "Open Laura automatically?");
     assert.equal(translate("shell.signOut.confirm"), "Sign Out");
 });

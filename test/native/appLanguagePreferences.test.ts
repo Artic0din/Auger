@@ -65,7 +65,7 @@ test("a profile with no language shows Match Device, with Match Device and Engli
         assert.deepEqual(h.store.currentChoice, { tag: null, isDeviceValue: false });
         assert.equal(h.store.selectedLabel, "Match Device");
         assert.deepEqual(h.store.options, [{ tag: null, label: "Match Device" }, ...APPLE_LANGUAGES.map(([tag, label]) => ({ tag, label }))]);
-        assert.equal(h.store.footer, "The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.");
+        assert.equal(h.store.footer, "The language of Auger’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.");
     } finally { h.store.stop(); }
 });
 
@@ -121,7 +121,7 @@ test("a language another client stored that this build lacks shows as itself, wi
         await h.store.refresh();
         assert.equal(h.store.selectedLabel, "Íslenska");
         assert.deepEqual(h.store.options.map(option => option.tag), [null, ...APPLE_LANGUAGES.map(([tag]) => tag), "is"], "re-saving never clears it");
-        assert.equal(h.store.footer, "Silo isn’t available in Íslenska yet, so it uses the device language.");
+        assert.equal(h.store.footer, "Auger isn’t available in Íslenska yet, so it uses the device language.");
     } finally { h.store.stop(); }
 });
 

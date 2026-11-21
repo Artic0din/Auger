@@ -1112,7 +1112,7 @@ test("AI Subtitles… opens a language menu with Apple's headings and hints, and
         await remote(page, ENTER);
         assert.equal(await focused(page), "ai-language:fr", "focus starts on the first language you can use");
         assert.equal(await text(page, ".player-ai-title"), "AI Subtitles");
-        assert.equal(await text(page, ".player-ai-subtitle"), "Choose a language. Silo translates existing subtitles or transcribes the audio.");
+        assert.equal(await text(page, ".player-ai-subtitle"), "Choose a language. Auger translates existing subtitles or transcribes the audio.");
         assert.equal(await page.locator('[data-focus="ai-language-back"] .player-choice-label').textContent(), "Back to Subtitles");
         const headings = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-pane-active .player-ai-menu .player-menu-heading")).map(node => node.textContent));
         assert.deepEqual(headings, ["SUGGESTED LANGUAGES", "ALL LANGUAGES"]);
@@ -1274,7 +1274,7 @@ test("Back leaves the AI menu for the AI Subtitles… row, and no AI row shows w
 });
 const text = (page: Page, selector: string): Promise<string> => page.locator(selector).innerText();
 // PlayerViewModel.connectionLostMessage (silo-apple b54fefb1): Apple's give-up after a lost connection, drawn on two lines.
-const CONNECTION_LOST = "Connection lost\nSilo couldn't reconnect to the server. Check your connection, then try again to continue where you left off.";
+const CONNECTION_LOST = "Connection lost\nAuger couldn't reconnect to the server. Check your connection, then try again to continue where you left off.";
 
 const INTRO = { kind: "intro" as const, startSeconds: 20, endSeconds: 60 };
 const RECAP = { kind: "recap" as const, startSeconds: 0, endSeconds: 15 };

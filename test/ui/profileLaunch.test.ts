@@ -95,6 +95,17 @@ test("Change account from the composed picker preserves saved credentials and re
     } finally { await tv.page.context().close(); await browser.close(); }
 });
 
+test("the profile picker shows the Auger lockup, not a SILO text mark", async () => {
+    const browser = await launchBrowser();
+    const tv = await openTv(browser, { app: "application" });
+    try {
+        await picker(tv);
+        const marks = await tv.page.locator('[data-screen="profiles"] .signin-wordmark, .profiles-flow .signin-wordmark').evaluateAll(nodes => nodes.map(node => ({ tag: node.tagName, alt: node.getAttribute("alt"), text: (node.textContent ?? "").trim() })));
+        assert.ok(marks.length > 0, "the picker carries a wordmark");
+        for (const mark of marks) assert.deepEqual(mark, { tag: "IMG", alt: "Auger", text: "" });
+    } finally { await tv.page.context().close(); await browser.close(); }
+});
+
 test("Change Account waits for a profile instead of reopening a remembered profile", async () => {
     const browser = await launchBrowser();
     const tv = await openTv(browser, { app: "application" });
@@ -368,7 +379,7 @@ test("the remember offer is Apple TV's centred alert over the picker, and Back a
         await tv.page.locator('[data-focus="profile:p-owner"]').click();
         const alert = tv.page.getByRole("alertdialog", { name: "Open Laura automatically?" });
         await alert.waitFor();
-        assert.equal(await alert.locator("p").textContent(), "Silo can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
+        assert.equal(await alert.locator("p").textContent(), "Auger can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
         assert.deepEqual(await alert.locator("button").allTextContents(), ["Ask Every Time", "Remember"], "the cancel button comes first, as in the tvOS alert");
         assert.equal(await tv.focused(), "remember", "focus starts on Remember");
         const layout = await alert.evaluate(node => {

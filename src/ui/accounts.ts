@@ -197,7 +197,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         const serverItems = addresses.map(address => {
             const brand = cachedBranding(core.publicStorage, address);
             const item = actionButton(address, brand?.serverName ?? new URL(address).host, () => { selected = address; render(false, true); });
-            const mark = el("img", "accounts-server-mark"); mark.src = brand?.markUrl ?? "icon.png"; mark.alt = "";
+            const mark = el("img", "accounts-server-mark"); mark.src = brand?.markUrl ?? "img/auger-mark.png"; mark.alt = "";
             item.element.prepend(mark);
             item.element.addEventListener("focus", () => { if (selected !== address) { selected = address; paneEntry = undefined; render(true); } });
             item.element.setAttribute("aria-selected", String(address === selected));
@@ -235,7 +235,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         overflow = [overflowColumn(rail, "accounts-column-rail", previousRail), overflowColumn(pane, "accounts-column-pane", previousPane)];
         for (const column of previousColumns) column.disconnect();
         const columns = el("div", "accounts-columns"); columns.append(...overflow.map(column => column.element));
-        const mark = el("img", "accounts-wordmark"); mark.src = "img/silo-wordmark.png"; mark.alt = "Silo";
+        const mark = el("img", "accounts-wordmark"); mark.src = "img/auger-wordmark.png"; mark.alt = "Auger";
         host.show({ name: "change-account", content: [backdrop.element, scrim, mark, el("h1", "accounts-title", translate("accounts.headline")), el("p", "signin-text", translate("accounts.body")), columns],
             zones: [{ id: "servers", layout: "column", right: "accounts", items: serverItems }, { id: "accounts", layout: "column", left: "servers", items: accounts }],
             focus: accounts.length === 0 ? { zone: "servers", key: "add-server" } : { zone: "accounts", key: accounts.find(row => row.key === current?.accounts.localAccountId)?.key ?? accounts[0]!.key },

@@ -11,7 +11,7 @@ export function startupFailure(root: HTMLElement, retry: () => void): SiloApp {
     root.classList.add("signin");
     const draw = (): void => {
         const again = button("retry", translate("common.tryAgain"), retry);
-        host.show({ name: "startup-failed", content: [el("h1", "signin-title", "Silo could not start"), actions([again])], controls: [again], focus: "retry", back: undefined });
+        host.show({ name: "startup-failed", content: [el("h1", "signin-title", "Auger could not start"), actions([again])], controls: [again], focus: "retry", back: undefined });
     };
     draw();
     const late = lateRedraw(() => false, draw);

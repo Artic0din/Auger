@@ -2,13 +2,13 @@
 # Build the staged web app (npm run build), then package it as a signed .wgt with the Tizen CLI.
 # Requires Node.js with dev dependencies installed (npm ci), Tizen Studio "Web CLI" on PATH,
 # and a security profile in the developer environment.
-# Produces dist/Silo.wgt (name from app/config.xml <name>Silo</name>).
+# Produces dist/Auger.wgt (name from app/config.xml <name>Auger</name>).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT_DIR}/dist"
 STAGE_DIR="${OUT_DIR}/wgt"
-EXPECTED_BASENAME="Silo.wgt"
+EXPECTED_BASENAME="Auger.wgt"
 PROFILE="${TIZEN_SECURITY_PROFILE:-}"
 
 if ! command -v tizen >/dev/null 2>&1; then

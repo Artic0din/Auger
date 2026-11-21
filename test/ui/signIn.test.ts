@@ -1418,7 +1418,7 @@ tvTest("the address screen is the Apple TV manual entry: headline, lead, field, 
     assert.equal(await tv.page.locator("#signin-address").getAttribute("placeholder"), "media.example.com");
     assert.equal(await tv.page.locator("#signin-address").getAttribute("aria-label"), "Server address");
     assert.equal(await tv.page.locator(".marquee-chip").innerText(), "Living room TV", "the TV's name sits top right");
-    assert.equal(await tv.page.locator(".signin-wordmark").getAttribute("alt"), "Silo");
+    assert.equal(await tv.page.locator(".signin-wordmark").getAttribute("alt"), "Auger");
     await shows(tv, "Type with a keyboard");
     await shows(tv, "When you select a field, this TV's on-screen keyboard opens. You can also type on a USB or Bluetooth keyboard connected to the TV.");
     assert.equal(await tv.page.getByText("phone", { exact: false }).count(), 0, "no phone or notification is promised");
@@ -1609,7 +1609,7 @@ tvTest("the sign-in screens use the Apple TV Marquee metrics", async (tv) => {
     // MarqueeTVScreen: 90 x 60 padding, the 150-wide wordmark asset, copy 900 wide.
     assert.deepEqual(await style(tv, ".signin-screen", "padding-top", "padding-left"), ["60px", "90px"]);
     await tv.eventually(async () => tv.page.locator(".signin-wordmark").evaluate((node) => node instanceof HTMLImageElement && node.complete && node.naturalWidth === 764), "the wordmark asset");
-    // SiloWordmarkView(width: 150) scaled to fit the 64-high top row: the 764x400 asset draws 122x64.
+    // The wordmark (width: 150) scaled to fit the 64-high top row: the 764x312 asset draws 150x61.
     assert.deepEqual([(await box(tv, ".signin-wordmark")).width, (await box(tv, ".signin-wordmark")).height], [150, 64]);
     assert.deepEqual(await style(tv, ".signin-wordmark", "object-fit"), ["contain"]);
     assert.equal(await tv.page.locator(".marquee-body").evaluate((node) => node.getBoundingClientRect().top), 124, "the body starts under the 64-high top row");

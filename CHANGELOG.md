@@ -78,6 +78,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
 - Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.
 - Split the CI UI tests across three parallel shards (`node --test --test-shard`), with the build and native tests in their own job, so the run no longer grows toward its time limit as tests are added; passing runs took 15 to 26 minutes in one job against a 30-minute limit. The `test` check now passes when every part passes (#646).
 - Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
@@ -128,6 +129,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - The Released, Aired, First Aired and Last Aired dates on a Details page now use the language you pick, as on Apple TV, instead of the TV's own language: with German chosen on an English TV, a film reads `2. Januar 2024` (#592).
+- A film now offers Show Up Next in the transport bar while it plays when there is something On Deck, as on Apple TV. The next episode and On Deck are looked up when playback starts, not only near the end (#698).
 - Rewind or Fast Forward pressed while a skip is still under way now adds to where that skip is going, as on Apple TV, instead of jumping from where playback was before it. Fast Forward then a quick Rewind now lands 20 seconds after where you started, where Rewind could take you back past that point or to the start (#724).
 - On a Details page for a title with only one version, the Versions button is now greyed out and Right from Play skips over it, as on Apple TV, instead of opening a picker with nothing to choose (#720).
 - Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).
