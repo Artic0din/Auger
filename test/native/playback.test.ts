@@ -2274,7 +2274,7 @@ test("a film's Show Up Next hides and its panel closes once the manual retry fai
     r.controller.destroy();
 });
 
-test("a film's Up Next opened while its first On Deck read is out shows the failure, and keeps the button for one retry (#736)", async () => {
+test("a film's Up Next opened while its first On Deck read is out shows nothing next, as on Apple TV, and keeps the button for one retry (#736, #741)", async () => {
     const r = await filmRig();
     const hold = await playMovieWith(r, filmRequest, () => { const held = r.h.fake.hold("/home/sections?image_size=small"); r.h.fake.script("/home/sections?image_size=small", problem(500, "internal_error", "Unavailable")); return held; });
     await r.h.clock.advance(0);
@@ -2285,7 +2285,10 @@ test("a film's Up Next opened while its first On Deck read is out shows the fail
     const failed = last(r.views);
     assert.ok(failed.phase === "playing");
     assert.equal(failed.upNext?.loading, undefined);
-    assert.equal(failed.upNext?.failed, true, "the panel says the read failed");
+    // PlayerViewModel.loadNextUpOnDeckItems (silo-apple main 71a3beb9): a film's failed On Deck read empties the deck and sets no
+    // lookup error, so the panel reads Apple's upNext.noNext rather than the next-episode failure line (#741).
+    assert.equal(failed.upNext?.failed, undefined, "a film's On Deck failure is not a failed lookup");
+    assert.deepEqual(failed.upNext?.deck, []);
     assert.notEqual(failed.upNext?.status, "Nothing to watch next");
     assert.equal(failed.episodes, true, "after one failure the button stays, so a retry can still recover");
     r.controller.destroy();
@@ -2435,6 +2438,50 @@ test("a failed On Deck read is not cached as nothing and a later read recovers",
     assert.notEqual(recovered.upNext?.status, "Nothing to watch next");
     assert.equal(recovered.upNext?.next?.contentId, "episode:s1e12");
     assert.equal(recovered.episodes, true, "a film whose manual retry succeeds keeps the button");
+    r.controller.destroy();
+});
+
+test("an episode whose next-episode lookup fails still shows Up Next as failed", async () => {
+    const r = await autoplayRig(false);
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    // The next-episode lookup reads the series' seasons; its first-frame read and the retry on opening Up Next both fail.
+    await playMovieWith(r, EPISODE, () => r.h.fake.script("/catalog/series/series%3As1/seasons?image_size=small", unavailable, unavailable));
+    r.controller.showUpNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.upNext?.failed, true, "a failed episode lookup keeps today's failure line");
+    r.controller.destroy();
+});
+
+// The same episode with nothing next is run twice: On Deck answering proves the next-episode lookup succeeded (only then is the
+// first On Deck item offered), so the failure line in the second run comes from the failed On Deck read alone.
+for (const deck of ["answers", "fails"] as const) test(`an episode with no next episode whose On Deck read ${deck} ${deck === "fails" ? "keeps today's failure line" : "offers On Deck"}`, async () => {
+    const r = await autoplayRig(false);
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    const seasonsPath = "/catalog/series/series%3As1/seasons?image_size=small";
+    const episodesPath = "/catalog/series/series%3As1/seasons/1/episodes?image_size=small";
+    const seasons = r.catalog.route("GET", seasonsPath, "p-owner")?.body as { items: { season_number: number }[] };
+    const episodes = r.catalog.route("GET", episodesPath, "p-owner")?.body as { items: { content_id: string }[] };
+    await playMovieWith(r, EPISODE, () => {
+        // The series ends at this episode, so the lookup succeeds with nothing next.
+        const lastSeason = { ...seasons, items: seasons.items.filter(season => season.season_number === 1) };
+        const toHere = { ...episodes, items: episodes.items.slice(0, episodes.items.findIndex(item => item.content_id === EPISODE.contentId) + 1) };
+        r.h.fake.script(seasonsPath, { status: 200, body: lastSeason }, { status: 200, body: lastSeason });
+        r.h.fake.script(episodesPath, { status: 200, body: toHere }, { status: 200, body: toHere });
+        if (deck === "fails") r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable);
+    });
+    r.controller.showUpNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    if (deck === "answers") {
+        assert.equal(view.upNext?.failed, undefined, "the next-episode lookup succeeded");
+        assert.ok(view.upNext?.next !== undefined && view.upNext.next.contentId === view.upNext.deck[0]?.contentId, "with nothing next, the first On Deck item is offered");
+    } else {
+        assert.equal(view.upNext?.next, undefined, "no next episode");
+        assert.equal(view.upNext?.failed, true, "an episode keeps the failure line when its On Deck read fails (#741)");
+    }
     r.controller.destroy();
 });
 
