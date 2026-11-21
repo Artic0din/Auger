@@ -995,8 +995,21 @@
 .player-menu-stats {
     border-radius: 18px;
     outline: 2px solid transparent;
-    outline-offset: 10px;
+    /*
+     * A scroll container clips its content to its rounded corners, so the pane takes Apple's 10 pt ring gap as padding inside its edge, with
+     * the ring drawn on that edge, and a matching negative margin keeps the content where it was. The rounded edge then never reaches the text.
+     */
+    margin: -10px;
+    padding: 10px;
+    /* Focus scrolls the pane's content into view: the same inset keeps that from hiding the padding. */
+    scroll-padding: 10px;
+    outline-offset: 0;
     transition: transform var(--silo-fast) ease-out, outline-color var(--silo-fast) ease-out;
+}
+
+.player-menu-list.player-menu-pane-active.player-menu-info,
+.player-menu-list.player-menu-pane-active.player-menu-stats {
+    height: calc(100% + 20px);
 }
 
 .player-menu-info:has(> [data-focus="info"]:focus),

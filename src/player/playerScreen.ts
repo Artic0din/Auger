@@ -658,10 +658,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         return all.find((button) => button.className.indexOf("player-choice-current") !== -1) ?? all[0];
     };
     const pagedPane = (index: number): boolean => tabNames[index] === "Info" || tabNames[index] === "Stats";
-    /** `keepPage` is for a redraw of the pane already shown; every other show opens a paged pane at its top, as Apple rebuilds HUDScrollablePane with its tab. */
+    /** `keepPage` is for a redraw of the pane already shown; every other show opens the pane at its top, as Apple rebuilds each pane with its tab. */
     const showPane = (index: number, keepPage = false): void => {
         const pane = lists[index];
-        if (!keepPage && pane !== undefined && pagedPane(index)) settlePage(pane, true);
+        if (!keepPage && pane !== undefined) settlePage(pane, true);
         column = index;
         for (const [pane, list] of lists.entries()) {
             list.classList.toggle("player-menu-pane-active", pane === index);

@@ -155,6 +155,59 @@ test("in an Info pane that fits, Down reaches Retry and one Up returns to the ta
     } finally { await page.close(); }
 });
 
+// #739 review: a pane that does not page (Chapters) also opens at its top when its tab is shown again on the rail.
+test("Chapters opens at its top again after Left and Right on the tab rail (#556)", async () => {
+    const { page } = await open();
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        const chapters = Array.from({ length: 40 }, (_, index) => ({ title: `Chapter ${index + 1}`, seconds: index * 60 }));
+        await show(page, { ...playing(TRACKS), positionSeconds: 0, hud: { chapters, chapterState: "ready", stats: STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        await openPanel(page);
+        await nextTab(page, 5);
+        const pane = page.locator(".player-menu-chapters");
+        assert.ok(await pane.evaluate(node => node.scrollHeight > node.clientHeight + 200), "the chapter list scrolls");
+        await remote(page, UP);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Chapters");
+        // The rail keeps focus while the pane below is left scrolled, as after reading down the list and returning.
+        await pane.evaluate(node => { node.style.scrollBehavior = "auto"; node.scrollTop = 400; node.style.scrollBehavior = ""; });
+        await remote(page, LEFT);
+        await remote(page, RIGHT);
+        assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Chapters");
+        assert.equal(await pane.evaluate(node => node.scrollTop), 0, "the pane is shown from its top");
+    } finally { await page.close(); }
+});
+
+// #739 review: a redraw with new contents keeps the pane on the target it was paged to, recomputed for those contents, and paging carries on from there.
+test("a paged Stats pane keeps its Engine target, recomputed, when its rows change (#556)", async () => {
+    const { page } = await open();
+    const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ label: `Row ${index + 1}`, value: "value" }));
+    const stats = (stream: number) => ({ ...STATS, playback: rows(30), stream: rows(stream), engine: Array.from({ length: 4 }, (_, index) => ({ label: `Engine ${index + 1}`, value: "value" })) });
+    const hud = (stream: number) => ({ chapters: [], chapterState: "ready" as const, stats: stats(stream), speeds: [], aspects: [], speed: 1, aspect: "Fit" as const, autoNext: false, busy: false });
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, { ...playing(TRACKS), hud: hud(1) });
+        await openPanel(page);
+        await nextTab(page, 1);
+        const pane = page.locator(".player-menu-stats");
+        const at = (): Promise<{ top: number; end: number; engine: number }> => pane.evaluate(node => {
+            const engine = Array.from(node.querySelectorAll(".player-stats-heading")).find(heading => heading.textContent === "Engine");
+            return { top: node.scrollTop, end: node.scrollHeight - node.clientHeight, engine: engine instanceof HTMLElement && engine.offsetParent === node ? engine.offsetTop : NaN };
+        });
+        await remote(page, DOWN);
+        const before = await at();
+        assert.equal(before.top, before.engine, "paged to Engine");
+        await show(page, { ...playing(TRACKS), hud: hud(6) });
+        const after = await at();
+        assert.ok(after.engine > before.engine, `Engine moved down (${before.engine} to ${after.engine})`);
+        assert.equal(after.top, after.engine, "the pane stays on Engine at its new offset");
+        assert.equal(await focused(page), "stats");
+        await remote(page, DOWN);
+        assert.equal((await at()).top, after.end, "Down carries on to the end");
+        await remote(page, UP);
+        assert.equal((await at()).top, after.engine, "and Up returns to Engine");
+    } finally { await page.close(); }
+});
+
 // HUDScrollablePane's ring (TVPlayerInfoHUD.swift:361-375): a 2 pt stroke at 86 % white, 10 pt outside the 18 pt rounded pane, scaled to 1.01.
 test("a focused Info or Stats pane draws Apple's ring outside it and grows to 1.01 (#556)", async () => {
     const { page } = await open();
@@ -166,9 +219,17 @@ test("a focused Info or Stats pane draws Apple's ring outside it and grows to 1.
             const style = getComputedStyle(node);
             return { outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`, offset: style.outlineOffset, radius: style.borderTopLeftRadius, transform: style.transform };
         });
-        const focusedRing = { outline: "solid 2px rgba(255, 255, 255, 0.86)", offset: "10px", radius: "18px", transform: "matrix(1.01, 0, 0, 1.01, 0, 0)" };
+        // The ring is drawn on the pane's edge, which sits 10 px outside its content (Apple's `.padding(-10)` around the ScrollView).
+        const focusedRing = { outline: "solid 2px rgba(255, 255, 255, 0.86)", offset: "0px", radius: "18px", transform: "matrix(1.01, 0, 0, 1.01, 0, 0)" };
         assert.equal(await focused(page), "info");
         assert.deepEqual(await ring(".player-menu-info"), focusedRing);
+        // The S95C at 17789b8: the pane's rounded corner clipped "TITLE". The first label sits inside the ring's inner edge, clear of the corner.
+        const clearance = await page.locator(".player-menu-info").evaluate(node => {
+            const pane = node.getBoundingClientRect();
+            const label = node.querySelector(".player-menu-heading")!.getBoundingClientRect();
+            return { left: label.left - pane.left, top: label.top - pane.top, right: pane.right - label.right };
+        });
+        assert.ok(clearance.left >= 10 && clearance.top >= 10 && clearance.right >= 0, `TITLE clears the rounded edge by 10 px (${JSON.stringify(clearance)})`);
         assert.equal(await page.locator(".player-menu-info").evaluate(node => getComputedStyle(node).transitionProperty), "none", "reduced motion drops the ring's transition");
         await remote(page, UP);
         assert.equal((await ring(".player-menu-info")).transform, "none", "the tab holds focus, so the pane has no ring");
