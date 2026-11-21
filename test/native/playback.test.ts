@@ -2232,6 +2232,8 @@ test("a manual Up Next retry and the window retry read each part at most once mo
         await r.h.clock.advance(0);
     }
     assert.deepEqual(reads(), { episode: 3, deck: 3 }, "and nothing more");
+    const end = last(r.views);
+    assert.equal(end.phase === "playing" && end.episodes, true, "an episode keeps Show Up Next with every retry used");
     r.controller.destroy();
 });
 
@@ -2252,7 +2254,17 @@ test("a film's Show Up Next hides and its panel closes once the manual retry fai
     r.controller.showUpNext();
     await r.h.clock.advance(0);
     assert.equal(sectionReads(r), 2, "another press sends no read");
-    // Kody (#740): opened through Show Up Next, then dismissed, the film still offers nothing.
+    assert.equal("upNext" in last(r.views), false, "and opens no panel");
+    // The prompt window later finds the read already retried: no read goes out, and the button does not flicker back while one loads.
+    const playing = last(r.views);
+    assert.ok(playing.phase === "playing" && playing.durationSeconds !== undefined);
+    const views = r.views.length;
+    r.avplay.tick((playing.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(sectionReads(r), 2, "the window sends no read");
+    assert.deepEqual(r.views.slice(views).filter(view => view.phase === "playing" && view.episodes === true), [], "Show Up Next never reappears");
+    // Kody (#740): dismissed afterwards, the film still offers nothing.
     r.controller.cancelAutoplay();
     await r.h.clock.advance(0);
     const dismissed = last(r.views);
@@ -2261,6 +2273,24 @@ test("a film's Show Up Next hides and its panel closes once the manual retry fai
     assert.equal("upNext" in dismissed, false);
     r.controller.destroy();
 });
+
+test("a film's Up Next opened while its first On Deck read is out shows the failure, and keeps the button for one retry (#736)", async () => {
+    const r = await filmRig();
+    const hold = await playMovieWith(r, filmRequest, () => { const held = r.h.fake.hold("/home/sections?image_size=small"); r.h.fake.script("/home/sections?image_size=small", problem(500, "internal_error", "Unavailable")); return held; });
+    await r.h.clock.advance(0);
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    hold.release();
+    await r.h.clock.advance(0);
+    const failed = last(r.views);
+    assert.ok(failed.phase === "playing");
+    assert.equal(failed.upNext?.loading, undefined);
+    assert.equal(failed.upNext?.failed, true, "the panel says the read failed");
+    assert.notEqual(failed.upNext?.status, "Nothing to watch next");
+    assert.equal(failed.episodes, true, "after one failure the button stays, so a retry can still recover");
+    r.controller.destroy();
+});
+
 for (const state of ["dismissed", "hidden"] as const) {
     test(`no window retry fires while the prompt is ${state} (#736)`, async () => {
         const r = await filmRig();
@@ -2404,8 +2434,10 @@ test("a failed On Deck read is not cached as nothing and a later read recovers",
     assert.equal(recovered.upNext?.failed, undefined);
     assert.notEqual(recovered.upNext?.status, "Nothing to watch next");
     assert.equal(recovered.upNext?.next?.contentId, "episode:s1e12");
+    assert.equal(recovered.episodes, true, "a film whose manual retry succeeds keeps the button");
     r.controller.destroy();
 });
+
 test("prompt discovery discarded during a local seek retries after the seek settles", async () => {
     const r = await autoplayRig(false);
     await playMovie(r, EPISODE);

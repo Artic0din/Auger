@@ -2824,6 +2824,8 @@ export class PlaybackController implements PlayerControls {
     showUpNext(): void {
         const attempt = this.active();
         if (attempt?.started !== true || attempt.plan === undefined || attempt.hidden || attempt.request.shuffleId !== undefined) return;
+        // A hidden button opens nothing: a film with nothing to offer stays closed.
+        if (!this.episodesVisible(attempt)) return;
         attempt.offer.manual = true;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
         else {
@@ -3974,7 +3976,8 @@ export class PlaybackController implements PlayerControls {
             if (!live() || (error instanceof ApiError && error.aborted)) return;
             attempt.offer.deckFailed = true;
             // A film has nothing else to offer: once a retry fails too, its Up Next panel closes with the button (canShowNextUpScreen).
-            if (attempt.request.episode !== true && attempt.offer.deckRetried) attempt.offer.manual = false;
+            // The window retry is spent too, so the button cannot come back while a read loads.
+            if (attempt.request.episode !== true && attempt.offer.deckRetried) { attempt.offer.manual = false; attempt.offer.deckWindowRetried = true; }
             attempt.offer.deckSettled = false;
         } finally {
             if (live()) {
