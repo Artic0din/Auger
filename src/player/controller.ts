@@ -494,6 +494,8 @@ interface Attempt {
     captionNotice: string;
     /** An embedded track whose file failed before AVPlay could list its tracks: AVPlay draws it at the first frame. */
     captionFallback: string | undefined;
+    /** The change in flight is a direct-play switch to an embedded subtitle's file, so a further subtitle choice waits for it. */
+    embeddedSwitch: boolean;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -692,7 +694,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, embeddedSwitch: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1126,6 +1128,12 @@ export class PlaybackController implements PlayerControls {
             this.showPlayback(reporting);
             return;
         }
+        const busy = this.active();
+        // A choice made while a direct-play subtitle replan is out is kept for when it settles, instead of being dropped.
+        if (busy?.started === true && busy.busy && busy.embeddedSwitch && busy.change.state === "changing" && busy.plan !== undefined && (trackId === undefined || selectableSubtitle(busy.plan, trackId))) {
+            busy.pendingSubtitle = { id: trackId, applied: false };
+            return;
+        }
         const attempt = this.changeable();
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined || trackId === shownSubtitle(attempt, plan)) {
@@ -1143,6 +1151,7 @@ export class PlaybackController implements PlayerControls {
         }
         const audio = plan.selectedTracks.audio;
         this.changeTracks(attempt, plan, { ...(audio === undefined ? {} : { audio }), ...(trackId === undefined ? {} : { subtitle: { id: trackId } }) });
+        attempt.embeddedSwitch = loadsEmbeddedFile(plan, trackId);
     }
 
     saveSeriesSubtitle(): void {
@@ -1713,6 +1722,7 @@ export class PlaybackController implements PlayerControls {
                 this.fail(attempt, startFailure(error), true);
                 return;
             }
+            if (operation === "track_change" && !sessionGone(error) && this.embeddedSwitchFallback(attempt, plan, selected)) return;
             if ((operation === "track_change" || operation === "quality_change") && unanswered(error) && attempt.presented
                 && (attempt.recovery?.active === true || (error instanceof ApiError && error.transient))) {
                 if (attempt.reporting) this.restoreReportedSubtitle(attempt);
@@ -2066,6 +2076,7 @@ export class PlaybackController implements PlayerControls {
             attempt.search?.reportUnselected();
         }
         attempt.busy = false;
+        attempt.embeddedSwitch = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
             this.beginCompletion(attempt);
@@ -2356,6 +2367,20 @@ export class PlaybackController implements PlayerControls {
             return true;
         }
         try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        return true;
+    }
+
+    /**
+     * A direct-play switch to an embedded track replans for its file (#538). When that replan is refused or never answered (seen on the S95C
+     * while the server stalled), the open stream is unchanged, so AVPlay draws the track instead, as a failed file read does.
+     */
+    private embeddedSwitchFallback(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): boolean {
+        const id = selected.subtitle?.id;
+        if (id === undefined || !attempt.started || attempt.reporting || attempt.plan !== plan || !loadsEmbeddedFile(plan, id)) return false;
+        if (!this.applyStreamSubtitle(attempt, id)) return false;
+        try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        attempt.subtitleOverride = { id };
+        this.changeSettled(attempt, { state: "idle" });
         return true;
     }
 
