@@ -1007,6 +1007,12 @@ export class PlaybackController implements PlayerControls {
             if (moved) this.updatePrompt(attempt);
             this.finishSkipSeek(attempt, moved);
             this.showPlayback(attempt);
+            // A switch that settled while this seek held the controls left its queued subtitle choice for now (#738).
+            const pending = attempt.pendingSubtitle;
+            if (pending !== undefined && !attempt.busy && !attempt.reporting && attempt.change.state !== "changing") {
+                attempt.pendingSubtitle = undefined;
+                this.selectSubtitle(pending.id);
+            }
         };
         try {
             this.seekTo(
@@ -2118,7 +2124,7 @@ export class PlaybackController implements PlayerControls {
         attempt.changeFailure = undefined;
         if (failure !== undefined) {
             this.routeFailed(attempt, failure);
-        } else if (attempt.pendingSubtitle !== undefined) {
+        } else if (attempt.pendingSubtitle !== undefined && !attempt.busy) {
             const pending = attempt.pendingSubtitle;
             attempt.pendingSubtitle = undefined;
             this.selectSubtitle(pending.id);
@@ -2190,6 +2196,7 @@ export class PlaybackController implements PlayerControls {
         attempt.recoverySpec = undefined;
         attempt.recoveryRetryAt = 0;
         attempt.change = { state: "idle" };
+        attempt.switchLocal = false;
         attempt.busy = false;
         attempt.seekFailure = undefined;
         attempt.changeFailure = undefined;

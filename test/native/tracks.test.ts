@@ -2048,6 +2048,139 @@ test("a replayed switch adopted around a suspend hides AVPlay's subtitles again 
     } finally { r.controller.destroy(); }
 });
 
+// #745 final review (Kody).
+test("a subtitle switch adopted on a new stream leaves no local-draw state behind, so the next lost switch draws locally again (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // The first switch's answer is a plan on a new stream: adopt replaces the plan and reopens.
+        r.server.next.push({ delivery: "original_http", url: session => `${r.h.fake.origin}/api/v2/stream/${session}/other`, subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        const opens = r.avplay.urls.length;
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        assert.equal(r.avplay.urls.length, opens + 1, "the replayed plan is adopted on a new stream");
+        await playReplacement(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(tracks(r).change.state, "idle");
+        // A second switch whose answers are lost must draw locally and leave the controls free.
+        const session = [...r.server.sessions.keys()].pop() ?? id;
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${session}/replan`);
+        const texts = r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length;
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length, texts + 1, "AVPlay draws the second switch locally");
+        const seeks = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+        r.controller.seekToSeconds(150);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeks + 1, "the controls are not left busy");
+    } finally { r.controller.destroy(); }
+});
+
+// #745 review (Codex): a failed restore replaces the transport while a switch is drawn locally; adopting the reconnected plan clears that state.
+test("a failed restore during an unresolved switch reconnects with no local-draw state left behind (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.suspend();
+        await settle(r);
+        r.controller.restore();
+        await settle(r);
+        r.avplay.finishRestore("PLAYER_ERROR_CONNECTION_FAILED");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused", `playing after the reconnect (${view.phase})`);
+        assert.notEqual(tracks(r).change.state, "changing", "the old switch is not left in flight");
+        // The next switch whose answers are lost must draw locally again.
+        const session = [...r.server.sessions.keys()].pop() ?? "";
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${session}/replan`);
+        const texts = r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length;
+        const next = tracks(r).selectedSubtitleId === "file:42:subtitle:1" ? "file:42:subtitle:5" : "file:42:subtitle:1";
+        r.controller.selectSubtitle(next);
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length, texts + 1, "AVPlay draws the next lost switch locally");
+        const seeks = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+        r.controller.seekToSeconds(150);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeks + 1, "and the controls are free");
+    } finally { r.controller.destroy(); }
+});
+
+test("a subtitle chosen during an unresolved switch survives a refusal that lands during a seek, and is sent once the seek settles (#738)", async () => {
+    const { r, id } = await lostSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4, "the replay is refused while the seek is out");
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.avplay.finishSeek();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 5, "the subtitle chosen meanwhile is sent after the seek");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
+test("an AVPlay error during a local seek while a switch is unresolved is a seek failure, not a switch failure (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        const operations = replans(r.h).map(body => body.operation);
+        // The seek's failure is routed as a seek failure: a route recovery goes out, rather than the switch recording a change failure.
+        // That recovery still carries the plan identity the unresolved switch may have replaced (follow-up issue).
+        assert.deepEqual(operations, ["track_change", "track_change", "track_change", "failure_recovery"]);
+    } finally { r.controller.destroy(); }
+});
+
+test("a replay refused during a held seek leaves the seek holding the controls, so a second seek waits (#738)", async () => {
+    const { r, id } = await lostSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        const seeks = (): number => r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+        const before = seeks();
+        r.controller.seekToSeconds(200);
+        await settle(r);
+        assert.equal(seeks(), before, "the second seek waits for the first");
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.equal(seeks(), before + 1, "and goes once the first settles");
+    } finally { r.controller.destroy(); }
+});
+
 test("while a lost embedded subtitle switch is unresolved, other track changes wait for its answer (#738)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
