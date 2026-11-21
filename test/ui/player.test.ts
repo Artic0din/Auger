@@ -3704,25 +3704,6 @@ test("Info shows Apple's TITLE column and a NOW PLAYING column of one row per fa
 
 // StatsPane + PlaybackStatsPanel two-column layout (TVPlayerInfoHUD.swift:745-790, PlaybackStatsPanel.swift:33-38, :74-89):
 // PLAYBACK on the left, a divider, STREAM over ENGINE on the right; an empty section has no heading.
-// #729 review: a direct-play subtitle switch keeps the subtitle rows choosable, so a viewer can make the choice the controller holds for
-// when the switch settles. Other rows, and every row during another change, stay locked.
-test("during a direct-play subtitle switch the subtitle rows stay choosable and Enter sends the choice (#538)", async () => {
-    const { page } = await open();
-    try {
-        await show(page, playing({ ...TRACKS, selectedSubtitleId: "file:42:subtitle:1", subtitleMode: "render", change: { state: "changing", kind: "subtitle" } }));
-        await openPanel(page);
-        await nextTab(page, 4);
-        assert.equal(await page.locator('[data-focus="file:42:subtitle:2"]').getAttribute("aria-disabled"), "false");
-        assert.equal(await page.locator('[data-focus="subtitles-off"]').getAttribute("aria-disabled"), "false");
-        await page.locator('[data-focus="file:42:subtitle:2"]').focus();
-        const before = await commands(page);
-        await remote(page, ENTER);
-        assert.deepEqual((await commands(page)).slice(before.length), ["selectSubtitle file:42:subtitle:2"]);
-        await show(page, playing({ ...TRACKS, selectedSubtitleId: "file:42:subtitle:1", subtitleMode: "render", change: { state: "changing" } }));
-        assert.equal(await page.locator('[data-focus="file:42:subtitle:2"]').getAttribute("aria-disabled"), "true", "another change still locks them");
-    } finally { await page.close(); }
-});
-
 test("Stats lays out PLAYBACK beside STREAM and ENGINE with one row per fact, focused as one scrollable pane", async () => {
     const { page } = await open();
     const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: false, busy: false };
