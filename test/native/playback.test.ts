@@ -2240,13 +2240,14 @@ test("Up Next hides an unwatched episode synopsis when the profile asks and keep
     shown.controller.destroy();
 });
 
-// The S95C capture (#721 review): S1E25 to S2E1 showed no still behind the card, though the season 2 row had one.
-for (const itemStills of [true, false]) {
-    test(`a next episode from the next season keeps its season row's still behind the card (catalog item ${itemStills ? "with" : "without"} a still) (#697)`, async () => {
+// The S95C captures (#721 reviews): S1E25 to S2E1 showed no still, then the series backdrop, behind the card, though the season 2 row had a still.
+// Apple's backgroundArtwork (PlayerView.swift) takes the episode still first and the backdrop only when there is none.
+for (const itemStill of ["still", "none", "series"] as const) {
+    test(`a next episode from the next season keeps its season row's still behind the card (catalog item with ${itemStill === "still" ? "a still" : itemStill === "none" ? "no backdrop" : "the series backdrop"}) (#697)`, async () => {
         const r = await rig("p-owner");
         const catalog = new FakeCatalog();
         catalog.episodeStills = true;
-        catalog.itemStills = itemStills;
+        catalog.itemStill = itemStill;
         catalog.fileIds.set("episode:s1e13", "43");
         catalog.fileIds.set("episode:s1e21", "44");
         r.h.fake.catalog = catalog;
