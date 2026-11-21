@@ -1706,10 +1706,11 @@ test("an embedded subtitle switch whose replan is refused with 409 falls back to
     } finally { r.controller.destroy(); }
 });
 
-test("an embedded subtitle switch whose replan is never answered falls back to AVPlay's track (#538)", async () => {
+test("an embedded subtitle switch whose answers are lost reconciles before another change, which the server then accepts (#538)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
         const path = `/playback/${id}/replan`;
+        // The fake commits each request before dropping its answer, as a stalled server can.
         for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(path);
         r.controller.selectSubtitle("file:42:subtitle:5");
         await settle(r);
@@ -1718,7 +1719,78 @@ test("an embedded subtitle switch whose replan is never answered falls back to A
         await r.h.clock.advance(2000);
         await settle(r);
         assert.equal(replans(r.h).length, 3);
-        assertAVPlayDrawsFrench(r);
+        const view = last(r.views);
+        assert.equal(view.phase === "loading" && view.detail, "reconnecting", "the uncertain change is reconciled, not marked idle over a stale plan");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        assert.equal(replans(r.h)[3]?.operation, "track_change", "reconciliation starts with a no-op replan");
+        await playReplacement(r);
+        assert.ok(r.server.session(id).receipt !== undefined, "the uncertain session is replaced, as for an audio change (three lost track-change answers)");
+        assert.equal(r.avplay.state, "PLAYING");
+        // The next switch carries the fresh plan's identity, so the server accepts it instead of refusing a stale failed_plan_id.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const sent = replans(r.h).length;
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, sent + 1, "one replan, accepted");
+        await playReplacement(r);
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a refused audio change that carries the drawn embedded subtitle keeps the app's captions (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectAudio("file:42:audio:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay does not take over the subtitle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "Delay and Appearance stay");
+        assert.equal(tracks(r).change.state, "failed", "the audio change fails as before");
+        const view = last(r.views);
+        assert.equal(view.phase === "playing" || view.phase === "paused" ? view.captions?.text : undefined, "Forced", "the app keeps drawing the subtitle");
+    } finally { r.controller.destroy(); }
+});
+
+test("a refused embedded subtitle switch with no AVPlay row for it fails the change and keeps playing (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.avplay.tracks = [];
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).change.state, "failed");
+        assert.equal(r.avplay.state, "PLAYING");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "the subtitle that was showing stays chosen");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a subtitle chosen while an embedded subtitle switch succeeds is applied after it (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        const hold = r.h.fake.hold(path);
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        const change = tracks(r).change;
+        assert.equal(change.state === "changing" && change.kind, "subtitle", "the screen can tell a subtitle switch is out");
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+        hold.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the later choice is sent once the first settles");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "and it takes effect");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false);
     } finally { r.controller.destroy(); }
 });
 
