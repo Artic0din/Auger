@@ -129,6 +129,8 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Choosing a subtitle that the TV draws itself, after subtitles were turned off or an app-drawn subtitle was showing, now shows it again. It used to stay selected but invisible (#735).
+- Subtitle Delay, Appearance and Only on this TV now stay in the player's Subtitles tab for an embedded text subtitle chosen when a video starts on direct play, as on Apple TV. The TV asks the server for those subtitles as files it draws itself, instead of letting the video player draw them where they could not be shifted or restyled. If that file can't load, the video player draws the subtitle and these rows hide. Switching embedded subtitles mid-video still hides them (#538).
+- The Released, Aired, First Aired and Last Aired dates on a Details page now use the language you pick, as on Apple TV, instead of the TV's own language: with German chosen on an English TV, a film reads `2. Januar 2024` (#592).
 - A film now offers Show Up Next in the transport bar while it plays when there is something On Deck, as on Apple TV. The next episode and On Deck are looked up when playback starts, not only near the end (#698).
 - Rewind or Fast Forward pressed while a skip is still under way now adds to where that skip is going, as on Apple TV, instead of jumping from where playback was before it. Fast Forward then a quick Rewind now lands 20 seconds after where you started, where Rewind could take you back past that point or to the start (#724).
 - On a Details page for a title with only one version, the Versions button is now greyed out and Right from Play skips over it, as on Apple TV, instead of opening a picker with nothing to choose (#720).

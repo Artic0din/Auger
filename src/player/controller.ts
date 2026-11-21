@@ -60,7 +60,7 @@ import { DEFAULT_APPEARANCE, decodeCues, type SubtitleAppearance, type SubtitleC
 import type { CatalogSubtitleTrack, SubtitleIntent, SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { defaultSubtitle, initialSubtitle, matchesSubtitle, playableIntent, startSubtitleTrackId } from "./preplaySubtitles.ts";
 import { PlaybackRecovery, recoveryVerdict, type RecoveryStep, type RecoveryVerdict, unanswered } from "./playbackRecovery.ts";
-import { audioRow, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
+import { audioRow, canonicalLanguageKey, orderSubtitles, qualityMenuLabel, subtitleRow } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
@@ -492,6 +492,8 @@ interface Attempt {
     secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
+    /** An embedded track whose file failed before AVPlay could list its tracks: AVPlay draws it at the first frame. */
+    captionFallback: string | undefined;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -690,7 +692,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -1519,7 +1521,7 @@ export class PlaybackController implements PlayerControls {
         const report = { panel: attempt.hdrPanel, preference: { hdrEnabled: attempt.hdrEnabled } };
         return {
             client_capabilities: clientCapabilities(report),
-            client_playback_context: playbackContext(this.deps.device.model, this.deps.device.appVersion, report, !attempt.nativeSubtitleUnavailable),
+            client_playback_context: playbackContext(this.deps.device.model, this.deps.device.appVersion, report),
         };
     }
 
@@ -2027,6 +2029,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private alignOpenStream(attempt: Attempt, plan: PlaybackPlan): boolean {
+        this.applyCaptionFallback(attempt, plan);
         if (plan.subtitle.mode === "off" || plan.subtitle.mode === "burn_in" || plan.subtitle.mode === "unknown" || plan.subtitle.artifact !== undefined) return true;
         const id = shownSubtitle(attempt, plan);
         if (id === undefined) return true;
@@ -2282,11 +2285,12 @@ export class PlaybackController implements PlayerControls {
     /** `refresh` rereads the shown track past the HTTP cache after a timing change: its cues stay on screen until the new ones load, and stay if that fails. */
     private readCaptions(attempt: Attempt, plan: PlaybackPlan, refresh = false): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
-        const key = artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
+        const key = captionKeyOf(plan);
         this.reconcileSecondary(attempt, plan);
         if (!refresh && key !== undefined && key === attempt.captionKey) return;
         const shownTiming = attempt.captionTiming;
         attempt.captionKey = key;
+        attempt.captionFallback = undefined;
         attempt.captionTiming = this.timingVersionOf(attempt, plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey);
         attempt.captionAbort?.abort();
         const abort = new AbortController();
@@ -2327,10 +2331,49 @@ export class PlaybackController implements PlayerControls {
                 attempt.captionKey = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary(attempt);
+                if (this.nativeCaptionFallback(attempt, plan)) {
+                    this.showPlayback(attempt);
+                    return;
+                }
                 attempt.captionNotice = CAPTION_FAILED;
             }
             if (current()) this.showPlayback(attempt);
         })();
+    }
+
+    /**
+     * Original HTTP asks for embedded text as an artifact (#538). When the app cannot load that file (over the 4 MiB limit, or a failed read),
+     * AVPlay still has the embedded track and draws it, as it did before; Delay and Appearance then hide, since they cannot act on AVPlay's text.
+     */
+    private nativeCaptionFallback(attempt: Attempt, loaded: PlaybackPlan): boolean {
+        const plan = attempt.plan;
+        const id = loaded.subtitle.trackId;
+        // Only while the plan on screen still shows that track from that file. A same-artifact replan (an audio change) keeps the read, so the
+        // plan that started it may be gone; its artifact and track, not its id, are what must still hold.
+        if (plan === undefined || captionKeyOf(plan) !== captionKeyOf(loaded) || plan.subtitle.trackId !== id || shownSubtitle(attempt, plan) !== id) return false;
+        const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
+        if (plan.delivery !== "original_http" || row === undefined || !inStreamCandidate(plan, row)) return false;
+        if (!this.applyStreamSubtitle(attempt, id)) {
+            if (attempt.started) return false;
+            // AVPlay lists its tracks only once it plays; the first frame applies this.
+            attempt.captionFallback = id;
+            return true;
+        }
+        try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        return true;
+    }
+
+    /** The first frame's half of `nativeCaptionFallback`. */
+    private applyCaptionFallback(attempt: Attempt, plan: PlaybackPlan): void {
+        const id = attempt.captionFallback;
+        if (id === undefined) return;
+        attempt.captionFallback = undefined;
+        if (shownSubtitle(attempt, plan) !== id) return;
+        if (this.applyStreamSubtitle(attempt, id)) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        } else {
+            attempt.captionNotice = CAPTION_FAILED;
+        }
     }
 
     /** Read once per attempt, so replans and track changes keep the profile's style and timing. */
@@ -4174,6 +4217,12 @@ function trackView(attempt: Attempt, plan: PlaybackPlan): TrackView {
 }
 
 /** Delay and styling apply to overlay cues. AVPlay-drawn text and burn-in have no offset or style path here. */
+/** The identity of a plan's drawn subtitle file, as `readCaptions` keys its read. */
+function captionKeyOf(plan: PlaybackPlan): string | undefined {
+    const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
+    return artifact === undefined ? undefined : `${artifact.format} ${artifact.origin} ${artifact.url}`;
+}
+
 function subtitleOverlay(attempt: Attempt, plan: PlaybackPlan): boolean {
     const id = shownSubtitle(attempt, plan);
     if (id === undefined) return true;
@@ -4241,9 +4290,17 @@ function textTrackIndex(tracks: readonly AVPlayTrackInfo[], row: SubtitleTrack, 
     const ordinal = row.hlsRendition?.index;
     const published = ordinal === undefined ? undefined : text[ordinal - 1];
     if (!languageOnly && published !== undefined) return published.index;
-    const language = row.language?.toLowerCase();
-    if (language !== undefined && language !== "") {
-        const matches = text.filter((track) => trackLanguage(track) === language);
+    // An original file's TEXT rows are numbered by the file's stream index, which the server publishes as `stream_index`
+    // (the S95C selected English SDH, artifact 9.vtt, as TEXT 12 after one video and two audio streams). A file can hold several tracks in one language.
+    const language = canonicalLanguageKey(row.language);
+    if (languageOnly && row.streamIndex !== undefined) {
+        const stream = text.find(track => track.index === row.streamIndex);
+        // A row in another known language means AVPlay numbers this file differently: match by language instead.
+        const other = stream === undefined ? undefined : canonicalLanguageKey(trackLanguage(stream));
+        if (stream !== undefined && (language === undefined || other === undefined || other === language)) return stream.index;
+    }
+    if (language !== undefined) {
+        const matches = text.filter((track) => canonicalLanguageKey(trackLanguage(track)) === language);
         const match = matches.length === 1 ? matches[0] : undefined;
         if (match !== undefined) return match.index;
     }
