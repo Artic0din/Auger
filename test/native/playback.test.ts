@@ -1672,6 +1672,36 @@ test("an absolute seek queued behind a seek that fails keeps its own target", as
     assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 100000");
 });
 
+// Each queued skip is held at 0 and the duration as it is pressed, on both paths: a seek that lands and one that fails end in
+// the same place (stand-in review of #725).
+for (const [name, start, skips, outcome, landing] of [
+    ["a chain that reaches 0 lands", 5, [-10, -10, 30], "lands", 30],
+    ["a chain that reaches 0 behind a failed seek", 5, [-10, -10, 30], "fails", 30],
+    ["a chain that reaches the end lands", 7180, [30, 30, -10], "lands", 7190],
+    ["a chain that reaches the end behind a failed seek", 7180, [30, 30, -10], "fails", 7190],
+    ["two skips behind a failed seek", 30, [30, -10, -10], "fails", 10],
+] as const) test(`${name} where each press is held at 0 and the duration`, async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(start * 1000);
+    for (const skip of skips) r.controller.seekBy(skip);
+    r.avplay.finishSeek(outcome === "fails" ? "UnknownError" : undefined);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), `seekTo ${landing * 1000}`);
+});
+
+test("a skip pressed after a queued absolute seek keeps that seek's target when the seek in flight fails", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekToSeconds(100);
+    r.controller.seekBy(-10);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 90000");
+});
+
 test("Rewind after a finished Fast Forward measures from the Fast Forward's landing, as on Apple TV", async () => {
     const r = await rig();
     await playMovie(r);
