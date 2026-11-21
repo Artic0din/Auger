@@ -2709,6 +2709,48 @@ test("authority loss while the background STOP resend waits sends no old-scope r
     }
 });
 
+test("a background STOP resend refused with 403 before the next episode starts shows the failure card and cancels autoplay", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await autoplayRig(true);
+        const id = await playMovie(r, EPISODE);
+        r.h.fake.script(`/playback/${id}`, { status: 503, body: {} }, problem(403, "forbidden", "Forbidden"));
+        r.avplay.tick(5399000);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "ready", "the advance goes on after the 503");
+        await r.h.clock.advance(1000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 2);
+        assert.equal(completion(r).state, "failed", "the refused resend ends the advance");
+        assert.equal(completion(r).failure, "session");
+        assert.equal(completion(r).retryable, false);
+        await r.h.clock.advance(30000);
+        assert.equal(bodies(r.h, "/start").length, 1, "autoplay never starts the next episode");
+        r.controller.destroy();
+    } finally { warnings.mock.restore(); }
+});
+
+test("a background STOP resend answered 404 after a 503 still lets the next episode start, as the first STOP likely landed", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await autoplayRig(true);
+        const id = await playMovie(r, EPISODE);
+        r.h.fake.script(`/playback/${id}`, { status: 503, body: {} }, problem(404, "not_found", "Not found"));
+        r.avplay.tick(5399000);
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        await r.h.clock.advance(1000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 2);
+        assert.equal(completion(r).state, "ready");
+        for (let step = 0; step < 20 && bodies(r.h, "/start").length < 2; step++) await r.h.clock.advance(1000);
+        assert.equal(bodies(r.h, "/start").length, 2, "the countdown starts the next episode");
+        assert.equal(warnings.mock.callCount(), 1, "the 404 is logged");
+        r.controller.destroy();
+    } finally { warnings.mock.restore(); }
+});
+
 test("Back, background, teardown and profile loss cancel EOF resolution despite late answers", async () => {
     for (const action of ["back", "background", "destroy", "profile"] as const) {
         const r = await episodeRig();

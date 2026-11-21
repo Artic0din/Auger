@@ -2838,6 +2838,7 @@ export class PlaybackController implements PlayerControls {
         const working: MessageKey = shuffle ? "upNext.headingShuffle" : "upNext.headingEnded";
         // A failure while the session ends (the final progress or STOP) is not a failed lookup: nothing was looked up yet.
         let stage: "session" | "lookup" = "session";
+        const refused = (error: unknown): boolean => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed");
         const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
             if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}) });
         };
@@ -2858,7 +2859,17 @@ export class PlaybackController implements PlayerControls {
                 attempt.stopRetryAt = Math.max(attempt.stopRetryAt, this.deps.clock.now() + (RESEND_DELAYS_MS[0] ?? 0));
                 attempt.ended = true;
                 void this.stopSession(attempt, false, 1).catch((failure: unknown) => {
-                    if (!(failure instanceof ApiError && failure.aborted)) console.warn("Silo playback: the session did not stop; the server will time it out", failure);
+                    if (failure instanceof ApiError && failure.aborted) return;
+                    // A resend refused like a first send ends the advance while it is still on screen. A 404 after a failure that may
+                    // clear most likely means the first STOP landed, so it is only logged, as Apple logs a failed stop and goes on.
+                    if (refused(failure) && current()) {
+                        this.cancelAutoplay();
+                        stage = "session";
+                        show("failed");
+                        abort.abort();
+                        return;
+                    }
+                    console.warn("Silo playback: the session did not stop; the server will time it out", failure);
                 });
             }
             if (!current()) return;
@@ -2944,7 +2955,7 @@ export class PlaybackController implements PlayerControls {
         } catch (error) {
             // Only the session's own end can find the session missing; a 404 after that is a lookup that Retry may yet answer.
             const missingSession = error instanceof ApiError && error.status === 404 && stage === "session";
-            const forbidden = missingSession || (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed"));
+            const forbidden = missingSession || refused(error);
             show("failed", undefined, !forbidden);
         } finally {
             completion.pending = false;
