@@ -1405,6 +1405,61 @@ async function startMovie(tv: Tv, id = "movie:m0001"): Promise<void> {
     await prepare(tv);
 }
 
+// #27: one remote journey that keeps focus and context through paging, loading, a failure, playback and Back, on the real player.
+appTest("remote navigation keeps focus and context through Browse paging, a failed Details load, playback and Back (#27)", async (tv, playback, catalog) => {
+    // A second Browse page needs more than 100 films.
+    for (let i = 61; i <= 260; i++) catalog.add({ id: `movie:m${String(i).padStart(4, "0")}`, type: "movie", title: `Movie ${String(i).padStart(4, "0")}`, libraryId: "12", year: 1990 + (i % 30) });
+    const card = "movie:m0106";
+    // Its own file, so the play request names this title rather than the default one.
+    catalog.fileIds.set(card, "43");
+    playback.items.set(card, ["43"]);
+    await signIn(tv);
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator('[data-view="library:12"] [data-focus="movie:m0001"]').first().waitFor();
+    await selectLibraryMode(tv, "Browse");
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 100, "first Browse page");
+    // Paging: the last row asks for the next page, and Down then lands on it.
+    await tv.page.locator('.catalog-grid .browse-card').last().focus();
+    await tv.remote(37);
+    await tv.remote(39);
+    await tv.jump(300);
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 200, "second Browse page");
+    await tv.remote(40);
+    assert.equal(await tv.focused(), card, "focus is on the second page");
+    // Loading: the title's Details read is refused, but its answer is held, so the loading page holds focus.
+    const details = `/catalog/items/${encodeURIComponent(card)}`;
+    catalog.failNext(details, problem(400, "validation_failed", "Unavailable"));
+    const held = tv.fake.hold(details, true);
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await tv.focused() === "loading", "the loading page takes focus");
+    await tv.jump(5000);
+    assert.equal(await tv.focused(), "loading", "the loading page keeps focus while the read is out");
+    assert.equal(await tv.page.locator(".details-failure").count(), 0);
+    // Failure: the refusal arrives, and the failure page takes focus on Try Again.
+    held.release();
+    await tv.jump(35000);
+    await tv.page.locator(".details-failure").waitFor();
+    assert.equal(await tv.focused(), "retry", "the failure page takes focus on its retry");
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await tv.focused() === "play", "Details loads with Play focused");
+    // Playback through the real player, for the chosen title.
+    await tv.page.keyboard.press("Enter");
+    await prepare(tv);
+    const starts = tv.fake.requests.filter(request => request.path === "/playback/start");
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0]?.body?.file_id, "43", "the play request is for the chosen card's file");
+    // Back from the player returns to Details on Play.
+    await tv.remote(10009);
+    await tv.page.locator(`[data-view="item:${card}"]`).waitFor();
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+    await tv.eventually(async () => await tv.focused() === "play", "returning from playback restores Play");
+    // Back returns to Browse with both pages and the same card focused.
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="library:12"]').waitFor();
+    await tv.eventually(async () => await tv.focused() === card, "Back restores the second-page card");
+    assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 200, "both pages are kept");
+});
+
 async function prepare(tv: Tv): Promise<void> {
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.pendingPrepares > 0), "AVPlay preparation");
     await tv.page.evaluate(() => {
