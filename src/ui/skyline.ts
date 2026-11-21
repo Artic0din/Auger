@@ -219,8 +219,8 @@ export class Skyline {
         this.nav.setAttribute("aria-label", "Main navigation");
         this.tabs.setAttribute("role", "tablist");
         const wordmark = el("img", "skyline-wordmark");
-        wordmark.src = "img/silo-wordmark.png";
-        wordmark.alt = "Silo";
+        wordmark.src = "img/auger-wordmark.png";
+        wordmark.alt = "Auger";
         this.nav.append(wordmark, this.tabs, this.tools);
         this.selector.setAttribute("role", "menu");
         this.selector.hidden = true;

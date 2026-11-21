@@ -3,7 +3,7 @@
     <tizen:application id="Sil0Tv0001.Silo" package="Sil0Tv0001" required_version="8.0"/>
     <icon src="icon.png"/>
     <content src="index.html"/>
-    <name>Silo</name>
+    <name>Auger</name>
     <access origin="*" subdomains="true"/>
     <tizen:allow-navigation>*</tizen:allow-navigation>
     <tizen:content-security-policy>default-src *; script-src 'self'; style-src 'self'; img-src * data:; object-src 'self';</tizen:content-security-policy>

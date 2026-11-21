@@ -85,7 +85,7 @@ test("progress is a whole percentage and phases read plainly", () => {
 
 test("failure and result lines read as Apple's", () => {
     assert.equal(failureText("subtitle_changed"), "The subtitle changed while it was syncing. Try again.");
-    assert.equal(failureText("no_audio"), "This video has no audio Silo can read.");
+    assert.equal(failureText("no_audio"), "This video has no audio Auger can read.");
     assert.equal(failureText("unavailable"), "The server is busy. Try again in a few minutes.");
     assert.equal(failureText("error"), "Sync failed. Try again.");
     assert.equal(failureText(undefined), "Sync failed. Try again.");
@@ -94,7 +94,7 @@ test("failure and result lines read as Apple's", () => {
     assert.equal(syncResult({ offsetMs: 0, scale: 1 }, finished("synced")), undefined);
     assert.deepEqual(syncResult({ offsetMs: 0, scale: 1 }, finished("already_synced")), { text: "Already matches the audio.", warning: false });
     assert.deepEqual(syncResult({ offsetMs: 0, scale: 1 }, finished("no_match")), { text: "Doesn't match this video's audio; probably for another release.", warning: true });
-    assert.deepEqual(syncResult({ offsetMs: 0, scale: 1 }, finished("failed", { failure: "no_audio" })), { text: "This video has no audio Silo can read.", warning: true });
+    assert.deepEqual(syncResult({ offsetMs: 0, scale: 1 }, finished("failed", { failure: "no_audio" })), { text: "This video has no audio Auger can read.", warning: true });
     assert.equal(syncResult({ offsetMs: 0, scale: 1 }, undefined), undefined);
     assert.equal(syncActionNote(false), "Matches the timing to the audio for everyone watching.");
     assert.equal(syncActionNote(true), "Matches the timing to the audio for everyone. The file itself isn't changed.");

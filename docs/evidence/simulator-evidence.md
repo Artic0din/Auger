@@ -14,12 +14,12 @@ Keep the developer security profile and certificates outside the repository.
 npm ci
 export TIZEN_SECURITY_PROFILE="YourProfileName"
 ./scripts/build-wgt.sh
-shasum -a 256 dist/Silo.wgt
+shasum -a 256 dist/Auger.wgt
 ```
 
-The `silo-tizen-wgt` artifact from a Tizen Builds run is the same package, signed in CI for that commit; its `Silo.wgt.sha256` records the hash.
+The `silo-tizen-wgt` artifact from a Tizen Builds run is the same package, signed in CI for that commit; its `Auger.wgt.sha256` records the hash.
 Record the source commit, uncommitted-diff identity if applicable, package hash and simulator version.
-The package command stages the web app and signs `dist/Silo.wgt`.
+The package command stages the web app and signs `dist/Auger.wgt`.
 Keep a copy of any installed candidate that must be restored.
 
 ## Launch on macOS
@@ -39,7 +39,7 @@ cd "$simulator_dir"
   --disableInspector
 ```
 
-Use the simulator's app-loading interface to install the signed `Silo.wgt`, then launch its Silo tile.
+Use the simulator's app-loading interface to install the signed `Auger.wgt`, then launch its Auger tile.
 If the simulator reports an install or launch error, verify the loaded files before claiming that the new candidate is running.
 A shell reload and launching the tile can recover the observed `Cannot read properties of null (reading 'location')` launch failure; repeated failure is a blocker, not a successful install.
 Remote debugging is for local inspection; close its clients when finished and do not expose its port to the network.

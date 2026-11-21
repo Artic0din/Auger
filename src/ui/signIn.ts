@@ -134,12 +134,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     const core = options.core;
     const clock: Clock = core.clock ?? systemClock;
     const backdrop = new MarqueeBackdrop(clock);
-    const host = new ScreenHost(root, () => {
-        const wordmark = el("img", "signin-wordmark");
-        wordmark.src = "img/silo-wordmark.png";
-        wordmark.alt = "Silo";
-        return wordmark;
-    }, backdrop.element);
+    const host = new ScreenHost(root, undefined, backdrop.element);
     root.classList.add("signin", "signin-auth");
     let address = options.address ?? readServer(core) ?? "";
     // The Apple TV app's Advanced options; reset once a server answers, whose address then says both.

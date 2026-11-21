@@ -1756,7 +1756,7 @@ browseTest("Search waits 300 ms and keeps titles, People, Requests and the count
     filtered.release();
     await tv.eventually(async () => browseReads(tv, "/catalog/people").length >= people + 2, "People reads for the new query and filter");
     await tv.page.fill("#browse-search", "");
-    await shows(tv, "Search Silo");
+    await shows(tv, "Search Auger");
     assert.equal(await tv.page.locator('.browse-grid .browse-card, [data-focus="person:7"], .search-request-rail').count(), 0, "an emptied field resets at once");
     assert.equal(await tv.page.locator(".search-filters").count(), 0);
 }, { catalog: keptSearch });
@@ -1767,7 +1767,7 @@ browseTest("Emptying the field after a failed search returns to the Search promp
     await tv.page.fill("#browse-search", "Movie"); await tv.remote(IME_DONE);
     await tv.page.locator(".search-failure").waitFor();
     await tv.page.fill("#browse-search", "");
-    await shows(tv, "Search Silo");
+    await shows(tv, "Search Auger");
     assert.equal(await tv.page.locator(".search-failure").count(), 0, "SearchViewModel.resetState clears the error");
     assert.equal(await tv.focused(), "query");
 });
@@ -4243,7 +4243,7 @@ browseTest("Search removes root chrome and new visits clear its query while root
     assert.equal(tv.fake.requests.length, reads);
     await tv.page.locator('[data-focus="search"]').click();
     assert.equal(await tv.page.inputValue("#browse-search"), "");
-    await tv.page.getByText("Search Silo", { exact: true }).waitFor();
+    await tv.page.getByText("Search Auger", { exact: true }).waitFor();
 });
 
 browseTest("sideways menu dismissal removes its hidden focus zone", async (tv) => {

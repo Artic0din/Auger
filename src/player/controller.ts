@@ -2898,7 +2898,7 @@ export class PlaybackController implements PlayerControls {
                         abort.abort();
                         return;
                     }
-                    console.warn("Silo playback: the session did not stop; the server will time it out", failure);
+                    console.warn("Auger playback: the session did not stop; the server will time it out", failure);
                 });
             }
             if (!current()) return;
@@ -3097,7 +3097,7 @@ export class PlaybackController implements PlayerControls {
             return false;
         }
         if (!heads.some(head => /#EXT-X-DEFINE|\{\$/.test(head))) return false;
-        console.warn(`Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery ${plan.delivery})`);
+        console.warn(`Auger playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery ${plan.delivery})`);
         return true;
     }
 

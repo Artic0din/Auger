@@ -555,7 +555,7 @@ test("measured Settings pickers centre the selected choice and privacy handoff",
         await tv.page.locator('[data-focus="remember-profile"]').click();
         assert.equal(await tv.page.getByRole("dialog").count(), 1);
         assert.equal(await tv.page.getByRole("radio", { checked: true }).evaluate(node => node === document.activeElement), true);
-        assert.equal(await tv.page.getByRole("dialog").getByText("Show Who's Watching whenever you return to Silo.", { exact: true }).count(), 1);
+        assert.equal(await tv.page.getByRole("dialog").getByText("Show Who's Watching whenever you return to Auger.", { exact: true }).count(), 1);
         assert.equal(await tv.page.locator('.settings-checkmark').count(), 1);
         await tv.remote(10009);
         assert.equal(await tv.focused(), "remember-profile");
@@ -752,9 +752,9 @@ test("profile subtitle editors read and compare profile values while narrower ov
 test("Profile Selection caption follows the chosen launch behavior", async () => {
     const { tv } = await setup();
     const captions = {
-        "Every Time": "Show Who's Watching whenever you return to Silo.",
-        "After 1 Hour": "Show Who's Watching when you've been away from Silo for 1 hour.",
-        "After 12 Hours": "Show Who's Watching when you've been away from Silo for 12 hours.",
+        "Every Time": "Show Who's Watching whenever you return to Auger.",
+        "After 1 Hour": "Show Who's Watching when you've been away from Auger for 1 hour.",
+        "After 12 Hours": "Show Who's Watching when you've been away from Auger for 12 hours.",
         Automatic: "Use the profile selected for the current TV user. A protected profile can reopen without asking for its PIN.",
     } as const;
     try {
@@ -874,7 +874,7 @@ test("Paired Silo Profile shows the profile this TV reopens and opens the profil
         await openSettings(tv);
         assert.equal(await tv.page.locator(".settings-section-header").first().textContent(), "TV USER");
         assert.equal(await tv.page.locator('[data-focus="paired-profile"] .settings-row-value').textContent(), "Not paired");
-        await tv.page.getByText("This TV user context is not set to keep separate app preferences. Silo uses the profile pairing available to the current app context, and you can change it here at any time. Ask Every Time is on, so Silo will still show Who's Watching at launch.", { exact: true }).waitFor();
+        await tv.page.getByText("This TV user context is not set to keep separate app preferences. Auger uses the profile pairing available to the current app context, and you can change it here at any time. Ask Every Time is on, so Auger will still show Who's Watching at launch.", { exact: true }).waitFor();
         await tv.page.locator('[data-focus="remember-profile"]').click();
         await tv.page.getByRole("radio", { name: "Automatic", exact: true }).click();
         await tv.eventually(async () => await tv.page.locator('[data-focus="paired-profile"] .settings-row-value').textContent() === "Laura", "remembered profile name");
@@ -894,7 +894,7 @@ test("Subtitles, the profile account line and sign-out confirmation follow Apple
         const profile = tv.page.locator('[data-focus="settings-profile"]');
         assert.equal(await profile.locator(".settings-profile-name").textContent(), "Laura");
         assert.equal(await profile.locator(".settings-profile-account").textContent(), "laura");
-        assert.equal(await tv.page.locator(".settings-version").textContent(), "Silo 0.0.1");
+        assert.equal(await tv.page.locator(".settings-version").textContent(), "Auger 0.0.1");
         assert.equal(await tv.page.getByRole("button", { name: /Diagnostics/ }).count(), 0);
         assert.equal(await tv.page.locator('[data-focus="subtitles"] .settings-category-detail').textContent(), "Language and appearance");
         // The version uses siloSecondaryText; category subtitles dim the row foreground instead.
@@ -956,7 +956,7 @@ test("Apple Settings rail enters the first row, shows separate values and restor
         await tv.page.locator('[data-focus="settings-signout"]').click();
         await tv.page.getByRole("button", { name: "Cancel", exact: true }).click();
         assert.equal(await tv.page.locator(":focus").getAttribute("data-focus"), "settings-signout");
-        assert.equal(await tv.page.getByText(/Silo 0\.0\.1/).count(), 1);
+        assert.equal(await tv.page.getByText(/Auger 0\.0\.1/).count(), 1);
         assert.equal(await tv.page.getByRole("button", { name: /nav.*menu|synced.*menu/i }).count(), 0);
     } finally { await tv.page.context().close(); }
 });
@@ -1070,7 +1070,7 @@ test("quality footer and bitrate labels follow Apple TV", async () => {
 });
 
 const BUFFERING_MODE_KEY = "playback.buffering_quality_mode";
-const BUFFERING_SENTENCES = "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.";
+const BUFFERING_SENTENCES = "What Auger does on Auto when playback keeps buffering. Auger always asks before lowering a quality you picked.";
 
 test("Lower quality when buffering follows Apple's QUALITY rows and saves for this TV only", async () => {
     const { tv, settings } = await setup(true);
@@ -1579,7 +1579,7 @@ test("Server settings open Acknowledgements with TMDB's logo and required notice
         await credits.getByText("This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.", { exact: true }).waitFor();
         await credits.getByText("Profile avatars", { exact: true }).waitFor();
         assert.match(await credits.textContent() ?? "", /Davis Uche.*creativecommons\.org\/licenses\/by\/4\.0/);
-        await credits.getByText("These names and logos belong to their owners. Silo is not affiliated with or endorsed by them.", { exact: true }).waitFor();
+        await credits.getByText("These names and logos belong to their owners. Auger is not affiliated with or endorsed by them.", { exact: true }).waitFor();
         await tv.page.keyboard.press("ArrowUp");
         assert.equal(await tv.focused(), "done", "Up from the top of the document reaches Done");
         await tv.page.keyboard.press("ArrowDown");

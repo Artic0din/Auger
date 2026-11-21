@@ -4492,7 +4492,7 @@ test("an HLS playlist that needs variable substitution is refused before AVPlay 
         const view = last(r.views);
         assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
         assert.equal(ops(r.h).at(-1), "DELETE /playback/S1", "the session is stopped");
-        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
+        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Auger playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
         assert.equal(r.h.clock.scheduled, 0);
         r.controller.dismissError();
         assert.deepEqual(r.exits, ["error:playback_failed"]);
