@@ -575,6 +575,10 @@ interface Attempt {
     /** Pause or resume asked for while a local seek is settling. Applied when that seek ends. */
     pauseAfterSeek: boolean | undefined;
     queuedSeekSeconds: number | undefined;
+    /** The target of the local seek in flight; read only while `pending.seek` is set. */
+    seekTarget: number | undefined;
+    /** The skips behind `queuedSeekSeconds`, in press order, when only skips queued it: a failed seek replays them from the real position. */
+    queuedSkips: number[] | undefined;
     progress: Promise<void> | undefined;
     cancelTimer: (() => void) | undefined;
     stopSpec: RequestSpec<PlaybackMutation> | undefined;
@@ -745,6 +749,8 @@ export class PlaybackController implements PlayerControls {
             seekFailure: undefined,
             pauseAfterSeek: undefined,
             queuedSeekSeconds: undefined,
+            seekTarget: undefined,
+            queuedSkips: undefined,
             progress: undefined,
             cancelTimer: undefined,
             stopSpec: undefined,
@@ -856,7 +862,14 @@ export class PlaybackController implements PlayerControls {
 
     seekBy(seconds: number): void {
         const attempt = this.active();
-        if (attempt !== undefined) this.seekToSeconds(attempt.sourceSeconds + seconds);
+        if (attempt === undefined) return;
+        // PlayerViewModel.queueSkipDebounce (RelativeSeek.target(current:pending:delta:)): a skip pressed while a seek is in flight adds
+        // to the target already asked for, the queued one first, never to the position from before that seek.
+        const inFlight = attempt.busy && this.pending.seek !== undefined;
+        const pending = inFlight ? attempt.queuedSeekSeconds ?? attempt.seekTarget : undefined;
+        const skips = attempt.queuedSeekSeconds === undefined ? [] : attempt.queuedSkips;
+        this.seekToSeconds((pending ?? attempt.sourceSeconds) + seconds);
+        if (inFlight && attempt.queuedSeekSeconds !== undefined && skips !== undefined) attempt.queuedSkips = [...skips, seconds];
     }
 
     retrySettings(): void {
@@ -892,7 +905,10 @@ export class PlaybackController implements PlayerControls {
         const duration = plan.durationSeconds;
         const target = Math.max(0, Math.min(seconds, duration ?? Number.MAX_VALUE));
         if (attempt.busy) {
-            if (this.pending.seek !== undefined && attempt.change.state !== "changing" && !attempt.hidden && !attempt.restoring) attempt.queuedSeekSeconds = target;
+            if (this.pending.seek !== undefined && attempt.change.state !== "changing" && !attempt.hidden && !attempt.restoring) {
+                attempt.queuedSeekSeconds = target;
+                attempt.queuedSkips = undefined;
+            }
             return;
         }
         if (attempt.undoSkip === target) attempt.undoSkip = undefined;
@@ -918,10 +934,12 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const transport = this.transport;
+        attempt.seekTarget = target;
         const settled = (moved: boolean): void => {
             if (transport !== this.transport || !attempt.live) {
                 attempt.pauseAfterSeek = undefined;
                 attempt.queuedSeekSeconds = undefined;
+                attempt.queuedSkips = undefined;
                 return;
             }
             attempt.busy = false;
@@ -932,8 +950,13 @@ export class PlaybackController implements PlayerControls {
             attempt.seekFailure = undefined;
             const pauseAfterSeek = attempt.pauseAfterSeek;
             attempt.pauseAfterSeek = undefined;
-            const queued = attempt.queuedSeekSeconds;
+            // Skips queued behind a seek that did not move count from where playback still is, not from the failed target, each held at
+            // 0 and the end as it was when pressed, so a failed seek and a landed one end in the same place.
+            const queued = !moved && attempt.queuedSkips !== undefined && attempt.queuedSeekSeconds !== undefined
+                ? attempt.queuedSkips.reduce((at, skip) => Math.max(0, Math.min(at + skip, duration ?? Number.MAX_VALUE)), attempt.sourceSeconds)
+                : attempt.queuedSeekSeconds;
             attempt.queuedSeekSeconds = undefined;
+            attempt.queuedSkips = undefined;
             if (failure !== undefined) {
                 if (pauseAfterSeek !== undefined) attempt.paused = pauseAfterSeek;
                 this.routeFailed(attempt, failure);
@@ -1000,6 +1023,7 @@ export class PlaybackController implements PlayerControls {
         attempt.restoring = false;
         attempt.hidden = true;
         attempt.queuedSeekSeconds = undefined;
+        attempt.queuedSkips = undefined;
         // A backgrounded app is paused to the buffering controller: nothing waits, prompts or lowers unseen.
         this.syncBuffering(attempt);
         this.capturePosition(attempt);
@@ -1780,6 +1804,7 @@ export class PlaybackController implements PlayerControls {
     /** A codec or route failure on this TV: the server picks the next route, a bounded number of times. */
     private routeFailed(attempt: Attempt, classification: string): void {
         attempt.queuedSeekSeconds = undefined;
+        attempt.queuedSkips = undefined;
         attempt.pendingSkipUndo = undefined;
         const plan = attempt.plan;
         if (!attempt.live || plan === undefined) {

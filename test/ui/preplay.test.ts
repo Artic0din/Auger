@@ -159,7 +159,8 @@ preplay("switching episodes keeps a failed shared subtitle save blocked until co
 });
 
 preplay("a confirmed series preference refresh clears other episodes' stale track intents but retains versions", async (tv, catalog) => {
-    for (const id of ['episode:s1e11', 'episode:s1e12']) catalog.fileIds.set(id, '42');
+    // Versions opens only with a choice (#720), so each episode offers a second file.
+    for (const id of ['episode:s1e11', 'episode:s1e12']) { catalog.fileIds.set(id, '42'); catalog.moreFileIds.set(id, ['43']); }
     await series(tv);
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();
     await tv.page.getByRole('button', { name: /Play S1:E2|Resume S1:E2/ }).waitFor();
@@ -235,6 +236,8 @@ preplay("series Play refreshes progress saved after an initially unplayed episod
 
 for (const destination of ["series", "season"]) preplay(`${destination} keeps an explicit next-episode version through playback return`, async (tv, catalog, playback) => {
     catalog.fileIds.set("episode:s1e11", "42");
+    // Versions opens only with a choice (#720), so the episode offers a second file.
+    catalog.moreFileIds.set("episode:s1e11", ["43"]);
     playback.items.set("episode:s1e11", ["42"]);
     await series(tv);
     if (destination === "season") {

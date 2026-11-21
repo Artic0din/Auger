@@ -21,7 +21,7 @@ export function aspectLabel(aspect: PlayerAspect): string {
 const STAT_KEYS: Readonly<Record<string, MessageKey>> = {
     Video: "player.hud.video", Audio: "player.hud.audio", Subtitles: "player.hud.subtitles", Playback: "player.hud.playback",
     "Dynamic range": "player.stats.dynamicRange", "Playback rate": "player.stats.playbackRate", "Playback status": "player.stats.playbackStatus",
-    Delivery: "player.stats.delivery", Source: "player.stats.source",
+    Delivery: "player.stats.delivery", Source: "player.stats.source", Diagnostics: "player.settings.diagnostics",
 };
 /** A stats or Info row's label in the shown language where Apple has the same text; the rest keep their English. */
 export function statLabel(label: string): string {
@@ -75,7 +75,9 @@ export interface LiveStats {
 
 // AetherPlaybackStatsSourceMetadata.playMethodLabel and deliveryLabel.
 const PLAY_METHODS: Readonly<Record<PlaybackPlan["delivery"], MessageKey | undefined>> = { original_http: "player.stats.playMethodDirectPlay", server_remux_progressive: "player.stats.playMethodRemuxed", server_remux_hls: "player.stats.playMethodRemuxed", server_transcode_hls: "player.stats.playMethodTranscoded", unknown: undefined };
-const DELIVERIES: Readonly<Record<PlaybackPlan["delivery"], string | undefined>> = { original_http: "Original HTTP", server_remux_progressive: "Server Remux", server_remux_hls: "Server Remux HLS", server_transcode_hls: "Server Transcode HLS", unknown: undefined };
+const DELIVERIES: Readonly<Record<PlaybackPlan["delivery"], MessageKey | undefined>> = { original_http: "player.stats.deliveryOriginalHttp", server_remux_progressive: "player.stats.deliveryServerRemux", server_remux_hls: "player.stats.deliveryServerRemuxHls", server_transcode_hls: "player.stats.deliveryServerTranscodeHls", unknown: undefined };
+// AetherPlaybackStatsProjection.phaseLabel: the status stays its English id in the view state and reads the catalog here.
+const PHASES: Readonly<Record<LiveStats["status"], MessageKey>> = { Playing: "player.stats.phasePlaying", Paused: "player.stats.phasePaused", Rebuffering: "player.stats.phaseRebuffering" };
 const RANGES: Readonly<Record<string, string>> = { sdr: "SDR", hdr10: "HDR10", hdr10_plus: "HDR10+", "hdr10+": "HDR10+", hlg: "HLG", dolby_vision: "Dolby Vision" };
 const VIDEO_CODECS: Readonly<Record<string, string>> = { hevc: "HEVC", h265: "HEVC", hvc1: "HEVC", hev1: "HEVC", h264: "H.264", avc: "H.264", avc1: "H.264", avc3: "H.264", av1: "AV1", av01: "AV1", vp9: "VP9", vp09: "VP9", mpeg2video: "MPEG-2", mpeg2: "MPEG-2", mpeg4: "MPEG-4", vc1: "VC-1" };
 const CONTAINERS: Readonly<Record<string, string>> = { matroska: "MKV", mkv: "MKV", mpegts: "MPEG-TS", "mpeg-ts": "MPEG-TS", ts: "MPEG-TS", quicktime: "MOV", mov: "MOV", mp4: "MP4", m4v: "M4V" };
@@ -112,6 +114,7 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const picture = width > 0 && height > 0;
     const output = recipe?.dynamicRange ?? source.dynamicRange;
     const methodKey = PLAY_METHODS[plan.delivery];
+    const deliveryKey = DELIVERIES[plan.delivery];
     const playMethod = methodKey === undefined ? undefined : translate(methodKey);
     // A transcode names its output codec; a copy leaves the file's.
     const codec = recipe?.videoCodec ?? source.videoCodec;
@@ -149,7 +152,7 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
             ]),
             ...notes.map((note, index) => ({ label: index === 0 ? "Diagnostics" : "", value: note })),
         ],
-        stream: rows([["Playback status", live.status]]),
-        engine: rows([["Delivery", DELIVERIES[plan.delivery]], ["Source", live.host]]),
+        stream: rows([["Playback status", translate(PHASES[live.status])]]),
+        engine: rows([["Delivery", deliveryKey === undefined ? undefined : translate(deliveryKey)], ["Source", live.host]]),
     };
 }

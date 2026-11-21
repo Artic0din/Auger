@@ -421,7 +421,9 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     if (state !== undefined) {
         const ordinal = audio.findIndex((_track, index) => selectedAudio === `file:${file?.fileId}:audio:${index}`);
         const version = actionButton("version", `${translate("detail.version")}: ${versionValue}`, () => state.showPanel("version"));
-        version.element.setAttribute("aria-disabled", String(playbackChoices === undefined || playbackDetail.versions.length === 0));
+        // TVPlaybackSelectorRow.isVersionDisabled: Versions opens only with more than one version to choose. Tizen shows no Edition
+        // selector, so every version is in the choice (Apple's DetailPlaybackFormatting.versionSelectorVersions without editions).
+        version.element.setAttribute("aria-disabled", String(playbackChoices === undefined || playbackDetail.versions.length < 2));
         version.element.setAttribute("aria-haspopup", "dialog");
         actions.push(version);
         const trigger = actionButton("audio", `${translate("detail.audio")}: ${ordinal === -1 ? autoLabel : audioLabel(ordinal)}`, () => state.showPanel("audio"));
