@@ -435,6 +435,22 @@ test("hidden Down opens Info and hidden Right returns to scrubber", async () => 
     } finally { await page.close(); }
 });
 
+// TVPlayerTransportCluster.swift:69-75 (silo-apple main f70e16a): with nothing to show next, the button is not drawn at all (#698).
+test("a hidden Show Up Next draws nothing in the transport, so the options button starts its group", async () => {
+    const { page } = await open();
+    try {
+        const box = (): Promise<{ display: string; width: number }> => page.locator('[data-focus="up-next"]').evaluate(node => ({ display: getComputedStyle(node).display, width: node.getBoundingClientRect().width }));
+        // The group is right-aligned (margin-left: auto): a drawn ring sits left of the options button inside it.
+        const lead = (): Promise<number> => page.locator('[data-focus="tracks"]').evaluate(node => node.getBoundingClientRect().left - (node.parentElement as HTMLElement).getBoundingClientRect().left);
+        await show(page, { ...playing(TRACKS), episodes: true });
+        assert.deepEqual(await box(), { display: "flex", width: 66 }, "shown: Apple's 66 px circle");
+        assert.ok(await lead() >= 66, "shown: the ring comes before the options button");
+        await show(page, { ...playing(TRACKS), episodes: false });
+        assert.deepEqual(await box(), { display: "none", width: 0 }, "hidden: no empty ring");
+        assert.equal(await lead(), 0, "hidden: the options button starts the group");
+    } finally { await page.close(); }
+});
+
 test("Show Up Next is in the transport and its panel names the next episode", async () => {
     const { page } = await open();
     try {
@@ -454,6 +470,58 @@ test("Show Up Next is in the transport and its panel names the next episode", as
         assert.equal(await page.locator(".player-next-up .player-title").innerText(), "Harbor Lights chapter 1.3");
         assert.equal(await page.getByText("Nothing to watch next").count(), 0);
         assert.equal(await page.getByText("Loading Up Next").count(), 0);
+    } finally { await page.close(); }
+});
+
+const reachUpNext = async (page: Page): Promise<void> => {
+    await show(page, { ...playing(TRACKS), episodes: true });
+    // With the controls shown, as a viewer reaches the button.
+    await remote(page, DOWN);
+    await remote(page, RIGHT);
+    await remote(page, RIGHT);
+    assert.equal(await focused(page), "up-next");
+};
+
+// AGENTS.md (TV focus): focus is never lost. Desktop Chromium empties focus the moment a node gets the hidden attribute, and the screen's
+// later "focus outside the transport" fallback then catches it. A TV engine need not empty it, so the screen must move focus itself. The test
+// stands in for such an engine: while the button hides, document.activeElement keeps reporting it whenever the browser has emptied focus.
+test("a focused Show Up Next that hides during playback hands focus to the scrubber itself, and draws nothing (#698)", async () => {
+    const { page } = await open();
+    try {
+        await reachUpNext(page);
+        const active = await page.evaluate(next => {
+            const held = document.activeElement as HTMLElement;
+            const real = Object.getOwnPropertyDescriptor(Document.prototype, "activeElement")!.get!;
+            Object.defineProperty(document, "activeElement", { configurable: true, get(this: Document) { const focusedNode = real.call(this) as Element | null; return focusedNode === null || focusedNode === this.body ? held : focusedNode; } });
+            try {
+                window.player.show(next);
+                return document.activeElement?.getAttribute("data-focus") ?? null;
+            } finally { delete (document as unknown as Record<string, unknown>).activeElement; }
+        }, { ...playing(TRACKS), episodes: false });
+        assert.equal(active, "position", "the screen moved focus to the scrubber, though the engine still reported the hidden button");
+        const drawn = await page.locator('[data-focus="up-next"]').evaluate(node => { const box = node.getBoundingClientRect(); return { width: box.width, height: box.height }; });
+        assert.deepEqual(drawn, { width: 0, height: 0 }, "and the CSS leaves no empty ring where it was");
+    } finally { await page.close(); }
+});
+
+// The same choice as the draw's fallback (`skipUsable() ? skip : bar`): a usable skip pill takes focus before the scrubber, as Apple's pill does.
+test("a focused Show Up Next that hides while Skip Credits is usable hands focus to the pill (#698)", async () => {
+    const { page } = await open();
+    try {
+        await reachUpNext(page);
+        await show(page, { ...playing(TRACKS), episodes: false, skipMarker: { kind: "credits", startSeconds: 7000, endSeconds: 7200 }, positionSeconds: 7010 });
+        assert.equal(await page.locator(".player-skip").isVisible(), true, "the pill is up");
+        assert.equal(await focused(page), await page.locator(".player-skip").getAttribute("data-focus"), "focus lands on the pill, not the scrubber");
+    } finally { await page.close(); }
+});
+
+// A guard, not a check of this PR's CSS: a load already focuses the overlay, before and after #698.
+test("guard: a load that hides a focused Show Up Next focuses the overlay", async () => {
+    const { page } = await open();
+    try {
+        await reachUpNext(page);
+        await show(page, { phase: "loading", title: "The Movie" });
+        assert.equal(await focused(page), "player");
     } finally { await page.close(); }
 });
 

@@ -2522,7 +2522,8 @@ test("refreshView sends the subtitles again in the order an Arabic catalog sorts
         r.controller.refreshView();
         const arabic = ids();
         assert.deepEqual([...arabic].sort(), [...english].sort(), "the same tracks");
-        assert.notDeepEqual(arabic, english, `the order follows Arabic collation: ${english.join(",")} -> ${arabic.join(",")}`);
+        // Arabic collation (Intl.Collator("ar")): الإسبانية (Spanish), الإنجليزية (English, both tracks), الفرنسية (French), اليابانية (Japanese).
+        assert.deepEqual(arabic, ["file:42:subtitle:4", "file:42:subtitle:0", "file:42:subtitle:1", "file:42:subtitle:3", "file:42:subtitle:2"], `the exact Arabic order, not merely a different one: ${english.join(",")} -> ${arabic.join(",")}`);
     } finally { setAppLanguage(null); r.controller.destroy(); }
 });
 

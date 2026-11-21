@@ -11,6 +11,7 @@ import { build } from "esbuild";
 import { type Browser, chromium, type Page } from "playwright";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
+import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "../../src/player/upNextPreview.ts";
 import { type MessageKey, translate, translateTv } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 
@@ -292,7 +293,7 @@ const center = (page: Page, selector: string): Promise<number> => page.locator(s
 const direction = (page: Page, selector: string): Promise<string> => page.locator(selector).first().evaluate(node => getComputedStyle(node).direction);
 const MIDDLE = 960;
 const NEXT = { contentId: "next", fileId: "43", title: "Nächste Folge", startSeconds: 0, episode: true as const };
-const promptView = (): Extract<PlaybackView, { phase: "playing" | "paused" }> => playing({ upNext: { next: NEXT, deck: [NEXT], countdown: 30, status: "Up Next" } });
+const promptView = (): Extract<PlaybackView, { phase: "playing" | "paused" }> => playing({ upNext: { next: NEXT, deck: [NEXT], countdown: 30, status: "Up Next" }, captions: { text: "A visible line", secondaryText: "", appearance: DEFAULT_APPEARANCE } });
 const PROMPT = { kind: "prompt" as const, remainingMs: 15_000, totalMs: 15_000, running: true, revision: 1 };
 
 test("in Arabic the player mirrors, and only the transport, the scrubber and its time row stay left to right", async () => {
@@ -511,16 +512,28 @@ test("a German catalog that lands while the end-of-playback card is up redraws i
 test("an Arabic catalog that lands while Up Next is up mirrors the panel and moves the caption box with it", async () => {
     const page = await open(undefined);
     const box = (): Promise<string> => page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
+    // The caption line must be drawn, with an area, inside the scaled preview (UP_NEXT_PREVIEW at upNextPreviewLeft), not merely start
+    // with the right translate: a trailing scale(0) or an empty line would leave nothing to read.
+    const insidePreview = async (rightToLeft: boolean): Promise<void> => {
+        const line = await page.locator(".player-captions span").first().evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, text: node.textContent }; });
+        const left = upNextPreviewLeft(1920, rightToLeft);
+        const preview = { left, top: UP_NEXT_PREVIEW.top, right: left + UP_NEXT_PREVIEW.width, bottom: UP_NEXT_PREVIEW.top + UP_NEXT_PREVIEW.height };
+        assert.equal(line.text, "A visible line");
+        assert.ok(line.right - line.left > 0 && line.bottom - line.top > 0, `the line has an area: ${JSON.stringify(line)}`);
+        assert.ok(line.left >= preview.left && line.right <= preview.right && line.top >= preview.top && line.bottom <= preview.bottom, `the line sits inside the preview ${JSON.stringify(preview)}: ${JSON.stringify(line)}`);
+    };
     try {
         await show(page, promptView());
         assert.equal(await direction(page, "section.player"), "ltr");
         assert.ok(await center(page, ".player-next-up .player-title") > MIDDLE, "English: the panel is on the right");
         assert.ok((await box()).startsWith("translate(180px, 112px)"), "English: the caption box sits over the preview on the left");
+        await insidePreview(false);
         await page.evaluate(strings => window.player.setLanguage("ar", strings), catalog("ar"));
         await page.waitForFunction(() => document.querySelector("section.player")?.getAttribute("dir") === "rtl");
         assert.equal(await direction(page, ".player-next-up"), "rtl");
         assert.ok(await center(page, ".player-next-up .player-title") < MIDDLE, "Arabic: the panel moves to the left");
         assert.ok((await box()).startsWith("translate(980px, 112px)"), `Arabic: the caption box moves with the preview to the right: ${await box()}`);
+        await insidePreview(true);
     } finally { await page.close(); }
 });
 

@@ -680,6 +680,11 @@
     color: #ffffff;
 }
 
+/* The display above outranks the hidden attribute, so a hidden button (Show Up Next with nothing next) would still draw its ring. */
+.player-transport .player-button[hidden] {
+    display: none;
+}
+
 .player-glyph {
     display: flex;
     align-items: center;
