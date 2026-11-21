@@ -128,6 +128,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The Details pills for the version and audio choices now read Version and Audio in the language you pick, as on Apple TV, instead of Versions and Audio Tracks in English (#728).
 - When a film's On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode". An episode whose next episode can't be found keeps that line (#741).
 - Choosing a subtitle that the TV draws itself, after subtitles were turned off or an app-drawn subtitle was showing, now shows it again. It used to stay selected but invisible (#735).
 - The Up Next card now treats an empty episode still link from the server as no still, and shows the episode's backdrop instead of blank art (#731).
