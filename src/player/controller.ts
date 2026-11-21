@@ -449,6 +449,7 @@ interface Attempt {
         episode: PlayRequest | undefined;
         deckSettled: boolean;
         deckFailed: boolean;
+        windowRetried: boolean;
         deck: PlayRequest[];
         /** Successor whose catalog presentation was requested. Ticks must not read it again. */
         presentationFor: string | undefined;
@@ -680,7 +681,7 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, windowRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
@@ -3810,7 +3811,15 @@ export class PlaybackController implements PlayerControls {
         }
         if (attempt.promptDismissed || attempt.hidden || attempt.busy) return;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
-        else this.publishOffer(attempt);
+        else {
+            // Discovery starts at the first frame (#698), so a read that failed then is read once more when the window opens.
+            if (!attempt.offer.windowRetried && (attempt.offer.episodeFailed && !attempt.offer.episodeLoading || attempt.offer.deckFailed && !attempt.offer.deckLoading)) {
+                attempt.offer.windowRetried = true;
+                if (attempt.offer.episodeFailed) this.retryEpisode(attempt);
+                if (attempt.offer.deckFailed) this.retryDeck(attempt);
+            }
+            this.publishOffer(attempt);
+        }
     }
 
     private beginDiscovery(attempt: Attempt): void {

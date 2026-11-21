@@ -611,7 +611,6 @@ function sessionIds(server: FakePlayback): string[] {
     return [...server.sessions.keys()];
 }
 
-/** Plays MOVIE to the playing state: start, prepare, resume seek, play. */
 /**
  * playMovie with `setup` run after the start's own reads and before the first frame, where Up Next discovery begins (as Apple's lookup
  * starts once the item loads): a test that holds or fails a discovery read sets it up here.
@@ -630,6 +629,7 @@ async function playMovieWith<T>(r: Rig, request: PlayRequest, setup: () => T): P
     return result;
 }
 
+/** Plays MOVIE to the playing state: start, prepare, resume seek, play. */
 async function playMovie(r: Rig, request: PlayRequest = MOVIE): Promise<string> {
     r.controller.play(request);
     await r.h.clock.advance(0);
@@ -2070,6 +2070,46 @@ test("a movie with On Deck items offers Show Up Next from the start, without ope
     assert.equal(view.episodes, true, "the On Deck read ran at the first frame and found items");
     assert.equal("upNext" in view, false, "far from the end nothing opens by itself");
     assert.ok(r.h.fake.requests.some(q => q.path.startsWith("/home/sections")), "the On Deck read went out without Up Next being opened");
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    const opened = last(r.views);
+    assert.ok(opened.phase === "playing");
+    assert.equal(opened.upNext?.loading, undefined, "the first-frame read had already settled");
+    assert.equal(opened.upNext?.next?.contentId, opened.upNext?.deck[0]?.contentId, "a film offers its first On Deck item");
+    assert.ok((opened.upNext?.deck.length ?? 0) > 0);
+    assert.equal(opened.upNext?.deck.some(item => item.contentId === "movie:m0001"), false, "the playing film is not in its own deck");
+    r.controller.destroy();
+});
+
+test("a film with nothing On Deck hides Show Up Next once the first-frame read settles (#698)", async () => {
+    const r = await autoplayRig(false);
+    r.catalog.fileIds.set("movie:m0001", "42");
+    r.server.items.set("movie:m0001", ["42"]);
+    for (const section of r.catalog.households.get("p-owner")?.sections ?? []) section.items.length = 0;
+    await playMovie(r, { ...MOVIE, contentId: "movie:m0001", fileId: "42", title: "Movie 0001" });
+    await r.h.clock.advance(0);
+    assert.ok(r.h.fake.requests.some(q => q.path.startsWith("/home/sections")), "the On Deck read ran");
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.notEqual(view.episodes, true, "an empty settled deck hides the button");
+    r.controller.destroy();
+});
+
+test("a next-episode read that fails at the first frame is read again when the prompt window opens (#698)", async () => {
+    const r = await autoplayRig(false);
+    const path = "/watch/" + encodeURIComponent(EPISODE.contentId);
+    await playMovieWith(r, EPISODE, () => r.h.fake.script(path, problem(500, "internal_error", "Unavailable")));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    assert.equal("upNext" in view, false);
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const prompt = last(r.views);
+    assert.ok(prompt.phase === "playing");
+    assert.equal(prompt.upNext?.failed, undefined);
+    assert.equal(prompt.upNext?.next?.contentId, "episode:s1e13", "the card offers the next episode before the end");
     r.controller.destroy();
 });
 
