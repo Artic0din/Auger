@@ -4165,9 +4165,9 @@ export class PlaybackController implements PlayerControls {
         const fromDeck = episode === undefined && episodeReady && !offer.episodeLoading && !offer.deckFailed && offer.deck.length > 0;
         const displayed = fromDeck ? offer.deck[0] : episode;
         const loading = displayed === undefined && (offer.episodeLoading || (offer.deckLoading && !offer.episodeFailed));
-        // A film's failed On Deck read is no lookup error (PlayerViewModel.loadNextUpOnDeckItems empties the deck), so its Up Next
-        // reads upNext.noNext. An episode keeps the failure line for a failed lookup or On Deck read.
-        const failed = displayed === undefined && !loading && (offer.episodeFailed || (offer.deckFailed && attempt.request.episode === true));
+        // A failed On Deck read is no lookup error (PlayerViewModel.loadNextUpOnDeckItems empties the deck), so Up Next reads
+        // upNext.noNext. Only a failed next-episode lookup shows the failure line: the series may still have a next episode.
+        const failed = displayed === undefined && !loading && offer.episodeFailed;
         // An automatic prompt waits for a real choice. A loading or empty read must not shrink the video or move the reported position.
         if (!showManual && displayed === undefined && offer.deck.length === 0) {
             this.clearPrompt(attempt);
