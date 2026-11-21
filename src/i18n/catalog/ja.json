@@ -529,6 +529,7 @@
  "player.controls.scrubber": "タイムライン",
  "player.controls.showUpNext": "次に再生を表示",
  "player.error.connectionLost": "接続が切断されました\nAugerはサーバーに再接続できませんでした。接続を確認してから、もう一度お試しください。中断したところから再開します。",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "戻る",
  "player.hud.aspect": "アスペクト比",
  "player.hud.audio": "オーディオ",

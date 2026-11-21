@@ -95,6 +95,17 @@ test("Change account from the composed picker preserves saved credentials and re
     } finally { await tv.page.context().close(); await browser.close(); }
 });
 
+test("the profile picker shows the Auger lockup, not a SILO text mark", async () => {
+    const browser = await launchBrowser();
+    const tv = await openTv(browser, { app: "application" });
+    try {
+        await picker(tv);
+        const marks = await tv.page.locator('[data-screen="profiles"] .signin-wordmark, .profiles-flow .signin-wordmark').evaluateAll(nodes => nodes.map(node => ({ tag: node.tagName, alt: node.getAttribute("alt"), text: (node.textContent ?? "").trim() })));
+        assert.ok(marks.length > 0, "the picker carries a wordmark");
+        for (const mark of marks) assert.deepEqual(mark, { tag: "IMG", alt: "Auger", text: "" });
+    } finally { await tv.page.context().close(); await browser.close(); }
+});
+
 test("Change Account waits for a profile instead of reopening a remembered profile", async () => {
     const browser = await launchBrowser();
     const tv = await openTv(browser, { app: "application" });

@@ -529,6 +529,7 @@
  "player.controls.scrubber": "شريط التقدّم",
  "player.controls.showUpNext": "عرض التالي",
  "player.error.connectionLost": "انقطع الاتصال\nتعذّر على Auger إعادة الاتصال بالخادم. تحقق من اتصالك، ثم حاول مرة أخرى لمتابعة المشاهدة من حيث توقفت.",
+ "player.eyebrow.episode": "م{season}:ح{episode}",
  "player.goBack": "رجوع",
  "player.hud.aspect": "نسبة العرض",
  "player.hud.audio": "الصوت",

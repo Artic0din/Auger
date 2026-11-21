@@ -38,6 +38,14 @@ export interface Screen {
     readonly dispose?: () => void;
 }
 
+/** The Auger lockup every sign-in and profile screen shows above its content. */
+function augerWordmark(): HTMLElement {
+    const wordmark = el("img", "signin-wordmark");
+    wordmark.src = "img/auger-wordmark.png";
+    wordmark.alt = "Auger";
+    return wordmark;
+}
+
 export class ScreenHost {
     private readonly root: HTMLElement;
     private readonly wordmark: () => HTMLElement;
@@ -45,7 +53,7 @@ export class ScreenHost {
     private readonly behind: HTMLElement | undefined;
     private current: Screen | undefined;
 
-    constructor(root: HTMLElement, wordmark: () => HTMLElement = () => el("div", "signin-wordmark", "SILO"), behind?: HTMLElement) {
+    constructor(root: HTMLElement, wordmark: () => HTMLElement = augerWordmark, behind?: HTMLElement) {
         this.root = root;
         this.wordmark = wordmark;
         this.behind = behind;

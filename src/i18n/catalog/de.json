@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Zeitleiste",
  "player.controls.showUpNext": "Als Nächstes anzeigen",
  "player.error.connectionLost": "Verbindung verloren\nAuger konnte keine neue Verbindung zum Server herstellen. Prüfe deine Verbindung und versuche es dann erneut, um dort weiterzuschauen, wo du aufgehört hast.",
+ "player.eyebrow.episode": "S{season}:F{episode}",
  "player.goBack": "Zurück",
  "player.hud.aspect": "Seitenverhältnis",
  "player.hud.audio": "Audio",

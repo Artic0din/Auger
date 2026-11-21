@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Časová osa",
  "player.controls.showUpNext": "Zobrazit Následuje",
  "player.error.connectionLost": "Připojení ztraceno\nAplikaci Auger se nepodařilo znovu připojit k serveru. Zkontrolujte připojení a zkuste to znovu, přehrávání bude pokračovat tam, kde skončilo.",
+ "player.eyebrow.episode": "Ř{season}:D{episode}",
  "player.goBack": "Zpět",
  "player.hud.aspect": "Poměr stran",
  "player.hud.audio": "Zvuk",

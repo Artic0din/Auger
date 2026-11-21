@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Vremenska traka",
  "player.controls.showUpNext": "Prikaži „Slijedi“",
  "player.error.connectionLost": "Veza je prekinuta\nAuger se nije uspio ponovno povezati s poslužiteljem. Provjerite vezu i pokušajte ponovno kako biste nastavili ondje gdje ste stali.",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Natrag",
  "player.hud.aspect": "Omjer slike",
  "player.hud.audio": "Zvuk",

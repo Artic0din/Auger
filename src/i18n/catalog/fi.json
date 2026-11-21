@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Aikajana",
  "player.controls.showUpNext": "Näytä Seuraavaksi",
  "player.error.connectionLost": "Yhteys katkesi\nAuger ei saanut yhteyttä palvelimeen uudelleen. Tarkista yhteys ja yritä sitten uudelleen jatkaaksesi siitä, mihin jäit.",
+ "player.eyebrow.episode": "K{season}:J{episode}",
  "player.goBack": "Palaa",
  "player.hud.aspect": "Kuvasuhde",
  "player.hud.audio": "Ääni",

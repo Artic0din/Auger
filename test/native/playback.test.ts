@@ -1967,6 +1967,9 @@ test("Up Next appears at Apple's default 30 seconds and Keep Watching suppresses
     r.avplay.tick((duration - 30) * 1000);
     await r.h.clock.advance(0);
     assert.ok("upNext" in last(r.views), "panel should appear before EOF");
+    const shown = last(r.views);
+    assert.ok(shown.phase === "playing");
+    assert.deepEqual([shown.upNext?.countdown, shown.upNext?.countdownTotal], [30, 30], "the ring runs over the prompt's 30 seconds (Apple's nextUpPromptSeconds)");
     r.controller.cancelAutoplay();
     r.avplay.tick((duration - 10) * 1000);
     await r.h.clock.advance(0);
@@ -2051,6 +2054,7 @@ test("Show Up Next opens the manual panel on the next episode without a countdow
     assert.equal(view.upNext?.failed, undefined);
     assert.equal(view.upNext?.status, "Up Next");
     assert.equal(view.upNext?.countdown, undefined);
+    assert.equal(view.upNext?.countdownTotal, 100, "opened by hand, the ring would run over Apple's 100-second HUD threshold");
     assert.equal(view.upNext?.next?.contentId, "episode:s1e13");
     assert.equal(view.upNext?.next?.title, "Harbor Lights chapter 1.3");
     r.controller.playNext();
@@ -2324,6 +2328,32 @@ test("Up Next hides an unwatched episode synopsis when the profile asks and keep
     assert.match(visible.upNext?.next?.overview ?? "", /synthetic episode/);
     shown.controller.destroy();
 });
+
+// The S95C captures (#721 reviews): S1E25 to S2E1 showed no still, then the series backdrop, behind the card, though the season 2 row had a still.
+// Apple's backgroundArtwork (PlayerView.swift) takes the episode still first and the backdrop only when there is none.
+for (const itemStill of ["still", "none", "series"] as const) {
+    test(`a next episode from the next season keeps its season row's still behind the card (catalog item with ${itemStill === "still" ? "a still" : itemStill === "none" ? "no backdrop" : "the series backdrop"}) (#697)`, async () => {
+        const r = await rig("p-owner");
+        const catalog = new FakeCatalog();
+        catalog.episodeStills = true;
+        catalog.itemStill = itemStill;
+        catalog.fileIds.set("episode:s1e13", "43");
+        catalog.fileIds.set("episode:s1e21", "44");
+        r.h.fake.catalog = catalog;
+        r.server.items.set("episode:s1e13", ["43"]);
+        r.server.items.set("episode:s1e21", ["44"]);
+        await playMovie(r, { contentId: "episode:s1e13", fileId: "43", title: "Harbor Lights chapter 1.3", startSeconds: 0, episode: true, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 });
+        r.controller.showUpNext();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing");
+        assert.equal(view.upNext?.next?.contentId, "episode:s1e21", "the next episode is season 2's first");
+        assert.equal(view.upNext?.next?.backdropUrl, `/art/${encodeURIComponent("episode:s1e21")}-still.svg`, "its still is the season row's");
+        assert.equal(view.upNext?.next?.backdropIsEpisodeStill, true, "and the still keeps its episode-still flag, so the spoiler setting still applies");
+        r.controller.destroy();
+    });
+}
 
 test("On Deck blurs an unwatched episode still and leaves series art and a started episode sharp", async () => {
     const spoilers = (): EpisodeSpoilerSettings => ({ hidesImages: true, hidesOverviews: false });
@@ -4462,7 +4492,7 @@ test("an HLS playlist that needs variable substitution is refused before AVPlay 
         const view = last(r.views);
         assert.equal(view.phase === "error" && view.error.kind, "playback_failed");
         assert.equal(ops(r.h).at(-1), "DELETE /playback/S1", "the session is stopped");
-        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Silo playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
+        assert.deepEqual(warnings.mock.calls.map(call => call.arguments), [["Auger playback: the HLS playlist uses #EXT-X-DEFINE, which AVPlay cannot read (delivery server_transcode_hls)"]]);
         assert.equal(r.h.clock.scheduled, 0);
         r.controller.dismissError();
         assert.deepEqual(r.exits, ["error:playback_failed"]);

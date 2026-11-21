@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Шкала відтворення",
  "player.controls.showUpNext": "Показати «Далі»",
  "player.error.connectionLost": "З’єднання втрачено\nAuger не вдалося знову під’єднатися до сервера. Перевірте з’єднання й спробуйте ще раз, щоб продовжити з того самого місця.",
+ "player.eyebrow.episode": "С{season}:Е{episode}",
  "player.goBack": "Назад",
  "player.hud.aspect": "Пропорції",
  "player.hud.audio": "Аудіо",

@@ -529,6 +529,7 @@
  "player.controls.scrubber": "Barra de tiempo",
  "player.controls.showUpNext": "Mostrar “A continuación”",
  "player.error.connectionLost": "Conexión perdida\nAuger no pudo volver a conectarse al servidor. Revisa tu conexión y vuelve a intentarlo para continuar donde lo dejaste.",
+ "player.eyebrow.episode": "T{season}:E{episode}",
  "player.goBack": "Volver",
  "player.hud.aspect": "Relación de aspecto",
  "player.hud.audio": "Audio",
