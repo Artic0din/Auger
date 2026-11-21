@@ -293,7 +293,8 @@ for (const reduced of [false, true]) test(`Home series entry stays passive befor
         assert.equal(await primary.textContent(), "Play S1:E1");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
         for (const hold of holds.filter(hold => hold.path === paths[3])) hold.release();
-        await tv.eventually(async () => await tv.page.locator('[data-focus="version"]').getAttribute("aria-disabled") !== "true", "playback detail arrived");
+        // Subtitles enables once the playback choices land; a single-version episode keeps Versions disabled (#720).
+        await tv.eventually(async () => await tv.page.locator('[data-focus="subtitles"]').getAttribute("aria-disabled") !== "true", "playback detail arrived");
         await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(await tv.focused(), "next-episode");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
