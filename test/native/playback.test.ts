@@ -2262,7 +2262,10 @@ test("a failed On Deck read is not cached as nothing and a later read recovers",
     const failed = last(r.views);
     assert.ok(failed.phase === "playing");
     assert.equal(failed.upNext?.loading, undefined);
-    assert.equal(failed.upNext?.failed, true);
+    // PlayerViewModel.loadNextUpOnDeckItems (silo-apple main 71a3beb9): a film's failed On Deck read empties the deck and
+    // sets no lookup error, so Up Next reads Apple's upNext.noNext, not the next-episode failure line (#741).
+    assert.equal(failed.upNext?.failed, undefined, "a film's On Deck failure is not a failed lookup");
+    assert.deepEqual(failed.upNext?.deck, []);
     assert.equal(failed.upNext?.next, undefined);
     assert.notEqual(failed.upNext?.status, "Nothing to watch next");
     r.controller.showUpNext();
@@ -2271,6 +2274,19 @@ test("a failed On Deck read is not cached as nothing and a later read recovers",
     assert.ok(recovered.phase === "playing");
     assert.equal(recovered.upNext?.failed, undefined);
     assert.equal(recovered.upNext?.next?.contentId, "episode:s1e12");
+    r.controller.destroy();
+});
+
+test("an episode whose next-episode lookup fails still shows Up Next as failed", async () => {
+    const r = await autoplayRig(false);
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    // The next-episode lookup reads the series' seasons; its first-frame read and the retry on opening Up Next both fail.
+    await playMovieWith(r, EPISODE, () => r.h.fake.script("/catalog/series/series%3As1/seasons?image_size=small", unavailable, unavailable));
+    r.controller.showUpNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.upNext?.failed, true, "a failed episode lookup keeps today's failure line");
     r.controller.destroy();
 });
 
