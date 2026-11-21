@@ -1514,7 +1514,8 @@ appTest("natural episode EOF offers manual Play Now and Stop returns to origin",
     await prepare(tv);
     await tv.page.evaluate(() => { window.appHarness.avplay.tick(5399000); window.appHarness.avplay.listener?.onstreamcompleted(); });
     await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
-    assert.equal(await tv.page.getByRole("heading", { name: "Harbor Lights chapter 1.3", exact: true }).count(), 1);
+    // The heading names the episode as Apple's card does: its code, then its title (#697).
+    assert.equal(await tv.page.getByRole("heading", { name: "S1:E3 Harbor Lights chapter 1.3", exact: true }).count(), 1);
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
     assert.equal(tv.fake.requests.filter(r => r.method === "DELETE").length, 1);
     await tv.remote(413);

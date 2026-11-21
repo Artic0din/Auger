@@ -259,11 +259,12 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('[data-focus="play-next"]').textContent(), text("upNext.playNow", language));
             // PlayerView.swift:1466-1477 (silo-apple b54fefb1): Up Next's dismiss button is upNext.close, its countdown upNext.playingNextIn.
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
-            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 30 }));
+            assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 30 }));
+            assert.equal(await page.locator(".player-countdown-seconds").textContent(), language === "ar" ? "٣٠" : "30", "the ring writes the seconds in the language's digits");
             assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
             assert.equal(await page.locator('[data-focus="cancel-autoplay"]').textContent(), "Cancel autoplay", "no Apple key: English");
             await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 1 });
-            assert.equal(await page.locator(".player-error-text").textContent(), text("upNext.playingNextIn", language, { seconds: 1 }));
+            assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 1 }));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
             await show(page, playing({ skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 }, positionSeconds: 25 }));
             assert.equal(await page.locator(".player-skip-label").textContent(), text("introSkip.pill.skip", language));
@@ -424,11 +425,24 @@ for (const language of [undefined, "ar"]) {
             assert.equal(await center(page, ".player-next-up .player-title") > MIDDLE, language === undefined, "the panel is on the right in English, on the left in Arabic");
             const captions = await page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
             assert.ok(captions.startsWith(`translate(${language === undefined ? 180 : 980}px, 112px)`), `the caption box follows the preview: ${captions}`);
+            // PlayerView.actionRow's two rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move between rows (#721).
             await page.locator('[data-focus="play-next"]').focus();
             await remote(page, toEnd(page));
-            assert.equal(await focusedId(page), "keep-watching");
+            assert.equal(await focusedId(page), "play-next", "the ring takes no focus, so Play Now ends its row");
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "keep-watching", "Down goes to the second row");
+            await remote(page, toEnd(page));
+            assert.equal(await focusedId(page), "back", "Close follows Keep Watching in its row");
             await remote(page, toStart(page));
-            assert.equal(await focusedId(page), "play-next");
+            assert.equal(await focusedId(page), "keep-watching");
+            await remote(page, toEnd(page));
+            await remote(page, UP);
+            assert.equal(await focusedId(page), "play-next", "Up from Close goes to the first row, not back along the second");
+            await remote(page, DOWN);
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "deck:next", "Down from the second row goes to On Deck");
+            await remote(page, UP);
+            assert.equal(await focusedId(page), "keep-watching", "and Up comes back");
         } finally { await page.close(); }
     });
 
@@ -506,6 +520,16 @@ test("a German catalog that lands while the end-of-playback card is up redraws i
         await page.evaluate(strings => window.player.setLanguage("de", strings), catalog("de"));
         await page.waitForFunction(expected => document.querySelector(".player-next-up .player-title")?.textContent === expected, text("upNext.endOfPlayback", "de"));
         assert.equal(await page.locator(".player-next-eyebrow").textContent(), text("upNext.headingFinished", "de"));
+    } finally { await page.close(); }
+});
+
+// The background still leaves the video preview clear, and the preview sits on the right in Arabic (Apple's HStack mirrors), so the cut-out does too.
+test("in Arabic the background still's cut-out follows the preview to the right", async () => {
+    const page = await open("ar");
+    try {
+        await show(page, playing({ upNext: { next: { ...NEXT, backdropUrl: "/images/next.jpg" }, deck: [], countdown: 30, status: "Up Next" } }));
+        const clip = await page.locator(".player-next-backdrop").evaluate(node => getComputedStyle(node).clipPath);
+        assert.ok(clip.includes("980px 112px") && !clip.includes("180px 112px"), `the cut-out starts at x = 980: ${clip}`);
     } finally { await page.close(); }
 });
 
