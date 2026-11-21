@@ -128,6 +128,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- When a film's On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode". An episode whose next episode can't be found keeps that line (#741).
 - Choosing a subtitle that the TV draws itself, after subtitles were turned off or an app-drawn subtitle was showing, now shows it again. It used to stay selected but invisible (#735).
 - The Up Next card now treats an empty episode still link from the server as no still, and shows the episode's backdrop instead of blank art (#731).
 - On a film, Show Up Next now disappears when What's On Deck can't be loaded even after a second try, as on Apple TV, instead of staying for the whole film and opening an empty panel (#736).
