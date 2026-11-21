@@ -236,7 +236,8 @@ export type AudioTracks = { readonly state: "loading" } | { readonly state: "fai
 
 export type TrackChange =
     | { readonly state: "idle" }
-    | { readonly state: "changing"; readonly kind?: "quality" }
+    /** `subtitle`: a direct-play switch to an embedded subtitle's file (#538), during which the subtitle rows stay choosable. */
+    | { readonly state: "changing"; readonly kind?: "quality" | "subtitle" }
     /** The server refused the choice; the current plan keeps playing. */
     | { readonly state: "refused"; readonly message: string }
     | { readonly state: "failed" };
@@ -403,6 +404,15 @@ const MAX_RECOVERY_REPLANS = 3;
 const AUDIO_TRACK_SWITCH_FAILED = "audioTrackSwitchFailed";
 /** Waits before resending an identical start, replan or stop that got no usable answer. */
 const RESEND_DELAYS_MS = [1000, 2000];
+/**
+ * A direct-play subtitle switch whose answer is still unknown after RESEND_DELAYS_MS is sent again on this backoff, the last repeating, until
+ * the server answers: it replays its stored decision for the same replan_request_id (silo-server playback-protocol-v3 §2.3, #738).
+ */
+const SWITCH_REPLAY_DELAYS_MS = [5000, 10000, 15000, 30000];
+/** A replan whose lease is still held (409 replan_in_progress) can be replayed once the 15 s lease has run out (playback-protocol-v3 §2.3). */
+const REPLAN_LEASE_MS = 15000;
+/** A switch still unanswered this long after it was sent shows the subtitle failure note; on the S95C replans took 10 to 28 s (#738). */
+const SWITCH_NOTE_AFTER_MS = 60000;
 /** AVPlay's display coordinates are in the app's 1920x1080 space. */
 const SCREEN = { width: 1920, height: 1080 };
 /** Apple tvOS `nextUpHUDCountdownThresholdSeconds`: a manual panel counts down only inside this. */
@@ -1120,10 +1130,16 @@ export class PlaybackController implements PlayerControls {
             const latest = reporting.pendingSubtitle;
             if (trackId === (latest === undefined ? shownSubtitle(reporting, plan) : latest.id)) return;
             if (trackId !== undefined && !selectableSubtitle(plan, trackId)) return;
-            const applied = this.applyStreamSubtitle(reporting, trackId);
+            const applied = !loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(reporting, trackId);
             if (applied) reporting.subtitleOverride = { id: trackId };
             reporting.pendingSubtitle = { id: trackId, applied };
             this.showPlayback(reporting);
+            return;
+        }
+        const busy = this.active();
+        // A choice made while a direct-play subtitle replan is out is kept for when it settles, instead of being dropped.
+        if (busy?.started === true && subtitleSwitchOut(busy) && busy.plan !== undefined && (trackId === undefined || selectableSubtitle(busy.plan, trackId))) {
+            busy.pendingSubtitle = { id: trackId, applied: false };
             return;
         }
         const attempt = this.changeable();
@@ -1135,14 +1151,14 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const previous = shownSubtitle(attempt, plan);
-        if (this.applyStreamSubtitle(attempt, trackId)) {
+        if (!loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(attempt, trackId)) {
             attempt.subtitleOverride = { id: trackId };
             this.showPlayback(attempt);
             if (renditionSwitch(plan, trackId)) this.reportSubtitle(attempt, plan, trackId, previous);
             return;
         }
         const audio = plan.selectedTracks.audio;
-        this.changeTracks(attempt, plan, { ...(audio === undefined ? {} : { audio }), ...(trackId === undefined ? {} : { subtitle: { id: trackId } }) });
+        this.changeTracks(attempt, plan, { ...(audio === undefined ? {} : { audio }), ...(trackId === undefined ? {} : { subtitle: { id: trackId } }) }, loadsEmbeddedFile(plan, trackId) ? "subtitle" : undefined);
     }
 
     saveSeriesSubtitle(): void {
@@ -1687,10 +1703,13 @@ export class PlaybackController implements PlayerControls {
         });
         let decision: PlaybackDecision;
         try {
-            decision = await this.resend(attempt, () => {
+            const send = (): Promise<PlaybackDecision> => {
                 if (!current()) throw abortedError();
                 return this.deps.session.call({ ...replan, profileScoped: true, signal: attempt.signal });
-            });
+            };
+            decision = operation === "track_change" && buffering === undefined && subtitleSwitchOut(attempt)
+                ? await this.replaySwitch(attempt, plan, selected, send, current)
+                : await this.resend(attempt, send);
         } catch (error) {
             this.qualityUnsettled(attempt, buffering);
             if (!current()) {
@@ -1725,6 +1744,8 @@ export class PlaybackController implements PlayerControls {
             // A missing or unusable answer cannot prove that the server rolled the change back.
             if (operation === "track_change" && error instanceof ApiError && !error.transient && error.failure.kind !== "invalid_response" && !sessionGone(error)) {
                 if (attempt.reporting) this.restoreReportedSubtitle(attempt);
+                // A refusal proves the server kept its plan. A lost answer does not, so that case reconciles above instead.
+                if (this.embeddedSwitchFallback(attempt, plan, selected)) return;
                 this.changeSettled(attempt, { state: "failed" });
                 return;
             }
@@ -1845,7 +1866,8 @@ export class PlaybackController implements PlayerControls {
     /** The attempt, when nothing else is in flight: a pending seek or change makes a choice wait. */
     private changeable(): Attempt | undefined {
         const attempt = this.active();
-        return attempt !== undefined && attempt.started && !attempt.busy ? attempt : undefined;
+        // A subtitle switch whose answer is unknown leaves the plan uncertain, so no other change is sent over it until it is answered.
+        return attempt !== undefined && attempt.started && !attempt.busy && !subtitleSwitchOut(attempt) ? attempt : undefined;
     }
 
     private reportSubtitle(attempt: Attempt, plan: PlaybackPlan, trackId: string | undefined, previous: string | undefined): void {
@@ -2044,10 +2066,10 @@ export class PlaybackController implements PlayerControls {
         return false;
     }
 
-    private changeTracks(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
+    private changeTracks(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks, kind?: "subtitle"): void {
         this.clearThumbnails(attempt);
         attempt.busy = true;
-        attempt.change = { state: "changing" };
+        attempt.change = kind === undefined ? { state: "changing" } : { state: "changing", kind };
         this.showPlayback(attempt);
         void this.replan(attempt, plan, "track_change", attempt.sourceSeconds, undefined, selected);
     }
@@ -2358,6 +2380,59 @@ export class PlaybackController implements PlayerControls {
         }
         try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
         return true;
+    }
+
+    /**
+     * A direct-play switch to an embedded track replans for its file (#538). When the server refuses that replan (409 on the S95C while it
+     * stalled), the open stream and plan are unchanged, so AVPlay draws the track instead, as a failed file read does. Subtitle-only switches only.
+     */
+    private embeddedSwitchFallback(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): boolean {
+        const id = selected.subtitle?.id;
+        if (!subtitleSwitchOut(attempt) || id === undefined || !attempt.started || attempt.reporting || attempt.plan !== plan || !loadsEmbeddedFile(plan, id)) return false;
+        if (!this.applyStreamSubtitle(attempt, id)) return false;
+        try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        attempt.subtitleOverride = { id };
+        this.changeSettled(attempt, { state: "idle" });
+        return true;
+    }
+
+    /**
+     * Sends a direct-play subtitle switch's replan until the server answers it (#738). The usual resends come first; past them the answer is
+     * unknown, so AVPlay draws the chosen track over the open stream and playback carries on, while the identical request is sent again on
+     * SWITCH_REPLAY_DELAYS_MS and the server replays its decision. Only a refusal, a lost session or an unusable answer ends the loop early.
+     */
+    private async replaySwitch(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks, send: () => Promise<PlaybackDecision>, current: () => boolean): Promise<PlaybackDecision> {
+        const sentAt = this.deps.clock.now();
+        let noted = false;
+        for (let index = 0; ; index++) {
+            try {
+                return await send();
+            } catch (error) {
+                // A new play, a lost session or a replaced transport ends the replays; the caller settles the change.
+                if (!(error instanceof ApiError) || !unanswered(error) || error.aborted || !current()) throw error;
+                const quick = RESEND_DELAYS_MS[index];
+                if (quick === undefined && attempt.busy) this.drawSwitchLocally(attempt, plan, selected);
+                if (!noted && this.deps.clock.now() - sentAt >= SWITCH_NOTE_AFTER_MS) {
+                    noted = true;
+                    attempt.captionNotice = CAPTION_FAILED;
+                    this.showPlayback(attempt);
+                }
+                const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
+                const lease = error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0;
+                await sleep(this.deps.clock, Math.max(backoff, lease, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError);
+            }
+        }
+    }
+
+    /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it, and playback leaves the change's frozen state. */
+    private drawSwitchLocally(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
+        const id = selected.subtitle?.id;
+        if (id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id)) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+            attempt.subtitleOverride = { id };
+        }
+        attempt.busy = false;
+        this.showPlayback(attempt);
     }
 
     /** The first frame's half of `nativeCaptionFallback`. */
@@ -4274,6 +4349,18 @@ function renditionSwitch(plan: PlaybackPlan, trackId: string | undefined): boole
     if (plan.streamProtocol !== "hls") return false;
     if (trackId === undefined) return plan.subtitle.hlsRendition !== undefined || plan.subtitle.inventory.some((row) => row.hlsRendition !== undefined);
     return plan.subtitle.inventory.find((row) => row.trackId === trackId)?.hlsRendition !== undefined;
+}
+
+/** Direct play asks for embedded text as files the app draws (#538), so choosing one replans for its file; AVPlay's copy is only the fallback when the file fails. */
+/** A direct-play subtitle-only switch to an embedded track's file is in flight. */
+function subtitleSwitchOut(attempt: Attempt): boolean {
+    return attempt.change.state === "changing" && attempt.change.kind === "subtitle";
+}
+
+function loadsEmbeddedFile(plan: PlaybackPlan, trackId: string | undefined): boolean {
+    if (trackId === undefined || plan.delivery !== "original_http" || plan.streamProtocol === "hls") return false;
+    const row = plan.subtitle.inventory.find(entry => entry.trackId === trackId);
+    return row !== undefined && inStreamCandidate(plan, row);
 }
 
 function inStreamCandidate(plan: PlaybackPlan, row: SubtitleTrack): boolean {

@@ -783,7 +783,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
                     const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
                     const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
-                    const blocked = !aiPanel && (tracks.change.state === "changing" || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
+                    // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
+                    const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
+                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
                     button.setAttribute("aria-disabled", String(blocked));
                 }
             }
@@ -1476,7 +1478,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         } else if (key === "enter") {
             if (document.activeElement?.getAttribute("aria-disabled") === "true") return;
             const id = focusedId();
-            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing" && !AI_JOB_ACTIONS.includes(id ?? "")) {
+            const subtitleSwitch = (view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing" && view.tracks.change.kind === "subtitle"
+                && tabNames[column] === "Subtitles" && (id === OFF || view.tracks.subtitles.some(track => track.id === id));
+            if ((view.phase === "playing" || view.phase === "paused") && view.tracks.change.state === "changing" && !subtitleSwitch && !AI_JOB_ACTIONS.includes(id ?? "")) {
                 return;
             }
             const picker = openPicker();

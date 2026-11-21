@@ -1659,6 +1659,25 @@ for (const late of [false, true]) test(`an embedded track whose extracted file i
     } finally { r.controller.destroy(); }
 });
 
+test("choosing an embedded subtitle on direct play loads its file for the app to draw, not AVPlay's copy (#538)", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay's own French track is not used");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(last(r.views).phase === "playing" || last(r.views).phase === "paused" ? (last(r.views) as { captions?: { text: string } }).captions?.text : undefined, "Bonjour", "the app draws the French file");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "so Delay and Appearance stay");
+    } finally { r.controller.destroy(); }
+});
+
 test("an AVPlay row at the track's stream index in another language is not used for the fallback (#538)", async () => {
     const r = await rig();
     r.avplay.tracks = [
@@ -1681,32 +1700,338 @@ test("an AVPlay row at the track's stream index in another language is not used 
     } finally { r.controller.destroy(); }
 });
 
-test("returning to the artifact track through AVPlay keeps overlay-only tools hidden: AVPlay draws it now", async () => {
+// The S95C at dabdae65 (#729 review): switching Dutch to English mid-play sent one replan, which the stalled server answered 409 or never answered.
+// No file was read and nothing was drawn, and switching back while that replan was out sent nothing.
+async function embeddedSwitchRig(): Promise<{ r: Rig; id: string }> {
     const r = await rig();
     frenchInventory(r);
     r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
     r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    await settle(r);
+    return { r, id };
+}
+
+function assertAVPlayDrawsFrench(r: Rig): void {
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 3", "AVPlay draws French");
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle false");
+    assert.equal(r.avplay.state, "PLAYING", "the open stream keeps playing");
+    assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+    assert.equal(tracks(r).subtitleTools?.overlay, false, "Delay and Appearance hide for AVPlay's text");
+    assert.notEqual(tracks(r).change.state, "failed");
+    assert.deepEqual(r.exits, []);
+}
+
+test("an embedded subtitle switch whose replan is refused with 409 falls back to AVPlay's track (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assertAVPlayDrawsFrench(r);
+    } finally { r.controller.destroy(); }
+});
+
+// #738 design: the server stores each replan's decision under its replan_request_id and replays it to an identical request (silo-server
+// playback-protocol-v3 §2.3), so a switch whose answers are lost stays in flight and is re-sent; AVPlay draws the track meanwhile.
+test("an embedded subtitle switch whose answers are lost draws AVPlay's track, then adopts the replayed plan without reopening (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        // The fake commits the first request, then drops its answer and two replays.
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(path);
+        const opens = r.avplay.urls.length;
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        const sent = replans(r.h);
+        assert.equal(sent.length, 3);
+        assert.equal(new Set(sent.map(body => body.replan_request_id)).size, 1, "every send is the same replan");
+        const meanwhile = last(r.views);
+        assert.ok(meanwhile.phase === "playing", "playback carries on, with no reconnect");
+        assert.equal(r.avplay.urls.length, opens, "the stream is not reopened");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 3", "AVPlay draws French while the answer is unknown");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle false");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        const after = replans(r.h);
+        assert.equal(after.length, 4, "the replan is sent again");
+        assert.equal(after[3]?.replan_request_id, sent[0]?.replan_request_id, "with its original identity, so the server replays its decision");
+        assert.equal(r.avplay.urls.length, opens, "the replayed plan is adopted over the open stream");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle true", "AVPlay's text is hidden again");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "the app draws the file, so Delay and Appearance return");
+        const view = last(r.views);
+        assert.equal(view.phase === "playing" || view.phase === "paused" ? view.captions?.text : undefined, "Bonjour");
+        assert.equal(requests(r.h, "/playback/start").length, 1, "no new playback start");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("an embedded subtitle switch answered 409 replan_in_progress is sent again once the 15 s lease has run out (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.h.fake.script(path, problem(409, "replan_in_progress", "Replan in progress"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+        await r.h.clock.advance(14000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 1, "nothing is sent while the lease is held");
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the same replan goes again after 15 s");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
+    } finally { r.controller.destroy(); }
+});
+
+/** embeddedSwitchRig with a switch to French whose answers are lost: AVPlay draws French and the replan stays in flight. */
+async function lostSwitchRig(): Promise<{ r: Rig; id: string }> {
+    const { r, id } = await embeddedSwitchRig();
+    r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+    for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+    r.controller.selectSubtitle("file:42:subtitle:5");
+    await settle(r);
+    await r.h.clock.advance(1000);
+    await settle(r);
+    await r.h.clock.advance(2000);
+    await settle(r);
+    assert.equal(replans(r.h).length, 3);
+    return { r, id };
+}
+
+// #738 review: a new play, suspend and restore, and a seek each leave no stray replan and no change stuck in flight.
+test("a new play ends a lost embedded subtitle switch's replays (#738)", async () => {
+    const { r, id } = await lostSwitchRig();
+    try {
+        const oldReplans = (): number => requests(r.h, `/playback/${id}/replan`).length;
+        r.controller.play({ ...MOVIE, contentId: "movie-2", startSeconds: 0 });
+        await settle(r);
+        const sent = oldReplans();
+        await r.h.clock.advance(60000);
+        await settle(r);
+        assert.equal(oldReplans(), sent, "the old session's replan is not sent again");
+    } finally { r.controller.destroy(); }
+});
+
+test("a seek during a lost embedded subtitle switch keeps its position when the replayed plan is adopted (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        const opens = r.avplay.urls.length;
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assert.equal(r.avplay.urls.length, opens, "no reopen");
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.ok(view.positionSeconds >= 120, `the seek holds (${view.positionSeconds})`);
+    } finally { r.controller.destroy(); }
+});
+
+test("suspend and restore during a lost embedded subtitle switch leave no change stuck in flight (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.suspend();
+        await settle(r);
+        r.controller.restore();
+        await settle(r);
+        if (r.avplay.calls.some(call => call.startsWith("restore"))) { r.avplay.finishRestore(); await settle(r); }
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        await r.h.clock.advance(60000);
+        await settle(r);
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused", `playing after restore (${view.phase})`);
+        assert.notEqual(tracks(r).change.state, "changing", "the switch is settled, not left in flight");
+        const sent = replans(r.h).length;
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(replans(r.h).length, sent + 1, "a later choice is sent, not held behind a dead switch");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a switch the server keeps answering replan_in_progress shows the subtitle failure note after 60 s and keeps replaying at most every 30 s (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        r.h.fake.script(path, ...Array.from({ length: 12 }, () => problem(409, "replan_in_progress", "Replan in progress")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(45000);
+        await settle(r);
+        const early = last(r.views);
+        assert.notEqual(early.phase === "playing" || early.phase === "paused" ? early.captions?.status : undefined, "failed", "no note within the usual window");
+        await r.h.clock.advance(20000);
+        await settle(r);
+        const late = last(r.views);
+        assert.equal(late.phase === "playing" || late.phase === "paused" ? late.captions?.status : undefined, "failed", "the failure note shows past 60 s");
+        const before = replans(r.h).length;
+        await r.h.clock.advance(30000);
+        await settle(r);
+        assert.equal(replans(r.h).length, before + 1, "the replan is still replayed, at most every 30 s");
+        assert.equal(r.avplay.state, "PLAYING");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("while a lost embedded subtitle switch is unresolved, other track changes wait for its answer (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(path);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        r.controller.selectAudio("file:42:audio:1");
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(replans(r.h).length, 3, "nothing else is sent over a plan the server may have replaced");
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        const sent = replans(r.h);
+        assert.equal(sent.length, 5, "the replay, then the subtitle chosen meanwhile");
+        assert.equal(sent[4]?.failed_plan_id === sent[0]?.failed_plan_id, false, "sent with the adopted plan's identity");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "the later choice wins");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+test("a refused audio change that carries the drawn embedded subtitle keeps the app's captions (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectAudio("file:42:audio:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay does not take over the subtitle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "Delay and Appearance stay");
+        assert.equal(tracks(r).change.state, "failed", "the audio change fails as before");
+        const view = last(r.views);
+        assert.equal(view.phase === "playing" || view.phase === "paused" ? view.captions?.text : undefined, "Forced", "the app keeps drawing the subtitle");
+    } finally { r.controller.destroy(); }
+});
+
+test("a refused embedded subtitle switch with no AVPlay row for it fails the change and keeps playing (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.avplay.tracks = [];
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).change.state, "failed");
+        assert.equal(r.avplay.state, "PLAYING");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "the subtitle that was showing stays chosen");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a subtitle chosen while an embedded subtitle switch succeeds is applied after it (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        const hold = r.h.fake.hold(path);
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        const change = tracks(r).change;
+        assert.equal(change.state === "changing" && change.kind, "subtitle", "the screen can tell a subtitle switch is out");
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+        hold.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the later choice is sent once the first settles");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "and it takes effect");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false);
+    } finally { r.controller.destroy(); }
+});
+
+test("switching back while a failing embedded subtitle replan is out sends a fresh replan afterwards (#538)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const path = `/playback/${id}/replan`;
+        const hold = r.h.fake.hold(path);
+        r.h.fake.script(path, problem(409, "conflict", "Conflict"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        hold.release();
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the switch back is not dropped");
+        assert.equal((replans(r.h)[1]?.selected_tracks as { subtitle?: { id?: string } } | undefined)?.subtitle?.id, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
+test("returning to the first embedded track on direct play loads its file again, not AVPlay's copy (#538)", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    const forced = { delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } } as const;
+    r.server.next.push(forced);
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" }, { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     try {
         await playMovie(r, { ...MOVIE, startSeconds: 0 });
         await settle(r);
         assert.equal(tracks(r).subtitleTools?.overlay, true);
+        const opens = r.avplay.urls.length;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
         r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.server.next.push(forced);
         r.controller.selectSubtitle("file:42:subtitle:1");
         await settle(r);
-        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2", "AVPlay draws the track again");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "AVPlay draws neither track");
+        assert.equal(r.avplay.urls.length, opens, "the open stream is kept");
         assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
-        assert.equal(tracks(r).subtitleTools?.overlay, false);
+        assert.equal(tracks(r).subtitleTools?.overlay, true);
     } finally { r.controller.destroy(); }
 });
 
-test("a native subtitle selected from an Off plan hides overlay-only tools", async () => {
+test("an embedded subtitle chosen from an Off plan on direct play loads its file, so Delay and Appearance show (#538)", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
     r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
     await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     r.controller.selectSubtitle("file:42:subtitle:1");
-    assert.equal(r.avplay.calls.includes("setSelectTrack TEXT 4"), true);
-    assert.equal(tracks(r).subtitleTools?.overlay, false);
+    await settle(r);
+    assert.equal(r.avplay.calls.includes("setSelectTrack TEXT 4"), false);
+    assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    assert.equal(tracks(r).subtitleTools?.overlay, true);
     r.controller.destroy();
 });
 
@@ -2176,18 +2501,20 @@ test("an original-file embedded text switch clears sidecar captions", async () =
     r.controller.destroy();
 });
 
-test("an original-file embedded text track selects the open TEXT row and does not replan", async () => {
+test("an original-file embedded text track is loaded as a file through one replan that keeps the open stream (#538)", async () => {
     const r = await rig();
     r.server.next.push({ timeline: STREAM_TIMELINE });
     await playMovie(r, { ...MOVIE, startSeconds: 0 });
     r.avplay.tracks = [
         { index: 4, type: "TEXT", extra_info: "{\"track_num\":\"0\",\"track_lang\":\"eng\",\"subtitle_type\":\"0\",\"fourCC\":\"TTML\"}" },
     ];
+    r.server.next.push({ timeline: STREAM_TIMELINE, subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     const calls = r.avplay.calls.length;
     r.controller.selectSubtitle("file:42:subtitle:1");
     await settle(r);
-    assert.deepEqual(r.avplay.calls.slice(calls), ["getTotalTrackInfo", "setSelectTrack TEXT 4"]);
-    assert.equal(replans(r.h).length, 0);
+    assert.equal(r.avplay.calls.slice(calls).some(call => call.startsWith("open") || call.startsWith("setSelectTrack TEXT")), false, "no reopen and no AVPlay text");
+    assert.equal(replans(r.h).length, 1);
     assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
     assert.equal(last(r.views).phase, "playing");
     r.controller.destroy();
