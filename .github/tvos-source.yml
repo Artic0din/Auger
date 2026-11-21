@@ -9,3 +9,4 @@ require:
   - src/*.css
   - src/app.ts
   - app/index.html
+  - src/i18n/catalog/**

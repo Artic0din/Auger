@@ -29,7 +29,7 @@ the diff.
 silo-apple commit: `<sha>`
 
 - `tvOS/Screens/.../View.swift:NN-NN`: what this change ports from it
-<!-- Required when this change touches src/ui, src/player, src/*.css, src/app.ts or app/index.html: cite each Swift file
+<!-- Required when this change touches src/ui, src/player, src/*.css, src/app.ts, app/index.html or src/i18n/catalog: cite each Swift file
 and line range this change ports, read before writing code (AGENTS.md "Parity
 delivery gates"). See "Port from the tvOS source" in CONTRIBUTING.md. -->
 
