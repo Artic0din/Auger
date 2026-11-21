@@ -24,7 +24,7 @@ import { durationText } from "../i18n/duration.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
+import { detailDate, episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { spinner } from "./marquee.ts";
 import { defaultArtwork } from "./defaultArtwork.ts";
@@ -544,7 +544,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     if (directors !== undefined) facts.push({ label: translate("detail.director"), value: directors });
     const writers = creditLine(crew, ["writer", "screenplay", "story"]);
     if (writers !== undefined) facts.push({ label: writerFactLabel(crew), value: writers });
-    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: fact.value })));
+    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: "date" in fact ? detailDate(fact.date) : fact.value })));
     // TVDetailFactsSection: the "Details" header always shows; only the facts grid hides when empty.
     const factsPanel = el("div", "details-facts");
     factsPanel.setAttribute("aria-label", translate("detail.details"));
