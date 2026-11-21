@@ -2260,6 +2260,7 @@ for (const itemStills of [true, false]) {
         assert.ok(view.phase === "playing");
         assert.equal(view.upNext?.next?.contentId, "episode:s1e21", "the next episode is season 2's first");
         assert.equal(view.upNext?.next?.backdropUrl, `/art/${encodeURIComponent("episode:s1e21")}-still.svg`, "its still is the season row's");
+        assert.equal(view.upNext?.next?.backdropIsEpisodeStill, true, "and the still keeps its episode-still flag, so the spoiler setting still applies");
         r.controller.destroy();
     });
 }

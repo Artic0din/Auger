@@ -847,7 +847,8 @@ test("Up Next captures remote input, preserves focus and exposes Keep Watching a
         assert.equal(await focused(page), "keep-watching");
         await remote(page, ENTER);
         assert.deepEqual(await commands(page), ["keepWatching"]);
-        await remote(page, DOWN);
+        // Close shares Keep Watching's row (PlayerView.actionRow), and Down from that row enters On Deck (#721).
+        await remote(page, RIGHT);
         assert.equal(await focused(page), "back");
         await remote(page, DOWN);
         assert.equal(await focused(page), "deck:deck-0");

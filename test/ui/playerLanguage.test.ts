@@ -424,11 +424,24 @@ for (const language of [undefined, "ar"]) {
             assert.equal(await center(page, ".player-next-up .player-title") > MIDDLE, language === undefined, "the panel is on the right in English, on the left in Arabic");
             const captions = await page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
             assert.ok(captions.startsWith(`translate(${language === undefined ? 180 : 980}px, 112px)`), `the caption box follows the preview: ${captions}`);
+            // PlayerView.actionRow's two rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move between rows (#721).
             await page.locator('[data-focus="play-next"]').focus();
             await remote(page, toEnd(page));
-            assert.equal(await focusedId(page), "keep-watching");
+            assert.equal(await focusedId(page), "play-next", "the ring takes no focus, so Play Now ends its row");
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "keep-watching", "Down goes to the second row");
+            await remote(page, toEnd(page));
+            assert.equal(await focusedId(page), "back", "Close follows Keep Watching in its row");
             await remote(page, toStart(page));
-            assert.equal(await focusedId(page), "play-next");
+            assert.equal(await focusedId(page), "keep-watching");
+            await remote(page, toEnd(page));
+            await remote(page, UP);
+            assert.equal(await focusedId(page), "play-next", "Up from Close goes to the first row, not back along the second");
+            await remote(page, DOWN);
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "deck:next", "Down from the second row goes to On Deck");
+            await remote(page, UP);
+            assert.equal(await focusedId(page), "keep-watching", "and Up comes back");
         } finally { await page.close(); }
     });
 

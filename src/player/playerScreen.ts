@@ -1606,13 +1606,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             }
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
-            const buttons = [next, keep, cancelAutoplay, retry, back, ...Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))].filter(button => !button.hidden);
-            const index = buttons.findIndex(button => button === document.activeElement);
+            // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button.
+            const rows = [[next, retry], [keep, cancelAutoplay, back], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+                .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
+            const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
+            const current = rows[row];
+            const column = current?.findIndex(button => button === document.activeElement) ?? -1;
             if (key === "stop") controls.back();
             else if (key === "back") controls.keepWatching();
-            else if (key === "enter") (buttons[index] ?? buttons[0])?.click();
-            else if (layout === "up" || layout === "left") buttons[Math.max(0, index - 1)]?.focus();
-            else if (layout === "down" || layout === "right") buttons[Math.min(buttons.length - 1, index + 1)]?.focus();
+            else if (key === "enter") (current?.[column] ?? rows[0]?.[0])?.click();
+            else if (current === undefined) rows[0]?.[0]?.focus();
+            else if (layout === "left" || layout === "right") current[Math.max(0, Math.min(current.length - 1, column + (layout === "left" ? -1 : 1)))]?.focus();
+            else if (layout === "up" || layout === "down") rows[Math.max(0, Math.min(rows.length - 1, row + (layout === "up" ? -1 : 1)))]?.[0]?.focus();
             return;
         }
         if (view.phase === "error") {
