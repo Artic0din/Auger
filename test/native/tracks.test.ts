@@ -2440,6 +2440,35 @@ test("a route failure while the switch's request is out wakes the next replay as
     } finally { r.controller.destroy(); }
 });
 
+test("a switch answer that reopens the stream ends the route failure's deadline for later switches (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // The answer moves the stream, so it is adopted with a reopen rather than kept.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing");
+        await r.h.clock.advance(31000);
+        await settle(r);
+        // A later switch whose first answer is lost must replay, not end on the old deadline.
+        r.server.next.push({ delivery: "original_http", subtitle: 1, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
 test("a replay refused during a held seek leaves the seek holding the controls, so a second seek waits (#738)", async () => {
     const { r, id } = await lostSwitchRig();
     try {

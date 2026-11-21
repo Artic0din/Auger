@@ -2229,6 +2229,8 @@ export class PlaybackController implements PlayerControls {
         attempt.recoveryRetryAt = 0;
         attempt.change = { state: "idle" };
         attempt.switchLocal = false;
+        // A new transport ends any route failure's wait, so its deadline cannot reach a later switch.
+        attempt.switchFailedAt = undefined;
         attempt.busy = false;
         attempt.seekFailure = undefined;
         attempt.changeFailure = undefined;
