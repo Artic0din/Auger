@@ -529,6 +529,7 @@
  "player.controls.scrubber": "타임라인",
  "player.controls.showUpNext": "다음 재생 보기",
  "player.error.connectionLost": "연결 끊김\nSilo에서 서버에 다시 연결할 수 없어요. 연결을 확인한 후 다시 시도하면 중단한 곳부터 이어서 볼 수 있어요.",
+ "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "돌아가기",
  "player.hud.aspect": "화면 비율",
  "player.hud.audio": "오디오",

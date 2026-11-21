@@ -60,7 +60,13 @@ export async function nextEpisode(read: Read, contentId: string, effectiveFileId
             if (version === undefined) continue;
             const resume = detail.watch?.played === false ? resumeSeconds(detail.watch.positionSeconds, version.durationSeconds || undefined) : undefined;
             const watch = presentationWatch(detail.watch);
-            return { contentId: detail.id, fileId: version.fileId, title: detail.title, startSeconds: resume ?? 0, episode: true, ...(seriesTitle === undefined ? {} : { seriesTitle }), seasonNumber: detail.seasonNumber, episodeNumber: detail.episodeNumber, ...(watch === undefined ? {} : { watch }) };
+            // The season row already has the synopsis and still (Apple's PlayerNextUpEpisode reads them there), so the card needs no second read.
+            return {
+                contentId: detail.id, fileId: version.fileId, title: detail.title, startSeconds: resume ?? 0, episode: true, ...(seriesTitle === undefined ? {} : { seriesTitle }), seasonNumber: detail.seasonNumber, episodeNumber: detail.episodeNumber, ...(watch === undefined ? {} : { watch }),
+                ...(row.overview === undefined ? {} : { overview: row.overview }),
+                ...(row.stillUrl === undefined ? {} : { backdropUrl: row.stillUrl }),
+                ...(row.stillIsEpisodeStill === undefined ? {} : { backdropIsEpisodeStill: row.stillIsEpisodeStill }),
+            };
         }
     }
     return undefined;
