@@ -823,6 +823,23 @@ for (const complete of [false, true]) {
     });
 }
 
+// Up and Down move between rows; on the last row there is none below, so Down leaves focus where it is (#721 review).
+test("Down on the last Up Next row keeps focus where it is, on a later On Deck card or on Close", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const };
+        const deck = [0, 1, 2].map(index => ({ contentId: `deck-${index}`, fileId: `f${index}`, title: `Deck ${index}`, startSeconds: 0 }));
+        await show(page, { ...playing(TRACKS), upNext: { next, deck, countdown: undefined, status: "Up Next" } });
+        await page.locator('[data-focus="deck:deck-1"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:deck-1", "the second On Deck card keeps focus");
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: undefined, status: "Up Next" } });
+        await page.locator('[data-focus="back"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "back", "with no On Deck, Close is on the last row and keeps focus");
+    } finally { await page.close(); }
+});
+
 test("Up Next captures remote input, preserves focus and exposes Keep Watching and On Deck", async () => {
     const { page } = await open();
     const candidate = { contentId: "next", fileId: "43", title: "Next episode", overview: "The next chapter.", startSeconds: 0, episode: true as const };

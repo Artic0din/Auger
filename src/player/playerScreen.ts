@@ -1606,7 +1606,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             }
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
-            // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button.
+            // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
             const rows = [[next, retry], [keep, cancelAutoplay, back], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
@@ -1617,7 +1617,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else if (key === "enter") (current?.[column] ?? rows[0]?.[0])?.click();
             else if (current === undefined) rows[0]?.[0]?.focus();
             else if (layout === "left" || layout === "right") current[Math.max(0, Math.min(current.length - 1, column + (layout === "left" ? -1 : 1)))]?.focus();
-            else if (layout === "up" || layout === "down") rows[Math.max(0, Math.min(rows.length - 1, row + (layout === "up" ? -1 : 1)))]?.[0]?.focus();
+            // With no row that way, focus stays where it is; a row change lands on that row's first button.
+            else if (layout === "up" || layout === "down") rows[row + (layout === "up" ? -1 : 1)]?.[0]?.focus();
             return;
         }
         if (view.phase === "error") {
