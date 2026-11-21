@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { currentChapter, planStats, videoOptions } from "../../src/player/playerHUD.ts";
+import { currentChapter, planStats, statLabel, videoOptions } from "../../src/player/playerHUD.ts";
 import { decodePlayerChapters } from "../../src/contracts/v2/chapters.ts";
 import { HUDState } from "../../src/player/hudState.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -186,5 +186,27 @@ test("the play method reads in the shown language, as Apple's playMethodLabel do
             ["Vom Server neu verpackt", "Vom Server neu verpackt · MP4"],
             ["Vom Server transcodiert", "Vom Server transcodiert · MP4"],
         ]);
+    } finally { setAppLanguage(null); }
+});
+
+// AetherPlaybackStatsProjection.phaseLabel and deliveryLabel (silo-apple main 71a3beb9, lines 60-70 and 529-542), and
+// PlaybackStats' Diagnostics row (PlaybackStats.swift:121): the status, the delivery and the Diagnostics label read the catalog.
+test("Stats' status, delivery and Diagnostics read in the shown language, as Apple's projection does", () => {
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const statuses = (["Playing", "Paused", "Rebuffering"] as const).map(status => planStats(planWith(() => undefined), { audio: undefined, subtitle: undefined, speed: 1, status, host: undefined }).stream[0]?.value);
+        assert.deepEqual(statuses, ["Wird abgespielt", "Pausiert", "Wird erneut gepuffert"]);
+        const deliveries = (["original_http", "server_remux_progressive", "server_remux_hls", "server_transcode_hls"] as const).map(delivery =>
+            planStats(planWith(plan => { plan.delivery = delivery; }), { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined }).engine[0]);
+        assert.deepEqual(deliveries, [
+            { label: "Delivery", value: "Original-HTTP" },
+            { label: "Delivery", value: "Server-Remux" },
+            { label: "Delivery", value: "Server-Remux (HLS)" },
+            { label: "Delivery", value: "Server-Transkodierung (HLS)" },
+        ]);
+        const notes = planStats(planWith(plan => { plan.decision_reason = "video_codec_unsupported"; }), { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined }).playback.at(-1);
+        assert.deepEqual(notes, { label: "Diagnostics", value: "Video codec unsupported" }, "the label stays the row's id; the reason is server text");
+        assert.equal(statLabel("Diagnostics"), "Diagnose");
+        assert.equal(statLabel("Delivery"), "Bereitstellung");
     } finally { setAppLanguage(null); }
 });

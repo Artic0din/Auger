@@ -244,13 +244,15 @@ for (const media of ['movie:m0001', 'series:s1']) detailTest(`${media} hero Up r
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
     catalog.fileIds.set('episode:s1e11', '42');
     await tv.page.locator(`[data-section="recently_added"] [data-focus="${media}"]`).first().click();
-    await tv.page.locator('[data-focus="version"][aria-disabled="false"]').waitFor();
+    await tv.page.locator('[data-focus="subtitles"][aria-disabled="false"]').waitFor();
     // A series' episode answers repaint the primary action as loading; start once they have landed.
     if (media.startsWith('series')) await settledEpisodePrefetch(tv); else await answersPainted(tv);
     await answersPainted(tv);
     const primary = media.startsWith('movie') ? 'resume' : 'next-episode';
     const below = media.startsWith('movie') ? '.details-people [data-focus]' : '[data-focus="season:1"]';
-    const keys = [primary, ...(media.startsWith('movie') ? ['play'] : []), 'version', 'audio', 'subtitles', 'watchlist', 'more'];
+    // The episode has one version, so its Versions is disabled and takes no focus (#720); the movie's two versions keep it.
+    if (media.startsWith('series')) assert.equal(await tv.page.locator('[data-focus="version"]').getAttribute('aria-disabled'), 'true');
+    const keys = [primary, ...(media.startsWith('movie') ? ['play', 'version'] : []), 'audio', 'subtitles', 'watchlist', 'more'];
     for (const key of keys) {
         await tv.page.locator(`.browse-actions [data-focus="${key}"]`).focus();
         if (key === 'more') {
@@ -278,6 +280,9 @@ for (const media of ['movie:m0001', 'series:s1']) detailTest(`${media} hero Up r
 
 detailTest('hero Up falls back from vanished Start Over and disabled selectors to Play then Watchlist', async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    // Every selector must start live to take focus: the movie's tracked file gives Audio its tracks, and a second file gives
+    // Versions a choice (#720). Episode 2 is the one shown when the selectors are checked.
+    for (const id of ['episode:s1e11', 'episode:s1e12']) { catalog.fileIds.set(id, '42'); catalog.moreFileIds.set(id, ['43']); }
     const body = catalog.route('GET', '/catalog/items/episode%3As1e11', 'p-owner')?.body as Record<string, unknown>;
     await tv.page.route('**/api/v2/catalog/items/episode%3As1e11?**', route => route.fulfill({ json: { ...body, user_data: { played: false, position_seconds: 120 } } }));
     await tv.page.route('**/api/v2/catalog/series/series%3As1/seasons/2/episodes?**', route => route.fulfill({ json: { items: [] } }));
@@ -1367,7 +1372,8 @@ detailTest('Hero uses measured series colours and genres only at rest', async tv
     // The page's one Play claim runs until the viewer moves by key, so a script `.focus()` can lose to a late repaint; Right is what a viewer presses.
     await tv.eventually(async () => await tv.focused() === "next-episode", "Play focused");
     await tv.remote(39);
-    await tv.eventually(async () => await tv.focused() === "version", "Version focused by remote");
+    // The episode's single version leaves Versions disabled (#720), and its file lists no audio tracks, so Right passes both.
+    await tv.eventually(async () => await tv.focused() === "subtitles", "Subtitles focused by remote");
     assert.equal(await readLive(tv, () => {
         const node = document.querySelector(".details-play");
         if (node === null || !node.isConnected) return null;
@@ -1925,7 +1931,8 @@ for (const [kind, id] of [['Movie', 'movie:m0001'], ['Episode', 'episode:s1e11']
         }, key, value => value.top >= 0 && value.bottom <= 1080, `${key} remains revealable`);
         assert.ok(revealed.top >= 0 && revealed.bottom <= 1080, JSON.stringify(revealed));
     }
-    for (const key of ['version', 'audio', 'subtitles']) {
+    // An episode's single version leaves Versions disabled (#720); the movie's two versions open its picker.
+    for (const key of [...(kind === 'Movie' ? ['version'] : []), 'audio', 'subtitles']) {
         await tv.page.locator(`[data-focus="${key}"]`).click();
         const rect = await readLive(tv, () => {
             const panel = document.querySelector(".details-track-popover");
@@ -2496,7 +2503,7 @@ for (const check of ['cast', 'caption', 'season', 'description', 'menu', 'metada
         await tv.page.route('**/api/v2/catalog/items/episode%3As1e11?**', route => route.fulfill({ json: { ...body, ratings: [{ name: 'TMDB', source: 'tmdb', score: 80, display: '80%' }] } }));
     }
     await tv.page.locator(`[data-section="recently_added"] [data-focus="${check === 'cast' || check === 'menu' ? 'movie:m0001' : 'series:s1'}"]`).first().click();
-    await tv.page.locator('[data-focus="version"][aria-disabled="false"]').waitFor();
+    await tv.page.locator('[data-focus="subtitles"][aria-disabled="false"]').waitFor();
     if (check === 'cast') {
         const rail = await readLive(tv, () => {
             const node = document.querySelector('.details-people');

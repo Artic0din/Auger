@@ -46,6 +46,8 @@ export class FakeCatalog implements CatalogRoutes {
     /** content id -> resume position in seconds. */
     readonly progress = new Map<string, number>();
     readonly fileIds = new Map<string, string>();
+    /** content id -> file ids of further versions after the first, for a title that offers a Versions choice. */
+    readonly moreFileIds = new Map<string, readonly string[]>();
     readonly removed = new Set<string>();
     /** Cards dismissed from Continue Watching and Next Up; other rows keep them. */
     readonly homeDismissed = new Set<string>();
@@ -382,7 +384,7 @@ export class FakeCatalog implements CatalogRoutes {
             overview: `A synthetic ${title.type} for the browse tests.`,
             runtime: 90,
             duration_seconds: 5400,
-            versions: title.type === "series" ? [] : [{ ...version, file_id: this.fileIds.get(id) ?? `f-${id}`, duration: 5400 }],
+            versions: title.type === "series" ? [] : [this.fileIds.get(id) ?? `f-${id}`, ...this.moreFileIds.get(id) ?? []].map(fileId => ({ ...version, file_id: fileId, duration: 5400 })),
             user_data: { watched_count: 0, unplayed_count: 1, in_progress_count: 0, played: false, position_seconds: this.progress.get(id), last_file_id: this.fileIds.get(id) ?? `f-${id}` },
         };
         if (title.type === "series") {

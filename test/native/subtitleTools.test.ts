@@ -9,6 +9,9 @@ import { decodeProviderStatus, decodeSearchResponse } from "../../src/contracts/
 import { connected, signIn } from "./support/harness.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { fixture, problem } from "./support/fakeSilo.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const FILE = "42";
 const PROVIDERS = "/subtitles/providers/status";
@@ -521,4 +524,35 @@ test("the settings contract the Settings screen accepts still loads subtitle pre
     assert.ok(paths.includes("/settings/subtitle-appearance/effective"));
     assert.ok(paths.includes(`/settings/values/effective?keys=${SYNC}`));
     display.destroy();
+});
+
+// SubtitleSearchMenu.swift:320 and PlayerViewModel.swift:9095 (silo-apple main 71a3beb9): the adding line and the not-set-up
+// reason read subtitleSearch.adding and subtitleSearch.notSetUpShort. They are worded when the view is read, so a language
+// file that lands later redraws them.
+test("the not-set-up reason and the adding line read in the shown language, and follow a language change", async () => {
+    const h = await signed();
+    const search = new SubtitleSearch(h.core.session, FILE, () => true, () => undefined);
+    h.fake.script(PROVIDERS, { status: 200, body: { ...available, enabled: false, state: "not_configured", providers: [] } });
+    await search.refresh();
+    assert.equal(search.view.unavailableReason, "Not set up on this server", "English is unchanged");
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(search.view.unavailableReason, "Auf diesem Server nicht eingerichtet");
+        await search.pick("en");
+        assert.equal(search.view.message, "Auf diesem Server nicht eingerichtet");
+        const adding = new SubtitleSearch(h.core.session, FILE, () => true, () => undefined);
+        h.fake.script(PROVIDERS, { status: 200, body: available });
+        h.fake.script(SEARCH, { status: 200, body: { results: [hit], warnings: [] } });
+        await adding.refresh();
+        await adding.pick("en");
+        const held = h.fake.hold(DOWNLOAD);
+        const pending = adding.download(hit.provider + ":" + hit.id);
+        assert.equal(adding.view.status, "Untertitel wird hinzugefügt …");
+        setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+        assert.equal(adding.view.status, "جارٍ إضافة الترجمة…", "a later language rewords the line already shown");
+        held.release();
+        await pending;
+        adding.destroy();
+    } finally { setAppLanguage(null); }
+    search.destroy();
 });
