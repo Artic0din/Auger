@@ -57,3 +57,14 @@ test("Home and the Movies, Series and For You tabs use Apple's points times the 
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+
+test("the profile menu uses Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await signedIn(tv);
+        await tv.page.locator('[data-focus="profiles"]').first().click();
+        await tv.page.locator(".skyline-selector:not([hidden]) .skyline-profile-title").waitFor();
+        assert.deepEqual(await tv.page.evaluate(unscaledText, ".skyline-selector"), []);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
