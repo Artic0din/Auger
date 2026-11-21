@@ -30,6 +30,8 @@ interface ProfileRoute {
     readonly sessionExpired?: boolean;
     /** The sign-in was opened from Change Account, so Back returns there. */
     readonly fromAccounts?: boolean;
+    /** Change Account's Add account: a new account, not a saved one to renew (TVLoginView.signInHeadline). */
+    readonly addingAccount?: boolean;
 }
 
 export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
@@ -98,8 +100,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             ...(account ? { username: account.username } : {}),
             onChangeAccount: () => showAccounts(),
             ...(route?.returnToAccounts ? { returnToAccounts: true } : {}),
-            // TVLoginView.signInHeadline: from Change Account with no saved account to renew.
-            ...(route?.fromAccounts && account === undefined ? { addingAccount: true } : {}),
+            ...(route?.addingAccount ? { addingAccount: true } : {}),
             ...(route?.sessionExpired ? { sessionExpired: true } : {}),
             ...(pickerRequested || route?.fromAccounts || route?.returnToAccounts ? { onCancel: () => showAccounts() } : {}),
             ...(chooseServer ? { chooseServer: true } : {}),
@@ -174,6 +175,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         const adding = account === undefined;
         showSignIn(undefined, adding && address === undefined, account, address, current, {
             fromAccounts: true,
+            ...(adding ? { addingAccount: true } : {}),
             returnToAccounts: adding || account?.needsSignIn === true,
             skipRemembered: account !== undefined && !current,
         });

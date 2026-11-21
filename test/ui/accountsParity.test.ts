@@ -41,6 +41,30 @@ for (const reduced of [false, true]) {
     }
 }
 
+// TVLoginView.signInHeadline (silo-apple main 71a3beb9, TVLoginView.swift:554-559): a saved account renewed from Change Account
+// keeps tvSignIn.title; only adding an account reads tvSignIn.addAccountTitle, also after the server's branding lands.
+test("a saved account signed in again from Change Account keeps Sign in to", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seedAccounts(tv, 1, [{ id: "renew", baseUrl: "@active", username: "renewme", profileCount: 1, needsSignIn: true, lastUsedAt: 10 }]);
+        await openChangeAccount(tv);
+        await tv.page.locator('[data-focus="renew"]').click();
+        await tv.page.locator("[data-server-headline]").waitFor();
+        assert.match(await tv.page.locator("[data-server-headline]").innerText(), /^Sign in to /);
+    });
+});
+
+test("branding that lands after Add an account's code screen keeps Add an account on", async () => {
+    await withSignedInTv(browser, async tv => {
+        await openChangeAccount(tv);
+        const hold = tv.fake.hold("/theme/branding");
+        tv.fake.script("/theme/branding", { status: 200, body: { server_name: "Family Cinema" } });
+        await tv.page.locator('[data-focus="add-account"]').click();
+        await tv.page.locator('[data-screen="code"]').waitFor();
+        hold.release();
+        await tv.eventually(async () => (await tv.page.locator("[data-server-headline]").innerText()) === "Add an account on Family Cinema", "the branded add-account headline");
+    });
+});
+
 test("server management rows use Settings focus and pressed motion and open on release", async () => {
     await withSignedInTv(browser, async tv => {
         await openSettingsAccounts(tv);
