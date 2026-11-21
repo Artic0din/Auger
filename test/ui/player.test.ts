@@ -3466,6 +3466,51 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
 
 // VideoPane (TVPlayerInfoHUD.swift:795-957, silo-apple e0337595): PICTURE holds Quality and Aspect, PLAYBACK holds Speed and
 // Auto-play next; subtitle timing lives only in the Subtitles pane's TIMING group (#1178).
+// HUDRowButtonStyle (TVPlayerInfoHUD.swift:450, 479, 482, silo-apple main 71a3beb9): a held panel row scales to 0.98, animated
+// easeOut(SiloTheme.fastDuration) = 0.12 s; Reduce Motion keeps the look and drops the animation.
+for (const reduced of [false, true]) {
+    test(`a held panel row scales to 0.98 as Apple's HUD rows do, in ${reduced ? "reduced" : "normal"} motion`, async () => {
+        const { page } = await open();
+        const quality = { choices: [{ id: "auto", label: "Auto" }, { id: "1080p", label: "1080p" }], selectedId: "auto" };
+        const hud = { chapters: [], chapterState: "ready" as const, stats: STATS, speeds: [1, 2], aspects: ["Fit", "Stretch"] as const, speed: 1, aspect: "Fit" as const, autoNext: true, busy: false };
+        const look = (key: string): Promise<{ scale: number; pressed: boolean; transitions: string[] }> => page.locator(`[data-focus="${key}"]`).evaluate(node => {
+            const css = getComputedStyle(node);
+            const transitions = node.getAnimations().filter((animation): animation is CSSTransition => animation instanceof CSSTransition && animation.transitionProperty === "scale")
+                .map(animation => `${animation.effect?.getTiming().duration}ms ${animation.effect?.getTiming().easing}`);
+            for (const animation of node.getAnimations()) animation.finish();
+            return { scale: (css.scale === "none" ? 1 : Number.parseFloat(getComputedStyle(node).scale)) * new DOMMatrix(css.transform).a, pressed: node.hasAttribute("data-pressed"), transitions };
+        });
+        const hold = (): Promise<void> => page.evaluate(() => { (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { keyCode: 13, bubbles: true, cancelable: true })); });
+        const release = (): Promise<void> => page.evaluate(() => { (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", { keyCode: 13, bubbles: true, cancelable: true })); });
+        try {
+            await page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+            await show(page, { ...playing({ ...TRACKS, quality, subtitleTools: ALL_TOOLS }), hud });
+            await openPanel(page);
+            await nextTab(page, 2);
+            for (const key of ["video-quality", "video-speed"]) {
+                await page.locator(`[data-focus="${key}"]`).focus();
+                const focusedLook = await look(key);
+                assert.equal(focusedLook.scale, 1, `${key}: a focused row does not scale`);
+                await hold();
+                const held = await look(key);
+                assert.equal(held.pressed, true);
+                assert.ok(Math.abs(held.scale - 0.98) < 1e-6, `${key}: held at 0.98, not ${held.scale}`);
+                assert.deepEqual(held.transitions, reduced ? [] : ["120ms ease-out"], `${key}: easeOut 0.12 s, none in Reduce Motion`);
+                await page.evaluate(() => { const node = document.activeElement as HTMLElement; node.blur(); node.focus(); });
+                await release();
+                assert.equal((await look(key)).scale, 1, `${key}: back to 1 once the press ends`);
+            }
+            await nextTab(page, 1);
+            const track = await focused(page);
+            assert.ok(track !== null);
+            await hold();
+            assert.ok(Math.abs((await look(track)).scale - 0.98) < 1e-6, `the track row ${track} is a HUD row too`);
+            await page.evaluate(() => { const node = document.activeElement as HTMLElement; node.blur(); node.focus(); });
+            await release();
+        } finally { await page.close(); }
+    });
+}
+
 test("Video groups Quality and Aspect under PICTURE and Speed and Auto-play next under PLAYBACK, with no Subtitle delay", async () => {
     const { page } = await open();
     const quality = { choices: [{ id: "auto", label: "Auto" }, { id: "1080p", label: "1080p" }], selectedId: "auto" };
