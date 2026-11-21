@@ -3500,6 +3500,17 @@ for (const reduced of [false, true]) {
                 await release();
                 assert.equal((await look(key)).scale, 1, `${key}: back to 1 once the press ends`);
             }
+            // Select released on the row itself, with no blur first, also ends the press.
+            await page.locator('[data-focus="video-speed"]').focus();
+            const row = await page.locator('[data-focus="video-speed"]').elementHandle();
+            assert.ok(row !== null);
+            await hold();
+            assert.equal(await row.evaluate(node => node.hasAttribute("data-pressed")), true);
+            await release();
+            // Release opens Speed's choices, which redraws the panel: the released row must not keep the press, nor the row now focused.
+            assert.equal(await row.evaluate(node => node.hasAttribute("data-pressed")), false, "released Select ends the row's press");
+            const live = await page.evaluate(() => { const node = document.activeElement; if (node === null) return null; for (const animation of node.getAnimations()) animation.finish(); const css = getComputedStyle(node); return { pressed: node.hasAttribute("data-pressed"), scale: (css.scale === "none" ? 1 : Number.parseFloat(css.scale)) * new DOMMatrix(css.transform).a }; });
+            assert.deepEqual(live, { pressed: false, scale: 1 }, "the focused row after release is at rest");
             await nextTab(page, 1);
             const track = await focused(page);
             assert.ok(track !== null);

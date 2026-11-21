@@ -13,6 +13,7 @@ import type { Reply } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 import { afterPaint, detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
@@ -1306,6 +1307,17 @@ browseTest("Opening a box set focuses Play, keeps member order, and Back returns
     await tv.remote(BACK);
     await shows(tv, "This box set isn't available. Box sets may be turned off for this library, or too few of its movies are here.");
     assert.equal(await tv.page.locator('[data-focus="play"]').count(), 0);
+}, { catalog: new BoxSetCatalog() });
+
+// Box set Play is TVPrimaryPillButton with stabilizesFocusMotion (TVDetailActions.swift:53-67, silo-apple main 71a3beb9): it does not
+// lift when focused and presses from 1 to 0.98 (:770), easeOut fastDuration (:745).
+for (const reduced of [false, true]) browseTest(`Box set Play stays at 1 when focused and presses to 0.98 (reduced motion: ${reduced})`, async tv => {
+    await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await assertPressedLook(tv, tv.page.locator('[data-focus="play"].box-set-play'), { focusScale: 1, heldScale: 0.98, heldOpacity: 1, animates: "scale" }, reduced);
 }, { catalog: new BoxSetCatalog() });
 
 browseTest("Box set Play stays on the first screen with and without a backdrop", async (tv, catalog) => {
