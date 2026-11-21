@@ -4263,6 +4263,12 @@ function textTrackIndex(tracks: readonly AVPlayTrackInfo[], row: SubtitleTrack, 
     const ordinal = row.hlsRendition?.index;
     const published = ordinal === undefined ? undefined : text[ordinal - 1];
     if (!languageOnly && published !== undefined) return published.index;
+    // An original file's TEXT rows are numbered by the file's stream index, which the server publishes as `stream_index`
+    // (the S95C selected English SDH, artifact 9.vtt, as TEXT 12 after one video and two audio streams). A file can hold several tracks in one language.
+    if (languageOnly && row.streamIndex !== undefined) {
+        const stream = text.find(track => track.index === row.streamIndex);
+        if (stream !== undefined) return stream.index;
+    }
     const language = row.language?.toLowerCase();
     if (language !== undefined && language !== "") {
         const matches = text.filter((track) => trackLanguage(track) === language);

@@ -1564,6 +1564,51 @@ test("an embedded track the plan sends as a sidecar artifact is drawn by the app
     } finally { r.controller.destroy(); }
 });
 
+// The S95C at d765a104 (#729 review): Aladdin, direct play, Dutch (21.vtt) chosen, its artifact answered 503 from the start.
+// AVPlay lists one TEXT row per subtitle stream, numbered by the file's stream index (video 0, two audio, subtitles from 3): the earlier
+// S95C check selected English SDH, artifact 9.vtt, as TEXT 12. The file has more than one Dutch stream, so a language match is ambiguous.
+test("an embedded track whose file fails is drawn by AVPlay at its stream index, with other tracks in the same language (#538, S95C)", async () => {
+    const r = await rig();
+    const languages = ["eng", "eng", "fra", "dut", "dut", "deu"];
+    r.avplay.tracks = languages.map((language, ordinal) => ({ index: 3 + ordinal + 18, type: "TEXT", extra_info: JSON.stringify({ track_num: String(ordinal + 18), track_lang: language, subtitle_type: "0", fourCC: "TTML" }) }));
+    const file = r.server.file("42");
+    const embedded = file.inventory[1];
+    assert.ok(embedded !== undefined);
+    r.server.files.set("42", { ...file, inventory: [...file.inventory, {
+        ...embedded, track_id: "file:42:subtitle:5", combined_index: 5, codec: "subrip", language: "dut", label: "Dutch", forced: false, stream_index: 24,
+        url: "/api/v2/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24",
+    }] });
+    r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/stream/x/subtitles/21.vtt?file_id=42&embedded_stream_index=24", { status: 503, text: "unavailable" });
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 24", "AVPlay draws Dutch, the stream the artifact URL pins");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle false", "and its text is shown");
+        assert.notEqual(view.captions?.status, "failed");
+        assert.equal(view.tracks.subtitleTools?.overlay, false, "Delay and Appearance hide");
+    } finally { r.controller.destroy(); }
+});
+
+test("an embedded track whose file fails before playback, with no AVPlay TEXT row for it at the first frame, reports the subtitle as failed (#538)", async () => {
+    const r = await rig();
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=gone`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=gone", { status: 503, text: "unavailable" });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "fra" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(r.avplay.calls.some(call => call.startsWith("setSelectTrack TEXT")), false, "no AVPlay row matches the track");
+        assert.equal(view.captions?.status, "failed", "so the subtitle is reported as failed");
+        assert.equal(view.tracks.subtitleTools?.overlay, true, "and the app's overlay stays the subtitle's owner, as for any failed artifact");
+    } finally { r.controller.destroy(); }
+});
+
 for (const late of [false, true]) test(`an embedded track whose extracted file is too large for the app is drawn by AVPlay instead on direct play, ${late ? "after" : "before"} the first frame (#538)`, async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=large`, format: "vtt", timing_origin_seconds: 0 } });
@@ -1580,7 +1625,8 @@ for (const late of [false, true]) test(`an embedded track whose extracted file i
         assert.ok(view.phase === "playing" || view.phase === "paused");
         assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:1");
         assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 4", "AVPlay draws the embedded track");
-        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1) ?? "setSilentSubtitle false", "setSilentSubtitle false", "and its text is not hidden");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle false", "and its text is shown");
+        assert.equal(r.avplay.silentSubtitle, false);
         assert.notEqual(view.captions?.status, "failed", "the subtitle is not reported as failed");
         assert.equal(view.tracks.subtitleTools?.overlay, false, "Delay and Appearance cannot act on AVPlay's text, so they hide as before #538");
     } finally { r.controller.destroy(); }
