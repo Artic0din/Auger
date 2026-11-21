@@ -1564,6 +1564,28 @@ test("an embedded track the plan sends as a sidecar artifact is drawn by the app
     } finally { r.controller.destroy(); }
 });
 
+for (const late of [false, true]) test(`an embedded track whose extracted file is too large for the app is drawn by AVPlay instead on direct play, ${late ? "after" : "before"} the first frame (#538)`, async () => {
+    const r = await rig();
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=large`, format: "vtt", timing_origin_seconds: 0 } });
+    // Over the app's 4 MiB subtitle limit (src/api/http.ts SUBTITLE_MAX_BYTES).
+    const held = late ? r.h.fake.hold("/captions?token=large") : undefined;
+    r.h.fake.script("/captions?token=large", { status: 200, text: "WEBVTT\n\n" + "x".repeat(4 * 1024 * 1024) });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        held?.release();
+        await settle(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused");
+        assert.equal(view.tracks.selectedSubtitleId, "file:42:subtitle:1");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 4", "AVPlay draws the embedded track");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1) ?? "setSilentSubtitle false", "setSilentSubtitle false", "and its text is not hidden");
+        assert.notEqual(view.captions?.status, "failed", "the subtitle is not reported as failed");
+        assert.equal(view.tracks.subtitleTools?.overlay, false, "Delay and Appearance cannot act on AVPlay's text, so they hide as before #538");
+    } finally { r.controller.destroy(); }
+});
+
 test("returning to the artifact track through AVPlay keeps overlay-only tools hidden: AVPlay draws it now", async () => {
     const r = await rig();
     frenchInventory(r);

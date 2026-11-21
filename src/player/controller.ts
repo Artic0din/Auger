@@ -490,6 +490,8 @@ interface Attempt {
     secondaryAbort: AbortController | undefined;
     captionAbort: AbortController | undefined;
     captionNotice: string;
+    /** An embedded track whose file failed before AVPlay could list its tracks: AVPlay draws it at the first frame. */
+    captionFallback: string | undefined;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -688,7 +690,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -2022,6 +2024,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private alignOpenStream(attempt: Attempt, plan: PlaybackPlan): boolean {
+        this.applyCaptionFallback(attempt, plan);
         if (plan.subtitle.mode === "off" || plan.subtitle.mode === "burn_in" || plan.subtitle.mode === "unknown" || plan.subtitle.artifact !== undefined) return true;
         const id = shownSubtitle(attempt, plan);
         if (id === undefined) return true;
@@ -2282,6 +2285,7 @@ export class PlaybackController implements PlayerControls {
         if (!refresh && key !== undefined && key === attempt.captionKey) return;
         const shownTiming = attempt.captionTiming;
         attempt.captionKey = key;
+        attempt.captionFallback = undefined;
         attempt.captionTiming = this.timingVersionOf(attempt, plan.subtitle.inventory.find(track => track.trackId === plan.subtitle.trackId)?.syncKey);
         attempt.captionAbort?.abort();
         const abort = new AbortController();
@@ -2322,10 +2326,48 @@ export class PlaybackController implements PlayerControls {
                 attempt.captionKey = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary(attempt);
+                if (this.nativeCaptionFallback(attempt, plan)) {
+                    this.showPlayback(attempt);
+                    return;
+                }
                 attempt.captionNotice = CAPTION_FAILED;
             }
             if (current()) this.showPlayback(attempt);
         })();
+    }
+
+    /**
+     * Original HTTP asks for embedded text as an artifact (#538). When the app cannot load that file (over the 4 MiB limit, or a failed read),
+     * AVPlay still has the embedded track and draws it, as it did before; Delay and Appearance then hide, since they cannot act on AVPlay's text.
+     */
+    private nativeCaptionFallback(attempt: Attempt, loaded: PlaybackPlan): boolean {
+        const plan = attempt.plan;
+        const id = loaded.subtitle.trackId;
+        // Only while the plan on screen still shows the track whose file failed.
+        if (plan === undefined || plan.planId !== loaded.planId || shownSubtitle(attempt, plan) !== id) return false;
+        const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
+        if (plan.delivery !== "original_http" || row === undefined || !inStreamCandidate(plan, row)) return false;
+        if (!this.applyStreamSubtitle(attempt, id)) {
+            if (attempt.started) return false;
+            // AVPlay lists its tracks only once it plays; the first frame applies this.
+            attempt.captionFallback = id;
+            return true;
+        }
+        try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        return true;
+    }
+
+    /** The first frame's half of `nativeCaptionFallback`. */
+    private applyCaptionFallback(attempt: Attempt, plan: PlaybackPlan): void {
+        const id = attempt.captionFallback;
+        if (id === undefined) return;
+        attempt.captionFallback = undefined;
+        if (shownSubtitle(attempt, plan) !== id) return;
+        if (this.applyStreamSubtitle(attempt, id)) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        } else {
+            attempt.captionNotice = CAPTION_FAILED;
+        }
     }
 
     /** Read once per attempt, so replans and track changes keep the profile's style and timing. */
