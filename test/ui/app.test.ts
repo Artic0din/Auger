@@ -2130,10 +2130,13 @@ appTest("the composed remote seeks and changes audio through the real playback o
     const change = tv.fake.requests.filter((request) => request.path.endsWith("/replan")).pop();
     assert.equal(change?.body?.operation, "track_change");
     assert.equal(change?.body?.position_seconds, 80);
-    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info.
+    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info. Show Up Next still
+    // sits before Options (#698), so Options is a third press.
     await tv.page.keyboard.press("ArrowDown");
     await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("ArrowRight");
+    await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "tracks");
     await tv.page.keyboard.press("Enter");
     await tv.page.keyboard.press("ArrowRight");
     assert.equal(await tv.page.locator('.player-menu [data-focus="file:42:audio:1"]').getAttribute("aria-pressed"), "true");
