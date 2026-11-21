@@ -1898,6 +1898,76 @@ test("a switch the server keeps answering replan_in_progress shows the subtitle 
     } finally { r.controller.destroy(); }
 });
 
+// #745 review (Kody): the stream ending while a switch is out is held as endedDuringChange; drawing the switch locally must not drop it.
+test("a stream that ends during a lost embedded subtitle switch still reaches the end of playback (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onstreamcompleted();
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        await r.h.clock.advance(0);
+        assert.notEqual(last(r.views).phase, "playing", "the end of the stream is not lost");
+        assert.ok(requests(r.h, `/playback/${id}`).some(request => request.method === "DELETE"), "the session is stopped at the end");
+    } finally { r.controller.destroy(); }
+});
+
+// #745 review (Codex): a replayed answer that lands during a local seek must not leave AVPlay's text and the app's both drawing.
+test("a replayed switch that lands during a seek hides AVPlay's subtitles once the seek settles (#738)", async () => {
+    const { r } = await lostSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(r.avplay.silentSubtitle, true, "AVPlay's own text is hidden");
+        assert.equal(tracks(r).subtitleTools?.overlay, true, "the app draws the file");
+    } finally { r.controller.destroy(); }
+});
+
+// #745 review (Kody): adaptation_unavailable is a refusal too; the switch falls back to AVPlay as for a 409.
+test("an embedded subtitle switch refused as adaptation_unavailable falls back to AVPlay's track (#738)", async () => {
+    const { r } = await embeddedSwitchRig();
+    try {
+        r.server.next.push({ terminal: "adaptation_unavailable" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assertAVPlayDrawsFrench(r);
+    } finally { r.controller.destroy(); }
+});
+
+// #745 review (Kody): Off chosen while a switch is out is applied once it settles.
+test("Off chosen during an embedded subtitle switch turns subtitles off once it settles (#738)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        const hold = r.h.fake.hold(`/playback/${id}/replan`);
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.selectSubtitle(undefined);
+        r.server.next.push({ delivery: "original_http", clearSubtitle: true });
+        hold.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "Off is sent after the switch");
+        assert.equal(tracks(r).selectedSubtitleId, undefined, "subtitles end off");
+        const view = last(r.views);
+        assert.equal(view.phase === "playing" || view.phase === "paused" ? view.captions?.text ?? "" : "", "");
+    } finally { r.controller.destroy(); }
+});
+
 test("while a lost embedded subtitle switch is unresolved, other track changes wait for its answer (#738)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {

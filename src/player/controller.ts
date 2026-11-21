@@ -1775,6 +1775,8 @@ export class PlaybackController implements PlayerControls {
             if (attempt.plan === undefined || (!attempt.started && attempt.nativeSubtitleUnavailable)) { this.fail(attempt, decisionFailure(decision), true); return; }
             // The server rolled the change back; the current plan and transport keep playing.
             if (attempt.reporting) this.restoreReportedSubtitle(attempt);
+            // A refused embedded subtitle switch falls back to AVPlay's track, as a 409 does.
+            if (this.embeddedSwitchFallback(attempt, plan, selected)) return;
             this.changeSettled(attempt, { state: "refused", message: decision.terminal.message });
             return;
         }
@@ -1806,6 +1808,12 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             if (operation === "track_change" && attempt.plan !== undefined && sameDirectTransport(attempt.plan, decision.plan, selected)) {
+                // A replayed switch can land during a local seek, when AVPlay refuses to hide its subtitles: adopt it once the seek settles.
+                const seek = this.pending.seek;
+                if (seek !== undefined) {
+                    await seek.catch(() => undefined);
+                    if (!current() || attempt.plan === undefined) return;
+                }
                 this.applyKeptSubtitle(attempt, decision.plan, decision.serverFeatures);
                 return;
             }
@@ -2440,6 +2448,11 @@ export class PlaybackController implements PlayerControls {
             attempt.subtitleOverride = { id };
         }
         attempt.busy = false;
+        // The stream ended while the switch held playback frozen: end it now rather than leave completion waiting for the answer.
+        if (attempt.endedDuringChange) {
+            this.changeSettled(attempt, { state: "idle" });
+            return;
+        }
         this.showPlayback(attempt);
     }
 
