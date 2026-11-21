@@ -2454,6 +2454,8 @@ export class PlaybackController implements PlayerControls {
                 this.scheduleProgress(attempt);
             }
             if (!this.alignOpenStream(attempt, plan)) return;
+            // Apple reads the next episode and On Deck once the item loads (PlayerViewModel.swift:6604-6607), so Show Up Next is offered from the start.
+            this.beginDiscovery(attempt);
             this.updatePrompt(attempt);
             this.showPlayback(attempt);
             this.applyPreparedSubtitleChoices(attempt, plan);

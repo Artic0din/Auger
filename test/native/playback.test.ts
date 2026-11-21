@@ -125,11 +125,11 @@ test("a discovery settings read started before a save cannot overwrite Auto-play
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
-    await playMovie(r, EPISODE);
+    // Discovery reads the preference at the first frame (as Apple's lookup starts once the item loads): hold it after the start's own reads.
+    const path = "/settings/values/effective?keys=playback.auto_play_next";
+    const hold = await playMovieWith(r, EPISODE, () => r.h.fake.hold(path));
     const view = last(r.views);
     assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
-    const path = "/settings/values/effective?keys=playback.auto_play_next";
-    const hold = r.h.fake.hold(path);
     r.avplay.tick((view.durationSeconds - 20) * 1000);
     await r.h.clock.advance(0);
     r.controller.toggleAutoNext();
@@ -612,6 +612,24 @@ function sessionIds(server: FakePlayback): string[] {
 }
 
 /** Plays MOVIE to the playing state: start, prepare, resume seek, play. */
+/**
+ * playMovie with `setup` run after the start's own reads and before the first frame, where Up Next discovery begins (as Apple's lookup
+ * starts once the item loads): a test that holds or fails a discovery read sets it up here.
+ */
+async function playMovieWith<T>(r: Rig, request: PlayRequest, setup: () => T): Promise<T> {
+    r.controller.play(request);
+    await r.h.clock.advance(0);
+    const result = setup();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    assert.equal(r.avplay.state, "PLAYING");
+    return result;
+}
+
 async function playMovie(r: Rig, request: PlayRequest = MOVIE): Promise<string> {
     r.controller.play(request);
     await r.h.clock.advance(0);
@@ -1714,6 +1732,9 @@ test("EOF holds the handoff until pending progress and the exact final STOP rece
     r.controller.destroy();
 });
 
+/** Catalog watch reads (`/watch/<id>`): the successor lookup and the fresh watch read after a confirmed STOP. */
+const watchReads = (r: Rig): number => r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.path.includes("?")).length;
+
 const EPISODE: PlayRequest = { contentId: "episode:s1e12", fileId: "42", title: "Harbor Lights chapter 1.2", startSeconds: 0, episode: true };
 
 async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig & { catalog: FakeCatalog }> {
@@ -1947,6 +1968,22 @@ test("a delayed prompt cannot appear after seeking out of its window, and an ope
     r.controller.destroy();
 });
 
+// PlayerViewModel.canShowNextUpScreen (silo-apple main f70e16a, :1598-1603) shows Show Up Next for On Deck items, and Apple reads them
+// once the item loads (:6604-6607). A movie mid-playback with On Deck items therefore offers the button from the start (#698).
+test("a movie with On Deck items offers Show Up Next from the start, without opening Up Next", async () => {
+    const r = await autoplayRig(false);
+    r.catalog.fileIds.set("movie:m0001", "42");
+    r.server.items.set("movie:m0001", ["42"]);
+    await playMovie(r, { ...MOVIE, contentId: "movie:m0001", fileId: "42", title: "Movie 0001" });
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.episodes, true, "the On Deck read ran at the first frame and found items");
+    assert.equal("upNext" in view, false, "far from the end nothing opens by itself");
+    assert.ok(r.h.fake.requests.some(q => q.path.startsWith("/home/sections")), "the On Deck read went out without Up Next being opened");
+    r.controller.destroy();
+});
+
 test("Show Up Next opens the manual panel on the next episode without a countdown far from the end", async () => {
     const r = await autoplayRig(false);
     await playMovie(r, EPISODE);
@@ -1989,10 +2026,10 @@ test("playback ticks do not repeat the Up Next catalog read", async () => {
 
 test("a seek during Up Next discovery does not leave the manual panel loading", async () => {
     const r = await autoplayRig(false);
-    await playMovie(r, EPISODE);
+    // Discovery starts at the first frame (as Apple's lookup starts once the item loads): hold its watch read after the start's own reads.
+    const hold = await playMovieWith(r, EPISODE, () => r.h.fake.hold("/watch/" + encodeURIComponent(EPISODE.contentId)));
     const view = last(r.views);
     assert.ok(view.phase === "playing");
-    const hold = r.h.fake.hold("/watch/" + encodeURIComponent(EPISODE.contentId));
     r.controller.showUpNext();
     await r.h.clock.advance(0);
     const loading = last(r.views);
@@ -2015,8 +2052,9 @@ test("a failed On Deck read is not cached as nothing and a later read recovers",
     const r = await autoplayRig(false);
     r.catalog.fileIds.set("movie:m0001", "42");
     r.server.items.set("movie:m0001", ["42"]);
-    await playMovie(r, { ...MOVIE, contentId: "movie:m0001", fileId: "42", title: "Movie 0001" });
-    r.h.fake.script("/home/sections?image_size=small", problem(500, "internal_error", "Unavailable"));
+    // Discovery's On Deck read runs from the first frame and fails; opening Up Next retries it once, and that fails too.
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, { ...MOVIE, contentId: "movie:m0001", fileId: "42", title: "Movie 0001" }, () => r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable));
     r.controller.showUpNext();
     await r.h.clock.advance(0);
     const failed = last(r.views);
@@ -2055,12 +2093,11 @@ test("prompt discovery discarded during a local seek retries after the seek sett
 
 test("stale prompt preference failure cannot override the EOF preference read", async () => {
     const r = await autoplayRig(true);
-    await playMovie(r, EPISODE);
+    // Discovery's preference read runs from the first frame: it is held and then refused from there.
+    const path = "/settings/values/effective?keys=playback.auto_play_next";
+    const hold = await playMovieWith(r, EPISODE, () => { const held = r.h.fake.hold(path); r.h.fake.script(path, problem(400, "invalid_request", "Unavailable")); return held; });
     const view = last(r.views);
     assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
-    const path = "/settings/values/effective?keys=playback.auto_play_next";
-    const hold = r.h.fake.hold(path);
-    r.h.fake.script(path, problem(400, "invalid_request", "Unavailable"));
     r.avplay.tick((view.durationSeconds - 25) * 1000);
     await r.h.clock.advance(0);
     const discovery = r.h.fake.hold("/watch/" + encodeURIComponent(EPISODE.contentId));
@@ -2528,6 +2565,7 @@ test("episode EOF orders held progress, final STOP, fresh watch and exactly one 
     const stop = r.h.fake.hold(`/playback/${id}`);
     const watch = r.h.fake.hold(`/watch/${encodeURIComponent(EPISODE.contentId)}`);
     r.avplay.tick(5399000);
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     listener?.onstreamcompleted();
     listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -2537,7 +2575,7 @@ test("episode EOF orders held progress, final STOP, fresh watch and exactly one 
     assert.equal(completion(r).status, "upNext.headingEnded");
     assert.equal(completion(r).shuffle, undefined);
     assert.equal(bodies(r.h, "/start").length, 1);
-assert.equal(r.h.fake.requests.filter(q => q.path.startsWith("/watch/") && !q.path.includes("?")).length, 0);
+    assert.equal(watchReads(r) - watchBefore, 0, "no fresh watch read before the final STOP is confirmed");
     progress.release();
     await r.h.clock.advance(0);
     const body = only(bodies(r.h, `/playback/${id}`));
@@ -2805,6 +2843,7 @@ test("Back during held EOF STOP never resurrects continuation but still retires 
     const id = await playMovie(r, EPISODE);
     const hold = r.h.fake.hold(`/playback/${id}`, true);
     const listener = r.avplay.listener;
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     r.controller.back();
@@ -2812,7 +2851,7 @@ test("Back during held EOF STOP never resurrects continuation but still retires 
     listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.deepEqual(r.exits, ["back"]);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+    assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
     assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
     assert.ok(r.server.session(id).receipt !== undefined);
     r.controller.destroy();
@@ -2893,6 +2932,7 @@ test("an expired pending progress answer at EOF offers Back without an impossibl
     const progress = r.h.fake.hold(`/playback/${id}/progress`);
     r.server.sessions.delete(id);
     await r.h.clock.advance(10000);
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "finalizing");
@@ -2904,7 +2944,7 @@ test("an expired pending progress answer at EOF offers Back without an impossibl
     assert.equal(completion(r).next, undefined);
     r.controller.playNext();
     assert.equal(r.h.fake.requests.filter(request => request.method === "DELETE").length, 0);
-assert.equal(r.h.fake.requests.some(request => request.path.startsWith("/watch/") && !request.path.includes("?")), false);
+    assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
     assert.equal(bodies(r.h, "/start").length, 1);
     r.controller.back();
     assert.deepEqual(r.exits, ["back"]);
@@ -2915,6 +2955,7 @@ test("a missing session during EOF STOP offers Back without a retry that can nev
     const r = await episodeRig();
     const id = await playMovie(r, EPISODE);
     r.server.sessions.delete(id);
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "failed");
@@ -2925,7 +2966,7 @@ test("a missing session during EOF STOP offers Back without a retry that can nev
     await r.h.clock.advance(0);
     assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
     assert.equal(bodies(r.h, "/start").length, 1);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+    assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
     r.controller.back();
     assert.deepEqual(r.exits, ["back"]);
     r.controller.destroy();
@@ -3007,12 +3048,13 @@ test("STOP authorization, installation, administrator and malformed receipt refu
         const r = await episodeRig();
         const id = await playMovie(r, EPISODE);
         r.h.fake.script(`/playback/${id}`, refusal);
+        const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
         r.avplay.listener?.onstreamcompleted();
         await r.h.clock.advance(0);
         assert.equal(completion(r).state, "failed");
         r.controller.playNext();
         assert.equal(bodies(r.h, "/start").length, 1);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+        assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
         r.controller.destroy();
     }
 });
@@ -3075,6 +3117,7 @@ test("authority loss while the EOF STOP is out prevents old-scope resends and ne
         const id = await playMovie(r, EPISODE);
         // The authority goes while the STOP is out, so its answer arrives under no authority at all.
         const stop = r.h.fake.hold(`/playback/${id}`);
+        const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
         r.avplay.listener?.onstreamcompleted();
         await r.h.clock.advance(0);
         if (action === "profile") r.h.core.profiles.clear();
@@ -3085,7 +3128,7 @@ test("authority loss while the EOF STOP is out prevents old-scope resends and ne
         r.controller.playNext();
         assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
         assert.equal(bodies(r.h, "/start").length, 1);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+        assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
         r.controller.destroy();
     }
 });
@@ -3096,13 +3139,14 @@ test("a pending progress administrator refusal wins over a later EOF", async () 
     const hold = r.h.fake.hold(`/playback/${id}/progress`);
     r.server.endByAdmin(id);
     await r.h.clock.advance(10000);
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     r.avplay.listener?.onstreamcompleted();
     hold.release();
     await r.h.clock.advance(0);
     assert.equal(completion(r).state, "failed");
     assert.equal(completion(r).retryable, false);
     assert.equal(bodies(r.h, `/playback/${id}`).length, 0);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+    assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
     r.controller.destroy();
 });
 
@@ -3112,12 +3156,13 @@ test("revoked PIN proof during EOF finalization removes the old authority and ca
     r.server.items.set(EPISODE.contentId, ["42"]);
     const id = await playMovie(r, EPISODE);
     r.h.fake.changePin("p-kid", "1357");
+    const watchBefore = watchReads(r); // the next-episode lookup now runs from the start, as on Apple TV
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.deepEqual(r.exits, ["end:authority_changed"]);
     assert.equal(r.h.core.session.activeProfile, undefined);
     assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
-assert.equal(r.h.fake.requests.some(q => q.path.startsWith("/watch/") && !q.path.includes("?")), false);
+    assert.equal(watchReads(r), watchBefore, "the end of playback looks up no successor");
     r.controller.playNext();
     assert.equal(bodies(r.h, "/start").length, 1);
     r.controller.destroy();
