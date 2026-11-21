@@ -112,6 +112,15 @@ a Samsung TV running it. Desktop Chromium and the Samsung TV simulator do not
 prove TV rendering, AVPlay playback or remote behavior; see
 [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md).
 
+## Port from the tvOS source
+
+The Apple TV app is the specification for the TV interface.
+Before writing code that changes `src/ui` or `src/player`, read the matching view in silo-apple's tvOS source on upstream main and plan the port from it: layout, strings and catalog keys, focus, sizes and states.
+Cite each Swift file and line range the change ports under the pull request's "tvOS source" heading, for example `tvOS/Screens/Detail/TVSeriesDetailView.swift:852-854`.
+The tvOS source check fails an interface change without a citation.
+A maintainer adds the `tvos-source-not-needed` label when the change has no tvOS counterpart, such as AVPlay-only behaviour.
+Screenshots verify the port; they never replace reading the source.
+
 ## Show visible changes
 
 A pull request that changes what a user sees must show the change in its

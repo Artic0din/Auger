@@ -1,0 +1,8 @@
+# Pull requests that change the TV app's interface must cite the silo-apple tvOS
+# source they port, under a "tvOS source" heading, before the tvOS source check
+# passes. The check reads this file at a pull request's base commit. Maintainers
+# override it with the tvos-source-not-needed label. See "Port from the tvOS
+# source" in CONTRIBUTING.md.
+require:
+  - src/ui/**
+  - src/player/**
