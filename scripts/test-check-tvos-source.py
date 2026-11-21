@@ -9,7 +9,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parent / "ci" / "check-tvos-source.py"
 RULES = "# comment\nrequire:\n  - src/ui/**\n  - src/player/**\n  - src/*.css\n  - src/app.ts\n  - app/index.html\n"
-CITED = "## tvOS source\n\n- `tvOS/Screens/Components/TVCollectionPosterCard.swift:106-148`\n"
+CITED = "## tvOS source\n\nsilo-apple 71a3beb9\n\n- `tvOS/Screens/Components/TVCollectionPosterCard.swift:106-148`\n"
 
 
 class CheckTvosSourceTest(unittest.TestCase):
@@ -51,7 +51,9 @@ class CheckTvosSourceTest(unittest.TestCase):
                      "## tvOS source\n\n<!-- tvOS/Screens/Home/HomeView.swift:79 -->\n",
                      "## tvOS source\n\n`tvOS/Screens/Home/HomeView.swift` (no line)\n",
                      "## Approach\n\nPorts tvOS/Screens/Home/HomeView.swift:79.\n\n## tvOS source\n\nSee above.\n",
-                     "## tvOS source\n\nPending.\n\n## Risks\n\ntvOS/Screens/Home/HomeView.swift:79\n"):
+                     "## tvOS source\n\nPending.\n\n## Risks\n\ntvOS/Screens/Home/HomeView.swift:79\n",
+                     "## tvOS source\n\ntvOS/Screens/Home/HomeView.swift:79 (no commit named)\n",
+                     "## Approach\n\n```markdown\n## tvOS source\n\nsilo-apple 71a3beb9 HomeView.swift:79\n```\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(1, result.returncode, result.stdout)
@@ -60,12 +62,28 @@ class CheckTvosSourceTest(unittest.TestCase):
     def test_passes_a_cited_line_or_range_under_the_heading(self):
         head = self.commit({"src/player/controller.ts": "export {};\n"})
         for body in (CITED,
-                     "### tvOS Source\n\nScreens/Player/tvOS/TVPlayerControls.swift:583\n",
-                     "## tvOS source\r\n\r\n- PlayerView.swift:1613-1635\r\n",
-                     "## tvOS source\n\n### Card\n\nTVCollectionPosterCard.swift:106\n"):
+                     "### tvOS Source\n\nsilo-apple `f70e16a`, Screens/Player/tvOS/TVPlayerControls.swift:583\n",
+                     "## tvOS source\r\n\r\n- 71a3beb9c0c4b6774b5caca452dfec66f208ac8f PlayerView.swift:1613-1635\r\n",
+                     "## tvOS source\n\nsilo-apple 71a3beb9\n\n### Card\n\nTVCollectionPosterCard.swift:106\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
+                self.assertIn("tvOS source cited", result.stdout)
+
+    def test_fails_an_uncited_player_change(self):
+        result = self.check(self.commit({"src/player/controller.ts": "export {};\n"}), "## tvOS source\n\nPending.\n")
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertIn("changes src/player/controller.ts", result.stdout)
+
+    def test_reads_rules_with_an_inline_comment_and_rejects_empty_rules(self):
+        self.base = self.commit({".github/tvos-source.yml": "require: # paths\n  - src/ui/**\n"})
+        head = self.commit({"src/ui/home.ts": "export {};\n"})
+        self.assertEqual(1, self.check(head, "").returncode)
+        self.base = self.commit({".github/tvos-source.yml": "require: []\n"})
+        head = self.commit({"src/ui/home.ts": "export const a = 1;\n"})
+        result = self.check(head, CITED)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no require paths", result.stdout + result.stderr)
 
     def test_shared_styles_and_shell_need_a_citation(self):
         for path in ("src/theme.css", "src/app.css", "src/app.ts", "app/index.html"):

@@ -17,6 +17,9 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 SOURCE_HEADING = re.compile(r"tvos\s+source", re.IGNORECASE)
 # A citation is a Swift file with a line or line range, such as tvOS/Screens/Detail/TVSeriesDetailView.swift:852-854.
 CITATION = re.compile(r"[\w./-]+\.swift:\d+(?:-\d+)?")
+# AGENTS.md "Parity delivery gates" asks for the source revision, so the section also names a silo-apple commit.
+REVISION = re.compile(r"\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
+FENCE = re.compile(r"^[ \t>]*(`{3,}|~{3,})[^`\n]*\n.*?^[ \t>]*\1\1?[`~]*[ \t]*$", re.DOTALL | re.MULTILINE)
 
 
 def git(*arguments: str) -> str:
@@ -30,18 +33,22 @@ def required_patterns(base: str) -> list[str]:
         return []
     patterns, in_require = [], False
     for line in shown.stdout.splitlines():
-        if re.match(r"^require:\s*$", line):
+        if re.match(r"^require:\s*(#.*)?$", line):
             in_require = True
         elif in_require and (match := re.match(r"^\s+-\s+(\S+)\s*$", line)):
             patterns.append(match.group(1).strip("'\""))
         elif line.strip() and not line.startswith((" ", "#")):
             in_require = False
+    if not patterns:
+        # A rules file that yields no paths would silently pass everything.
+        raise SystemExit("::error::.github/tvos-source.yml has no require paths this check can read")
     return patterns
 
 
 def source_text(body: str) -> str:
     body = body.replace("\r\n", "\n")  # GitHub sends PR bodies with CRLF line endings.
     body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+    body = FENCE.sub("", body)
     sections, level = [], None
     for line in body.splitlines():
         heading = HEADING.match(line)
@@ -69,13 +76,14 @@ def main() -> int:
     if not touched:
         print("tvOS source not required: no changed path matches .github/tvos-source.yml")
         return 0
-    if CITATION.search(source_text(env.get("BODY") or "")):
+    section = source_text(env.get("BODY") or "")
+    if CITATION.search(section) and REVISION.search(section):
         print("tvOS source cited")
         return 0
     print(
         f"::error::This pull request changes {', '.join(touched[:3])}, so it needs the silo-apple tvOS source it ports. "
-        "Under a \"tvOS source\" heading, cite each Swift file and line range (for example "
-        "tvOS/Screens/Detail/TVSeriesDetailView.swift:852-854), as CONTRIBUTING.md \"Port from the tvOS source\" describes. "
+        "Under a \"tvOS source\" heading, name the silo-apple commit you read and cite each Swift file and line range "
+        "(for example tvOS/Screens/Detail/TVSeriesDetailView.swift:852-854), as CONTRIBUTING.md \"Port from the tvOS source\" describes. "
         f"A maintainer adds the {NOT_NEEDED} label when the change has no tvOS counterpart."
     )
     return 1
