@@ -72,8 +72,11 @@ const HOME_ROLES: readonly Role[] = [
 
 /** Details' fixture with a populated For You feed, as topBar.test.ts serves it; the plain fixture answers 404. */
 class ForYouCatalog extends FakeDetails {
+    /** Answers the feed with no sections, for For You's empty page. */
+    emptyFeed = false;
     override route(method: string, path: string, profile: string | undefined, body?: Record<string, unknown>): Reply | undefined {
         if (path.startsWith("/recommendations/discover")) {
+            if (this.emptyFeed) return { status: 200, body: { items: [] } };
             const card = super.route("GET", "/catalog/items/movie%3Am0001", profile)?.body;
             return { status: 200, body: { items: [
                 { type: "popular", title: "Popular", kind: "popular", items: [card] },
@@ -84,8 +87,8 @@ class ForYouCatalog extends FakeDetails {
     }
 }
 
-async function signedIn(tv: Tv): Promise<void> {
-    tv.fake.catalog = new ForYouCatalog();
+async function signedIn(tv: Tv, catalog = new ForYouCatalog()): Promise<void> {
+    tv.fake.catalog = catalog;
     await tv.page.evaluate(() => window.browseHarness.connect());
     await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
     tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
@@ -117,6 +120,28 @@ test("Home and the Movies, Series and For You tabs use Apple's points times the 
             await check(tab);
         }
         assert.deepEqual(HOME_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+/** For You's empty page is Apple's EmptyStateView (Screens/Recommendations/RecommendationsView.swift:186-190). */
+const FOR_YOU_EMPTY_ROLES: readonly Role[] = [
+    [".for-you-empty .search-state-title", 28, "600", "Components/EmptyStateView.swift:16; Theme/Typography.swift:17"],
+    [".for-you-empty .search-state-description", 22, "400", "Components/EmptyStateView.swift:21; Theme/Typography.swift:31"],
+];
+
+test("For You's empty page uses Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new ForYouCatalog();
+        catalog.emptyFeed = true;
+        await signedIn(tv, catalog);
+        await tv.page.locator('[data-focus="for_you"]').first().click();
+        await tv.page.locator('[data-view="for_you"] .for-you-empty').waitFor();
+        assert.deepEqual(await tv.page.evaluate(unscaledText, "body"), []);
+        const roles = await tv.page.evaluate(offRoles, FOR_YOU_EMPTY_ROLES);
+        assert.deepEqual(roles.off, []);
+        assert.deepEqual(roles.seen, FOR_YOU_EMPTY_ROLES.map(([selector]) => selector));
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
