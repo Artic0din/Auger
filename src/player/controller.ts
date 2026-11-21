@@ -2863,6 +2863,8 @@ export class PlaybackController implements PlayerControls {
                     // A resend refused like a first send ends the advance while it is still on screen. A 404 after a failure that may
                     // clear most likely means the first STOP landed, so it is only logged, as Apple logs a failed stop and goes on.
                     if (refused(failure) && current()) {
+                        // As after a refused first send, the session never ended: Keep Watching and Back leave instead of replaying.
+                        attempt.ended = false;
                         this.cancelAutoplay();
                         stage = "session";
                         show("failed");

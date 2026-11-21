@@ -2737,6 +2737,28 @@ test("a background STOP resend refused with 403 before the next episode starts s
     } finally { warnings.mock.restore(); }
 });
 
+test("Back on the end card after a refused STOP resend leaves without replaying the episode, as after a refused first STOP", async () => {
+    // The card's Back button and the remote's Back key both call keepWatching (playerScreen.ts).
+    for (const refusal of [problem(403, "forbidden", "Forbidden"), problem(410, "gone", "Gone")]) {
+        const warnings = mock.method(console, "warn", () => undefined);
+        try {
+            const r = await autoplayRig(true);
+            const id = await playMovie(r, EPISODE);
+            r.h.fake.script(`/playback/${id}`, { status: 503, body: {} }, refusal);
+            r.avplay.listener?.onstreamcompleted();
+            for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+            await r.h.clock.advance(1000);
+            for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+            assert.equal(completion(r).state, "failed", `${refusal.status}: the failure card shows`);
+            r.controller.keepWatching();
+            for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+            assert.equal(bodies(r.h, "/start").length, 1, `${refusal.status}: Back starts no replay on the refused session`);
+            assert.deepEqual(r.exits, ["back"], `${refusal.status}: Back leaves the player`);
+            r.controller.destroy();
+        } finally { warnings.mock.restore(); }
+    }
+});
+
 test("a background STOP resend answered 404 after a 503 still lets the next episode start, as the first STOP likely landed", async () => {
     const warnings = mock.method(console, "warn", () => undefined);
     try {
