@@ -135,7 +135,7 @@ const SF_WIDTHS: readonly { selector: string; text: string; width: number }[] = 
     { selector: ".browse > .browse-section-title", text: "Cast & Crew", width: 201.36 },
     { selector: ".browse > .browse-section-title", text: "Related Movies", width: 247.42 },
     { selector: ".details-editorial .details-director", text: "Directed by River Vale", width: 215.7 },
-    { selector: '[data-focus="audio"] .details-action-label', text: "Audio Tracks", width: 151.9 },
+    { selector: '[data-focus="audio"] .details-action-label', text: "Audio", width: 68.68 },
     { selector: '[data-focus="resume"] .details-action-label', text: "Resume 20:00", width: 193.93 },
     { selector: ".details-people .browse-card-title", text: "Morgan Lane", width: 119.32 },
     { selector: ".details-people .browse-card-subtitle", text: "Sam", width: 33.71 },
