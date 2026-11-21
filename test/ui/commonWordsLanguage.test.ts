@@ -88,6 +88,22 @@ test("the startup failure screen's button reads the catalog in German and Arabic
     for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
 
+// The default wordmark is an image now, so the base rule sizes it as SiloWordmarkView(width: 150) is sized: 150 by 64,
+// contained. Without that size the 764x312 asset drew at full size over the screen's top-left corner.
+test("the startup failure screen draws the Auger wordmark in a 150 by 64 box", async () => {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    try {
+        await page.setContent("<!doctype html><main id='root'></main>");
+        await page.addStyleTag({ content: ["../../src/theme.css", "../../src/ui/signIn.css"].map(path => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n") });
+        await page.addScriptTag({ content: bundle });
+        await page.evaluate(() => { (window as unknown as ScreenApi).startupFailure(document.getElementById("root") as HTMLElement, () => undefined); });
+        const wordmark = page.locator(".signin-wordmark");
+        assert.equal(await wordmark.getAttribute("src"), "img/auger-wordmark.png");
+        const box = await wordmark.evaluate(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height, fit: getComputedStyle(node).objectFit }; });
+        assert.deepEqual(box, { width: 150, height: 64, fit: "contain" });
+    } finally { await page.close(); }
+});
+
 test("a language file that lands after the startup failure screen drew redraws its button", async () => {
     for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
