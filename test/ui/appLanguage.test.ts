@@ -53,7 +53,7 @@ test("Settings > General lists App Language after Profile Selection and before T
         await tv.page.locator('[data-focus="title-art"]').waitFor();
         const row = tv.page.locator('[data-focus="app-language"]');
         assert.match(await row.innerText(), /^App Language\s*Match Device$/);
-        await tv.page.getByText("The language of Silo’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.", { exact: true }).waitFor();
+        await tv.page.getByText("The language of Auger’s menus and buttons on this profile. Audio and subtitle languages are set in Playback.", { exact: true }).waitFor();
         const order = await tv.page.locator('.settings-section-header, [data-focus="app-language"], [data-focus="remember-profile"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus") ?? node.textContent ?? ""));
         assert.deepEqual(order.slice(order.indexOf("PROFILE AT LAUNCH"), order.indexOf("TITLE PAGES") + 1), ["PROFILE AT LAUNCH", "remember-profile", "LANGUAGE", "app-language", "TITLE PAGES"]);
     });
@@ -105,7 +105,7 @@ test("a language another client stored that this build lacks shows as itself, wi
         // A language outside Apple's list is named by the browser's own data, which the TV decides.
         const name = await tv.page.evaluate(() => { const own = new Intl.DisplayNames(["is"], { type: "language" }).of("is") ?? "is"; return own.charAt(0).toLocaleUpperCase("is") + own.slice(1); });
         assert.equal(await tv.page.locator('[data-focus="app-language"]').innerText(), `App Language\n${name}`);
-        await tv.page.getByText(`Silo isn’t available in ${name} yet, so it uses the device language.`, { exact: true }).waitFor();
+        await tv.page.getByText(`Auger isn’t available in ${name} yet, so it uses the device language.`, { exact: true }).waitFor();
     }, settings => settings.profile().set(APP_LANGUAGE_KEY, "is"));
 });
 

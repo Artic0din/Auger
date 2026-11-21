@@ -25,7 +25,7 @@ export interface SubtitleSearchView {
 
 const SEARCHING = "Searching providers… This can take up to half a minute.";
 export const STORED = "The subtitle was saved but couldn't be turned on now. It will be available the next time you play this video.";
-const UNCONFIRMED = "Silo couldn't confirm the download. If it was saved, it will be available the next time you play this video.";
+const UNCONFIRMED = "Auger couldn't confirm the download. If it was saved, it will be available the next time you play this video.";
 const UNAVAILABLE = "Not set up on this server";
 const ADDING = "Adding subtitle…";
 /** The lines Apple reads from the catalog stay English ids in this state and are worded when the view is read, so a later language file rewords them. */

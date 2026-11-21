@@ -244,7 +244,8 @@ test("Details Auto resolves effective preferences before AVPlay; explicit Off on
         try {
             await playMovie(r, { ...MOVIE, subtitle: { kind } });
             assert.equal(replans(r.h).length, kind === "auto" ? 1 : 0);
-            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/")).length, 2, "one chapter read plus the preference read; an explicit Off uses it only for the display order");
+            // The file's own watch reads (`?file_id=`); Up Next's On Deck lookup reads the title without a file from the first frame, as Apple's does.
+            assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/watch/") && request.path.includes("?file_id=")).length, 2, "one chapter read plus the preference read; an explicit Off uses it only for the display order");
             assert.equal(tracks(r).selectedSubtitleId === undefined, kind === "off");
             assert.equal(r.avplay.urls.length, 1);
         } finally { r.controller.destroy(); }

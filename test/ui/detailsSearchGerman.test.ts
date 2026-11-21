@@ -60,7 +60,7 @@ test("a movie's Details and its More menu read in German", async () => {
 
 test("Search reads in German: field, filters, result count and the empty state", async () => {
     await inGerman(async tv => {
-        assert.deepEqual([german("search.filter.movies"), german("search.initial"), german("search.emptyBody")], ["Filme", "Silo durchsuchen", "Versuche es mit einem anderen Suchbegriff"], "the catalog holds German for these keys");
+        assert.deepEqual([german("search.filter.movies"), german("search.initial"), german("search.emptyBody")], ["Filme", "Auger durchsuchen", "Versuche es mit einem anderen Suchbegriff"], "the catalog holds German for these keys");
         await tv.page.locator('[data-focus="search"]').click();
         // German lands with the profile's language answer, which can come after Search has drawn its field.
         await tv.eventually(async () => await tv.page.locator("#browse-search").getAttribute("placeholder") === german("search.fieldPrompt.video"), "the German field prompt");

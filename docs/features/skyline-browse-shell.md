@@ -221,7 +221,7 @@ Back returns to that page; profile menus on root pages retain their own Back pri
 
 All/Movies/Series filters apply to the whole server query and start a new search; the shown results stay until it answers.
 All retains the negotiated episode scope; Movies and Series send their literal native types.
-Search shows the server title count as "N results", with no estimate marker, only when titles exist, and an idle Search Silo prompt.
+Search shows the server title count as "N results", with no estimate marker, only when titles exist, and an idle Search Auger prompt.
 The field prompt names audiobooks only while they take part in Search.
 People appears before titles, using 200 px circular portraits and centered two-line names.
 People-only results omit the title count and empty-catalog message.

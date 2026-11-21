@@ -33,7 +33,7 @@ const credits = (): readonly Credit[] => [
 ];
 
 const OPEN_SOURCE: readonly string[] = [
-    "Silo for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/silo-tizen",
+    "Auger for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/silo-tizen",
     "ThumbHash decoder by Evan Wallace — MIT License",
     "unicode-segmenter by Hyeseong Kim — MIT License",
     "uqr — MIT License",

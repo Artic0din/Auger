@@ -26,11 +26,13 @@
     animation: silo-page-enter var(--silo-page) ease-out;
 }
 
+/* The Auger lockup, sized as SiloWordmarkView(width: 150): 150 wide in a 64-high row, contained. */
 .signin-wordmark {
+    display: block;
+    width: 150px;
+    height: 64px;
     margin-bottom: 88px;
-    font-size: 26px;
-    font-weight: 800;
-    letter-spacing: 0.34em;
+    object-fit: contain;
 }
 
 .signin-title {
@@ -199,8 +201,8 @@
         linear-gradient(to left, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.55) 30%, rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.1) 80%, rgba(0, 0, 0, 0.3) 100%);
 }
 
-/* SiloWordmarkView(width: 150) scaled to fit the 64-high top row: the 764x400 asset draws 122x64,
-   centred (measured on the Apple TV app: x 104, 124 wide). */
+/* SiloWordmarkView(width: 150) scaled to fit the 64-high top row: the 764x312 asset draws 150x61.
+   Here it sits in the row with no margin. */
 .signin-auth .signin-wordmark {
     display: block;
     flex: none;

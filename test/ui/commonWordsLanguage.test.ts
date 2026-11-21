@@ -46,12 +46,12 @@ async function exitButtons(language: string | null): Promise<{ title: string; bu
 test("the exit dialog's Cancel reads the catalog in German and Arabic, with the keyless title and Exit left English", async () => {
     for (const language of ["de", "ar"]) {
         const shown = await exitButtons(language);
-        assert.deepEqual(shown, { title: "Exit Silo?", buttons: ["Exit", translate("common.cancel", undefined, language)] }, language);
+        assert.deepEqual(shown, { title: "Exit Auger?", buttons: ["Exit", translate("common.cancel", undefined, language)] }, language);
     }
 });
 
 test("the exit dialog in English is the text it always was", async () => {
-    assert.deepEqual(await exitButtons(null), { title: "Exit Silo?", buttons: ["Exit", "Cancel"] });
+    assert.deepEqual(await exitButtons(null), { title: "Exit Auger?", buttons: ["Exit", "Cancel"] });
 });
 
 type ScreenApi = {
@@ -84,12 +84,28 @@ async function screenText(screen: "startupFailure" | "unavailablePlayer", langua
 }
 
 test("the startup failure screen's button reads the catalog in German and Arabic, with its title left English, and English is unchanged", async () => {
-    assert.deepEqual(await screenText("startupFailure", null), { title: "Silo could not start", buttons: ["Try again"] });
-    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language), { title: "Silo could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
+    assert.deepEqual(await screenText("startupFailure", null), { title: "Auger could not start", buttons: ["Try again"] });
+    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
+});
+
+// The default wordmark is an image now, so the base rule sizes it as SiloWordmarkView(width: 150) is sized: 150 by 64,
+// contained. Without that size the 764x312 asset drew at full size over the screen's top-left corner.
+test("the startup failure screen draws the Auger wordmark in a 150 by 64 box", async () => {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    try {
+        await page.setContent("<!doctype html><main id='root'></main>");
+        await page.addStyleTag({ content: ["../../src/theme.css", "../../src/ui/signIn.css"].map(path => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n") });
+        await page.addScriptTag({ content: bundle });
+        await page.evaluate(() => { (window as unknown as ScreenApi).startupFailure(document.getElementById("root") as HTMLElement, () => undefined); });
+        const wordmark = page.locator(".signin-wordmark");
+        assert.equal(await wordmark.getAttribute("src"), "img/auger-wordmark.png");
+        const box = await wordmark.evaluate(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height, fit: getComputedStyle(node).objectFit }; });
+        assert.deepEqual(box, { width: 150, height: 64, fit: "contain" });
+    } finally { await page.close(); }
 });
 
 test("a language file that lands after the startup failure screen drew redraws its button", async () => {
-    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Silo could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
+    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
 
 test("a language file landing while Select is held on the startup failure's button waits for the release, and the press still runs Retry", async () => {

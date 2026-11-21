@@ -522,12 +522,17 @@ preplay("series Start Over skips fresh resume and retains automatic selectors", 
     catalog.progress.set("episode:s1e11", 630);
     playback.items.set("episode:s1e11", ["42"]);
     await series(tv);
-    const before = tv.fake.requests.filter(request => request.path.startsWith("/watch/")).length;
+    const before = tv.fake.requests.length;
     await tv.page.locator('[data-focus="start-over-episode"]').click();
     await prepare(tv);
     assert.equal(starts(tv).length, 1);
     assert.equal(starts(tv)[0]?.body?.start_position, 0);
-    assert.equal(tv.fake.requests.filter(request => request.path.startsWith("/watch/")).length, before + 2, "Start Over reads subtitle preferences and chapters but does not look up resume");
+    const sinceClick = tv.fake.requests.slice(before);
+    const started = sinceClick.findIndex(request => request.path === "/playback/start");
+    assert.ok(started >= 0, "Start Over sends START");
+    // Up Next reads the episode's title from the first frame (#698), so only a title read before START would be a resume lookup.
+    assert.deepEqual(sinceClick.slice(0, started).filter(request => request.path.startsWith("/watch/")).map(request => request.path), [], "Start Over does not look up resume");
+    assert.equal(sinceClick.filter(request => request.path.startsWith("/watch/") && request.path.includes("?file_id=")).length, 2, "Start Over reads subtitle preferences and chapters");
 });
 
 for (const failure of ["identity", "files"] as const) {
