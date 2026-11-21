@@ -1815,6 +1815,79 @@ async function lostSwitchRig(): Promise<{ r: Rig; id: string }> {
     return { r, id };
 }
 
+// #745 S95C recheck: a direct-play subtitle switch keeps the open stream, so a slow replan must not hold the transport.
+function shownPosition(r: Rig): number {
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" || view.phase === "paused", `playing (${view.phase})`);
+    return view.positionSeconds;
+}
+
+async function slowSwitchRig(): Promise<{ r: Rig; held: { release: () => void } }> {
+    const { r, id } = await embeddedSwitchRig();
+    r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+    const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+    r.controller.selectSubtitle("file:42:subtitle:5");
+    await settle(r);
+    assert.equal(replans(r.h).length, 1);
+    assert.equal(tracks(r).change.state, "changing");
+    return { r, held };
+}
+
+test("Pause goes through while a direct-play subtitle switch's replan is out (#745)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        r.controller.setPaused(true);
+        await settle(r);
+        assert.equal(r.avplay.state, "PAUSED", "Pause is not held behind the replan");
+        held.release();
+        await settle(r);
+        assert.equal(r.avplay.state, "PAUSED", "the answer does not undo the pause");
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a committed seek lands while a direct-play subtitle switch's replan is out (#745)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        const opens = r.avplay.urls.length;
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).at(-1), "seekTo 120000", "the seek is sent, not dropped");
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.ok(shownPosition(r) >= 120, `the seek lands (${shownPosition(r)})`);
+        held.release();
+        await settle(r);
+        assert.equal(r.avplay.urls.length, opens, "no reopen");
+        assert.equal(tracks(r).change.state, "idle");
+        assert.ok(shownPosition(r) >= 120, `the answer keeps the seek (${shownPosition(r)})`);
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a seek and a later subtitle pick during a slow direct-play switch both hold, and the later pick wins (#745)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.controller.selectSubtitle(undefined);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).at(-1), "seekTo 120000");
+        assert.ok(shownPosition(r) >= 120, `the seek holds (${shownPosition(r)})`);
+        assert.equal(tracks(r).selectedSubtitleId, undefined, "the later pick, Off, wins");
+        assert.notEqual(tracks(r).change.state, "changing");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
 // #738 review: a new play, suspend and restore, and a seek each leave no stray replan and no change stuck in flight.
 test("a new play ends a lost embedded subtitle switch's replays (#738)", async () => {
     const { r, id } = await lostSwitchRig();

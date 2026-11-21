@@ -1788,8 +1788,8 @@ export class PlaybackController implements PlayerControls {
             this.changeSettled(attempt, { state: "refused", message: decision.terminal.message });
             return;
         }
-        // Drawn locally, the switch no longer holds `busy`: a local seek may.
-        if (!attempt.switchLocal) attempt.busy = false;
+        // A subtitle switch never holds `busy`: a local seek may.
+        if (!subtitleSwitchOut(attempt)) attempt.busy = false;
         if (decision.outcome === "playable") {
             if (decision.sessionId !== sessionId) {
                 this.fail(attempt, { kind: "server" }, true);
@@ -2093,7 +2093,8 @@ export class PlaybackController implements PlayerControls {
 
     private changeTracks(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks, kind?: "subtitle"): void {
         this.clearThumbnails(attempt);
-        attempt.busy = true;
+        // A direct-play subtitle switch keeps the open stream, so pause, play and seeks go through while its replan is out (#745).
+        if (kind === undefined) attempt.busy = true;
         attempt.change = kind === undefined ? { state: "changing" } : { state: "changing", kind };
         this.showPlayback(attempt);
         void this.replan(attempt, plan, "track_change", attempt.sourceSeconds, undefined, selected);
@@ -2112,7 +2113,7 @@ export class PlaybackController implements PlayerControls {
             attempt.pendingDownloadId = undefined;
             attempt.search?.reportUnselected();
         }
-        if (!attempt.switchLocal || this.pending.seek === undefined) attempt.busy = false;
+        if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
@@ -2451,7 +2452,7 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it, and playback leaves the change's frozen state. */
+    /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it. */
     private drawSwitchLocally(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
         const id = selected.subtitle?.id;
         if (id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id)) {
@@ -2459,7 +2460,6 @@ export class PlaybackController implements PlayerControls {
             attempt.subtitleOverride = { id };
         }
         attempt.switchLocal = true;
-        attempt.busy = false;
         // The stream ended while the switch held playback frozen: end it now rather than leave completion waiting for the answer.
         if (attempt.endedDuringChange) {
             this.changeSettled(attempt, { state: "idle" });
@@ -3904,6 +3904,8 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const frozen = attempt.busy && !attempt.reporting;
+        // The replaced track's captions stay hidden while a subtitle switch's answer is out, as when the switch held `busy`.
+        const captionsHeld = frozen || (subtitleSwitchOut(attempt) && !attempt.switchLocal);
         const captionTime = this.captionInstant(attempt, plan);
         this.show({
             phase: attempt.paused ? "paused" : "playing",
@@ -3941,7 +3943,7 @@ export class PlaybackController implements PlayerControls {
             seekIntervals: attempt.seekIntervals,
             previewKey: frozen ? undefined : attempt.planAttemptId,
             // The offset moves cues this overlay draws. Text AVPlay selects itself is not shifted: AVPlay has no subtitle-offset call, and a TV has to confirm whether its TEXT track can move.
-            captions: attempt.hidden || attempt.restoring || frozen ? undefined : { text: attempt.cues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), secondaryText: attempt.secondaryCues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), appearance: attempt.appearance, status: attempt.captionNotice === CAPTION_LOADING ? "loading" : attempt.captionNotice === CAPTION_FAILED ? "failed" : attempt.cues.length > 0 ? "ready" : "none", cueCount: attempt.cues.length, instant: captionTime },
+            captions: attempt.hidden || attempt.restoring || captionsHeld ? undefined : { text: attempt.cues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), secondaryText: attempt.secondaryCues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), appearance: attempt.appearance, status: attempt.captionNotice === CAPTION_LOADING ? "loading" : attempt.captionNotice === CAPTION_FAILED ? "failed" : attempt.cues.length > 0 ? "ready" : "none", cueCount: attempt.cues.length, instant: captionTime },
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
@@ -4406,9 +4408,9 @@ function renditionSwitch(plan: PlaybackPlan, trackId: string | undefined): boole
 }
 
 /** Direct play asks for embedded text as files the app draws (#538), so choosing one replans for its file; AVPlay's copy is only the fallback when the file fails. */
-/** A track change holds `busy`: true while its replan is out, but not once a subtitle switch is drawn locally and a seek may hold it. */
+/** A track change holds `busy` while its replan is out; a direct-play subtitle switch never does, so a seek may hold it instead. */
 function changeHoldsBusy(attempt: Attempt): boolean {
-    return attempt.change.state === "changing" && !attempt.switchLocal;
+    return attempt.change.state === "changing" && attempt.change.kind !== "subtitle";
 }
 
 /** A direct-play subtitle-only switch to an embedded track's file is in flight. */
