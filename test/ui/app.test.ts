@@ -1420,12 +1420,13 @@ appTest("remote navigation keeps focus and context through Browse paging, a fail
     await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 100, "first Browse page");
     // Paging: the last row asks for the next page, and Down then lands on it.
     const pageTwo = tv.fake.hold("/catalog/query", true);
+    const readsBefore = tv.fake.requests.length;
     const edge = await tv.page.locator('.catalog-grid .browse-card').last().getAttribute("data-focus");
     await tv.page.locator('.catalog-grid .browse-card').last().focus();
     await tv.remote(37);
     await tv.remote(39);
     await tv.jump(300);
-    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && request.body?.cursor !== undefined), "the second page is asked for");
+    await tv.eventually(async () => tv.fake.requests.slice(readsBefore).some(request => request.path.startsWith("/catalog/query") && request.body?.cursor !== undefined), "the second page is asked for");
     assert.equal(await tv.focused(), edge, "the edge card keeps focus while the next page is out");
     assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 100);
     pageTwo.release();
