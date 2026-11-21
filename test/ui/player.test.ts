@@ -674,13 +674,104 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
     } finally { await page.close(); }
 });
 
+// PlayerView.metadata(for:) and CountdownRing (PlayerView.swift:1348-1395, :1777, silo-apple main f70e16a): the series line, the S·E code
+// before the title, the synopsis, and the countdown as a ring of seconds left over the countdown's length beside Play Now (#697).
+test("Up Next names the series and the episode code, shows the synopsis and counts down in a ring beside Play Now", async () => {
+    const { page } = await open();
+    try {
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Harbor Lights chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor.", backdropUrl: "/images/harbor-113.jpg" };
+        const backdrop = (): Promise<{ image: string; filter: string; opacity: string; clip: string } | undefined> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-next-backdrop");
+            if (node === null || node.hidden) return undefined;
+            const css = getComputedStyle(node.querySelector(".player-next-backdrop-art")!);
+            return { image: css.backgroundImage, filter: css.filter, opacity: css.opacity, clip: getComputedStyle(node).clipPath };
+        });
+        const ring = (): Promise<{ label: string | null; seconds: string; filled: number; afterPlayNow: boolean }> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-countdown")!;
+            const progress = node.querySelector<SVGCircleElement>(".player-countdown-progress")!;
+            const length = Number(progress.getAttribute("stroke-dasharray"));
+            return { label: node.getAttribute("aria-label"), seconds: node.querySelector(".player-countdown-seconds")!.textContent ?? "", filled: Math.round((1 - Number(progress.getAttribute("stroke-dashoffset")) / length) * 100) / 100, afterPlayNow: node.previousElementSibling?.getAttribute("data-focus") === "play-next" };
+        });
+        await show(page, { ...playing(TRACKS), upNext: { next: episode, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        assert.equal(await text(page, ".player-next-series"), "Harbor Lights");
+        assert.equal(await text(page, ".player-next-up .player-title .player-next-code"), "S1:E13");
+        assert.equal(await page.locator(".player-next-up .player-title").evaluate(node => node.lastChild?.textContent), "Harbor Lights chapter 1.3");
+        assert.equal(await text(page, ".player-next-synopsis"), "A storm closes the harbor.");
+        assert.deepEqual(await ring(), { label: "Playing next in 12 seconds", seconds: "12", filled: 0.4, afterPlayNow: true });
+        assert.equal(await page.locator(".player-next-up .player-error-text").textContent(), "", "the ring replaces the countdown sentence");
+        // PlayerView.backgroundImage: the next still, blurred 44 and scaled 1.12 at 0.18 opacity under 0.78 black. The live video plays
+        // under the page on a TV, so the layer leaves a hole over the preview while it plays.
+        const shown = await backdrop();
+        assert.ok(shown !== undefined && shown.image.includes("/images/harbor-113.jpg"), `the next still is drawn behind the card: ${JSON.stringify(shown)}`);
+        assert.deepEqual([shown.filter, shown.opacity], ["blur(44px)", "0.18"]);
+        assert.ok(shown.clip.includes("evenodd") && shown.clip.includes("180px 112px"), `with a hole over the preview: ${shown.clip}`);
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal(await page.locator(".player-next-series").isHidden(), true, "a movie has no series line");
+        assert.equal(await page.locator(".player-next-up .player-title .player-next-code").count(), 0, "nor an episode code");
+        assert.equal(await page.locator(".player-countdown").isHidden(), true, "no countdown, no ring");
+        assert.equal(await backdrop(), undefined, "no still, no background");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: episode, countdown: 9 });
+        assert.deepEqual(await ring(), { label: "Playing next in 9 seconds", seconds: "9", filled: 0.9, afterPlayNow: true }, "after the end, the ring runs over Apple's 10 seconds");
+        assert.equal((await backdrop())?.clip, "none", "after the end there is no video to leave room for");
+    } finally { await page.close(); }
+});
+
+// PlayerView.metadata(for:): Apple heads every episode with its series; its numbers are never missing there (PlayerNextUpEpisode's
+// seasonNumber and episodeNumber are Int), so an episode the TV knows without them keeps the series line and drops only the code.
+test("an episode without season or episode numbers keeps its series line and drops only the code", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "episode:x", fileId: "9", title: "The Pilot", startSeconds: 0, episode: true, seriesTitle: "Harbor Lights" }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal(await text(page, ".player-next-series"), "Harbor Lights");
+        assert.equal(await page.locator(".player-next-up .player-title .player-next-code").count(), 0);
+        assert.equal(await page.locator(".player-next-up .player-title").textContent(), "The Pilot");
+    } finally { await page.close(); }
+});
+
+// A still the spoiler setting hides is not drawn behind the page either, even when On Deck has art to fall back to.
+test("a spoiler-hidden next still leaves the page background empty, though On Deck has art", async () => {
+    const { page } = await open();
+    try {
+        const deckCard = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0, backdropUrl: "/images/other.jpg" };
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true, backdropUrl: "/images/spoiler.jpg", hideBackdrop: true }, deck: [deckCard], countdown: undefined, status: "Up Next" } });
+        assert.equal(await page.locator(".player-next-backdrop").isHidden(), true);
+    } finally { await page.close(); }
+});
+
+// PlayerView.actionRow on tvOS (:1397-1475, silo-apple main f70e16a): Play Now and the ring on the first row (56 apart), Keep Watching and
+// Close on the second (20 apart), each button with its symbol: play.fill, rectangle.inset.filled, xmark. The error page keeps plain buttons.
+test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on the next, each button with its symbol", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 };
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        const layout = await page.evaluate(() => {
+            const top = (selector: string): number => Math.round(document.querySelector(selector)!.getBoundingClientRect().top + document.querySelector(selector)!.getBoundingClientRect().height / 2);
+            const icon = (selector: string): boolean => document.querySelector(`${selector} svg`) !== null;
+            return {
+                firstRow: [top('[data-focus="play-next"]'), top(".player-countdown")],
+                secondRow: [top('[data-focus="keep-watching"]'), top('[data-focus="back"]')],
+                icons: [icon('[data-focus="play-next"]'), icon('[data-focus="keep-watching"]'), icon('[data-focus="back"]')],
+                labels: ['[data-focus="play-next"]', '[data-focus="keep-watching"]', '[data-focus="back"]'].map(selector => document.querySelector(selector)!.textContent),
+            };
+        });
+        assert.equal(layout.firstRow[0], layout.firstRow[1], "Play Now and the ring share a row");
+        assert.equal(layout.secondRow[0], layout.secondRow[1], "Keep Watching and Close share a row");
+        assert.ok(layout.secondRow[0]! > layout.firstRow[0]!, "the second row sits below the first");
+        assert.deepEqual(layout.icons, [true, true, true]);
+        assert.deepEqual(layout.labels, ["Play Now", "Keep Watching", "Close"], "the symbols add no text");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
+        assert.equal(await page.locator('[data-focus="back"] svg').count(), 0, "the error page's Go Back has no symbol");
+    } finally { await page.close(); }
+});
+
 test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
     const { page } = await open();
     const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
     try {
         await show(page, view);
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
-        assert.equal(await text(page, ".player-error-text"), "Playing next in 10 seconds", "Apple's upNext.playingNextIn");
+        assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), "Playing next in 10 seconds", "the ring speaks Apple's upNext.playingNextIn");
         assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
         assert.equal(await focused(page), "cancel-autoplay");
@@ -800,6 +891,23 @@ for (const complete of [false, true]) {
     });
 }
 
+// Up and Down move between rows; on the last row there is none below, so Down leaves focus where it is (#721 review).
+test("Down on the last Up Next row keeps focus where it is, on a later On Deck card or on Close", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const };
+        const deck = [0, 1, 2].map(index => ({ contentId: `deck-${index}`, fileId: `f${index}`, title: `Deck ${index}`, startSeconds: 0 }));
+        await show(page, { ...playing(TRACKS), upNext: { next, deck, countdown: undefined, status: "Up Next" } });
+        await page.locator('[data-focus="deck:deck-1"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:deck-1", "the second On Deck card keeps focus");
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: undefined, status: "Up Next" } });
+        await page.locator('[data-focus="back"]').focus();
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "back", "with no On Deck, Close is on the last row and keeps focus");
+    } finally { await page.close(); }
+});
+
 test("Up Next captures remote input, preserves focus and exposes Keep Watching and On Deck", async () => {
     const { page } = await open();
     const candidate = { contentId: "next", fileId: "43", title: "Next episode", overview: "The next chapter.", startSeconds: 0, episode: true as const };
@@ -824,7 +932,8 @@ test("Up Next captures remote input, preserves focus and exposes Keep Watching a
         assert.equal(await focused(page), "keep-watching");
         await remote(page, ENTER);
         assert.deepEqual(await commands(page), ["keepWatching"]);
-        await remote(page, DOWN);
+        // Close shares Keep Watching's row (PlayerView.actionRow), and Down from that row enters On Deck (#721).
+        await remote(page, RIGHT);
         assert.equal(await focused(page), "back");
         await remote(page, DOWN);
         assert.equal(await focused(page), "deck:deck-0");

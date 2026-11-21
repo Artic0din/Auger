@@ -1619,9 +1619,98 @@ test("a seek on a direct plan stays local, at source time minus the offset", asy
     assert.equal(r.avplay.calls[r.avplay.calls.length - 1], "seekTo 20000", "no second call while a seek is pending");
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls[r.avplay.calls.length - 1], "seekTo 10000", "the second skip adds to the pending target (#724)");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(10000);
-    assert.equal(only(bodies(r.h, "/progress")).position, 20);
+    assert.equal(only(bodies(r.h, "/progress")).position, 10);
+});
+
+// PlayerViewModel.queueSkipDebounce (silo-apple main 71a3beb9, PlayerViewModel.swift:7961-7985): each skip adds to the target still in
+// flight (RelativeSeek.target(current:pending:delta:)), never to the position from before the skip (#724).
+for (const [name, start, skips, landing] of [
+    ["Fast Forward then Rewind", 30, [30, -10], 50],
+    ["Rewind then Rewind", 60, [-10, -10], 40],
+    ["Fast Forward then Fast Forward", 30, [30, 30], 90],
+    ["three skips while the first is in flight", 30, [30, -10, -10], 40],
+] as const) test(`${name} chained during a seek lands on the summed target, as on Apple TV`, async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(start * 1000);
+    const seeks = (): string[] => r.avplay.calls.filter(call => call.startsWith("seekTo "));
+    const before = seeks().length;
+    for (const skip of skips) r.controller.seekBy(skip);
+    assert.deepEqual(seeks().slice(before), [`seekTo ${(start + (skips[0] ?? 0)) * 1000}`], "one seek at a time; the rest wait");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.deepEqual(seeks().slice(before), [`seekTo ${(start + (skips[0] ?? 0)) * 1000}`, `seekTo ${landing * 1000}`], "no key is lost, and the queued seek adds every skip to the pending target");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(10000);
+    assert.equal(only(bodies(r.h, "/progress")).position, landing);
+});
+
+test("a skip queued behind a seek that fails measures from where playback really is", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekBy(-10);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 20000", "Fast Forward failed at 0:30, so the Rewind goes to 0:20, not 0:50");
+});
+
+test("an absolute seek queued behind a seek that fails keeps its own target", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekToSeconds(100);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 100000");
+});
+
+// Each queued skip is held at 0 and the duration as it is pressed, on both paths: a seek that lands and one that fails end in
+// the same place (stand-in review of #725).
+for (const [name, start, skips, outcome, landing] of [
+    ["a chain that reaches 0 lands", 5, [-10, -10, 30], "lands", 30],
+    ["a chain that reaches 0 behind a failed seek", 5, [-10, -10, 30], "fails", 30],
+    ["a chain that reaches the end lands", 7180, [30, 30, -10], "lands", 7190],
+    ["a chain that reaches the end behind a failed seek", 7180, [30, 30, -10], "fails", 7190],
+    ["two skips behind a failed seek", 30, [30, -10, -10], "fails", 10],
+] as const) test(`${name} where each press is held at 0 and the duration`, async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(start * 1000);
+    for (const skip of skips) r.controller.seekBy(skip);
+    r.avplay.finishSeek(outcome === "fails" ? "UnknownError" : undefined);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), `seekTo ${landing * 1000}`);
+});
+
+test("a skip pressed after a queued absolute seek keeps that seek's target when the seek in flight fails", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekToSeconds(100);
+    r.controller.seekBy(-10);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 90000");
+});
+
+test("Rewind after a finished Fast Forward measures from the Fast Forward's landing, as on Apple TV", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(3000);
+    r.controller.seekBy(-10);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 50000");
 });
 
 test("410 playback_session_ended leaves playback without a new session or stop", async () => {
@@ -1878,6 +1967,9 @@ test("Up Next appears at Apple's default 30 seconds and Keep Watching suppresses
     r.avplay.tick((duration - 30) * 1000);
     await r.h.clock.advance(0);
     assert.ok("upNext" in last(r.views), "panel should appear before EOF");
+    const shown = last(r.views);
+    assert.ok(shown.phase === "playing");
+    assert.deepEqual([shown.upNext?.countdown, shown.upNext?.countdownTotal], [30, 30], "the ring runs over the prompt's 30 seconds (Apple's nextUpPromptSeconds)");
     r.controller.cancelAutoplay();
     r.avplay.tick((duration - 10) * 1000);
     await r.h.clock.advance(0);
@@ -1962,6 +2054,7 @@ test("Show Up Next opens the manual panel on the next episode without a countdow
     assert.equal(view.upNext?.failed, undefined);
     assert.equal(view.upNext?.status, "Up Next");
     assert.equal(view.upNext?.countdown, undefined);
+    assert.equal(view.upNext?.countdownTotal, 100, "opened by hand, the ring would run over Apple's 100-second HUD threshold");
     assert.equal(view.upNext?.next?.contentId, "episode:s1e13");
     assert.equal(view.upNext?.next?.title, "Harbor Lights chapter 1.3");
     r.controller.playNext();
@@ -2235,6 +2328,32 @@ test("Up Next hides an unwatched episode synopsis when the profile asks and keep
     assert.match(visible.upNext?.next?.overview ?? "", /synthetic episode/);
     shown.controller.destroy();
 });
+
+// The S95C captures (#721 reviews): S1E25 to S2E1 showed no still, then the series backdrop, behind the card, though the season 2 row had a still.
+// Apple's backgroundArtwork (PlayerView.swift) takes the episode still first and the backdrop only when there is none.
+for (const itemStill of ["still", "none", "series"] as const) {
+    test(`a next episode from the next season keeps its season row's still behind the card (catalog item with ${itemStill === "still" ? "a still" : itemStill === "none" ? "no backdrop" : "the series backdrop"}) (#697)`, async () => {
+        const r = await rig("p-owner");
+        const catalog = new FakeCatalog();
+        catalog.episodeStills = true;
+        catalog.itemStill = itemStill;
+        catalog.fileIds.set("episode:s1e13", "43");
+        catalog.fileIds.set("episode:s1e21", "44");
+        r.h.fake.catalog = catalog;
+        r.server.items.set("episode:s1e13", ["43"]);
+        r.server.items.set("episode:s1e21", ["44"]);
+        await playMovie(r, { contentId: "episode:s1e13", fileId: "43", title: "Harbor Lights chapter 1.3", startSeconds: 0, episode: true, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 });
+        r.controller.showUpNext();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing");
+        assert.equal(view.upNext?.next?.contentId, "episode:s1e21", "the next episode is season 2's first");
+        assert.equal(view.upNext?.next?.backdropUrl, `/art/${encodeURIComponent("episode:s1e21")}-still.svg`, "its still is the season row's");
+        assert.equal(view.upNext?.next?.backdropIsEpisodeStill, true, "and the still keeps its episode-still flag, so the spoiler setting still applies");
+        r.controller.destroy();
+    });
+}
 
 test("On Deck blurs an unwatched episode still and leaves series art and a started episode sharp", async () => {
     const spoilers = (): EpisodeSpoilerSettings => ({ hidesImages: true, hidesOverviews: false });

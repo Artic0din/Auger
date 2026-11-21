@@ -302,7 +302,7 @@ export type PlaybackView =
           readonly buffering: boolean;
           /** Apple's episodes icon: a next episode, On Deck row, in-flight read, or a failed read that can be tried again. */
           readonly episodes?: boolean;
-          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; readonly status: string; readonly loading?: boolean; readonly failed?: boolean };
+          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; /** The countdown's full length, for the ring (Apple's `nextUpCountdownTotalSeconds`). */ readonly countdownTotal?: number; readonly status: string; readonly loading?: boolean; readonly failed?: boolean };
           readonly resumePending?: boolean;
           readonly transportCommandCount?: number;
           readonly tracks: TrackView;
@@ -407,6 +407,8 @@ const RESEND_DELAYS_MS = [1000, 2000];
 const SCREEN = { width: 1920, height: 1080 };
 /** Apple tvOS `nextUpHUDCountdownThresholdSeconds`: a manual panel counts down only inside this. */
 const MANUAL_COUNTDOWN_THRESHOLD_SECONDS = 100;
+/** The countdown after a video ends before the next one starts (Apple's `nextUpCountdownDefaultSeconds`). */
+export const AUTOPLAY_COUNTDOWN_SECONDS = 10;
 
 type TrackInfo = { readonly state: "loading" | "failed" } | { readonly state: "ready"; readonly versions: readonly FileVersionTracks[] };
 
@@ -575,6 +577,10 @@ interface Attempt {
     /** Pause or resume asked for while a local seek is settling. Applied when that seek ends. */
     pauseAfterSeek: boolean | undefined;
     queuedSeekSeconds: number | undefined;
+    /** The target of the local seek in flight; read only while `pending.seek` is set. */
+    seekTarget: number | undefined;
+    /** The skips behind `queuedSeekSeconds`, in press order, when only skips queued it: a failed seek replays them from the real position. */
+    queuedSkips: number[] | undefined;
     progress: Promise<void> | undefined;
     cancelTimer: (() => void) | undefined;
     stopSpec: RequestSpec<PlaybackMutation> | undefined;
@@ -745,6 +751,8 @@ export class PlaybackController implements PlayerControls {
             seekFailure: undefined,
             pauseAfterSeek: undefined,
             queuedSeekSeconds: undefined,
+            seekTarget: undefined,
+            queuedSkips: undefined,
             progress: undefined,
             cancelTimer: undefined,
             stopSpec: undefined,
@@ -856,7 +864,14 @@ export class PlaybackController implements PlayerControls {
 
     seekBy(seconds: number): void {
         const attempt = this.active();
-        if (attempt !== undefined) this.seekToSeconds(attempt.sourceSeconds + seconds);
+        if (attempt === undefined) return;
+        // PlayerViewModel.queueSkipDebounce (RelativeSeek.target(current:pending:delta:)): a skip pressed while a seek is in flight adds
+        // to the target already asked for, the queued one first, never to the position from before that seek.
+        const inFlight = attempt.busy && this.pending.seek !== undefined;
+        const pending = inFlight ? attempt.queuedSeekSeconds ?? attempt.seekTarget : undefined;
+        const skips = attempt.queuedSeekSeconds === undefined ? [] : attempt.queuedSkips;
+        this.seekToSeconds((pending ?? attempt.sourceSeconds) + seconds);
+        if (inFlight && attempt.queuedSeekSeconds !== undefined && skips !== undefined) attempt.queuedSkips = [...skips, seconds];
     }
 
     retrySettings(): void {
@@ -892,7 +907,10 @@ export class PlaybackController implements PlayerControls {
         const duration = plan.durationSeconds;
         const target = Math.max(0, Math.min(seconds, duration ?? Number.MAX_VALUE));
         if (attempt.busy) {
-            if (this.pending.seek !== undefined && attempt.change.state !== "changing" && !attempt.hidden && !attempt.restoring) attempt.queuedSeekSeconds = target;
+            if (this.pending.seek !== undefined && attempt.change.state !== "changing" && !attempt.hidden && !attempt.restoring) {
+                attempt.queuedSeekSeconds = target;
+                attempt.queuedSkips = undefined;
+            }
             return;
         }
         if (attempt.undoSkip === target) attempt.undoSkip = undefined;
@@ -918,10 +936,12 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const transport = this.transport;
+        attempt.seekTarget = target;
         const settled = (moved: boolean): void => {
             if (transport !== this.transport || !attempt.live) {
                 attempt.pauseAfterSeek = undefined;
                 attempt.queuedSeekSeconds = undefined;
+                attempt.queuedSkips = undefined;
                 return;
             }
             attempt.busy = false;
@@ -932,8 +952,13 @@ export class PlaybackController implements PlayerControls {
             attempt.seekFailure = undefined;
             const pauseAfterSeek = attempt.pauseAfterSeek;
             attempt.pauseAfterSeek = undefined;
-            const queued = attempt.queuedSeekSeconds;
+            // Skips queued behind a seek that did not move count from where playback still is, not from the failed target, each held at
+            // 0 and the end as it was when pressed, so a failed seek and a landed one end in the same place.
+            const queued = !moved && attempt.queuedSkips !== undefined && attempt.queuedSeekSeconds !== undefined
+                ? attempt.queuedSkips.reduce((at, skip) => Math.max(0, Math.min(at + skip, duration ?? Number.MAX_VALUE)), attempt.sourceSeconds)
+                : attempt.queuedSeekSeconds;
             attempt.queuedSeekSeconds = undefined;
+            attempt.queuedSkips = undefined;
             if (failure !== undefined) {
                 if (pauseAfterSeek !== undefined) attempt.paused = pauseAfterSeek;
                 this.routeFailed(attempt, failure);
@@ -1000,6 +1025,7 @@ export class PlaybackController implements PlayerControls {
         attempt.restoring = false;
         attempt.hidden = true;
         attempt.queuedSeekSeconds = undefined;
+        attempt.queuedSkips = undefined;
         // A backgrounded app is paused to the buffering controller: nothing waits, prompts or lowers unseen.
         this.syncBuffering(attempt);
         this.capturePosition(attempt);
@@ -1780,6 +1806,7 @@ export class PlaybackController implements PlayerControls {
     /** A codec or route failure on this TV: the server picks the next route, a bounded number of times. */
     private routeFailed(attempt: Attempt, classification: string): void {
         attempt.queuedSeekSeconds = undefined;
+        attempt.queuedSkips = undefined;
         attempt.pendingSkipUndo = undefined;
         const plan = attempt.plan;
         if (!attempt.live || plan === undefined) {
@@ -2817,7 +2844,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
-        const deadline = this.deps.clock.now() + 10000;
+        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
         const tick = (): void => {
             const view = this.current;
             if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
@@ -3725,6 +3752,8 @@ export class PlaybackController implements PlayerControls {
             ...(attempt.prompt === undefined ? {} : { upNext: {
                 next: this.shownNext(attempt.prompt.next), deck: attempt.prompt.deck.map(item => this.shownNext(item) ?? item),
                 countdown: this.promptCountdown(attempt, plan),
+                // Apple's nextUpCountdownTotalSeconds: the HUD threshold when opened by hand, else the prompt's length.
+                countdownTotal: attempt.offer.manual ? MANUAL_COUNTDOWN_THRESHOLD_SECONDS : Math.max(1, attempt.promptSeconds),
                 status: attempt.prompt.loading === true || attempt.prompt.next !== undefined ? translate("upNext.heading") : translate("upNext.headingNothing"),
                 ...(attempt.prompt.loading === true ? { loading: true as const } : {}),
                 ...(attempt.prompt.failed === true ? { failed: true as const } : {}),
@@ -3944,7 +3973,12 @@ export class PlaybackController implements PlayerControls {
         void this.deps.session.call({ ...operations.getCatalogItem(request.contentId), profileScoped: true, signal }).then(detail => {
             if (!signal.aborted && detail.id === request.contentId) {
                 const watch = playbackWatch(detail.watch);
-                accept({ ...request, overview: detail.overview, backdropUrl: detail.backdropUrl, backdropIsEpisodeStill: detail.backdropIsEpisodeStill, ...(watch === undefined ? {} : { watch }) });
+                // Apple's backgroundArtwork (PlayerView.swift) takes the episode still first. On the S95C a next season's first episode's item
+                // carried no backdrop, or the series backdrop, where its season row had the still, so the item's backdrop wins only when it is a still or the row has none.
+                const rowStill = request.episode === true && request.backdropUrl !== undefined && request.backdropIsEpisodeStill !== false;
+                const itemWins = detail.backdropUrl !== undefined && (detail.backdropIsEpisodeStill === true || !rowStill);
+                const still = itemWins ? { backdropUrl: detail.backdropUrl, backdropIsEpisodeStill: detail.backdropIsEpisodeStill } : { backdropUrl: request.backdropUrl, backdropIsEpisodeStill: request.backdropIsEpisodeStill };
+                accept({ ...request, overview: detail.overview ?? request.overview, ...still, ...(watch === undefined ? {} : { watch }) });
             }
         }, () => undefined);
     }
