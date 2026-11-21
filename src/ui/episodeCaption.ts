@@ -24,6 +24,15 @@ function abbreviatedDate(date: Date): string {
         .map(part => part.type === "month" && part.value === "Sept" ? "Sep" : part.value).join("");
 }
 
+/** silo-apple DetailDateFormatting.longDate: a Details fact's date in the `.long` style of the shown language, built at local noon so no zone moves the day. */
+export function detailDate(value: string): string {
+    const [year = 0, month = 1, day = 1] = value.split("-").map(Number);
+    const date = new Date(0);
+    date.setFullYear(year, month - 1, day);
+    date.setHours(12, 0, 0, 0);
+    return new Intl.DateTimeFormat(shownLocale(), { dateStyle: "long" }).format(date);
+}
+
 export function episodeRuntime(minutes: number): string | undefined {
     return runtimeText(minutes);
 }

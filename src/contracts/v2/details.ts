@@ -15,7 +15,8 @@ export interface DetailExtras {
     readonly crew: readonly Credit[];
     readonly ratings: readonly { readonly name: string; readonly display: string }[];
     /** `label` is a catalog key, so the label reads in the language shown when the page draws. */
-    readonly facts: readonly { readonly label: MessageKey; readonly value: string }[];
+    /** A fact is text, or a calendar date (`YYYY-MM-DD`) the screen formats in the shown language. */
+    readonly facts: readonly ({ readonly label: MessageKey; readonly value: string } | { readonly label: MessageKey; readonly date: string })[];
 }
 
 function entries(value: unknown, path: string): unknown[] {
@@ -32,7 +33,7 @@ export function decodeDetailExtras(value: unknown): DetailExtras {
         if (key === "cast") integer(credit, "order", path);
         return { id: optionalString(credit, "person_id", path), name: string(credit, "name", path), role: string(credit, key === "cast" ? "character" : "job", path), photoUrl: optionalString(credit, "photo_url", path) };
     });
-    const facts: { label: MessageKey; value: string }[] = [];
+    const facts: ({ label: MessageKey; value: string } | { label: MessageKey; date: string })[] = [];
     for (const [key, label] of [["studios", "detail.studio"], ["networks", "detail.network"], ["countries", "detail.country"]] as const) {
         const values = entries(obj[key], `item_detail.${key}`).map((value) => {
             if (typeof value !== "string") throw new WireError(`item_detail.${key}`, "strings");
@@ -45,8 +46,7 @@ export function decodeDetailExtras(value: unknown): DetailExtras {
         if (raw === undefined) continue;
         const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
         if (match === null) continue;
-        const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
-        facts.push({ label, value: new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric" }).format(date) });
+        facts.push({ label, date: `${match[1]}-${match[2]}-${match[3]}` });
     }
     return {
         logoUrl: optionalString(obj, "logo_url", "item_detail"), cast: credits("cast"), crew: credits("crew"), facts,
