@@ -656,6 +656,7 @@ appTest("an expired only account signs in again even when its sign-in flag canno
     await tv.page.locator('[data-screen="code"], [data-view="change-account"]').first().waitFor({ timeout: 5000 });
     assert.equal(await tv.page.locator('[data-view="change-account"]').count(), 0, "the expired account is no other account to choose");
     assert.equal(await tv.page.locator('[data-screen="code"]').count(), 1);
+    assert.match(await tv.page.locator("[data-server-headline]").innerText(), /^Sign in to /, "renewing an account keeps Sign in to");
     await tv.page.getByRole("button", { name: "Sign in with a password", exact: true }).click();
     assert.equal(await tv.page.locator("#signin-username").inputValue(), "laura", "the expired account is the one renewed");
 });

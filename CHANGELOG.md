@@ -130,6 +130,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Adding an account from Change Account now titles the code screen "Add an account on {server}", as on Apple TV, in the language you pick. A first sign-in and renewing a saved account keep "Sign in to {server}" (#754).
 - Switching to another embedded subtitle during a video on direct play now loads that subtitle's file, so Delay, Appearance and Only on this TV stay, as on Apple TV, without restarting the video. If the server refuses the switch, or its answer is slow to arrive, the TV's player shows the subtitle meanwhile. Pause, play and seeking keep working while the switch is answered (#738).
 - The Details pills for the version and audio choices now read Version and Audio in the language you pick, as on Apple TV, instead of Versions and Audio Tracks in English (#728).
 - When a film's On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode". An episode whose next episode can't be found keeps that line (#741).
