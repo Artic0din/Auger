@@ -526,6 +526,10 @@ interface Attempt {
     sessionId: string | undefined;
     plan: PlaybackPlan | undefined;
     planAttemptId: string;
+    /** The scrub preview's identity: it changes only when the transport is replaced, so a kept stream keeps an active scrub (#745). */
+    previewKey: string;
+    /** A seek outside the window made while a subtitle switch is out: its reanchor waits for the switch's answer (#745). */
+    queuedReanchorSeconds: number | undefined;
     readonly attemptedKeys: string[];
     recoveries: number;
     sequence: number;
@@ -719,6 +723,8 @@ export class PlaybackController implements PlayerControls {
             sessionId: undefined,
             plan: undefined,
             planAttemptId: this.newId(),
+            previewKey: this.newId(),
+            queuedReanchorSeconds: undefined,
             attemptedKeys: [],
             recoveries: 0,
             sequence: 0,
@@ -941,6 +947,11 @@ export class PlaybackController implements PlayerControls {
             target >= timeline.timelineOffsetSeconds &&
             (timeline.seekWindowStartSeconds === undefined || target >= timeline.seekWindowStartSeconds) &&
             (timeline.seekWindowEndSeconds === undefined || target <= timeline.seekWindowEndSeconds);
+        // A reanchor closes AVPlay and would race the switch's replan: it waits for the answer, as in-window seeks need not.
+        if (!local && subtitleSwitchOut(attempt)) {
+            attempt.queuedReanchorSeconds = target;
+            return;
+        }
         attempt.pauseAfterSeek = requestedPaused;
         attempt.busy = true;
         this.clearThumbnails(attempt);
@@ -2133,6 +2144,9 @@ export class PlaybackController implements PlayerControls {
         if (failure === undefined && (resolveCompletedSubtitle || resolveDownloadedSubtitle) && attempt.plan !== undefined && !attempt.busy) {
             this.applyPreparedSubtitleChoices(attempt, attempt.plan);
         }
+        const reanchor = attempt.queuedReanchorSeconds;
+        attempt.queuedReanchorSeconds = undefined;
+        if (failure === undefined && reanchor !== undefined && !attempt.busy) this.seekAbsolute(reanchor);
     }
 
     private readTracks(attempt: Attempt): void {
@@ -2206,6 +2220,8 @@ export class PlaybackController implements PlayerControls {
             this.readTracks(attempt);
         }
         attempt.planAttemptId = this.newId();
+        attempt.previewKey = this.newId();
+        attempt.queuedReanchorSeconds = undefined;
         attempt.sourceSeconds = plan.timeline.sourceStartSeconds;
         attempt.started = false;
         attempt.bufferingAdvertised = serverFeatures.includes(BUFFERING_QUALITY_FEATURE);
@@ -3941,7 +3957,7 @@ export class PlaybackController implements PlayerControls {
                 message: attempt.hud.message,
             },
             seekIntervals: attempt.seekIntervals,
-            previewKey: frozen ? undefined : attempt.planAttemptId,
+            previewKey: frozen ? undefined : attempt.previewKey,
             // The offset moves cues this overlay draws. Text AVPlay selects itself is not shifted: AVPlay has no subtitle-offset call, and a TV has to confirm whether its TEXT track can move.
             captions: attempt.hidden || attempt.restoring || captionsHeld ? undefined : { text: attempt.cues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), secondaryText: attempt.secondaryCues.filter(cue => captionTime >= cue.start && captionTime < cue.end).map(cue => cue.text).join("\n"), appearance: attempt.appearance, status: attempt.captionNotice === CAPTION_LOADING ? "loading" : attempt.captionNotice === CAPTION_FAILED ? "failed" : attempt.cues.length > 0 ? "ready" : "none", cueCount: attempt.cues.length, instant: captionTime },
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),

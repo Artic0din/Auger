@@ -1702,10 +1702,10 @@ test("an AVPlay row at the track's stream index in another language is not used 
 
 // The S95C at dabdae65 (#729 review): switching Dutch to English mid-play sent one replan, which the stalled server answered 409 or never answered.
 // No file was read and nothing was drawn, and switching back while that replan was out sent nothing.
-async function embeddedSwitchRig(): Promise<{ r: Rig; id: string }> {
+async function embeddedSwitchRig(timeline?: Record<string, unknown>): Promise<{ r: Rig; id: string }> {
     const r = await rig();
     frenchInventory(r);
-    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.server.next.push({ ...(timeline === undefined ? {} : { timeline }), delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
     r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
     const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
     await settle(r);
@@ -1822,9 +1822,9 @@ function shownPosition(r: Rig): number {
     return view.positionSeconds;
 }
 
-async function slowSwitchRig(): Promise<{ r: Rig; held: { release: () => void } }> {
-    const { r, id } = await embeddedSwitchRig();
-    r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+async function slowSwitchRig(timeline?: Record<string, unknown>): Promise<{ r: Rig; held: { release: () => void } }> {
+    const { r, id } = await embeddedSwitchRig(timeline);
+    r.server.next.push({ ...(timeline === undefined ? {} : { timeline }), delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
     r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
     const held = r.h.fake.hold(`/playback/${id}/replan`, true);
     r.controller.selectSubtitle("file:42:subtitle:5");
@@ -1884,6 +1884,93 @@ test("a seek and a later subtitle pick during a slow direct-play switch both hol
         assert.ok(shownPosition(r) >= 120, `the seek holds (${shownPosition(r)})`);
         assert.equal(tracks(r).selectedSubtitleId, undefined, "the later pick, Off, wins");
         assert.notEqual(tracks(r).change.state, "changing");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+// #745 review: the old captions go when the new track is chosen, and the new ones come with the answer.
+test("a slow direct-play subtitle switch hides the replaced captions until its answer brings the new ones (#745)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.avplay.tick(1000);
+        const before = last(r.views);
+        assert.ok(before.phase === "playing");
+        assert.equal(before.captions?.text, "Forced");
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        const during = last(r.views);
+        assert.ok(during.phase === "playing");
+        assert.equal(during.captions, undefined, "the replaced Forced captions are gone at once");
+        held.release();
+        await settle(r);
+        await settle(r);
+        r.avplay.tick(1500);
+        const after = last(r.views);
+        assert.ok(after.phase === "playing");
+        assert.equal(after.captions?.text, "Bonjour", "the answer brings the new captions");
+    } finally { r.controller.destroy(); }
+});
+
+test("a slow direct-play switch's answer during a seek keeps a second seek queued until the first lands (#745)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        r.controller.seekToSeconds(200);
+        await settle(r);
+        const seeks = (): string[] => r.avplay.calls.filter(call => call.startsWith("seekTo"));
+        assert.deepEqual(seeks().slice(-1), ["seekTo 120000"], "the second seek waits for the first");
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.equal(seeks().at(-1), "seekTo 200000", "the queued seek follows");
+        r.avplay.finishSeek();
+        await settle(r);
+        assert.ok(shownPosition(r) >= 200, `the second seek lands (${shownPosition(r)})`);
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a same-stream answer to a slow subtitle switch keeps the scrub preview's key (#745)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        const key = (): string | undefined => { const view = last(r.views); return view.phase === "playing" || view.phase === "paused" ? view.previewKey : "gone"; };
+        const during = key();
+        assert.notEqual(during, undefined, "the preview is live during the switch");
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(tracks(r).change.state, "idle");
+        assert.equal(key(), during, "a kept stream keeps the preview key, so an active scrub is not cancelled");
+    } finally { r.controller.destroy(); }
+});
+
+test("a seek outside the window waits for a slow subtitle switch's answer, then reanchors (#745)", async () => {
+    const { r, held } = await slowSwitchRig({ can_seek_anywhere: false });
+    try {
+        const opens = r.avplay.urls.length;
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        assert.equal(replans(r.h).length, 1, "no reanchor while the switch is out");
+        assert.equal(r.avplay.urls.length, opens, "AVPlay stays open");
+        assert.equal(r.avplay.state, "PLAYING");
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2);
+        assert.equal(replans(r.h)[1]?.operation, "seek_reanchor", "the seek reanchors after the answer");
+        assert.equal(replans(r.h)[1]?.position_seconds, 120);
+        r.avplay.finishPrepare();
+        await settle(r);
+        if (r.avplay.calls.at(-1)?.startsWith("seekTo") === true) { r.avplay.finishSeek(); await settle(r); }
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5", "the switch's answer is kept");
         assert.deepEqual(r.exits, []);
     } finally { r.controller.destroy(); }
 });
