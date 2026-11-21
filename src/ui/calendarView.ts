@@ -7,7 +7,6 @@ import { artworkSymbol, defaultArtwork } from "./defaultArtwork.ts";
 import { shownLocale } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { abbreviatedWeekday } from "../i18n/weekdays.ts";
-import { markEnglishOnly } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
 
@@ -132,8 +131,12 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
     const dayZone: Zone = { id: "days", layout: "row", items: stripItems, get entry() { return `day:${state.selectedDay ?? dates[0]}`; } };
     zones.push(dayZone);
     let failureFocus = "retry";
-    if (state.data === undefined) {
-        if (failure !== undefined) {
+    const weekEmpty = shelves.every(shelf => shelf.items.length === 0);
+    // CalendarViewModel.load: a failed read sets its error only while `days.isEmpty`, so a failure over a shown week with events draws that
+    // week as a success would, and a failure over an empty or missing week shows the error page.
+    const failed = failure !== undefined && (state.data === undefined || weekEmpty);
+    if (failed || state.data === undefined) {
+        if (failed) {
             const error = state.error ?? failureState(failure);
             const page = searchState(errorHeadline(error), errorMessage(error), "calendar-failure", FAILURE_ICON);
             page.setAttribute("role", "alert");
@@ -153,10 +156,7 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
             zones.push({ id: "status", layout: "row", items: [{ key: "calendar-page", element: page }] });
         }
     }
-    // CalendarViewModel.load: a failed server read sets its error only while no week is shown, so a refresh that fails over a retained
-    // week draws that week as a success would. A failure of this TV's own (its timezone, its dates) keeps its note and Try Again.
-    const quietRefresh = failure !== undefined && state.data !== undefined && state.error !== undefined;
-    const empty = state.data !== undefined && !busy && (failure === undefined || quietRefresh) && shelves.every(shelf => shelf.items.length === 0);
+    const empty = state.data !== undefined && !busy && failure === undefined && weekEmpty;
     if (empty) {
         const copy = state.filter === "following" ? [translate("calendar.empty.following"), translate("calendar.empty.followingBody")] : state.filter === "trending" ? [translate("calendar.empty.trending"), translate("calendar.empty.trendingBody")] : [translate("calendar.empty.everything"), translate("calendar.empty.everythingBody")];
         const panel = searchState(copy[0] ?? "", copy[1] ?? "", "calendar-empty", CALENDAR_ICON);
@@ -165,7 +165,7 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         content.push(panel);
         zones.push({ id: "empty", layout: "row", items: links });
     }
-    for (const shelf of empty || state.data === undefined ? [] : shelves) {
+    for (const shelf of empty || failed || state.data === undefined ? [] : shelves) {
         const section = el("section", "calendar-shelf");
         section.style.setProperty("--calendar-scale", String(context.posterScale?.() ?? 1));
         section.setAttribute("data-section", shelf.date);
@@ -187,20 +187,11 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         content.push(section);
         zones.push({ id: shelf.date, layout: "row", items: shelf.items, spatial: true });
     }
-    if (failure !== undefined && state.data !== undefined && !quietRefresh) {
-        const action = actionButton("retry", translate("shell.errorView.tryAgain"), retry);
-        status.setAttribute("role", "alert");
-        const note = el("p", "browse-text", state.error === undefined ? failure : errorMessage(state.error));
-        markEnglishOnly(note, note.textContent ?? "");
-        status.appendChild(note);
-        content.push(zoneNode("browse-actions", [action]));
-        zones.push({ id: "status", layout: "row", items: [action] });
-    }
     const first = days.find(day => day.key === `day:${state.selectedDay}`) ?? days[0];
     let initial = first === undefined ? { zone: "status", key: failure === undefined ? "calendar-page" : failureFocus } : { zone: "filters", key: `filter:${state.filter}` };
     if (state.emptyLinkFocus) {
         if (empty) initial = { zone: "empty", key: `empty:${FILTERS.find(value => value !== state.filter)}` };
-        else if (state.data === undefined) initial = { zone: "status", key: failure === undefined ? "calendar-page" : "retry" };
+        else if (failed || state.data === undefined) initial = { zone: "status", key: failure === undefined ? "calendar-page" : failureFocus };
         if (state.data !== undefined) state.emptyLinkFocus = false;
     }
     return { name: "calendar", content, zones, focus: initial, back };

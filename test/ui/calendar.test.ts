@@ -708,6 +708,37 @@ calendarTest("Calendar failed revalidation keeps the current window quiet, as Ap
     assert.equal(await tv.page.locator(".calendar-event").count(), 0, "no previous-window cache leaks into an empty week");
 });
 
+/** CalendarViewModel.load sets its error while `days.isEmpty`, so a refresh that fails over an empty shown week shows the error page, not the empty panel. */
+for (const [status, id, headline, buttons] of [
+    [403, "forbidden", "Not allowed", ["Try Again"]],
+    [401, "token_invalid", "Session expired", ["Sign In Again", "Try Again"]],
+] as const) test(`a ${status} refresh over an empty week shows the error page with ${buttons.join(" then ")}, as Apple TV does`, async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCalendar();
+        await start(tv, catalog, true);
+        await activate(tv, "calendar"); await ready(tv, 3);
+        await activate(tv, "next-week"); await ready(tv, 0);
+        await tv.page.locator(".calendar-empty").waitFor();
+        // History covers the Calendar; Back shows the kept empty week and reads it again quietly.
+        await activate(tv, "profiles"); await activate(tv, "history");
+        await tv.eventually(async () => await tv.page.locator('.browse[data-view="calendar"]').count() === 0, "History");
+        catalog.calendarFailure = problem(status, id, "Hidden");
+        const before = reads(tv).length;
+        await tv.remote(10009);
+        await tv.eventually(async () => reads(tv).length > before, "the refresh read");
+        await tv.page.locator(".calendar-failure").waitFor();
+        assert.equal(await tv.page.locator(".calendar-empty").count(), 0, "no empty panel under the error");
+        assert.equal(await tv.page.locator(".calendar-shelf").count(), 0);
+        assert.equal(await tv.page.locator(".calendar-failure .search-state-title").innerText(), headline);
+        assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").allTextContents(), buttons);
+        catalog.calendarFailure = undefined;
+        await activate(tv, "retry"); await ready(tv, 0);
+        await tv.page.locator(".calendar-empty").waitFor();
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
 calendarTest("Calendar library recovery survives Settings Back onto Home and a later Calendar visit", async (tv, catalog) => {
     const settings = new FakeSettings(tv.fake);
     settings.profile().set(HIDDEN_KEY, [15]);
