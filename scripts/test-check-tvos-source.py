@@ -67,7 +67,9 @@ class CheckTvosSourceTest(unittest.TestCase):
         for body in (CITED,
                      "### tvOS Source\n\nsilo-apple `f70e16a`, Screens/Player/tvOS/TVPlayerControls.swift:583\n",
                      "## tvOS source\r\n\r\n- silo-apple commit: 71a3beb9c0c4b6774b5caca452dfec66f208ac8f\r\n- PlayerView.swift:1613-1635\r\n",
-                     "## tvOS source\n\nsilo-apple 71a3beb9\n\n### Card\n\nTVCollectionPosterCard.swift:106\n"):
+                     "## tvOS source\n\nsilo-apple 71a3beb9\n\n### Card\n\nTVCollectionPosterCard.swift:106\n",
+                     "## tvOS source\n\nsilo-apple commit: 8465631\n\nHomeView.swift:79\n",
+                     "## tvOS source\n\nsilo-apple commit: abcdefa\n\nHomeView.swift:79\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
