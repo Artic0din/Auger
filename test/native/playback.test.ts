@@ -2715,16 +2715,22 @@ test("a background STOP resend refused with 403 before the next episode starts s
         const r = await autoplayRig(true);
         const id = await playMovie(r, EPISODE);
         r.h.fake.script(`/playback/${id}`, { status: 503, body: {} }, problem(403, "forbidden", "Forbidden"));
-        r.avplay.tick(5399000);
+        // The next-episode lookup is still out when the resend is refused; its answer, a good one, lands afterwards.
+        const lookup = r.h.fake.hold("/watch/" + encodeURIComponent(EPISODE.contentId), true);
         r.avplay.listener?.onstreamcompleted();
         for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
-        assert.equal(completion(r).state, "ready", "the advance goes on after the 503");
+        assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
+        assert.notEqual(completion(r).state, "failed", "the advance goes on after the 503");
         await r.h.clock.advance(1000);
         for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
         assert.equal(bodies(r.h, `/playback/${id}`).length, 2);
         assert.equal(completion(r).state, "failed", "the refused resend ends the advance");
+        lookup.release();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(completion(r).state, "failed", "the late lookup answer does not offer the next episode");
         assert.equal(completion(r).failure, "session");
         assert.equal(completion(r).retryable, false);
+        assert.equal(completion(r).next, undefined);
         await r.h.clock.advance(30000);
         assert.equal(bodies(r.h, "/start").length, 1, "autoplay never starts the next episode");
         r.controller.destroy();
