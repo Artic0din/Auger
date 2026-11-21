@@ -27,7 +27,8 @@ export function detailAction(item: FocusItem): FocusItem {
     if (path === undefined) return item;
     const button = item.element;
     const accessibleLabel = startOver ? translate("detail.startOver") : button.textContent ?? "";
-    const label = item.key === "version" ? "Versions" : item.key === "audio" ? "Audio Tracks" : item.key === "subtitles" ? translate("detail.subtitles") : item.key === "watchlist" ? translate("detail.watchlist") : accessibleLabel;
+    // TVPlaybackSelectorRow (silo-apple 71a3beb9, :112, :147) titles these detail.version and detail.audio.
+    const label = item.key === "version" ? translate("detail.version") : item.key === "audio" ? translate("detail.audio") : item.key === "subtitles" ? translate("detail.subtitles") : item.key === "watchlist" ? translate("detail.watchlist") : accessibleLabel;
     button.textContent = "";
     button.setAttribute("aria-label", accessibleLabel);
     button.classList.add("details-action", !startOver && (item.key === "play" || item.key === "resume" || item.key === "next-episode") ? "details-play" : "details-circle");

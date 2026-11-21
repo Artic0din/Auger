@@ -8,7 +8,7 @@ import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { afterPaint, homeDetailsRead, launchBrowser, openTv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
 
@@ -18,8 +18,8 @@ after(async () => { await browser.close(); });
 
 const DATE_FACTS = [["release_date", "detail.released"], ["air_date", "detail.aired"], ["first_air_date", "detail.firstAired"], ["last_air_date", "detail.lastAired"]] as const;
 
-/** Each date fact's shown value, by its `item_detail` field. */
-async function dateFacts(language: string | null): Promise<Record<string, string>> {
+/** Opens Details for movie:m0001 on an English (en-AU) TV with `language` shown, and reads it with `read`. */
+async function onDetails<T>(language: string | null, read: (tv: Tv) => Promise<T>): Promise<T> {
     const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
     try {
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
@@ -44,16 +44,34 @@ async function dateFacts(language: string | null): Promise<Record<string, string
         await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').focus();
         await tv.page.keyboard.press("Enter");
         await tv.page.locator(".details-fact-row").first().waitFor();
+        const value = await read(tv);
+        assert.deepEqual(tv.console, []);
+        return value;
+    } finally { await tv.page.context().close(); }
+}
+
+/** Each date fact's shown value, by its `item_detail` field. */
+function dateFacts(language: string | null): Promise<Record<string, string>> {
+    const shown = language ?? "en";
+    return onDetails(language, async tv => {
         const values: Record<string, string> = {};
         for (const [field, key] of DATE_FACTS) {
             const label = translate(key, undefined, shown).toLocaleUpperCase(shown);
             // Exact label: German's "Ausstrahlung" labels contain each other.
             values[field] = await tv.page.locator(".details-fact-row").filter({ has: tv.page.locator("dt", { hasText: new RegExp(`^${label}$`) }) }).locator("dd").innerText();
         }
-        assert.deepEqual(tv.console, []);
         return values;
-    } finally { await tv.page.context().close(); }
+    });
 }
+
+// #728: the Version and Audio pills take Apple's detail.version and detail.audio (TVPlaybackSelectorRow.swift:112, :147), so they follow the language.
+test("Details' Version and Audio pills read in the shown language (#728)", async () => {
+    const labels = await onDetails("cs", async tv => ({
+        version: await tv.page.locator('[data-focus="version"] .details-action-label').innerText(),
+        audio: await tv.page.locator('[data-focus="audio"] .details-action-label').innerText(),
+    }));
+    assert.deepEqual(labels, { version: "Verze", audio: "Zvuk" });
+});
 
 test("Details' date facts read in German on an English TV", async () => {
     // The Pro's S95C capture of Spidey: "ERSTAUSSTRAHLUNG 6. August 2021", "LETZTE AUSSTRAHLUNG 13. Juli 2026".

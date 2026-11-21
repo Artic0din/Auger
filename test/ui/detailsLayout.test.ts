@@ -2780,7 +2780,7 @@ detailTest("movie Details keeps playback and personal controls in one row with c
 detailTest('Details restores the hero from supporting rails and uses native selector presentation', async tv => {
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator('[data-focus="version"]').focus();
-    assert.equal(await tv.page.locator('[data-focus="version"] .details-action-label').textContent(), 'Versions');
+    assert.equal(await tv.page.locator('[data-focus="version"] .details-action-label').textContent(), 'Version');
     await tv.page.locator('[data-focus="version"]').click();
     const picker = tv.page.getByRole('dialog', { name: 'Version', exact: true });
     assert.equal(await picker.locator('h2').textContent(), 'VERSION');
