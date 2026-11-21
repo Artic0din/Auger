@@ -157,8 +157,8 @@ export class FakeAVPlay implements AVPlay {
         }
         this.calls.push(`setSelectTrack ${trackType} ${trackIndex}`);
         if (trackType === "TEXT") {
+            // Selecting a TEXT track does not unhide subtitles: only setSilentSubtitle(false) does, as AVPlay documents the two calls separately.
             this.textIndex = trackIndex;
-            this.silentSubtitle = false;
         } else {
             this.audioIndex = trackIndex;
         }
