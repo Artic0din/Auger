@@ -207,8 +207,13 @@
 /* TVPrimaryPillButton in TVDetailActionRow (TVDetailActions.swift:53-56, 714): fixed 340 width, 22 inset, 16 spacing, 36 icon frame, 29 pt title. */
 .details-editorial .details-play:not(.box-set-play) { width: 340px; padding: 0 22px; gap: 16px; font-size: calc(29px * var(--silo-sf-cap-scale)); white-space: nowrap; }
 .details-play:not(.box-set-play) svg { width: 36px; height: 36px; }
-/* TVPillButtonStyle presses to 0.98 (TVDetailActions.swift:762); TVCirclePillSurface to 0.95 (:381). */
-.details-editorial .details-play:is(:active, [data-pressed]) { transform: scale(.98); }
+/* TVPrimaryPillButton is TVPillButtonStyle(.primary, focusTreatment: .compact) (TVDetailActions.swift:32-37, silo-apple main 71a3beb9):
+   1.025 focused (:774-777) and that focus scale times 0.98 held (:769-772), easeOut fastDuration (:745). The press is the individual
+   `scale` property, so it multiplies the focus transform. Box set Play stabilizes its focus motion, so it presses from 1 (:770).
+   TVCirclePillSurface presses to 0.95 (:381). */
+.details-editorial .details-play { transition: transform .12s ease-out, scale var(--silo-fast) ease-out; }
+.details-editorial .details-play:not(.box-set-play):focus { transform: scale(1.025); }
+.details-editorial .details-play:is(:active, [data-pressed]) { scale: .98; }
 /* Box set Play is TVPrimaryPillButton with stabilizesFocusMotion (TVDetailActions.swift:53-67,674,691-694).
    The verb sits on the film title; the icon is beside that stack. */
 .details-editorial .details-action.box-set-play { box-sizing: border-box; justify-content: flex-start; gap: 16px; height: 76px; min-width: 0; padding: 0 22px; }

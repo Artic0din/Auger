@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
@@ -118,9 +119,19 @@ test("focused controls cast Apple's black shadows, never a halo", () => openMovi
     assert.equal(await tv.focused(), "version");
     assert.equal(await shadow("play"), "rgba(0, 0, 0, 0.14) 0px 2px 4px 0px");
     assert.equal(await shadow("version"), "rgba(0, 0, 0, 0.34) 0px 6px 16px 0px");
-    const play = await tv.page.locator('[data-focus="play"]').evaluate(node => ({ width: node.getBoundingClientRect().width, border: getComputedStyle(node).borderTopWidth }));
+    // Layout width: the rect would include the 1.025 focus scale while it eases back.
+    const play = await tv.page.locator('[data-focus="play"]').evaluate(node => ({ width: node instanceof HTMLElement ? node.offsetWidth : 0, border: getComputedStyle(node).borderTopWidth }));
     assert.deepEqual(play, { width: 340, border: "0px" });
 }));
+
+// TVPrimaryPillButton is TVPillButtonStyle(kind: .primary, focusTreatment: .compact) (TVDetailActions.swift:32-37, silo-apple main
+// 71a3beb9): focused it scales to 1.025 (:774-777), and held to that focus scale times 0.98 (:769-772), easeOut(fastDuration) (:745).
+for (const reduced of [false, true]) {
+    test(`Details Play presses to 0.98 of its 1.025 focus scale, as Apple's pill does (reduced motion: ${reduced})`, () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
+        await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await assertPressedLook(tv, tv.page.locator('[data-focus="play"]'), { focusScale: 1.025, heldScale: 1.025 * 0.98, heldOpacity: 1, animates: "scale" }, reduced);
+    }));
+}
 
 test("Back from the action row leaves Details for the card that opened it", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
     assert.equal(await tv.focused(), "play");

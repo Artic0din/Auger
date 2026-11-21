@@ -125,6 +125,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).
 - When an episode ends while the server is slow to close it, the next episode now starts after the countdown, as on Apple TV, instead of waiting out three stop requests and showing "Couldn't load the next episode". The old episode's session is still closed in the background, or the server times it out (#709).
 - When a Calendar refresh fails while the week's cards are on screen, the Calendar now keeps showing the week with no error line or Try Again under it, as on Apple TV, and reads the week again on the next visit. A week with nothing loaded, or with no events, still shows the full error page (#651).
 - The player's transport bar no longer draws an empty circle where Show Up Next would be when there is nothing to show next, as on Apple TV (#698).
