@@ -113,7 +113,7 @@ jobs:
       - name: Package and sign
         run: |
           scripts/build-wgt.sh
-          (cd dist && sha256sum Silo.wgt | tee Silo.wgt.sha256)
+          (cd dist && sha256sum Auger.wgt | tee Auger.wgt.sha256)
 
       - name: Show the Tizen CLI log
         if: failure()
@@ -125,8 +125,8 @@ jobs:
         with:
           name: silo-tizen-wgt
           path: |
-            dist/Silo.wgt
-            dist/Silo.wgt.sha256
+            dist/Auger.wgt
+            dist/Auger.wgt.sha256
           if-no-files-found: error
 
       - name: Remove the signing certificates

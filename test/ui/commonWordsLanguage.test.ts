@@ -46,12 +46,12 @@ async function exitButtons(language: string | null): Promise<{ title: string; bu
 test("the exit dialog's Cancel reads the catalog in German and Arabic, with the keyless title and Exit left English", async () => {
     for (const language of ["de", "ar"]) {
         const shown = await exitButtons(language);
-        assert.deepEqual(shown, { title: "Exit Silo?", buttons: ["Exit", translate("common.cancel", undefined, language)] }, language);
+        assert.deepEqual(shown, { title: "Exit Auger?", buttons: ["Exit", translate("common.cancel", undefined, language)] }, language);
     }
 });
 
 test("the exit dialog in English is the text it always was", async () => {
-    assert.deepEqual(await exitButtons(null), { title: "Exit Silo?", buttons: ["Exit", "Cancel"] });
+    assert.deepEqual(await exitButtons(null), { title: "Exit Auger?", buttons: ["Exit", "Cancel"] });
 });
 
 type ScreenApi = {
@@ -84,12 +84,12 @@ async function screenText(screen: "startupFailure" | "unavailablePlayer", langua
 }
 
 test("the startup failure screen's button reads the catalog in German and Arabic, with its title left English, and English is unchanged", async () => {
-    assert.deepEqual(await screenText("startupFailure", null), { title: "Silo could not start", buttons: ["Try again"] });
-    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language), { title: "Silo could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
+    assert.deepEqual(await screenText("startupFailure", null), { title: "Auger could not start", buttons: ["Try again"] });
+    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
 
 test("a language file that lands after the startup failure screen drew redraws its button", async () => {
-    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Silo could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
+    for (const language of ["de", "ar"]) assert.deepEqual(await screenText("startupFailure", language, true), { title: "Auger could not start", buttons: [translate("common.tryAgain", undefined, language)] }, language);
 });
 
 test("a language file landing while Select is held on the startup failure's button waits for the release, and the press still runs Retry", async () => {

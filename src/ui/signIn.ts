@@ -136,8 +136,8 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     const backdrop = new MarqueeBackdrop(clock);
     const host = new ScreenHost(root, () => {
         const wordmark = el("img", "signin-wordmark");
-        wordmark.src = "img/silo-wordmark.png";
-        wordmark.alt = "Silo";
+        wordmark.src = "img/auger-wordmark.png";
+        wordmark.alt = "Auger";
         return wordmark;
     }, backdrop.element);
     root.classList.add("signin", "signin-auth");

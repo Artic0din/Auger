@@ -896,7 +896,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         const panes = el("div", "settings-panes");
         const rail = zoneNode("settings-categories", categories);
         rail.prepend(el("h1", "browse-title", translate("settings.title")));
-        rail.appendChild(el("p", "settings-version", `Silo ${APP_VERSION}`));
+        rail.appendChild(el("p", "settings-version", `Auger ${APP_VERSION}`));
         panes.append(rail, body);
         paneSnapshot = panes;
         host.show({ name: "settings", content: [panes], zones: [

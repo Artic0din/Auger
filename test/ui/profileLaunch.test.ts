@@ -368,7 +368,7 @@ test("the remember offer is Apple TV's centred alert over the picker, and Back a
         await tv.page.locator('[data-focus="profile:p-owner"]').click();
         const alert = tv.page.getByRole("alertdialog", { name: "Open Laura automatically?" });
         await alert.waitFor();
-        assert.equal(await alert.locator("p").textContent(), "Silo can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
+        assert.equal(await alert.locator("p").textContent(), "Auger can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
         assert.deepEqual(await alert.locator("button").allTextContents(), ["Ask Every Time", "Remember"], "the cancel button comes first, as in the tvOS alert");
         assert.equal(await tv.focused(), "remember", "focus starts on Remember");
         const layout = await alert.evaluate(node => {

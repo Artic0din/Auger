@@ -33,7 +33,7 @@ export interface DetailsAlert {
 /** PersonalStateNotice.failed(nil) (silo-apple Components/MediaActionFeedback.swift). */
 const ITEM_UPDATE_FAILED: DetailsAlert = { id: "details-update-failed", title: "Couldn't Update Item", message: "Your change wasn't saved. Please try again." };
 /** PersonalStateNotice.held: the write may have landed without an answer, so it is never re-sent from here. */
-const HELD_MESSAGE = "Silo sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.";
+const HELD_MESSAGE = "Auger sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.";
 function heldAlert(kind: PersonalAction): DetailsAlert {
     return { id: "details-change-held", title: "Change Not Confirmed", message: HELD_MESSAGE, held: kind };
 }

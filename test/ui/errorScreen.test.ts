@@ -162,7 +162,7 @@ for (const [status, problem, headline, message, buttons, keys] of [
     [401, { type: "about:blank", title: "Unauthorized", status: 401 }, "Session expired", "Your session has expired. Sign in again to continue.", ["Sign In Again", "Try Again"], ["sign-in", "retry"]],
     [403, { type: `${PROBLEM_BASE}permission_denied`, title: "Forbidden", status: 403, detail: "Search is not available to this profile." }, "Not allowed", "Search is not available to this profile.", ["Go Back", "Try Again"], ["go-back", "retry"]],
     [404, { type: "about:blank", title: "Not Found", status: 404 }, "Not found", NOT_FOUND, ["Go Back", "Try Again"], ["go-back", "retry"]],
-    [410, { type: `${PROBLEM_BASE}client_upgrade_required`, title: "Gone", status: 410 }, "Update required", "Update Silo to keep using this server.", ["Try Again"], ["retry"]],
+    [410, { type: `${PROBLEM_BASE}client_upgrade_required`, title: "Gone", status: 410 }, "Update required", "Update Auger to keep using this server.", ["Try Again"], ["retry"]],
     [500, SERVER_PROBLEM, "Something went wrong", SERVER_PROBLEM_MESSAGE, ["Try Again"], ["retry"]],
 ] as const) journey(`a ${status} Search failure shows Apple's ${headline} with ${buttons.join(" then ")}`, async tv => {
     let failing = true;

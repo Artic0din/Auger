@@ -27,12 +27,12 @@ test("quality footer matches Apple for the effective resolution and bitrate cap"
 
 test("buffering rows use the settings manifest's title, description and option labels", () => {
     assert.equal(bufferingQualityTitle(), "Lower quality when buffering");
-    assert.equal(bufferingQualityDescription(), "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.");
+    assert.equal(bufferingQualityDescription(), "What Auger does on Auto when playback keeps buffering. Auger always asks before lowering a quality you picked.");
     assert.deepEqual(bufferingQualityModes(), [["never", "Never"], ["ask", "Ask first"], ["always", "Automatically"]]);
 });
 
 test("quality footer adds Apple's two buffering sentences only when the buffering row is shown", () => {
-    assert.equal(qualityFooter("auto", null, true), "Plays the original file whenever your device and connection can handle it. What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.");
-    assert.equal(qualityFooter("720p", 6000, true), "Plays the original file up to 720p. Larger files are converted. Files above this bitrate are converted to fit. What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.");
+    assert.equal(qualityFooter("auto", null, true), "Plays the original file whenever your device and connection can handle it. What Auger does on Auto when playback keeps buffering. Auger always asks before lowering a quality you picked.");
+    assert.equal(qualityFooter("720p", 6000, true), "Plays the original file up to 720p. Larger files are converted. Files above this bitrate are converted to fit. What Auger does on Auto when playback keeps buffering. Auger always asks before lowering a quality you picked.");
     assert.equal(qualityFooter("auto", null, false), "Plays the original file whenever your device and connection can handle it.");
 });

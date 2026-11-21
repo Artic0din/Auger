@@ -161,7 +161,7 @@ jobs:
           scripts/build-wgt.sh
           mkdir wgt
           name="silo-tizen-${VERSION}-${BUILD}.wgt"
-          cp dist/Silo.wgt "wgt/${name}"
+          cp dist/Auger.wgt "wgt/${name}"
           (cd wgt && sha256sum "${name}" > "${name}.sha256" && cat "${name}.sha256")
 
       - name: Show the Tizen CLI log
@@ -233,7 +233,7 @@ jobs:
           # A prerelease never becomes Latest, so the releases/latest links keep
           # pointing at the store release.
           gh release create "${TAG}" --verify-tag --prerelease \
-            --title "Silo for Tizen ${VERSION} (${BUILD})" --notes-file notes.md wgt/*
+            --title "Auger for Tizen ${VERSION} (${BUILD})" --notes-file notes.md wgt/*
 
       # One prerelease, tag beta-latest, always holds the newest tester build
       # under a fixed name, so links can point at

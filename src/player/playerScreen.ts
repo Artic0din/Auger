@@ -65,7 +65,7 @@ export function errorText(error: PlaybackError): string {
         case "revoked":
             return "This profile no longer has access. Sign in again.";
         case "backgrounded":
-            return "Playback stopped when you left Silo. Go back and select the title to play again.";
+            return "Playback stopped when you left Auger. Go back and select the title to play again.";
         case "server":
             return "The server couldn't start playback. Try again.";
     }

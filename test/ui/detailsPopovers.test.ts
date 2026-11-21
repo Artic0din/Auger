@@ -309,7 +309,7 @@ detailTest("An unanswered favourite is Apple's Change Not Confirmed alert, and D
     await tv.page.locator('[data-focus="favorites"]').click();
     const alert = tv.page.getByRole("alertdialog", { name: "Change Not Confirmed", exact: true });
     await alert.waitFor();
-    assert.equal(await alert.locator(".signin-alert-text").textContent(), "Silo sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.");
+    assert.equal(await alert.locator(".signin-alert-text").textContent(), "Auger sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.");
     // PersonalStateNoticeAlert: the destructive Discard Held Change sits above OK, and OK keeps focus.
     assert.deepEqual(await alert.locator("button").allTextContents(), ["Discard Held Change", "OK"]);
     assert.equal(await tv.focused(), "alert-ok");
