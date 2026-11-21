@@ -1619,9 +1619,46 @@ test("a seek on a direct plan stays local, at source time minus the offset", asy
     assert.equal(r.avplay.calls[r.avplay.calls.length - 1], "seekTo 20000", "no second call while a seek is pending");
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls[r.avplay.calls.length - 1], "seekTo 10000", "the second skip adds to the pending target (#724)");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(10000);
-    assert.equal(only(bodies(r.h, "/progress")).position, 20);
+    assert.equal(only(bodies(r.h, "/progress")).position, 10);
+});
+
+// PlayerViewModel.queueSkipDebounce (silo-apple main 71a3beb9, PlayerViewModel.swift:7961-7985): each skip adds to the target still in
+// flight (RelativeSeek.target(current:pending:delta:)), never to the position from before the skip (#724).
+for (const [name, start, skips, landing] of [
+    ["Fast Forward then Rewind", 30, [30, -10], 50],
+    ["Rewind then Rewind", 60, [-10, -10], 40],
+    ["Fast Forward then Fast Forward", 30, [30, 30], 90],
+    ["three skips while the first is in flight", 30, [30, -10, -10], 40],
+] as const) test(`${name} chained during a seek lands on the summed target, as on Apple TV`, async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(start * 1000);
+    const seeks = (): string[] => r.avplay.calls.filter(call => call.startsWith("seekTo "));
+    const before = seeks().length;
+    for (const skip of skips) r.controller.seekBy(skip);
+    assert.deepEqual(seeks().slice(before), [`seekTo ${(start + (skips[0] ?? 0)) * 1000}`], "one seek at a time; the rest wait");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.deepEqual(seeks().slice(before), [`seekTo ${(start + (skips[0] ?? 0)) * 1000}`, `seekTo ${landing * 1000}`], "no key is lost, and the queued seek adds every skip to the pending target");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(10000);
+    assert.equal(only(bodies(r.h, "/progress")).position, landing);
+});
+
+test("Rewind after a finished Fast Forward measures from the Fast Forward's landing, as on Apple TV", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(3000);
+    r.controller.seekBy(-10);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 50000");
 });
 
 test("410 playback_session_ended leaves playback without a new session or stop", async () => {

@@ -575,6 +575,8 @@ interface Attempt {
     /** Pause or resume asked for while a local seek is settling. Applied when that seek ends. */
     pauseAfterSeek: boolean | undefined;
     queuedSeekSeconds: number | undefined;
+    /** The target of the local seek in flight; read only while `pending.seek` is set. */
+    seekTarget: number | undefined;
     progress: Promise<void> | undefined;
     cancelTimer: (() => void) | undefined;
     stopSpec: RequestSpec<PlaybackMutation> | undefined;
@@ -745,6 +747,7 @@ export class PlaybackController implements PlayerControls {
             seekFailure: undefined,
             pauseAfterSeek: undefined,
             queuedSeekSeconds: undefined,
+            seekTarget: undefined,
             progress: undefined,
             cancelTimer: undefined,
             stopSpec: undefined,
@@ -856,7 +859,11 @@ export class PlaybackController implements PlayerControls {
 
     seekBy(seconds: number): void {
         const attempt = this.active();
-        if (attempt !== undefined) this.seekToSeconds(attempt.sourceSeconds + seconds);
+        if (attempt === undefined) return;
+        // PlayerViewModel.queueSkipDebounce (RelativeSeek.target(current:pending:delta:)): a skip pressed while a seek is in flight adds
+        // to the target already asked for, the queued one first, never to the position from before that seek.
+        const pending = attempt.busy && this.pending.seek !== undefined ? attempt.queuedSeekSeconds ?? attempt.seekTarget : undefined;
+        this.seekToSeconds((pending ?? attempt.sourceSeconds) + seconds);
     }
 
     retrySettings(): void {
@@ -918,6 +925,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const transport = this.transport;
+        attempt.seekTarget = target;
         const settled = (moved: boolean): void => {
             if (transport !== this.transport || !attempt.live) {
                 attempt.pauseAfterSeek = undefined;
