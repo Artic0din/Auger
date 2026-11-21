@@ -6,3 +6,6 @@
 require:
   - src/ui/**
   - src/player/**
+  - src/*.css
+  - src/app.ts
+  - app/index.html

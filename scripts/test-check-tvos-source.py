@@ -8,7 +8,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).resolve().parent / "ci" / "check-tvos-source.py"
-RULES = "# comment\nrequire:\n  - src/ui/**\n  - src/player/**\n"
+RULES = "# comment\nrequire:\n  - src/ui/**\n  - src/player/**\n  - src/*.css\n  - src/app.ts\n  - app/index.html\n"
 CITED = "## tvOS source\n\n- `tvOS/Screens/Components/TVCollectionPosterCard.swift:106-148`\n"
 
 
@@ -66,6 +66,13 @@ class CheckTvosSourceTest(unittest.TestCase):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
+
+    def test_shared_styles_and_shell_need_a_citation(self):
+        for path in ("src/theme.css", "src/app.css", "src/app.ts", "app/index.html"):
+            with self.subTest(path=path):
+                head = self.commit({path: f"/* {path} */\n"})
+                self.assertEqual(1, self.check(head, "").returncode)
+                self.assertEqual(0, self.check(head, CITED).returncode)
 
     def test_label_waives_the_check(self):
         head = self.commit({"src/ui/home.ts": "export {};\n"})
