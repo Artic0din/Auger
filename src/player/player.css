@@ -32,6 +32,18 @@
 /* CountdownRing: 58 px, a 3 px track at 12% white and the remaining part in white with round ends, the seconds at 24 bold rounded. */
 .player-countdown { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin: 18px 0 0; margin-inline-end: 20px; vertical-align: top; }
 .player-countdown[hidden] { display: none; }
+/* PlayerView.actionRow: Play Now and the ring 56 apart, then Keep Watching and Close 20 apart, 18 between the rows. Elsewhere the rows are no box. */
+.player-actions-row { display: contents; }
+.player-next-up .player-actions-row { display: flex; align-items: center; margin: 18px 0 0; }
+.player-next-up .player-actions-primary { gap: 56px; }
+.player-next-up .player-actions-secondary { gap: 20px; }
+.player-next-up .player-actions-row > .player-button,
+.player-next-up .player-actions-row > .player-countdown { margin: 0; }
+.player-next-up .player-actions-row > .player-button { display: inline-flex; align-items: center; }
+.player-next-up .player-actions-row > [hidden] { display: none; }
+/* The Label's symbol before its words: 26 px with 16 between, as Apple's 24-32 pt symbols at 16-18 spacing. */
+.player-button-symbol { display: inline-flex; flex: none; width: 26px; height: 26px; margin-inline-end: 16px; }
+.player-button-symbol svg { width: 100%; height: 100%; }
 .player-countdown svg { position: absolute; inset: 0; width: 58px; height: 58px; }
 .player-countdown circle { fill: none; stroke-width: 3; }
 .player-countdown-track { stroke: rgba(255, 255, 255, 0.12); }

@@ -2240,6 +2240,30 @@ test("Up Next hides an unwatched episode synopsis when the profile asks and keep
     shown.controller.destroy();
 });
 
+// The S95C capture (#721 review): S1E25 to S2E1 showed no still behind the card, though the season 2 row had one.
+for (const itemStills of [true, false]) {
+    test(`a next episode from the next season keeps its season row's still behind the card (catalog item ${itemStills ? "with" : "without"} a still) (#697)`, async () => {
+        const r = await rig("p-owner");
+        const catalog = new FakeCatalog();
+        catalog.episodeStills = true;
+        catalog.itemStills = itemStills;
+        catalog.fileIds.set("episode:s1e13", "43");
+        catalog.fileIds.set("episode:s1e21", "44");
+        r.h.fake.catalog = catalog;
+        r.server.items.set("episode:s1e13", ["43"]);
+        r.server.items.set("episode:s1e21", ["44"]);
+        await playMovie(r, { contentId: "episode:s1e13", fileId: "43", title: "Harbor Lights chapter 1.3", startSeconds: 0, episode: true, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 });
+        r.controller.showUpNext();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing");
+        assert.equal(view.upNext?.next?.contentId, "episode:s1e21", "the next episode is season 2's first");
+        assert.equal(view.upNext?.next?.backdropUrl, `/art/${encodeURIComponent("episode:s1e21")}-still.svg`, "its still is the season row's");
+        r.controller.destroy();
+    });
+}
+
 test("On Deck blurs an unwatched episode still and leaves series art and a started episode sharp", async () => {
     const spoilers = (): EpisodeSpoilerSettings => ({ hidesImages: true, hidesOverviews: false });
     const hidden = await autoplayRig(false, undefined, spoilers);

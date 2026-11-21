@@ -56,6 +56,8 @@ export class FakeCatalog implements CatalogRoutes {
     persistStops = true;
     /** Episode cards and rows carry still artwork and a description the spoiler switches can hide. */
     episodeStills = false;
+    /** With `episodeStills`, whether an episode's catalog item also carries its still (the season row always does). */
+    itemStills = true;
     private readonly failures = new Map<string, Reply[]>();
     private readonly collectionLibraries = new Map<string, string>();
     private readonly searchContinuations = new Map<string, { q: string; type: string | null; household: Household; offset: number }>();
@@ -358,7 +360,9 @@ export class FakeCatalog implements CatalogRoutes {
         if (series !== undefined) {
             Object.assign(card, { series_id: series.id, series_title: series.title, season_number: title.season, episode_number: title.episode });
         }
-        if (this.episodeStills && title.type === "episode") {
+        if (this.episodeStills && title.type === "episode" && !this.itemStills) {
+            card.backdrop_url = undefined;
+        } else if (this.episodeStills && title.type === "episode") {
             card.backdrop_url = `/art/${encodeURIComponent(id)}-still.svg`;
             card.backdrop_is_episode_still = true;
             card.poster_is_episode_still = true;

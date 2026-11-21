@@ -27,7 +27,7 @@ import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
-import { arrowDownCircleIcon, closeIcon, episodesIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
+import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
@@ -274,6 +274,16 @@ export function clockText(seconds: number): string {
     return hours > 0 ? `${hours}:${two(minutes)}:${two(secs)}` : `${minutes}:${two(secs)}`;
 }
 
+/** A button drawn as Apple's Label: its symbol, then its words. The symbol is hidden from assistive technology, so the name is the words. */
+function labelWithSymbol(button: HTMLButtonElement, symbol: string, label: string): void {
+    // The card redraws on every playback tick: leave an unchanged label alone.
+    if (button.dataset.symbolLabel === label && button.querySelector(".player-button-symbol") !== null) return;
+    const glyph = el("span", "player-button-symbol");
+    glyph.innerHTML = symbol;
+    button.replaceChildren(glyph, document.createTextNode(label));
+    button.dataset.symbolLabel = label;
+}
+
 const RING_RADIUS = 27.5;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
@@ -498,12 +508,14 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const ring = countdownRing();
     /** PlayerView.metadata(for:): an episode heads with its series and puts its code before the title; anything else is its title alone. */
     const nextTitle = (candidate: PlayRequest | undefined, fallback: string): void => {
-        const code = candidate?.episode === true && candidate.seasonNumber !== undefined && candidate.episodeNumber !== undefined
+        // Apple's episodes always carry their numbers (PlayerNextUpEpisode's Ints); one the TV knows without them keeps its series line and drops the code.
+        const episode = candidate?.episode === true;
+        const code = episode && candidate.seasonNumber !== undefined && candidate.episodeNumber !== undefined
             ? translate("player.eyebrow.episode", { season: String(candidate.seasonNumber), episode: String(candidate.episodeNumber) })
             : undefined;
-        nextSeries.textContent = code === undefined ? "" : candidate?.seriesTitle ?? "";
+        nextSeries.textContent = episode ? candidate.seriesTitle ?? "" : "";
         nextSeries.hidden = nextSeries.textContent === "";
-        failureTitle.classList.toggle("player-next-episode-title", code !== undefined);
+        failureTitle.classList.toggle("player-next-episode-title", episode);
         if (candidate === undefined) failureTitle.textContent = fallback;
         else if (code === undefined) failureTitle.textContent = candidate.title;
         // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
@@ -534,7 +546,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     cancelAutoplay.type = "button";
     cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
     cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
-    actions.append(next, ring.element, keep, cancelAutoplay, retry, back);
+    // PlayerView.actionRow: Play Now and the ring, then Keep Watching and Close. The rows are only boxes on the Up Next card; the error page
+    // lays its buttons out as before.
+    const primaryRow = el("div", "player-actions-row player-actions-primary");
+    primaryRow.append(next, ring.element, retry);
+    const secondaryRow = el("div", "player-actions-row player-actions-secondary");
+    secondaryRow.append(keep, cancelAutoplay, back);
+    actions.append(primaryRow, secondaryRow);
     failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, mark, failureText, synopsis, actions, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
@@ -544,7 +562,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         tracksButton.setAttribute("aria-label", translate("player.audio.options"));
         closeButton.setAttribute("aria-label", translate("player.audio.close"));
         for (const [index, tab] of tabs.entries()) tab.textContent = translate(TAB_KEYS[tabNames[index] ?? "Info"]);
-        keep.textContent = translate("upNext.keepWatching");
+        labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"));
         retry.textContent = translate("common.retry");
     };
     labelStatics();
@@ -932,7 +950,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failureTitle.classList.remove("player-next-episode-title");
         ring.set(undefined, undefined);
         mark.hidden = view.phase !== "error";
-        back.textContent = view.phase === "error" ? translate("player.goBack") : translate("upNext.close");
+        if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
+        else labelWithSymbol(back, closeIcon(), translate("upNext.close"));
         if (view.phase === "completion" || prompt !== undefined) {
             cancelScrub();
             closeMenu();
@@ -996,7 +1015,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const loading = prompt?.loading === true;
                 const failed = prompt?.failed === true;
                 next.hidden = loading || failed || candidate === undefined;
-                next.textContent = translate("upNext.playNow");
+                labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
@@ -1008,7 +1027,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 return;
             }
             next.hidden = view.state !== "ready" || view.next === undefined;
-            next.textContent = translate("upNext.playNow");
+            labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
             retry.hidden = view.state !== "failed" || !view.retryable;
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;

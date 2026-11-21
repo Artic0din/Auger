@@ -225,3 +225,13 @@ test("the next episode carries the season row's overview and still", async () =>
     assert.equal(result?.overview, "A storm closes the harbor.");
     assert.equal(result?.backdropUrl, "/images/next-still.jpg");
 });
+
+test("the season row's still flag reaches the next episode, true or false", async () => {
+    for (const flag of [true, false]) {
+        const r = rig(1, 9);
+        r.data.set(seasonPath(1), { items: [{ ...row(NEXT, 1, 10), still_url: "/images/next-still.jpg", still_is_episode_still: flag }, row(CURRENT, 1, 9)] });
+        r.data.set(watchPath(NEXT), watch(NEXT, 1, 10));
+        const result = await nextEpisode(r.read, CURRENT, "effective");
+        assert.equal(result?.backdropIsEpisodeStill, flag);
+    }
+});

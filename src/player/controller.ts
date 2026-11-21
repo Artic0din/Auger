@@ -3912,7 +3912,9 @@ export class PlaybackController implements PlayerControls {
         void this.deps.session.call({ ...operations.getCatalogItem(request.contentId), profileScoped: true, signal }).then(detail => {
             if (!signal.aborted && detail.id === request.contentId) {
                 const watch = playbackWatch(detail.watch);
-                accept({ ...request, overview: detail.overview, backdropUrl: detail.backdropUrl, backdropIsEpisodeStill: detail.backdropIsEpisodeStill, ...(watch === undefined ? {} : { watch }) });
+                // The item may carry no still where the season row did (seen on the S95C for a next season's first episode): keep the row's.
+                const still = detail.backdropUrl === undefined ? { backdropUrl: request.backdropUrl, backdropIsEpisodeStill: request.backdropIsEpisodeStill } : { backdropUrl: detail.backdropUrl, backdropIsEpisodeStill: detail.backdropIsEpisodeStill };
+                accept({ ...request, overview: detail.overview ?? request.overview, ...still, ...(watch === undefined ? {} : { watch }) });
             }
         }, () => undefined);
     }

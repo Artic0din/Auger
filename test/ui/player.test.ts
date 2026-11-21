@@ -648,6 +648,55 @@ test("Up Next names the series and the episode code, shows the synopsis and coun
     } finally { await page.close(); }
 });
 
+// PlayerView.metadata(for:): Apple heads every episode with its series; its numbers are never missing there (PlayerNextUpEpisode's
+// seasonNumber and episodeNumber are Int), so an episode the TV knows without them keeps the series line and drops only the code.
+test("an episode without season or episode numbers keeps its series line and drops only the code", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "episode:x", fileId: "9", title: "The Pilot", startSeconds: 0, episode: true, seriesTitle: "Harbor Lights" }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal(await text(page, ".player-next-series"), "Harbor Lights");
+        assert.equal(await page.locator(".player-next-up .player-title .player-next-code").count(), 0);
+        assert.equal(await page.locator(".player-next-up .player-title").textContent(), "The Pilot");
+    } finally { await page.close(); }
+});
+
+// A still the spoiler setting hides is not drawn behind the page either, even when On Deck has art to fall back to.
+test("a spoiler-hidden next still leaves the page background empty, though On Deck has art", async () => {
+    const { page } = await open();
+    try {
+        const deckCard = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0, backdropUrl: "/images/other.jpg" };
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true, backdropUrl: "/images/spoiler.jpg", hideBackdrop: true }, deck: [deckCard], countdown: undefined, status: "Up Next" } });
+        assert.equal(await page.locator(".player-next-backdrop").isHidden(), true);
+    } finally { await page.close(); }
+});
+
+// PlayerView.actionRow on tvOS (:1397-1475, silo-apple main f70e16a): Play Now and the ring on the first row (56 apart), Keep Watching and
+// Close on the second (20 apart), each button with its symbol: play.fill, rectangle.inset.filled, xmark. The error page keeps plain buttons.
+test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on the next, each button with its symbol", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 };
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        const layout = await page.evaluate(() => {
+            const top = (selector: string): number => Math.round(document.querySelector(selector)!.getBoundingClientRect().top + document.querySelector(selector)!.getBoundingClientRect().height / 2);
+            const icon = (selector: string): boolean => document.querySelector(`${selector} svg`) !== null;
+            return {
+                firstRow: [top('[data-focus="play-next"]'), top(".player-countdown")],
+                secondRow: [top('[data-focus="keep-watching"]'), top('[data-focus="back"]')],
+                icons: [icon('[data-focus="play-next"]'), icon('[data-focus="keep-watching"]'), icon('[data-focus="back"]')],
+                labels: ['[data-focus="play-next"]', '[data-focus="keep-watching"]', '[data-focus="back"]'].map(selector => document.querySelector(selector)!.textContent),
+            };
+        });
+        assert.equal(layout.firstRow[0], layout.firstRow[1], "Play Now and the ring share a row");
+        assert.equal(layout.secondRow[0], layout.secondRow[1], "Keep Watching and Close share a row");
+        assert.ok(layout.secondRow[0]! > layout.firstRow[0]!, "the second row sits below the first");
+        assert.deepEqual(layout.icons, [true, true, true]);
+        assert.deepEqual(layout.labels, ["Play Now", "Keep Watching", "Close"], "the symbols add no text");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
+        assert.equal(await page.locator('[data-focus="back"] svg').count(), 0, "the error page's Go Back has no symbol");
+    } finally { await page.close(); }
+});
+
 test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
     const { page } = await open();
     const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };

@@ -509,6 +509,16 @@ test("a German catalog that lands while the end-of-playback card is up redraws i
     } finally { await page.close(); }
 });
 
+// The background still leaves the video preview clear, and the preview sits on the right in Arabic (Apple's HStack mirrors), so the cut-out does too.
+test("in Arabic the background still's cut-out follows the preview to the right", async () => {
+    const page = await open("ar");
+    try {
+        await show(page, playing({ upNext: { next: { ...NEXT, backdropUrl: "/images/next.jpg" }, deck: [], countdown: 30, status: "Up Next" } }));
+        const clip = await page.locator(".player-next-backdrop").evaluate(node => getComputedStyle(node).clipPath);
+        assert.ok(clip.includes("980px 112px") && !clip.includes("180px 112px"), `the cut-out starts at x = 980: ${clip}`);
+    } finally { await page.close(); }
+});
+
 test("an Arabic catalog that lands while Up Next is up mirrors the panel and moves the caption box with it", async () => {
     const page = await open(undefined);
     const box = (): Promise<string> => page.locator(".player-captions").evaluate(node => (node.parentElement as HTMLElement).style.transform);
