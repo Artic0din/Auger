@@ -126,6 +126,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - When an episode ends while the server is slow to close it, the next episode now starts after the countdown, as on Apple TV, instead of waiting out three stop requests and showing "Couldn't load the next episode". The old episode's session is still closed in the background, or the server times it out (#709).
+- When a Calendar refresh fails while the week's cards are on screen, the Calendar now keeps showing the week with no error line or Try Again under it, as on Apple TV, and reads the week again on the next visit. A week with nothing loaded, or with no events, still shows the full error page (#651).
 - The player's transport bar no longer draws an empty circle where Show Up Next would be when there is nothing to show next, as on Apple TV (#698).
 - Added native tests that a subtitle retimed while hidden is read again from the server when chosen, past a stored copy of its old cues (the test server now keeps a browser-style HTTP cache, off by default), and that a failed AI Subtitles job keeps its panel and Dismiss while Audio Retry reloads the audio list. Nothing visible changes (#706).
 - The card at the end of a video now uses Apple TV's words, in the language you pick: Finding the next episode while it works out what comes next, End of playback with No next episode is available. when nothing follows, and Apple's message when the next episode cannot be loaded. The separate Ending playback… step is gone, as on Apple TV.
