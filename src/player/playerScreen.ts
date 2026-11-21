@@ -1006,7 +1006,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const forwardSeconds = view.seekIntervals.forward;
             setIcon(backward, translate("player.skip.back", { seconds: backwardSeconds }), skipIcon("backward", backwardSeconds));
             setIcon(forward, translate("player.skip.forward", { seconds: forwardSeconds }), skipIcon("forward", forwardSeconds));
+            // A hidden button cannot hold focus, and a TV engine need not move it on its own: hand it to the scrubber. Focus is read before
+            // the button hides, because desktop Chromium clears it as the attribute lands.
+            const upNextHeldFocus = document.activeElement === episodesButton;
             episodesButton.hidden = view.episodes !== true;
+            // The draw's fallback below makes the same choice: a usable skip pill before the scrubber.
+            if (episodesButton.hidden && upNextHeldFocus) (skipUsable() ? skip : bar).focus();
             tracksButton.hidden = false;
             if (!episodesButton.hidden) setIcon(episodesButton, translate("player.controls.showUpNext"), episodesIcon());
             setIcon(tracksButton, translate("player.audio.options"), optionsIcon());
