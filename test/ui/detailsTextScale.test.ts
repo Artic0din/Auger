@@ -156,23 +156,25 @@ detailTest("movie Details text runs within 2% of SF Pro's width at Apple's size"
     await tv.page.evaluate(() => document.fonts.ready);
     // Resume holds focus, settled at its 1.025 focus scale, as it does once the page's opening focus lands.
     await tv.page.locator('[data-focus="resume"]').evaluate(node => { (node as HTMLElement).focus(); for (const animation of node.getAnimations()) animation.finish(); });
-    const widths = await tv.page.evaluate(rows => rows.map(({ selector, text }) => {
-        const node = [...document.querySelectorAll(selector)].find(candidate => (candidate.textContent ?? "").trim() === text);
-        if (node === undefined) return { text, width: Number.NaN };
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        // Layout width: a focused control's own scale (Play grows to 1.025, #716) would widen the rect. Only the control's scale
-        // comes out; the page's stage scale above it is part of what the SF Pro widths were measured at.
-        const control = node.closest("[data-focus]");
-        const css = control === null ? undefined : getComputedStyle(control);
-        const scale = css === undefined ? 1 : new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale));
-        return { text, width: Math.round(range.getBoundingClientRect().width / scale * 10) / 10 };
-    }), SF_WIDTHS.map(({ selector, text }) => ({ selector, text })));
-    // The case this guards: Resume is focused and grown when the widths are read, so its scale is really divided out.
-    const resume = await tv.page.locator('[data-focus="resume"]').evaluate(node => {
-        const css = getComputedStyle(node);
-        return { focused: document.activeElement === node, scale: new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale)) };
-    });
+    // One read: Resume's focus and scale are checked in the same task as the widths, so they describe the measured state.
+    const { resume, widths } = await tv.page.evaluate(rows => {
+        const scaleOf = (element: Element): number => {
+            const css = getComputedStyle(element);
+            return new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale));
+        };
+        const resumeNode = document.querySelector('[data-focus="resume"]');
+        const resumeState = { focused: resumeNode !== null && document.activeElement === resumeNode, scale: resumeNode === null ? 1 : scaleOf(resumeNode) };
+        return { resume: resumeState, widths: rows.map(({ selector, text }) => {
+            const node = [...document.querySelectorAll(selector)].find(candidate => (candidate.textContent ?? "").trim() === text);
+            if (node === undefined) return { text, width: Number.NaN };
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            // Layout width: a focused control's own scale (Play and Resume grow to 1.025) would widen the rect. Only the control's
+            // scale comes out; the page's stage scale above it is part of what the SF Pro widths were measured at.
+            const control = node.closest("[data-focus]");
+            return { text, width: Math.round(range.getBoundingClientRect().width / (control === null ? 1 : scaleOf(control)) * 10) / 10 };
+        }) };
+    }, SF_WIDTHS.map(({ selector, text }) => ({ selector, text })));
     assert.equal(resume.focused, true, "Resume holds focus as the widths are read");
     assert.ok(resume.scale > 1, `Resume is grown by its focus scale, not ${resume.scale}`);
     for (const [index, { text, width }] of widths.entries()) {
