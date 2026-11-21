@@ -69,7 +69,8 @@ class CheckTvosSourceTest(unittest.TestCase):
                      "## tvOS source\r\n\r\n- silo-apple commit: 71a3beb9c0c4b6774b5caca452dfec66f208ac8f\r\n- PlayerView.swift:1613-1635\r\n",
                      "## tvOS source\n\nsilo-apple 71a3beb9\n\n### Card\n\nTVCollectionPosterCard.swift:106\n",
                      "## tvOS source\n\nsilo-apple commit: 8465631\n\nHomeView.swift:79\n",
-                     "## tvOS source\n\nsilo-apple commit: abcdefa\n\nHomeView.swift:79\n"):
+                     "## tvOS source\n\nsilo-apple commit: abcdefa\n\nHomeView.swift:79\n",
+                     "## tvOS source\n\n71a3beb9 (silo-apple), HomeView.swift:79\n"):
             with self.subTest(body=body):
                 result = self.check(head, body)
                 self.assertEqual(0, result.returncode, result.stdout)
@@ -97,7 +98,7 @@ class CheckTvosSourceTest(unittest.TestCase):
 
     def test_shared_styles_and_shell_need_a_citation(self):
         base = self.base
-        for path in ("src/theme.css", "src/app.css", "src/app.ts", "src/bootstrap.ts", "src/main.ts", "app/index.html", "src/i18n/catalog/en.json"):
+        for path in ("src/theme.css", "src/app.css", "src/app.ts", "src/bootstrap.ts", "src/main.ts", "app/index.html", "src/i18n/catalog/en.json", "src/i18n/direction.ts"):
             with self.subTest(path=path):
                 self.git("reset", "-q", "--hard", base)  # each diff holds only the path under test
                 head = self.commit({path: f"/* {path} */\n"})

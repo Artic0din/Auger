@@ -115,7 +115,7 @@ prove TV rendering, AVPlay playback or remote behavior; see
 ## Port from the tvOS source
 
 AGENTS.md "Parity delivery gates" requires reading the affected Apple TV Swift source before any interface change.
-Under the pull request's "tvOS source" heading, name the silo-apple commit you read and cite each Swift file and line range the change ports; the tvOS source check fails an interface change (`src/ui`, `src/player`, the top-level `src` scripts and stylesheets, the app shell, the string catalog) without one.
+Under the pull request's "tvOS source" heading, name the silo-apple commit you read and cite each Swift file and line range the change ports; the tvOS source check fails an interface change (`src/ui`, `src/player`, the top-level `src` scripts and stylesheets, the app shell, localisation) without one.
 A maintainer adds the `tvos-source-not-needed` label when the change has no tvOS counterpart, such as AVPlay-only behaviour.
 
 ## Show visible changes

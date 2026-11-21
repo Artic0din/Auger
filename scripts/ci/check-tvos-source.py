@@ -17,7 +17,7 @@ SOURCE_HEADING = re.compile(r"tvos\s+source", re.IGNORECASE)
 # A citation is a Swift file with a line or line range, such as tvOS/Screens/Detail/TVSeriesDetailView.swift:852-854.
 CITATION = re.compile(r"[\w./-]+\.swift:\d+(?:-\d+)?")
 # AGENTS.md "Parity delivery gates" asks for the source revision, so a line in the section names the silo-apple commit.
-REVISION = re.compile(r"silo-apple\b[^\n]*?\b[0-9a-f]{7,40}\b", re.IGNORECASE)
+REVISION = re.compile(r"silo-apple\b[^\n]*?\b[0-9a-f]{7,40}\b|\b[0-9a-f]{7,40}\b[^\n]*?silo-apple", re.IGNORECASE)
 FENCE = re.compile(r"^[ \t>]*(`{3,}|~{3,})[^`\n]*\n.*?^[ \t>]*\1\1?[`~]*[ \t]*$", re.DOTALL | re.MULTILINE)
 
 
