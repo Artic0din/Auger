@@ -1650,6 +1650,28 @@ for (const [name, start, skips, landing] of [
     assert.equal(only(bodies(r.h, "/progress")).position, landing);
 });
 
+test("a skip queued behind a seek that fails measures from where playback really is", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekBy(-10);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 20000", "Fast Forward failed at 0:30, so the Rewind goes to 0:20, not 0:50");
+});
+
+test("an absolute seek queued behind a seek that fails keeps its own target", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.avplay.tick(30000);
+    r.controller.seekBy(30);
+    r.controller.seekToSeconds(100);
+    r.avplay.finishSeek("UnknownError");
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo ")).at(-1), "seekTo 100000");
+});
+
 test("Rewind after a finished Fast Forward measures from the Fast Forward's landing, as on Apple TV", async () => {
     const r = await rig();
     await playMovie(r);
