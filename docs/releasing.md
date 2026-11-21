@@ -31,13 +31,16 @@ Check the file against its `.sha256` first.
 ## Installing with Apps2Samsung
 
 In [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), add this repository as a source (`apps2samsung-cli sources add github.com/Silo-Server/silo-tizen` from the command line) and install the app from it.
-Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV does not need to be listed in the maintainer's certificate, and its update button installs a newer release.
+Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV does not need to be listed in the maintainer's certificate.
+Its update button compares the widget version in `config.xml`, not the build number, so it offers a newer build only when the version changes; a newer build of the same version is installed by installing from the source again.
 Because the signatures differ, a TV with a sideloaded build must uninstall the app before installing it through Apps2Samsung, and the reverse; uninstalling removes the app's data.
 
 ## Numbers
 
 - `1.0.0` is the version people see, and the widget version in `config.xml`.
-  It stays the same for every build until a Release run starts the next version with `bump: minor` (new features) or `bump: patch` (fixes only).
+  It stays the same for every build until a Release run starts the next version.
+  Start it by entering the new version in the `version` input, for example `1.1.0`.
+  `bump: minor` and `bump: patch` count from the latest exact `vX.Y.Z` release tag, and this flow publishes only `vX.Y.Z-beta.B` tags, so they stop with "Nothing has been released yet" (`scripts/release-version.py`).
   Tizen limits it to `[0-255].[0-255].[0-65535]`.
 - `23` is the build number: one counter for the whole repository that never resets.
 - Tags: `vX.Y.Z-beta.B` for builds (GitHub prereleases).
@@ -45,4 +48,5 @@ Because the signatures differ, a TV with a sideloaded build must uninstall the a
 ## Latest tester build link
 
 `releases/download/beta-latest/silo-tizen-latest-beta.wgt` always serves the newest tester build.
+It has no `.sha256`; to check a build before installing it, use the versioned file and its checksum.
 Every Release run moves the `beta-latest` tag to its commit and replaces that file on the "Latest tester build" prerelease, unless a newer tester build already exists.
