@@ -25,7 +25,7 @@ How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](.
 
 | Screen | Text |
 |---|---|
-| Details (movie, series, season, episode) | action row, readout, Version, Audio and Subtitles lists, More menu, facts, rails, empty, error and alert text, trailer status |
+| Details (movie, series, season, episode) | action row, readout, Version, Audio and Subtitles lists, More menu, facts (the Aired, Released, First Aired and Last Aired dates in the shown language's long date, as silo-apple `DetailDateFormatting.longDate`), rails, empty, error and alert text, trailer status |
 | Top bar and menus | the roots, Search and Profile buttons, the For You, library and profile menus, the sign-out confirmation |
 | Home | `Loading home`, the empty state, `Explore all`, row titles the server keys |
 | Watch Party | the hub, lobby, Ready, ballot, options and End sheets, invitation and its QR text, picker shelves, confirmation page, episode list and the room's notices (silo-apple `Screens/WatchParty`, `WatchParty/WatchPartyLobbyState.swift` at 6eea7cf7) |
@@ -88,7 +88,7 @@ The sign-in screens (server address, TV code, password, server not ready, the pl
 Apple has no key for these, or they belong to a later row of the plan.
 
 - Tizen-only Details text: the circle buttons' `Versions` and `Audio Tracks`, `Seasons`, `Unknown language`, `Special N`, preference-save notes (`Saving audio preference…`), the unplayable-file notes, `Loading extra…`, the personal-action retry notes, and the held-change alert.
-- Dates and the season view's `45 min` line: the facts' release dates use `Intl` with the device locale, not the shown language.
+- The season view's `45 min` line.
 - Home's original-language overlay (`cardOverlays.languageName`) and the card menu's Play, Resume, Mark as Watched, Add to Favorites and Add to Watchlist rows: Apple builds those as plain strings, so they stay English; the Not Interested and Show in Recommendations rows read the catalog (see [settings.md](settings.md#card-for-you-and-library-text)).
 - Box set cards and the error screen's headline and buttons (`Something went wrong`, `Try Again`, `Go Back`, `Sign In Again`): collections and error rows of the plan.
 - Requests text with no Apple key, or whose English differs: the `Movie` and `Series` facts (Apple's `displayName` is a plain string), `Not requested` on a card, `Search requests`, the Search button, `Previous page`, `Next page`, `No titles found.`, `No requests yet.`, `Loading requests…`, `Follow`, `Unfollow`, `Cancel request` on the detail (Apple's key reads `Cancel Request`), `Refresh`, `Could not load title information…`, `Could not confirm the change…`.
