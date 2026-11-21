@@ -1055,6 +1055,7 @@
  "topBar.series": "시리즈",
  "tvSignIn.action.newCode": "새 코드 표시",
  "tvSignIn.action.password": "비밀번호로 로그인",
+ "tvSignIn.addAccountTitle": "{server} 서버에 계정 추가",
  "tvSignIn.appleTv.lead": "휴대폰 카메라로 코드를 스캔하거나 {page}에 접속해 코드를 입력하세요. 휴대폰에서 승인하면 이 Apple TV가 자동으로 로그인돼요.",
  "tvSignIn.appleTv.leadNoPage": "휴대폰 카메라로 코드를 스캔하거나 서버의 /activate 페이지에 접속해 코드를 입력하세요. 휴대폰에서 승인하면 이 Apple TV가 자동으로 로그인돼요.",
  "tvSignIn.appleTv.typeOnPhoneBody": "입력란을 선택하면 근처 iPhone과 iPad에 키보드 알림이 표시돼요. 리모컨 대신 거기에서 입력하세요.",

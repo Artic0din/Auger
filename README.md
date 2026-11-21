@@ -7,10 +7,20 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 It talks to Silo's native `/api/v2` and plays through Samsung's AVPlay.
 [FEATURES.md](FEATURES.md) lists what it does today and tracks parity with the Apple TV app.
 
-## Tester builds
+## Install
 
-The newest tester build is always at [`silo-tizen-latest-beta.wgt`](https://github.com/Silo-Server/silo-tizen/releases/download/beta-latest/silo-tizen-latest-beta.wgt), with versioned builds and checksums on [Releases](https://github.com/Silo-Server/silo-tizen/releases).
-A tester build installs only on TVs listed in its signing certificate; see [Releasing](docs/releasing.md#installing-a-tester-build).
+The app is not in the Samsung TV store and will not be submitted to it.
+Install it in one of two ways:
+
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Silo-Server/silo-tizen`), then install from it.
+  Apps2Samsung signs the app with your own Samsung certificate, so it installs on your TV without being listed in ours.
+  It updates in one click when the app's version changes. It compares the version (`1.0.0`), not the build number, so to get a newer build of the same version, install it again from the source.
+- **Sideload:** download a versioned build and its `.sha256` checksum from [Releases](https://github.com/Silo-Server/silo-tizen/releases).
+  [`silo-tizen-latest-beta.wgt`](https://github.com/Silo-Server/silo-tizen/releases/download/beta-latest/silo-tizen-latest-beta.wgt) is always the newest build, but it has no checksum to check it against.
+  It is signed with the maintainer's certificate, so it installs only on TVs listed in it; see [Releasing](docs/releasing.md#sideloading-a-build).
+
+The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
+Uninstalling removes its data, so you sign in again afterwards.
 
 ## Screenshots
 
@@ -74,8 +84,8 @@ That certificate lists the TVs it may install on, so a CI-signed package install
 
 ## Release Flow
 
-Tester builds and store releases are made by the Release and Promote workflows from `main`; see [Releasing](docs/releasing.md).
-Samsung TV Seller Office has no upload API, so store submission is a manual step.
+Builds are made by the Release workflow from `main` and published on GitHub Releases; see [Releasing](docs/releasing.md).
+The app ships by sideloading and through Apps2Samsung, not through the Samsung TV store.
 
 ## Contributing
 
