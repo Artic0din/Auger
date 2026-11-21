@@ -125,6 +125,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Subtitle Delay, Appearance and Only on this TV now stay in the player's Subtitles tab for every embedded text subtitle on direct play, as on Apple TV. The TV asks the server for those subtitles as files it draws itself, instead of letting the video player draw them where they could not be shifted or restyled (#538).
 - Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).
 - When an episode ends while the server is slow to close it, the next episode now starts after the countdown, as on Apple TV, instead of waiting out three stop requests and showing "Couldn't load the next episode". The old episode's session is still closed in the background, or the server times it out (#709).
 - When a Calendar refresh fails while the week's cards are on screen, the Calendar now keeps showing the week with no error line or Try Again under it, as on Apple TV, and reads the week again on the next visit. A week with nothing loaded, or with no events, still shows the full error page (#651).

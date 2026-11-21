@@ -1491,7 +1491,7 @@ export class PlaybackController implements PlayerControls {
         const report = { panel: attempt.hdrPanel, preference: { hdrEnabled: attempt.hdrEnabled } };
         return {
             client_capabilities: clientCapabilities(report),
-            client_playback_context: playbackContext(this.deps.device.model, this.deps.device.appVersion, report, !attempt.nativeSubtitleUnavailable),
+            client_playback_context: playbackContext(this.deps.device.model, this.deps.device.appVersion, report),
         };
     }
 

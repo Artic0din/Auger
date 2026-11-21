@@ -463,6 +463,16 @@ const ORIGINAL_AUDIO_ROWS = [
     { index: 3, type: "AUDIO" as const, extra_info: "{\"language\":\"eng\",\"channels\":\"2\",\"fourCC\":\"audio/mpeg\"}" },
 ];
 
+// #538, option 2: the S95C accepts setSubtitlePosition but its own text does not move, so the app draws every embedded text track
+// itself. Original HTTP never claims native embedded text, and the server sends an artifact the overlay can delay and restyle.
+test("original HTTP asks for embedded text as an artifact from the first start, so Delay and Appearance always apply (#538)", async () => {
+    const r = await rig();
+    await playMovie(r);
+    const context = only(requests(r.h, "/playback/start")).body?.client_playback_context as { deliveries: { original_http: { subtitles: { embedded_text: boolean; sidecar_text: boolean } } } };
+    assert.equal(context.deliveries.original_http.subtitles.embedded_text, false);
+    assert.equal(context.deliveries.original_http.subtitles.sidecar_text, true, "text still comes, as an artifact");
+});
+
 test("original HTTP claims client-selected audio so a second track stays direct play (#507)", async () => {
     const r = await rig();
     await playMovie(r);
