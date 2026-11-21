@@ -2465,6 +2465,9 @@ export class PlaybackController implements PlayerControls {
     private async replaySwitch(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks, send: () => Promise<PlaybackDecision>, current: () => boolean): Promise<PlaybackDecision> {
         const sentAt = this.deps.clock.now();
         let noted = false;
+        // After a route failure (#750) the failed transport waits for the answer only until SWITCH_FAILURE_DEADLINE_MS.
+        const deadline = (): number => attempt.switchFailedAt === undefined ? Number.POSITIVE_INFINITY : attempt.switchFailedAt + SWITCH_FAILURE_DEADLINE_MS;
+        const waitUntil = (until: number): Promise<void> => sleep(this.deps.clock, Math.max(0, Math.min(until, deadline()) - this.deps.clock.now()), attempt.signal, abortedError);
         for (let index = 0; ; index++) {
             try {
                 return await send();
@@ -2472,7 +2475,7 @@ export class PlaybackController implements PlayerControls {
                 // A new play, a lost session or a replaced transport ends the replays; the caller settles the change.
                 if (!(error instanceof ApiError) || !unanswered(error) || error.aborted || !current()) throw error;
                 // A failed transport does not wait on the server for ever: past the deadline it shows the retryable error.
-                if (attempt.switchFailedAt !== undefined && this.deps.clock.now() - attempt.switchFailedAt >= SWITCH_FAILURE_DEADLINE_MS) {
+                if (this.deps.clock.now() >= deadline()) {
                     this.fail(attempt, { kind: "playback_failed" }, true);
                     throw error;
                 }
@@ -2484,18 +2487,24 @@ export class PlaybackController implements PlayerControls {
                     if (attempt.switchFailedAt === undefined) this.showPlayback(attempt);
                 }
                 const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
-                // The server's lease and Retry-After hold even when a route failure wakes the replay; only our own backoff is skipped.
+                // The server's lease and Retry-After hold even after a route failure; only our own backoff is skipped. A failure
+                // recorded while the request was out counts too, so its wake is not lost.
                 const serverWait = Math.max(error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0, (error.retryAfterSeconds ?? 0) * 1000);
                 const serverReady = this.deps.clock.now() + serverWait;
-                let woke = false;
-                const woken = new Promise<void>(resolve => { attempt.wakeSwitch = () => { woke = true; resolve(); }; });
-                try {
-                    await Promise.race([sleep(this.deps.clock, Math.max(backoff, serverWait), attempt.signal, abortedError), woken]);
-                } finally {
-                    attempt.wakeSwitch = undefined;
+                if (attempt.switchFailedAt === undefined) {
+                    const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
+                    try {
+                        await Promise.race([waitUntil(this.deps.clock.now() + Math.max(backoff, serverWait)), woken]);
+                    } finally {
+                        attempt.wakeSwitch = undefined;
+                    }
                 }
-                const rest = serverReady - this.deps.clock.now();
-                if (woke && rest > 0) await sleep(this.deps.clock, rest, attempt.signal, abortedError);
+                if (attempt.switchFailedAt !== undefined) await waitUntil(serverReady);
+                // A server wait longer than the deadline ends here, with no replay sent past it.
+                if (this.deps.clock.now() >= deadline()) {
+                    this.fail(attempt, { kind: "playback_failed" }, true);
+                    throw error;
+                }
             }
         }
     }

@@ -2374,7 +2374,7 @@ test("a wake after a route failure still waits out the server's replan_in_progre
     } finally { r.controller.destroy(); }
 });
 
-test("a route failure during a switch the server keeps holding ends in the retryable playback error (#750)", async () => {
+test("a route failure during a switch the server keeps holding ends in the retryable playback error at 30 s (#750)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
         r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 40 }, () => problem(409, "replan_in_progress", "In progress")));
@@ -2382,13 +2382,61 @@ test("a route failure during a switch the server keeps holding ends in the retry
         await settle(r);
         r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
         await settle(r);
-        for (let i = 0; i < 12; i++) { await r.h.clock.advance(15000); await settle(r); }
+        await r.h.clock.advance(29999);
+        await settle(r);
+        assert.equal(last(r.views).phase, "loading", "still waiting for the switch just before the deadline");
+        await r.h.clock.advance(1);
+        await settle(r);
         const view = last(r.views);
-        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" }, "not loading forever");
+        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" }, "the retryable error at 30 s");
         const sent = replans(r.h).length;
         await r.h.clock.advance(60000);
         await settle(r);
         assert.equal(replans(r.h).length, sent, "the replays stop");
+    } finally { r.controller.destroy(); }
+});
+
+test("a Retry-After past the deadline shows the retryable error at 30 s without another replay (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await r.h.clock.advance(29999);
+        await settle(r);
+        assert.equal(last(r.views).phase, "loading");
+        await r.h.clock.advance(1);
+        await settle(r);
+        const view = last(r.views);
+        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" });
+        assert.equal(replans(r.h).length, 1, "no replay is sent past the deadline");
+        await r.h.clock.advance(120000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+    } finally { r.controller.destroy(); }
+});
+
+test("a route failure while the switch's request is out wakes the next replay as soon as it comes back unanswered (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.h.fake.script(`/playback/${id}/replan`, problem(503, "service_unavailable", "Unavailable"));
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        // No clock advance: the failure that came while the request was out skips the client's 1 s backoff.
+        assert.deepEqual(replans(r.h).map(body => body.operation), ["track_change", "track_change", "failure_recovery"]);
+        await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing");
+        assert.deepEqual(r.exits, []);
     } finally { r.controller.destroy(); }
 });
 
