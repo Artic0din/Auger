@@ -21,9 +21,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  # The UI suite is most of the run (about 2,400 tests, each file with its own browser, two files at a time), so it is split across
+  # parallel shards instead of one job growing toward its time limit (#646). `test` keeps the check name the merge gate reads.
+  checks:
+    name: Build and native tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.11.1
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:native
+
+  ui:
+    name: UI tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,7 +59,23 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm test
+      # Some UI tests read the staged package (dist/wgt), so each shard builds it first.
+      - run: npm run build
+      - run: node --test --test-concurrency=2 --test-timeout=60000 --test-shard=${{ matrix.shard }}/3 "test/ui/*.test.ts"
+
+  test:
+    needs: [checks, ui]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every build, native and UI shard passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          UI: ${{ needs.ui.result }}
+        run: |
+          echo "Build and native tests: ${CHECKS}; UI shards: ${UI}"
+          test "${CHECKS}" = success && test "${UI}" = success
 
   package:
     name: Package .wgt
