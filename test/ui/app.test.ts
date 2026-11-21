@@ -1445,8 +1445,8 @@ appTest("remote navigation keeps focus and context through Browse paging, a fail
     assert.equal(await tv.focused(), "loading", "the loading page keeps focus while the read is out");
     assert.equal(await tv.page.locator(".details-failure").count(), 0);
     // Failure: the refusal arrives, and the failure page takes focus on Try Again.
+    // The refusal shows the failure page by itself. Jumping the clock here raced the reply: on a busy runner the load's timeout fired first.
     held.release();
-    await tv.jump(35000);
     await tv.page.locator(".details-failure").waitFor();
     assert.equal(await tv.focused(), "retry", "the failure page takes focus on its retry");
     await tv.page.keyboard.press("Enter");
