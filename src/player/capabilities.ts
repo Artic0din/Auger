@@ -161,7 +161,7 @@ export function clientCapabilities(report?: HdrReport): ClientCapabilities {
     return { ...CLIENT_CAPABILITIES, hdr: true, hdr_details: details };
 }
 
-export function playbackContext(model: string, appVersion: string, report?: HdrReport, originalEmbeddedText = true): ClientPlaybackContext {
+export function playbackContext(model: string, appVersion: string, report?: HdrReport): ClientPlaybackContext {
     const details = report === undefined ? undefined : hdrDetails(report);
     const original = delivery(["mp4", "m4v", "mkv", "matroska"], [], details, [CLIENT_SELECTED_AUDIO_TRACK_CLAIM]);
     const context: ClientPlaybackContext = {
@@ -171,7 +171,9 @@ export function playbackContext(model: string, appVersion: string, report?: HdrR
         device: { platform: "tizen", manufacturer: "Samsung", model },
         output: {},
         deliveries: {
-            original_http: { ...original, subtitles: { ...original.subtitles, embedded_text: originalEmbeddedText } },
+            // No native embedded text: the app draws every text track from the server's artifact, so Delay and Appearance apply to it.
+            // The S95C accepts AVPlay's setSubtitlePosition but its own text does not move, so AVPlay-drawn text could not follow Delay (#538).
+            original_http: { ...original, subtitles: { ...original.subtitles, embedded_text: false } },
             // MPEG-TS segments for copy remuxes, as AVPlay HLS plays them.
             hls: delivery(["m3u8", "hls"], ["hls_copy_mpegts_v1"], details),
         },
