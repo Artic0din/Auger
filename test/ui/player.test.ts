@@ -3511,8 +3511,12 @@ for (const reduced of [false, true]) {
             assert.equal(await row.evaluate(node => node.hasAttribute("data-pressed")), false, "released Select ends the row's press");
             const live = await page.evaluate(() => { const node = document.activeElement; if (node === null) return null; for (const animation of node.getAnimations()) animation.finish(); const css = getComputedStyle(node); return { pressed: node.hasAttribute("data-pressed"), scale: (css.scale === "none" ? 1 : Number.parseFloat(css.scale)) * new DOMMatrix(css.transform).a }; });
             assert.deepEqual(live, { pressed: false, scale: 1 }, "the focused row after release is at rest");
+            // Back closes Speed's choices, so the tab rail, and the Audio tab after Video, can be reached.
+            await remote(page, BACK);
+            assert.equal(await focused(page), "video-speed", "Back returns from Speed's choices to its row");
             await nextTab(page, 1);
             const track = await focused(page);
+            assert.equal(track, "file:42:audio:0", "focus reaches the first Audio track, not a Speed choice");
             assert.ok(track !== null);
             await hold();
             assert.ok(Math.abs((await look(track)).scale - 0.98) < 1e-6, `the track row ${track} is a HUD row too`);
