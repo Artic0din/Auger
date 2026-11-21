@@ -28,7 +28,12 @@ for (const reduced of [false, true]) {
                 await assertSelectLook(tv, key, { focusScale: rail ? 1 : 1.03, heldScale: 0.98, opacity: 1,
                     focusMs: reduced ? 0 : 120 });
                 if (kind === "add-server") await tv.page.locator('[data-screen="entry"]').waitFor();
-                if (kind === "add-account") await tv.page.locator('[data-screen="code"]').waitFor();
+                if (kind === "add-account") {
+                    await tv.page.locator('[data-screen="code"]').waitFor();
+                    // TVLoginView.signInHeadline (silo-apple main 71a3beb9, TVLoginView.swift:554-559): a sign-in started from Change Account
+                    // that renews no saved account reads tvSignIn.addAccountTitle.
+                    assert.match(await tv.page.locator("[data-server-headline]").innerText(), /^Add an account on /);
+                }
                 if (kind === "account") await tv.page.locator('[data-screen="profiles"]').waitFor();
                 if (kind === "server") assert.deepEqual(await keys(tv, ".accounts-pane button"), [owner, "add-account"]);
             });

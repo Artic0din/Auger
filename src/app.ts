@@ -98,6 +98,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             ...(account ? { username: account.username } : {}),
             onChangeAccount: () => showAccounts(),
             ...(route?.returnToAccounts ? { returnToAccounts: true } : {}),
+            // TVLoginView.signInHeadline: from Change Account with no saved account to renew.
+            ...(route?.fromAccounts && account === undefined ? { addingAccount: true } : {}),
             ...(route?.sessionExpired ? { sessionExpired: true } : {}),
             ...(pickerRequested || route?.fromAccounts || route?.returnToAccounts ? { onCancel: () => showAccounts() } : {}),
             ...(chooseServer ? { chooseServer: true } : {}),

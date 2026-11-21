@@ -1055,6 +1055,7 @@
  "topBar.series": "Séries",
  "tvSignIn.action.newCode": "Mostrar um novo código",
  "tvSignIn.action.password": "Entrar com senha",
+ "tvSignIn.addAccountTitle": "Adicionar uma conta em {server}",
  "tvSignIn.appleTv.lead": "Escaneie o código com a câmera do celular ou acesse {page} e digite-o. Aprove no celular e esta Apple TV entra sozinha.",
  "tvSignIn.appleTv.leadNoPage": "Escaneie o código com a câmera do celular ou acesse a página /activate do seu servidor e digite-o. Aprove no celular e esta Apple TV entra sozinha.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Ao selecionar um campo, uma notificação de teclado aparece nos iPhones e iPads próximos. Digite neles em vez de usar o controle remoto.",
