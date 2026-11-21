@@ -2754,11 +2754,16 @@ test("a background STOP resend refused with 403 before the next episode starts s
         const id = await playMovie(r, EPISODE);
         r.h.fake.script(`/playback/${id}`, { status: 503, body: {} }, problem(403, "forbidden", "Forbidden"));
         // The next-episode lookup is still out when the resend is refused; its answer, a good one, lands afterwards.
-        const lookup = r.h.fake.hold("/watch/" + encodeURIComponent(EPISODE.contentId), true);
+        const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
+        const lookup = r.h.fake.hold(watch, true);
+        const watchReads = (): number => r.h.fake.requests.filter(request => request.path === watch).length;
+        const before = watchReads();
         r.avplay.listener?.onstreamcompleted();
         for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
         assert.equal(bodies(r.h, `/playback/${id}`).length, 1);
         assert.notEqual(completion(r).state, "failed", "the advance goes on after the 503");
+        assert.equal(watchReads(), before + 1, "the lookup started after the 503");
+        assert.equal(r.h.fake.heldReplies, 1, "and its answer is held while the resend waits");
         await r.h.clock.advance(1000);
         for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
         assert.equal(bodies(r.h, `/playback/${id}`).length, 2);
