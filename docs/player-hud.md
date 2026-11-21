@@ -65,7 +65,8 @@ Stats and Info's Now playing rows come from the playback plan (`src/player/playe
 The picture and the Stats Audio format are the plan's `effective_recipe` (what reaches the TV, where Apple reads its engine's decoded stream), falling back to `source` and the selected track; Info's Audio row names the track as the Audio tab does. The Video row's bitrate is the recipe's, never a measured throughput.
 Dynamic range is the source's, or "source → output" when the recipe changes it, as Apple's planned-range label.
 Apple's engine-measured rows (buffer, network, read bitrates, dropped frames, A/V sync, decoders, Aether counters) are left out because AVPlay does not report them; no estimate is substituted (#556).
-The Info and Stats panes have no focus ring yet, and Stats scrolls by page rather than by section (#556).
+A focused Info or Stats pane draws Apple's ring (2 px at 86 % white, 10 px outside, 18 px corners) and scales to 1.01 (`HUDScrollablePane`, `TVPlayerInfoHUD.swift:361-375`).
+Down and Up page over the pane's scroll targets, bringing each to the top: Info's top and end, and Stats' top, its Engine section when it has rows, and its end. Up from the first target returns to the tab (`TVPlayerInfoHUD.swift:396-420`, `:772-787`).
 
 ## Native capture checklist
 

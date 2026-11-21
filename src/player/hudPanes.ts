@@ -18,7 +18,7 @@ export function fillHUDPane(list: HTMLElement, name: string, hud: PlayerHUD | un
         body.append(
             statsColumn([[translate("player.hud.playback"), stats?.playback ?? []]]),
             el("div", "player-stats-divider"),
-            statsColumn([[translate("player.hud.stream"), stats?.stream ?? []], [translate("player.stats.sectionEngine"), stats?.engine ?? []]]),
+            statsColumn([[translate("player.hud.stream"), stats?.stream ?? []], [translate("player.stats.sectionEngine"), stats?.engine ?? [], "engine"]]),
         );
         list.appendChild(body);
     } else if (name === "Chapters") {
@@ -30,11 +30,14 @@ export function fillHUDPane(list: HTMLElement, name: string, hud: PlayerHUD | un
 }
 
 /** A Grid of sections: an uppercase heading over label and value rows; a section with no rows is left out. */
-function statsColumn(sections: readonly (readonly [string, readonly StatsRow[]])[]): HTMLElement {
+function statsColumn(sections: readonly (readonly [string, readonly StatsRow[], string?])[]): HTMLElement {
     const column = el("div", "player-stats-column");
-    for (const [title, rows] of sections) {
+    for (const [title, rows, anchor] of sections) {
         if (rows.length === 0) continue;
-        column.appendChild(el("h2", "player-stats-heading", title));
+        const heading = el("h2", "player-stats-heading", title);
+        // StatsPane pages to Engine's heading (PlaybackStatsPanel.engineSectionID, TVPlayerInfoHUD.swift:772-787).
+        if (anchor !== undefined) heading.dataset.pageTarget = anchor;
+        column.appendChild(heading);
         column.appendChild(el("span", "player-stats-spacer"));
         for (const row of rows) column.append(el("span", "player-stats-label", statLabel(row.label)), el("span", "player-stats-value", row.value));
     }
