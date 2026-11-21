@@ -16,12 +16,15 @@ let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 
-async function releasedFact(language: string | null): Promise<string> {
+const DATE_FACTS = [["release_date", "detail.released"], ["air_date", "detail.aired"], ["first_air_date", "detail.firstAired"], ["last_air_date", "detail.lastAired"]] as const;
+
+/** Each date fact's shown value, by its `item_detail` field. */
+async function dateFacts(language: string | null): Promise<Record<string, string>> {
     const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
     try {
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         const catalog = new FakeDetails();
-        catalog.releaseDate = "2024-01-02";
+        Object.assign(catalog.factDates, { release_date: "2024-01-02", air_date: "2023-11-30", first_air_date: "2021-08-06", last_air_date: "2026-07-13" });
         tv.fake.catalog = catalog;
         const settings = new FakeSettings(tv.fake);
         settings.revision = 28;
@@ -40,19 +43,23 @@ async function releasedFact(language: string | null): Promise<string> {
         await afterPaint(tv);
         await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').focus();
         await tv.page.keyboard.press("Enter");
-        const label = translate("detail.released", undefined, shown).toLocaleUpperCase(shown);
-        const row = tv.page.locator(".details-fact-row").filter({ has: tv.page.locator("dt", { hasText: label }) });
-        await row.waitFor();
-        const value = await row.locator("dd").innerText();
+        await tv.page.locator(".details-fact-row").first().waitFor();
+        const values: Record<string, string> = {};
+        for (const [field, key] of DATE_FACTS) {
+            const label = translate(key, undefined, shown).toLocaleUpperCase(shown);
+            // Exact label: German's "Ausstrahlung" labels contain each other.
+            values[field] = await tv.page.locator(".details-fact-row").filter({ has: tv.page.locator("dt", { hasText: new RegExp(`^${label}$`) }) }).locator("dd").innerText();
+        }
         assert.deepEqual(tv.console, []);
-        return value;
+        return values;
     } finally { await tv.page.context().close(); }
 }
 
-test("Details' Released date reads in German on an English TV", async () => {
-    assert.equal(await releasedFact("de"), "2. Januar 2024");
+test("Details' date facts read in German on an English TV", async () => {
+    // The Pro's S95C capture of Spidey: "ERSTAUSSTRAHLUNG 6. August 2021", "LETZTE AUSSTRAHLUNG 13. Juli 2026".
+    assert.deepEqual(await dateFacts("de"), { release_date: "2. Januar 2024", air_date: "30. November 2023", first_air_date: "6. August 2021", last_air_date: "13. Juli 2026" });
 });
 
-test("Details' Released date keeps the English TV's long form in English", async () => {
-    assert.equal(await releasedFact(null), "2 January 2024");
+test("Details' date facts keep the English TV's long form in English", async () => {
+    assert.deepEqual(await dateFacts(null), { release_date: "2 January 2024", air_date: "30 November 2023", first_air_date: "6 August 2021", last_air_date: "13 July 2026" });
 });
