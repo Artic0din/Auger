@@ -2144,6 +2144,113 @@ test("a film's failed first-frame On Deck read is read again when the prompt win
     r.controller.destroy();
 });
 
+const filmRequest = { ...MOVIE, contentId: "movie:m0001", fileId: "42", title: "Movie 0001" };
+async function filmRig(): Promise<Rig> {
+    const r = await autoplayRig(false);
+    r.catalog.fileIds.set("movie:m0001", "42");
+    r.server.items.set("movie:m0001", ["42"]);
+    return r;
+}
+const sectionReads = (r: Rig): number => r.h.fake.requests.filter(q => q.path === "/home/sections?image_size=small").length;
+
+// Apple's canShowNextUpScreen (PlayerViewModel.swift:1598-1603) has no failure term: a failed On Deck read empties the list and the button hides.
+test("a film hides Show Up Next once its On Deck read and the window retry have both failed (#736)", async () => {
+    const r = await filmRig();
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, filmRequest, () => r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable));
+    await r.h.clock.advance(0);
+    const first = last(r.views);
+    assert.ok(first.phase === "playing" && first.durationSeconds !== undefined);
+    assert.equal(first.episodes, true, "after one failure the button stays, so the window can retry");
+    r.avplay.tick((first.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(sectionReads(r), 2);
+    const after = last(r.views);
+    assert.ok(after.phase === "playing");
+    assert.notEqual(after.episodes, true, "the retry failed too, so the film has nothing to offer");
+    assert.equal("upNext" in after, false);
+    r.controller.destroy();
+});
+
+test("leaving the prompt window and coming back sends no further Up Next reads (#736)", async () => {
+    const r = await filmRig();
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, filmRequest, () => r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable, unavailable));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(sectionReads(r), 2);
+    r.controller.seekToSeconds(view.durationSeconds - 300);
+    await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.avplay.tick((view.durationSeconds - 300) * 1000);
+    await r.h.clock.advance(0);
+    r.controller.seekToSeconds(view.durationSeconds - 20);
+    await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    for (const left of [20, 15, 10]) {
+        r.avplay.tick((view.durationSeconds - left) * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.equal(sectionReads(r), 2, "the window retry happened once for this item");
+    r.controller.destroy();
+});
+
+test("a manual Up Next retry and the window retry read each part at most once more (#736)", async () => {
+    const r = await autoplayRig(false);
+    const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    const reads = (): number => r.h.fake.requests.filter(q => q.path === watch).length;
+    await playMovieWith(r, EPISODE, () => r.h.fake.script(watch, ...Array.from({ length: 10 }, () => unavailable)));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    const start = reads();
+    assert.equal(start, 2, "the first frame read the episode and On Deck once each");
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    assert.equal(reads(), start + 2, "opening Up Next retried each part once");
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(reads(), start + 4, "the window retried each part once");
+    for (const left of [24, 20, 15, 10]) {
+        r.avplay.tick((view.durationSeconds - left) * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.equal(reads(), start + 4, "and nothing more");
+    r.controller.destroy();
+});
+
+for (const state of ["dismissed", "hidden"] as const) {
+    test(`no window retry fires while the prompt is ${state} (#736)`, async () => {
+        const r = await filmRig();
+        const unavailable = problem(500, "internal_error", "Unavailable");
+        const hold = await playMovieWith(r, filmRequest, () => { const held = r.h.fake.hold("/home/sections?image_size=small"); r.h.fake.script("/home/sections?image_size=small", unavailable, unavailable); return held; });
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+        r.avplay.tick((view.durationSeconds - 25) * 1000);
+        await r.h.clock.advance(0);
+        if (state === "dismissed") r.controller.cancelAutoplay();
+        else r.controller.suspend();
+        hold.release();
+        await r.h.clock.advance(0);
+        for (const left of [24, 20, 15]) {
+            r.avplay.tick((view.durationSeconds - left) * 1000);
+            await r.h.clock.advance(0);
+        }
+        assert.equal(sectionReads(r), 1, "the failed read is not retried");
+        r.controller.destroy();
+    });
+}
+
 test("failed Up Next reads are read again only once in the prompt window (#698)", async () => {
     const r = await autoplayRig(false);
     const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
