@@ -504,6 +504,17 @@ test("a focused Show Up Next that hides during playback hands focus to the scrub
     } finally { await page.close(); }
 });
 
+// The same choice as the draw's fallback (`skipUsable() ? skip : bar`): a usable skip pill takes focus before the scrubber, as Apple's pill does.
+test("a focused Show Up Next that hides while Skip Credits is usable hands focus to the pill (#698)", async () => {
+    const { page } = await open();
+    try {
+        await reachUpNext(page);
+        await show(page, { ...playing(TRACKS), episodes: false, skipMarker: { kind: "credits", startSeconds: 7000, endSeconds: 7200 }, positionSeconds: 7010 });
+        assert.equal(await page.locator(".player-skip").isVisible(), true, "the pill is up");
+        assert.equal(await focused(page), await page.locator(".player-skip").getAttribute("data-focus"), "focus lands on the pill, not the scrubber");
+    } finally { await page.close(); }
+});
+
 // A guard, not a check of this PR's CSS: a load already focuses the overlay, before and after #698.
 test("guard: a load that hides a focused Show Up Next focuses the overlay", async () => {
     const { page } = await open();

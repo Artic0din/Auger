@@ -1010,7 +1010,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             // the button hides, because desktop Chromium clears it as the attribute lands.
             const upNextHeldFocus = document.activeElement === episodesButton;
             episodesButton.hidden = view.episodes !== true;
-            if (episodesButton.hidden && upNextHeldFocus) bar.focus();
+            // The draw's fallback below makes the same choice: a usable skip pill before the scrubber.
+            if (episodesButton.hidden && upNextHeldFocus) (skipUsable() ? skip : bar).focus();
             tracksButton.hidden = false;
             if (!episodesButton.hidden) setIcon(episodesButton, translate("player.controls.showUpNext"), episodesIcon());
             setIcon(tracksButton, translate("player.audio.options"), optionsIcon());
