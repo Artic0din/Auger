@@ -2020,6 +2020,58 @@ test("returning to the first embedded track on direct play loads its file again,
     } finally { r.controller.destroy(); }
 });
 
+// A switch that hands the subtitle to AVPlay must also unhide AVPlay's subtitles: selecting a TEXT track does not, so after
+// Off (or a sidecar) silenced them, the chosen track stayed invisible on the S95C.
+test("choosing a subtitle after Off on a rendition stream turns AVPlay's subtitles back on", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.server.next.push(renditionPlan(1, "English Signs", 1));
+    await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    r.avplay.tracks = [
+        { index: 2, type: "TEXT", extra_info: "{\"track_num\":\"0\",\"track_lang\":\"eng\",\"subtitle_type\":\"0\",\"fourCC\":\"TTML\"}" },
+    ];
+    try {
+        r.server.next.push({ ...renditionPlan(1, "English Signs", 1), clearSubtitle: true });
+        r.controller.selectSubtitle(undefined);
+        await settle(r);
+        assert.equal(r.avplay.silentSubtitle, true, "Off silenced AVPlay's own subtitles");
+        const opens = r.avplay.urls.length;
+        r.server.next.push(renditionPlan(1, "English Signs", 1));
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(r.avplay.urls.length, opens, "the track changes in place");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2", "AVPlay draws the track");
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSilentSubtitle")).at(-1), "setSilentSubtitle false");
+        assert.equal(r.avplay.silentSubtitle, false, "and its subtitles show");
+    } finally { r.controller.destroy(); }
+});
+
+test("a refused unhide keeps the subtitle AVPlay already switched to, with no replan", async () => {
+    const r = await rig();
+    frenchInventory(r);
+    r.server.next.push(renditionPlan(1, "English Signs", 1));
+    await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    r.avplay.tracks = [
+        { index: 2, type: "TEXT", extra_info: "{\"track_num\":\"0\",\"track_lang\":\"eng\",\"subtitle_type\":\"0\",\"fourCC\":\"TTML\"}" },
+    ];
+    try {
+        r.server.next.push({ ...renditionPlan(1, "English Signs", 1), clearSubtitle: true });
+        r.controller.selectSubtitle(undefined);
+        await settle(r);
+        const silence = r.avplay.setSilentSubtitle.bind(r.avplay);
+        r.avplay.setSilentSubtitle = (hidden: boolean): void => { if (!hidden) throw new Error("InvalidStateError"); silence(hidden); };
+        const opens = r.avplay.urls.length;
+        const before = replans(r.h).length;
+        r.server.next.push(renditionPlan(1, "English Signs", 1));
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).at(-1), "setSelectTrack TEXT 2");
+        assert.equal(r.avplay.urls.length, opens, "no reopen");
+        assert.equal(replans(r.h).length - before, 1, "only the choice's own report, no fallback replan for the stream");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
 test("an embedded subtitle chosen from an Off plan on direct play loads its file, so Delay and Appearance show (#538)", async () => {
     const r = await rig();
     r.server.next.push({ delivery: "original_http", clearSubtitle: true });
@@ -2437,7 +2489,7 @@ test("a refused queued sidecar restores the confirmed rendition after an interme
     held.release();
     await settle(r);
     assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
-    assert.equal(r.avplay.calls.at(-1), "setSelectTrack TEXT 3");
+    assert.deepEqual(r.avplay.calls.slice(-2), ["setSelectTrack TEXT 3", "setSilentSubtitle false"], "AVPlay draws the confirmed rendition again, shown");
     r.controller.destroy();
 });
 
@@ -2479,7 +2531,7 @@ test("a confirmed rendition becomes the rollback choice for a refused queued Off
     await settle(r);
     assert.equal(replans(r.h).length, 2);
     assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
-    assert.equal(r.avplay.calls.at(-1), "setSelectTrack TEXT 3");
+    assert.deepEqual(r.avplay.calls.slice(-2), ["setSelectTrack TEXT 3", "setSilentSubtitle false"], "AVPlay draws the confirmed rendition again, shown");
     r.controller.destroy();
 });
 

@@ -129,6 +129,8 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Switching to another embedded subtitle during a video on direct play now loads that subtitle's file, so Delay, Appearance and Only on this TV stay, as on Apple TV, without restarting the video. If the server refuses the switch, or its answer is slow to arrive, the TV's player shows the subtitle meanwhile (#738).
+- Choosing a subtitle that the TV draws itself, after subtitles were turned off or an app-drawn subtitle was showing, now shows it again. It used to stay selected but invisible (#735).
+- The Up Next card now treats an empty episode still link from the server as no still, and shows the episode's backdrop instead of blank art (#731).
 - On a film, Show Up Next now disappears when What's On Deck can't be loaded even after a second try, as on Apple TV, instead of staying for the whole film and opening an empty panel (#736).
 - The player's Info and Stats panes now show Apple TV's focus ring and grow slightly when focused, and Down and Up page through them as on Apple TV: Info from its top to its end, Stats from its top to its Engine section to its end, instead of scrolling part of a page at a time (#556).
 - Subtitle Delay, Appearance and Only on this TV now stay in the player's Subtitles tab for an embedded text subtitle chosen when a video starts on direct play, as on Apple TV. The TV asks the server for those subtitles as files it draws itself, instead of letting the video player draw them where they could not be shifted or restyled. If that file can't load, the video player draws the subtitle and these rows hide. Switching embedded subtitles mid-video still hides them (#538).
