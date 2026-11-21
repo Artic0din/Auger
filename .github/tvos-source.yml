@@ -7,6 +7,6 @@ require:
   - src/ui/**
   - src/player/**
   - src/*.css
-  - src/app.ts
+  - src/*.ts
   - app/index.html
   - src/i18n/catalog/**

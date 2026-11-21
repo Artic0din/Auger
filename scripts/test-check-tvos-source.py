@@ -8,7 +8,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).resolve().parent / "ci" / "check-tvos-source.py"
-RULES = "# comment\nrequire:\n  - src/ui/**\n  - src/player/**\n  - src/*.css\n  - src/app.ts\n  - app/index.html\n  - src/i18n/catalog/**\n"
+RULES = "# comment\nrequire:\n  - src/ui/**\n  - src/player/**\n  - src/*.css\n  - src/*.ts\n  - app/index.html\n  - src/i18n/catalog/**\n"
 CITED = "## tvOS source\n\nsilo-apple 71a3beb9\n\n- `tvOS/Screens/Components/TVCollectionPosterCard.swift:106-148`\n"
 
 
@@ -86,7 +86,7 @@ class CheckTvosSourceTest(unittest.TestCase):
         self.assertIn("no require paths", result.stdout + result.stderr)
 
     def test_shared_styles_and_shell_need_a_citation(self):
-        for path in ("src/theme.css", "src/app.css", "src/app.ts", "app/index.html", "src/i18n/catalog/en.json"):
+        for path in ("src/theme.css", "src/app.css", "src/app.ts", "src/bootstrap.ts", "src/main.ts", "app/index.html", "src/i18n/catalog/en.json"):
             with self.subTest(path=path):
                 head = self.commit({path: f"/* {path} */\n"})
                 self.assertEqual(1, self.check(head, "").returncode)
