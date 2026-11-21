@@ -168,6 +168,13 @@ detailTest("movie Details text runs within 2% of SF Pro's width at Apple's size"
         const scale = css === undefined ? 1 : new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale));
         return { text, width: Math.round(range.getBoundingClientRect().width / scale * 10) / 10 };
     }), SF_WIDTHS.map(({ selector, text }) => ({ selector, text })));
+    // The case this guards: Resume is focused and grown when the widths are read, so its scale is really divided out.
+    const resume = await tv.page.locator('[data-focus="resume"]').evaluate(node => {
+        const css = getComputedStyle(node);
+        return { focused: document.activeElement === node, scale: new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale)) };
+    });
+    assert.equal(resume.focused, true, "Resume holds focus as the widths are read");
+    assert.ok(resume.scale > 1, `Resume is grown by its focus scale, not ${resume.scale}`);
     for (const [index, { text, width }] of widths.entries()) {
         const expected = SF_WIDTHS[index]!.width;
         assert.ok(Math.abs(width / expected - 1) < 0.02, `${text}: ${width}px against SF Pro's ${expected}px`);
