@@ -77,6 +77,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.
+- Split the CI UI tests across three parallel shards (`node --test --test-shard`), with the build and native tests in their own job, so the run no longer grows toward its time limit as tests are added; passing runs took 15 to 26 minutes in one job against a 30-minute limit. The `test` check now passes when every part passes (#646).
 - Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
 - Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
 - The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
@@ -125,6 +126,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).
+- When a Calendar refresh fails while the week's cards are on screen, the Calendar now keeps showing the week with no error line or Try Again under it, as on Apple TV, and reads the week again on the next visit. A week with nothing loaded, or with no events, still shows the full error page (#651).
 - The player's transport bar no longer draws an empty circle where Show Up Next would be when there is nothing to show next, as on Apple TV (#698).
 - Added native tests that a subtitle retimed while hidden is read again from the server when chosen, past a stored copy of its old cues (the test server now keeps a browser-style HTTP cache, off by default), and that a failed AI Subtitles job keeps its panel and Dismiss while Audio Retry reloads the audio list. Nothing visible changes (#706).
 - The card at the end of a video now uses Apple TV's words, in the language you pick: Finding the next episode while it works out what comes next, End of playback with No next episode is available. when nothing follows, and Apple's message when the next episode cannot be loaded. The separate Ending playback… step is gone, as on Apple TV.
