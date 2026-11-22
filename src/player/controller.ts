@@ -106,13 +106,22 @@ export type PlaybackError =
     /** Every route the server offered failed on this TV. */
     | { readonly kind: "playback_failed" }
     /** Media or API unreachable. Reconnecting belongs to recovery (#13). */
-    | { readonly kind: "network" }
+    | { readonly kind: "network"; readonly noResponse?: true }
     /** The server no longer knows the session (expired or restarted). Recovery belongs to #13. */
     | { readonly kind: "session_expired" }
     | { readonly kind: "installation_changed" }
     | { readonly kind: "revoked" }
     | { readonly kind: "backgrounded" }
-    | { readonly kind: "server" };
+    | { readonly kind: "server"; readonly reason?: ServerReason };
+
+/**
+ * Why the server refused, kept as data so the error page words it in the shown language (APIv2Client.errorDescription):
+ * a problem's detail, else its title; a bare HTTP status; or the update prompt for client_upgrade_required.
+ */
+export type ServerReason =
+    | { readonly text: string; readonly problemId?: string; readonly fieldCode?: string }
+    | { readonly status: number }
+    | { readonly update: true };
 
 export interface PlaybackExits {
     onBack(): void;
@@ -4758,12 +4767,24 @@ function decisionFailure(decision: PlaybackDecision): PlaybackError {
 
 function startFailure(error: unknown): PlaybackError {
     if (error instanceof ApiError) {
-        const kind = error.failure.kind;
-        if (kind === "network" || kind === "timeout") {
+        const failure = error.failure;
+        // PlayerViewModel's startSessionTimeout reads player.error.serverNoResponse.
+        if (failure.kind === "timeout") return { kind: "network", noResponse: true };
+        if (failure.kind === "network") {
             return { kind: "network" };
         }
         if (error.problemId === "installation_changed") {
             return { kind: "installation_changed" };
+        }
+        // PlayerViewModel shows a start failure's own description, as APIv2Client words it.
+        if (failure.kind === "http") return { kind: "server", reason: { status: failure.status } };
+        if (failure.kind === "problem") {
+            const { status, id, title, detail, errors } = failure.problem;
+            if (status === 410 && id === "client_upgrade_required") return { kind: "server", reason: { update: true } };
+            const text = detail?.trim() ? detail : title;
+            const fieldCode = errors[0]?.code;
+            if (text.trim() !== "") return { kind: "server", reason: fieldCode === undefined ? { text, problemId: id } : { text, problemId: id, fieldCode } };
+            return { kind: "server", reason: { status } };
         }
     }
     return { kind: "server" };

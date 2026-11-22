@@ -3808,6 +3808,87 @@ test("a newly mounted controller also waits for the previous controller's pendin
     assert.equal(r.avplay.state, "NONE");
 });
 
+// PlayerViewModel's start failure (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877) shows the error's own description:
+// APIv2Client words a problem by its detail, else its title, and a bare status as errors.apple.v2.httpStatus (#760).
+test("a refused start carries the server's own reason for the error page, as on Apple TV", async () => {
+    const detailed = await rig();
+    detailed.h.fake.script("/playback/start", { status: 400, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/validation_failed", title: "Rejected", status: 400, detail: "The file is offline." } });
+    detailed.controller.play(MOVIE);
+    await detailed.h.clock.advance(0);
+    const withDetail = last(detailed.views);
+    assert.ok(withDetail.phase === "error" && withDetail.error.kind === "server");
+    assert.deepEqual(withDetail.error.reason, { text: "The file is offline.", problemId: "validation_failed" });
+    detailed.controller.destroy();
+
+    const titled = await rig();
+    titled.h.fake.script("/playback/start", { status: 400, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/validation_failed", title: "Rejected", status: 400 } });
+    titled.controller.play(MOVIE);
+    await titled.h.clock.advance(0);
+    const withTitle = last(titled.views);
+    assert.ok(withTitle.phase === "error" && withTitle.error.kind === "server");
+    assert.deepEqual(withTitle.error.reason, { text: "Rejected", problemId: "validation_failed" });
+    titled.controller.destroy();
+
+    const bare = await rig();
+    bare.h.fake.script("/playback/start", { status: 400 });
+    bare.controller.play(MOVIE);
+    await bare.h.clock.advance(0);
+    const withStatus = last(bare.views);
+    assert.ok(withStatus.phase === "error" && withStatus.error.kind === "server");
+    assert.deepEqual(withStatus.error.reason, { status: 400 });
+    bare.controller.destroy();
+});
+
+// A field error names its code, which Apple's problem.localized words first (APIv2Models.swift:357-365) (#760).
+test("a refused start keeps the problem's first field code for the error page", async () => {
+    const r = await rig();
+    r.h.fake.script("/playback/start", { status: 422, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/validation_failed", title: "Invalid", status: 422, errors: [{ location: "body.media_id", code: "required" }, { location: "body.x", code: "invalid" }] } });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "server");
+    assert.deepEqual(view.error.reason, { text: "Invalid", problemId: "validation_failed", fieldCode: "required" });
+    r.controller.destroy();
+});
+
+// APIv2Client.swift:66-68 reads the update prompt only for a 410 whose problem is client_upgrade_required. The wall still
+// offers Retry, as Apple's does: isRetryablePlaybackFailure (PlayerViewModel.swift:6975-6977) is true for any start error
+// that is not a terminal failure (#760).
+test("only a 410 client_upgrade_required start asks for an update, and its wall still offers Retry", async () => {
+    const problem = (status: number, id: string): Record<string, unknown> => ({ type: `https://silo.example/problems/${id}`, title: "Update required", status, detail: "Update the app." });
+    const cases = [
+        { status: 410, id: "client_upgrade_required", reason: { update: true } },
+        { status: 400, id: "client_upgrade_required", reason: { text: "Update the app.", problemId: "client_upgrade_required" } },
+        { status: 410, id: "gone", reason: { text: "Update the app.", problemId: "gone" } },
+    ];
+    for (const { status, id, reason } of cases) {
+        const r = await rig();
+        r.h.fake.script("/playback/start", { status, headers: { "Content-Type": "application/problem+json" }, body: problem(status, id) });
+        r.controller.play(MOVIE);
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "error" && view.error.kind === "server", `${status} ${id}`);
+        assert.deepEqual(view.error.reason, reason, `${status} ${id}`);
+        assert.equal(view.retryable, true, `${status} ${id}`);
+        r.controller.destroy();
+    }
+});
+
+// Apple's start that times out reads "The server didn't respond in time." (PlayerViewModel.swift:6839, 6866-6868) (#760).
+test("a start the server never answers is a retryable no-response error", async () => {
+    const r = await rig();
+    for (let send = 0; send < 3; send++) r.h.fake.hold("/playback/start");
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(60000);
+    assert.equal(ops(r.h).filter(op => op === "POST /playback/start").length, 3, "the identical start is resent before giving up");
+    const view = last(r.views);
+    assert.ok(view.phase === "error");
+    assert.deepEqual(view.error, { kind: "network", noResponse: true });
+    assert.equal(view.retryable, true);
+    r.controller.destroy();
+});
+
 test("a start resend honors Retry-After and keeps its operation identity", async () => {
     const r = await rig();
     r.h.fake.script("/playback/start", { status: 503, headers: { "Retry-After": "30" } });
