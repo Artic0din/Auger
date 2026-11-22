@@ -391,8 +391,8 @@ Playback has these differences from browse:
   A picker floats over its pane and keeps focus until Back closes it onto the row that opened it; Up at its top does not reach the rail.
 - Play/Pause, Play, Pause, Stop, Rewind and Fast Forward act directly.
   Stop leaves playback.
-- Back from the overlay leaves playback (`controls.back()`), which restores the originating browse view and focus.
-  On the transport buttons Back first returns focus to the overlay, and on Skip it moves focus to Pause (`playerScreen.ts`).
+- Back follows Apple's order (`PlayerView.swift:434-473`): while playing with the controls up, from the scrubber, a transport button or over a buffering stall, it takes them down (`dismissControls`).
+  While paused, or with the controls down, Back leaves playback (`controls.back()`), which restores the originating browse view and focus.
 - Completion and error screens have their own button focus rules.
 - In Arabic the player mirrors except the transport, the scrubber and its time row, which pin `dir="ltr"` as Apple's `.mediaLayoutDirection()` does (`TVPlayerControls.swift:325,555,557,575`).
   Those three, a held seek and the skip pill's seek keep the remote's physical Left and Right (`physicalKey`).
