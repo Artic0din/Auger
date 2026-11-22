@@ -956,6 +956,7 @@
  "settings.learnedLimit": "{date}のバッファリング以降、{rate}に制限中",
  "settings.learnedLimit.reset": "リセット",
  "settings.learnedLimit.resetFailed": "制限をリセットできませんでした。もう一度お試しください。",
+ "settings.metadataLanguageNote": "利用できる場合は、説明文とキャッチコピーを優先言語に翻訳します。タイトルは翻訳されません。",
  "settings.nextUp.atEnd": "終了時",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, other {終了の#分前}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, other {終了の#秒前}}",

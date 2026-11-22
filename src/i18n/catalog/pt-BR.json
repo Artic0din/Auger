@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Limitado a {rate} após carregamento em {date}",
  "settings.learnedLimit.reset": "Redefinir",
  "settings.learnedLimit.resetFailed": "Não foi possível redefinir o limite. Tente novamente.",
+ "settings.metadataLanguageNote": "Traduz descrições e slogans para o idioma de sua preferência, quando disponível. Os títulos nunca são traduzidos.",
  "settings.nextUp.atEnd": "No fim",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minuto antes do fim} many {# de minutos antes do fim} other {# minutos antes do fim}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# segundo antes do fim} many {# de segundos antes do fim} other {# segundos antes do fim}}",

@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Arabelleğe alma nedeniyle {date} tarihinde {rate} ile sınırlandı",
  "settings.learnedLimit.reset": "Sıfırla",
  "settings.learnedLimit.resetFailed": "Sınır sıfırlanamadı. Tekrar deneyin.",
+ "settings.metadataLanguageNote": "Mevcut olduğunda açıklamaları ve sloganları tercih ettiğiniz dile çevirir. Başlıklar hiçbir zaman çevrilmez.",
  "settings.nextUp.atEnd": "Bölüm sonunda",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {Bitişten # dakika önce} other {Bitişten # dakika önce}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {Bitişten # saniye önce} other {Bitişten # saniye önce}}",

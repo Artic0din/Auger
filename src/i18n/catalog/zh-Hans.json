@@ -956,6 +956,7 @@
  "settings.learnedLimit": "{date}出现缓冲后已限制为{rate}",
  "settings.learnedLimit.reset": "重置",
  "settings.learnedLimit.resetFailed": "无法重置限制。请重试。",
+ "settings.metadataLanguageNote": "在可用时将简介和宣传语翻译为你的首选语言。标题永远不会被翻译。",
  "settings.nextUp.atEnd": "结束时",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, other {结束前#分钟}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, other {结束前#秒}}",

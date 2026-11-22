@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Ograničeno na {rate} nakon međuspremanja {date}",
  "settings.learnedLimit.reset": "Poništi",
  "settings.learnedLimit.resetFailed": "Nije moguće poništiti ograničenje. Pokušajte ponovno.",
+ "settings.metadataLanguageNote": "Prevodi opise i sloganove na željeni jezik kada je to moguće. Naslovi se nikad ne prevode.",
  "settings.nextUp.atEnd": "Na kraju",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minuta prije kraja} few {# minute prije kraja} other {# minuta prije kraja}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# sekunda prije kraja} few {# sekunde prije kraja} other {# sekundi prije kraja}}",

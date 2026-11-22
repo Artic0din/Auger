@@ -226,7 +226,7 @@ A row that nothing on this TV acts on stays hidden.
 | Deinterlacing, Deinterlacing Field Rate | AVPlay has no deinterlacer or cadence setter. Same section. |
 | Lossless Multichannel Audio | This client has no decoder for the lossless codecs, and the server has no lossless target. Same section. |
 | TrueHD Atmos and DTS:X | Apple hides it too in Silo builds, and Samsung decodes neither codec. Same section. |
-| Audiobooks Skip Back, Skip Forward | No audiobook player yet. The audiobook screens ship first (#55). |
+| Still Watching prompt | Apple's EPISODES row sets how many episodes auto-play before Up Next waits for the viewer (`TVPlaybackSettingsView.swift:275-279`). Samsung has no such guard yet, so the row would save a value nothing reads. Tracked in [#796](https://github.com/Artic0din/silo-tizen/issues/796). |
 | Use Device Settings | tvOS reads Media Accessibility caption preferences (`SystemCaptionAppearance.swift`). Samsung captions are the app overlay. No TV caption-style API is available, so the switch would not change language, behavior, or appearance. |
 | Diagnostics | Open issue #218, parked. |
 
