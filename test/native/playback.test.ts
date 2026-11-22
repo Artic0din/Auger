@@ -2066,6 +2066,99 @@ test("a server that offers Auto-play per profile only shows no toggle and gets n
     r.controller.destroy();
 });
 
+// #806 round 2, Codex's sequence: a prompt-window settings read that starts while Off is saving answers with the old value after the save.
+test("a settings read started while Off was saving cannot turn Auto-play back on after the save (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
+    await playMovieWith(r, EPISODE, () => r.h.fake.script(watch, problem(500, "internal_error", "Unavailable")));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    // The retry's read is answered with the value from before the save, and that answer is held until after the save completes.
+    const stale = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
+    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile", definition_revision: 24 }] } });
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    put.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const saved = last(r.views);
+    assert.ok(saved.phase === "playing");
+    assert.equal(saved.hud?.autoNext, false, "the save confirmed Off");
+    stale.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const after = last(r.views);
+    assert.ok(after.phase === "playing");
+    assert.equal(after.hud?.autoNext, false, "the read that started before the save finished does not bring On back");
+    assert.equal(after.upNext?.countdown, undefined, "nor the countdown");
+    r.controller.destroy();
+});
+
+// #806 round 2: a write the server took stays, even when the read that confirms it fails.
+test("a failed confirmation read after a saved Off keeps Off and the countdown stopped (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1, "the write went through");
+    assert.equal(completion(r).autoNext, false, "Off stays");
+    assert.equal(completion(r).countdown, undefined, "and the countdown does not restart");
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1);
+    r.controller.destroy();
+});
+
+test("turning Auto-play on on the finished card starts the countdown before the save answers (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", false);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).countdown, undefined);
+    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, 10, "On counts down at once, with the write still out");
+    put.release();
+    await r.h.clock.advance(0);
+    r.controller.destroy();
+});
+
+test("a confirmation read that returns another saved value moves the toggle and countdown to it (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile_device", definition_revision: 24 }] } });
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true, "the saved value is On, so the toggle reads On");
+    assert.equal(completion(r).countdown, 10, "and the countdown runs again");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2);
+    r.controller.destroy();
+});
+
 test("internal countdown teardown never publishes a manual Play Now frame", async () => {
     const r = await autoplayRig(true);
     await playMovie(r, EPISODE);
