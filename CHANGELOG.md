@@ -133,6 +133,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Settings' text now uses Apple TV's sizes and weights, scaled to SF Pro's cap height like the rest of the app, across the sidebar and the General, Playback, Subtitles and Server panes (#749).
+- If the TV's player hits an error while a subtitle change is still waiting for the server's answer, playback now recovers instead of stopping with an error. Silo gets the server's answer first, so it recovers with the server's current playback plan (#750).
 - When an episode has no next episode and its On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode. Pick something from On Deck, or go back." under an On Deck row that wasn't there (#744).
 - Adding an account from Change Account now titles the code screen "Add an account on {server}", as on Apple TV, in the language you pick. A first sign-in and renewing a saved account keep "Sign in to {server}" (#754).
 - Switching to another embedded subtitle during a video on direct play now loads that subtitle's file, so Delay, Appearance and Only on this TV stay, as on Apple TV, without restarting the video. If the server refuses the switch, or its answer is slow to arrive, the TV's player shows the subtitle meanwhile. Pause, play and seeking keep working while the switch is answered (#738).
