@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakePlayback } from "../native/support/fakePlayback.ts";
-import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 import { object } from "../../src/contracts/v2/wire.ts";
 
 class AudioPreferenceDetails extends FakeDetails {
@@ -584,6 +584,8 @@ for (const reduced of [false, true]) {
     preplay(`production ${reduced ? "reduced" : "normal"}: remote Audio focus, captured Resume and one handoff`, async (tv, catalog) => {
         await tv.page.locator('[data-focus="audio"]').focus();
         await tv.page.keyboard.press("Enter");
+        // A Details answer that lands during the press repaints first, and the press then paints on the next frame (#512).
+        await afterPaint(tv);
         assert.equal(await tv.focused(), "audio:auto");
         await tv.remote(40);
         await tv.remote(40);
@@ -655,6 +657,7 @@ preplay("version change clears old audio, pins the new file and allows a fresh e
 preplay("Details subtitles resolve a catalog stream choice through the server inventory and restore their trigger", async tv => {
     await tv.page.locator('[data-focus="subtitles"]').focus();
     await tv.page.keyboard.press("Enter");
+    await afterPaint(tv);
     assert.equal(await tv.focused(), "subtitle:auto");
     await tv.page.locator('[data-focus="subtitle:0"]').click();
     assert.equal(await tv.focused(), "subtitles");
@@ -839,4 +842,30 @@ preplay("missing watch duration is unavailable, so the cached position plays and
     await prepare(tv);
     assert.equal(starts(tv).length, 1);
     assert.equal(starts(tv)[0]?.body?.start_position, 1200.5);
+});
+
+// tvOS runs a Button on release for the press that began on it (ButtonStyle.isPressed, ported in selectRelease.ts). A Details
+// answer that repaints between Enter's keydown and keyup must not lose that press; its panel paints on the next frame (#512).
+for (const late of ["/watchlist/movie%3Am0001/membership", "/favorites/movie%3Am0001/membership", "/capabilities/metadata-ai"]) test(`a press survives a Details answer landing between keydown and keyup: ${late}`, async () => {
+    const tv = await openTv(browser, { app: "application", production: true });
+    const catalog = new AudioPreferenceDetails();
+    catalog.progress.set("movie:m0001", 1200.5);
+    tv.fake.catalog = catalog;
+    const playback = new FakePlayback(tv.fake);
+    playback.items.set("movie:m0001", ["42", "43"]);
+    playback.automaticAudioIndex = 2;
+    try {
+        const held = tv.fake.hold(late, true);
+        await details(tv);
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith(late)), `${late} sent`);
+        await tv.page.locator('[data-focus="audio"]').focus();
+        await tv.page.keyboard.down("Enter");
+        held.release();
+        await tv.jump(0);
+        await tv.page.keyboard.up("Enter");
+        await afterPaint(tv);
+        assert.equal(await tv.focused(), "audio:auto");
+        assert.equal(await tv.page.getByRole("dialog", { name: "Audio" }).count(), 1);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
 });
