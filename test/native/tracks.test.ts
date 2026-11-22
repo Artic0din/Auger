@@ -2514,6 +2514,18 @@ test("a reconnect that replaces the transport is not ended by the old switch's d
     } finally { r.controller.destroy(); }
 });
 
+test("a route failure facing 100 quick 503s sends one woken replay, not a flood (#750, Codex repro)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 100 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        for (let i = 0; i < 20; i++) await settle(r);
+        assert.equal(replans(r.h).length, 2, "the first send and the one woken replay; the rest wait for the clock");
+    } finally { r.controller.destroy(); }
+});
+
 test("a replay refused during a held seek leaves the seek holding the controls, so a second seek waits (#738)", async () => {
     const { r, id } = await lostSwitchRig();
     try {
