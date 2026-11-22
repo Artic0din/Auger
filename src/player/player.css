@@ -27,6 +27,9 @@
 /* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
 .player-next-series { margin: 0; font-size: 34px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-next-series[hidden] { display: none; }
+/* PlayerView.metadata(for:): captionSize 19 pt, medium, white at 0.46. */
+.player-next-meta { margin: 0; font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .46; }
+.player-next-meta[hidden] { display: none; }
 .player-next-up .player-title.player-next-episode-title { font-size: 25px; font-weight: 600; }
 .player-next-code { margin-inline-end: 4px; opacity: .62; }
 /* CountdownRing: 58 px, a 3 px track at 12% white and the remaining part in white with round ends, the seconds at 24 bold rounded. */
@@ -805,7 +808,10 @@
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
    siloError is #B00020. Buttons reuse SiloPrimaryButtonStyle as ported on
    .requests-failure .browse-button, with the player's min-width of 140. */
+/* A SwiftUI Text in the screen-tall VStack truncates before the buttons leave the screen: the message gives way, with an ellipsis. */
 .player-error.player-error-wall {
+    display: flex;
+    flex-direction: column;
     padding: 0;
     text-align: center;
 }
@@ -840,6 +846,13 @@
 }
 
 .player-error-wall .player-error-text {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    /* 26 lines of 35.1 px fit above the buttons on a 1080-line screen. */
+    -webkit-line-clamp: 26;
     margin: 0 auto 16px;
     padding: 0 16px;
     font-size: 26px;
@@ -849,6 +862,7 @@
 }
 
 .player-error-wall .player-error-actions {
+    flex: none;
     display: flex;
     flex-direction: row;
     justify-content: center;

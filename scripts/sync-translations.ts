@@ -26,8 +26,11 @@ import { SHIPPED_LANGUAGES } from "../src/i18n/language.ts";
 const REPOSITORY = "Silo-Server/silo-translations";
 const SCOPE_PLATFORM = "apple";
 const EXCLUDED_PREFIX = "apple.infoPlist.";
-/** Home section titles: the server sends the key (`home.section.recentlyAddedIn`) with the title it wrote. */
-const SERVER_KEY_PREFIXES: readonly string[] = ["home.section."];
+/**
+ * Home section titles: the server sends the key (`home.section.recentlyAddedIn`) with the title it wrote. A problem's
+ * text: its type names `error.<id>` and a field error `error.field.<code>` (APIv2Problem.localized).
+ */
+const SERVER_KEY_PREFIXES: readonly string[] = ["home.section.", "error."];
 /**
  * Keys vendored although silo-translations does not list `apple` for them. Settings › Playback's Video help line takes Android TV's
  * `settings.skipIntervals.footerVideo` ("left and right presses on the remote"), because Apple TV's own line names the Siri Remote,

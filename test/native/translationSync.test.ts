@@ -52,6 +52,11 @@ test("a translation keeps only the keys source files name as strings, so one scr
     assert.deepEqual(scoped, { "common.cancel": "Abbrechen", "settings.title": "Einstellungen" });
 });
 
+test("a translation keeps the keys the server names, Home's section titles and a problem's error lines, though no source spells them", () => {
+    const keys = new Set(["home.section.forYou", "error.validation_failed", "error.field.required", "account.error.needsSignIn", "never.used"]);
+    assert.deepEqual([...usedKeys([], keys)].sort(), ["error.field.required", "error.validation_failed", "home.section.forYou"]);
+});
+
 test("a refresh with no --languages keeps every shipped language, so the imports the build needs stay", () => {
     assert.deepEqual(languagesToSync([]), [...SHIPPED_LANGUAGES]);
     assert.deepEqual(languagesToSync(["--languages", "en,de"]), ["en", "de"]);

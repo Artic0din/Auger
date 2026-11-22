@@ -13,7 +13,7 @@ import type { Clock } from "../api/clock.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
-import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, type MessageKey, serverText, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
@@ -22,6 +22,7 @@ import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
+import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
@@ -59,7 +60,7 @@ export function errorText(error: PlaybackError): string {
             return "This video can't play on this TV.";
         case "network":
             // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
-            return translate("player.error.connectionLost");
+            return error.noResponse === true ? translate("player.error.serverNoResponse") : translate("player.error.connectionLost");
         case "session_expired":
             return "The server ended playback. Try again.";
         case "installation_changed":
@@ -68,8 +69,18 @@ export function errorText(error: PlaybackError): string {
             return "This profile no longer has access. Sign in again.";
         case "backgrounded":
             return "Playback stopped when you left Auger. Go back and select the title to play again.";
-        case "server":
-            return "The server couldn't start playback. Try again.";
+        case "server": {
+            // APIv2Client.errorDescription, as Apple's player shows it; a failure the server did not word keeps the TV's own line.
+            const reason = error.reason;
+            if (reason === undefined) return "The server couldn't start playback. Try again.";
+            if ("text" in reason) {
+                // problem.localized: the field code's line, else the problem type's, else the server's own text.
+                const byType = reason.problemId === undefined ? reason.text : serverText(reason.text, `error.${reason.problemId}`);
+                return serverText(byType, reason.fieldCode === undefined ? undefined : `error.field.${reason.fieldCode}`);
+            }
+            if ("update" in reason) return translate("update.appRequired");
+            return translate("errors.apple.v2.httpStatus", { status: String(reason.status) });
+        }
     }
 }
 
@@ -539,6 +550,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const synopsis = el("p", "player-next-synopsis");
     const nextSeries = el("p", "player-next-series");
     nextSeries.hidden = true;
+    const nextMeta = el("p", "player-next-meta");
+    nextMeta.hidden = true;
     // PlayerView.backgroundImage: the next still behind the whole page, blurred and dimmed.
     const nextBackdrop = el("div", "player-next-backdrop");
     const nextBackdropArt = el("div", "player-next-backdrop-art");
@@ -559,6 +572,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         else if (code === undefined) failureTitle.textContent = candidate.title;
         // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
         else failureTitle.replaceChildren(el("span", "player-next-code", code), document.createTextNode(" "), document.createTextNode(candidate.title));
+        // PlayerView.episodeMetadataLine: the air date and runtime, whichever are known.
+        nextMeta.textContent = [episodeAirDate(candidate?.airDate), (candidate?.runtimeMinutes === undefined ? undefined : episodeRuntime(candidate.runtimeMinutes))].filter(part => part !== undefined).join(" · ");
+        nextMeta.hidden = nextMeta.textContent === "";
     };
     const deck = el("div", "player-next-deck");
     const keep = el("button", "player-button");
@@ -602,7 +618,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
     secondaryRow.append(keep, cancelAutoplay, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, mark, failureText, synopsis, actions, autoPlay, deck);
+    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlay, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -1005,6 +1021,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         nextSeries.hidden = true;
+        nextMeta.hidden = true;
         nextBackdrop.hidden = true;
         failureTitle.classList.remove("player-next-episode-title");
         ring.set(undefined, undefined);

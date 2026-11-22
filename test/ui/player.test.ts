@@ -889,6 +889,38 @@ test("Up Next names the series and the episode code, shows the synopsis and coun
     } finally { await page.close(); }
 });
 
+// PlayerView.metadata(for:) and episodeMetadataLine (silo-apple 449ba47 PlayerView.swift:1374-1379, 1695-1709): the air date (abbreviated,
+// in the app language) and the runtime joined by " · ", 19 pt medium at 0.46 opacity, between the title and the synopsis; nothing when
+// both are missing (#759).
+test("Up Next shows the next episode's air date and runtime between its title and the synopsis (#759)", async () => {
+    const { page } = await open();
+    try {
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor." };
+        const line = (): Promise<{ text: string; hidden: boolean; afterTitle: boolean; beforeSynopsis: boolean; size: string; weight: string; opacity: string }> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-next-up .player-next-meta")!;
+            const all = [...node.parentElement!.children];
+            const at = (selector: string): number => all.indexOf(node.parentElement!.querySelector(selector)!);
+            const css = getComputedStyle(node);
+            return { text: node.textContent ?? "", hidden: node.hidden === true, afterTitle: all.indexOf(node) > at(".player-title"), beforeSynopsis: all.indexOf(node) < at(".player-next-synopsis"), size: css.fontSize, weight: css.fontWeight, opacity: css.opacity };
+        });
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, airDate: "2022-02-18", runtimeMinutes: 57 }, deck: [], countdown: undefined, status: "Up Next" } });
+        const shown = await line();
+        assert.deepEqual({ ...shown, size: undefined }, { text: "Feb 18, 2022 · 57m", hidden: false, afterTitle: true, beforeSynopsis: true, size: undefined, weight: "500", opacity: "0.46" });
+        assert.ok(Math.abs(parseFloat(shown.size) - 19 * cap) < 0.01, `19 pt times the cap scale: ${shown.size}`);
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, runtimeMinutes: 57 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).text, "57m", "the runtime alone");
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, airDate: "2022-02-18" }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).text, "Feb 18, 2022", "the date alone");
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, runtimeMinutes: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).hidden, true, "no date and no positive runtime, no line");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { ...episode, airDate: "2022-02-18", runtimeMinutes: 57 }, countdown: 9 });
+        assert.equal((await line()).text, "Feb 18, 2022 · 57m", "after the end too");
+        await show(page, playing(TRACKS));
+        assert.equal(await page.locator(".player-next-meta").isHidden(), true, "and gone with the panel");
+    } finally { await page.close(); }
+});
+
 // PlayerView.metadata(for:): Apple heads every episode with its series; its numbers are never missing there (PlayerNextUpEpisode's
 // seasonNumber and episodeNumber are Int), so an episode the TV knows without them keeps the series line and drops only the code.
 test("an episode without season or episode numbers keeps its series line and drops only the code", async () => {
@@ -2702,6 +2734,41 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
         assert.deepEqual(await commands(page), ["dismissError", "dismissError"]);
         assert.equal(await focused(page), "back");
         assert.deepEqual(logs, []);
+    } finally {
+        await page.close();
+    }
+});
+
+// Apple shows the start failure's own description (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877, APIv2Client.swift:66-70) (#760).
+test("a start failure shows the server's reason, or Apple's HTTP status line, in place of a fixed sentence", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "The file is offline." } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The file is offline.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 503 } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 503.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "Update Auger to keep using this server.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server didn't respond in time.");
+    } finally {
+        await page.close();
+    }
+});
+
+// Apple's wall (PlayerView.swift:998-1024) is a fixed-height VStack, so a long message gives way and Retry and Go Back stay on screen (#760).
+test("a long server message keeps Retry and Back on screen", async () => {
+    const { page } = await open();
+    try {
+        const detail = "The server could not prepare this file because its source is unavailable. ".repeat(80).trim();
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: detail } }, retryable: true });
+        const box = (selector: string) => page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; });
+        const message = await box(".player-error-text");
+        for (const selector of ['[data-focus="settings-retry"]', '[data-focus="back"]']) {
+            const button = await box(selector);
+            assert.ok(button.top >= message.bottom && button.bottom <= 1080, `${selector} at ${button.top}-${button.bottom}, message ends at ${message.bottom}`);
+        }
+        assert.equal(await focused(page), "settings-retry");
     } finally {
         await page.close();
     }
