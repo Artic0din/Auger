@@ -1991,6 +1991,8 @@ svg.library-empty-icon { width: auto; }
 /* The pane's rows and footers; Settings modals share .settings-controls and .settings-value but Apple sizes them differently. */
 .settings-pane .browse-button { font-size: calc(26px * var(--silo-sf-cap-scale)); }
 .settings-pane .settings-value { font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 400; }
+/* Apple has no empty-category state; it takes the nearest Apple style, the pane footer (TVSettingsComponents.swift:453, 19 pt regular). */
+.settings-pane .settings-empty { font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 400; }
 /* TVSettingsPickerRow uses .font(.system(size: 26)), regular. The resting stroke is siloChromeRestingBorder, white at 9%, 1px. On is semibold. */
 .settings-pane .browse-button,
 .settings-info-row { height: 66px; font-weight: 400; border: 1px solid rgba(255, 255, 255, 0.09); }

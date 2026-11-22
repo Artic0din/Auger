@@ -176,3 +176,25 @@ test("Settings' rail and General, Playback, Subtitles and Server panes use Apple
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+
+test("Settings' empty category message takes the pane footer's size", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        // Without the subtitle rows the fixture leaves out, the Subtitles pane shows the Tizen-only empty message.
+        tv.fake.catalog = new FakeCatalog();
+        new FakeSettings(tv.fake);
+        const routes = tv.fake.catalog;
+        assert.ok(routes !== undefined);
+        await signedIn(tv, routes);
+        await tv.page.locator('[data-focus="profiles"]').first().focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
+        await tv.page.locator('[data-focus="subtitles"]').click();
+        await tv.page.locator(".settings-pane .settings-empty").waitFor();
+        assert.deepEqual(await tv.page.evaluate(unscaledText, ".settings"), []);
+        const roles = await tv.page.evaluate(offRoles, [[".settings-pane .settings-empty", 19, "400", "tvOS/Screens/Settings/TVSettingsComponents.swift:453 (nearest Apple style)"]] as const);
+        assert.deepEqual(roles, { off: [], seen: [".settings-pane .settings-empty"] });
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
