@@ -43,7 +43,7 @@ test("next playable episode uses explicit numeric order and a fresh allowed file
     r.data.set(seasonPath(1), { items: [row("later", 1, 12), row(NEXT, 1, 10), row(CURRENT, 1, 9)] });
     r.data.set(watchPath(NEXT), watch(NEXT, 1, 10));
     const result = await nextEpisode(r.read, CURRENT, "effective");
-    assert.deepEqual(result, { contentId: NEXT, fileId: `file-${NEXT}`, title: `Title ${NEXT}`, startSeconds: 0, episode: true, seasonNumber: 1, episodeNumber: 10, watch: { played: false } });
+    assert.deepEqual(result, { contentId: NEXT, fileId: `file-${NEXT}`, title: `Title ${NEXT}`, startSeconds: 0, episode: true, seasonNumber: 1, episodeNumber: 10, watch: { played: false }, runtimeMinutes: 42 });
     assert.equal(r.reads[r.reads.length - 1], watchPath(NEXT));
 });
 
@@ -224,6 +224,16 @@ test("the next episode carries the season row's overview and still", async () =>
     const result = await nextEpisode(r.read, CURRENT, "effective");
     assert.equal(result?.overview, "A storm closes the harbor.");
     assert.equal(result?.backdropUrl, "/images/next-still.jpg");
+});
+
+// PlayerView.episodeMetadataLine (silo-apple 449ba47 PlayerView.swift:1695-1709) reads the row's air date and runtime (#759).
+test("the next episode carries the season row's air date and runtime", async () => {
+    const r = rig(1, 9);
+    r.data.set(seasonPath(1), { items: [{ ...row(NEXT, 1, 10), air_date: "2022-02-18", runtime: 57 }, row(CURRENT, 1, 9)] });
+    r.data.set(watchPath(NEXT), watch(NEXT, 1, 10));
+    const result = await nextEpisode(r.read, CURRENT, "effective");
+    assert.equal(result?.airDate, "2022-02-18");
+    assert.equal(result?.runtimeMinutes, 57);
 });
 
 test("the season row's still flag reaches the next episode, true or false", async () => {
