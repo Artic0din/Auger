@@ -135,6 +135,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Refreshing the translations no longer brings the old Silo name back where the app names itself: the sync renames it to Auger in those strings and leaves the Silo server's name alone (#802).
 - When the server is slow to confirm a subtitle change, a seek no longer jumps back if the change brings a new stream, the subtitle no longer disappears after leaving and returning to the app, and the TV's player shows the new subtitle even if a seek was in progress at the time (#751).
 - The picture preview while scrubbing now shows during a subtitle change, as on Apple TV (#757).
 - On a video the TV can only seek within a window, a seek made while a subtitle change is waiting for the server now lands where you asked: a newer seek replaces it, skips add to it, and it survives the change bringing a new stream (#756).
