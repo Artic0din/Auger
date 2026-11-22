@@ -177,6 +177,17 @@ test("Search uses Apple's points times the cap scale", async () => {
     } finally { await tv.page.context().close(); }
 });
 
+test("the profile menu uses Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await signedIn(tv);
+        await tv.page.locator('[data-focus="profiles"]').first().click();
+        await tv.page.locator(".skyline-selector:not([hidden]) .skyline-profile-title").waitFor();
+        assert.deepEqual(await tv.page.evaluate(unscaledText, ".skyline-selector"), []);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
 test("Calendar's week, cards, empty week and failure use Apple's points times the cap scale", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
