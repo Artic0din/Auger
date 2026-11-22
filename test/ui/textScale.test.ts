@@ -3,10 +3,11 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
+import { FakeCalendar } from "../native/support/fakeCalendar.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import type { CatalogRoutes, Reply } from "../native/support/fakeSilo.ts";
+import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
@@ -19,8 +20,8 @@ after(async () => { await browser.close(); });
  * Left out: text hidden from sight (`.silo-sr-only`); avatar initials, which Apple sizes from the avatar
  * (`ProfileAvatarView.swift:51`, `size * 0.34`); and card badges, which Apple scales with the card's width
  * (`CardOverlays.swift:279`, the preset's points times width / 185); and the Settings subtitle preview, which Apple
- * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`). None is a whole point. Text clipped into a
- * 1 px box is hidden from sight too, as Search hides its screen-reader title and label.
+ * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`). None is a whole point. Text
+ * clipped into a 1 px box is hidden from sight too, as Search hides its screen-reader title and label.
  */
 function unscaledText(root: string): string[] {
     const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
@@ -186,6 +187,33 @@ test("the profile menu uses Apple's points times the cap scale", async () => {
         await tv.page.locator('[data-focus="profiles"]').first().click();
         await tv.page.locator(".skyline-selector:not([hidden]) .skyline-profile-title").waitFor();
         assert.deepEqual(await tv.page.evaluate(unscaledText, ".skyline-selector"), []);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Calendar's week, cards, empty week and failure use Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const calendar = new FakeCalendar();
+        // The fixture's week is laid out in Melbourne time, as calendar.test.ts runs it.
+        const cdp = await tv.page.context().newCDPSession(tv.page);
+        await cdp.send("Emulation.setTimezoneOverride", { timezoneId: "Australia/Melbourne" });
+        await signedIn(tv, calendar);
+        const found = new Set<string>();
+        const collect = async (): Promise<void> => { for (const entry of await tv.page.evaluate(unscaledText, ".browse")) found.add(entry); };
+        await tv.page.locator('[data-focus="calendar"]').first().click();
+        await tv.page.locator(".calendar-event").first().waitFor();
+        await collect();
+        await tv.page.locator('[data-focus="next-week"]').click();
+        await tv.page.locator(".calendar-empty").waitFor();
+        // Today shows only off the current week, so the next week measures it.
+        await tv.page.locator('[data-focus="today"]').waitFor();
+        await collect();
+        calendar.calendarFailure = problem(503, "service_unavailable", "Unavailable");
+        await tv.page.locator('[data-focus="empty:trending"]').click();
+        await tv.page.locator(".calendar-failure").waitFor();
+        await collect();
+        assert.deepEqual([...found].sort(), []);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });

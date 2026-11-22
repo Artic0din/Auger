@@ -133,6 +133,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Settings' text now uses Apple TV's sizes and weights, scaled to SF Pro's cap height like the rest of the app, across the sidebar and the General, Playback, Subtitles and Server panes (#749).
+- Calendar's text now uses Apple TV's sizes, scaled to SF Pro's cap height like the rest of the app, across the week strip, filters, cards, the empty week and the failure page. The failure page's second button is now regular weight, as on Apple TV (#749).
 - The profile name at the top of the profile menu is now drawn at Apple TV's size, scaled to SF Pro's cap height like the rest of the app (#749).
 - Search's All, Movies and TV Shows filter pills now use Apple TV's text size, scaled to SF Pro's cap height like the rest of the app (#749).
 - If the TV's player hits an error while a subtitle change is still waiting for the server's answer, playback now recovers instead of stopping with an error. Silo gets the server's answer first, so it recovers with the server's current playback plan (#750).
