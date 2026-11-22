@@ -260,7 +260,10 @@ test("Settings' rail and General, Playback, Subtitles and Server panes use Apple
         const seen = new Set<string>();
         for (const pane of ["general", "playback", "subtitles", "server"]) {
             await tv.page.locator(`[data-focus="${pane}"]`).click();
+            // The pane shown must be the one asked for, so every pane is really measured.
+            await tv.page.locator(`.settings-pane[data-scroll-key="settings-pane:${pane}"]`).waitFor();
             await tv.jump(1000);
+            assert.equal(await tv.page.locator(".settings-pane").getAttribute("data-scroll-key"), `settings-pane:${pane}`);
             for (const entry of await tv.page.evaluate(unscaledText, ".settings")) found.add(`${pane}: ${entry}`);
             const roles = await tv.page.evaluate(offRoles, SETTINGS_ROLES);
             for (const entry of roles.off) found.add(`${pane}: ${entry}`);
@@ -305,6 +308,9 @@ test("a Settings pane error uses Apple's warning footer size and weight", async 
         const routes = tv.fake.catalog;
         assert.ok(routes !== undefined);
         await signedIn(tv, routes);
+        // Home's startup settings reads must finish before the refusal is scripted, so none of them can take it
+        // (the same wait as settings.test.ts's setup).
+        await tv.eventually(async () => ["keys=ui.title_art", "keys=ui.card_overlays"].every(key => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes(key))), "Home settings reads");
         // A refused contract read leaves the pane with its warning footer, as settings.test.ts raises it.
         tv.fake.script("/settings/contract/capabilities", problem(403, "permission_denied", "Denied"));
         await tv.page.locator('[data-focus="profiles"]').first().focus();
