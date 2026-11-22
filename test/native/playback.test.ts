@@ -3851,6 +3851,29 @@ test("a refused start keeps the problem's first field code for the error page", 
     r.controller.destroy();
 });
 
+// APIv2Client.swift:66-68 reads the update prompt only for a 410 whose problem is client_upgrade_required. The wall still
+// offers Retry, as Apple's does: isRetryablePlaybackFailure (PlayerViewModel.swift:6975-6977) is true for any start error
+// that is not a terminal failure (#760).
+test("only a 410 client_upgrade_required start asks for an update, and its wall still offers Retry", async () => {
+    const problem = (status: number, id: string): Record<string, unknown> => ({ type: `https://silo.example/problems/${id}`, title: "Update required", status, detail: "Update the app." });
+    const cases = [
+        { status: 410, id: "client_upgrade_required", reason: { update: true } },
+        { status: 400, id: "client_upgrade_required", reason: { text: "Update the app.", problemId: "client_upgrade_required" } },
+        { status: 410, id: "gone", reason: { text: "Update the app.", problemId: "gone" } },
+    ];
+    for (const { status, id, reason } of cases) {
+        const r = await rig();
+        r.h.fake.script("/playback/start", { status, headers: { "Content-Type": "application/problem+json" }, body: problem(status, id) });
+        r.controller.play(MOVIE);
+        await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "error" && view.error.kind === "server", `${status} ${id}`);
+        assert.deepEqual(view.error.reason, reason, `${status} ${id}`);
+        assert.equal(view.retryable, true, `${status} ${id}`);
+        r.controller.destroy();
+    }
+});
+
 // Apple's start that times out reads "The server didn't respond in time." (PlayerViewModel.swift:6839, 6866-6868) (#760).
 test("a start the server never answers is a retryable no-response error", async () => {
     const r = await rig();

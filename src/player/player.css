@@ -785,7 +785,10 @@
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
    siloError is #B00020. Buttons reuse SiloPrimaryButtonStyle as ported on
    .requests-failure .browse-button, with the player's min-width of 140. */
+/* A SwiftUI Text in the screen-tall VStack truncates before the buttons leave the screen: the message gives way, with an ellipsis. */
 .player-error.player-error-wall {
+    display: flex;
+    flex-direction: column;
     padding: 0;
     text-align: center;
 }
@@ -820,6 +823,13 @@
 }
 
 .player-error-wall .player-error-text {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    /* 26 lines of 35.1 px fit above the buttons on a 1080-line screen. */
+    -webkit-line-clamp: 26;
     margin: 0 auto 16px;
     padding: 0 16px;
     font-size: 26px;
@@ -829,6 +839,7 @@
 }
 
 .player-error-wall .player-error-actions {
+    flex: none;
     display: flex;
     flex-direction: row;
     justify-content: center;

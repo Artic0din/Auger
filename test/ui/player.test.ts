@@ -2657,10 +2657,28 @@ test("a start failure shows the server's reason, or Apple's HTTP status line, in
         assert.equal(await text(page, ".player-error-text"), "The file is offline.");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 503 } }, retryable: true });
         assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 503.");
-        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: false });
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: true });
         assert.equal(await text(page, ".player-error-text"), "Update Auger to keep using this server.");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
         assert.equal(await text(page, ".player-error-text"), "The server didn't respond in time.");
+    } finally {
+        await page.close();
+    }
+});
+
+// Apple's wall (PlayerView.swift:998-1024) is a fixed-height VStack, so a long message gives way and Retry and Go Back stay on screen (#760).
+test("a long server message keeps Retry and Back on screen", async () => {
+    const { page } = await open();
+    try {
+        const detail = "The server could not prepare this file because its source is unavailable. ".repeat(80).trim();
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: detail } }, retryable: true });
+        const box = (selector: string) => page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; });
+        const message = await box(".player-error-text");
+        for (const selector of ['[data-focus="settings-retry"]', '[data-focus="back"]']) {
+            const button = await box(selector);
+            assert.ok(button.top >= message.bottom && button.bottom <= 1080, `${selector} at ${button.top}-${button.bottom}, message ends at ${message.bottom}`);
+        }
+        assert.equal(await focused(page), "settings-retry");
     } finally {
         await page.close();
     }
