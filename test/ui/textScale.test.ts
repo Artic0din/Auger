@@ -218,6 +218,27 @@ test("Calendar's week, cards, empty week and failure use Apple's points times th
     } finally { await tv.page.context().close(); }
 });
 
+/** Settings' text roles, paths under iosApp/iosApp/tvOS/Screens/Settings/ (silo-apple 449ba47). */
+const SETTINGS_ROLES: readonly Role[] = [
+    [".settings-categories .browse-title", 48, "700", "TVSettingsView.swift:185"],
+    [".settings-version", 18, "400", "TVSettingsView.swift:202"],
+    [".settings-profile-name", 27, "600", "TVSettingsView.swift:223"],
+    [".settings-profile-account", 19, "400", "TVSettingsView.swift:226"],
+    [".settings-category-title", 25, "500", "TVSettingsView.swift:253"],
+    [".settings-category-detail", 16, "400", "TVSettingsView.swift:256"],
+    [".settings-pane-header .browse-section-title", 42, "700", "TVSettingsView.swift:461"],
+    [".settings-pane-header .settings-blurb", 20, "400", "TVSettingsView.swift:465"],
+    [".settings-pane .settings-row-title", 26, "400", "TVSettingsComponents.swift:315"],
+    [".settings-pane .browse-button:not([aria-checked=\"true\"]):not(.settings-learned-limit) .settings-row-value", 24, "400", "TVSettingsComponents.swift:319"],
+    [".settings-pane .browse-button[role=\"switch\"][aria-checked=\"true\"] .settings-row-value", 24, "600", "TVSettingsComponents.swift:348"],
+    [".settings-info-row", 26, "400", "TVSettingsComponents.swift:401"],
+    [".settings-info-row .settings-row-value", 24, "400", "TVSettingsComponents.swift:405"],
+    [".settings-section-header", 19, "600", "TVSettingsComponents.swift:436"],
+    [".settings-pane .settings-value", 19, "400", "TVSettingsComponents.swift:453"],
+];
+// The connection-speed line (22 pt, TVPlaybackSettingsView.swift:146) shows only after a speed is measured, which this
+// fixture never does; the whole-point check still covers it whenever it is drawn.
+
 test("Settings' rail and General, Playback, Subtitles and Server panes use Apple's points times the cap scale", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
@@ -236,12 +257,18 @@ test("Settings' rail and General, Playback, Subtitles and Server panes use Apple
         await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
         await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
         const found = new Set<string>();
+        const seen = new Set<string>();
         for (const pane of ["general", "playback", "subtitles", "server"]) {
             await tv.page.locator(`[data-focus="${pane}"]`).click();
             await tv.jump(1000);
             for (const entry of await tv.page.evaluate(unscaledText, ".settings")) found.add(`${pane}: ${entry}`);
+            const roles = await tv.page.evaluate(offRoles, SETTINGS_ROLES);
+            for (const entry of roles.off) found.add(`${pane}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
         }
         assert.deepEqual([...found].sort(), []);
+        // Every role must be measured, so text drawn at size 0 or missing cannot pass.
+        assert.deepEqual(SETTINGS_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
@@ -265,6 +292,27 @@ test("Settings' empty category message takes the pane footer's size", async () =
         assert.deepEqual(await tv.page.evaluate(unscaledText, ".settings"), []);
         const roles = await tv.page.evaluate(offRoles, [[".settings-pane .settings-empty", 19, "400", "tvOS/Screens/Settings/TVSettingsComponents.swift:453 (nearest Apple style)"]] as const);
         assert.deepEqual(roles, { off: [], seen: [".settings-pane .settings-empty"] });
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+
+test("a Settings pane error uses Apple's warning footer size and weight", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        tv.fake.catalog = new FakeCatalog();
+        new FakeSettings(tv.fake);
+        const routes = tv.fake.catalog;
+        assert.ok(routes !== undefined);
+        await signedIn(tv, routes);
+        // A refused contract read leaves the pane with its warning footer, as settings.test.ts raises it.
+        tv.fake.script("/settings/contract/capabilities", problem(403, "permission_denied", "Denied"));
+        await tv.page.locator('[data-focus="profiles"]').first().focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator(".settings-pane .browse-error.settings-warning").waitFor();
+        const roles = await tv.page.evaluate(offRoles, [[".settings-pane .browse-error.settings-warning", 29, "500", "TVSettingsComponents.swift:474 (.body; HIG Body 29 pt medium)"]] as const);
+        assert.deepEqual(roles, { off: [], seen: [".settings-pane .browse-error.settings-warning"] });
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });

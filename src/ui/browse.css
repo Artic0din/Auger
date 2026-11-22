@@ -464,11 +464,15 @@
 }
 
 /* TVSettingsWarningFooter is .siloError; the rest of the app uses the ink. */
-/* TVSettingsWarningFooter (TVSettingsComponents.swift:474) uses .body, which has no size in Swift; Apple's tvOS HIG type table gives Body as 29 pt medium. */
 .browse-error.settings-warning {
+    color: var(--silo-error);
+}
+
+/* The pane's TVSettingsWarningFooter (TVSettingsComponents.swift:474) uses .body, which has no size in Swift; Apple's tvOS
+   HIG type table gives Body as 29 pt medium. Modal errors are out of this change and keep their size. */
+.settings-pane .browse-error.settings-warning {
     font-size: calc(29px * var(--silo-sf-cap-scale));
     font-weight: 500;
-    color: var(--silo-error);
 }
 
 .browse-nav,
