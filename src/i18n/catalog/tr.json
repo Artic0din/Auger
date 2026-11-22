@@ -1126,6 +1126,7 @@
  "topBar.series": "Diziler",
  "tvSignIn.action.newCode": "Yeni kod göster",
  "tvSignIn.action.password": "Parolayla oturum aç",
+ "tvSignIn.addAccountTitle": "{server} sunucusuna hesap ekleyin",
  "tvSignIn.appleTv.lead": "Kodu telefonunuzun kamerasıyla tarayın veya {page} adresine gidip kodu girin. Telefonunuzda onaylayın, bu Apple TV kendiliğinden oturum açar.",
  "tvSignIn.appleTv.leadNoPage": "Kodu telefonunuzun kamerasıyla tarayın veya sunucunuzun /activate sayfasına gidip kodu girin. Telefonunuzda onaylayın, bu Apple TV kendiliğinden oturum açar.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Bir alanı seçtiğinizde yakındaki iPhone ve iPad’lerde bir klavye bildirimi görünür. Kumanda yerine oradan yazın.",

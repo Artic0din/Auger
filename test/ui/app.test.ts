@@ -656,6 +656,7 @@ appTest("an expired only account signs in again even when its sign-in flag canno
     await tv.page.locator('[data-screen="code"], [data-view="change-account"]').first().waitFor({ timeout: 5000 });
     assert.equal(await tv.page.locator('[data-view="change-account"]').count(), 0, "the expired account is no other account to choose");
     assert.equal(await tv.page.locator('[data-screen="code"]').count(), 1);
+    assert.match(await tv.page.locator("[data-server-headline]").innerText(), /^Sign in to /, "renewing an account keeps Sign in to");
     await tv.page.getByRole("button", { name: "Sign in with a password", exact: true }).click();
     assert.equal(await tv.page.locator("#signin-username").inputValue(), "laura", "the expired account is the one renewed");
 });
@@ -1444,8 +1445,8 @@ appTest("remote navigation keeps focus and context through Browse paging, a fail
     assert.equal(await tv.focused(), "loading", "the loading page keeps focus while the read is out");
     assert.equal(await tv.page.locator(".details-failure").count(), 0);
     // Failure: the refusal arrives, and the failure page takes focus on Try Again.
+    // The refusal shows the failure page by itself. Jumping the clock here raced the reply: on a busy runner the load's timeout fired first.
     held.release();
-    await tv.jump(35000);
     await tv.page.locator(".details-failure").waitFor();
     assert.equal(await tv.focused(), "retry", "the failure page takes focus on its retry");
     await tv.page.keyboard.press("Enter");

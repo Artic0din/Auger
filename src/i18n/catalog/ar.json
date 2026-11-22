@@ -1126,6 +1126,7 @@
  "topBar.series": "المسلسلات",
  "tvSignIn.action.newCode": "عرض رمز جديد",
  "tvSignIn.action.password": "تسجيل الدخول بكلمة مرور",
+ "tvSignIn.addAccountTitle": "إضافة حساب على {server}",
  "tvSignIn.appleTv.lead": "امسح الرمز بكاميرا هاتفك، أو انتقل إلى {page} وأدخله. وافق على هاتفك وسيسجّل Apple TV هذا الدخول تلقائيًا.",
  "tvSignIn.appleTv.leadNoPage": "امسح الرمز بكاميرا هاتفك، أو انتقل إلى صفحة /activate على خادمك وأدخله. وافق على هاتفك وسيسجّل Apple TV هذا الدخول تلقائيًا.",
  "tvSignIn.appleTv.typeOnPhoneBody": "عند اختيار حقل، يظهر إشعار لوحة المفاتيح على أجهزة iPhone وiPad القريبة. اكتب هناك بدلًا من جهاز التحكم عن بُعد.",

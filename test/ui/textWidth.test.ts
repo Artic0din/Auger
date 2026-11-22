@@ -66,7 +66,8 @@ test("one tracking token brings Inter titles to Apple's width", async () => {
             assert.equal(Number.parseFloat(title.spacing) || 0, 0, `${title.text} ${title.spacing}`);
         }
         assert.equal(measured.kitchen.text, "My Kitchen Rules");
-        assert.equal(measured.kitchen.size, "28px");
+        // CalendarEventCard.swift:249: siloCardTitle, 28 pt semibold, times the cap scale.
+        assert.equal(measured.kitchen.size, "27.118px");
         assert.equal(measured.kitchen.weight, "600");
         assert.equal(measured.kitchen.lines, 1);
         assert.ok(measured.kitchen.width <= measured.kitchen.card, `${measured.kitchen.width} > ${measured.kitchen.card}`);

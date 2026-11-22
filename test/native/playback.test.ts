@@ -2455,8 +2455,9 @@ test("an episode whose next-episode lookup fails still shows Up Next as failed",
 });
 
 // The same episode with nothing next is run twice: On Deck answering proves the next-episode lookup succeeded (only then is the
-// first On Deck item offered), so the failure line in the second run comes from the failed On Deck read alone.
-for (const deck of ["answers", "fails"] as const) test(`an episode with no next episode whose On Deck read ${deck} ${deck === "fails" ? "keeps today's failure line" : "offers On Deck"}`, async () => {
+// first On Deck item offered), so the second run isolates the failed On Deck read. PlayerViewModel.loadNextUpOnDeckItems
+// (silo-apple main 71a3beb9) empties the deck on failure and sets no lookup error, so Up Next reads upNext.noNext (#744).
+for (const deck of ["answers", "fails"] as const) test(`an episode with no next episode whose On Deck read ${deck} ${deck === "fails" ? "shows nothing next, as on Apple TV" : "offers On Deck"}`, async () => {
     const r = await autoplayRig(false);
     const unavailable = problem(500, "internal_error", "Unavailable");
     const seasonsPath = "/catalog/series/series%3As1/seasons?image_size=small";
@@ -2480,7 +2481,8 @@ for (const deck of ["answers", "fails"] as const) test(`an episode with no next 
         assert.ok(view.upNext?.next !== undefined && view.upNext.next.contentId === view.upNext.deck[0]?.contentId, "with nothing next, the first On Deck item is offered");
     } else {
         assert.equal(view.upNext?.next, undefined, "no next episode");
-        assert.equal(view.upNext?.failed, true, "an episode keeps the failure line when its On Deck read fails (#741)");
+        assert.equal(view.upNext?.failed, undefined, "a failed On Deck read is not a failed lookup");
+        assert.deepEqual(view.upNext?.deck, [], "it reads as an empty deck");
     }
     r.controller.destroy();
 });

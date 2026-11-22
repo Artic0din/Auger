@@ -24,6 +24,15 @@ What changed and why this way, and which surfaces and repositories it affects.
 Mention an alternative only if a reviewer would ask about it. Do not walk through
 the diff.
 
+## tvOS source
+
+silo-apple commit: `<sha>`
+
+- `tvOS/Screens/.../View.swift:NN-NN`: what this change ports from it
+<!-- Required when this change touches src/ui, src/player, src/*.ts, src/*.css, app/index.html or src/i18n: cite each Swift file
+and line range this change ports, read before writing code (AGENTS.md "Parity
+delivery gates"). See "Port from the tvOS source" in CONTRIBUTING.md. -->
+
 ## Validation
 
 One line per kind of check and its result; do not list tests by name. Name required

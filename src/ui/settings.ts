@@ -854,7 +854,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             rows.push(item);
             body.append(el("h3", "settings-section-header", translate("settings.general.topMenuHeaderTv")), item.element, el("p", "settings-value", translate("settings.general.topMenuFooterTv")));
         }
-        if (state.loaded && rows.length === 0) body.appendChild(el("p", "browse-text", "No supported settings in this category."));
+        if (state.loaded && rows.length === 0) body.appendChild(el("p", "browse-text settings-empty", "No supported settings in this category."));
         if (category === "server") {
             for (const row of rows) {
                 const icon = row.key === "accounts" ? "switch-profile" : row.key === "privacy" ? "privacy" : row.key === "acknowledgements" ? "credits" : "switch-server";

@@ -1126,6 +1126,7 @@
  "topBar.series": "Seriale",
  "tvSignIn.action.newCode": "Pokaż nowy kod",
  "tvSignIn.action.password": "Zaloguj się hasłem",
+ "tvSignIn.addAccountTitle": "Dodaj konto na serwerze {server}",
  "tvSignIn.appleTv.lead": "Zeskanuj kod aparatem telefonu albo otwórz stronę {page} i wpisz go. Zatwierdź na telefonie, a to Apple TV zaloguje się samo.",
  "tvSignIn.appleTv.leadNoPage": "Zeskanuj kod aparatem telefonu albo otwórz stronę /activate na swoim serwerze i wpisz go. Zatwierdź na telefonie, a to Apple TV zaloguje się samo.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Gdy wybierzesz pole, na pobliskich urządzeniach iPhone i iPad pojawi się powiadomienie klawiatury. Pisz tam zamiast pilotem.",

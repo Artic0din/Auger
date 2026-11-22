@@ -1126,6 +1126,7 @@
  "topBar.series": "Serier",
  "tvSignIn.action.newCode": "Visa en ny kod",
  "tvSignIn.action.password": "Logga in med lösenord",
+ "tvSignIn.addAccountTitle": "Lägg till ett konto på {server}",
  "tvSignIn.appleTv.lead": "Skanna koden med telefonens kamera, eller gå till {page} och ange den. Godkänn på telefonen så loggar den här Apple TV:n in automatiskt.",
  "tvSignIn.appleTv.leadNoPage": "Skanna koden med telefonens kamera, eller gå till sidan /activate på din server och ange den. Godkänn på telefonen så loggar den här Apple TV:n in automatiskt.",
  "tvSignIn.appleTv.typeOnPhoneBody": "När du väljer ett fält visas en tangentbordsavisering på iPhone- och iPad-enheter i närheten. Skriv där i stället för med fjärrkontrollen.",

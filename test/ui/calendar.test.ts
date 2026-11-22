@@ -318,7 +318,7 @@ calendarTest("Calendar native comparison placeholders and captions", async (tv, 
     held.release(); await ready(tv, 3);
     assert.equal(await tv.page.locator('.calendar-week').evaluate(node => node.getBoundingClientRect().y), 284, `week strip uses CalendarView's 30pt spacing; the old assertion encoded 281. ${JSON.stringify(await tv.page.locator('.calendar-filters').evaluate(node => ({ height: node.getBoundingClientRect().height, margin: getComputedStyle(node).margin, y: node.getBoundingClientRect().y })))}`);
     const card = tv.page.locator('.calendar-event').first();
-    assert.deepEqual(await card.locator('.browse-card-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ["28px", "600"]);
+    assert.deepEqual(await card.locator('.browse-card-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ["27.118px", "600"], "Apple's siloCardTitle, 28 pt semibold, times the cap scale");
     assert.equal(await card.locator('.browse-card-subtitle').evaluate(node => getComputedStyle(node).whiteSpace), "nowrap");
     await activate(tv, "next-week"); await ready(tv, 0);
     assert.equal(await tv.page.locator('.calendar-empty svg').count(), 1);
@@ -345,7 +345,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
         assert.deepEqual(await tv.page.locator('.calendar-day-number').first().evaluate(node => {
             const style = getComputedStyle(node);
             return [style.fontSize, style.fontWeight];
-        }), ["26px", "700"]);
+        }), ["25.181px", "700"], "CalendarWeekStrip numberFont, 26 pt bold, times the cap scale");
         assert.equal(await tv.page.locator('h1').filter({ hasText: /^Calendar$/ }).count(), 0);
         const strip = tv.page.locator('.calendar-week');
         assert.deepEqual(await strip.locator('[data-focus]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-focus'))), ["previous-week", ...["2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"].map(date => `day:${date}`), "next-week"]);
@@ -554,6 +554,9 @@ for (const [status, id, headline, buttons] of [
             const boxes = await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { centre: Math.round((box.left + box.right) / 2), top: Math.round(box.top), bottom: Math.round(box.bottom) }; }));
             assert.ok(Math.abs((boxes[0]?.centre ?? 0) - (boxes[1]?.centre ?? 1e6)) <= 1, JSON.stringify(boxes));
             assert.ok((boxes[1]?.top ?? 0) >= (boxes[0]?.bottom ?? 1), JSON.stringify(boxes));
+            // The primary is siloSubheadline, 28 pt semibold (ViewExtensions.swift:416); the secondary is siloBody, 26 pt regular
+            // (ErrorView.swift:45). Each is times the cap scale.
+            assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight])), [["27.118px", "600"], ["25.181px", "400"]]);
             await activate(tv, "sign-in");
             await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.signOutCalls) === 1, "Sign In Again signs out");
         }

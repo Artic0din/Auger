@@ -1126,6 +1126,7 @@
  "topBar.series": "Sarjat",
  "tvSignIn.action.newCode": "Näytä uusi koodi",
  "tvSignIn.action.password": "Kirjaudu salasanalla",
+ "tvSignIn.addAccountTitle": "Lisää tili palvelimelle {server}",
  "tvSignIn.appleTv.lead": "Skannaa koodi puhelimesi kameralla tai siirry osoitteeseen {page} ja syötä koodi. Hyväksy puhelimessa, niin tämä Apple TV kirjautuu sisään itsestään.",
  "tvSignIn.appleTv.leadNoPage": "Skannaa koodi puhelimesi kameralla tai siirry palvelimesi sivulle /activate ja syötä koodi. Hyväksy puhelimessa, niin tämä Apple TV kirjautuu sisään itsestään.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Kun valitset kentän, lähellä oleviin iPhoneihin ja iPadeihin tulee näppäimistöilmoitus. Kirjoita niillä kaukosäätimen sijaan.",

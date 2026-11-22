@@ -422,6 +422,8 @@ const SWITCH_REPLAY_DELAYS_MS = [5000, 10000, 15000, 30000];
 const REPLAN_LEASE_MS = 15000;
 /** A switch still unanswered this long after it was sent shows the subtitle failure note; on the S95C replans took 10 to 28 s (#738). */
 const SWITCH_NOTE_AFTER_MS = 60000;
+/** How long a failed transport waits for a switch's answer before playback shows its retryable error (#750). */
+const SWITCH_FAILURE_DEADLINE_MS = 30000;
 /** AVPlay's display coordinates are in the app's 1920x1080 space. */
 const SCREEN = { width: 1920, height: 1080 };
 /** Apple tvOS `nextUpHUDCountdownThresholdSeconds`: a manual panel counts down only inside this. */
@@ -520,6 +522,12 @@ interface Attempt {
     captionFallback: string | undefined;
     /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
     switchLocal: boolean;
+    /** Ends an unresolved switch's wait between replays, so a route failure resolves it at once (#750). */
+    wakeSwitch: (() => void) | undefined;
+    /** When a route failure began waiting for an unresolved switch's answer; the wait ends at SWITCH_FAILURE_DEADLINE_MS. */
+    switchFailedAt: number | undefined;
+    /** The route failure's one skip of the client backoff has been used; later replays back off as usual. */
+    switchWakeUsed: boolean;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -722,7 +730,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -906,7 +914,8 @@ export class PlaybackController implements PlayerControls {
         const inFlight = attempt.busy && this.pending.seek !== undefined;
         const pending = inFlight ? attempt.queuedSeekSeconds ?? attempt.seekTarget : undefined;
         const skips = attempt.queuedSeekSeconds === undefined ? [] : attempt.queuedSkips;
-        this.seekToSeconds((pending ?? attempt.sourceSeconds) + seconds);
+        // A reanchor queued behind a subtitle switch is the newest target, so a skip adds to it (#756).
+        this.seekToSeconds((pending ?? attempt.queuedReanchorSeconds ?? attempt.sourceSeconds) + seconds);
         if (inFlight && attempt.queuedSeekSeconds !== undefined && skips !== undefined) attempt.queuedSkips = [...skips, seconds];
     }
 
@@ -946,6 +955,7 @@ export class PlaybackController implements PlayerControls {
             if (this.pending.seek !== undefined && !changeHoldsBusy(attempt) && !attempt.hidden && !attempt.restoring) {
                 attempt.queuedSeekSeconds = target;
                 attempt.queuedSkips = undefined;
+                attempt.queuedReanchorSeconds = undefined;
             }
             return;
         }
@@ -961,6 +971,8 @@ export class PlaybackController implements PlayerControls {
             attempt.queuedReanchorSeconds = target;
             return;
         }
+        // A newer seek that runs now replaces any reanchor still queued (#756).
+        attempt.queuedReanchorSeconds = undefined;
         attempt.pauseAfterSeek = requestedPaused;
         attempt.busy = true;
         this.clearThumbnails(attempt);
@@ -1888,6 +1900,16 @@ export class PlaybackController implements PlayerControls {
             }
             return;
         }
+        // An unresolved switch may have replaced the plan this recovery would name: resolve it now, and recover from its answer (#750).
+        // The failed transport stays open until then, as the switch's replay belongs to it; the recovery closes it.
+        if (subtitleSwitchOut(attempt)) {
+            attempt.changeFailure = attempt.changeFailure ?? classification;
+            attempt.switchFailedAt = attempt.switchFailedAt ?? this.deps.clock.now();
+            attempt.busy = true;
+            this.show({ phase: "loading", title: attempt.request.title });
+            attempt.wakeSwitch?.();
+            return;
+        }
         this.closeTransport();
         if (attempt.recoveries >= MAX_RECOVERY_REPLANS) {
             this.fail(attempt, { kind: "playback_failed" }, true);
@@ -2135,6 +2157,8 @@ export class PlaybackController implements PlayerControls {
         }
         if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
+        attempt.switchFailedAt = undefined;
+        attempt.switchWakeUsed = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
             this.beginCompletion(attempt);
@@ -2221,6 +2245,9 @@ export class PlaybackController implements PlayerControls {
         attempt.recoveryRetryAt = 0;
         attempt.change = { state: "idle" };
         attempt.switchLocal = false;
+        // A new transport ends any route failure's wait, so its deadline cannot reach a later switch.
+        attempt.switchFailedAt = undefined;
+        attempt.switchWakeUsed = false;
         attempt.busy = false;
         attempt.seekFailure = undefined;
         attempt.changeFailure = undefined;
@@ -2230,7 +2257,6 @@ export class PlaybackController implements PlayerControls {
         }
         attempt.planAttemptId = this.newId();
         attempt.previewKey = this.newId();
-        attempt.queuedReanchorSeconds = undefined;
         attempt.sourceSeconds = plan.timeline.sourceStartSeconds;
         attempt.started = false;
         attempt.bufferingAdvertised = serverFeatures.includes(BUFFERING_QUALITY_FEATURE);
@@ -2457,22 +2483,57 @@ export class PlaybackController implements PlayerControls {
     private async replaySwitch(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks, send: () => Promise<PlaybackDecision>, current: () => boolean): Promise<PlaybackDecision> {
         const sentAt = this.deps.clock.now();
         let noted = false;
+        // After a route failure (#750) the failed transport waits for the answer only until SWITCH_FAILURE_DEADLINE_MS.
+        const deadline = (): number => attempt.switchFailedAt === undefined ? Number.POSITIVE_INFINITY : attempt.switchFailedAt + SWITCH_FAILURE_DEADLINE_MS;
+        const waitUntil = (until: number): Promise<void> => sleep(this.deps.clock, Math.max(0, Math.min(until, deadline()) - this.deps.clock.now()), attempt.signal, abortedError);
         for (let index = 0; ; index++) {
             try {
                 return await send();
             } catch (error) {
                 // A new play, a lost session or a replaced transport ends the replays; the caller settles the change.
                 if (!(error instanceof ApiError) || !unanswered(error) || error.aborted || !current()) throw error;
+                // A failed transport does not wait on the server for ever: past the deadline it shows the retryable error.
+                if (this.deps.clock.now() >= deadline()) {
+                    this.fail(attempt, { kind: "playback_failed" }, true);
+                    throw error;
+                }
                 const quick = RESEND_DELAYS_MS[index];
                 if (quick === undefined && !attempt.switchLocal) this.drawSwitchLocally(attempt, plan, selected);
                 if (!noted && this.deps.clock.now() - sentAt >= SWITCH_NOTE_AFTER_MS) {
                     noted = true;
                     attempt.captionNotice = CAPTION_FAILED;
-                    this.showPlayback(attempt);
+                    if (attempt.switchFailedAt === undefined) this.showPlayback(attempt);
                 }
                 const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
-                const lease = error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0;
-                await sleep(this.deps.clock, Math.max(backoff, lease, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError);
+                // A route failure skips our backoff once, for the next replay only, whether it lands during this wait or while
+                // the request was out. The server's lease and Retry-After always hold, and later replays back off as usual.
+                const serverWait = Math.max(error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0, (error.retryAfterSeconds ?? 0) * 1000);
+                const serverReady = this.deps.clock.now() + serverWait;
+                const wakeDue = (): boolean => attempt.switchFailedAt !== undefined && !attempt.switchWakeUsed;
+                if (!wakeDue()) {
+                    const sleepUntil = this.deps.clock.now() + Math.max(backoff, serverWait);
+                    if (attempt.switchWakeUsed) {
+                        await waitUntil(sleepUntil);
+                    } else {
+                        const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
+                        try {
+                            await Promise.race([waitUntil(sleepUntil), woken]);
+                        } finally {
+                            attempt.wakeSwitch = undefined;
+                        }
+                    }
+                }
+                if (wakeDue()) {
+                    attempt.switchWakeUsed = true;
+                    await waitUntil(serverReady);
+                }
+                // A reconnect or new play may have replaced the transport while this waited: the old replay then just stops.
+                if (!current()) throw abortedError();
+                // A server wait longer than the deadline ends here, with no replay sent past it.
+                if (this.deps.clock.now() >= deadline()) {
+                    this.fail(attempt, { kind: "playback_failed" }, true);
+                    throw error;
+                }
             }
         }
     }
@@ -2485,6 +2546,8 @@ export class PlaybackController implements PlayerControls {
             attempt.subtitleOverride = { id };
         }
         attempt.switchLocal = true;
+        // A failed transport waiting for this switch's answer keeps its loading screen.
+        if (attempt.switchFailedAt !== undefined) return;
         // The stream ended while the switch held playback frozen: end it now rather than leave completion waiting for the answer.
         if (attempt.endedDuringChange) {
             this.changeSettled(attempt, { state: "idle" });
@@ -2670,6 +2733,7 @@ export class PlaybackController implements PlayerControls {
             this.updatePrompt(attempt);
             this.showPlayback(attempt);
             this.applyPreparedSubtitleChoices(attempt, plan);
+            this.runQueuedReanchor(attempt);
         };
         const startMs = Math.round(plan.timeline.playerStartSeconds * 1000);
         if (startMs <= 0) {
@@ -2685,6 +2749,14 @@ export class PlaybackController implements PlayerControls {
         } catch {
             this.routeFailed(attempt, "avplay_resume_seek_failed");
         }
+    }
+
+    /** A seek queued behind a switch whose answer replaced the transport runs once the new stream plays (#756). */
+    private runQueuedReanchor(attempt: Attempt): void {
+        const reanchor = attempt.queuedReanchorSeconds;
+        if (reanchor === undefined || subtitleSwitchOut(attempt) || attempt.busy) return;
+        attempt.queuedReanchorSeconds = undefined;
+        this.seekAbsolute(reanchor);
     }
 
     private applyPreparedSubtitleChoices(attempt: Attempt, plan: PlaybackPlan): void {
@@ -3722,6 +3794,8 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             this.restartProgress(attempt);
+            // A replacement that prepared while hidden starts here, so its queued seek runs here too.
+            this.runQueuedReanchor(attempt);
             return;
         }
         if (attempt.deferredOpen && attempt.plan !== undefined) {
@@ -4140,9 +4214,9 @@ export class PlaybackController implements PlayerControls {
         const fromDeck = episode === undefined && episodeReady && !offer.episodeLoading && !offer.deckFailed && offer.deck.length > 0;
         const displayed = fromDeck ? offer.deck[0] : episode;
         const loading = displayed === undefined && (offer.episodeLoading || (offer.deckLoading && !offer.episodeFailed));
-        // A film's failed On Deck read is no lookup error (PlayerViewModel.loadNextUpOnDeckItems empties the deck), so its Up Next
-        // reads upNext.noNext. An episode keeps the failure line for a failed lookup or On Deck read.
-        const failed = displayed === undefined && !loading && (offer.episodeFailed || (offer.deckFailed && attempt.request.episode === true));
+        // A failed On Deck read is no lookup error (PlayerViewModel.loadNextUpOnDeckItems empties the deck), so Up Next reads
+        // upNext.noNext. Only a failed next-episode lookup shows the failure line: the series may still have a next episode.
+        const failed = displayed === undefined && !loading && offer.episodeFailed;
         // An automatic prompt waits for a real choice. A loading or empty read must not shrink the video or move the reported position.
         if (!showManual && displayed === undefined && offer.deck.length === 0) {
             this.clearPrompt(attempt);

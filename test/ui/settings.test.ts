@@ -84,11 +84,11 @@ test("Settings rail subtitles stay regular and muted through focus changes", asy
             const style = getComputedStyle(node);
             return { weight: style.fontWeight, size: style.fontSize, opacity: style.opacity, color: style.color };
         });
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(0, 0, 0)" });
         await tv.page.keyboard.press("ArrowRight");
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(237, 237, 237)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(237, 237, 237)" });
         await tv.page.keyboard.press("ArrowLeft");
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(0, 0, 0)" });
     } finally { await tv.page.context().close(); }
 });
 

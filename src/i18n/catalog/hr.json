@@ -1126,6 +1126,7 @@
  "topBar.series": "Serije",
  "tvSignIn.action.newCode": "Prikaži novi kôd",
  "tvSignIn.action.password": "Prijava lozinkom",
+ "tvSignIn.addAccountTitle": "Dodaj račun na poslužitelju {server}",
  "tvSignIn.appleTv.lead": "Skenirajte kôd kamerom telefona ili otvorite {page} i unesite ga. Odobrite na telefonu i ovaj će se Apple TV sam prijaviti.",
  "tvSignIn.appleTv.leadNoPage": "Skenirajte kôd kamerom telefona ili otvorite stranicu /activate na svojem poslužitelju i unesite ga. Odobrite na telefonu i ovaj će se Apple TV sam prijaviti.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Kada odaberete polje, na obližnjim iPhone i iPad uređajima pojavit će se obavijest s tipkovnicom. Tipkajte ondje umjesto daljinskim upravljačem.",
