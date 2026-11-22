@@ -11,6 +11,7 @@ import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
 import { selectLibraryMode } from "./support/library.ts";
+import { leavePlayer } from "./support/leavePlayer.ts";
 import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
@@ -1458,7 +1459,7 @@ appTest("remote navigation keeps focus and context through Browse paging, a fail
     assert.equal(starts.length, 1);
     assert.equal(starts[0]?.body?.file_id, "43", "the play request is for the chosen card's file");
     // Back from the player returns to Details on Play.
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator(`[data-view="item:${card}"]`).waitFor();
     assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
     await tv.eventually(async () => await tv.focused() === "play", "returning from playback restores Play");
@@ -1560,7 +1561,7 @@ for (const reduced of [false, true]) {
         assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
         assert.equal(playback.session(id).receipt, undefined);
         assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.positionMs), 32000);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
         await tv.eventually(async () => playback.session(id).receipt !== undefined, "recovered session stopped on Back");
     }, true);
@@ -1652,7 +1653,7 @@ for (const reduced of [false, true]) {
         assert.equal(starts.length, 2);
         assert.equal(starts[1]?.body?.file_id, "43");
         assert.equal(starts[1]?.body?.start_position, 0);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-view="home"]').waitFor();
         assert.equal(await tv.focused(), "episode:s1e12");
         assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 2);
@@ -1826,7 +1827,7 @@ appTest("saved server profile 15/45 reaches the composed controller and every re
     await tv.remote(417);
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.slice(-1)[0]), "seekTo 145000");
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="home"]').waitFor();
     assert.equal(await tv.focused(), "movie:m0001");
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
@@ -1866,7 +1867,7 @@ appTest("Home Continue uses the existing app player owner once and returns witho
     assert.equal(starts[0]?.body?.file_id, "42");
     assert.equal(starts[0]?.body?.start_position, 1200);
     assert.equal(starts[0]?.headers["x-profile-id"], "p-owner");
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().waitFor();
     assert.equal(await tv.focused(), "movie:m0001");
     assert.equal(tv.fake.requests.filter(request => request.path === "/playback/start").length, 1);
