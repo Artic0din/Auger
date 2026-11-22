@@ -2469,6 +2469,32 @@ test("a switch answer that reopens the stream ends the route failure's deadline 
     } finally { r.controller.destroy(); }
 });
 
+test("after a route failure only the first replay skips the backoff; later quick 503s are spaced by it (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 10 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the route failure wakes one replay at once");
+        await r.h.clock.advance(1999);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the next replay waits out the 2 s backoff");
+        await r.h.clock.advance(1);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        await r.h.clock.advance(4999);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3, "and the one after the 5 s backoff");
+        await r.h.clock.advance(1);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+    } finally { r.controller.destroy(); }
+});
+
 test("a replay refused during a held seek leaves the seek holding the controls, so a second seek waits (#738)", async () => {
     const { r, id } = await lostSwitchRig();
     try {

@@ -517,6 +517,8 @@ interface Attempt {
     wakeSwitch: (() => void) | undefined;
     /** When a route failure began waiting for an unresolved switch's answer; the wait ends at SWITCH_FAILURE_DEADLINE_MS. */
     switchFailedAt: number | undefined;
+    /** The route failure's one skip of the client backoff has been used; later replays back off as usual. */
+    switchWakeUsed: boolean;
     captionPreferenceNotice: string;
     /** The artifact the cues came from; a replan naming the same one keeps them. */
     captionKey: string | undefined;
@@ -719,7 +721,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -2143,6 +2145,7 @@ export class PlaybackController implements PlayerControls {
         if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
         attempt.switchFailedAt = undefined;
+        attempt.switchWakeUsed = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
             this.beginCompletion(attempt);
@@ -2231,6 +2234,7 @@ export class PlaybackController implements PlayerControls {
         attempt.switchLocal = false;
         // A new transport ends any route failure's wait, so its deadline cannot reach a later switch.
         attempt.switchFailedAt = undefined;
+        attempt.switchWakeUsed = false;
         attempt.busy = false;
         attempt.seekFailure = undefined;
         attempt.changeFailure = undefined;
@@ -2489,19 +2493,28 @@ export class PlaybackController implements PlayerControls {
                     if (attempt.switchFailedAt === undefined) this.showPlayback(attempt);
                 }
                 const backoff = quick ?? SWITCH_REPLAY_DELAYS_MS[Math.min(index - RESEND_DELAYS_MS.length, SWITCH_REPLAY_DELAYS_MS.length - 1)] ?? REPLAN_LEASE_MS;
-                // The server's lease and Retry-After hold even after a route failure; only our own backoff is skipped. A failure
-                // recorded while the request was out counts too, so its wake is not lost.
+                // A route failure skips our backoff once, for the next replay only, whether it lands during this wait or while
+                // the request was out. The server's lease and Retry-After always hold, and later replays back off as usual.
                 const serverWait = Math.max(error.problemId === "replan_in_progress" ? REPLAN_LEASE_MS : 0, (error.retryAfterSeconds ?? 0) * 1000);
                 const serverReady = this.deps.clock.now() + serverWait;
-                if (attempt.switchFailedAt === undefined) {
-                    const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
-                    try {
-                        await Promise.race([waitUntil(this.deps.clock.now() + Math.max(backoff, serverWait)), woken]);
-                    } finally {
-                        attempt.wakeSwitch = undefined;
+                const wakeDue = (): boolean => attempt.switchFailedAt !== undefined && !attempt.switchWakeUsed;
+                if (!wakeDue()) {
+                    const sleepUntil = this.deps.clock.now() + Math.max(backoff, serverWait);
+                    if (attempt.switchWakeUsed) {
+                        await waitUntil(sleepUntil);
+                    } else {
+                        const woken = new Promise<void>(resolve => { attempt.wakeSwitch = resolve; });
+                        try {
+                            await Promise.race([waitUntil(sleepUntil), woken]);
+                        } finally {
+                            attempt.wakeSwitch = undefined;
+                        }
                     }
                 }
-                if (attempt.switchFailedAt !== undefined) await waitUntil(serverReady);
+                if (wakeDue()) {
+                    attempt.switchWakeUsed = true;
+                    await waitUntil(serverReady);
+                }
                 // A server wait longer than the deadline ends here, with no replay sent past it.
                 if (this.deps.clock.now() >= deadline()) {
                     this.fail(attempt, { kind: "playback_failed" }, true);
