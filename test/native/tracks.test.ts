@@ -2010,7 +2010,8 @@ test("skips during a slow switch add to the queued reanchor's target (#756)", as
     } finally { r.controller.destroy(); }
 });
 
-test("a refused switch still runs the queued reanchor on the kept stream (#756)", async () => {
+// Coverage of existing behaviour: a refusal already ran the queued seek through changeSettled before #756; this keeps it so.
+test("a refused switch still runs the queued reanchor on the kept stream (#756, existing behaviour)", async () => {
     const { r, id } = await embeddedSwitchRig({ can_seek_anywhere: false });
     try {
         r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
@@ -2037,12 +2038,18 @@ test("a switch answer that replaces the transport keeps the queued reanchor (#75
         await settle(r);
         r.controller.seekToSeconds(120);
         await settle(r);
+        const opens = r.avplay.urls.length;
+        assert.equal(reanchors(r).length, 0, "the seek waits behind the switch");
         held.release();
         await settle(r);
         await settle(r);
-        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(r.avplay.urls.length, opens + 1, "the answer opens a new transport");
+        assert.match(r.avplay.urls.at(-1) ?? "", /st=moved/);
+        assert.equal(r.avplay.calls.at(-1), "prepareAsync");
+        assert.equal(reanchors(r).length, 0, "nothing runs before the new stream plays");
+        await playReplacement(r);
         await settle(r);
-        assert.equal(only(reanchors(r)).position_seconds, 120, "the queued seek runs on the new stream");
+        assert.equal(only(reanchors(r)).position_seconds, 120, "the queued seek runs on the new stream once it plays");
     } finally { r.controller.destroy(); }
 });
 
