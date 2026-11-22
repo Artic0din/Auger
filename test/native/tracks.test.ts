@@ -11,6 +11,7 @@ import { playChoices } from "../../src/ui/browseModel.ts";
 import { orderedInventory, PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
+import { FakeTrickplay } from "./support/fakeTrickplay.ts";
 import { operations } from "../../src/api/operations.ts";
 import { readFileSync } from "node:fs";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
@@ -1972,6 +1973,53 @@ test("a seek outside the window waits for a slow subtitle switch's answer, then 
         if (r.avplay.calls.at(-1)?.startsWith("seekTo") === true) { r.avplay.finishSeek(); await settle(r); }
         assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5", "the switch's answer is kept");
         assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+// #757: the scrub preview stays available while a subtitle switch is out, as Apple keeps a file's trickplay sheets through a
+// replan of the same file (PlayerViewModel.swift:349-366); a switch to another file uses that file's previews.
+async function trickplaySwitchRig(): Promise<{ r: Rig; id: string; previews: FakeTrickplay }> {
+    const r = await rig();
+    r.h.fake.script("/playback/capabilities", { status: 200, body: { ...fixture("playback_capability_available"), features: ["trickplay_v1"] } });
+    const previews = new FakeTrickplay(r.h.fake, r.h.clock);
+    frenchInventory(r);
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    await settle(r);
+    return { r, id, previews };
+}
+
+test("the scrub preview tile loads while a subtitle switch is out (#757)", async () => {
+    const { r, id } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).change.state, "changing");
+        const tile = await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined);
+        assert.equal(tile?.index, 123, "the same file's preview is shown during the switch");
+        held.release();
+        await settle(r);
+    } finally { r.controller.destroy(); }
+});
+
+test("a subtitle switch that moves to another file previews that file, not the old one (#757)", async () => {
+    const { r } = await trickplaySwitchRig();
+    try {
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined), "file 42's previews load first");
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const manifests = (): string[] => r.h.fake.requests.filter(request => request.path.includes("/trickplay?")).map(request => request.path);
+        const before = manifests().length;
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined));
+        assert.equal(manifests().length, before + 1, "a new manifest is read");
+        assert.match(manifests().at(-1) ?? "", /file_id=43$/, "for the file now playing");
     } finally { r.controller.destroy(); }
 });
 
