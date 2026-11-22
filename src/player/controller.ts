@@ -69,6 +69,9 @@ import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playe
 /** What browse hands over: one file of one catalog item. */
 export interface PlayRequest {
     readonly overview?: string | undefined;
+    /** Up Next's metadata line: the season row's air date and runtime in minutes (PlayerView.episodeMetadataLine). */
+    readonly airDate?: string | undefined;
+    readonly runtimeMinutes?: number | undefined;
     readonly backdropUrl?: string | undefined;
     /** False for series key art. Absent or true is an episode still. */
     readonly backdropIsEpisodeStill?: boolean | undefined;

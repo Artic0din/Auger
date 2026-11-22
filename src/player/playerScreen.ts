@@ -22,6 +22,7 @@ import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
+import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
@@ -539,6 +540,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const synopsis = el("p", "player-next-synopsis");
     const nextSeries = el("p", "player-next-series");
     nextSeries.hidden = true;
+    const nextMeta = el("p", "player-next-meta");
+    nextMeta.hidden = true;
     // PlayerView.backgroundImage: the next still behind the whole page, blurred and dimmed.
     const nextBackdrop = el("div", "player-next-backdrop");
     const nextBackdropArt = el("div", "player-next-backdrop-art");
@@ -559,6 +562,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         else if (code === undefined) failureTitle.textContent = candidate.title;
         // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
         else failureTitle.replaceChildren(el("span", "player-next-code", code), document.createTextNode(" "), document.createTextNode(candidate.title));
+        // PlayerView.episodeMetadataLine: the air date and runtime, whichever are known.
+        nextMeta.textContent = [episodeAirDate(candidate?.airDate), (candidate?.runtimeMinutes === undefined ? undefined : episodeRuntime(candidate.runtimeMinutes))].filter(part => part !== undefined).join(" · ");
+        nextMeta.hidden = nextMeta.textContent === "";
     };
     const deck = el("div", "player-next-deck");
     const keep = el("button", "player-button");
@@ -592,7 +598,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
     secondaryRow.append(keep, cancelAutoplay, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, mark, failureText, synopsis, actions, deck);
+    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -993,6 +999,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         nextSeries.hidden = true;
+        nextMeta.hidden = true;
         nextBackdrop.hidden = true;
         failureTitle.classList.remove("player-next-episode-title");
         ring.set(undefined, undefined);

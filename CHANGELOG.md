@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Up Next now shows the next episode's air date and runtime under its title, as on Apple TV (#759).
 - Added a tvOS source check: a pull request that changes the TV interface must cite the silo-apple tvOS source it ports, file and line range, under a "tvOS source" heading.
 - Added a screen test that follows one remote journey through Browse paging, a failed Details load and its retry, playback and the return from it, and Back to the same second-page card (#27).
 - Added a screen test that every text size on Home and the Movies, Series and For You tabs is Apple TV's point size times the SF Pro cap-height scale, as Details and Person already check (#749).
