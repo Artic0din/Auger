@@ -1975,6 +1975,77 @@ test("a seek outside the window waits for a slow subtitle switch's answer, then 
     } finally { r.controller.destroy(); }
 });
 
+// #756: the queued out-of-window seek during a slow subtitle switch.
+const reanchors = (r: Rig): Record<string, unknown>[] => replans(r.h).filter(body => body.operation === "seek_reanchor");
+
+test("a newer in-window seek cancels the queued reanchor (#756)", async () => {
+    const { r, held } = await slowSwitchRig({ can_seek_anywhere: true, seek_window_end_seconds: 60 });
+    try {
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.controller.seekToSeconds(30);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.deepEqual(reanchors(r), [], "the 120 s reanchor was replaced by the 30 s seek");
+        assert.ok(Math.abs(shownPosition(r) - 30) < 1, `stays at 30 s (${shownPosition(r)})`);
+    } finally { r.controller.destroy(); }
+});
+
+test("skips during a slow switch add to the queued reanchor's target (#756)", async () => {
+    const { r, held } = await slowSwitchRig({ can_seek_anywhere: false });
+    try {
+        const start = shownPosition(r);
+        r.controller.seekBy(15);
+        await settle(r);
+        r.controller.seekBy(15);
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(only(reanchors(r)).position_seconds, start + 30, "two 15 s skips reanchor 30 s on");
+    } finally { r.controller.destroy(); }
+});
+
+test("a refused switch still runs the queued reanchor on the kept stream (#756)", async () => {
+    const { r, id } = await embeddedSwitchRig({ can_seek_anywhere: false });
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        assert.deepEqual(reanchors(r), []);
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(only(reanchors(r)).position_seconds, 120, "the queued seek runs after the refusal");
+    } finally { r.controller.destroy(); }
+});
+
+test("a switch answer that replaces the transport keeps the queued reanchor (#756)", async () => {
+    const { r, id } = await embeddedSwitchRig({ can_seek_anywhere: false });
+    try {
+        r.server.next.push({ timeline: { can_seek_anywhere: false }, delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        await settle(r);
+        assert.equal(only(reanchors(r)).position_seconds, 120, "the queued seek runs on the new stream");
+    } finally { r.controller.destroy(); }
+});
+
 // #738 review: a new play, suspend and restore, and a seek each leave no stray replan and no change stuck in flight.
 test("a new play ends a lost embedded subtitle switch's replays (#738)", async () => {
     const { r, id } = await lostSwitchRig();

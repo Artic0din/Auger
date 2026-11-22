@@ -905,7 +905,8 @@ export class PlaybackController implements PlayerControls {
         const inFlight = attempt.busy && this.pending.seek !== undefined;
         const pending = inFlight ? attempt.queuedSeekSeconds ?? attempt.seekTarget : undefined;
         const skips = attempt.queuedSeekSeconds === undefined ? [] : attempt.queuedSkips;
-        this.seekToSeconds((pending ?? attempt.sourceSeconds) + seconds);
+        // A reanchor queued behind a subtitle switch is the newest target, so a skip adds to it (#756).
+        this.seekToSeconds((pending ?? attempt.queuedReanchorSeconds ?? attempt.sourceSeconds) + seconds);
         if (inFlight && attempt.queuedSeekSeconds !== undefined && skips !== undefined) attempt.queuedSkips = [...skips, seconds];
     }
 
@@ -945,6 +946,7 @@ export class PlaybackController implements PlayerControls {
             if (this.pending.seek !== undefined && !changeHoldsBusy(attempt) && !attempt.hidden && !attempt.restoring) {
                 attempt.queuedSeekSeconds = target;
                 attempt.queuedSkips = undefined;
+                attempt.queuedReanchorSeconds = undefined;
             }
             return;
         }
@@ -960,6 +962,8 @@ export class PlaybackController implements PlayerControls {
             attempt.queuedReanchorSeconds = target;
             return;
         }
+        // A newer seek that runs now replaces any reanchor still queued (#756).
+        attempt.queuedReanchorSeconds = undefined;
         attempt.pauseAfterSeek = requestedPaused;
         attempt.busy = true;
         this.clearThumbnails(attempt);
@@ -2244,7 +2248,6 @@ export class PlaybackController implements PlayerControls {
         }
         attempt.planAttemptId = this.newId();
         attempt.previewKey = this.newId();
-        attempt.queuedReanchorSeconds = undefined;
         attempt.sourceSeconds = plan.timeline.sourceStartSeconds;
         attempt.started = false;
         attempt.bufferingAdvertised = serverFeatures.includes(BUFFERING_QUALITY_FEATURE);
@@ -2721,6 +2724,12 @@ export class PlaybackController implements PlayerControls {
             this.updatePrompt(attempt);
             this.showPlayback(attempt);
             this.applyPreparedSubtitleChoices(attempt, plan);
+            // A seek queued behind a switch whose answer replaced the transport runs against the new plan (#756).
+            const reanchor = attempt.queuedReanchorSeconds;
+            if (reanchor !== undefined && !subtitleSwitchOut(attempt) && !attempt.busy) {
+                attempt.queuedReanchorSeconds = undefined;
+                this.seekAbsolute(reanchor);
+            }
         };
         const startMs = Math.round(plan.timeline.playerStartSeconds * 1000);
         if (startMs <= 0) {
