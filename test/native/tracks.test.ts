@@ -11,6 +11,8 @@ import { playChoices } from "../../src/ui/browseModel.ts";
 import { orderedInventory, PlaybackController, type PlaybackView, type PlayRequest, type TrackView } from "../../src/player/controller.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
+import { FakeTrickplay } from "./support/fakeTrickplay.ts";
+import { SeekThumbnails } from "../../src/player/seekThumbnails.ts";
 import { operations } from "../../src/api/operations.ts";
 import { readFileSync } from "node:fs";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
@@ -1972,6 +1974,99 @@ test("a seek outside the window waits for a slow subtitle switch's answer, then 
         if (r.avplay.calls.at(-1)?.startsWith("seekTo") === true) { r.avplay.finishSeek(); await settle(r); }
         assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5", "the switch's answer is kept");
         assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+// #757: the scrub preview stays available while a subtitle switch is out, as Apple keeps a file's trickplay sheets through a
+// replan of the same file (PlayerViewModel.swift:349-366); a switch to another file uses that file's previews.
+async function trickplaySwitchRig(): Promise<{ r: Rig; id: string; previews: FakeTrickplay }> {
+    const r = await rig();
+    r.h.fake.script("/playback/capabilities", { status: 200, body: { ...fixture("playback_capability_available"), features: ["trickplay_v1"] } });
+    const previews = new FakeTrickplay(r.h.fake, r.h.clock);
+    frenchInventory(r);
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=forced", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nForced" });
+    const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    await settle(r);
+    return { r, id, previews };
+}
+
+test("the scrub preview tile loads while a subtitle switch is out (#757)", async () => {
+    const { r, id } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(tracks(r).change.state, "changing");
+        const loaded: string[] = [];
+        const tile = await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { loaded.push(sheet.url); });
+        assert.equal(tile?.index, 123, "the same file's preview is shown during the switch");
+        assert.equal(tracks(r).change.state, "changing", "while the replan is still pending");
+        assert.equal(loaded.length, 1, "one sheet is loaded");
+        assert.equal(loaded[0], tile?.url, "the tile's own sheet");
+        assert.match(loaded[0] ?? "", new RegExp(`/trickplay/42/9913/${tile?.sheet}\\.9913\\.jpg`), "file 42's sheet for that tile");
+        held.release();
+        await settle(r);
+    } finally { r.controller.destroy(); }
+});
+
+test("a subtitle switch that moves to another file previews that file, not the old one (#757)", async () => {
+    const { r } = await trickplaySwitchRig();
+    try {
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined), "file 42's previews load first");
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const manifests = (): string[] => r.h.fake.requests.filter(request => request.path.includes("/trickplay?")).map(request => request.path);
+        const before = manifests().length;
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined));
+        assert.equal(manifests().length, before + 1, "a new manifest is read");
+        assert.match(manifests().at(-1) ?? "", /file_id=43$/, "for the file now playing");
+    } finally { r.controller.destroy(); }
+});
+
+test("a preview built while a switch is held is replaced when the answer moves to another file (#757)", async () => {
+    const { r, id } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        const before: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { before.push(sheet.url); }), "file 42's preview loads during the switch");
+        assert.match(before[0] ?? "", /\/trickplay\/42\//);
+        held.release();
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const after: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { after.push(sheet.url); }));
+        assert.match(after[0] ?? "", /\/trickplay\/43\//, "the next preview is file 43's");
+    } finally { r.controller.destroy(); }
+});
+
+// #794 review: adopt() already drops the provider, so this leaves one for the old file in place on purpose, to test seekThumbnail's own
+// file key (Apple's contentId#fileId cache) apart from every adoption path.
+test("a preview provider left over from another file is rebuilt for the file now playing (#757)", async () => {
+    const { r } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const internals = r.controller as unknown as { attempt?: { thumbnails?: SeekThumbnails } };
+        assert.ok(internals.attempt !== undefined, "an attempt is playing");
+        internals.attempt.thumbnails = new SeekThumbnails(r.h.core.session, r.h.clock, MOVIE.contentId, "42");
+        const loaded: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { loaded.push(sheet.url); }));
+        assert.match(loaded[0] ?? "", /\/trickplay\/43\//, "file 43's sheet, not the stale provider's file 42");
     } finally { r.controller.destroy(); }
 });
 
