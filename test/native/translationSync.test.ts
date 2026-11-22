@@ -101,6 +101,19 @@ test("an English app-name message that names the Silo server or account stops th
     assert.throws(() => brandCatalog({ ...englishNames(), "update.appRequired": "Silo needs your Silo account." }, true), /update\.appRequired/);
 });
 
+test("Silo as a verb (\"Silo accounts for\") is the app, not an account, and is renamed (#802)", () => {
+    const text = "Silo accounts for buffering. Silo servers its own cache.";
+    assert.equal(brandCatalog({ ...englishNames(), "settings.bufferingQuality.description": text }, true)["settings.bufferingQuality.description"], "Auger accounts for buffering. Auger servers its own cache.");
+});
+
+test("building English catalogs holds a missing app-name key, or one naming the Silo server or account, for review (#802)", () => {
+    const { "search.initial": _dropped, ...missing } = englishNames();
+    assert.throws(() => buildCatalogs(missing, new Map(), [], ["en"]), /search\.initial/);
+    for (const text of ["Update Silo to keep using this Silo server.", "Sign in with your Silo account."]) {
+        assert.throws(() => buildCatalogs({ ...englishNames(), "update.appRequired": text }, new Map(), [], ["en"]), /update\.appRequired/, text);
+    }
+});
+
 test("the sync builds each catalog with the app renamed: English, a translation scoped to the keys in use, and server text untouched (#802)", () => {
     const english = { ...Object.fromEntries(RENAMED_BY_733.map(key => [key, `${key} by Silo`])), "server.unreachable": "The Silo server can't be reached", "unused.key": "Silo elsewhere" };
     const german = { "search.initial": "Silo durchsuchen", "update.appRequired": "Aktualisiere Silo", "server.unreachable": "Der Silo-Server ist nicht erreichbar", "unused.key": "Silo" };

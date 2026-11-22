@@ -54,7 +54,8 @@ const UPSTREAM_APP_NAME = /Silo/g;
 const APP_NAME = "Auger";
 
 /** Silo as the server's or account's name, which keeps Silo. No listed message says this at 857d5235; one that starts to is reviewed. */
-const SERVER_NAME = /Silo(?:['’]s)?[\s-]+(?:server|account)/i;
+// Whole words: "Silo accounts for" or "Silo servers" as verbs are the app.
+const SERVER_NAME = /\bSilo(?:['’]s)?[\s-]+(?:server|account)\b/i;
 
 /**
  * The messages with the app named Auger in each app-name key. In English (`requireName`), a listed key that is missing, no longer says
