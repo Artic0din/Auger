@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHIPPED_LANGUAGES } from "../../src/i18n/language.ts";
-import { languagesToSync, PLATFORM_EXCEPTIONS, scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
+import { APP_NAME_KEYS, brandCatalog, languagesToSync, PLATFORM_EXCEPTIONS, scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
+import { readFileSync } from "node:fs";
 
 const arb = {
     "@@locale": "en",
@@ -57,4 +58,29 @@ test("a refresh with no --languages keeps every shipped language, so the imports
     assert.deepEqual(languagesToSync(["--languages", "en,de"]), ["en", "de"]);
     assert.throws(() => languagesToSync(["--languages", "de"]), /usage/);
     assert.throws(() => languagesToSync(["--nope"]), /usage/);
+});
+
+// #733 renamed the TV app to Auger by hand in the vendored files; silo-translations still says Silo. The sync reapplies the rename to the
+// keys that name the app, and leaves text about the server alone (#802).
+test("a sync names the app Auger where a message names the app, and keeps Silo where it names the server (#802)", () => {
+    const branded = brandCatalog({ "search.initial": "Search Silo", "settings.general.pairingShared": "Silos menyer och Silo på andra", "server.address": "Your Silo server's address" });
+    assert.deepEqual(branded, { "search.initial": "Search Auger", "settings.general.pairingShared": "Augers menyer och Auger på andra", "server.address": "Your Silo server's address" });
+});
+
+test("an English app-name message that no longer says Silo stops the sync, so a reworded string is reviewed; a translation may omit the name (#802)", () => {
+    assert.throws(() => brandCatalog({ "search.initial": "Search" }, true), /search\.initial/);
+    assert.deepEqual(brandCatalog({ "player.error.connectionLost": "Connessione persa" }), { "player.error.connectionLost": "Connessione persa" });
+});
+
+test("every vendored language already has the rename the sync applies, so a fresh sync changes nothing (#802)", () => {
+    assert.equal(APP_NAME_KEYS.length, 16, "the keys #733 renamed");
+    for (const tag of SHIPPED_LANGUAGES) {
+        const messages = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
+        for (const key of APP_NAME_KEYS) {
+            const text = messages[key];
+            if (text === undefined) continue;
+            assert.ok(!text.includes("Silo"), `${tag} ${key} still says Silo`);
+            assert.equal(brandCatalog({ [key]: text.replaceAll("Auger", "Silo") })[key], text, `${tag} ${key}`);
+        }
+    }
 });

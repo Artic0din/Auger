@@ -35,6 +35,36 @@ const SERVER_KEY_PREFIXES: readonly string[] = ["home.section."];
  */
 export const PLATFORM_EXCEPTIONS: readonly string[] = ["settings.skipIntervals.footerVideo"];
 
+/**
+ * The keys whose text names the TV app, which #733 renamed from Silo to Auger in every language. silo-translations still says Silo,
+ * so the sync renames them again. Text about the server (Silo server, its address, its errors, the Silo account) keeps Silo.
+ */
+export const APP_NAME_KEYS: readonly string[] = [
+    "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
+    "profiles.rememberOffer.bodyAppleTv", "search.initial", "settings.about.trademarkNotice", "settings.appLanguage.footer",
+    "settings.appLanguage.unshippedFooter", "settings.bufferingQuality.description", "settings.general.pairingShared",
+    "settings.general.pairingSharedAskEveryTime", "settings.profileLaunch.afterOneHour.detail", "settings.profileLaunch.afterTwelveHours.detail",
+    "settings.profileLaunch.askEveryLaunch.detail", "update.appRequired",
+];
+// Plain text, not a word match: a translation can inflect the name ("Silos", "Silo'nun"), and #733 renamed the stem.
+const UPSTREAM_APP_NAME = /Silo/g;
+const APP_NAME = "Auger";
+
+/**
+ * The messages with the app named Auger in each app-name key. In English (`requireName`), a listed key that no longer says Silo stops
+ * the sync, so a reworded string is reviewed; a translation may leave the name out (Italian's connection-lost line, Polish's profile error).
+ */
+export function brandCatalog(messages: Readonly<Record<string, string>>, requireName = false): Record<string, string> {
+    const branded = { ...messages };
+    for (const key of APP_NAME_KEYS) {
+        const text = branded[key];
+        if (text === undefined) continue;
+        if (requireName && !text.includes("Silo")) throw new Error(`${key} no longer names Silo; check whether it still names the app before syncing`);
+        branded[key] = text.replace(UPSTREAM_APP_NAME, APP_NAME);
+    }
+    return branded;
+}
+
 type ArbEntry = string | { readonly description?: string; readonly "x-platforms"?: readonly string[] };
 
 /**
@@ -112,7 +142,7 @@ async function main(): Promise<void> {
     const used = usedKeys(readSources(join(root, "src")), englishKeys);
     // Everything is downloaded and checked before any vendored file changes.
     const catalogs = new Map<string, Record<string, string>>();
-    for (const tag of languages) catalogs.set(tag, tag === "en" ? english : scopeCatalog(await download(`catalog/${tag}.arb`, commit), used));
+    for (const tag of languages) catalogs.set(tag, tag === "en" ? brandCatalog(english, true) : brandCatalog(scopeCatalog(await download(`catalog/${tag}.arb`, commit), used)));
     const destination = join(root, "src", "i18n", "catalog");
     mkdirSync(destination, { recursive: true });
     for (const stale of readdirSync(destination)) if (stale.endsWith(".json")) rmSync(join(destination, stale));
