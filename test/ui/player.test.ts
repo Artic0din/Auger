@@ -482,6 +482,42 @@ test("Back while playing hides the controls first, from the scrubber or a transp
     } finally { await page.close(); }
 });
 
+// onExitCommand runs once per Menu press (PlayerView.swift:440); a held Back's auto-repeat is not a second press (#805).
+test("a held Back hides the controls once and its repeats never leave the player", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(TRACKS));
+        await remote(page, UP);
+        await page.evaluate((code) => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: code, bubbles: true, cancelable: true }));
+            for (let n = 0; n < 3; n++) target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: code, repeat: true, bubbles: true, cancelable: true }));
+            target.dispatchEvent(new KeyboardEvent("keyup", { keyCode: code, bubbles: true, cancelable: true }));
+        }, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        assert.deepEqual(await commands(page), [], "the repeats are not presses");
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+// dismissControls cancels a hold seek before it hides the controls (PlayerViewModel.swift:9697-9703) (#805).
+test("Back that hides the controls disarms a pending skip or hold seek", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(TRACKS));
+        await remote(page, UP);
+        await holdKey(page, RIGHT);
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await page.clock.runFor(1000);
+        await page.evaluate((code) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", { keyCode: code, bubbles: true, cancelable: true })), RIGHT);
+        await page.clock.runFor(1000);
+        assert.deepEqual(await commands(page), [], "neither the hold nor the tap seeks");
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "nothing brings the controls back");
+    } finally { await page.close(); }
+});
+
 test("Back while paused leaves the player at once", async () => {
     const { page } = await open();
     try {
@@ -507,6 +543,24 @@ test("Back while buffering hides the controls the buffering keeps up, and any ot
         assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
         await remote(page, BACK);
         assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+test("a dismiss lasts only for its own stall, and a key that reveals during a stall keeps the controls up past the hide timer", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), buffering: true });
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await show(page, { ...playing(TRACKS), positionSeconds: 756 });
+        await show(page, { ...playing(TRACKS), buffering: true, positionSeconds: 757 });
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0, "a new stall with no key pressed brings the controls back");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await remote(page, UP);
+        await page.clock.runFor(6000);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0, "the stall holds them up once the hide timer has run");
+        assert.deepEqual(await commands(page), []);
     } finally { await page.close(); }
 });
 

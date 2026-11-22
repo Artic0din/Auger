@@ -1637,6 +1637,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (key === undefined || view.phase === "closed") {
             return;
         }
+        // onExitCommand runs once per Menu press: a held Back's repeats are not presses, so one that hid the controls cannot also leave.
+        if (key === "back" && event.repeat) {
+            event.preventDefault();
+            return;
+        }
         // The transport, the scrubber and a held seek read `key`, the remote's own Left and Right; Up Next, the buffering card and the panel read `layout`, which follows the screen's mirrored layout.
         const layout = remoteKey(event, section) ?? key;
         event.preventDefault();
@@ -1754,6 +1759,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         // While playing, Back with the controls up only takes them down (PlayerView.onExitCommand, then dismissControls).
         if (key === "back" && view.phase === "playing" && !controlsHidden() && !timeline && seekPreview === undefined && autoRate === 0) {
+            // dismissControls cancels a hold seek: a skip or hold armed by a Left or Right still down must not fire behind hidden controls.
+            cancelHold?.();
+            cancelHold = undefined;
+            pendingTap = undefined;
             cancelHide?.();
             cancelHide = undefined;
             dismissed = true;
