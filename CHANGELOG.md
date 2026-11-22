@@ -133,6 +133,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - The profile name at the top of the profile menu is now drawn at Apple TV's size, scaled to SF Pro's cap height like the rest of the app (#749).
+- Search's All, Movies and TV Shows filter pills now use Apple TV's text size, scaled to SF Pro's cap height like the rest of the app (#749).
 - If the TV's player hits an error while a subtitle change is still waiting for the server's answer, playback now recovers instead of stopping with an error. Silo gets the server's answer first, so it recovers with the server's current playback plan (#750).
 - When an episode has no next episode and its On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode. Pick something from On Deck, or go back." under an On Deck row that wasn't there (#744).
 - Adding an account from Change Account now titles the code screen "Add an account on {server}", as on Apple TV, in the language you pick. A first sign-in and renewing a saved account keep "Sign in to {server}" (#754).
