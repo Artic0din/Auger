@@ -1615,20 +1615,20 @@ svg.library-empty-icon { width: auto; }
 .calendar-week .browse-button { flex: none; margin: 0; }
 .calendar-week .calendar-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 84px; height: 96px; min-height: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: rgba(255,255,255,.05); box-shadow: none; }
 .calendar-day + .calendar-day { margin-left: -8px; }
-.calendar-weekday { font-size: 18px; font-weight: 600; color: rgba(237,237,237,.6); }
-.calendar-day-number { font-size: 26px; font-weight: 700; }
+.calendar-weekday { font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(237,237,237,.6); }
+.calendar-day-number { font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 700; }
 .calendar-day-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .calendar-event-dot { background: rgba(237,237,237,.8); }
 .calendar-week .calendar-chevron { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.08); color: rgba(237,237,237,.7); }
 .calendar-chevron svg { width: 19px; height: 26px; }
-.calendar-month { margin-left: auto; white-space: nowrap; font-size: 24px; font-weight: 600; color: rgba(237,237,237,.6); }
+.calendar-month { margin-left: auto; white-space: nowrap; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(237,237,237,.6); }
 .calendar-week .calendar-day[aria-pressed="true"] { background: rgba(237,237,237,.88); color: #000; }
 .calendar-week .calendar-day[aria-current="date"]:not([aria-pressed="true"]):not(:focus) { border-color: rgba(255,255,255,.35); }
 .calendar-week .browse-button:focus { background: rgba(237,237,237,.94); color: #000; box-shadow: none; }
 .calendar-week .calendar-day:focus { transform: scale(1.06); }
 .calendar-day[aria-pressed="true"] .calendar-weekday, .calendar-day:focus .calendar-weekday { color: rgba(0,0,0,.7); }
 .calendar-day[aria-pressed="true"] .calendar-event-dot, .calendar-day:focus .calendar-event-dot { background: #000; }
-.calendar-week [data-focus="today"] { height: 64px; padding: 0 24px; font-size: 22px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); }
+.calendar-week [data-focus="today"] { height: 64px; padding: 0 24px; font-size: calc(22px * var(--silo-sf-cap-scale)); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); }
 .calendar-week [data-focus="today"]:focus { background: rgba(237,237,237,.94); }
 /* Compact heading-to-heading pitch measured at Apple 05753bf is 595.
    The shelf box plus the old 6px gap measured 561, so the gap is 40. */
@@ -1636,25 +1636,25 @@ svg.library-empty-icon { width: auto; }
 /* SF 36 semibold is a 42px line, so the poster starts 86px under the heading.
    Caption lines are SF 28 and 22. The shared card's bottom margin is cleared
    so the shelf ends on the caption, which is what anchor .bottom scrolls. */
-.calendar-shelf .browse-section-title { margin: 0 0 20px; height: 42px; font-size: 36px; font-weight: 600; line-height: 42px; }
+.calendar-shelf .browse-section-title { margin: 0 0 20px; height: 42px; font-size: calc(36px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 42px; }
 .calendar-shelf .browse-row { box-sizing: border-box; width: 1920px; margin-left: -80px; margin-right: -80px; padding: 24px 80px; }
 .calendar-shelf .browse-card { width: calc(260px * var(--calendar-scale, 1)); margin: 0; margin-inline-end: 40px; border: 0; border-radius: 0; }
 .calendar-shelf .browse-art { width: calc(260px * var(--calendar-scale, 1)); height: calc(390px * var(--calendar-scale, 1)); }
-.calendar-event .browse-card-title { padding: 0; margin: 16px 0 2px; line-height: 32.98px; min-height: 65.96px; white-space: normal; font-size: 28px; font-weight: 600; color: rgba(237,237,237,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.calendar-event .browse-card-title { padding: 0; margin: 16px 0 2px; line-height: 32.98px; min-height: 65.96px; white-space: normal; font-size: calc(28px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(237,237,237,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .calendar-event:focus { transform: none; box-shadow: none; }
 .calendar-event .browse-art { transition: transform var(--silo-fast) ease-out; }
 .calendar-event:focus .browse-art { transform: scale(1.05); box-shadow: 0 0 0 4px rgba(255,255,255,.7); }
 .calendar-event:focus .browse-card-title { color: #ededed; }
-.calendar-event .browse-card-subtitle { margin: 0; padding: 0; font-size: 22px; line-height: 25.91px; color: rgba(237,237,237,.6); }
+.calendar-event .browse-card-subtitle { margin: 0; padding: 0; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 25.91px; color: rgba(237,237,237,.6); }
 .calendar-shelf-empty .browse-section-title { color: rgba(237,237,237,.6); }
-.calendar-shelf-empty .browse-text { margin: 0; font-size: 22px; color: rgba(237,237,237,.6); }
+.calendar-shelf-empty .browse-text { margin: 0; font-size: calc(22px * var(--silo-sf-cap-scale)); color: rgba(237,237,237,.6); }
 .calendar-event .browse-card-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: none; }
 /* Use Apple's 30-point section gap as a stable slot for retained-data status. */
 .calendar-status { height: 30px; }
 .calendar-status.calendar-pending { min-height: 320px; }
 .calendar-status .browse-text { margin: 0; max-width: none; font-size: 22px; line-height: 30px; }
 .calendar-filters { display: flex; gap: 6px; width: max-content; margin: 188px 0 0; padding: 6px; border-radius: 40px; background: rgba(255,255,255,.07); }
-.calendar-filters .browse-button { margin: 0; padding: 0 26px; height: 54px; min-height: 0; border: 0; font-size: 22px; background: transparent; color: rgba(237,237,237,.7); box-shadow: none; }
+.calendar-filters .browse-button { margin: 0; padding: 0 26px; height: 54px; min-height: 0; border: 0; font-size: calc(22px * var(--silo-sf-cap-scale)); background: transparent; color: rgba(237,237,237,.7); box-shadow: none; }
 .calendar-filters .browse-button[aria-pressed="true"] { background: rgba(237,237,237,.88); color: #000; }
 .calendar-filters .browse-button:focus { background: rgba(237,237,237,.96); color: #000; transform: scale(1.05); }
 .calendar-empty, .calendar-failure { min-height: 320px; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
@@ -1664,13 +1664,17 @@ svg.library-empty-icon { width: auto; }
 .calendar-loading { min-height: 320px; outline: none; }
 .calendar-failure { gap: 48px; }
 .calendar-failure .search-state-icon { width: 48px; height: 48px; margin: 0; color: #b00020; }
-.calendar-failure .search-state-title { margin: 0; font-size: 36px; line-height: 43px; }
-.calendar-failure .search-state-description { padding: 0 60px; font-size: 26px; line-height: 32px; color: rgba(237,237,237,.6); }
+/* The empty week's title and message are siloSubheadline 28 and siloCaption 22 (CalendarView.swift:277, :281). */
+.calendar-empty .search-state-title { font-size: calc(28px * var(--silo-sf-cap-scale)); }
+.calendar-empty .search-state-description { font-size: calc(22px * var(--silo-sf-cap-scale)); }
+.calendar-failure .search-state-title { margin: 0; font-size: calc(36px * var(--silo-sf-cap-scale)); line-height: 43px; }
+.calendar-failure .search-state-description { padding: 0 60px; font-size: calc(26px * var(--silo-sf-cap-scale)); line-height: 32px; color: rgba(237,237,237,.6); }
 .calendar-failure .browse-actions { display: flex; flex-direction: column; align-items: center; gap: 16px; margin: 16px 0 0; }
 /* ErrorView on tvOS: the first button is a 200 pt capsule whose label wraps, any other is plain text at its own width. */
 .calendar-failure .browse-button { box-sizing: border-box; width: 200px; white-space: normal; }
-.calendar-failure .browse-button + .browse-button { width: auto; padding: 4px 24px; border-radius: 22px; background: transparent; color: rgba(237,237,237,.6); font-size: 26px; }
-.calendar-empty-links .browse-button, .calendar-failure .browse-button { border: 0; padding: 14px 18px; font-size: 28px; background: rgba(237,237,237,.72); color: #000; }
+/* ErrorView.swift:45: the secondary button is siloBody, 26 pt regular, in a plain style. */
+.calendar-failure .browse-button + .browse-button { width: auto; padding: 4px 24px; border-radius: 22px; background: transparent; color: rgba(237,237,237,.6); font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; }
+.calendar-empty-links .browse-button, .calendar-failure .browse-button { border: 0; padding: 14px 18px; font-size: calc(28px * var(--silo-sf-cap-scale)); background: rgba(237,237,237,.72); color: #000; }
 .calendar-empty-links .browse-button:focus, .calendar-failure .browse-button:focus { background: #ededed; box-shadow: 0 0 0 4px #fff; }
 .calendar-failure .browse-button + .browse-button:focus { color: #000; box-shadow: none; }
 .calendar-moon { display: inline-flex; width: 22px; height: 22px; margin-right: 8px; color: rgba(237,237,237,.3); }
@@ -1681,9 +1685,9 @@ svg.library-empty-icon { width: auto; }
 .calendar-empty-links .browse-button { width: 300px; margin: 0; }
 .calendar-event .browse-art { position: relative; }
 .calendar-releases { position: absolute; top: 12px; inset-inline-start: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 24px); }
-.calendar-release { padding: 5px 12px; border-radius: 20px; background: rgba(237,237,237,.92); color: #000; font-size: 18px; font-weight: 700; letter-spacing: .8px; }
+.calendar-release { padding: 5px 12px; border-radius: 20px; background: rgba(237,237,237,.92); color: #000; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: .8px; }
 .calendar-watched { position: absolute; top: 12px; inset-inline-end: 12px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ededed; color: #000; font-size: 20px; font-weight: 700; box-shadow: 0 0 4px rgba(0,0,0,.3); }
-.calendar-time { position: absolute; bottom: 12px; inset-inline-end: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: 20px; font-weight: 600; white-space: normal; }
+.calendar-time { position: absolute; bottom: 12px; inset-inline-end: 12px; max-width: calc(100% - 24px); padding: 5px 12px; border-radius: 20px; background: rgba(0,0,0,.62); color: #fff; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 600; white-space: normal; }
 @media (prefers-reduced-motion: reduce) {
     .calendar-event:focus .browse-art, .calendar-week .calendar-day:focus, .calendar-filters .browse-button:focus { transform: none; }
 }
