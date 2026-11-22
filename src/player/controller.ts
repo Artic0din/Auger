@@ -4620,8 +4620,9 @@ function startAt(plan: PlaybackPlan, seconds: number): PlaybackPlan | undefined 
     const timeline = plan.timeline;
     const duration = plan.durationSeconds;
     if (plan.delivery !== "original_http" || seconds < 0 || (duration !== undefined && seconds > duration) || !seekableAt(plan, seconds)) return undefined;
-    if (seconds === timeline.sourceStartSeconds) return plan;
-    return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds: Math.max(0, seconds - timeline.timelineOffsetSeconds) } };
+    const playerStartSeconds = Math.max(0, seconds - timeline.timelineOffsetSeconds);
+    if (seconds === timeline.sourceStartSeconds && playerStartSeconds === timeline.playerStartSeconds) return plan;
+    return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds } };
 }
 
 function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requested?: SelectedTracks): boolean {

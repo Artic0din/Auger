@@ -2040,6 +2040,25 @@ test("a moved stream starts at the playhead converted by its timeline, not offse
     } finally { r.controller.destroy(); }
 });
 
+test("a moved stream opens at a playhead of 0 s, not its own resume point, when its source start is already 0 (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // Source start 0 equals the playhead, but the stream's player start is its own resume point, 12.5 s.
+        await movedLostSwitch(r, id, { ...STREAM_TIMELINE, source_start_seconds: 0, player_start_seconds: 12.5, timeline_offset_seconds: 0 });
+        r.controller.seekToSeconds(0);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        const before = seeksTo(r).length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        r.avplay.finishPrepare();
+        await settle(r);
+        assert.deepEqual(seeksTo(r).slice(before).filter(call => call !== "seekTo 0"), [], "0 s, not 12.5 s");
+    } finally { r.controller.destroy(); }
+});
+
 test("a moved stream with a timeline offset opens at the player-relative playhead (#792)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
