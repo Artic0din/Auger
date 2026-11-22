@@ -387,7 +387,8 @@ test("remaining settings expose only honoured rows and save profile appearance",
             const element = node as HTMLElement;
             return { fontSize: element.style.fontSize, align: getComputedStyle(element).textAlign, weight: getComputedStyle(element).fontWeight };
         });
-        assert.deepEqual(caption, { fontSize: "21.5px", align: "center", weight: "600" });
+        // Small's 43 pt at the preview's half size, times the cap scale for the bundled sans-serif (#789).
+        assert.deepEqual(caption, { fontSize: "calc(21.5px * var(--silo-sf-cap-scale))", align: "center", weight: "600" });
         const previewLook = () => tv.page.locator(".settings-subtitle-preview").evaluate(node => {
             const box = node.getBoundingClientRect();
             const text = node.querySelector("span") as HTMLElement;
@@ -415,7 +416,7 @@ test("remaining settings expose only honoured rows and save profile appearance",
             hugsText: true,
             bottomGap: 12,
         });
-        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "25.8px", "the line scales with the Small preview size");
+        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "24.9873px", "the line scales with the Small preview size (25.8 px times the cap scale)");
         await tv.page.getByRole("button", { name: /Position/ }).click();
         await tv.page.getByRole("radio", { name: "Lower Third", exact: true }).click();
         await tv.page.locator('[data-focus="appearance-position"]').waitFor();

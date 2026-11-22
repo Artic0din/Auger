@@ -133,6 +133,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Subtitles now use Apple TV's five caption sizes, so each size is about 1.3 to 1.5 times larger than before; the Settings preview follows the same sizes at half scale (#789). Lower-third captions sit 27% up the picture, as on Apple TV, instead of 25%.
 - Refreshing the translations no longer brings the old Silo name back where the app names itself: the sync renames it to Auger in those strings and leaves the Silo server's name alone (#802).
 - When the server is slow to confirm a subtitle change, a seek no longer jumps back if the change brings a new stream, the subtitle no longer disappears after leaving and returning to the app, and the TV's player shows the new subtitle even if a seek was in progress at the time (#751).
 - The picture preview while scrubbing now shows during a subtitle change, as on Apple TV (#757).
