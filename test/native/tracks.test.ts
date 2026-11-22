@@ -1998,8 +1998,13 @@ test("the scrub preview tile loads while a subtitle switch is out (#757)", async
         r.controller.selectSubtitle("file:42:subtitle:5");
         await settle(r);
         assert.equal(tracks(r).change.state, "changing");
-        const tile = await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined);
+        const loaded: string[] = [];
+        const tile = await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { loaded.push(sheet.url); });
         assert.equal(tile?.index, 123, "the same file's preview is shown during the switch");
+        assert.equal(tracks(r).change.state, "changing", "while the replan is still pending");
+        assert.equal(loaded.length, 1, "one sheet is loaded");
+        assert.equal(loaded[0], tile?.url, "the tile's own sheet");
+        assert.match(loaded[0] ?? "", new RegExp(`/trickplay/42/9913/${tile?.sheet}\\.9913\\.jpg`), "file 42's sheet for that tile");
         held.release();
         await settle(r);
     } finally { r.controller.destroy(); }
@@ -2020,6 +2025,27 @@ test("a subtitle switch that moves to another file previews that file, not the o
         assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async () => undefined));
         assert.equal(manifests().length, before + 1, "a new manifest is read");
         assert.match(manifests().at(-1) ?? "", /file_id=43$/, "for the file now playing");
+    } finally { r.controller.destroy(); }
+});
+
+test("a preview built while a switch is held is replaced when the answer moves to another file (#757)", async () => {
+    const { r, id } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        const before: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { before.push(sheet.url); }), "file 42's preview loads during the switch");
+        assert.match(before[0] ?? "", /\/trickplay\/42\//);
+        held.release();
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const after: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { after.push(sheet.url); }));
+        assert.match(after[0] ?? "", /\/trickplay\/43\//, "the next preview is file 43's");
     } finally { r.controller.destroy(); }
 });
 

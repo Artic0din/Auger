@@ -922,6 +922,8 @@ export class PlaybackController implements PlayerControls {
         const attempt = active !== undefined && active.started && !active.busy ? active : undefined;
         const fileId = attempt?.plan?.effectiveMediaFileId;
         if (attempt === undefined || fileId === undefined || !attempt.trickplayEnabled) return undefined;
+        // Keyed by file, as Apple's contentId#fileId cache: a provider for another file is never reused, whichever path adopted the plan.
+        if (attempt.thumbnails !== undefined && attempt.thumbnails.fileId !== fileId) this.clearThumbnails(attempt);
         const provider = attempt.thumbnails ?? new SeekThumbnails(this.deps.session, this.deps.clock, attempt.request.contentId, fileId);
         attempt.thumbnails = provider;
         const tile = await provider.load(seconds, signal, loadSheet);
