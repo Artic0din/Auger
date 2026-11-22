@@ -200,10 +200,11 @@ test("Calendar's week, cards, empty week and failure use Apple's points times th
         const collect = async (): Promise<void> => { for (const entry of await tv.page.evaluate(unscaledText, ".browse")) found.add(entry); };
         await tv.page.locator('[data-focus="calendar"]').first().click();
         await tv.page.locator(".calendar-event").first().waitFor();
-        await tv.page.locator('[data-focus="today"]').waitFor().catch(() => undefined);
         await collect();
         await tv.page.locator('[data-focus="next-week"]').click();
         await tv.page.locator(".calendar-empty").waitFor();
+        // Today shows only off the current week, so the next week measures it.
+        await tv.page.locator('[data-focus="today"]').waitFor();
         await collect();
         calendar.calendarFailure = problem(503, "service_unavailable", "Unavailable");
         await tv.page.locator('[data-focus="empty:trending"]').click();

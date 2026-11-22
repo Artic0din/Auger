@@ -554,8 +554,9 @@ for (const [status, id, headline, buttons] of [
             const boxes = await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { centre: Math.round((box.left + box.right) / 2), top: Math.round(box.top), bottom: Math.round(box.bottom) }; }));
             assert.ok(Math.abs((boxes[0]?.centre ?? 0) - (boxes[1]?.centre ?? 1e6)) <= 1, JSON.stringify(boxes));
             assert.ok((boxes[1]?.top ?? 0) >= (boxes[0]?.bottom ?? 1), JSON.stringify(boxes));
-            // ErrorView.swift:45: the secondary button is siloBody, regular weight; the primary keeps semibold.
-            assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).fontWeight)), ["600", "400"]);
+            // The primary is siloSubheadline, 28 pt semibold (ViewExtensions.swift:416); the secondary is siloBody, 26 pt regular
+            // (ErrorView.swift:45). Each is times the cap scale.
+            assert.deepEqual(await tv.page.locator(".calendar-failure .browse-button").evaluateAll(nodes => nodes.map(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight])), [["27.118px", "600"], ["25.181px", "400"]]);
             await activate(tv, "sign-in");
             await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.signOutCalls) === 1, "Sign In Again signs out");
         }
