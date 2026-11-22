@@ -918,9 +918,14 @@ export class PlaybackController implements PlayerControls {
     }
 
     async seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined> {
-        const attempt = this.changeable();
+        // Apple keeps a file's previews through a replan of that file (PlayerViewModel.swift:349-366), so a subtitle switch,
+        // which holds nothing, still previews (#757). A seek or quality change in flight is still a barrier.
+        const active = this.active();
+        const attempt = active !== undefined && active.started && !active.busy ? active : undefined;
         const fileId = attempt?.plan?.effectiveMediaFileId;
         if (attempt === undefined || fileId === undefined || !attempt.trickplayEnabled) return undefined;
+        // Keyed by file, as Apple's contentId#fileId cache: a provider for another file is never reused, whichever path adopted the plan.
+        if (attempt.thumbnails !== undefined && attempt.thumbnails.fileId !== fileId) this.clearThumbnails(attempt);
         const provider = attempt.thumbnails ?? new SeekThumbnails(this.deps.session, this.deps.clock, attempt.request.contentId, fileId);
         attempt.thumbnails = provider;
         const tile = await provider.load(seconds, signal, loadSheet);

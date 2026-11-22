@@ -14,7 +14,7 @@ export class SeekThumbnails {
     private readonly session: NativeSession;
     private readonly clock: Clock;
     private readonly contentId: string;
-    private readonly fileId: string;
+    readonly fileId: string;
     private readonly authority: AbortSignal;
     private active: AbortController | undefined;
     private manifest: TrickplayManifest | undefined;
