@@ -4218,7 +4218,7 @@ test("Up and Down skip the dimmed primary row in SECONDARY, as Apple's disabled 
     } finally { await page.close(); }
 });
 
-test("the second line draws under the primary at Apple's offsets for each position", async () => {
+test("the second line draws under the primary at Apple's offsets for each position (lower third #797)", async () => {
     const { page } = await open();
     try {
         const view = (position: "bottom" | "lower-third" | "top") => ({ ...playing(TRACKS), captions: { text: "Primary", secondaryText: "Secondary", appearance: { ...DEFAULT_APPEARANCE, position } } });
@@ -4229,7 +4229,8 @@ test("the second line draws under the primary at Apple's offsets for each positi
         await show(page, view("bottom"));
         assert.deepEqual(await offsets(), [["auto", "8%"], ["auto", "17%"]]);
         await show(page, view("lower-third"));
-        assert.deepEqual(await offsets(), [["auto", "25%"], ["auto", "36%"]]);
+        // AetherSubtitleOverlay.swift:414-423 (silo-apple 449ba47): the lower third's primary sits 27% up, not 25%.
+        assert.deepEqual(await offsets(), [["auto", "27%"], ["auto", "36%"]]);
         await show(page, view("top"));
         assert.deepEqual(await offsets(), [["8%", "auto"], ["17%", "auto"]]);
         assert.equal(await text(page, ".player-captions-secondary"), "Secondary");

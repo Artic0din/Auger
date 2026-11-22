@@ -62,9 +62,10 @@ export function subtitleFontSize(style: SubtitleAppearance, scale = 1): string {
 }
 
 export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false): void {
-        // AetherSubtitleOverlay.defaultPlacement: the second line's inset is 17% at the top and bottom and 36% in the lower third.
+        // AetherSubtitleOverlay.defaultPlacement (:376-434): the primary's inset is 8% at the top and bottom and 27% in the lower
+        // third; the second line's is 17% and 36%. Apple places the two independently, so a tall primary can reach the second line.
         layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
-        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? (secondary ? "36%" : "25%") : secondary ? "17%" : "8%";
+        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? (secondary ? "36%" : "27%") : secondary ? "17%" : "8%";
         // AetherSubtitleOverlay draws the generic families semibold and a named family at its own weight.
         // Samsung's generic sans-serif face has no semibold, so sans-serif uses the bundled Inter (theme.css).
         const bundledSans = style.fontFamily === "sans-serif";
