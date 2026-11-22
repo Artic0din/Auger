@@ -2303,8 +2303,8 @@ test("a subtitle chosen during an unresolved switch survives a refusal that land
     } finally { r.controller.destroy(); }
 });
 
-test("an AVPlay error during a local seek while a switch is unresolved is a seek failure, not a switch failure (#738)", async () => {
-    const { r } = await lostSwitchRig();
+test("an AVPlay error during a local seek while a switch is unresolved recovers against the plan the server is on (#750)", async () => {
+    const { r, id } = await lostSwitchRig();
     try {
         r.controller.seekToSeconds(120);
         await settle(r);
@@ -2312,12 +2312,250 @@ test("an AVPlay error during a local seek while a switch is unresolved is a seek
         await settle(r);
         r.avplay.finishSeek();
         await settle(r);
-        await r.h.clock.advance(1000);
+        await settle(r);
+        // The switch is resolved first, at once rather than after its backoff: its replay is answered with the committed plan.
+        const operations = replans(r.h).map(body => body.operation);
+        assert.deepEqual(operations, ["track_change", "track_change", "track_change", "track_change", "failure_recovery"]);
+        // The server answers a stale identity with 409 stale_playback_plan, so the recovery reaching AVPlay shows it named the current plan.
+        const recovery = replans(r.h).at(-1);
+        assert.notEqual(recovery?.failed_plan_id, replans(r.h)[0]?.failed_plan_id, "not the plan the switch replaced");
+        assert.equal(r.server.session(id).receipt, undefined, "the session is still live");
+        const opens = r.avplay.urls.length;
+        await playReplacement(r);
+        assert.equal(r.avplay.urls.length, opens, "no reopen beyond the recovery's own");
+        assert.equal(last(r.views).phase, "playing");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+// #784 review: a route failure during a slow switch waits for its answer, and recovers with that answer's plan.
+test("an AVPlay error before a slow switch is answered recovers with the plan the answer brings (#750)", async () => {
+    const { r, held } = await slowSwitchRig();
+    try {
+        const id = only([...r.server.sessions.keys()]);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        assert.deepEqual(replans(r.h).map(body => body.operation), ["track_change"], "the recovery waits for the switch's answer");
+        held.release();
+        await settle(r);
         await settle(r);
         const operations = replans(r.h).map(body => body.operation);
-        // The seek's failure is routed as a seek failure: a route recovery goes out, rather than the switch recording a change failure.
-        // That recovery still carries the plan identity the unresolved switch may have replaced (follow-up issue).
-        assert.deepEqual(operations, ["track_change", "track_change", "track_change", "failure_recovery"]);
+        assert.deepEqual(operations, ["track_change", "failure_recovery"]);
+        assert.notEqual(replans(r.h)[1]?.failed_plan_id, replans(r.h)[0]?.failed_plan_id, "the recovery names the answer's plan, not the one it replaced");
+        await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing");
+        assert.equal(r.server.session(id).receipt, undefined);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a wake after a route failure still waits out the server's replan_in_progress lease (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress"));
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+        await r.h.clock.advance(2000);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await r.h.clock.advance(10000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 1, "the wake skips the client's backoff, not the server's 15 s lease");
+        await r.h.clock.advance(3000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h)[1]?.operation, "track_change", "the replay goes once the lease is out");
+        assert.equal(replans(r.h)[2]?.operation, "failure_recovery");
+    } finally { r.controller.destroy(); }
+});
+
+test("a route failure during a switch the server keeps holding ends in the retryable playback error at 30 s (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 40 }, () => problem(409, "replan_in_progress", "In progress")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await r.h.clock.advance(29999);
+        await settle(r);
+        assert.equal(last(r.views).phase, "loading", "still waiting for the switch just before the deadline");
+        await r.h.clock.advance(1);
+        await settle(r);
+        const view = last(r.views);
+        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" }, "the retryable error at 30 s");
+        const sent = replans(r.h).length;
+        await r.h.clock.advance(60000);
+        await settle(r);
+        assert.equal(replans(r.h).length, sent, "the replays stop");
+    } finally { r.controller.destroy(); }
+});
+
+test("a Retry-After past the deadline shows the retryable error at 30 s without another replay (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await r.h.clock.advance(29999);
+        await settle(r);
+        assert.equal(last(r.views).phase, "loading");
+        await r.h.clock.advance(1);
+        await settle(r);
+        const view = last(r.views);
+        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" });
+        assert.equal(replans(r.h).length, 1, "no replay is sent past the deadline");
+        await r.h.clock.advance(120000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+    } finally { r.controller.destroy(); }
+});
+
+test("a route failure while the switch's request is out wakes the next replay as soon as it comes back unanswered (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.h.fake.script(`/playback/${id}/replan`, problem(503, "service_unavailable", "Unavailable"));
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        // No clock advance: the failure that came while the request was out skips the client's 1 s backoff.
+        assert.deepEqual(replans(r.h).map(body => body.operation), ["track_change", "track_change", "failure_recovery"]);
+        await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a switch answer that reopens the stream ends the route failure's deadline for later switches (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // The answer moves the stream, so it is adopted with a reopen rather than kept.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`, true);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        held.release();
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing");
+        await r.h.clock.advance(31000);
+        await settle(r);
+        // A later switch whose first answer is lost must replay, not end on the old deadline.
+        r.server.next.push({ delivery: "original_http", subtitle: 1, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        const before = replans(r.h).length;
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        assert.equal(replans(r.h).length, before + 1, "the later switch sends its replan");
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, before + 2, "the lost answer's request is sent again after the 1 s backoff");
+        assert.equal(replans(r.h)[before + 1]?.replan_request_id, replans(r.h)[before]?.replan_request_id, "the same request, for the server to replay");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a stream adopted after a used wake resets it, so the next route failure skips the backoff again (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // First failure: one 503 while the switch is out, so the wake is spent on the replay that brings a moved stream.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.h.fake.script(`/playback/${id}/replan`, problem(503, "service_unavailable", "Unavailable"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing", "the moved stream is adopted");
+        // Second failure on the new stream: its first replay must again skip the backoff.
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        const sent = replans(r.h).length;
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, sent + 1, "the new failure's first replay goes at once");
+    } finally { r.controller.destroy(); }
+});
+
+test("after a route failure only the first replay skips the backoff; later quick 503s are spaced by it (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 10 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, 1);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the route failure wakes one replay at once");
+        await r.h.clock.advance(1999);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the next replay waits out the 2 s backoff");
+        await r.h.clock.advance(1);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        await r.h.clock.advance(4999);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3, "and the one after the 5 s backoff");
+        await r.h.clock.advance(1);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+    } finally { r.controller.destroy(); }
+});
+
+test("a reconnect that replaces the transport is not ended by the old switch's deadline (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }), ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable", { "Retry-After": "40" })));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        // The connection then drops: the reconnect replaces the transport while the switch's replay still sleeps.
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await settle(r);
+        await r.h.clock.advance(30000);
+        await settle(r);
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a route failure facing 100 quick 503s sends one woken replay, not a flood (#750, Codex repro)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 100 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        for (let i = 0; i < 20; i++) await settle(r);
+        assert.equal(replans(r.h).length, 2, "the first send and the one woken replay; the rest wait for the clock");
     } finally { r.controller.destroy(); }
 });
 
