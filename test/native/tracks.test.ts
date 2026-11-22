@@ -2040,6 +2040,26 @@ test("a moved stream starts at the playhead converted by its timeline, not offse
     } finally { r.controller.destroy(); }
 });
 
+test("a moved stream with a timeline offset opens at the player-relative playhead (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // The new stream's player clock is 10 s behind the source, and its own resume point is player 12.5 s: source 120 s
+        // is player 110 s, not the resume point shifted by the seek (132.5 s).
+        await movedLostSwitch(r, id, { ...STREAM_TIMELINE, source_start_seconds: 0, player_start_seconds: 12.5, timeline_offset_seconds: 10 });
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        const before = seeksTo(r).length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        r.avplay.finishPrepare();
+        await settle(r);
+        assert.deepEqual(seeksTo(r).slice(before), ["seekTo 110000"], "source 120 s less the 10 s offset");
+    } finally { r.controller.destroy(); }
+});
+
 test("a playhead outside the moved stream's window reanchors through the server, not a local seek (#792)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
