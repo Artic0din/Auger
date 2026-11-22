@@ -848,20 +848,32 @@ export class PlaybackController implements PlayerControls {
         if (attempt === undefined || !attempt.autoNextSupported || attempt.hud.autoBusy) return;
         attempt.hud.autoBusy = true;
         attempt.hud.message = "Saving Auto-play next";
-        this.showPlayback(attempt);
-        const enabled = !attempt.autoNext;
+        // PlayerViewModel.setNextUpAutoPlayEnabled: the local value changes, and the countdown stops or starts, before the write goes out.
+        // The new epoch also keeps an older settings read from overwriting it.
+        const previous = attempt.autoNext;
+        const enabled = !previous;
+        attempt.settingsEpoch += 1;
         const epoch = attempt.settingsEpoch;
-        const deciding = (): boolean => attempt.live || this.completion?.attempt === attempt;
+        attempt.autoNext = enabled;
+        this.showPlayback(attempt);
+        if (!attempt.live) this.completionAutoNextChanged(attempt);
+        const current = (): boolean => !attempt.signal.aborted && epoch === attempt.settingsEpoch && (attempt.live || this.completion?.attempt === attempt);
         // Apple writes this TV's value from every Auto-play control (PlayerSettings.setAutoPlayNextEpisode → enqueueDeviceValue).
         const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled, "profile_device"), profileScoped: true, signal: attempt.signal }).then(async () => {
             const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
-            if (attempt.signal.aborted || epoch !== attempt.settingsEpoch || !deciding()) return;
-            attempt.settingsEpoch = epoch + 1;
-            attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+            if (!current()) return;
+            const saved = values.get(AUTO_NEXT_KEY)?.value === true;
             if (attempt.live) attempt.hud.message = "";
-            else this.completionAutoNextChanged(attempt);
+            if (saved === attempt.autoNext) return;
+            attempt.autoNext = saved;
+            if (!attempt.live) this.completionAutoNextChanged(attempt);
         }).catch(() => {
-            if (!attempt.signal.aborted && attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
+            // Apple's writer keeps the local value and retries, and a refusal shows only in Settings (SettingsViewModel.swift:443). Nothing
+            // here retries (#810), so the toggle goes back to the saved value, and the card acts on it again: On counts down once more.
+            if (!current()) return;
+            attempt.autoNext = previous;
+            if (attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
+            else this.completionAutoNextChanged(attempt);
         }).finally(() => {
             attempt.hud.autoBusy = false;
             if (attempt.live) this.showPlayback(attempt);

@@ -1904,7 +1904,7 @@ function completion(r: Rig): Extract<PlaybackView, { phase: "completion" }> {
     return view;
 }
 
-async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
+async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"]): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
     const r = await episodeRig(spoilers);
     const settings = new FakeSettings(r.h.fake);
     settings.overrides.set("playback.auto_play_next", enabled);
@@ -1914,7 +1914,7 @@ async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: 
         contract.definitions.push({ key: "playback.next_up_prompt_seconds", introduced_in: 1, persistence: "remote", allowed_scopes: ["profile", "profile_device"], resolution_order: ["profile_device", "profile", "default"], value_schema: { type: "integer", minimum: 0, maximum: 120 }, default_value: 30 });
         settings.overrides.set("playback.next_up_prompt_seconds", promptSeconds);
     }
-    contract.definitions.push({ key: "playback.auto_play_next", introduced_in: 1, persistence: "remote", allowed_scopes: ["profile", "profile_device"], resolution_order: ["profile_device", "profile", "default"], value_schema: { type: "boolean" }, default_value: true });
+    contract.definitions.push({ key: "playback.auto_play_next", introduced_in: 1, persistence: "remote", allowed_scopes: autoNextScopes, resolution_order: [...autoNextScopes].reverse().concat("default"), value_schema: { type: "boolean" }, default_value: true });
     r.h.fake.script("/settings/contract", { status: 200, body: contract });
     return { ...r, settings };
 }
@@ -1931,6 +1931,139 @@ test("EOF re-reads autoplay; unreadable or disabled settings never start a count
         assert.equal(bodies(r.h, "/start").length, 1);
         r.controller.destroy();
     }
+});
+
+// PlayerViewModel.setNextUpAutoPlayEnabled sets the local value and cancels the countdown before anything is saved
+// (silo-apple 449ba47 PlayerViewModel.swift:4230-4239, PlayerSettings.swift:1107-1110) (#806 review).
+test("turning Auto-play off on the finished card stops the countdown at once, before the save answers (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, false, "the toggle reads Off at once");
+    assert.equal(completion(r).countdown, undefined, "and the countdown stops while the save is out");
+    await r.h.clock.advance(3000);
+    assert.equal(completion(r).countdown, undefined, "a running countdown would read 7 by now");
+    hold.release();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, false, "the save confirms Off");
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "and nothing plays on its own");
+    r.controller.destroy();
+});
+
+// Apple keeps the local value and retries; a refusal shows only in Settings (SettingsViewModel.swift:443). Samsung has no retrying writer, so
+// a refused save puts the toggle back to On, and the card counts down again, as On means (#806 review).
+test("a refused Auto-play save on the finished card restores the toggle and its countdown (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true, "the saved value is still On");
+    assert.equal(completion(r).countdown, 10, "so the countdown starts again from Apple's 10 seconds");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "and the next episode plays");
+    r.controller.destroy();
+});
+
+test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 1, "the 10 seconds passed with the save still out, and nothing played");
+    hold.release();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, undefined, "the confirmed Off keeps it stopped");
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1);
+    r.controller.destroy();
+});
+
+// An On Deck title is another title: Apple's nextUpPickAutoPlays is false for it (PlayerViewModel.swift:4061-4071), so On never counts down.
+test("turning Auto-play on over an On Deck title starts no countdown and plays nothing (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    const household = [...r.catalog.households.values()][0]!;
+    household.sections = [{ id: "deck", sectionType: "continue_watching", title: "On Deck", items: ["movie:m0001", "movie:m0002"] }];
+    r.catalog.fileIds.set("movie:m0001", "42");
+    r.server.items.set("movie:m0001", ["42"]);
+    await playMovie(r, { ...MOVIE, contentId: "movie:m0001" });
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).next?.contentId, "movie:m0002");
+    assert.equal(completion(r).countdown, undefined);
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, false);
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, undefined, "On over an On Deck title starts no countdown");
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "and nothing plays");
+    r.controller.destroy();
+});
+
+test("turning Auto-play off and on over a Shuffle pick restarts its countdown and plays the pick (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).status, "upNext.headingShuffle");
+    assert.equal(completion(r).next?.contentId, "movie-2");
+    assert.equal(completion(r).countdown, 10);
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, undefined, "Off stops the Shuffle countdown");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10, "On starts it again");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "and the pick plays");
+    r.controller.destroy();
+});
+
+// The contract decoder keeps Auto-play only as Apple's profile and profile_device row (src/contracts/v2/settings.ts), the scope this
+// toggle writes, so a server that offers it per profile alone gets no toggle and no device write it would refuse (#806 review).
+test("a server that offers Auto-play per profile only shows no toggle and gets no device write (#806)", async () => {
+    const r = await autoplayRig(true, undefined, undefined, ["profile"]);
+    await playMovie(r, EPISODE);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.hud?.autoNext, undefined, "no Auto-play row in the player");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, undefined, "and none on the finished card");
+    assert.equal(r.h.fake.requests.some(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")), false);
+    r.controller.destroy();
 });
 
 test("internal countdown teardown never publishes a manual Play Now frame", async () => {
