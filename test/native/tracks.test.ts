@@ -2495,6 +2495,25 @@ test("after a route failure only the first replay skips the backoff; later quick
     } finally { r.controller.destroy(); }
 });
 
+test("a reconnect that replaces the transport is not ended by the old switch's deadline (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }), ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable", { "Retry-After": "40" })));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        // The connection then drops: the reconnect replaces the transport while the switch's replay still sleeps.
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await settle(r);
+        await r.h.clock.advance(30000);
+        await settle(r);
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
 test("a replay refused during a held seek leaves the seek holding the controls, so a second seek waits (#738)", async () => {
     const { r, id } = await lostSwitchRig();
     try {

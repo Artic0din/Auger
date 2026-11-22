@@ -2515,6 +2515,8 @@ export class PlaybackController implements PlayerControls {
                     attempt.switchWakeUsed = true;
                     await waitUntil(serverReady);
                 }
+                // A reconnect or new play may have replaced the transport while this waited: the old replay then just stops.
+                if (!current()) throw abortedError();
                 // A server wait longer than the deadline ends here, with no replay sent past it.
                 if (this.deps.clock.now() >= deadline()) {
                     this.fail(attempt, { kind: "playback_failed" }, true);
