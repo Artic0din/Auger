@@ -567,7 +567,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             : undefined;
         nextSeries.textContent = episode ? candidate.seriesTitle ?? "" : "";
         nextSeries.hidden = nextSeries.textContent === "";
-        failureTitle.classList.toggle("player-next-episode-title", episode);
+        failureTitle.classList.toggle("player-next-episode-title", code !== undefined);
+        // PlayerView.metadata(for:): a next item with no episode code heads the card at seriesTitleSize (#801).
+        failureTitle.classList.toggle("player-next-named", candidate !== undefined && code === undefined);
         if (candidate === undefined) failureTitle.textContent = fallback;
         else if (code === undefined) failureTitle.textContent = candidate.title;
         // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
@@ -1011,7 +1013,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         nextSeries.hidden = true;
         nextMeta.hidden = true;
         nextBackdrop.hidden = true;
-        failureTitle.classList.remove("player-next-episode-title");
+        failureTitle.classList.remove("player-next-episode-title", "player-next-named", "player-next-working");
         ring.set(undefined, undefined);
         mark.hidden = view.phase !== "error";
         if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
@@ -1083,6 +1085,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
+                failureTitle.classList.toggle("player-next-working", loading);
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
                 ring.set(loading || failed || candidate === undefined ? undefined : seconds, prompt?.countdownTotal);
                 if (!failure.contains(document.activeElement)) (next.hidden ? keep : next).focus();
@@ -1098,6 +1101,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
             const working = view.state === "finalizing" || view.state === "resolving";
             nextTitle(working ? undefined : candidate, working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : translate("upNext.endOfPlayback"));
+            failureTitle.classList.toggle("player-next-working", working);
             failureText.textContent = working ? "" : view.state === "failed" ? translate(view.failure === "session" ? "errors.apple.playback.invalidSample" : "upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
             if (view.countdown !== undefined) failureText.textContent = "";
             ring.set(view.countdown, AUTOPLAY_COUNTDOWN_SECONDS);

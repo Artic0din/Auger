@@ -849,6 +849,57 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
 
 // PlayerView.metadata(for:) and CountdownRing (PlayerView.swift:1348-1395, :1777, silo-apple main f70e16a): the series line, the S·E code
 // before the title, the synopsis, and the countdown as a ring of seconds left over the countdown's length beside Play Now (#697).
+// #801: every Up Next text is Apple's tvOS point size times the SF Pro cap scale, at Apple's weight (silo-apple 449ba47 PlayerView.swift).
+test("Up Next draws its text at Apple's points times the cap scale, in every state (#801)", async () => {
+    const { page } = await open();
+    try {
+        /** [selector, points, weight, PlayerView.swift source]. */
+        type Role = readonly [string, number, string, string];
+        const check = async (state: string, roles: readonly Role[]): Promise<void> => {
+            const off = await page.evaluate(list => {
+                const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+                const found: string[] = [];
+                for (const [selector, points, weight] of list) {
+                    const nodes = [...document.querySelectorAll(selector)].filter(node => node.getClientRects().length > 0);
+                    if (nodes.length === 0) { found.push(`${selector}: not shown`); continue; }
+                    for (const node of nodes) {
+                        const css = getComputedStyle(node);
+                        const drawn = parseFloat(css.fontSize) / cap;
+                        if (Math.abs(drawn - points) > 0.01 || css.fontWeight !== weight) found.push(`${selector}: ${drawn.toFixed(2)} pt ${css.fontWeight}, not ${points} pt ${weight}`);
+                    }
+                }
+                return found;
+            }, roles);
+            assert.deepEqual(off, [], state);
+        };
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor.", airDate: "2022-02-18", runtimeMinutes: 57 };
+        await show(page, { ...playing(TRACKS), upNext: { next: episode, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        await check("an episode on the prompt", [
+            [".player-next-eyebrow", 18, "600", ":1256-1261 eyebrowSize, semibold"],
+            [".player-next-series", 34, "700", ":1353 seriesTitleSize, bold"],
+            [".player-next-up .player-title.player-next-episode-title", 25, "600", ":1364 subtitleSize, semibold"],
+            [".player-next-meta", 19, "500", ":1379 captionSize, medium"],
+            [".player-next-synopsis", 22, "400", ":1387 bodySize"],
+            ['.player-next-up [data-focus="play-next"]', 30, "600", ":1409 Play Now, 30 semibold"],
+            ['.player-next-up [data-focus="keep-watching"]', 26, "600", ":1452 Keep Watching, 26 semibold"],
+            ['.player-next-up [data-focus="back"]', 26, "600", ":1469 Close, 26 semibold"],
+            [".player-countdown-seconds", 24, "700", ":1790 CountdownRing, 24 bold rounded"],
+        ]);
+        // PlayerView.swift:1387-1390: the overview at 0.58, three lines at most, 620 wide.
+        assert.deepEqual(await page.locator(".player-next-synopsis").evaluate(node => { const css = getComputedStyle(node); return [css.opacity, css.maxWidth, css.webkitLineClamp]; }), ["0.58", "620px", "3"]);
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        await check("a title with no episode code", [[".player-next-up .player-title", 34, "700", ":1369-1372 seriesTitleSize, bold"]]);
+        await show(page, { ...playing(TRACKS), upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
+        await check("while the next item is looked up", [[".player-next-up .player-title", 42, "600", ":1327-1328 titleSize, semibold"]]);
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined });
+        await check("with nothing to follow", [
+            [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
+            [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
+        ]);
+        assert.equal(await page.locator(".player-next-up .player-error-text").evaluate(node => getComputedStyle(node).opacity), "0.62", "the finished message at 0.62");
+    } finally { await page.close(); }
+});
+
 test("Up Next names the series and the episode code, shows the synopsis and counts down in a ring beside Play Now", async () => {
     const { page } = await open();
     try {
