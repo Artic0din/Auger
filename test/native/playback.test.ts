@@ -66,24 +66,55 @@ test("HUD chapters read the effective watch file, expose failures and retry with
     r.controller.destroy();
 });
 
-test("live autoplay reflects the effective device override after a profile write", async () => {
+// Apple writes Auto-play next for this TV only, from the player's Video pane and from Up Next alike: setAutoPlayNextEpisode →
+// enqueueDeviceValue (silo-apple 449ba47 PlayerSettings.swift:1107-1110; tvOS/TVPlayerInfoHUD.swift:880-881) (#759).
+test("the Auto-play toggle saves this TV's value, so the change always takes effect here (#759)", async () => {
     const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r);
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile_device", definition_revision: 24 }] } });
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
+    const writes = r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
+    assert.deepEqual(writes.map(request => request.path), ["/settings/values/playback.auto_play_next?scope=profile_device"]);
+    assert.deepEqual(writes[0]?.body, { value: false });
     const view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.equal(view.hud?.autoNext, true);
-    assert.match(view.hud?.message ?? "", /device|TV|override/i);
+    assert.equal(view.hud?.autoNext, false, "this TV's value wins over the profile's");
+    assert.equal(view.hud?.message, "", "no override message");
+    r.controller.destroy();
+});
+
+// PlayerViewModel.setNextUpAutoPlayEnabled (silo-apple 449ba47 PlayerViewModel.swift:4230-4239): Off cancels the countdown, On starts it again.
+test("turning Auto-play off on the finished card stops its countdown, and on starts it again (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    assert.equal(completion(r).autoNext, true);
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, false);
+    assert.equal(completion(r).countdown, undefined, "Off cancels the countdown");
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "and nothing plays on its own");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, 10, "On starts Apple's 10 seconds again");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "and the next episode plays");
     r.controller.destroy();
 });
 
 test("live autoplay saves once while pending and retains the old value on refusal", async () => {
     const r = await autoplayRig(false);
     await playMovie(r);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile", problem(403, "forbidden", "Unavailable"));
-    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile");
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
     r.controller.toggleAutoNext();
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
@@ -105,7 +136,7 @@ test("EOF waits for a pending Auto-play save before starting a countdown", async
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r, EPISODE);
-    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile");
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
     r.settings.profile().set("playback.auto_play_next", true);

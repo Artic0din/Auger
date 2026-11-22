@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "في انتظار الموافقة",
  "tvSignIn.title": "تسجيل الدخول إلى {server}",
  "upNext.almostFinished": "أوشك على الانتهاء",
+ "upNext.autoPlayOff": "التشغيل التلقائي معطّل",
+ "upNext.autoPlayOn": "التشغيل التلقائي مفعّل",
  "upNext.close": "إغلاق",
  "upNext.endOfPlayback": "انتهى التشغيل",
  "upNext.finding": "جارٍ البحث عن الحلقة التالية",

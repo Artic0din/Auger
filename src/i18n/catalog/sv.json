@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "Väntar på godkännande",
  "tvSignIn.title": "Logga in på {server}",
  "upNext.almostFinished": "Snart slut",
+ "upNext.autoPlayOff": "Autouppspelning: Av",
+ "upNext.autoPlayOn": "Autouppspelning: På",
  "upNext.close": "Stäng",
  "upNext.endOfPlayback": "Uppspelningen är slut",
  "upNext.finding": "Letar efter nästa avsnitt",

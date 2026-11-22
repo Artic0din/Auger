@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "承認待ち",
  "tvSignIn.title": "{server}にサインイン",
  "upNext.almostFinished": "まもなく終了",
+ "upNext.autoPlayOff": "自動再生：オフ",
+ "upNext.autoPlayOn": "自動再生：オン",
  "upNext.close": "閉じる",
  "upNext.endOfPlayback": "再生終了",
  "upNext.finding": "次のエピソードを検索中",

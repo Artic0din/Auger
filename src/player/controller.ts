@@ -289,7 +289,7 @@ export type PlaybackView =
      * `status` is the card's status line (Apple's statusLabel) as a catalog key, so a language change redraws it; `shuffle` words the card
      * for a Shuffle, as Apple's does; `failure: "session"` marks a failed state that came from ending the session, before any lookup.
      */
-    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session" }
+    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session"; readonly autoNext?: boolean }
     | ({ readonly phase: "loading"; readonly title: string; readonly detail?: "reconnecting" | "restoring"; /** A different file of a Shuffle pick follows: the screen forgets the last file's skip decisions. */ readonly nextPart?: true } & BufferingOverlay)
     | ({
           readonly phase: "playing" | "paused";
@@ -664,7 +664,8 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.active();
         if (attempt !== undefined) this.syncBuffering(attempt);
     };
-    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean } | undefined;
+    /** `autoplays`: the card's pick is one Apple counts down to (the next episode or a Shuffle pick), not an On Deck title. */
+    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
 
@@ -829,7 +830,9 @@ export class PlaybackController implements PlayerControls {
     }
 
     toggleAutoNext(): void {
-        const attempt = this.active();
+        // The finished card's toggle (PlayerView.autoPlayToggle) acts on the ended attempt.
+        const completion = this.completion;
+        const attempt = this.active() ?? (completion !== undefined && completion.attempt === this.attempt && completion.attempt.ended ? completion.attempt : undefined);
         if (attempt === undefined || !attempt.autoNextSupported || attempt.hud.autoBusy) return;
         attempt.hud.autoBusy = true;
         attempt.hud.message = "Saving Auto-play next";
@@ -837,12 +840,14 @@ export class PlaybackController implements PlayerControls {
         const enabled = !attempt.autoNext;
         const epoch = attempt.settingsEpoch;
         const deciding = (): boolean => attempt.live || this.completion?.attempt === attempt;
-        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled), profileScoped: true, signal: attempt.signal }).then(async () => {
+        // Apple writes this TV's value from every Auto-play control (PlayerSettings.setAutoPlayNextEpisode → enqueueDeviceValue).
+        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled, "profile_device"), profileScoped: true, signal: attempt.signal }).then(async () => {
             const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
             if (attempt.signal.aborted || epoch !== attempt.settingsEpoch || !deciding()) return;
             attempt.settingsEpoch = epoch + 1;
             attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-            if (attempt.live) attempt.hud.message = attempt.autoNext === enabled ? "" : "This TV's override keeps Auto-play next unchanged.";
+            if (attempt.live) attempt.hud.message = "";
+            else this.completionAutoNextChanged(attempt);
         }).catch(() => {
             if (!attempt.signal.aborted && attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
         }).finally(() => {
@@ -2883,7 +2888,7 @@ export class PlaybackController implements PlayerControls {
         attempt.endedDuringChange = false;
         this.leave(attempt, "abandon");
         this.nextStart = undefined;
-        this.completion = { attempt, abort: new AbortController(), pending: false };
+        this.completion = { attempt, abort: new AbortController(), pending: false, autoplays: false };
         this.retryCompletion();
     }
 
@@ -3134,6 +3139,24 @@ export class PlaybackController implements PlayerControls {
         } else this.back();
     }
 
+    /** PlayerViewModel.setNextUpAutoPlayEnabled: Off cancels the finished card's countdown, On starts it again for a pick that counts down. */
+    private completionAutoNextChanged(attempt: Attempt): void {
+        const completion = this.completion;
+        const view = this.current;
+        if (completion?.attempt !== attempt || view.phase !== "completion") return;
+        if (!attempt.autoNext) {
+            this.cancelAutoplayTimer?.();
+            this.cancelAutoplayTimer = undefined;
+            this.show({ ...view, autoNext: false, countdown: undefined });
+            return;
+        }
+        this.show({ ...view, autoNext: true });
+        if (completion.autoplays && view.state === "ready" && view.next !== undefined && this.cancelAutoplayTimer === undefined) {
+            attempt.promptDismissed = false;
+            this.startAutoplay(completion);
+        }
+    }
+
     private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
         const tick = (): void => {
@@ -3156,9 +3179,10 @@ export class PlaybackController implements PlayerControls {
         const working: MessageKey = shuffle ? "upNext.headingShuffle" : "upNext.headingEnded";
         // A failure while the session ends (the final progress or STOP) is not a failed lookup: nothing was looked up yet.
         let stage: "session" | "lookup" = "session";
+        const autoNext = (): { autoNext?: boolean } => attempt.autoNextSupported ? { autoNext: attempt.autoNext } : {};
         const refused = (error: unknown): boolean => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed");
         const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
-            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}) });
+            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}), ...autoNext() });
         };
         // Apple's playShufflePart loads the next part with a plain loading state, not the end screen.
         if (attempt.request.shuffleId === undefined) show("finalizing");
@@ -3237,6 +3261,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request.shuffleId, attempt.request.contentId, quality);
+                completion.autoplays = next !== undefined;
                 show("ready", next, false, next === undefined ? "upNext.headingFinished" : "upNext.headingShuffle");
                 if (current() && next !== undefined && attempt.autoNext) this.startAutoplay(completion);
                 return;
@@ -3248,6 +3273,7 @@ export class PlaybackController implements PlayerControls {
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, fileId, attempt.request.seriesTitle, quality) : undefined;
             if (next !== undefined) {
+                completion.autoplays = true;
                 show("ready", next, false, "upNext.headingEnded");
                 this.loadPresentation(next, abort.signal, enriched => {
                     if (current() && this.current.phase === "completion" && this.current.next === next) this.show({ ...this.current, next: enriched });
@@ -3271,7 +3297,7 @@ export class PlaybackController implements PlayerControls {
                 show("ready", items[0], false, "upNext.heading", items);
             }, quality);
             if (!current()) return;
-            this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false });
+            this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false, ...autoNext() });
         } catch (error) {
             // Only the session's own end can find the session missing; a 404 after that is a lookup that Retry may yet answer.
             const missingSession = error instanceof ApiError && error.status === 404 && stage === "session";

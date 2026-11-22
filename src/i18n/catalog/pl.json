@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "Oczekiwanie na zatwierdzenie",
  "tvSignIn.title": "Zaloguj się na serwerze {server}",
  "upNext.almostFinished": "Prawie koniec",
+ "upNext.autoPlayOff": "Autoodtwarzanie wyłączone",
+ "upNext.autoPlayOn": "Autoodtwarzanie włączone",
  "upNext.close": "Zamknij",
  "upNext.endOfPlayback": "Koniec odtwarzania",
  "upNext.finding": "Szukanie następnego odcinka",

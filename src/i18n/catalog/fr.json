@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "En attente d’approbation",
  "tvSignIn.title": "Connexion à {server}",
  "upNext.almostFinished": "Presque terminé",
+ "upNext.autoPlayOff": "Lecture automatique : Désactivé",
+ "upNext.autoPlayOn": "Lecture automatique : Activé",
  "upNext.close": "Fermer",
  "upNext.endOfPlayback": "Fin de la lecture",
  "upNext.finding": "Recherche de l’épisode suivant",

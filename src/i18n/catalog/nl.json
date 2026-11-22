@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "Wachten op goedkeuring",
  "tvSignIn.title": "Inloggen bij {server}",
  "upNext.almostFinished": "Bijna afgelopen",
+ "upNext.autoPlayOff": "Automatisch afspelen staat uit",
+ "upNext.autoPlayOn": "Automatisch afspelen staat aan",
  "upNext.close": "Sluiten",
  "upNext.endOfPlayback": "Einde van het afspelen",
  "upNext.finding": "Volgende aflevering zoeken",

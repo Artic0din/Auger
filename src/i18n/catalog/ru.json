@@ -1084,6 +1084,8 @@
  "tvSignIn.status.waiting": "Ожидание подтверждения",
  "tvSignIn.title": "Вход на сервер {server}",
  "upNext.almostFinished": "Почти закончилось",
+ "upNext.autoPlayOff": "Автовоспроизведение выключено",
+ "upNext.autoPlayOn": "Автовоспроизведение включено",
  "upNext.close": "Закрыть",
  "upNext.endOfPlayback": "Воспроизведение завершено",
  "upNext.finding": "Поиск следующей серии",

@@ -440,9 +440,12 @@ for (const language of [undefined, "ar"]) {
             assert.equal(await focusedId(page), "play-next", "Up from Close goes to the first row, not back along the second");
             await remote(page, DOWN);
             await remote(page, DOWN);
-            assert.equal(await focusedId(page), "deck:next", "Down from the second row goes to On Deck");
+            // PlayerView.focusBelowActions and focusAboveOnDeck (silo-apple 449ba47 PlayerView.swift:1640-1652): the Auto-play toggle sits between (#759).
+            assert.equal(await focusedId(page), "auto-play", "Down from the second row goes to the Auto-play toggle");
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "deck:next", "then On Deck");
             await remote(page, UP);
-            assert.equal(await focusedId(page), "keep-watching", "and Up comes back");
+            assert.equal(await focusedId(page), "auto-play", "and Up comes back to the toggle");
         } finally { await page.close(); }
     });
 

@@ -5,7 +5,8 @@ This work originally stacked on `origin/feat/markers-skip-intro` at `f64c773cea2
 
 The pinned server settings manifest at `cc8514943289045e7b9f7ac8d36d4968bfe93926` defines `playback.auto_play_next` as a remote boolean, introduced in revision 1, default true.
 Its resolution order is `profile_device`, `profile`, `default`.
-The player discovers the definition and reads its effective value through the existing profile-scoped adapter; it never writes the setting.
+The player discovers the definition and reads its effective value through the existing profile-scoped adapter.
+Its Auto-play toggles, in the player's Video pane and on the Up Next card, write this TV's value (`profile_device`), as Apple's do.
 Absent, incompatible, unreadable or false preferences leave continuation manual.
 
 The pre-end panel uses `playback.next_up_prompt_seconds`, with Apple's default of 30 seconds.
