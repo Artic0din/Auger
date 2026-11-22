@@ -973,7 +973,8 @@
 /* The menu header's 44 pt avatar sits on white 16% with a white initial (TVTopMenuBar.swift:1226-1233). */
 .skyline-profile-header .navigation-avatar { background: rgba(255,255,255,.16); color: #fff; }
 .skyline-profile-labels { min-width: 0; }
-.skyline-profile-title { font-size: 24px; font-weight: 600; line-height: 29px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 24 pt semibold (TVTopMenuBar.swift:1438 at silo-apple f70e16a). */
+.skyline-profile-title { font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 29px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* SF Mono 14 tracked 1.4, 2 pt under the name (TVTopMenuBar.swift:1235-1245 at silo-apple 5780c84). Roboto Mono advances 0.6em to SF Mono's 0.618em, so the line adds the 0.25 px difference. */
 .skyline-profile-server { margin-top: 2px; font-family: var(--silo-mono); font-size: 14px; line-height: 17px; letter-spacing: 1.65px; color: rgba(255,255,255,.38); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skyline-menu-divider { height: 1px; background: rgba(255,255,255,.12); margin: 10px 12px; }
