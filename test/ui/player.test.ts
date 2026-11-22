@@ -1077,6 +1077,64 @@ test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on 
     } finally { await page.close(); }
 });
 
+// PlayerView.autoPlayFooter and autoPlayToggle (silo-apple 449ba47 PlayerView.swift:1263-1270, 1293-1300, 1544-1556, 1640-1652,
+// 1755-1772): below the actions, "Auto-play is On/Off" at 19 pt semibold, white 0.54 (0.92 focused, with a 1.5 pt capsule at 0.55 and
+// a 1.04 scale). Down from the actions reaches it, Up returns to the preferred action, and Up from On Deck comes back to it (#759).
+test("Up Next's Auto-play toggle sits below the actions, names the setting and flips it from the remote (#759)", async () => {
+    const { page } = await open();
+    try {
+        const hud = { chapters: [], chapterState: "failed" as const, stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit" as const, busy: false };
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13 };
+        const card = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0 };
+        const prompt = (autoNext: boolean): PlaybackView => ({ ...playing(TRACKS), hud: { ...hud, autoNext }, upNext: { next, deck: [card], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        await show(page, prompt(true));
+        const toggle = page.locator('[data-focus="auto-play"]');
+        assert.equal(await toggle.innerText(), "Auto-play is On");
+        const tops = await page.evaluate(() => ['[data-focus="keep-watching"]', '[data-focus="auto-play"]', '[data-focus="deck:movie:other"]'].map(selector => document.querySelector(selector)!.getBoundingClientRect().top));
+        assert.ok(tops[0]! < tops[1]! && tops[1]! < tops[2]!, `below the actions and above On Deck: ${tops.join(", ")}`);
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const style = (): Promise<{ size: string; weight: string; color: string; ring: string; scale: string; padding: string }> => toggle.evaluate(async node => {
+            // Read after the focus transition settles.
+            await Promise.all(node.getAnimations().map(animation => animation.finished));
+            const css = getComputedStyle(node);
+            return { size: css.fontSize, weight: css.fontWeight, color: css.color, ring: css.boxShadow, scale: css.scale, padding: css.padding };
+        });
+        const resting = await style();
+        assert.ok(Math.abs(parseFloat(resting.size) - 19 * cap) < 0.01, `19 pt times the cap scale: ${resting.size}`);
+        assert.deepEqual([resting.weight, resting.color, resting.padding, resting.scale], ["600", "rgba(255, 255, 255, 0.54)", "10px 22px", "none"]);
+        assert.equal(await focused(page), "play-next");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "keep-watching");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play", "Down from the actions");
+        const lit = await style();
+        assert.equal(lit.color, "rgba(255, 255, 255, 0.92)");
+        assert.ok(lit.ring.includes("rgba(255, 255, 255, 0.55)") && lit.ring.includes("1.5px"), `the capsule ring: ${lit.ring}`);
+        assert.equal(lit.scale, "1.04");
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next", "Up returns to the preferred action, not the row above");
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:movie:other");
+        await remote(page, UP);
+        assert.equal(await focused(page), "auto-play", "Up from On Deck");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["toggleAutoNext"]);
+        await show(page, prompt(false));
+        assert.equal(await toggle.innerText(), "Auto-play is Off");
+        assert.equal(await focused(page), "auto-play", "focus stays on the toggle");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 9 });
+        assert.equal(await toggle.innerText(), "Auto-play is On", "the finished card has it too");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 9 });
+        assert.equal(await toggle.isHidden(), true, "not without the setting");
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, autoNext: true });
+        assert.equal(await toggle.isHidden(), true, "nor without a next item");
+        await show(page, { ...playing(TRACKS), hud: { ...hud, autoNext: true }, upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
+        assert.equal(await toggle.isHidden(), true, "nor while the next item is looked up");
+    } finally { await page.close(); }
+});
+
 test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
     const { page } = await open();
     const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };

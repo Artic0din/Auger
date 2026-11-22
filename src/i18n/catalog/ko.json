@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "승인 대기 중",
  "tvSignIn.title": "{server} 서버에 로그인",
  "upNext.almostFinished": "거의 다 봤어요",
+ "upNext.autoPlayOff": "자동 재생 끔",
+ "upNext.autoPlayOn": "자동 재생 켬",
  "upNext.close": "닫기",
  "upNext.endOfPlayback": "재생 종료",
  "upNext.finding": "다음 에피소드를 찾는 중",

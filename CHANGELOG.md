@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Up Next now has an Auto-play toggle below its buttons, as on Apple TV. On the finished card, turning it off stops the countdown and turning it on starts it again (#759).
 - Up Next now shows the next episode's air date and runtime under its title, as on Apple TV (#759).
 - Added a tvOS source check: a pull request that changes the TV interface must cite the silo-apple tvOS source it ports, file and line range, under a "tvOS source" heading.
 - Added a screen test that follows one remote journey through Browse paging, a failed Details load and its retry, playback and the return from it, and Back to the same second-page card (#27).
@@ -82,6 +83,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Auto-play next now saves for this TV only, from the player and from Up Next, as on Apple TV, so the change always takes effect here (#759).
 - The README and release docs now describe installing by sideloading or through Apps2Samsung. The Samsung TV store path is dropped: the app will not be submitted to it (#732).
 - The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
 - Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.

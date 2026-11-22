@@ -37,7 +37,8 @@ Existing scrub previews remain owned by `SeekThumbnails`; chapter rows do not fe
 The Apple intersection is 1× and 2×; fractional rates are omitted.
 Speed is exposed for `http_progressive` plans with `setSpeed`, and omitted for HLS or unspecified protocols without a verified rate contract.
 Video speed and aspect apply to this playback attempt and are reapplied when its transport reopens or restores.
-Auto-play next uses the existing profile preference and changes only after a successful save.
+Auto-play next saves this TV's value (`profile_device`), as Apple's `setAutoPlayNextEpisode` does (`PlayerSettings.swift:1107-1110`), and changes only after a successful save.
+Up Next has the same toggle below its actions (`PlayerView.autoPlayToggle`); on the finished card, Off cancels the countdown and On starts it again.
 
 Fit maps to `PLAYER_DISPLAY_MODE_LETTER_BOX`; Stretch maps to `PLAYER_DISPLAY_MODE_FULL_SCREEN`.
 Fill is omitted: Samsung describes `PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO` as following video DAR/PAR, which does not establish Apple's crop-to-fill behaviour.
@@ -81,7 +82,7 @@ No simulator, TV, signed package or installed-build acceptance is claimed by des
    Repeat with no chapters and after changing edition, then capture chapter-read failure and Retry using a controlled test service.
 4. **Playback required:** record HTTP 1×/2×, Fit/Stretch, remote focus across updates, unsupported-method/error states, and settings restoration after reconnect and visibility restore.
    Check HLS hides unverified speed controls and compare the documented Fill omission explicitly.
-5. **Episode playback required:** toggle Auto-play next both ways, verify the saved profile value, and check pre-end/EOF continuation with each value.
+5. **Episode playback required:** toggle Auto-play next both ways from the HUD and from Up Next, verify this TV's saved value, and check pre-end/EOF continuation with each value.
    Capture save failure without changing the displayed value, plus the pending-write focus state.
 
 Before publishing captures, remove private media details, addresses, credentials and device identifiers.

@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "Очікування підтвердження",
  "tvSignIn.title": "Вхід на сервер {server}",
  "upNext.almostFinished": "Майже завершено",
+ "upNext.autoPlayOff": "Автовідтворення вимкнено",
+ "upNext.autoPlayOn": "Автовідтворення увімкнено",
  "upNext.close": "Закрити",
  "upNext.endOfPlayback": "Кінець відтворення",
  "upNext.finding": "Пошук наступного епізоду",

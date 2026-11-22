@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "Čeká se na schválení",
  "tvSignIn.title": "Přihlášení k serveru {server}",
  "upNext.almostFinished": "Téměř u konce",
+ "upNext.autoPlayOff": "Automatické přehrávání je vypnuto",
+ "upNext.autoPlayOn": "Automatické přehrávání je zapnuto",
  "upNext.close": "Zavřít",
  "upNext.endOfPlayback": "Konec přehrávání",
  "upNext.finding": "Hledá se další díl",

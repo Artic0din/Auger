@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "Onay bekleniyor",
  "tvSignIn.title": "{server} sunucusunda oturum açın",
  "upNext.almostFinished": "Neredeyse bitti",
+ "upNext.autoPlayOff": "Otomatik oynatma kapalı",
+ "upNext.autoPlayOn": "Otomatik oynatma açık",
  "upNext.close": "Kapat",
  "upNext.endOfPlayback": "Oynatma sona erdi",
  "upNext.finding": "Sonraki bölüm aranıyor",

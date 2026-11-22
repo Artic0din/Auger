@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "Odotetaan hyväksyntää",
  "tvSignIn.title": "Kirjaudu palvelimelle {server}",
  "upNext.almostFinished": "Melkein lopussa",
+ "upNext.autoPlayOff": "Automaattinen toisto: Pois",
+ "upNext.autoPlayOn": "Automaattinen toisto: Päällä",
  "upNext.close": "Sulje",
  "upNext.endOfPlayback": "Toisto päättyi",
  "upNext.finding": "Etsitään seuraavaa jaksoa",

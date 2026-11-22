@@ -1156,6 +1156,8 @@
  "tvSignIn.status.waiting": "Aguardando aprovação",
  "tvSignIn.title": "Entrar em {server}",
  "upNext.almostFinished": "Quase no fim",
+ "upNext.autoPlayOff": "Reprodução automática: Desativado",
+ "upNext.autoPlayOn": "Reprodução automática: Ativado",
  "upNext.close": "Fechar",
  "upNext.endOfPlayback": "Fim da reprodução",
  "upNext.finding": "Procurando o próximo episódio",

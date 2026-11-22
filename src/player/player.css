@@ -44,6 +44,26 @@
 .player-next-up .player-actions-row > .player-countdown { margin: 0; }
 .player-next-up .player-actions-row > .player-button { display: inline-flex; align-items: center; }
 .player-next-up .player-actions-row > [hidden] { display: none; }
+/* AutoPlayToggleButtonStyle (PlayerView.swift:1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
+   and a 1.04 scale when focused, 0.98 when pressed. */
+.player-autoplay-toggle {
+    align-self: flex-start;
+    margin: 18px 0 0;
+    padding: 10px 22px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, .54);
+    font: inherit;
+    font-size: calc(19px * var(--silo-sf-cap-scale));
+    font-weight: 600;
+    outline: none;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0);
+    transition: color 180ms ease-in-out, box-shadow 180ms ease-in-out, scale var(--silo-fast) ease-out;
+}
+.player-autoplay-toggle:focus { color: rgba(255, 255, 255, .92); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); scale: 1.04; }
+.player-autoplay-toggle[data-pressed] { scale: .98; }
+.player-autoplay-toggle[hidden] { display: none; }
 /* The Label's symbol before its words: 26 px with 16 between, as Apple's 24-32 pt symbols at 16-18 spacing. */
 .player-button-symbol { display: inline-flex; flex: none; width: 26px; height: 26px; margin-inline-end: 16px; }
 .player-button-symbol svg { width: 100%; height: 100%; }
