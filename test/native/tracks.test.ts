@@ -12,6 +12,7 @@ import { orderedInventory, PlaybackController, type PlaybackView, type PlayReque
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
 import { FakeTrickplay } from "./support/fakeTrickplay.ts";
+import { SeekThumbnails } from "../../src/player/seekThumbnails.ts";
 import { operations } from "../../src/api/operations.ts";
 import { readFileSync } from "node:fs";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
@@ -2046,6 +2047,26 @@ test("a preview built while a switch is held is replaced when the answer moves t
         const after: string[] = [];
         assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { after.push(sheet.url); }));
         assert.match(after[0] ?? "", /\/trickplay\/43\//, "the next preview is file 43's");
+    } finally { r.controller.destroy(); }
+});
+
+// #794 review: adopt() already drops the provider, so this leaves one for the old file in place on purpose, to test seekThumbnail's own
+// file key (Apple's contentId#fileId cache) apart from every adoption path.
+test("a preview provider left over from another file is rebuilt for the file now playing (#757)", async () => {
+    const { r } = await trickplaySwitchRig();
+    try {
+        r.server.next.push({ effectiveFileId: "43", delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        const internals = r.controller as unknown as { attempt?: { thumbnails?: SeekThumbnails } };
+        assert.ok(internals.attempt !== undefined, "an attempt is playing");
+        internals.attempt.thumbnails = new SeekThumbnails(r.h.core.session, r.h.clock, MOVIE.contentId, "42");
+        const loaded: string[] = [];
+        assert.ok(await r.controller.seekThumbnail(1235, new AbortController().signal, async sheet => { loaded.push(sheet.url); }));
+        assert.match(loaded[0] ?? "", /\/trickplay\/43\//, "file 43's sheet, not the stale provider's file 42");
     } finally { r.controller.destroy(); }
 });
 
