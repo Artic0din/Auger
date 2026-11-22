@@ -639,6 +639,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** A playing or paused view means AVPlay can show a frame. Later loads must not cover it. */
     let pictureShown = false;
     let cancelHide: (() => void) | undefined;
+    /** Back took the controls down over a buffering stall, which otherwise keeps them up (dismissControls); a key or the stall's end clears it. */
+    let dismissed = false;
     let menuOpen = false;
     /** Where a fresh Select press was made, waiting for its release; another key or a focus change ends it, and so does its control becoming disabled. */
     let selectHeld: { readonly element: Element | null; readonly key: string | null; readonly context: string } | undefined;
@@ -975,6 +977,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (skipKind === "intro" || skipKind === "undo") skipPrompt.resolve();
     };
 
+    const controlsHidden = (): boolean => view.phase === "playing" && (!view.buffering || dismissed) && cancelHide === undefined && !menuOpen && seekPreview === undefined;
+
     const render = (): void => {
         draw();
         // A redraw that disables the held control ends the press, even if a later redraw enables it again.
@@ -1199,7 +1203,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
         }
-        const hidden = view.phase === "playing" && !view.buffering && cancelHide === undefined && !menuOpen && seekPreview === undefined;
+        const hidden = controlsHidden();
         overlay.className = ["player-overlay", hidden ? "player-overlay-hidden" : "", conceal ? "player-overlay-clear" : ""].filter(Boolean).join(" ");
         skip.className = ["player-button", "player-skip", skipKind === "recap" || skipKind === "credits" ? "player-skip-segment" : "player-skip-intro", hidden ? "player-skip-lit" : "", menuOpen ? "player-skip-hud" : ""].filter(Boolean).join(" ");
         // The controls hiding takes the pill out of the focus graph, as on tvOS: Select then acts on the button that held focus.
@@ -1629,6 +1633,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     });
 
     const reveal = (): void => {
+        dismissed = false;
         cancelHide?.();
         cancelHide = clock.schedule(() => {
             cancelHide = undefined;
@@ -1661,6 +1666,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         // Any other key, remote or not, ends a held Select.
         if (key !== "enter") selectHeld = undefined;
         if (key === undefined || view.phase === "closed") {
+            return;
+        }
+        // onExitCommand runs once per Menu press: a held Back's repeats are not presses, so one that hid the controls cannot also leave.
+        if (key === "back" && event.repeat) {
+            event.preventDefault();
             return;
         }
         // The transport, the scrubber and a held seek read `key`, the remote's own Left and Right; Up Next, the buffering card and the panel read `layout`, which follows the screen's mirrored layout.
@@ -1780,6 +1790,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (key === "down") { openMenu("video"); return; }
             if (key === "left" || key === "right") bar.focus();
         }
+        // While playing, Back with the controls up only takes them down (PlayerView.onExitCommand, then dismissControls).
+        if (key === "back" && view.phase === "playing" && !controlsHidden() && !timeline && seekPreview === undefined && autoRate === 0) {
+            // dismissControls cancels a hold seek: a skip or hold armed by a Left or Right still down must not fire behind hidden controls.
+            cancelHold?.();
+            cancelHold = undefined;
+            pendingTap = undefined;
+            cancelHide?.();
+            cancelHide = undefined;
+            dismissed = true;
+            render();
+            return;
+        }
         reveal();
         if ((key === "left" || key === "right") && scrubberOwnsArrows()) {
             if (!event.repeat) armHold(key);
@@ -1801,11 +1823,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (transport.contains(document.activeElement)) bar.focus();
             else if (skipUsable()) skip.focus();
             else if (pillButtons.length > 0) pillButtons[0]?.focus();
-            render();
-            return;
-        }
-        if (key === "back" && at >= 0) {
-            bar.focus();
             render();
             return;
         }
@@ -1915,6 +1932,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             cancelScrub();
         }
         view = next;
+        if (next.phase !== "playing" || !next.buffering) dismissed = false;
         if (next.phase !== "playing" && next.phase !== "paused") readyPreviewKey = undefined;
         else if (next.previewKey !== undefined) readyPreviewKey = next.previewKey;
         if (document.hidden && next.phase !== "closed" && next.phase !== "error") {

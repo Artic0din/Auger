@@ -17,7 +17,7 @@ import { profileMenuAvatar } from "./navigationAvatar.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { navigationIcon } from "./navigationIcon.ts";
 import { decodeAppearance, DEFAULT_APPEARANCE } from "../contracts/v2/subtitles.ts";
-import { applySubtitleAppearance } from "../player/subtitleView.ts";
+import { applySubtitleAppearance, subtitleFontSize } from "../player/subtitleView.ts";
 import { pairedProfileDescription, pairedProfileLabel, profileSelectionCaption } from "./pairedProfile.ts";
 import { bitrateLabel, bufferingQualityModes, bufferingQualityTitle, qualityFooter } from "./qualitySettings.ts";
 import { ConnectionSpeed, learnedLimitText } from "./connectionSpeed.ts";
@@ -37,8 +37,6 @@ const FEATURE_TITLES = { watchParty: "settings.experimental.watchParty" } as con
 /** First sentence of SettingsViewModel.hdrFooterText (136-143), without "without Dolby Vision". The tvOS original-file sentence is omitted; see docs/settings.md. */
 // After STREAMING, as TVPlaybackSettingsView.swift:248. The Lossless and TrueHD sentences at 251-257 are not on this pane.
 const HDR_FOOTER = "With HDR off, videos the server converts for this device are sent in SDR.";
-/** tvOS preview point sizes at 1080 lines, then ×0.5. SubtitleAppearance.swift:36-41; SubtitleAppearancePreview.swift:19-21,128-129. */
-const TV_PREVIEW_POINT_SIZE = { small: 43, medium: 51, large: 58, xlarge: 74, xxlarge: 88 } as const;
 const MODE_CHOICES = [["auto", "Auto"], ["always", "Always"], ["off", "Off"]] as const;
 const LAUNCH_CHOICES = [["automatic", "settings.profileLaunch.automatic"], ["askEveryLaunch", "settings.profileLaunch.askEveryLaunch"], ["afterOneHour", "settings.profileLaunch.afterOneHour"], ["afterTwelveHours", "settings.profileLaunch.afterTwelveHours"]] as const satisfies readonly (readonly [LaunchBehavior, MessageKey])[];
 /** Apple scrolls its Acknowledgements document by remote presses while the document holds focus. */
@@ -824,7 +822,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 const appearance = decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
                 // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
                 applySubtitleAppearance(preview, text, appearance);
-                text.style.fontSize = `${TV_PREVIEW_POINT_SIZE[appearance.fontSize] * 0.5}px`;
+                text.style.fontSize = subtitleFontSize(appearance, 0.5);
                 text.style.fontWeight = "600";
                 text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
                 text.style.borderRadius = "4px";
