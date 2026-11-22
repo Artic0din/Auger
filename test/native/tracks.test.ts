@@ -2461,11 +2461,44 @@ test("a switch answer that reopens the stream ends the route failure's deadline 
         // A later switch whose first answer is lost must replay, not end on the old deadline.
         r.server.next.push({ delivery: "original_http", subtitle: 1, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
         r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        const before = replans(r.h).length;
         r.controller.selectSubtitle("file:42:subtitle:1");
         await settle(r);
+        assert.equal(replans(r.h).length, before + 1, "the later switch sends its replan");
         const view = last(r.views);
         assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, before + 2, "the lost answer's request is sent again after the 1 s backoff");
+        assert.equal(replans(r.h)[before + 1]?.replan_request_id, replans(r.h)[before]?.replan_request_id, "the same request, for the server to replay");
         assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a stream adopted after a used wake resets it, so the next route failure skips the backoff again (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // First failure: one 503 while the switch is out, so the wake is spent on the replay that brings a moved stream.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.h.fake.script(`/playback/${id}/replan`, problem(503, "service_unavailable", "Unavailable"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing", "the moved stream is adopted");
+        // Second failure on the new stream: its first replay must again skip the backoff.
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable")));
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        const sent = replans(r.h).length;
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, sent + 1, "the new failure's first replay goes at once");
     } finally { r.controller.destroy(); }
 });
 
