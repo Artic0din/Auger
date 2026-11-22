@@ -895,6 +895,11 @@ export class PlaybackController implements PlayerControls {
         });
     }
 
+    /** A settings read may apply Auto-play only if no press came after it started and no write is out: the write's own outcome decides. */
+    private readsAutoNext(attempt: Attempt, epoch: number): boolean {
+        return epoch === attempt.settingsEpoch && attempt.autoNextSave === undefined;
+    }
+
     togglePause(): void {
         const attempt = this.active();
         if (attempt !== undefined) this.setPaused(!(attempt.pauseAfterSeek ?? attempt.paused));
@@ -1475,7 +1480,7 @@ export class PlaybackController implements PlayerControls {
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await call(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                    if (attempt.live && epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                    if (attempt.live && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
                 } catch { /* Unavailable autoplay preferences leave Play next manual. */ }
             }
             if (definitions.some(def => def.key === HDR_KEY)) {
@@ -3283,8 +3288,8 @@ export class PlaybackController implements PlayerControls {
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: abort.signal });
-                    if (epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { if (current() && epoch === attempt.settingsEpoch) attempt.autoNext = false; }
+                    if (this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                } catch { if (current() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
                 if (!current()) return;
             }
             show("resolving");
@@ -4238,8 +4243,8 @@ export class PlaybackController implements PlayerControls {
                     const epoch = attempt.settingsEpoch;
                     try {
                         const values = await read(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                        if (live() && epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                    } catch { if (live() && epoch === attempt.settingsEpoch) attempt.autoNext = false; }
+                        if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                    } catch { if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
                 }
                 if (attempt.request.episode === true) {
                     const fileId = attempt.plan?.effectiveMediaFileId;

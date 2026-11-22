@@ -2100,6 +2100,72 @@ test("a settings read started while Off was saving cannot turn Auto-play back on
     r.controller.destroy();
 });
 
+// #806 round 3: a read that starts after the press and answers before the write cannot apply the value from before the press.
+test("a settings read that answers while Off is still saving cannot turn Auto-play back on (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
+    await playMovieWith(r, EPISODE, () => r.h.fake.script(watch, problem(500, "internal_error", "Unavailable")));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    const stale = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
+    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile", definition_revision: 24 }] } });
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    stale.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const during = last(r.views);
+    assert.ok(during.phase === "playing");
+    assert.equal(during.hud?.autoNext, false, "the read that answered before the save does not bring On back");
+    assert.equal(during.upNext?.countdown, undefined, "nor the countdown");
+    put.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const saved = last(r.views);
+    assert.ok(saved.phase === "playing");
+    assert.equal(saved.hud?.autoNext, false, "and the save confirms Off");
+    r.controller.destroy();
+});
+
+// #806 round 3: after a refused write restores On, a read that started during the write and then fails cannot set it Off.
+test("a read that started during a refused Off write and then fails leaves the restored On (#806)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    const watch = "/watch/" + encodeURIComponent(EPISODE.contentId);
+    await playMovieWith(r, EPISODE, () => r.h.fake.script(watch, problem(500, "internal_error", "Unavailable")));
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
+    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    const failing = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
+    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
+    r.avplay.tick((view.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    put.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const refused = last(r.views);
+    assert.ok(refused.phase === "playing");
+    assert.equal(refused.hud?.autoNext, true, "the refused write restores On");
+    failing.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    const after = last(r.views);
+    assert.ok(after.phase === "playing");
+    assert.equal(after.hud?.autoNext, true, "and the read that failed afterwards leaves it On");
+    r.controller.destroy();
+});
+
 // #806 round 2: a write the server took stays, even when the read that confirms it fails.
 test("a failed confirmation read after a saved Off keeps Off and the countdown stopped (#806)", async () => {
     const r = await autoplayRig(true);
