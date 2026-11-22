@@ -2007,6 +2007,175 @@ test("a seek during a lost switch is kept when the replayed answer reopens a mov
     } finally { r.controller.destroy(); }
 });
 
+// #792 review: a lost switch whose replayed answer moves the stream, with the answer's timeline given.
+async function movedLostSwitch(r: Rig, id: string, timeline: Record<string, unknown>): Promise<void> {
+    r.server.next.push({ timeline, delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+    r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+    for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+    r.controller.selectSubtitle("file:42:subtitle:5");
+    await settle(r);
+    await r.h.clock.advance(1000);
+    await settle(r);
+    await r.h.clock.advance(2000);
+    await settle(r);
+    assert.equal(replans(r.h).length, 3);
+}
+const seeksTo = (r: Rig): string[] => r.avplay.calls.filter(call => call.startsWith("seekTo"));
+
+test("a moved stream starts at the playhead converted by its timeline, not offset twice (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        await movedLostSwitch(r, id, { ...STREAM_TIMELINE, source_start_seconds: 0, player_start_seconds: 12.5, timeline_offset_seconds: 0 });
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        const before = seeksTo(r).length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        r.avplay.finishPrepare();
+        await settle(r);
+        assert.deepEqual(seeksTo(r).slice(before), ["seekTo 120000"], "120 s, not 132.5 s");
+    } finally { r.controller.destroy(); }
+});
+
+test("a playhead outside the moved stream's window reanchors through the server, not a local seek (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        await movedLostSwitch(r, id, { ...STREAM_TIMELINE, can_seek_anywhere: true, seek_window_end_seconds: 60 });
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        const before = seeksTo(r).length;
+        await playReplacement(r);
+        await settle(r);
+        assert.ok(!seeksTo(r).slice(before).includes("seekTo 120000"), "no local seek past the window");
+        assert.equal(replans(r.h).filter(body => body.operation === "seek_reanchor").at(-1)?.position_seconds, 120, "the server reanchors at 120 s");
+    } finally { r.controller.destroy(); }
+});
+
+test("a reanchor queued during the switch is the position the moved stream starts at (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig({ ...STREAM_TIMELINE, can_seek_anywhere: false });
+    try {
+        await movedLostSwitch(r, id, STREAM_TIMELINE);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        assert.equal(replans(r.h).filter(body => body.operation === "seek_reanchor").length, 0, "queued behind the switch");
+        const before = seeksTo(r).length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        r.avplay.finishPrepare();
+        await settle(r);
+        assert.deepEqual(seeksTo(r).slice(before), ["seekTo 120000"], "the queued 120 s, not the old playhead");
+    } finally { r.controller.destroy(); }
+});
+
+test("a moved stream waits for a pending seek and starts at its final position (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        await movedLostSwitch(r, id, STREAM_TIMELINE);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        const opens = r.avplay.urls.length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4, "the answer arrives while the seek is out");
+        assert.equal(r.avplay.urls.length, opens, "and the reopen waits for the seek");
+        r.avplay.finishSeek();
+        await settle(r);
+        await settle(r);
+        assert.equal(r.avplay.urls.length, opens + 1);
+        const before = seeksTo(r).length;
+        r.avplay.finishPrepare();
+        await settle(r);
+        assert.deepEqual(seeksTo(r).slice(before), ["seekTo 120000"]);
+    } finally { r.controller.destroy(); }
+});
+
+test("a seek AVPlay never answers does not hold the moved stream's answer for ever (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        await movedLostSwitch(r, id, STREAM_TIMELINE);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4, "the answer arrives while the seek is out");
+        await r.h.clock.advance(14999);
+        await settle(r);
+        assert.notEqual(last(r.views).phase, "error", "the answer waits for the seek until startup's 15 s deadline");
+        // AVPlay refuses every call while a seek is out, even close, so past the deadline the answer is not left
+        // waiting: the reopen fails and playback ends on the retryable error instead of hanging.
+        await r.h.clock.advance(1);
+        await settle(r);
+        await settle(r);
+        const view = last(r.views);
+        assert.deepEqual(view.phase === "error" ? view.error : view.phase, { kind: "playback_failed" });
+    } finally { r.controller.destroy(); }
+});
+
+test("a lost switch's fallback whose unhide AVPlay refuses is retried, not marked drawn (#792)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        for (let i = 0; i < 4; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        const unhide = r.avplay.setSilentSubtitle.bind(r.avplay);
+        let refuse = true;
+        r.avplay.setSilentSubtitle = (hidden: boolean) => { if (refuse && !hidden) throw new DOMException("refused", "InvalidStateError"); unhide(hidden); };
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        refuse = false;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assertAVPlayDrawsFrench(r);
+    } finally { r.controller.destroy(); }
+});
+
+test("a rendition rollback that redraws the sidecar keeps AVPlay's text hidden across a restore (#792)", async () => {
+    const r = await rig();
+    try {
+        frenchInventory(r);
+        // English Signs is drawn from the plan's sidecar; French is an AVPlay rendition.
+        const { decisionRendition: _signsRendition, ...signs } = renditionPlan(1, "English Signs", 1);
+        r.server.next.push({ ...signs, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=signs`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=signs", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" }, { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nSigns" });
+        const id = await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        r.avplay.tracks = [{ index: 3, type: "TEXT", extra_info: JSON.stringify({ track_lang: "fra" }) }];
+        r.server.next.push({ terminal: "subtitle_unavailable" });
+        const held = r.h.fake.hold(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assert.equal(replans(r.h).length, 1, "the rendition switch is reported");
+        // AVPlay cannot reselect English Signs when the refusal arrives, so the rollback redraws it from the sidecar.
+        r.avplay.tracks = [];
+        held.release();
+        await settle(r);
+        await settle(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1", "the refusal rolls back to English Signs");
+        assert.equal(r.avplay.silentSubtitle, true, "the rollback hides AVPlay's text under the sidecar");
+        r.controller.suspend();
+        await settle(r);
+        r.controller.restore();
+        await settle(r);
+        if (r.avplay.calls.some(call => call.startsWith("restore"))) { r.avplay.finishRestore(); await settle(r); }
+        assert.equal(r.avplay.silentSubtitle, true, "the sidecar draws English Signs, so AVPlay's own text stays hidden");
+    } finally { r.controller.destroy(); }
+});
+
 // #751: a local fallback drawn while the app is suspended still shows the subtitle once the app is restored.
 test("a lost switch's AVPlay fallback reached while suspended unhides the subtitle on restore (#751)", async () => {
     const { r, id } = await embeddedSwitchRig();
