@@ -2649,6 +2649,23 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
     }
 });
 
+// Apple shows the start failure's own description (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877, APIv2Client.swift:66-70) (#760).
+test("a start failure shows the server's reason, or Apple's HTTP status line, in place of a fixed sentence", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "The file is offline." } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The file is offline.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 503 } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 503.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: false });
+        assert.equal(await text(page, ".player-error-text"), "Update Auger to keep using this server.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server didn't respond in time.");
+    } finally {
+        await page.close();
+    }
+});
+
 test("a retryable start failure focuses Retry, moves to Back, and only Retry starts again", async () => {
     const { page, logs } = await open();
     try {
