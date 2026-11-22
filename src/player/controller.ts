@@ -2724,12 +2724,7 @@ export class PlaybackController implements PlayerControls {
             this.updatePrompt(attempt);
             this.showPlayback(attempt);
             this.applyPreparedSubtitleChoices(attempt, plan);
-            // A seek queued behind a switch whose answer replaced the transport runs against the new plan (#756).
-            const reanchor = attempt.queuedReanchorSeconds;
-            if (reanchor !== undefined && !subtitleSwitchOut(attempt) && !attempt.busy) {
-                attempt.queuedReanchorSeconds = undefined;
-                this.seekAbsolute(reanchor);
-            }
+            this.runQueuedReanchor(attempt);
         };
         const startMs = Math.round(plan.timeline.playerStartSeconds * 1000);
         if (startMs <= 0) {
@@ -2745,6 +2740,14 @@ export class PlaybackController implements PlayerControls {
         } catch {
             this.routeFailed(attempt, "avplay_resume_seek_failed");
         }
+    }
+
+    /** A seek queued behind a switch whose answer replaced the transport runs once the new stream plays (#756). */
+    private runQueuedReanchor(attempt: Attempt): void {
+        const reanchor = attempt.queuedReanchorSeconds;
+        if (reanchor === undefined || subtitleSwitchOut(attempt) || attempt.busy) return;
+        attempt.queuedReanchorSeconds = undefined;
+        this.seekAbsolute(reanchor);
     }
 
     private applyPreparedSubtitleChoices(attempt: Attempt, plan: PlaybackPlan): void {
@@ -3782,6 +3785,8 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             this.restartProgress(attempt);
+            // A replacement that prepared while hidden starts here, so its queued seek runs here too.
+            this.runQueuedReanchor(attempt);
             return;
         }
         if (attempt.deferredOpen && attempt.plan !== undefined) {
