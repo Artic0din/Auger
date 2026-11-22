@@ -64,6 +64,8 @@ export async function nextEpisode(read: Read, contentId: string, effectiveFileId
             return {
                 contentId: detail.id, fileId: version.fileId, title: detail.title, startSeconds: resume ?? 0, episode: true, ...(seriesTitle === undefined ? {} : { seriesTitle }), seasonNumber: detail.seasonNumber, episodeNumber: detail.episodeNumber, ...(watch === undefined ? {} : { watch }),
                 ...(row.overview === undefined ? {} : { overview: row.overview }),
+                ...(row.airDate === undefined ? {} : { airDate: row.airDate }),
+                runtimeMinutes: row.runtimeMinutes,
                 ...(row.stillUrl === undefined ? {} : { backdropUrl: row.stillUrl }),
                 ...(row.stillIsEpisodeStill === undefined ? {} : { backdropIsEpisodeStill: row.stillIsEpisodeStill }),
             };
