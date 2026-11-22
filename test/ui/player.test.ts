@@ -4266,6 +4266,12 @@ test("the second line draws under the primary at Apple's offsets for each positi
         await show(page, view("lower-third"));
         // AetherSubtitleOverlay.swift:414-423 (silo-apple 449ba47): the lower third's primary sits 27% up, not 25%.
         assert.deepEqual(await offsets(), [["auto", "27%"], ["auto", "36%"]]);
+        // Rendered, not just styled: each caption's bottom edge sits that share of the caption viewport's height above its bottom.
+        const insets = await page.evaluate(() => {
+            const viewport = document.querySelector(".player-captions")!.parentElement!.getBoundingClientRect();
+            return [".player-captions", ".player-captions-secondary"].map(selector => (viewport.bottom - document.querySelector(selector)!.getBoundingClientRect().bottom) / viewport.height);
+        });
+        assert.ok(Math.abs((insets[0] ?? 0) - 0.27) < 0.001 && Math.abs((insets[1] ?? 0) - 0.36) < 0.001, `rendered 27% and 36% up: ${insets.join(", ")}`);
         await show(page, view("top"));
         assert.deepEqual(await offsets(), [["8%", "auto"], ["17%", "auto"]]);
         assert.equal(await text(page, ".player-captions-secondary"), "Secondary");
