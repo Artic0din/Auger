@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Begrenset til {rate} etter bufring {date}",
  "settings.learnedLimit.reset": "Tilbakestill",
  "settings.learnedLimit.resetFailed": "Kunne ikke tilbakestille grensen. Prøv igjen.",
+ "settings.metadataLanguageNote": "Oversetter beskrivelser og slagord til språket du foretrekker, når det er tilgjengelig. Titler oversettes aldri.",
  "settings.nextUp.atEnd": "På slutten",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minutt før slutt} other {# minutter før slutt}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# sekund før slutt} other {# sekunder før slutt}}",

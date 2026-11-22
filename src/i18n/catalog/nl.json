@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Beperkt tot {rate} na bufferen op {date}",
  "settings.learnedLimit.reset": "Resetten",
  "settings.learnedLimit.resetFailed": "Kan de limiet niet resetten. Probeer het opnieuw.",
+ "settings.metadataLanguageNote": "Vertaalt beschrijvingen en taglines naar je voorkeurstaal als dat kan. Titels worden nooit vertaald.",
  "settings.nextUp.atEnd": "Aan het einde",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minuut voor het einde} other {# minuten voor het einde}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# seconde voor het einde} other {# seconden voor het einde}}",

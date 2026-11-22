@@ -956,6 +956,7 @@
  "settings.learnedLimit": "{date} 緩衝後已限制為 {rate}",
  "settings.learnedLimit.reset": "重設",
  "settings.learnedLimit.resetFailed": "無法重設限制。請再試一次。",
+ "settings.metadataLanguageNote": "有可用翻譯時，將簡介和標語翻譯成你偏好的語言。標題一律不翻譯。",
  "settings.nextUp.atEnd": "結束時",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, other {結束前 # 分鐘}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, other {結束前 # 秒}}",

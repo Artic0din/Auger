@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Begrænset til {rate} efter buffering den {date}",
  "settings.learnedLimit.reset": "Nulstil",
  "settings.learnedLimit.resetFailed": "Kunne ikke nulstille grænsen. Prøv igen.",
+ "settings.metadataLanguageNote": "Oversætter beskrivelser og taglines til dit foretrukne sprog, når det er muligt. Titler oversættes aldrig.",
  "settings.nextUp.atEnd": "Ved slutningen",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minut før slut} other {# minutter før slut}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# sekund før slut} other {# sekunder før slut}}",

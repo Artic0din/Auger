@@ -956,6 +956,7 @@
  "settings.learnedLimit": "Rajoitettu nopeuteen {rate} puskuroinnin vuoksi ({date})",
  "settings.learnedLimit.reset": "Nollaa",
  "settings.learnedLimit.resetFailed": "Rajoituksen nollaaminen epäonnistui. Yritä uudelleen.",
+ "settings.metadataLanguageNote": "Kääntää kuvaukset ja iskulauseet haluamallesi kielelle, kun käännös on saatavilla. Nimiä ei koskaan käännetä.",
  "settings.nextUp.atEnd": "Lopussa",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, one {# minuutti ennen loppua} other {# minuuttia ennen loppua}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, one {# sekunti ennen loppua} other {# sekuntia ennen loppua}}",

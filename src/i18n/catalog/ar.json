@@ -956,6 +956,7 @@
  "settings.learnedLimit": "محدود بـ {rate} بعد التخزين المؤقت في {date}",
  "settings.learnedLimit.reset": "إعادة تعيين",
  "settings.learnedLimit.resetFailed": "تعذّرت إعادة تعيين الحد. حاول مرة أخرى.",
+ "settings.metadataLanguageNote": "يترجم الأوصاف والعبارات الترويجية إلى لغتك المفضلة عند توفرها. لا تُترجم العناوين أبدًا.",
  "settings.nextUp.atEnd": "عند النهاية",
  "settings.nextUp.minutesBeforeEnd": "{count, plural, zero {# دقيقة قبل النهاية} one {دقيقة واحدة قبل النهاية} two {دقيقتان قبل النهاية} few {# دقائق قبل النهاية} many {# دقيقة قبل النهاية} other {# دقيقة قبل النهاية}}",
  "settings.nextUp.secondsBeforeEnd": "{count, plural, zero {# ثانية قبل النهاية} one {ثانية واحدة قبل النهاية} two {ثانيتان قبل النهاية} few {# ثوانٍ قبل النهاية} many {# ثانية قبل النهاية} other {# ثانية قبل النهاية}}",
