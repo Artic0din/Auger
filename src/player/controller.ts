@@ -1845,6 +1845,16 @@ export class PlaybackController implements PlayerControls {
                 this.applyKeptSubtitle(attempt, decision.plan, decision.serverFeatures);
                 return;
             }
+            if (operation === "track_change" && subtitleSwitchOut(attempt)) {
+                // A subtitle switch leaves seeking free, so the playhead may have moved since it was asked (#751). A moved
+                // stream starts where the viewer is now, once any seek settles, not where the switch began.
+                for (let seek = this.pending.seek; seek !== undefined; seek = this.pending.seek) {
+                    await seek.catch(() => undefined);
+                    if (!current()) return;
+                }
+                this.adopt(attempt, reanchored(decision.plan, attempt.sourceSeconds), decision.serverFeatures);
+                return;
+            }
             this.adopt(attempt, decision.plan, decision.serverFeatures, buffering !== undefined);
         } else {
             this.qualityUnsettled(attempt, buffering);
@@ -2529,10 +2539,12 @@ export class PlaybackController implements PlayerControls {
     /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it. */
     private drawSwitchLocally(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
         const id = selected.subtitle?.id;
-        if (id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id)) {
-            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
-            attempt.subtitleOverride = { id };
-        }
+        const drawn = id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id);
+        // AVPlay can refuse, for example while a seek is out (#751): the replaced captions stay hidden, and the next lost
+        // answer tries again.
+        if (!drawn) return;
+        try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
+        attempt.subtitleOverride = { id };
         attempt.switchLocal = true;
         // A failed transport waiting for this switch's answer keeps its loading screen.
         if (attempt.switchFailedAt !== undefined) return;
@@ -2545,7 +2557,12 @@ export class PlaybackController implements PlayerControls {
     }
 
     /** While the app draws the shown subtitle's file, AVPlay's own subtitles stay hidden. */
-    private hideNativeUnderOverlay(attempt: Attempt): void {
+    /** AVPlay's own text shows when it draws the chosen track (a native override), and hides under the overlay otherwise. */
+    private restoreNativeVisibility(attempt: Attempt): void {
+        if (attempt.subtitleOverride?.id !== undefined) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* The next switch or reopen applies it again. */ }
+            return;
+        }
         if (attempt.captionKey === undefined || attempt.subtitleOverride !== undefined) return;
         try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* The next switch or reopen hides them again. */ }
     }
@@ -3741,8 +3758,9 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             if (restored) {
-                // A kept subtitle adopted while the player was suspended may not have hidden AVPlay's own text (#738).
-                this.hideNativeUnderOverlay(attempt);
+                // AVPlay refuses visibility changes while suspended, so a kept subtitle (#738) or a local fallback (#751)
+                // reached then is applied now.
+                this.restoreNativeVisibility(attempt);
                 this.restartProgress(attempt);
                 return;
             }
@@ -4551,6 +4569,15 @@ function streamRenditionAnswer(plan: PlaybackPlan, id: string | undefined): bool
  * this picture. A sidecar or Off draws here. An audio change, a burn-in, a native row with no
  * artifact, or a different native embedded selection does not.
  */
+/** A seekable direct-play plan started at `seconds` instead of where it was asked; any other plan as it is. */
+function reanchored(plan: PlaybackPlan, seconds: number): PlaybackPlan {
+    const timeline = plan.timeline;
+    const shift = seconds - timeline.sourceStartSeconds;
+    const duration = plan.durationSeconds;
+    if (shift === 0 || plan.delivery !== "original_http" || !timeline.canSeekAnywhere || seconds < 0 || (duration !== undefined && seconds > duration)) return plan;
+    return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds: timeline.playerStartSeconds + shift } };
+}
+
 function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requested?: SelectedTracks): boolean {
     if (!sameDirectStreamUrl(current.streamUrl, next.streamUrl) || current.delivery !== "original_http" || next.delivery !== "original_http") return false;
     if (current.effectiveMediaFileId !== next.effectiveMediaFileId || current.streamProtocol !== next.streamProtocol) return false;

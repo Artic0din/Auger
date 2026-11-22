@@ -1975,6 +1975,105 @@ test("a seek outside the window waits for a slow subtitle switch's answer, then 
     } finally { r.controller.destroy(); }
 });
 
+// #751: a seek made while a lost switch is drawn locally survives an answer that moves the stream.
+test("a seek during a lost switch is kept when the replayed answer reopens a moved stream (#751)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.server.next.push({ delivery: "original_http", subtitle: 5, url: session => `${r.h.fake.origin}/api/v2/stream/${session}?st=moved`, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        for (let i = 0; i < 3; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        r.controller.seekToSeconds(120);
+        await settle(r);
+        r.avplay.finishSeek();
+        await settle(r);
+        const opens = r.avplay.urls.length;
+        await r.h.clock.advance(5000);
+        await settle(r);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assert.equal(r.avplay.urls.length, opens + 1, "the answer reopens the moved stream");
+        await playReplacement(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" || view.phase === "paused", view.phase);
+        assert.ok(view.positionSeconds >= 120, `the seek survives the new stream (${view.positionSeconds})`);
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+// #751: a local fallback drawn while the app is suspended still shows the subtitle once the app is restored.
+test("a lost switch's AVPlay fallback reached while suspended unhides the subtitle on restore (#751)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        // One answered switch draws French from its file, so AVPlay's own text is hidden under the overlay.
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        r.h.fake.script("/captions?token=french", { status: 200, text: "WEBVTT\n\n00:00.000 --> 00:30.000\nBonjour" });
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await settle(r);
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:5");
+        assert.equal(r.avplay.silentSubtitle, true, "the overlay draws French, with AVPlay's text hidden");
+        // The switch back to Forced loses its answers.
+        r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=forced`, format: "vtt", timing_origin_seconds: 0 } });
+        for (let i = 0; i < 6; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:1");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        r.controller.suspend();
+        await settle(r);
+        // The third lost answer reaches the local fallback while AVPlay refuses to unhide its text.
+        const selects = r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length;
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assert.ok(r.avplay.calls.filter(call => call.startsWith("setSelectTrack TEXT")).length > selects, "the fallback selects Forced in AVPlay");
+        r.controller.restore();
+        await settle(r);
+        if (r.avplay.calls.some(call => call.startsWith("restore"))) { r.avplay.finishRestore(); await settle(r); }
+        if (r.avplay.calls.at(-1) === "prepareAsync") await playReplacement(r);
+        assert.equal(r.avplay.silentSubtitle, false, "AVPlay shows Forced once the app is back");
+        assert.equal(tracks(r).selectedSubtitleId, "file:42:subtitle:1");
+    } finally { r.controller.destroy(); }
+});
+
+// #751: a local fallback that AVPlay refuses during a seek is tried again, and the replaced captions stay hidden meanwhile.
+test("a lost switch's AVPlay fallback refused during a seek is retried on the next lost answer (#751)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.avplay.rejectTrackInfoDuringSeek = true;
+        r.server.next.push({ delivery: "original_http", subtitle: 5, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=french`, format: "vtt", timing_origin_seconds: 0 } });
+        for (let i = 0; i < 4; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        // A seek is pending across the third lost answer, so AVPlay cannot list its tracks for the fallback.
+        r.controller.seekToSeconds(20);
+        await settle(r);
+        await r.h.clock.advance(2000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 3);
+        r.avplay.finishSeek();
+        await settle(r);
+        r.avplay.tick(21000);
+        const during = last(r.views);
+        assert.ok(during.phase === "playing" || during.phase === "paused");
+        assert.notEqual(during.captions?.text, "Forced", "the replaced track's captions do not come back");
+        // The fourth lost answer tries the fallback again, now that the seek has settled.
+        await r.h.clock.advance(5000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 4);
+        assertAVPlayDrawsFrench(r);
+    } finally { r.controller.destroy(); }
+});
+
 // #738 review: a new play, suspend and restore, and a seek each leave no stray replan and no change stuck in flight.
 test("a new play ends a lost embedded subtitle switch's replays (#738)", async () => {
     const { r, id } = await lostSwitchRig();

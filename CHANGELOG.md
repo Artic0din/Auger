@@ -132,6 +132,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- When the server is slow to confirm a subtitle change, a seek no longer jumps back if the change brings a new stream, the subtitle no longer disappears after leaving and returning to the app, and the TV's player shows the new subtitle even if a seek was in progress at the time (#751).
 - Calendar's text now uses Apple TV's sizes, scaled to SF Pro's cap height like the rest of the app, across the week strip, filters, cards, the empty week and the failure page. The failure page's second button is now regular weight, as on Apple TV (#749).
 - The profile name at the top of the profile menu is now drawn at Apple TV's size, scaled to SF Pro's cap height like the rest of the app (#749).
 - Search's All, Movies and TV Shows filter pills now use Apple TV's text size, scaled to SF Pro's cap height like the rest of the app (#749).
