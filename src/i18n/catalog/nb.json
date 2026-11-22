@@ -1055,6 +1055,7 @@
  "topBar.series": "Serier",
  "tvSignIn.action.newCode": "Vis en ny kode",
  "tvSignIn.action.password": "Logg på med passord",
+ "tvSignIn.addAccountTitle": "Legg til en konto på {server}",
  "tvSignIn.appleTv.lead": "Skann koden med telefonkameraet, eller gå til {page} og skriv den inn. Godkjenn på telefonen, så logger denne Apple TV-en på av seg selv.",
  "tvSignIn.appleTv.leadNoPage": "Skann koden med telefonkameraet, eller gå til /activate-siden på serveren din og skriv den inn. Godkjenn på telefonen, så logger denne Apple TV-en på av seg selv.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Når du velger et felt, vises et tastaturvarsel på iPhone- og iPad-enheter i nærheten. Skriv der i stedet for med fjernkontrollen.",

@@ -16,7 +16,7 @@ after(async () => { await browser.close(); });
 /**
  * Rendered text under `root` whose size is not a whole Apple point times the cap scale, as "classes size".
  * Left out: text hidden from sight (`.silo-sr-only`); avatar initials, which Apple sizes from the avatar
- * (`ProfileAvatarView.swift:51`, `size * 0.34`); card badges, which Apple scales with the card's width
+ * (`ProfileAvatarView.swift:51`, `size * 0.34`); and card badges, which Apple scales with the card's width
  * (`CardOverlays.swift:279`, the preset's points times width / 185); and the Settings subtitle preview, which Apple
  * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`). None is a whole point.
  */

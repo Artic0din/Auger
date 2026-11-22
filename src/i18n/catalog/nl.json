@@ -1055,6 +1055,7 @@
  "topBar.series": "Series",
  "tvSignIn.action.newCode": "Nieuwe code tonen",
  "tvSignIn.action.password": "Inloggen met een wachtwoord",
+ "tvSignIn.addAccountTitle": "Account toevoegen op {server}",
  "tvSignIn.appleTv.lead": "Scan de code met de camera van je telefoon, of ga naar {page} en voer hem daar in. Keur het goed op je telefoon en deze Apple TV wordt vanzelf ingelogd.",
  "tvSignIn.appleTv.leadNoPage": "Scan de code met de camera van je telefoon, of ga naar de /activate-pagina van je server en voer hem daar in. Keur het goed op je telefoon en deze Apple TV wordt vanzelf ingelogd.",
  "tvSignIn.appleTv.typeOnPhoneBody": "Als je een veld selecteert, verschijnt er een toetsenbordmelding op iPhones en iPads in de buurt. Typ daar in plaats van met de afstandsbediening.",

@@ -12,13 +12,13 @@ Start with the root [README](../README.md) for build, signing and release, [FEAT
 - Requests appears in the top bar only while the server enables it for the active viewer.
 - Playback uses AVPlay: direct play first, HLS transcode as the fallback.
 - Diagnostics reports are not available yet: Silo Server does not accept a Tizen diagnostics platform ([#138](https://github.com/Silo-Server/silo-tizen/issues/138)).
-- No build is submitted to Samsung TV Seller Office until the app reaches parity with the Apple TV app.
+- The app ships by sideloading and through Apps2Samsung; it is not submitted to the Samsung TV store (#732).
 
 ## Core References
 
 - [Native API v2](native-api-v2.md) - every `/api/v2` operation the app calls, with its auth, gating and error handling
 - [TV focus](tv-focus.md) - read before changing navigation, menus, grids, dialogs or custom controls
-- [Releasing](releasing.md) - tester builds, store releases and installing a tester build
+- [Releasing](releasing.md) - builds, sideloading and installing with Apps2Samsung
 - [Upstream design notes](upstream-design-notes.md) - the silo-apple and silo-android design specs that apply to a TV client; read the matching one before porting a feature
 - `parity/upstream-snapshot.json` - the Apple TV and Android TV state FEATURES.md was last reviewed against; the weekly Parity drift workflow opens an issue when upstream changes (`scripts/parity-drift.py`)
 

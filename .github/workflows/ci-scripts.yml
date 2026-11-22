@@ -29,6 +29,8 @@ jobs:
         run: python3 scripts/test-release-version.py
       - name: Test the Evidence check
         run: python3 scripts/test-check-evidence.py
+      - name: Test the tvOS source check
+        run: python3 scripts/test-check-tvos-source.py
       - name: Test setting the package version
         run: |
           cp app/config.xml "${RUNNER_TEMP}/config.xml"
