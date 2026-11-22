@@ -994,6 +994,11 @@ test("Up Next draws its text at Apple's points times the cap scale, in every sta
         ]);
         // PlayerView.swift:1387-1390: the overview at 0.58, three lines at most, 620 wide.
         assert.deepEqual(await page.locator(".player-next-synopsis").evaluate(node => { const css = getComputedStyle(node); return [css.opacity, css.maxWidth, css.webkitLineClamp]; }), ["0.58", "620px", "3"]);
+        // A synopsis that wraps past three lines shows three.
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, overview: "A storm closes the harbor and the town waits. ".repeat(20) }, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        const clamp = await page.locator(".player-next-synopsis").evaluate(node => ({ height: node.getBoundingClientRect().height, line: parseFloat(getComputedStyle(node).lineHeight), full: node.scrollHeight }));
+        assert.ok(clamp.full > clamp.line * 3, `the text wraps past three lines (${clamp.full} px)`);
+        assert.ok(clamp.height <= clamp.line * 3 + 0.5, `but shows at most three: ${clamp.height} px for ${clamp.line} px lines`);
         await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
         await check("a title with no episode code", [[".player-next-up .player-title", 34, "700", ":1369-1372 seriesTitleSize, bold"]]);
         await show(page, { ...playing(TRACKS), upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
@@ -1003,7 +1008,26 @@ test("Up Next draws its text at Apple's points times the cap scale, in every sta
             [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
             [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
         ]);
-        assert.equal(await page.locator(".player-next-up .player-error-text").evaluate(node => getComputedStyle(node).opacity), "0.62", "the finished message at 0.62");
+        // finishedContent (:1340-1343) draws finishedMessage, which is also the failed lookup's sentence (:1613-1630), white at 0.62 and
+        // 560 wide. Over the darkest page Up Next draws (a white still at 0.18 under black at 0.78), that is above 4.5:1.
+        const message = async (): Promise<{ color: string; opacity: string; maxWidth: string; contrast: number }> => page.locator(".player-next-up .player-error-text").evaluate(node => {
+            const css = getComputedStyle(node);
+            const [r = 0, g = 0, b = 0] = css.color.match(/[\d.]+/g)!.map(Number);
+            const alpha = Number(css.opacity);
+            const backdrop = 255 * 0.18 * (1 - 0.78);
+            const mix = (channel: number): number => channel * alpha + backdrop * (1 - alpha);
+            const linear = (channel: number): number => { const c = channel / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+            const luminance = (red: number, green: number, blue: number): number => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+            const text = luminance(mix(r), mix(g), mix(b));
+            const ground = luminance(backdrop, backdrop, backdrop);
+            return { color: css.color, opacity: css.opacity, maxWidth: css.maxWidth, contrast: Math.round((text + 0.05) / (ground + 0.05) * 100) / 100 };
+        });
+        const finished = await message();
+        assert.deepEqual({ ...finished, contrast: undefined }, { color: "rgb(255, 255, 255)", opacity: "0.62", maxWidth: "560px", contrast: undefined }, "the finished message");
+        assert.ok(finished.contrast >= 4.5, `contrast ${finished.contrast}:1`);
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "failed", retryable: true, next: undefined });
+        const failed = await message();
+        assert.deepEqual([failed.color, failed.opacity], ["rgb(255, 255, 255)", "0.62"], "a failed lookup's sentence is the same text, not error red");
     } finally { await page.close(); }
 });
 

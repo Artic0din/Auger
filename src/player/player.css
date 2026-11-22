@@ -31,8 +31,8 @@
 /* :1385-1390: bodySize at 0.58, three lines at most, 620 wide. */
 .player-next-synopsis[hidden] { display: none; }
 .player-next-synopsis:not([hidden]) { display: -webkit-box; max-width: 620px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 1.4; opacity: .58; }
-/* :1340-1342: the finished message, bodySize medium at 0.62. */
-.player-next-up .player-error-text { font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .62; }
+/* :1340-1343: the finished message, bodySize medium, white at 0.62, 560 wide. The failed lookup's sentence is the same Text (:1613-1630). */
+.player-next-up .player-error-text { max-width: 560px; color: #ffffff; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .62; }
 /* actionRow (:1405-1470): Play Now at 30 semibold, Keep Watching and Close at 26 semibold. */
 .player-next-up .player-button[data-focus="play-next"] { font-size: calc(30px * var(--silo-sf-cap-scale)); }
 .player-next-up .player-button[data-focus="keep-watching"],
