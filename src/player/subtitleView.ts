@@ -47,6 +47,20 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     };
 }
 
+/** Apple's tvOS cue sizes in points on the 1080-line playfield (SubtitleAppearance.swift:38-45 at silo-apple 449ba47). */
+const SUBTITLE_POINTS = { small: 43, medium: 51, large: 58, xlarge: 74, xxlarge: 88 } as const;
+
+/**
+ * A cue's CSS font size at `scale` of the playfield (the Settings preview is 0.5, SubtitleAppearancePreview.swift:21).
+ * Apple draws the generic families in SF (AetherSubtitleOverlay.swift:571-590). Tizen's bundled Inter stands in for SF Pro, so
+ * sans-serif takes the cap scale as every Inter text does; Samsung's serif and monospace faces and a named family are not SF
+ * stand-ins, so they draw at raw points, as Apple draws a named family (#789).
+ */
+export function subtitleFontSize(style: SubtitleAppearance, scale = 1): string {
+    const points = SUBTITLE_POINTS[style.fontSize] * scale;
+    return style.fontFamily === "sans-serif" ? `calc(${points}px * var(--silo-sf-cap-scale))` : `${points}px`;
+}
+
 export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false): void {
         // AetherSubtitleOverlay.defaultPlacement: the second line's inset is 17% at the top and bottom and 36% in the lower third.
         layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
@@ -57,7 +71,7 @@ export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, s
         const generic = bundledSans || style.fontFamily === "serif" || style.fontFamily === "monospace";
         text.style.fontFamily = `${bundledSans ? "Inter" : style.fontFamily}, sans-serif`;
         text.style.fontWeight = generic ? "600" : "";
-        text.style.fontSize = `${{ small: 28, medium: 36, large: 44, xlarge: 54, xxlarge: 64 }[style.fontSize]}px`;
+        text.style.fontSize = subtitleFontSize(style);
         const rgba = (color: string, opacity: number): string => `rgba(${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)},${opacity / 100})`;
         text.style.color = rgba(style.fontColor, style.textOpacity);
         text.style.backgroundColor = style.backgroundStyle === "box" ? rgba(style.backgroundColor, style.backgroundOpacity) : "transparent";

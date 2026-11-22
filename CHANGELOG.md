@@ -132,6 +132,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Subtitles now use Apple TV's five caption sizes, so each size is about 1.3 to 1.5 times larger than before; the Settings preview follows the same sizes at half scale (#789).
 - On a video the TV can only seek within a window, a seek made while a subtitle change is waiting for the server now lands where you asked: a newer seek replaces it, skips add to it, and it survives the change bringing a new stream (#756).
 - Settings' text now uses Apple TV's sizes and weights, scaled to SF Pro's cap height like the rest of the app, across the sidebar and the General, Playback, Subtitles and Server panes (#749).
 - Calendar's text now uses Apple TV's sizes, scaled to SF Pro's cap height like the rest of the app, across the week strip, filters, cards, the empty week and the failure page. The failure page's second button is now regular weight, as on Apple TV (#749).

@@ -1165,6 +1165,25 @@ test("sans-serif captions use the bundled semibold face and leave other families
     } finally { await page.close(); }
 });
 
+// #789: Apple draws cues at its tvOS 1080-line ladder (SubtitleAppearance.swift:38-45), SF semibold for the generic families
+// (AetherSubtitleOverlay.swift:571-590). The bundled Inter stands in for SF, so sans-serif takes the cap scale; Samsung's serif and
+// monospace faces and a named family draw at raw points.
+test("caption sizes follow Apple's tvOS ladder, with the cap scale only for the bundled sans-serif (#789)", async () => {
+    const { page } = await open();
+    try {
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const ladder = { small: 43, medium: 51, large: 58, xlarge: 74, xxlarge: 88 } as const;
+        for (const family of ["sans-serif", "serif", "monospace", "Avenir Next"]) {
+            for (const [size, points] of Object.entries(ladder) as [keyof typeof ladder, number][]) {
+                await show(page, { ...playing(TRACKS), captions: { text: "Size", appearance: { ...DEFAULT_APPEARANCE, fontSize: size, fontFamily: family } } });
+                const drawn = await page.locator(".player-captions span").first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+                const expected = family === "sans-serif" ? points * cap : points;
+                assert.ok(Math.abs(drawn - expected) < 0.01, `${family} ${size}: ${drawn} px, not ${expected}`);
+            }
+        }
+    } finally { await page.close(); }
+});
+
 test("captions apply profile styles, stay safe text and clear during recovery", async () => {
     const { page } = await open();
     try {
@@ -1172,7 +1191,8 @@ test("captions apply profile styles, stay safe text and clear during recovery", 
         const layer = page.locator(".player-captions");
         assert.equal(await layer.innerText(), '<img src=x onerror="alert(1)">');
         assert.equal(await layer.locator("img").count(), 0);
-        assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).fontSize), "64px");
+        // Apple's XX-Large, 88 pt, times the cap scale for the bundled sans-serif (#789).
+        assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).fontSize), "85.228px");
         assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).color), "rgb(0, 255, 0)");
         await show(page, { phase: "loading", title: "Movie", detail: "reconnecting" });
         assert.equal(await layer.isVisible(), false);
