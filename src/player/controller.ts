@@ -106,13 +106,22 @@ export type PlaybackError =
     /** Every route the server offered failed on this TV. */
     | { readonly kind: "playback_failed" }
     /** Media or API unreachable. Reconnecting belongs to recovery (#13). */
-    | { readonly kind: "network" }
+    | { readonly kind: "network"; readonly noResponse?: true }
     /** The server no longer knows the session (expired or restarted). Recovery belongs to #13. */
     | { readonly kind: "session_expired" }
     | { readonly kind: "installation_changed" }
     | { readonly kind: "revoked" }
     | { readonly kind: "backgrounded" }
-    | { readonly kind: "server" };
+    | { readonly kind: "server"; readonly reason?: ServerReason };
+
+/**
+ * Why the server refused, kept as data so the error page words it in the shown language (APIv2Client.errorDescription):
+ * a problem's detail, else its title; a bare HTTP status; or the update prompt for client_upgrade_required.
+ */
+export type ServerReason =
+    | { readonly text: string; readonly problemId?: string; readonly fieldCode?: string }
+    | { readonly status: number }
+    | { readonly update: true };
 
 export interface PlaybackExits {
     onBack(): void;
@@ -513,6 +522,8 @@ interface Attempt {
     captionFallback: string | undefined;
     /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
     switchLocal: boolean;
+    /** A local fallback AVPlay refused, kept to try again once the player can (on restore, or the next lost answer). */
+    redrawSwitch: (() => void) | undefined;
     /** Ends an unresolved switch's wait between replays, so a route failure resolves it at once (#750). */
     wakeSwitch: (() => void) | undefined;
     /** When a route failure began waiting for an unresolved switch's answer; the wait ends at SWITCH_FAILURE_DEADLINE_MS. */
@@ -721,7 +732,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, redrawSwitch: undefined, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -916,9 +927,14 @@ export class PlaybackController implements PlayerControls {
     }
 
     async seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined> {
-        const attempt = this.changeable();
+        // Apple keeps a file's previews through a replan of that file (PlayerViewModel.swift:349-366), so a subtitle switch,
+        // which holds nothing, still previews (#757). A seek or quality change in flight is still a barrier.
+        const active = this.active();
+        const attempt = active !== undefined && active.started && !active.busy ? active : undefined;
         const fileId = attempt?.plan?.effectiveMediaFileId;
         if (attempt === undefined || fileId === undefined || !attempt.trickplayEnabled) return undefined;
+        // Keyed by file, as Apple's contentId#fileId cache: a provider for another file is never reused, whichever path adopted the plan.
+        if (attempt.thumbnails !== undefined && attempt.thumbnails.fileId !== fileId) this.clearThumbnails(attempt);
         const provider = attempt.thumbnails ?? new SeekThumbnails(this.deps.session, this.deps.clock, attempt.request.contentId, fileId);
         attempt.thumbnails = provider;
         const tile = await provider.load(seconds, signal, loadSheet);
@@ -951,12 +967,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (attempt.undoSkip === target) attempt.undoSkip = undefined;
-        const timeline = plan.timeline;
-        const local =
-            timeline.canSeekAnywhere &&
-            target >= timeline.timelineOffsetSeconds &&
-            (timeline.seekWindowStartSeconds === undefined || target >= timeline.seekWindowStartSeconds) &&
-            (timeline.seekWindowEndSeconds === undefined || target <= timeline.seekWindowEndSeconds);
+        const local = seekableAt(plan, target);
         // A reanchor closes AVPlay and would race the switch's replan: it waits for the answer, as in-window seeks need not.
         if (!local && subtitleSwitchOut(attempt)) {
             attempt.queuedReanchorSeconds = target;
@@ -1039,7 +1050,7 @@ export class PlaybackController implements PlayerControls {
         };
         try {
             this.seekTo(
-                Math.round((target - timeline.timelineOffsetSeconds) * 1000),
+                Math.round((target - plan.timeline.timelineOffsetSeconds) * 1000),
                 () => settled(true),
                 () => settled(false),
             );
@@ -1849,6 +1860,25 @@ export class PlaybackController implements PlayerControls {
                 this.applyKeptSubtitle(attempt, decision.plan, decision.serverFeatures);
                 return;
             }
+            if (operation === "track_change" && subtitleSwitchOut(attempt)) {
+                // A subtitle switch leaves seeking free, so the playhead may have moved since it was asked (#751). A moved
+                // stream starts where the viewer is now, once any seek settles, not where the switch began. A seek AVPlay
+                // never answers is waited for no longer than startup is.
+                const giveUp = this.deps.clock.now() + STARTUP_TIMEOUT_MS;
+                for (let seek = this.pending.seek; seek !== undefined; seek = this.pending.seek) {
+                    const left = giveUp - this.deps.clock.now();
+                    if (left <= 0) { this.pending.seek = undefined; break; }
+                    await Promise.race([seek.catch(() => undefined), sleep(this.deps.clock, left, attempt.signal, abortedError).catch(() => undefined)]);
+                    if (!current()) return;
+                }
+                // A reanchor queued behind the switch is the newest target; otherwise the playhead.
+                const target = attempt.queuedReanchorSeconds ?? attempt.sourceSeconds;
+                const start = startAt(decision.plan, target);
+                this.adopt(attempt, start ?? decision.plan, decision.serverFeatures);
+                // A target the new stream cannot open at runs once it plays, where seekAbsolute picks a local seek or a reanchor.
+                if (start === undefined && decision.plan.delivery === "original_http" && target !== decision.plan.timeline.sourceStartSeconds) attempt.queuedReanchorSeconds = target;
+                return;
+            }
             this.adopt(attempt, decision.plan, decision.serverFeatures, buffering !== undefined);
         } else {
             this.qualityUnsettled(attempt, buffering);
@@ -2029,6 +2059,8 @@ export class PlaybackController implements PlayerControls {
         attempt.subtitleRestore = undefined;
         attempt.subtitleOverride = restore;
         if (restore !== undefined && !this.applyStreamSubtitle(attempt, restore.id) && attempt.plan?.subtitle.artifact !== undefined) {
+            // The sidecar draws the rolled-back track, so AVPlay holds no override and a restore keeps its text hidden (#792).
+            attempt.subtitleOverride = undefined;
             try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* Sidecar captions remain independent of native rendering. */ }
             this.readCaptions(attempt, attempt.plan);
         }
@@ -2148,6 +2180,7 @@ export class PlaybackController implements PlayerControls {
         }
         if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
+        attempt.redrawSwitch = undefined;
         attempt.switchFailedAt = undefined;
         attempt.switchWakeUsed = false;
         attempt.change = change;
@@ -2236,6 +2269,7 @@ export class PlaybackController implements PlayerControls {
         attempt.recoveryRetryAt = 0;
         attempt.change = { state: "idle" };
         attempt.switchLocal = false;
+        attempt.redrawSwitch = undefined;
         // A new transport ends any route failure's wait, so its deadline cannot reach a later switch.
         attempt.switchFailedAt = undefined;
         attempt.switchWakeUsed = false;
@@ -2532,10 +2566,19 @@ export class PlaybackController implements PlayerControls {
     /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it. */
     private drawSwitchLocally(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
         const id = selected.subtitle?.id;
-        if (id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id)) {
-            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
-            attempt.subtitleOverride = { id };
+        let drawn = id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id);
+        // The track only shows once AVPlay unhides its text; a refused unhide is not drawn (#792).
+        if (drawn) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { drawn = false; }
         }
+        // AVPlay can refuse, for example while a seek is out (#751): the replaced captions stay hidden, and the next lost
+        // answer tries again.
+        if (!drawn || id === undefined) {
+            attempt.redrawSwitch = id === undefined ? undefined : () => this.drawSwitchLocally(attempt, plan, selected);
+            return;
+        }
+        attempt.redrawSwitch = undefined;
+        attempt.subtitleOverride = { id };
         attempt.switchLocal = true;
         // A failed transport waiting for this switch's answer keeps its loading screen.
         if (attempt.switchFailedAt !== undefined) return;
@@ -2548,7 +2591,12 @@ export class PlaybackController implements PlayerControls {
     }
 
     /** While the app draws the shown subtitle's file, AVPlay's own subtitles stay hidden. */
-    private hideNativeUnderOverlay(attempt: Attempt): void {
+    /** AVPlay's own text shows when it draws the chosen track (a native override), and hides under the overlay otherwise. */
+    private restoreNativeVisibility(attempt: Attempt): void {
+        if (attempt.subtitleOverride?.id !== undefined) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* The next switch or reopen applies it again. */ }
+            return;
+        }
         if (attempt.captionKey === undefined || attempt.subtitleOverride !== undefined) return;
         try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* The next switch or reopen hides them again. */ }
     }
@@ -3753,8 +3801,12 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             if (restored) {
-                // A kept subtitle adopted while the player was suspended may not have hidden AVPlay's own text (#738).
-                this.hideNativeUnderOverlay(attempt);
+                // AVPlay refuses visibility changes while suspended, so a kept subtitle (#738) or a local fallback (#751)
+                // reached then is applied now; a fallback AVPlay refused outright is tried again.
+                const redraw = attempt.redrawSwitch;
+                attempt.redrawSwitch = undefined;
+                if (redraw !== undefined && subtitleSwitchOut(attempt) && !attempt.switchLocal) redraw();
+                this.restoreNativeVisibility(attempt);
                 this.restartProgress(attempt);
                 return;
             }
@@ -4565,6 +4617,28 @@ function streamRenditionAnswer(plan: PlaybackPlan, id: string | undefined): bool
  * this picture. A sidecar or Off draws here. An audio change, a burn-in, a native row with no
  * artifact, or a different native embedded selection does not.
  */
+/** Whether the plan's timeline lets AVPlay seek to `seconds` locally, without the server reanchoring. */
+function seekableAt(plan: PlaybackPlan, seconds: number): boolean {
+    const timeline = plan.timeline;
+    return timeline.canSeekAnywhere &&
+        seconds >= timeline.timelineOffsetSeconds &&
+        (timeline.seekWindowStartSeconds === undefined || seconds >= timeline.seekWindowStartSeconds) &&
+        (timeline.seekWindowEndSeconds === undefined || seconds <= timeline.seekWindowEndSeconds);
+}
+
+/**
+ * A direct-play plan opened at source `seconds` instead of where it was asked, when its timeline can start there; the player
+ * position is the source position less the timeline offset (#792). Undefined when it cannot.
+ */
+function startAt(plan: PlaybackPlan, seconds: number): PlaybackPlan | undefined {
+    const timeline = plan.timeline;
+    const duration = plan.durationSeconds;
+    if (plan.delivery !== "original_http" || seconds < 0 || (duration !== undefined && seconds > duration) || !seekableAt(plan, seconds)) return undefined;
+    const playerStartSeconds = Math.max(0, seconds - timeline.timelineOffsetSeconds);
+    if (seconds === timeline.sourceStartSeconds && playerStartSeconds === timeline.playerStartSeconds) return plan;
+    return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds } };
+}
+
 function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requested?: SelectedTracks): boolean {
     if (!sameDirectStreamUrl(current.streamUrl, next.streamUrl) || current.delivery !== "original_http" || next.delivery !== "original_http") return false;
     if (current.effectiveMediaFileId !== next.effectiveMediaFileId || current.streamProtocol !== next.streamProtocol) return false;
@@ -4693,12 +4767,24 @@ function decisionFailure(decision: PlaybackDecision): PlaybackError {
 
 function startFailure(error: unknown): PlaybackError {
     if (error instanceof ApiError) {
-        const kind = error.failure.kind;
-        if (kind === "network" || kind === "timeout") {
+        const failure = error.failure;
+        // PlayerViewModel's startSessionTimeout reads player.error.serverNoResponse.
+        if (failure.kind === "timeout") return { kind: "network", noResponse: true };
+        if (failure.kind === "network") {
             return { kind: "network" };
         }
         if (error.problemId === "installation_changed") {
             return { kind: "installation_changed" };
+        }
+        // PlayerViewModel shows a start failure's own description, as APIv2Client words it.
+        if (failure.kind === "http") return { kind: "server", reason: { status: failure.status } };
+        if (failure.kind === "problem") {
+            const { status, id, title, detail, errors } = failure.problem;
+            if (status === 410 && id === "client_upgrade_required") return { kind: "server", reason: { update: true } };
+            const text = detail?.trim() ? detail : title;
+            const fieldCode = errors[0]?.code;
+            if (text.trim() !== "") return { kind: "server", reason: fieldCode === undefined ? { text, problemId: id } : { text, problemId: id, fieldCode } };
+            return { kind: "server", reason: { status } };
         }
     }
     return { kind: "server" };

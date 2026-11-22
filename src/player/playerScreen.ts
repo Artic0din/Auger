@@ -13,7 +13,7 @@ import type { Clock } from "../api/clock.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
-import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, type MessageKey, serverText, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
@@ -59,7 +59,7 @@ export function errorText(error: PlaybackError): string {
             return "This video can't play on this TV.";
         case "network":
             // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
-            return translate("player.error.connectionLost");
+            return error.noResponse === true ? translate("player.error.serverNoResponse") : translate("player.error.connectionLost");
         case "session_expired":
             return "The server ended playback. Try again.";
         case "installation_changed":
@@ -68,8 +68,18 @@ export function errorText(error: PlaybackError): string {
             return "This profile no longer has access. Sign in again.";
         case "backgrounded":
             return "Playback stopped when you left Auger. Go back and select the title to play again.";
-        case "server":
-            return "The server couldn't start playback. Try again.";
+        case "server": {
+            // APIv2Client.errorDescription, as Apple's player shows it; a failure the server did not word keeps the TV's own line.
+            const reason = error.reason;
+            if (reason === undefined) return "The server couldn't start playback. Try again.";
+            if ("text" in reason) {
+                // problem.localized: the field code's line, else the problem type's, else the server's own text.
+                const byType = reason.problemId === undefined ? reason.text : serverText(reason.text, `error.${reason.problemId}`);
+                return serverText(byType, reason.fieldCode === undefined ? undefined : `error.field.${reason.fieldCode}`);
+            }
+            if ("update" in reason) return translate("update.appRequired");
+            return translate("errors.apple.v2.httpStatus", { status: String(reason.status) });
+        }
     }
 }
 

@@ -46,6 +46,8 @@ export class FakeAVPlay implements AVPlay {
     /** AUDIO index from the last `setSelectTrack`; until then the stream's first AUDIO row plays. */
     audioIndex: number | undefined;
     silentSubtitle = false;
+    /** AVPlay on the S95C rejects `getTotalTrackInfo` while a `seekTo` is outstanding (#751); off by default. */
+    rejectTrackInfoDuringSeek = false;
     /** Between suspend() and a restore. */
     private suspendedPlayer = false;
     private stream = 0;
@@ -142,6 +144,7 @@ export class FakeAVPlay implements AVPlay {
 
     getTotalTrackInfo(): readonly AVPlayTrackInfo[] {
         this.require("getTotalTrackInfo", ["PLAYING", "PAUSED"]);
+        if (this.rejectTrackInfoDuringSeek && this.seeks.length > 0) throw new DOMException("seeking", "InvalidStateError");
         this.calls.push("getTotalTrackInfo");
         return this.rows;
     }
