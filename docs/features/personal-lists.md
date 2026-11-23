@@ -53,6 +53,4 @@ Personal pages preserve the `item` route identity and refresh their current page
 Browser tests remove Watchlist and Favorites membership through the production Details controls against a coherent fake server, retaining page-three focus and preserving the other list.
 The shared route additions are `personal`, `RouteHandlers.personalFilter`, the three catalog query source literals and the optional Skyline profile `personal` callback.
 
-This is the personal-pages portion of issue 29 only.
-It does not complete issue 29 or whole-app Apple TV parity.
-Desktop Chromium validates behavior, bounded DOM and focus geometry; it does not prove Chromium 108 runtime, signed WGT, emulator or real-TV acceptance.
+Desktop Chromium validates behavior, bounded DOM, and focus geometry; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for Chromium 108, signed `.wgt`, and physical-TV proof boundaries.
