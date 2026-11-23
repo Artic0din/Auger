@@ -15,10 +15,8 @@ The passive hero previews the focused request using already loaded data; focus p
 Its copy stays anchored above the row band as title and synopsis heights change.
 A wrapped title reduces the synopsis to two lines; available provider ratings stay on the metadata line.
 Two-line titles fill the first line as Apple TV does, never leave one word alone on the second, and keep the server's title text unchanged.
-The root top bar opens global Search and its independent Available to request rail.
-A new bar-owned Search starts empty; Back returns to its originating root tab.
-Requests is pushed from the profile menu and has no Search button or top bar.
-Back from a request detail retains the Search query and restores its result after an invalidated supplement refresh, unless the person moved focus or edited the query.
+Requests is pushed from the profile menu and has no Search button or top bar; global Search (opened from the root top bar) carries an independent Available to request rail.
+Back from a request detail opened from Search retains the query and restores its result after an invalidated supplement refresh, unless the viewer moved focus or edited the query.
 Search uses the existing state renderer for accessible progress, no-results copy and a centered catalog error with Try Again.
 A failed People lookup leaves usable title results without another error panel or retry control; a new query tries People again.
 A pending People lookup prevents premature No results but leaves catalog errors and Try Again visible.
