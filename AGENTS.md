@@ -215,3 +215,17 @@ range before every push. Do not commit certificates, security profiles,
 passwords, server URLs, tokens or DUIDs. CI signs with repository secrets
 (`TIZEN_AUTHOR_P12_B64`, `TIZEN_AUTHOR_PASSWORD`, `TIZEN_DISTRIBUTOR_P12_B64`,
 `TIZEN_DISTRIBUTOR_PASSWORD`); see [Releasing](docs/releasing.md).
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `Artic0din/silo-tizen`, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage roles, each label named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` and `docs/adr/`, created only when needed. See `docs/agents/domain.md`.
