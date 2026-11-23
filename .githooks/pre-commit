@@ -6,7 +6,7 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   exit 1
 fi
 gitleaks git --staged --redact --no-banner
-if ! git diff --cached --name-only | grep -qE '\.(ts|js|mjs|json)$'; then
+if git diff --cached --quiet -- '*.ts' '*.js' '*.mjs' '*.json'; then
   : # Nothing staged that the type check reads.
 elif [ -x node_modules/.bin/tsc ]; then
   npm run --silent typecheck
