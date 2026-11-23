@@ -1,52 +1,34 @@
 # Releasing
 
-Releases run from GitHub Actions on `main`.
-Each run picks its own version and build number from the repository's tags.
+Releases run from GitHub Actions on `main` and compute version and build numbers from repository tags. Auger ships by sideloading and through [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung). It is not submitted to the Samsung TV store ([#732](https://github.com/Artic0din/silo-tizen/issues/732)).
 
-The app ships by sideloading and through [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung).
-It will not be submitted to the Samsung TV store (decided 22 Nov 2026, #732): store certification needs a public demo server with licence-free content, testing across many TV model groups and screen-flow paperwork.
+## Publishing a tester build
 
-## Tester build
+1. Confirm **Tizen Builds** passed on the target `main` commit.
+2. Open **Actions**, select **Release**, and run the workflow with `bump` left on `build`. (On the very first release with no prior tag, supply a starting `version` such as `0.1.0`.)
+3. Verify the run tags `vX.Y.Z-beta.B`, writes `X.Y.Z` into `app/config.xml`, signs `silo-tizen-X.Y.Z-B.wgt` with the maintainer's Samsung certificate, and publishes the `.wgt` and `.sha256` on a GitHub prerelease grouped by `.github/release.yml`.
 
-Actions → **Release** → Run workflow, leaving `bump` on `build`.
-
-The run tags the commit `v1.0.0-beta.23`, writes `1.0.0` into `app/config.xml`, and signs the package with the maintainer's Samsung certificate.
-It publishes `silo-tizen-1.0.0-23.wgt` and its `.sha256` on a GitHub prerelease.
-Its notes list the pull requests merged since the previous build, grouped by label (`.github/release.yml`).
-
-It requires **Tizen Builds** to have passed on the commit, so run it once `main` is green.
-
-The very first run has no tester build to continue from: enter the version to start with, such as `0.1.0`, as `version`.
-
-If a run fails, use **Re-run failed jobs**: it keeps the same tag and build number.
-Delete the tag instead only if that run never published its prerelease.
-The next run refuses to start while the newest tag has no release, so its notes don't skip changes no tester got.
+If a run fails, use **Re-run failed jobs** to keep the same tag and build number. Delete the tag only if the run never published a prerelease; the next run refuses to start while the newest tag has no release.
 
 ## Sideloading a build
 
-The signing certificate lists the TVs it may install on (their DUIDs), so a build installs only on those TVs.
-On a listed TV in Developer Mode, install the `.wgt` with Tizen Studio's Device Manager or `tizen install -n silo-tizen-1.0.0-23.wgt -t <device>`.
-Check the file against its `.sha256` first.
+The maintainer's certificate lists allowed TV DUIDs, so a sideloaded build installs only on those TVs.
+
+1. Download the versioned `.wgt` and `.sha256` from GitHub Releases and verify the checksum.
+2. On a listed TV in Developer Mode, install through Tizen Studio Device Manager or run `tizen install -n silo-tizen-1.0.0-23.wgt -t <device>`.
 
 ## Installing with Apps2Samsung
 
-In [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), add this repository as a source (`apps2samsung-cli sources add github.com/Silo-Server/silo-tizen` from the command line) and install the app from it.
-Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV does not need to be listed in the maintainer's certificate.
-Its update button compares the widget version in `config.xml`, not the build number, so it offers a newer build only when the version changes; a newer build of the same version is installed by installing from the source again.
-Because the signatures differ, a TV with a sideloaded build must uninstall the app before installing it through Apps2Samsung, and the reverse; uninstalling removes the app's data.
+1. Add this repository as a source in [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (`apps2samsung-cli sources add github.com/Silo-Server/silo-tizen`) and install from it. Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV needs no listing in the maintainer's certificate.
+2. When upgrading to a newer build with the same widget version in `config.xml`, install from the source again because Apps2Samsung's update button compares only `X.Y.Z`, not the build number.
+3. Uninstall the existing app before switching between a sideloaded build and Apps2Samsung in either direction because their signatures differ; uninstalling clears app data.
 
-## Numbers
+## Version and tag scheme
 
-- `1.0.0` is the version people see, and the widget version in `config.xml`.
-  It stays the same for every build until a Release run starts the next version.
-  Start it by entering the new version in the `version` input, for example `1.1.0`.
-  `bump: minor` and `bump: patch` count from the latest exact `vX.Y.Z` release tag, and this flow publishes only `vX.Y.Z-beta.B` tags, so they stop with "Nothing has been released yet" (`scripts/release-version.py`).
-  Tizen limits it to `[0-255].[0-255].[0-65535]`.
-- `23` is the build number: one counter for the whole repository that never resets.
-- Tags: `vX.Y.Z-beta.B` for builds (GitHub prereleases).
+- **Version (`X.Y.Z`):** user-visible widget version in `app/config.xml`, constrained by Tizen to `[0-255].[0-255].[0-65535]`. Keep the same version across beta builds; start a new version by entering it in the `version` workflow input. `bump: minor` and `bump: patch` count from exact `vX.Y.Z` tags, so they stop with "Nothing has been released yet" (`scripts/release-version.py`) while only `vX.Y.Z-beta.B` tags exist.
+- **Build number (`B`):** single monotonically increasing counter across the repository.
+- **Tags:** `vX.Y.Z-beta.B` for GitHub prereleases.
 
 ## Latest tester build link
 
-`releases/download/beta-latest/silo-tizen-latest-beta.wgt` always serves the newest tester build.
-It has no `.sha256`; to check a build before installing it, use the versioned file and its checksum.
-Every Release run moves the `beta-latest` tag to its commit and replaces that file on the "Latest tester build" prerelease, unless a newer tester build already exists.
+`releases/download/beta-latest/silo-tizen-latest-beta.wgt` always serves the newest tester build without a `.sha256` file; use the versioned release file when checksum verification is required. Each Release run moves `beta-latest` to its commit and replaces that file unless a newer tester build already exists.

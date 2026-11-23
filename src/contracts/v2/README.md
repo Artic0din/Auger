@@ -118,7 +118,6 @@ Absent/false flags keep video-only searches; capability read/decode failures rem
 The episode-inclusive request type is limited to text Search and is not added to library, facet, letter or POST source types.
 See [Text Search](../../../docs/features/skyline-browse-shell.md#text-search) for route ownership, continuation and source evidence.
 Unknown members are ignored and response enums are additive; malformed consumed fields fail without echoing values.
-These factories do not implement the library UI or complete issue 28.
 
 ## Audiobooks
 
@@ -159,7 +158,7 @@ Auto omits audio fields; explicit audio IDs use the selected file's audio-array 
 Zero explicitly starts over, while an omitted `start_position` retains server resume semantics for callers that need them.
 Start still declares `retry:"never"`; only the controller resends its identical body and identity through its existing bounded domain retry.
 No per-content preference writes, subtitle start fields or renderer claims are added.
-See [preplay behavior](../../../docs/features/skyline-browse-shell.md#preplay-audio-and-resume).
+See [preplay behavior](../../../docs/features/skyline-browse-shell.md#preplay-audio-subtitles-and-resume).
 
 ## Seek preview reads
 
@@ -234,19 +233,10 @@ The room operations that this layer does not cover yet (suggestion delete, membe
 
 ## Updating the pinned contract
 
-1. Pick the new server commit and copy the same fixture names from its `contracts/api/v2/fixtures/`.
-2. Write the commit SHA to `SOURCE`.
-3. Re-read the OpenAPI schemas and docs for the operations above and update `wire.ts`.
-4. Run the native tests.
+1. Run `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-ref>` to re-vendor fixtures, rebuild both Settings subsets in manifest order, and update `SOURCE`.
+2. Update the manifest revision and SHA-256 printed by the script in the header above, then check OpenAPI schemas and update decoders in `src/contracts/v2/`.
+3. Run `npm run test:native` and `scripts/sync-apiv2-fixtures.test.sh`.
 
 ## Native tests
 
-Commands assume the repository root is the cwd.
-Node 23.6 or later runs the TypeScript sources directly:
-
-```bash
-node --test --test-timeout=15000 test/native/
-```
-
-Type checking needs `allowImportingTsExtensions` (sources import `./x.ts`) and
-`erasableSyntaxOnly` (Node strips types; no enums, namespaces or parameter properties).
+Commands assume the repository root is the cwd. Node.js 26 or later runs TypeScript tests directly (`npm run test:native`). Type checking requires `allowImportingTsExtensions` (explicit `.ts` imports) and `erasableSyntaxOnly` (no enums, namespaces, or parameter properties).
