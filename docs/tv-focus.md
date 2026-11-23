@@ -223,7 +223,22 @@ Other layers:
   The press is cancelled when focus, visibility or the element changes.
   The 650 ms value is marked "tune on TV" in the code.
 
-## Never Fetch on Focus
+## Never fetch on focus
+
+Moving focus starts no network request, activates no route, and writes no data outside six explicit parity exceptions:
+
+| Exception | Trigger | Delay | Cancellation / recovery |
+| --- | --- | --- | --- |
+| `filter` | Search filter pill focused | Immediate | Cancels superseded reads |
+| `season-pill` | Missing series season pill focused | 70 ms dwell | Leaving cancels; explicit Select/Retry recovers |
+| `episode-detail` | Uncached episode card focused | 120 ms dwell | Leaving cancels; queue caps at 4; explicit Retry recovers |
+| `outer-edge` | Outer loaded episode card with missing neighbor | 70 ms dwell | Once per edge; leaving cancels; move away and back retries |
+| `featured-card` | Featured marquee card in auto-translation mode | 1500 ms dwell | Moving on cancels |
+| `marquee-rest` | Home, For You, or library Recommended card focused | 150 ms dwell (immediate on row change) | Leaving cancels; late answers ignored |
+
+Fetching otherwise belongs only to explicit activation (Enter), initial view load, or one-off prefetch.
+
+### Exception details
 
 Search filter pills apply their filter immediately, matching Apple TV's segmented picker, and cancel superseded reads.
 Series season pills activate after 70 ms of resting focus, matching `TVSeriesDetailView.swift:780–793` at `7baff3ef657757cc0a69202e86dd4bd5c7fcb585` (paths below are under `iosApp/iosApp/tvOS/Screens/Detail/`).
@@ -232,7 +247,6 @@ For a missing season, the dwell permits one bounded episode-page read; leaving c
 Select remains immediate; Retry is the explicit recovery action.
 The pill nodes stay mounted during episode updates so repainting cannot cancel their focus or request.
 The selected pill centers on initial display and selection, clamped to the row ends, following `TVSeriesDetailView.swift:653–674`.
-The signed same-state comparison on 5 November 2026 at `93a39b3` confirmed the pill window; the later inset and hero corrections still need signed comparison.
 The current season keeps its current episode on focus, while a different season starts at E01 and retains pill focus until Down.
 Episode-card focus paints the loaded summary immediately, then reads missing full detail after 120 ms on the same episode, matching `TVItemDetailView.swift:805-858` at Apple source `df891d2e`.
 This is an explicit exception to the general no-focus-fetch rule, approved for Apple TV parity.
@@ -398,29 +412,19 @@ Playback has these differences from browse:
   Those three, a held seek and the skip pill's seek keep the remote's physical Left and Right (`physicalKey`).
   The options panel's tab rail and columns, Up Next's buttons and the buffering card's two buttons read `remoteKey(event, section)`: the scope is the player, because focus can sit in the left-to-right scrubber while the press belongs to the buffering prompt (Apple reads that press through the layout, `PlayerView.swift:869`).
 
-## Checklist
+## Focus rules checklist
 
-Do:
+Verify every rule below before finishing any navigation, menu, grid, dialog, or control change.
 
-- Give every view at least one focusable item, including loading, empty and error states.
-- Key items by stable content id and declare focus by `{ zone, key }`.
-- Use `row`, `column` and `grid` layouts with explicit zone links at real boundaries.
-- Let the host call `preventDefault` for arrows it handles.
-- Handle Back in exactly one layer, and return `false` when you did not handle it.
-- Capture modal keys in capture phase and stop propagation.
-- Keep the focused node mounted across repaints.
-- Check Reduced Motion on any new animation or scroll.
-
-Don't:
-
-- Don't add `tabindex` navigation, Tab handling or browser spatial navigation.
-- Don't move focus programmatically except when the focused item disappears.
-  Moving focus in answer to a remote key, including Back to the navigation bar, is the host's job, not a programmatic move.
-- Don't restore focus by position or index.
-- Don't fetch, write or navigate from `focus` handlers outside the narrow read exceptions above.
-- Don't attach a second `keydown` handler that also moves focus in an owned zone.
-- Don't let browse render over an active modal.
-- Don't infer TV behaviour from desktop Chromium.
+- Supply at least one focusable item in every view, including loading, empty, and error states.
+- Key items by stable content id and declare focus as `{ zone, key }` (never by list index or position).
+- Use `row`, `column`, and `grid` layouts with explicit zone links at real boundaries, letting the host handle arrow keys and call `preventDefault` (rely on app zones, never `tabindex`, `Tab`, or browser spatial navigation).
+- Keep one `keydown` focus owner per zone and handle Back in one layer, returning `false` when unhandled.
+- Intercept modal keys in capture phase with `stopImmediatePropagation`, trap focus inside the modal, and pause browse re-renders while open.
+- Keep the focused DOM node mounted across repaints; move focus programmatically only when the focused item disappears.
+- Restrict focus-move reads strictly to the six named exceptions above; gate all other reads, writes, and navigation on explicit Enter or view load.
+- Honor `prefers-reduced-motion: reduce` on every new animation or scroll.
+- Validate D-pad movement, Back, and Select hold on a Samsung TV or emulator rather than inferring TV behavior from desktop Chromium.
 
 ## Tests
 
