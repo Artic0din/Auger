@@ -56,7 +56,7 @@ This repo sits beside sibling Silo repositories.
 
 ## Commands and proof bar
 
-See `package.json` for standard scripts (`npm ci`, `npm run build`, `npm test`, `npm run typecheck`; requires Node.js 26+ and `npx playwright install chromium`).
+See `package.json` for standard scripts (`npm ci`, `npm run build`, `npm test`, `npm run typecheck`; requires Node.js 26+ and `npx playwright install chromium`). Only one screen-test suite runs per machine; a second `npm run test:ui` waits for the first.
 
 - `python3 scripts/test-release-version.py` tests the release version script.
 - `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-commit>` re-vendors API v2 fixtures. Regenerate with this script instead of hand-editing `src/contracts/v2/fixtures/`.
