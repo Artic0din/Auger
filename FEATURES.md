@@ -3,7 +3,7 @@
 Inventory of what the Samsung TV client does today, and a tracker for parity with the Apple TV (tvOS) and Android TV apps.
 The app ships by sideloading and through Apps2Samsung, not the Samsung TV store ([Releasing](docs/releasing.md)).
 
-Checked against the code on 3 Nov 2026; update a row in the pull request that changes it.
+Checked against the code on 3 Nov 2026 (Tizen rows reconciled against `src/` on 24 Nov 2026); update a row in the pull request that changes it.
 
 Tizen status legend:
 
@@ -52,7 +52,7 @@ File pointers are repository-relative.
 | PIN-protected profiles, lockout handling | ✅ | ✅ | ✅ | PIN never stored; proof kept only if the viewer opts in |
 | Create profile (presets, PIN, child restrictions) | ✅ | ✅ | ✅ | Ported from Apple's `CreateProfileView`. Android: `TvCreateProfileScreen`. Apple: `CreateProfileView` (tvOS layout), opened from `AddProfileTile` |
 | Profile menu: Switch Profile, or Add Profile while the account has one profile | 🟡 | ✅ | ✅ | `src/ui/skyline.ts`, `src/ui/profiles.ts`. Order matches Apple: Settings, the profile row, Change Account, Sign Out. The row is Add Profile when the open account's cached list holds one profile, Switch Profile otherwise. Missing: hiding the row when the account's `max_profiles` is 1 or less. Tizen does not read `max_profiles`, so an account capped at one profile is offered Add Profile and the server refuses it after the form (#465; PR #493 waits on a capture that needs the limit set to 1, a server write). Add Profile borrows Switch Profile's icon. Apple: `ProfileMenuRow`. Android: shared `profileMenuRow` |
-| Remember profile at launch | 🟡 | ✅ | ✅ | Two choices: remember, or ask each launch. Timed choices not built. Apple: `ProfileLaunchPreferences`. Android: Automatic, Every Time, After 1 Hour, After 12 Hours (Settings → General) |
+| Remember profile at launch | ✅ | ✅ | ✅ | Four choices in Settings > General > Profile at Launch: Automatic, Every Time, After 1 Hour, After 12 Hours (`src/session/profileLaunch.ts`, `src/ui/settings.ts`). Apple: `ProfileLaunchPreferences`. Android: Automatic, Every Time, After 1 Hour, After 12 Hours |
 | Apple TV user mapping | ➖ | ✅ | ➖ | Apple-only concept (`AppleTVUserContext`) |
 | Per-profile settings applied (hidden libraries, audio, quality, bitrate, seek, subtitles, title art, poster size, badges) | ✅ | ✅ | ✅ | Read from the server settings contract on each use |
 
@@ -100,15 +100,15 @@ File pointers are repository-relative.
 | Full filmography (All, Movies, Series) | ✅ | ✅ | ✅ | Server-filtered, paged. Android: filter chips on `TvPersonDetailScreen`. Apple: `TVPersonDetailContent` with `PersonFilterBar`, paged |
 | Trailers | 🟡 | ✅ | ✅ | Movie and series Details show YouTube cards in Trailers & More. Select stays on the card: AVPlay cannot play them, and a Samsung YouTube handoff is unproven. Apple: `TVTrailersRail`. Android: `TvDetailTrailersSection` |
 | Local extras | ✅ | ✅ | ✅ | Tizen's Trailers & More plays local extras from zero; absent embedded file IDs resolve through catalog versions, with Retry, cancellation and Back restoration. Fake-server/AVPlay tests pass; native playback and comparison remain pending. Apple: `TVTrailersRail`. Android: `TvDetailTrailersSection`, played from `TvItemDetailScreen` |
-| Synopsis dialog | ✅ | ➖ | ✅ | Android: `TvExpandableSynopsis`. Apple: `TVHeroSynopsis` is a non-focusable 3-line clamp, no dialog |
+| Synopsis dialog | ➖ | ➖ | ✅ | Removed to match tvOS's non-focusable 3-line clamp (`docs/features/details-actions.md`). Android: `TvExpandableSynopsis`. Apple: `TVHeroSynopsis` |
 
 ## Personal lists & ratings
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Watchlist, Favorites, History pages | ✅ | ✅ | ✅ | Tizen: profile menu. Apple: Watchlist and Favorites under For You, History in the profile menu. Grid parity open (#105). Android: `TvPersonalScreens` |
+| Watchlist, Favorites, History pages | ✅ | ✅ | ✅ | Tizen and Apple: Watchlist and Favorites under For You, History in the profile menu (`src/ui/skyline.ts`). Grid parity open (#105). Android: `TvPersonalScreens` |
 | Watched / favourite / watchlist actions on details | ✅ | ✅ | ✅ | Server-confirmed readback, never auto-replayed. Rating write reconcile open (#84). Android: `TvHeroToggleIconButton`. Apple: hero Watchlist button (`TVDetailActions`), Favorite/Watched in the More menu |
-| Personal star rating (1–5) | ✅ | ➖ | ✅ | Apple shows external scores only; no personal ratings client in the tree. Missing-rating log noise (#79) |
+| Personal star rating (1–5) | ➖ | ➖ | ✅ | Removed to match tvOS, which shows external scores only (`docs/features/details-actions.md`) |
 | External scores (IMDb, TMDB) | ✅ | ✅ | ✅ | TMDB logo and notice in Acknowledgements. Android: `TvDetailMetadata` and `TvFocusMarqueeModel` |
 | Title art switch (this TV or all devices) | ✅ | ✅ | ✅ | Android: `TitleArtStore`, Settings → General |
 
@@ -117,7 +117,7 @@ File pointers are repository-relative.
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
 | For You hub (discover rows) | ✅ | ✅ | ✅ | Reuses Home renderers. Apple: `RecommendationsView`. Android: `TvRecommendationsScreen` |
-| Watchlist and Favorites shortcuts from the For You menu | ➖ | ✅ | ✅ | Tizen reaches them from the profile menu (#105). Android: dropdown under the For You tab in `TvTopMenuBar` |
+| Watchlist and Favorites shortcuts from the For You menu | ✅ | ✅ | ✅ | Tizen: For You dropdown opens Watchlist and Favorites (`src/ui/skyline.ts`, `docs/features/personal-lists.md`). Android: dropdown under the For You tab in `TvTopMenuBar` |
 
 ## Calendar
 
@@ -189,9 +189,9 @@ File pointers are repository-relative.
 | HDR, Dolby Vision, buffering, lossless audio, deinterlacing | 🟡 | ✅ | 🟡 | HDR is a device switch when the server offers the key. Dolby Vision is absent: Samsung exposes no Dolby Vision support check and this client claims no Dolby Vision profile. Lower quality when buffering works on playback (Apple's decision, pill and replans; default Automatically), with the Settings row and the learned-limit Reset. Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and its Field Rate are hidden because AVPlay has no control for them ([docs/settings.md](docs/settings.md#streaming-rows-avplay-cannot-honour)). Android has Dolby Vision, Force HDR Passthrough, buffering quality and frame-rate matching; lossless audio and deinterlacing settings not found |
 | Poster size, advisory age | ✅ | ✅ | 🟡 | General Settings has Poster Size (Compact, Standard, Large) and Show Advisory Age, each drawn only when the server defines the key. Android has Poster Size; advisory age not found. Show Audiobooks is built (see Audiobooks) |
 | Theme music (Play and Loop rows; Details plays the title's theme) | ✅ | ✅ | ✅ | Plays through an HTML5 `<audio>` element because AVPlay belongs to video, and stops before playback opens. Checked on an S95C (22 Nov 2026, main `2ccaadf3`, #529): an mp3 theme plays at volume 0.35, loops when asked, fades out over about 350 ms on leaving Details, resumes on return, and is paused and released (`pause()`, then `load()`) before AVPlay opens, after which AVPlay plays with its audio stream. Not proven: sound by ear (the TV stayed muted) and the other formats (flac, ogg, wav, converted AAC), since the themes checked were mp3 |
-| App Language (Settings › General row and picker) | 🟡 | ✅ | ? | Tizen stores the profile's `ui.app_language` choice as Apple does and lists Apple's 22 languages, but only Settings, the top bar and its menus, Home, For You, the library tabs and the card menu's Remove rows follow the choice so far (the other screens stay English until their #571 PRs), and it has no system per-app language to write. Android has the group on the phone app's Interface page (`AppLanguageSettings.kt`); its TV app was not checked |
-| Acknowledgements (TMDB and open source) | ✅ | ✅ | ➖ | Android: Settings → Server → About shows App Version and Privacy Policy only |
-| Privacy policy | ➖ | ✅ | ✅ | Android: `TvPrivacyPolicyDialog` |
+| App Language (Settings › General row and picker) | 🟡 | ✅ | ? | Tizen stores the Profile's `ui.app_language` choice across Apple's 22 languages with RTL mirroring; see [docs/translation.md](docs/translation.md) for current screen coverage and remaining Tizen-only English copy (#571). Tizen has no system per-app language. Android has the group on phone (`AppLanguageSettings.kt`); TV not checked |
+| Acknowledgements (TMDB and open source) | ✅ | ✅ | ➖ | Android: Settings > Server > About shows App Version and Privacy Policy only |
+| Privacy policy | ✅ | ✅ | ✅ | Settings > Server > About opens the Privacy Policy QR modal (`src/ui/settings.ts`). Android: `TvPrivacyPolicyDialog` |
 
 ## Diagnostics & support
 
