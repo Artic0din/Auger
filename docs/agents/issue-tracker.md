@@ -6,7 +6,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --json number,title,body,labels,comments`.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **List issues**: `gh issue list --state open --json number,title,body,author,labels,comments --jq '[.[] | {number, title, body, author: .author.login, labels: [.labels[].name], comments: [.comments[] | {body, author: .author.login, createdAt}]}]'` with appropriate `--label` and `--state` filters. It returns 30 issues unless you pass `-L <n>`.
 - **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
 - **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh issue create --blocked-by <n>,<n> ...` or `gh issue edit <child> --add-blocked-by <blocker>` (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Count open blockers**: `gh api repos/<owner>/<repo>/issues/<n> --jq .issue_dependencies_summary.blocked_by` (open blockers only; 0 means startable). `gh issue view <n> --json blockedBy` also lists closed blockers, so filter it: `--jq '[.blockedBy.nodes[] | select(.state == "OPEN")] | length'`.
@@ -14,7 +14,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: post the explanation with `gh issue comment <number> --body "..."`, then `gh issue close <number>`. On an already-closed issue, `gh issue close --comment` drops the comment and still exits 0.
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+The only tracker repository is `Artic0din/silo-tizen`. Pass `--repo Artic0din/silo-tizen` to every `gh issue` and `gh pr` command, reads and edits included, and use `repos/Artic0din/silo-tizen/` for `<owner>/<repo>` in `gh api` paths; the examples in this file omit it for brevity. Never infer the target from a remote or the `gh` default, and never file or edit issues in the Silo-Server repositories from here (see `AGENTS.md`). If an item is not in `Artic0din/silo-tizen`, stop.
 
 File issues only into the user's own repo. Never file into `mattpocock/skills` (the repo these skills come from) unless the user owns it. In a fork, `gh` can default to the upstream parent, so before the first `gh issue create` of a session, check the target with `gh repo view --json nameWithOwner` and confirm it with the user if it is not their repo.
 
@@ -42,9 +42,9 @@ Read it as in **Read an issue** above.
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map --title "..." --body-file <file>`.
 - **Child ticket**: an issue linked to the map as a GitHub sub-issue (see **Make an issue a sub-issue of a parent**). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
 - **Blocking**: see **Blocking** under Conventions.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (see **Count open blockers**, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **Frontier query**: list the map's open children (`gh api --paginate repos/<owner>/<repo>/issues/<map>/sub_issues`, or the map's task list), drop any with an open blocker (see **Count open blockers**, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
+- **Claim**: the frontier result is a candidate, not ownership. As the session's first write, create a claim ref: `gh api --method POST repos/Artic0din/silo-tizen/git/refs -f ref=refs/heads/wayfinder-claims/<n> -f sha="$(git rev-parse origin/main)"`. Only the session that gets `201 Created` owns the ticket; if the ref already exists, skip the ticket, and on any other failure stop. Then recheck that the ticket is open, unblocked and unassigned; if not, delete the ref (`gh api --method DELETE repos/Artic0din/silo-tizen/git/refs/heads/wayfinder-claims/<n>`) and rerun the frontier query. Otherwise run `gh issue edit <n> --repo Artic0din/silo-tizen --add-assignee @me`, and start work only after it succeeds.
+- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then delete the claim ref, then append a context pointer (gist + link) to the map's Decisions-so-far.
