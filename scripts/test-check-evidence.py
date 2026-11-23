@@ -127,6 +127,7 @@ class BrokenCaptureTest(unittest.TestCase):
 
     def test_reports_a_link_that_cannot_be_requested(self):
         self.assertTrue(self.module.broken_capture("https://github.com:x/a.png").startswith("no response"))
+        self.assertTrue(self.module.broken_capture("https://[github.com/a.png").startswith("a malformed URL"))
 
     def test_leaves_signed_in_and_other_hosts_unfetched(self):
         with mock.patch.object(self.module.urllib.request, "urlopen") as urlopen:

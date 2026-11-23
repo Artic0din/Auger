@@ -35,11 +35,14 @@ FETCHED_HOSTS = {"github.com", "raw.githubusercontent.com"}
 
 def broken_capture(url: str) -> str | None:
     """Return why a capture link cannot load, or None when it loads."""
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as error:
+        return f"a malformed URL ({error})"
     # An upload that failed silently leaves an empty commit segment, such as blob//shot.png.
     if "//" in parts.path:
         return "an empty path segment"
-    if parts.hostname not in FETCHED_HOSTS or "/user-attachments/" in parts.path:
+    if parts.hostname not in FETCHED_HOSTS or parts.path.startswith("/user-attachments/"):
         return None
     try:
         with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=15) as response:
