@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
+import urllib.error
 
 
 SCRIPT = Path(__file__).resolve().parent / "ci" / "check-evidence.py"
@@ -95,6 +98,42 @@ class CheckEvidenceTest(unittest.TestCase):
         result = self.check(head)
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn("needs evidence because it changes src/ui/home.ts", result.stdout)
+
+    def test_fails_a_capture_left_by_a_failed_upload(self):
+        head = self.commit({"src/ui/home.ts": "export {};\n"})
+        body = f"## Evidence\n\n![a]({CAPTURE})\n![b](https://github.com/o/r/blob//805-after.png?raw=true)\n"
+        result = self.check(head, body)
+        self.assertEqual(1, result.returncode, result.stdout)
+        self.assertIn("Evidence link does not load (an empty path segment)", result.stdout)
+
+
+class BrokenCaptureTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("check_evidence", SCRIPT)
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+
+    def test_reports_a_repository_link_that_does_not_resolve(self):
+        missing = urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+        with mock.patch.object(self.module.urllib.request, "urlopen", side_effect=missing) as urlopen:
+            self.assertEqual("HTTP 404", self.module.broken_capture("https://github.com/o/r/blob/abc/a.png"))
+        self.assertEqual("HEAD", urlopen.call_args.args[0].get_method())
+
+    def test_accepts_a_repository_link_that_resolves(self):
+        response = mock.MagicMock(status=200)
+        response.__enter__.return_value = response
+        with mock.patch.object(self.module.urllib.request, "urlopen", return_value=response):
+            self.assertIsNone(self.module.broken_capture("https://github.com/o/r/blob/abc/a.png"))
+
+    def test_reports_a_link_that_cannot_be_requested(self):
+        self.assertTrue(self.module.broken_capture("https://github.com:x/a.png").startswith("no response"))
+        self.assertTrue(self.module.broken_capture("https://[github.com/a.png").startswith("a malformed URL"))
+
+    def test_leaves_signed_in_and_other_hosts_unfetched(self):
+        with mock.patch.object(self.module.urllib.request, "urlopen") as urlopen:
+            self.assertIsNone(self.module.broken_capture(CAPTURE))
+            self.assertIsNone(self.module.broken_capture("https://example.com/home.png"))
+        urlopen.assert_not_called()
 
 
 if __name__ == "__main__":

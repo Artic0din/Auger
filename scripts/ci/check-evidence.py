@@ -2,14 +2,18 @@
 """Fail a pull request that changes visible code without attaching captures under an Evidence heading.
 
 Implements the Evidence check described in CONTRIBUTING.md ("Show visible changes") and .github/evidence.yml.
-It proves captures are attached, not that they show the right device or state; reviewers still judge that.
+It proves captures are attached and that repository links load, not that they show the right device or state; reviewers still judge that.
 """
 
 import fnmatch
+import http.client
 import os
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
 
 NOT_NEEDED = "evidence-not-needed"
 REQUIRED = "evidence-required"
@@ -22,6 +26,32 @@ MEDIA = re.compile(
     r"|https?://[^\s)\"'<>]+\.(png|jpe?g|gif|webp|mp4|mov|webm)\b",
     re.IGNORECASE,
 )
+
+
+# Repository file links on this public repository resolve without credentials, so CI can confirm them.
+# GitHub user-attachments links need a signed-in session and are only checked for shape.
+FETCHED_HOSTS = {"github.com", "raw.githubusercontent.com"}
+
+
+def broken_capture(url: str) -> str | None:
+    """Return why a capture link cannot load, or None when it loads."""
+    try:
+        parts = urlsplit(url)
+    except ValueError as error:
+        return f"a malformed URL ({error})"
+    # An upload that failed silently leaves an empty commit segment, such as blob//shot.png.
+    if "//" in parts.path:
+        return "an empty path segment"
+    if parts.hostname not in FETCHED_HOSTS or parts.path.startswith("/user-attachments/"):
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=15) as response:
+            status = response.status
+    except urllib.error.HTTPError as error:
+        status = error.code
+    except (OSError, http.client.HTTPException, ValueError) as error:
+        return f"no response ({error})"
+    return None if status == 200 else f"HTTP {status}"
 
 
 def git(*arguments: str) -> str:
@@ -77,7 +107,13 @@ def main() -> int:
     if REQUIRED not in labels and not touched:
         print("Evidence not required: no changed path matches .github/evidence.yml")
         return 0
-    if MEDIA.search(evidence_text(env.get("BODY") or "")):
+    captures = [match.group(0) for match in MEDIA.finditer(evidence_text(env.get("BODY") or ""))]
+    if captures:
+        broken = [(url, reason) for url in dict.fromkeys(captures) if (reason := broken_capture(url))]
+        for url, reason in broken:
+            print(f"::error::Evidence link does not load ({reason}): {url}. Upload it again and update the link.")
+        if broken:
+            return 1
         print("Evidence attached")
         return 0
     reason = f"the {REQUIRED} label is set" if REQUIRED in labels else f"it changes {', '.join(touched[:3])}"
