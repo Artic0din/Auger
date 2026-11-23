@@ -12,11 +12,11 @@ It talks to Silo's native `/api/v2` and plays through Samsung's AVPlay.
 The app is not in the Samsung TV store and will not be submitted to it.
 Install it in one of two ways:
 
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Silo-Server/silo-tizen`), then install from it.
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Artic0din/silo-tizen`), then install from it.
   Apps2Samsung signs the app with your own Samsung certificate, so it installs on your TV without being listed in ours.
   It updates in one click when the app's version changes. It compares the version (`1.0.0`), not the build number, so to get a newer build of the same version, install it again from the source.
-- **Sideload:** download a versioned build and its `.sha256` checksum from [Releases](https://github.com/Silo-Server/silo-tizen/releases).
-  [`silo-tizen-latest-beta.wgt`](https://github.com/Silo-Server/silo-tizen/releases/download/beta-latest/silo-tizen-latest-beta.wgt) is always the newest build, but it has no checksum to check it against.
+- **Sideload:** download a versioned build and its `.sha256` checksum from [Releases](https://github.com/Artic0din/silo-tizen/releases).
+  [`silo-tizen-latest-beta.wgt`](https://github.com/Artic0din/silo-tizen/releases/download/beta-latest/silo-tizen-latest-beta.wgt) is always the newest build, but it has no checksum to check it against.
   It is signed with the maintainer's certificate, so it installs only on TVs listed in it; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.

@@ -30,7 +30,7 @@ Check the file against its `.sha256` first.
 
 ## Installing with Apps2Samsung
 
-In [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), add this repository as a source (`apps2samsung-cli sources add github.com/Silo-Server/silo-tizen` from the command line) and install the app from it.
+In [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), add this repository as a source (`apps2samsung-cli sources add github.com/Artic0din/silo-tizen` from the command line) and install the app from it.
 Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV does not need to be listed in the maintainer's certificate.
 Its update button compares the widget version in `config.xml`, not the build number, so it offers a newer build only when the version changes; a newer build of the same version is installed by installing from the source again.
 Because the signatures differ, a TV with a sideloaded build must uninstall the app before installing it through Apps2Samsung, and the reverse; uninstalling removes the app's data.

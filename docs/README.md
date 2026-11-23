@@ -11,7 +11,7 @@ Start with the root [README](../README.md) for build, signing and release, [FEAT
 - Music has no browsing yet. Audiobooks is opt-in (Settings, General, Show Audiobooks) and shows the library and detail but cannot play yet.
 - Requests appears in the top bar only while the server enables it for the active viewer.
 - Playback uses AVPlay: direct play first, HLS transcode as the fallback.
-- Diagnostics reports are not available yet: Silo Server does not accept a Tizen diagnostics platform ([#138](https://github.com/Silo-Server/silo-tizen/issues/138)).
+- Diagnostics reports are not available yet: Silo Server does not accept a Tizen diagnostics platform ([#138](https://github.com/Artic0din/silo-tizen/issues/138)).
 - The app ships by sideloading and through Apps2Samsung; it is not submitted to the Samsung TV store (#732).
 
 ## Core References

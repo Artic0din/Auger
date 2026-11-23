@@ -86,17 +86,17 @@ class BetaReleaseTest(unittest.TestCase):
 
 GENERATED = """## What's Changed
 ### 🚀 Features
-* feat(requests): let viewers get notified about requests by @dev in https://github.com/Silo-Server/silo-tizen/pull/559
+* feat(requests): let viewers get notified about requests by @dev in https://github.com/Artic0din/silo-tizen/pull/559
 ### 🐛 Fixes
-* fix(tv)!: let Down leave the search field by @dev in https://github.com/Silo-Server/silo-tizen/pull/561
+* fix(tv)!: let Down leave the search field by @dev in https://github.com/Artic0din/silo-tizen/pull/561
 ### Other changes
-* ci: cache builds by @dev in https://github.com/Silo-Server/silo-tizen/pull/500
-* feat(profiles): ask who's watching at launch by @dev in https://github.com/Silo-Server/silo-tizen/pull/543
+* ci: cache builds by @dev in https://github.com/Artic0din/silo-tizen/pull/500
+* feat(profiles): ask who's watching at launch by @dev in https://github.com/Artic0din/silo-tizen/pull/543
 
 ## New Contributors
-* @new made their first contribution in https://github.com/Silo-Server/silo-tizen/pull/501
+* @new made their first contribution in https://github.com/Artic0din/silo-tizen/pull/501
 
-**Full Changelog**: https://github.com/Silo-Server/silo-tizen/compare/v1.0.0...v1.1.0-beta.22
+**Full Changelog**: https://github.com/Artic0din/silo-tizen/compare/v1.0.0...v1.1.0-beta.22
 """
 
 

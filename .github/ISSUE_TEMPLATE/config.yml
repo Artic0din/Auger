@@ -13,7 +13,7 @@ contact_links:
     url: https://discord.gg/siloserver
     about: Ask how to set up or use Silo in the Silo Discord.
   - name: Report a security vulnerability
-    url: https://github.com/Silo-Server/silo-tizen/security/advisories/new
+    url: https://github.com/Artic0din/silo-tizen/security/advisories/new
     about: Report it privately. Do not open a public issue.
   - name: How to report a problem
     url: https://siloserver.org/docs/report-a-problem
