@@ -45,6 +45,14 @@ class VerdictTest(unittest.TestCase):
         rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "", "QUEUED")]
         self.assertEqual("check not passing: Evidence=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
+    def test_a_stuck_older_run_does_not_mask_a_newer_pass(self):
+        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "2026-11-22T05:00:00Z", "IN_PROGRESS")]
+        self.assertTrue(gate.verdict(ready_pr(statusCheckRollup=rollup), []).startswith("READY"))
+
+    def test_unknown_mergeability_asks_for_a_retry(self):
+        self.assertEqual("mergeability UNKNOWN: GitHub is still computing it, run again shortly",
+                         gate.verdict(ready_pr(mergeable="UNKNOWN"), []))
+
     def test_a_conflicting_branch_names_the_fix_not_the_missing_checks(self):
         result = gate.verdict(ready_pr(mergeable="CONFLICTING", statusCheckRollup=[]), [])
         self.assertEqual("conflicts with main: merge main into the branch", result)

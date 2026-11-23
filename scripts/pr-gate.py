@@ -20,7 +20,7 @@ PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 CODEX_STATE = re.compile(r"codex-review-state:v1 (\{.*?\}) -->")
 CODEX_LOGIN = "chatgpt-codex-connector"
 THREADS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
-pullRequest(number:$number){reviewThreads(first:100){totalCount nodes{isResolved path line}}}}}"""
+pullRequest(number:$number){headRefOid reviewThreads(first:100){totalCount nodes{isResolved path line}}}}}"""
 
 
 def latest_checks(rollup: list[dict]) -> dict[str, str]:
@@ -33,11 +33,10 @@ def latest_checks(rollup: list[dict]) -> dict[str, str]:
             outcome = "PENDING"
         else:
             outcome = check.get("conclusion") or check.get("state") or "PENDING"
+        if not started and outcome == "PENDING":
+            started = "\uffff"  # A queued re-run has no start time yet and must not lose to the run it replaces.
         if name not in latest or started >= latest[name][0]:
             latest[name] = (started, outcome)
-        if outcome == "PENDING":
-            # A queued re-run has no start time yet and must not lose to the stale run it replaces.
-            latest[name] = ("\uffff", outcome)
     return {name: outcome for name, (_, outcome) in latest.items()}
 
 
@@ -88,7 +87,11 @@ def main() -> int:
             "--json", "state,mergeable,headRefOid,statusCheckRollup,comments")
     owner, name = REPOSITORY.split("/")
     page = gh("api", "graphql", "-f", f"query={THREADS}", "-F", f"owner={owner}", "-F", f"name={name}",
-              "-F", f"number={number}")["data"]["repository"]["pullRequest"]["reviewThreads"]
+              "-F", f"number={number}")["data"]["repository"]["pullRequest"]
+    if page["headRefOid"] != pr["headRefOid"]:
+        print(f"#{number} was pushed to while being checked; run again")
+        return 1
+    page = page["reviewThreads"]
     if page["totalCount"] > len(page["nodes"]):
         print(f"#{number} has {page['totalCount']} review threads; check the ones past 100 by hand")
         return 1
