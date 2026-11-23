@@ -1,8 +1,6 @@
 # Subtitle sync
 
-Part of [#522](https://github.com/Artic0din/silo-tizen/issues/522): Sync to Audio and Reset Timing on the player's Subtitles tab.
-Apple behaviour is read from silo-apple `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane`, `SubtitleSync.swift`, `APIv2SubtitleSyncModels.swift`).
-No server changes are required.
+Sync to Audio and Reset Timing on the player's Subtitles tab ([#522](https://github.com/Artic0din/silo-tizen/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane`, `SubtitleSync.swift`, `APIv2SubtitleSyncModels.swift`).
 
 The server aligns a subtitle to the file's audio and stores a timing correction (`offset_ms` and `scale`).
 It never changes the subtitle's bytes: the subtitle's URL serves the corrected timing.
