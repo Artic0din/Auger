@@ -49,7 +49,7 @@ Complete every step before attaching simulator parity evidence to a pull request
 3. **Capture native app viewport.** Capture the app viewport (1920×1080 on Samsung), not the desktop or simulator shell. Wait for transitions to settle and confirm with a second frame when needed.
 4. **Pair with real Apple TV.** Capture the matching state in the real Apple TV app and label both source commits and installed build IDs separately. Xcode Apple TV previews at 960×540 for a 1920×1080 logical screen may be paired beside Samsung at 50% only when scales are labeled explicitly; never upscale a preview and label it native.
 5. **Use real TV Back.** Send TV Back key code `10009` for single-Back evidence; macOS `Esc` triggers a second Back in the simulator and invalidates focus-restoration checks. Disclose any CDP focus emulation used while a Mac screen is locked.
-6. **Redact and clean up.** Keep raw captures private (dirs `700`, files `600`) and publish only redacted copies free of sign-in codes, server addresses, account names, DUIDs, and credentials. Restore any mutated test state (including originally unset values), close Xcode and debugging clients, and release simulator ownership.
+6. **Redact and clean up.** Keep raw captures private (dirs `700`, files `600`) and publish only redacted copies free of sign-in codes, server addresses, account names, DUIDs, credentials, and private media details (titles, artwork, and identifying metadata). Restore any mutated test state (including originally unset values), close Xcode and debugging clients, and release simulator ownership.
 
 ## Pull request acceptance
 
