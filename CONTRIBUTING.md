@@ -20,7 +20,7 @@ for taking the time to write things up well.
 
 ## Write a useful issue
 
-Open an [issue](https://github.com/Silo-Server/silo-tizen/issues) for problems
+Open an [issue](https://github.com/Artic0din/silo-tizen/issues) for problems
 in the Samsung TV app. Server and API problems belong in
 [`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose).
 Search first; if an issue already covers the problem, add what's new there.
@@ -64,7 +64,7 @@ Tizen-specific workflow.
 
 ## Before you start
 
-Open an [issue](https://github.com/Silo-Server/silo-tizen/issues) before
+Open an [issue](https://github.com/Artic0din/silo-tizen/issues) before
 implementing a feature, navigation or behavior change, large refactor, or work
 that changes the shared server contract. Documentation, narrow fixes, and
 well-scoped parity corrections can go straight to a pull request.
