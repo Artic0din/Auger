@@ -78,20 +78,20 @@ is the reference for TV behavior.
 
 ## Development setup
 
-Read [README.md](README.md#build) for prerequisites, build, and signing commands, [AGENTS.md](AGENTS.md) for platform invariants and context pointers, and [GLOSSARY.md](GLOSSARY.md) plus [docs/domain-model.md](docs/domain-model.md) for canonical terms.
+Read [README.md](README.md) for prerequisites, build, and signing commands, [AGENTS.md](AGENTS.md) for platform invariants and context pointers, [docs/README.md](docs/README.md) for the documentation index, and [GLOSSARY.md](GLOSSARY.md) plus [docs/domain-model.md](docs/domain-model.md) for canonical terms.
 
 A running Silo Server is required for live sign-in, browsing, and playback validation. Keep certificates, security profiles, passwords, DUIDs, generated build output, logs, and media fixtures out of Git.
 
 ## Validate your change
 
-Run focused tests while iterating. Before opening a pull request, run the CI checks:
+Run focused tests while iterating. Before opening a pull request, run the main local checks:
 
 ```sh
 npm test
 python3 scripts/test-release-version.py
 ```
 
-`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. For user-visible changes, package `dist/Auger.wgt` and capture same-state evidence following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
+`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene, evidence, `tvOS source`, and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and capture same-state evidence following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
 
 ## Port from the tvOS source
 
