@@ -30,13 +30,13 @@ Uninstalling removes its data, so you sign in again afterwards.
 
 ## Layout
 
-- `app/` - package manifest (`config.xml`), HTML entry, icon, fonts and third-party marks
-- `src/api/`, `src/session/`, `src/contracts/v2/` - native transport, sessions, profile authority and contract decoders
-- `src/ui/` - sign-in, profile/PIN, browse and settings screens, and remote focus
-- `src/player/` - server playback plan, AVPlay transport, progress, final stop and track changes
-- `scripts/` - build, packaging and release scripts
-- `test/` - native contract tests and Playwright screen tests
-- `docs/` - behaviour, design and validation notes; start with [App behaviour](docs/app-behaviour.md)
+- `app/` holds the package manifest (`config.xml`), HTML entry, icon, fonts, and third-party marks.
+- `src/api/`, `src/session/`, and `src/contracts/v2/` own `/api/v2` transport, sessions, active Profile Authority, and contract decoders.
+- `src/ui/` owns screens and remote focus; `src/player/` owns AVPlay playback.
+- `scripts/` holds build, packaging, fixture sync, and release scripts; `test/` holds native and Playwright screen tests.
+- [GLOSSARY.md](GLOSSARY.md) and [docs/domain-model.md](docs/domain-model.md) define canonical terms and entity rules.
+- `docs/` holds behavior, focus, API, feature, and validation docs; use [docs/README.md](docs/README.md) as the index and [docs/app-behaviour.md](docs/app-behaviour.md) for current runtime behavior.
+- [AGENTS.md](AGENTS.md) holds coding-agent context pointers, platform invariants, and parity gates.
 
 ## Prerequisites
 

@@ -78,39 +78,20 @@ is the reference for TV behavior.
 
 ## Development setup
 
-Read [README.md](README.md) for prerequisites, signing setup, and build commands,
-then read [AGENTS.md](AGENTS.md) for module ownership and the Tizen platform rules.
+Read [README.md](README.md) for prerequisites, build, and signing commands, [AGENTS.md](AGENTS.md) for platform invariants and context pointers, [docs/README.md](docs/README.md) for the documentation index, and [GLOSSARY.md](GLOSSARY.md) plus [docs/domain-model.md](docs/domain-model.md) for canonical terms.
 
-Build the app with Node.js 26 or later, and package it with the Tizen Studio Web
-CLI and your own Certificate Manager security profile:
-
-```sh
-npm ci
-npx playwright install chromium
-npm run build
-export TIZEN_SECURITY_PROFILE="YourProfileName"
-./scripts/build-wgt.sh
-```
-
-A running Silo server is required for realistic authentication, browsing, and
-playback validation. Do not commit certificates, security profiles, passwords,
-DUIDs, generated build output, logs, or media fixtures.
+A running Silo Server is required for live sign-in, browsing, and playback validation. Keep certificates, security profiles, passwords, DUIDs, generated build output, logs, and media fixtures out of Git.
 
 ## Validate your change
 
-Run focused tests while iterating. Before opening a pull request, run the main
-CI checks:
+Run focused tests while iterating. Before opening a pull request, run the main local checks:
 
 ```sh
 npm test
 python3 scripts/test-release-version.py
 ```
 
-`npm test` runs both type checks, the production build, the native tests and the
-Playwright screen tests. Then package the `.wgt` and exercise visible changes on
-a Samsung TV running it. Desktop Chromium and the Samsung TV simulator do not
-prove TV rendering, AVPlay playback or remote behavior; see
-[docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md).
+`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene, evidence, `tvOS source`, and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and capture same-state evidence following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
 
 ## Port from the tvOS source
 
@@ -186,7 +167,4 @@ You retain copyright in your contribution; no assignment is requested.
 
 ## Instructions for coding agents
 
-Coding agents must read [AGENTS.md](AGENTS.md) before changing the repository
-(`CLAUDE.md` points to the same guidance). The organization-wide contribution
-guide and AI-assisted contribution policy apply to agent and human authors
-equally.
+Read [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it) and [GLOSSARY.md](GLOSSARY.md) before changing the repository. The organization-wide contribution guide and AI-assisted contribution policy apply equally to agent and human authors.
