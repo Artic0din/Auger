@@ -96,9 +96,7 @@ Paths in the following table are relative to `iosApp/iosApp/` at that exact SHA.
 Android TV at `670f5ba0ae2ed8065bb3d6a23c7317a09b5bc666` also uses 60-title works pages (`androidTvApp/src/androidMain/kotlin/org/siloserver/silo/tv/ui/screens/people/TvPersonDetailViewModel.kt:21`).
 Existing native API operations support this change; no upstream changes are required.
 
-Desktop tests prove synthetic behavior only.
-Signed WGT, native layout calibration, matched Apple TV evidence, AVPlay and physical-TV acceptance remain parent validation gates.
-This source change does not establish whole-feature parity or close the discovery umbrella.
+Desktop tests prove synthetic behavior only; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt`, Apple TV comparison, and physical-TV gates.
 
 ## Remote trace and native capture handoff
 

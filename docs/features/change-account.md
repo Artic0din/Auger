@@ -27,8 +27,7 @@ Focus outlines, the shared backdrop stage, and the selected server fill were rec
 Who's watching row stillness (`abf4ac45aa0ded295dd1443b91457cdf42dffbf2`) already holds: moving focus does not move the other row.
 Offline recovery says "Back to profiles" while a saved account can open profiles, otherwise "Change account".
 Tizen has no downloads, so download deletion copy is omitted.
-Desktop Chromium tests establish app behavior only.
-Same-state Apple TV and signed Samsung WGT captures remain required before merge.
+Desktop Chromium tests establish app behavior only; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt` and Apple TV comparison gates.
 
 Saved-server follow-up reference: silo-apple `2c03722c3eecee64c74272258190f13e3258d959`.
 `TVChangeAccountView.swift:1` guards this screen with `#if os(tvOS)`.

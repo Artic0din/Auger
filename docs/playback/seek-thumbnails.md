@@ -3,8 +3,7 @@
 The existing cancellable seek preview now optionally displays the server's JPEG thumbnail at the preview's source timestamp.
 Left/Right or the visible seek buttons request a preview; Enter commits the existing seek command and Back cancels it.
 The image is decorative, never takes focus, and adds no controls or explanatory copy.
-Unsupported, unavailable, malformed, expired or failed previews leave timestamp seeking usable.
-This slice does not complete issue 29 or whole-app acceptance.
+Unsupported, unavailable, malformed, expired, or failed previews leave timestamp seeking usable.
 
 ## Scrub transport behavior
 
