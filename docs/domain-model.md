@@ -11,7 +11,7 @@ erDiagram
     SERVER ||--o{ LIBRARY : holds
     ACCOUNT ||--|| HOUSEHOLD : owns
     HOUSEHOLD ||--|{ PROFILE : contains
-    HOUSEHOLD ||--|| PRIMARY_PROFILE : "managed by"
+    HOUSEHOLD ||--|| PROFILE : "managed by (Primary Profile)"
     PROFILE }o--o{ LIBRARY : "sees, unless restricted or hidden"
     COLLECTION }o--o{ LIBRARY : "draws titles from"
     PROFILE ||--o{ COLLECTION : "creates personal"
@@ -56,7 +56,7 @@ stateDiagram-v2
 - **Next Up** appears as its own Home row only when the **Profile** splits it out from **Continue Watching**.
 - **Up Next** is the player panel shown as the current title nears its end or finishes.
 - For an episode, **Up Next** follows the series to its next playable episode (crossing regular season boundaries; specials do not advance into regular seasons) and auto-plays only when enabled by this TV's override, falling back to the **Profile**'s effective autoplay setting.
-- **Up Next** also displays the **On Deck** row of other playable titles drawn from the **Profile**'s Home rows (**Continue Watching** and **Next Up**), excluding the current title and its series.
+- **Up Next** also displays the **On Deck** row of other playable titles drawn from the **Profile**'s Home rows (**Continue Watching**, including any separate in-progress row, and **Next Up**), excluding the current title and its series.
 - After a movie, or when a series has no next episode, **Up Next** uses the first **On Deck** title as its primary offer.
 - **On Deck** titles always require explicit **Viewer** selection and never auto-play.
 
