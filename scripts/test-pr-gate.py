@@ -42,7 +42,7 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual("check not passing: Kody Code Review=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_a_queued_rerun_outranks_an_older_pass(self):
-        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "", "QUEUED")]
+        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "0001-01-01T00:00:00Z", "QUEUED")]
         self.assertEqual("check not passing: Evidence=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_a_stuck_older_run_does_not_mask_a_newer_pass(self):

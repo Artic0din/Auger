@@ -33,6 +33,8 @@ def latest_checks(rollup: list[dict]) -> dict[str, str]:
             outcome = "PENDING"
         else:
             outcome = check.get("conclusion") or check.get("state") or "PENDING"
+        if started.startswith("0001-"):
+            started = ""  # gh prints Go's zero time for a run that has not started.
         if not started and outcome == "PENDING":
             started = "\uffff"  # A queued re-run has no start time yet and must not lose to the run it replaces.
         if name not in latest or started >= latest[name][0]:
