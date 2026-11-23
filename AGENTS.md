@@ -92,7 +92,7 @@ Before porting a feature, read its upstream design spec; [Upstream design notes]
 
 - `npm ci` installs the build and test tools (Node.js 26 or later); `npx playwright install chromium` adds the browser the screen tests need.
 - `npm run build` type-checks and stages `app/` into `dist/wgt/`.
-- `npm test` runs both type checks, the build, native tests and Playwright screen tests.
+- `npm test` runs both type checks, the build, native tests and Playwright screen tests. Only one screen-test suite runs per machine; a second `npm run test:ui` waits for the first.
 - `python3 scripts/test-release-version.py` tests the release version script.
 - `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-commit>` re-vendors the API v2 contract fixtures; never hand-edit `src/contracts/v2/fixtures/`.
 - `export TIZEN_SECURITY_PROFILE="YourProfileName"` then `./scripts/build-wgt.sh` packages and signs `dist/Auger.wgt` with `tizen package -t wgt`.
