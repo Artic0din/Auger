@@ -1,24 +1,24 @@
-# Silo strings (vendored)
+# Vendored Silo string catalog
 
-`SOURCE` holds the exact `silo-translations` commit these files come from.
-`<tag>.json` is that repository's `catalog/<tag>.arb`, reduced to `key -> ICU message`.
-The keys are the ones Apple ships (no `x-platforms`, or one naming `apple`), because tvOS is the parity target and Apple's keys use the ICU subset `src/i18n/icu.ts` reads.
-One Android-only key is also vendored (`PLATFORM_EXCEPTIONS` in `scripts/sync-translations.ts`): Settings › Playback's Video help line, `settings.skipIntervals.footerVideo`, because Apple TV's own line names the Siri Remote.
-Metadata and Info.plist prompts are left out, and a message outside that subset stops the sync.
-The TV app is called Auger (#733), but silo-translations says Silo, so the sync renames Silo to Auger in the keys that name the app (`APP_NAME_KEYS` in `scripts/sync-translations.ts`); text about the server keeps Silo. An English app-name message that no longer says Silo stops the sync, to be reviewed; add a key to the list when a new string names the app.
-`en.json` holds all 3,576 messages (247 KB, 57 KB gzipped).
-Each of the other 21 languages (Apple's list) holds only the keys `src` names as strings, plus every `home.section.*` key because the server names those, 476 today at 29 to 44 KB each: the whole catalog would add about 5 MB to the package, and a key no screen shows is dead weight there. A test holds each file to exactly the keys in use, so a screen that starts using a key needs a new sync, and one that stops using it a new sync too.
-Phone-only text is in it, because `x-platforms` names `apple` for all Apple devices; trim it by key prefix if the size ever matters.
+`SOURCE` pins the exact `silo-translations` commit these files come from. Each `<tag>.json` reduces that repository's `catalog/<tag>.arb` to `key -> ICU message`. See [docs/settings.md](../../../docs/settings.md#app-language) and [docs/translation.md](../../../docs/translation.md) for runtime usage.
 
-Refresh at an explicit commit or release tag, never a moving branch:
+## Filtering and app naming rules
+
+- **Included keys:** keys shipped by Apple (no `x-platforms`, or naming `apple`) because tvOS is the parity target and uses the ICU subset supported by `src/i18n/icu.ts`. Metadata and `Info.plist` prompts are excluded; any message outside the supported ICU subset stops sync.
+- **Android exception:** `PLATFORM_EXCEPTIONS` in `scripts/sync-translations.ts` also vendors `settings.skipIntervals.footerVideo` because Apple's copy names the Siri Remote.
+- **Brand substitution:** `APP_NAME_KEYS` in `scripts/sync-translations.ts` replaces `Silo` with `Auger` in app-name strings ([#733](https://github.com/Artic0din/silo-tizen/issues/733)) while keeping `Silo` in Server references. Sync fails for review if an English `APP_NAME_KEYS` entry stops containing `Silo`; add new app-name keys to `APP_NAME_KEYS`.
+- **Per-language trimming:** `en.json` keeps the full Apple keyset. Each of the other 21 shipped languages keeps only keys named as literal strings in `src/` plus every `home.section.*` and `error.*` key (`SERVER_KEY_PREFIXES` in `scripts/sync-translations.ts`), saving ~5 MB in the `.wgt`. A test pins every non-English file to the exact keys in use, so adding or removing a screen key requires a fresh sync.
+
+## Package loading
+
+- `SHIPPED_LANGUAGES` (`src/i18n/language.ts`) lists shipped languages in Apple order (English first, rest sorted by tag; the picker sorts by display name via `shippedByName`). A test pins this list to the files in this directory.
+- Only `en.json` bundles into `main.js` (imported by `translate.ts`). `scripts/catalog-files.ts` packages every other language as `catalog/<tag>.js`; `src/i18n/load.ts` loads it on demand and calls `registerCatalog` to redraw screens.
+
+## Refreshing the catalog
+
+Sync against an explicit commit or release tag, never a moving branch, then run `npm test`:
 
 ```sh
-npm run sync:translations -- <silo-translations commit or tag>   # every shipped language
-npm run sync:translations -- <commit or tag> --languages en,de   # a subset deletes the other files
+npm run sync:translations -- <silo-translations commit or tag>   # all shipped languages
+npm run sync:translations -- <commit or tag> --languages en,de   # subset (deletes unlisted files)
 ```
-
-`SHIPPED_LANGUAGES` (`src/i18n/language.ts`) lists them in Apple's order, English first and the rest sorted by tag, with the name Apple shows for each (`AppLanguage.shipped`; the picker sorts by that name instead, `shippedByName`); the build packages each file but English's as `catalog/<tag>.js` in the .wgt (`scripts/catalog-files.ts`). Add a new language to the list, and run `npm test`.
-A test holds the shipped list to the files here.
-Only `en.json` is imported, by `translate.ts`: English is in `main.js`. Every other language is loaded when it is the language shown (`src/i18n/load.ts` adds a script for its packaged file), the screens read English until it lands, and `registerCatalog` then tells them to draw again. A test holds every packaged file to the vendored text and to the keys `src` names.
-
-How screens use it is in [docs/settings.md](../../../docs/settings.md#app-language).

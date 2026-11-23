@@ -1,8 +1,6 @@
 # Tests
 
-`npm test` runs both strict type checks, the production build, `test/native/*.test.ts` and `test/ui/*.test.ts`.
-Node.js 26 or later is required.
-The package uses ES modules; Node runs TypeScript tests directly by stripping their types.
+Requires Node.js 26 or later (ES modules with native TypeScript type stripping) and Playwright Chromium.
 
 ```bash
 npm ci
@@ -10,51 +8,36 @@ npx playwright install chromium
 npm test
 ```
 
-## Native contracts, sessions and playback
+`npm test` runs both strict type checks, `npm run build`, `test/native/*.test.ts`, and `test/ui/*.test.ts`.
 
-`npm run test:native` uses the real core and controller with fake Silo, KeyManager and AVPlay ports.
-The tests require no TV, account or network service.
-They cover authentication, refresh/cleanup races, profile authority and PIN proofs, catalog decoding and profile restrictions, playback identities, progress/stop ordering, retries, offset timelines, seek/close sequencing and track changes.
-EOF tests hold progress, STOP and fresh watch separately before permitting one manual successor START.
-They check identical STOP retries, unchanged watch state, explicit-zero starts, numeric season ordering, unreadable media, specials, multi-episode ranges, unknown durations, cancellation and late authority answers.
-The fake catalog applies a declared synthetic completion threshold on STOP, while a disabled persistence mode covers successful receipts without watch side effects.
-AVPlay's fake enforces its documented states and retains uncancellable callbacks after teardown.
-Lost track-change replies cannot leave an obsolete local plan playing; definitive refusals preserve the current transport.
+## Native suite (`npm run test:native`)
 
-## Screens and composed app
+Runs the real API, session, catalog, and playback controllers against fake Silo, KeyManager, and AVPlay ports with no TV or network required.
 
-`npm run test:ui` runs two test files at a time, because each file launches its own Chromium and Node's default (one fewer than the cores) leaves a shared or slow machine so busy that timers and replies land out of order.
-It bundles the real TypeScript screens for Chrome 108, as the TV build does, and runs them in desktop Chromium.
-Playwright routes native API requests to the same fake Silo and serves synthetic SVG artwork.
-The fake server and browser clocks move together; polling and retry tests do not sleep.
-`openTv` installs a running browser clock; `fastForward` alone does not stop host time from consuming a deadline between jumps.
-Call `pauseTvClock(tv)` before starting an exact deadline or intermediate animation under test, then use `tv.jump(ms)` or `page.clock.runFor(ms)` to advance it explicitly.
-The pause helper advances existing timers by a protocol margin, so call it before the timed action starts.
-Unexpected page logs and errors fail the screen tests.
-To hunt a timing flake, run a test with `SILO_REPLY_JITTER_MS=150`: every fake Silo answer is delayed by a random time up to that many milliseconds, so a test that acts before an in-flight read lands fails far more often.
-Wait for `tv.pendingReplies === 0` or for the screen's own condition, never for a fixed time.
+- Covers auth, refresh/cleanup races, Profile Authority and PIN proofs, contract decoding, Library restrictions, playback identities, progress/STOP ordering, identical STOP retries, offset timelines, seek/close sequencing, track changes, and natural episode EOF handoff.
+- `FakeAVPlay` enforces documented AVPlay states and retains uncancellable callbacks after teardown.
+- Lost track-change replies cannot leave an obsolete local plan playing; definitive refusals preserve the active transport.
 
-`test/ui/app.test.ts` composes real sign-in, profiles, browse and playback over FakeCatalog, FakePlayback and FakeAVPlay.
-It covers the approved device-code journey, returning from playback, PIN-proof revocation during playback, sign-out/relaunch, protected-account restore, exit modal focus/key isolation, unavailable AVPlay and startup failure recovery.
-Its production case imports the actual `src/main.ts`, supplies the Tizen platform ports and exercises the same journey through that entry.
-The focused sign-in, profile, browse and player suites retain their failure/loading/empty-state, navigation, paging and track-menu checks.
-Preplay tests use the production entry in normal and reduced motion, checking per-file audio, nonzero server Auto preference, explicit version pins, numeric start-over, fresh Resume, duplicate activation, Retry, cancellation and initiating focus.
-Native tests check the three-second boundary, late replies, profile/sign-out fences and exact whole start bodies and headers, including saved quality/cap and identical lost-answer resends.
-The Details fake lists different audio inventories for files 42 and 43; the playback fake validates initial audio IDs and resolves Auto separately.
-Skyline regressions cover full profile names, the contrast of an unfocused empty server field, and Samsung media-key registration and dispatch.
-Player tests cover explicit Play/Pause idempotency, visible transport focus, seek preview/commit/cancel and preservation of the preview during live progress updates.
-Profile seek tests save 15/45 through Settings and consume them through the real controller and screen, including numeric enum boundaries, independent DELETE resets, unbatched reads, unsupported servers, malformed responses, Retry and authority replacement.
-Browse and composition tests also cover bounded type tabs, menu dwell and dismissal, server/profile-scoped library persistence, intermediate scroll frames, debounced previews and non-focusable Details synopsis text.
+## UI suite (`npm run test:ui`)
 
-Native transport tests cover headers, timeouts, HTTPS and logout, while native browse and composed-app tests cover the current focus and return behavior.
-Desktop Chromium and fake AVPlay do not prove real video/audio, TV keyboard behavior or Tizen 8.0's Chromium 108 rendering.
-The signed-TV app journey and the remaining hardware matrix must be checked separately.
+Bundles the real TypeScript screens targeting Chrome 108 and runs two test files concurrently in desktop Chromium (limiting concurrency avoids timer/reply starvation on shared machines). Playwright routes `/api/v2` calls to the fake Silo server and serves synthetic SVG artwork.
 
-## Captures and security
+### Clock control and flake hunting
 
-Set `PLAYER_CAPTURE_DIR` to a folder outside the repository to capture the player screen tests.
-PR images and recordings belong outside Git and must use inspected synthetic data.
-The Gitleaks configuration retains default rules and excludes only the exact synthetic subtitle-path hash at its pinned fixture path.
+- **Pause before timed actions.** `openTv` installs a running browser clock, so `fastForward` alone lets host time consume deadlines between jumps. Call `pauseTvClock(tv)` before starting an exact deadline or intermediate animation, then advance explicitly with `tv.jump(ms)` or `page.clock.runFor(ms)`.
+- **Wait on observable state.** Wait for `tv.pendingReplies === 0` or the screen's own DOM/state condition, never a fixed sleep. Unexpected page logs and errors fail the test.
+- **Reproduce timing flakes.** Run with `SILO_REPLY_JITTER_MS=150` to inject random reply delays up to 150 ms and expose tests that act before in-flight reads settle.
+
+### Suite coverage boundaries
+
+- `test/ui/app.test.ts` composes real sign-in, Profiles, browse, and playback (including a production case importing `src/main.ts`) over fake ports, covering device-code approval, playback return, PIN-proof revocation during playback, sign-out/relaunch, protected-account restore, Exit modal key isolation, unavailable AVPlay, and startup failure recovery.
+- Focused screen suites (`signIn`, `profiles`, `browse`, `settings`, `player`, `focusParity`, `rtl`, `accountsParity`) cover loading/failure/empty states, Skyline bar/menus, preplay audio/version/resume, seek preview and profile skip intervals, media-key registration, pressed looks, and reduced motion.
+- Desktop Chromium and fake AVPlay prove behavior, not Chromium 108 rendering, real video/audio, or TV IME behavior. Verify hardware behavior separately per [docs/evidence/simulator-evidence.md](../docs/evidence/simulator-evidence.md).
+
+## Captures, security, and quick checks
+
+- Set `PLAYER_CAPTURE_DIR` to a directory outside the repository to save player screen test captures. Keep PR media outside Git and use inspected synthetic data.
+- `.gitleaks.toml` keeps default rules and excludes only the pinned synthetic subtitle-path hash fixture.
 
 ```bash
 npm run typecheck

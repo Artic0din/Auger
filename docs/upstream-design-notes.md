@@ -1,21 +1,18 @@
-# Upstream Design Notes
+# Upstream design notes
 
-silo-apple and silo-android keep design specs and implementation plans in `docs/superpowers/`.
-Before porting a feature, read the matching spec: it records what the Apple TV or Android TV app does, why, and the edge cases its review found.
-They describe Swift and Kotlin code, so port the behaviour, not the structure.
-This page links the specs that apply to a TV client; phone, reader, audiobook, download and admin specs are left out.
-Most specs have an implementation plan of the same name under `docs/superpowers/plans/`.
+Read the matching upstream spec in `silo-apple` or `silo-android` (`docs/superpowers/`) before porting a TV feature. Each spec records what the Apple TV or Android TV client does, why, and the edge cases caught in review. Port the behavior, not the Swift or Kotlin structure.
+
+Most specs have a companion implementation plan under `docs/superpowers/plans/` with the same name. Phone, reader, audiobook, download, and admin specs are excluded here.
 
 ## Parity audits
 
-- [Four-client feature comparison](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-17-four-client-feature-comparison.md) - iOS, tvOS, Android phone and Android TV
+- [Four-client feature comparison](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-17-four-client-feature-comparison.md) (iOS, tvOS, Android phone, Android TV)
 - [Android TV and tvOS full-app parity audit](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-18-tvos-parity-fullapp-audit.md)
 - [TV client review: solidity and mobile parity](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-17-tv-client-parity-review.md)
 - [TV and mobile parity audit](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-17-tv-mobile-parity-audit.md)
 - [Android TV full parity rework](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-05-23-android-tv-parity-rework-design.md)
 - [Client and server API contract audit](https://github.com/Silo-Server/silo-android/blob/main/docs/superpowers/specs/2026-06-15-client-server-contract-audit.md)
-
-The Android repository also keeps Apple TV reference captures of Home, Calendar, movie and series detail, the player controls and the audio, subtitle and version pickers in [`docs/superpowers/reference/tvos-detail/`](https://github.com/Silo-Server/silo-android/tree/main/docs/superpowers/reference/tvos-detail).
+- Apple TV reference captures of Home, Calendar, Details, player controls, and pickers live in [`docs/superpowers/reference/tvos-detail/`](https://github.com/Silo-Server/silo-android/tree/main/docs/superpowers/reference/tvos-detail) in `silo-android`.
 
 ## Screens
 

@@ -24,7 +24,7 @@ One viewer identity inside a Household, with its own watch history, settings and
 _Avoid_: User, member
 
 **Primary Profile**:
-The Profile that manages its Household: it adds Profiles and sets their restrictions.
+The Profile that manages its Household by adding Profiles and setting their restrictions.
 Being the Primary Profile does not make it a Server administrator.
 _Avoid_: Owner, admin, household manager
 
@@ -44,7 +44,7 @@ One Server-defined shelf of content, such as movies, series, mixed video or audi
 _Avoid_: Section, folder, source
 
 **Restricted Library**:
-A Library barred by access policy — set by a Server administrator for an Account, or by the Primary Profile for a Profile in its Household.
+A Library barred by access policy, set by a Server administrator for an Account or by the Primary Profile for a Profile in its Household.
 The restricted Profile cannot undo it.
 _Avoid_: Hidden Library, locked library
 

@@ -44,7 +44,7 @@ stateDiagram-v2
 ## Catalog Visibility and Grouping
 
 - A **Profile** sees the **Libraries** allowed to its **Account** and **Profile**, minus its **Hidden Libraries**.
-- **Restricted Libraries** are barred by access policy — either by a **Server** administrator for an **Account** (affecting every **Profile** in the **Household**), or by the **Primary Profile** for a **Profile** inside its **Household**; the restricted **Profile** cannot undo them.
+- **Restricted Libraries** are barred by access policy, set by a **Server** administrator for an **Account** (affecting every **Profile** in the **Household**) or by the **Primary Profile** for a **Profile** inside its **Household**. The restricted **Profile** cannot undo them.
 - **Hidden Libraries** are chosen by the **Profile** itself to hide from its browsing, search, and navigation tabs; that **Profile** can restore them from the TV or another client.
 - A **Collection** is either curated on the **Server** or created as a personal **Collection** by a **Profile**, and either can span **Libraries**.
 - A personal **Collection** is editable only by its creator **Profile**; when shared, other **Profiles** in the same **Household** see it read-only, and other **Accounts** never see it.
