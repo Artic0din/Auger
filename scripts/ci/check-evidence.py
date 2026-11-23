@@ -6,6 +6,7 @@ It proves captures are attached and that repository links load, not that they sh
 """
 
 import fnmatch
+import http.client
 import os
 import re
 import subprocess
@@ -45,7 +46,7 @@ def broken_capture(url: str) -> str | None:
             status = response.status
     except urllib.error.HTTPError as error:
         status = error.code
-    except (urllib.error.URLError, TimeoutError) as error:
+    except (OSError, http.client.HTTPException, ValueError) as error:
         return f"no response ({error})"
     return None if status == 200 else f"HTTP {status}"
 
