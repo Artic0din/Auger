@@ -16,6 +16,8 @@ Start with the root [README](../README.md) for build, signing and release, [FEAT
 
 ## Core References
 
+- [Glossary](../GLOSSARY.md) - canonical domain vocabulary for the app and its docs
+- [Domain model](domain-model.md) - relationships, authority lifecycle, catalog visibility, and playback rules
 - [Native API v2](native-api-v2.md) - every `/api/v2` operation the app calls, with its auth, gating and error handling
 - [TV focus](tv-focus.md) - read before changing navigation, menus, grids, dialogs or custom controls
 - [Releasing](releasing.md) - builds, sideloading and installing with Apps2Samsung
