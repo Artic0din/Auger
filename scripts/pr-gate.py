@@ -18,8 +18,9 @@ REQUIRED_CHECKS = ("Evidence", "tvOS source", "Build and native tests",
                    "UI tests (1/3)", "UI tests (2/3)", "UI tests (3/3)", "Kody Code Review")
 PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 CODEX_STATE = re.compile(r"codex-review-state:v1 (\{.*?\}) -->")
+CODEX_LOGIN = "chatgpt-codex-connector"
 THREADS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
-pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved path line}}}}}"""
+pullRequest(number:$number){reviewThreads(first:100){totalCount nodes{isResolved path line}}}}}"""
 
 
 def latest_checks(rollup: list[dict]) -> dict[str, str]:
@@ -34,11 +35,16 @@ def latest_checks(rollup: list[dict]) -> dict[str, str]:
             outcome = check.get("conclusion") or check.get("state") or "PENDING"
         if name not in latest or started >= latest[name][0]:
             latest[name] = (started, outcome)
+        if outcome == "PENDING":
+            # A queued re-run has no start time yet and must not lose to the stale run it replaces.
+            latest[name] = ("\uffff", outcome)
     return {name: outcome for name, (_, outcome) in latest.items()}
 
 
 def codex_reviewed(comments: list[dict], head: str) -> bool:
     for comment in reversed(comments):
+        if (comment.get("author") or {}).get("login") != CODEX_LOGIN:
+            continue
         if match := CODEX_STATE.search(comment.get("body", "")):
             review = json.loads(match.group(1)).get("code_review") or {}
             return review.get("commit_sha") == head and review.get("status") == "completed"
@@ -81,9 +87,12 @@ def main() -> int:
     pr = gh("pr", "view", number, "-R", REPOSITORY,
             "--json", "state,mergeable,headRefOid,statusCheckRollup,comments")
     owner, name = REPOSITORY.split("/")
-    threads = gh("api", "graphql", "-f", f"query={THREADS}", "-F", f"owner={owner}", "-F", f"name={name}",
-                 "-F", f"number={number}")["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
-    result = verdict(pr, threads)
+    page = gh("api", "graphql", "-f", f"query={THREADS}", "-F", f"owner={owner}", "-F", f"name={name}",
+              "-F", f"number={number}")["data"]["repository"]["pullRequest"]["reviewThreads"]
+    if page["totalCount"] > len(page["nodes"]):
+        print(f"#{number} has {page['totalCount']} review threads; check the ones past 100 by hand")
+        return 1
+    result = verdict(pr, page["nodes"])
     print(f"#{number} {result}")
     return 0 if result.startswith("READY") else 1
 

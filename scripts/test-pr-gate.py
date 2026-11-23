@@ -11,9 +11,9 @@ spec.loader.exec_module(gate)
 HEAD = "350887ea7ddadc34d4b53c7eb489fd56c6a6f704"
 
 
-def codex(sha, status="completed"):
+def codex(sha, status="completed", login="chatgpt-codex-connector"):
     state = f'{{"code_review":{{"commit_sha":"{sha}","status":"{status}"}},"security_review":{{}}}}'
-    return {"body": f"<!-- codex-review-state:v1 {state} -->\nCodex Review Summary"}
+    return {"author": {"login": login}, "body": f"<!-- codex-review-state:v1 {state} -->\nCodex Review Summary"}
 
 
 def check(name, conclusion="SUCCESS", started="2026-11-22T06:00:00Z", status="COMPLETED"):
@@ -41,6 +41,10 @@ class VerdictTest(unittest.TestCase):
         rollup = ready_pr()["statusCheckRollup"] + [check("Kody Code Review", None, "2026-11-22T07:00:00Z", "IN_PROGRESS")]
         self.assertEqual("check not passing: Kody Code Review=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
+    def test_a_queued_rerun_outranks_an_older_pass(self):
+        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "", "QUEUED")]
+        self.assertEqual("check not passing: Evidence=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
+
     def test_a_conflicting_branch_names_the_fix_not_the_missing_checks(self):
         result = gate.verdict(ready_pr(mergeable="CONFLICTING", statusCheckRollup=[]), [])
         self.assertEqual("conflicts with main: merge main into the branch", result)
@@ -50,7 +54,8 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual("check not reported: tvOS source", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_codex_must_have_completed_the_head_commit(self):
-        for comments in ([], [codex("0" * 40)], [codex(HEAD, "running")], [codex(HEAD), codex("0" * 40)]):
+        for comments in ([], [codex("0" * 40)], [codex(HEAD, "running")], [codex(HEAD), codex("0" * 40)],
+                         [codex(HEAD, login="someone")]):
             with self.subTest(comments=comments):
                 self.assertEqual("Codex has not completed a review of 350887ea",
                                  gate.verdict(ready_pr(comments=comments), []))
