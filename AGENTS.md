@@ -215,6 +215,9 @@ range before every push. Do not commit certificates, security profiles,
 passwords, server URLs, tokens or DUIDs. CI signs with repository secrets
 (`TIZEN_AUTHOR_P12_B64`, `TIZEN_AUTHOR_PASSWORD`, `TIZEN_DISTRIBUTOR_P12_B64`,
 `TIZEN_DISTRIBUTOR_PASSWORD`); see [Releasing](docs/releasing.md).
+`npm ci` installs a pre-commit hook from `.githooks/` that runs that staged
+scan and the type check, and the Secrets workflow scans every pull request's
+commits.
 
 ## Agent skills
 

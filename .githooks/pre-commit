@@ -1,0 +1,13 @@
+#!/bin/sh
+# Installed by `npm ci` / `npm install` (the prepare script sets core.hooksPath).
+set -e
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed (brew install gitleaks); commit blocked." >&2
+  exit 1
+fi
+gitleaks git --staged --redact --no-banner
+if [ -x node_modules/.bin/tsc ]; then
+  npm run --silent typecheck
+else
+  echo "pre-commit: skipped the type check because node_modules is missing; run npm ci." >&2
+fi
