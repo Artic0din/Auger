@@ -13,7 +13,8 @@
     "test:native": "node --test --test-timeout=15000 \"test/native/*.test.ts\"",
     "test": "npm run build && npm run test:native && npm run test:ui",
     "sync:translations": "node scripts/sync-translations.ts",
-    "test:ui": "node scripts/run-ui-tests.ts"
+    "test:ui": "node scripts/run-ui-tests.ts",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
