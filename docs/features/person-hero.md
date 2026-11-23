@@ -28,7 +28,5 @@ The packaged third-party notices retain the ThumbHash and segmentation licenses;
 
 Primary sources are Apple `PersonDetailView.swift` at `f33479404712737499b22365430db1885cf6c6ab`, the same hero at `1a7cceeaf3b2bfc4f889c00487d19b2c6f843940` (two commits ahead, with no hero change), server `cc8514943289045e7b9f7ac8d36d4968bfe93926` where OpenAPI declares `photo_thumbhash`, and Skyline guide SHA-256 `2d42d292e01ab6ee539278b63c286756fc432edf876a9286a33c9e853672cac2`.
 
-This does not complete Person parity or issue 28.
-Metadata refresh polling remains separate.
-[Filmography](person-filmography.md) now shares the Person page beneath this retained hero.
-Synthetic desktop tests and captures do not prove a live server, Chromium 108, AVPlay, a signed package, the emulator, or a television.
+Metadata refresh polling and paged filmography live on the shared Person page ([Person filmography](person-filmography.md)).
+Desktop tests prove synthetic behavior only; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for Chromium 108, signed `.wgt`, and physical-TV gates.

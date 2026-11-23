@@ -128,15 +128,9 @@ The progress bar, Box set label and film count stay above it.
 Cast photos, collection tiles, Trailers & More stills, Season posters and Requests posters keep their own fallbacks.
 Version labels retain the server edition, resolution and codec fields.
 
-Native acceptance remains required before merge.
-Compare identical Movie and Series items, profile, selected file and tracks, card-size setting and 1920×1080 viewport on both clients.
-Capture entry with Play focused; each selector open; subtitle Off selected; More; Cast focused; Trailers & More focused; related focused; and Back restoration.
-For Series additionally capture Season 1 selected, the first episode focused, the second episode focused, another season explicitly selected, Specials selected, and Back from Episode information.
-Apple's Movie hero uses an unreserved editorial stack inside `heroComposition.clipped()` (`TVDetailHero.swift:149-166,263-270`); title and synopsis retain their vertical size (`:493,501`, `TVHeroSynopsis.swift:24`).
-It has no grow-the-hero or shrink-the-title rule.
-The Tizen Movie frame now follows that fixed clipping contract, including overflow for pathological text; Series separately clips its primary editorial region and preserves disclosure/actions.
-This is a source-derived result, not an observation of the same pathological item on an installed Apple build.
-Native comparison must establish the exact visible truncation before merge.
+Native comparison follows [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for identical Movie and Series items, Profile, selected file and tracks, card-size setting, and 1920×1080 viewport.
+Capture entry with Play focused, each selector open, subtitle Off selected, More, Cast, Trailers & More, Related, and Back restoration; for Series also capture Season 1, first and second episodes, another season, Specials, and Back from Episode information.
+Apple's Movie hero uses an unreserved editorial stack inside `heroComposition.clipped()` (`TVDetailHero.swift:149-166,263-270`), while Tizen lets Movie grow for long text so focused Play stays visible (see [Details actions](details-actions.md#hero-meta-lines-and-screen-states-395)); Series clips its primary editorial region and preserves disclosure and actions.
 
 Apple does not filter local extras by file ID (`Screens/Detail/TrailerRail.swift:94-98`); tvOS launches their content ID from the beginning (`TVItemDetailView.swift:259-265`).
 The Tizen fallback resolves `/catalog/items/{content_id}/versions` on Select when the embedded file ID is absent, then uses the existing player and its authoritative inventory.
@@ -187,9 +181,7 @@ The server's returned effective file, tracks, warnings and source/player timelin
 The controller retains protocol 3, saved quality/cap settings, capability gates and bounded identical-body start resends with the same attempt identity.
 
 The contract is pinned to [server cc851494](https://github.com/Silo-Server/silo-server/blob/cc8514943289045e7b9f7ac8d36d4968bfe93926/internal/apiv2/playback.go), with [Apple's fresh resume state at f334794](https://github.com/Silo-Server/silo-apple/blob/f33479404712737499b22365430db1885cf6c6ab/iosApp/iosApp/Screens/Detail/DetailResumeState.swift) as the interaction reference.
-Production-entry desktop Chromium tests use synthetic Silo, KeyManager and AVPlay ports in normal and reduced motion.
-They establish request, cancellation and focus behavior, not audible selection, decoded media, subtitles, a signed package, real Chromium 108 or Tizen 8.0 TV acceptance.
-Those device and subtitle gates remain open under issue #11; this slice does not complete issues #28 or #29.
+Production-entry desktop Chromium tests use synthetic Silo, KeyManager, and AVPlay ports in normal and reduced motion; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for hardware and native comparison gates ([#11](https://github.com/Artic0din/silo-tizen/issues/11)).
 
 ## Text Search
 
@@ -255,10 +247,8 @@ The native Samsung text field remains attached across renders; the tvOS alphabet
 Samsung simulator keyboard rendering and final same-state visual acceptance remain unverified.
 These source changes do not diagnose historical keyboard or first-query latency reports.
 
-Primary sources are the pinned [OpenAPI](https://github.com/Silo-Server/silo-server/blob/cc8514943289045e7b9f7ac8d36d4968bfe93926/contracts/api/v2/openapi.json), its catalog handler/parser/resolver, and canonical [Apple SearchViewModel at f334794](https://github.com/Silo-Server/silo-apple/blob/f33479404712737499b22365430db1885cf6c6ab/iosApp/iosApp/Screens/Search/SearchViewModel.swift).
-The binding Skyline guide SHA-256 remains `2d42d292e01ab6ee539278b63c286756fc432edf876a9286a33c9e853672cac2`; section 6.7 retains the existing Search screen.
-Synthetic desktop tests and captures establish this Search slice only, not live-server, decoded playback, Chromium 108 runtime, Tizen or whole-app acceptance.
-The broader discovery and Details parity work remains tracked by issue #28.
+Primary sources are the pinned [OpenAPI](https://github.com/Silo-Server/silo-server/blob/cc8514943289045e7b9f7ac8d36d4968bfe93926/contracts/api/v2/openapi.json) and canonical [Apple SearchViewModel at f334794](https://github.com/Silo-Server/silo-apple/blob/f33479404712737499b22365430db1885cf6c6ab/iosApp/iosApp/Screens/Search/SearchViewModel.swift).
+Desktop tests verify synthetic Search behavior only; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for runtime and hardware proof boundaries.
 
 Focus never activates a route or starts a request.
 A library tab opens its anchored selector after 250 ms.
@@ -324,10 +314,9 @@ The Sign Out confirmation and its backdrop fade in and out over 0.2 s.
 Profile and For You rows use original filled glyphs for Apple's filled symbols (people, clock, paper plane, gear, bookmark, heart, sparkles), sized to Apple's measured ink in the same 30 × 20 icon box; Change Account is a person in a circle with a tick badge, and Watch Party and Sign Out stay outlined as on Apple TV.
 The header uses the confirmed server branding name, falling back to the host when none is cached, in the bundled Roboto Mono at Apple's tracking.
 Every focused menu row uses a white platter and black text, including Sign Out.
-Change Account opens saved accounts without logging out or deleting saved sign-ins.
+Change Account opens saved Servers and Accounts without logging out or deleting saved sign-ins ([Change Account](change-account.md)).
 Back leaves the profile menu closed and restores the selected tab and its page.
-The header keeps the server name because Tizen has no multiple saved accounts per server.
-Sign Out requires confirmation; Cancel and Back preserve the session and restore avatar focus.
+Sign Out requires confirmation (and warns when signing out of a Server's only Account will remove the Server); Cancel and Back preserve the session and restore avatar focus.
 Its two-action layout follows `TVSettingsConfirmationOverlay`: centered surface, 48/42 px padding, 38 px title, 22 px message, horizontal 260 px buttons with 16 px spacing and a 0.62 black backdrop.
 The existing focus host owns that row; Up/Down stay inside it, Left/Right select an action, and tapping the backdrop cancels without activating the covered page.
 Back dismisses either anchored menu until focus leaves its anchor or the viewer presses it again.
@@ -343,12 +332,9 @@ With no rows, the page is Apple's: a blank focus owner spoken as "Loading recomm
 Recommendation identities are namespaced separately from Home sections; no continuation or exact total is invented.
 The server web client's recommendation adapter was checked, but importing its React/legacy-card layer would add a second transport and model without reducing this port.
 
-This slice does not implement Apple's saved-server list or the additional Sign Out & Remove Server confirmation action.
-The saved-server list is tracked in #127; the additional removal action remains under #107.
-Those are client work, not claimed Tizen limitations.
-Music and Watch Party remain in their existing separate scopes.
-Inter, original SVG drawings and CSS material/focus effects remain documented platform equivalents; full-product and physical-TV parity are not established by these changes.
-The [current signed simulator comparisons](../evidence/screenshots/94-navigation/README.md) record package identity, historical-frame labels, measured menu/dialog bounds and remaining validation limits.
+Music and Watch Party remain in their separate scopes.
+Inter, original SVG drawings, and CSS material/focus effects are documented platform equivalents.
+The [signed simulator comparisons](../evidence/screenshots/94-navigation/README.md) record package identity, measured menu/dialog bounds, and validation limits.
 
 `BrowseOptions.publicStorage` accepts the existing `PublicStorage` interface.
 The composition owner passes its existing public storage dependency to persist scopes across launches.
@@ -519,9 +505,7 @@ Card actions is the tvOS context menu beside the card: no title, one column of r
 Not Interested (silo-apple `NotInterestedMenuButton`, 29c0dd43) is offered on a poster card (`MediaCard`, `TVMediaCard`) of a movie or series whose `user_state` carries `not_interested`, never on a wide still in a thumbnail row (`EpisodeThumbCard`'s menu has no such row), so a server that predates the mark offers nothing. Marking writes `PUT /not-interested/{id}` and clearing `DELETE`, once and never replayed. A newly accepted mark takes the title out of Home's recommendation and discovery rows at once and out of every For You row (`HomeSectionsMutation.notInterestedSectionTypes`); the rows of what is new, in progress, saved or chosen keep it, and a refused write changes nothing and shows the update-failed alert. A movie or series page offers the same entry in More after the translation row and before Watch Party (see Details actions).
 It opens at once from the row's data; choosing a row closes it, the change runs behind it and Home rereads its rows, and a failure shows Couldn’t Update Item with OK.
 Home with no rows shows Apple's EmptyStateView, "Nothing to watch yet", under a page focus owner; while Home has rows, a refresh that runs or fails shows only the feed.
-This is a scoped Home journey delivery against canonical Apple `f33479404712737499b22365430db1885cf6c6ab` and the guide hash `2d42d292e01ab6ee539278b63c286756fc432edf876a9286a33c9e853672cac2`.
-The Select and Play behavior follows Apple `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`; native same-state acceptance remains pending.
-It does not complete whole-Home parity, issue #28, preplay controls, next-up behaviour or hardware acceptance.
+Home Select and Play behavior follows Apple `7baff3ef657757cc0a69202e86dd4bd5c7fcb585` (and `f33479404712737499b22365430db1885cf6c6ab`).
 Progress appears only when the server supplies position and duration.
 The marquee text follows focus at once, with no animation.
 The backdrop shows at once for the first card; later backdrops wait for focus to rest 150 ms, or after a row change until Apple's 320 ms hold cap (the tvOS band's scroll phase outlasts it, so Apple always swaps there), then fade in over the previous art with `ease-in-out` over 240 ms.
@@ -561,14 +545,10 @@ The page tint sits behind the entire browse surface so headings, pills and capti
 Track selectors use anchored popovers with Auto entry focus, preference subtext and selection checkmarks.
 The 560px track popovers use 76px rows; Audio checks both Auto and its effective track, and subtitle rows group by language and format without changing selection identity.
 The cast section's leading anchor is centered on focus, following tvOS at `bef81e8`.
-Remote YouTube trailers remain omitted because this client has no verified YouTube application handoff or direct stream resolver; local playable extras remain available.
-Calendar's explicit season context retains its season-chip entry focus instead.
-Cast and crew share a rail of at most 24 people, combining roles for the same server person ID.
-Credits without a person ID remain readable without an invented person route.
-Person pages show the biography and the first 24 accessible movie and series credits.
-Related titles use a bounded rail with loading placeholders and omit the heading, cards and focus zone on failure or an empty result, matching Apple TV.
-These bounded rails do not implement Apple's complete paged person browser.
-The earlier Details slice used [silo-apple at 148d5d7](https://github.com/Silo-Server/silo-apple/tree/148d5d70f8b8ce982a827fead2b16f8de40f0f57), subject to the binding Skyline guide.
+Cast and crew share a rail of at most 24 people, combining roles for the same Server person ID.
+Credits without a person ID stay readable without an invented person route.
+Selecting a person opens the paged [Person filmography](person-filmography.md) page.
+Related titles use a bounded rail with loading placeholders and omit the heading, cards, and focus zone on failure or empty result, matching Apple TV.
 
 Version selection carries the exact file ID to playback and uses that file's duration for the five-second resume end margin.
 Watchlist and favorite controls require the personal-list capability and successful item membership reads.
@@ -582,37 +562,17 @@ If an episode reread fails, the existing rows remain with an explicit retry that
 Season metadata uses its real catalog ID; missing metadata leaves the episode list usable.
 Facts remain individually reachable by remote, including lists taller than the screen.
 
-Remote trailer metadata contains a site and site key, not an AVPlay stream URL.
-A Samsung trailer handoff remains unverified, so this slice exposes no trailer control.
-Apple's local extras, artwork preferences, automatic version quality ranking and complete person filters remain outside this slice.
+## Settings integration
 
-The shell uses the shared tokens in `src/theme.css` alongside Skyline's navigation, marquee and card dimensions.
-Desktop Chromium tests and synthetic captures do not prove actual Chromium 108, Tizen emulator, signed package or Samsung TV behavior.
+Settings uses the native session and HTTP owners, sharing `FocusHost` across the category rail, control pane, and pickers.
+Category focus previews loaded controls without network requests; writes require explicit activation.
+Back cancels a picker, returns from controls to the category rail, and exits Settings to Browse with avatar focus.
+Loading, empty, and failed states keep Back and Retry reachable.
 
-Settings uses the existing native session and HTTP owners.
-General contains Hidden libraries and the [title-art switches](title-art.md) with this-TV/all-devices scope; Playback contains the [saved profile defaults](../playback/playback-quality.md#saved-profile-defaults), including separate video seek intervals.
-The category rail, control pane and pickers share `FocusHost`.
-Category focus only previews loaded controls; requests and writes require explicit activation.
-Back cancels a picker, returns from controls to the category rail, then returns to browse with avatar focus.
-Loading, empty and failed states retain reachable Back and retry controls.
+- **General** holds TV User, Profile at Launch ([profile-launch.md](profile-launch.md)), App Language, Title Pages ([title-art.md](title-art.md)), Theme Music, Cards & Posters (Show Advisory Age, Poster Size), and Show Audiobooks.
+- **Playback** holds [saved playback defaults](../playback/playback-quality.md#saved-playback-settings) (Resolution, Maximum Bitrate, Lower quality when buffering, conditional Learned limit, Connection speed, Audio Language, HDR, Episodes autoplay/Next Up/Skip controls, Spoilers, Video/Audiobooks skip intervals, and Reset).
+- **Subtitles** holds Language, Behavior, Show Forced Subtitles, conditional Metadata Language, and Appearance ([subtitle-appearance.md](../playback/subtitle-appearance.md)).
+- **Server** holds Active Server info, [Accounts](change-account.md), Restore All Libraries (shown when `ui.disabled_library_ids` is nonempty, writing `[]` and refreshing Browse on exit), About, and Extra Features ([Watch Party](watch-party.md)).
+- See [docs/settings.md](../settings.md) for the complete Settings contract, styling, and AVPlay exclusions.
 
-Discovery checks the settings API version, capability state, allowed flag, manifest revision and profile scope before exposing controls.
-The consumed contract subset is pinned to server `cc8514943289045e7b9f7ac8d36d4968bfe93926` in the synthetic settings fixture.
-Language suggestions come from the discovered server contract, filtered by their introduction revision; unfamiliar valid stored tags remain selectable.
-Original language uses `x-silo-original` from revision 9.
-Automatic playback starts already omit explicit audio ID and index, allowing the server to consume the preference.
-No quality-default or subtitle-default controls are exposed in this slice.
-
-Profile rows and effective values are read separately and never copied into one another.
-`No preference` stores explicit JSON null; `Use inherited default` deletes only the profile row.
-A device, library or series audio override can continue to take priority.
-The current effective value, source and policy constraints are shown separately from the edited profile value.
-Writes are serialized, not automatically replayed, and confirmed by explicit and effective readback.
-After an uncertain answer, retry first reconciles the edited scopes (both profile and this profile-device row for title art); Retry-After blocks early requests.
-Account/profile authority changes cancel work and clear old settings data.
-
-The hidden-library editor requests `include_hidden=true`; access restrictions remain server-owned.
-Library IDs stay opaque strings until the validated positive JSON-integer write boundary.
-Each toggle rereads the profile list and preserves IDs absent from the editable library list.
-Returning after a hidden-list mutation refreshes Home and root navigation and drops cached library roots.
-The whole-array API remains last-write-wins across clients; rereading does not make concurrent edits atomic.
+Profile rows and effective values stay separate. On profile scope, `No preference` writes explicit JSON `null` and `Use inherited default` deletes the profile row; on `profile_device` scope, clearing an override deletes only this device's row. Writes serialize without automatic replay, confirm via explicit and effective readback, reconcile scopes on Retry after uncertain answers, honor `Retry-After`, and cancel cleanly on Authority changes.

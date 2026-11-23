@@ -36,7 +36,6 @@ Find Trailers queues discovery and polls refreshed item detail; it does not play
 tvOS offers it only when remote trailers can be displayed (`TVItemDetailView.swift:317-324,481-488`).
 The pinned native contract includes `POST /api/v2/catalog/items/{id}/trailers/refresh`.
 Samsung's existing rail displays remote cards, so movies and series offer Find Trailers after the watched actions and before Translate Description.
-Not Interested (silo-apple 29c0dd43, `TVMovieDetailView` and `TVSeriesDetailView` More menus) follows Translate Description and precedes Watch Party. It reads `Not Interested`, or `Show in Recommendations` once marked, from the item's `user_state.not_interested`, and is offered only for a movie or series from a server that sends it. Pressing it shows the new state at once and writes `PUT` or `DELETE /not-interested/{id}`; a refused write puts the state back and shows the update-failed alert. A new mark takes the title out of Home's recommendation rows and every For You row, so Back lands on the card that took its place. An unanswered write shows the same update-failed alert, not Apple's held-change alert, because the write is idempotent and a retry is safe. The card menu and the page share one per-title record for the session (`notInterestedStore.ts`): the write still out (one at a time per title, so a page or menu opened over it shows the state it will leave, waits, and sends nothing), the state the last answered write left, and how a later read is reconciled with it. A read that began before that answer keeps the answered state; a read that began after it is authoritative and replaces it, so a clear made in the card menu is not undone by an earlier mark remembered on the page. The store tells its subscribers when a write is answered; the open card menu and the shown page subscribe while they are shown and draw again, so neither is left disabled or showing an optimistic label.
 Discovery does not add a YouTube playback handoff: remote cards still have that existing platform limitation.
 The request is profile-scoped, non-retryable and never replayed after authentication refresh.
 Queued requests poll detail every 3 seconds, observing at least 60 seconds before five unchanged polls may settle, with a 120-second window.
@@ -44,6 +43,13 @@ Only new supported-video identities or local extra IDs finish discovery; existin
 Cooldown, disabled, exhausted, transport failure and rate limit use Apple's status copy, dismissed after three seconds.
 Leaving Details cancels observation; returning resumes an interrupted run without another POST, while an authority change discards it.
 The found payload updates the rail without resetting the selected season or overwriting newer watch state.
+
+**Not Interested** (`silo-apple` `29c0dd43`, `TVMovieDetailView` and `TVSeriesDetailView` More menus) follows Translate Description and precedes Watch Party:
+
+- Shown only for a movie or series from a Server sending `user_state.not_interested`; reads `Not Interested` or `Show in Recommendations`.
+- Pressing updates the displayed state at once and sends `PUT` or `DELETE /not-interested/{id}`. A new mark removes the title from Home recommendation rows and every For You row, so Back lands on the replacement card. Refused or unanswered writes roll back and show the update-failed alert (idempotent write, safe to retry).
+- `notInterestedStore.ts` shares one per-title session record across the card menu and Details (serializing writes, preserving answered state against reads started earlier, letting reads started later replace it, and notifying subscribed open views on settlement).
+
 Watch Party ends More while the experimental switch is on and the server can host a party, as `WatchPartyEntry.isAvailable` requires; it pushes the lobby over Details and creates a host-pick room holding the title ([Watch Party](watch-party.md)).
 Shuffle Series leads More when the capability supports series and the hierarchy has at least two episodes.
 It creates a series-scoped shuffle and uses the existing shuffle pick and player continuation owners (`TVSeriesDetailView.swift:923-928,954-966,1016-1021`).
@@ -145,9 +151,8 @@ Tests assert directional headings within three pixels, the movie stack 291/334/4
 The route-isolation and scroll changes need a new signed same-state re-check.
 No simulator, TV, live server or signed package was used for this follow-up.
 
-Metadata already includes the outlined rating chip and rating artwork (`TVDetailHero.swift:360-446`); Related Movies and Recommended Series already match (`TVMovieDetailView.swift:289`, `TVSeriesDetailView.swift:1117`).
-The optional advisory-age chip (`TVDetailHero.swift:450-453`) remains the outstanding #247 implementation item: Swift requires `AdvisoryAgePreferenceStore.showsAdvisoryAge`, which has no corresponding preference owner here.
-Adding that preference lifecycle falls outside this scroll change, so #247 stays open.
+Metadata includes the outlined rating chip, rating artwork (`TVDetailHero.swift:360-446`), and the optional advisory-age chip (`advisoryAgeBadgeLabel` in `src/ui/browseDetails.ts`, controlled by Show Advisory Age in General Settings). Related Movies and Recommended Series match (`TVMovieDetailView.swift:289`, `TVSeriesDetailView.swift:1117`).
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed comparison gates.
 
 The later comparison must cover Movie and Series fresh opening and reopening after Cast/table scroll; Up through every hero action; return from episode information with Season 2 selected; focused middle and terminal Details tables; first and subsequent trailers with and without Cast; Related Movies and Recommended Series; rated metadata with advisory preference off/on; and the rest hero including the movie stack y291/334/450/492/556.
 Repeat Series rail entry, horizontal terminal clamp and Up return at Compact, Standard and Large to protect #246.

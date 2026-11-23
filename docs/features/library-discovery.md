@@ -77,10 +77,7 @@ After relaunch, CDP read-back of the loaded JavaScript and CSS matched the signe
 Inter substitutes for SF Pro; drawn SVGs replace SF Symbols, CSS scale/shadow replaces native parallax/specular focus, and the dark panel gradient approximates the tvOS material.
 The focused Sort direction stays readable instead of copying Apple's low-contrast label.
 The historical Apple Filter frame leaves focus on Search behind the panel; Tizen keeps focus inside the modal instead of reproducing that escape.
-Existing top navigation and the six library mode controls are retained; their complete Apple composition belongs to #94 and is not claimed by this Browse delivery.
-The locked-desktop run used CDP focus emulation in Samsung's software simulator.
-This does not prove native visibility behavior, packaged browser-origin access, physical Tizen 8 behavior or successful AVPlay playback.
-Physical-TV testing remains deferred until simulator parity is complete.
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for simulator runtime limits and physical-TV gates.
 
 ## Expanded-row simulator evidence
 
@@ -129,9 +126,7 @@ Paired native captures and the reported collection's actual artwork request rema
 The existing session/operations boundary is retained; the server web Shuffle module is a thin request wrapper and offers no smaller reusable browser owner here.
 The API fixtures and consumed Shuffle wire fields are pinned to server commit `cc8514943289045e7b9f7ac8d36d4968bfe93926`.
 Optional test screenshots require both `DISCOVERY_CAPTURE` and `DISCOVERY_OUTPUT`; ordinary tests create no evidence directory.
-Desktop fake-server tests exercise discovery, authentication authority and the existing detail/player handoff.
-They do not establish Samsung simulator, actual Tizen 8 Chromium 108, packaged Tizen or physical TV compatibility.
-Home and whole-app parity remain outside this slice, and issue 28 remains open for parent review and remaining acceptance.
+Desktop fake-server tests exercise discovery, Authority, and detail/player handoff; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for simulator, Chromium 108, and physical-TV proof gates.
 
 ## Rows of collections
 
