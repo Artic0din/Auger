@@ -11,7 +11,7 @@ erDiagram
     SERVER ||--o{ LIBRARY : holds
     ACCOUNT ||--|| HOUSEHOLD : owns
     HOUSEHOLD ||--|{ PROFILE : contains
-    HOUSEHOLD ||--|| PROFILE : "managed by (Primary Profile)"
+    HOUSEHOLD |o--|| PROFILE : "managed by (Primary Profile)"
     PROFILE }o--o{ LIBRARY : "sees, unless restricted or hidden"
     COLLECTION }o--o{ LIBRARY : "draws titles from"
     PROFILE ||--o{ COLLECTION : "creates personal"
