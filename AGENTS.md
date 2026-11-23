@@ -207,6 +207,9 @@ messages. Include validation evidence, risks, and follow-up work.
   new has appeared.
   Green CI completes only the CI check; satisfy review and evidence gates,
   then continue the parent task when its agreed scope remains unfinished.
+- Before merging, run `python3 scripts/pr-gate.py <number>`. It prints `READY`
+  or the first gate that fails: conflicts, a check's latest run, Codex on the
+  head commit, or unresolved threads.
 
 ## Security & Configuration Tips
 
