@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("pr_gate", Path(__file__).resolve().parent / "pr-gate.py")
 gate = importlib.util.module_from_spec(spec)
@@ -72,6 +73,17 @@ class VerdictTest(unittest.TestCase):
         threads = [{"isResolved": False, "path": "src/ui/a.ts", "line": 4}, {"isResolved": True, "path": "b", "line": 1}]
         self.assertEqual("1 unresolved thread(s): src/ui/a.ts:4", gate.verdict(ready_pr(), threads))
 
+
+
+class MainTest(unittest.TestCase):
+    def test_a_push_between_reads_asks_for_a_rerun(self):
+        threads = {"data": {"repository": {"pullRequest": {"headRefOid": "0" * 40,
+                   "reviewThreads": {"totalCount": 0, "nodes": []}}}}}
+        with mock.patch.object(gate, "gh", side_effect=[ready_pr(), threads]), \
+                mock.patch.object(gate.sys, "argv", ["pr-gate.py", "826"]), \
+                mock.patch("builtins.print") as printed:
+            self.assertEqual(1, gate.main())
+        printed.assert_called_once_with("#826 was pushed to while being checked; run again")
 
 if __name__ == "__main__":
     unittest.main()
