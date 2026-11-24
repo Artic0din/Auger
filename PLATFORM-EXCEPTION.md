@@ -1,6 +1,6 @@
 # Platform Library Exception
 
-Copyright (C) 2026 Ryan Foyle and Auger contributors
+Copyright (C) 2026 Auger contributors
 
 This Program is licensed under the GNU Affero General Public License,
 version 3 or (at your option) any later version (see [LICENSE](LICENSE)),
@@ -38,7 +38,7 @@ remove this additional permission from their copy.
 
 ## Who grants this permission
 
-Ryan Foyle grants it for the code they hold copyright in.
+The Auger maintainers grant it for the code they hold copyright in.
 Contributors grant it for their contributions by agreeing to the
 licensing terms in [CONTRIBUTING.md](CONTRIBUTING.md).
 A contribution another author made before this file was added is covered once
