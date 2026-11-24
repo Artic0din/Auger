@@ -128,30 +128,23 @@ Native fake-server and desktop tests establish the state, identity, timing and c
 Actual Samsung suspend/restore, audible recovery, decoded frames, live-server restart behavior and the cross-device acceptance matrix remain unverified.
 The existing Skyline tokens and Chrome 108-compatible list layout are reused.
 
+## Lower quality when buffering
+
+Playback reads `playback.buffering_quality_mode` (`never`, `ask`, or `always`, defaulting to `always`) before start and runs Apple's `BufferingQualityController` (`src/player/bufferingQuality.ts`, `bufferingSignals.ts`, `bufferingBridge.ts`).
+For the Settings rows, learned-limit display, and Reset action, see [docs/settings.md](../settings.md#lower-quality-when-buffering).
+
+- A stall is AVPlay's `onbufferingstart` to `onbufferingcomplete` while the viewer wants to play (excluding initial startup before first frame, seek buffering until playhead advances, source reloads, pauses, backgrounding, and connection/media errors). AVPlay exposes no buffer-ahead or byte counters, so renderer-wait, upstream-silence, and `observed_throughput_kbps` inputs are unavailable.
+- Thresholds match Apple: two 1 s stalls within 2 minutes, or one 6 s stall, after 10 s of startup grace. In `always` on Auto, the player sends `quality_change` with `quality_preference: "auto"`, `bandwidth_estimate_kbps` at 70% of delivered bitrate, and `bandwidth_estimate_source: "observed_rebuffer"` when the server advertises `buffering_quality_v1`. A viewer-picked quality always prompts first (unless `never`) and steps down to the next rung.
+- Restore quality sends Auto with `learned_limit: "clear"`; `never` sends `learned_limit: "ignore"` on start and replans. Other replans repeat the active estimate while a lowering stands.
+- The prompt ("Playback keeps buffering" / "Try a lower quality to keep watching") runs a 15 s countdown while visible; undo ("Quality lowered to stop buffering" / Restore quality) and notices show for 5 s. Skip pills and Up Next pause the buffering pill timer. Select acts when controls are hidden, Left/Right switch buttons, and Back keeps the current quality.
+- A refused lowering keeps playing with no error; a lost or unusable answer reconnects to adopt the server's active plan. A queued lowering drops if the plan, attempt, or viewer pick changes first (Restore quality still sends). `plan_summary` events are not built.
+
 ## Saved Playback settings
 
-Profile menu > Settings > Playback offers Resolution, Maximum Bitrate, Audio Language, Skip Back, and Skip Forward (plus Lower quality when buffering, conditional Learned limit, Connection speed, HDR, Auto-Play Next Episode, Show Next Up, Skip Intros, Skip Credits, Spoilers, and Reset; see [docs/settings.md](../settings.md)).
-Hidden Libraries no longer opens a Settings editor: when the stored effective list is nonempty, Settings > Server offers Restore All Libraries, which writes an empty profile list and refreshes the catalog on exit.
-Quality choices are filtered by the supported server manifest and use Apple's order and labels: Auto, 4K, 1080p, 720p and 480p.
-Deprecated Original and unfamiliar stored strings are displayed as current values, without becoming new choices or being rewritten during a read.
-New profiles inherit Auto and no cap.
+Profile menu > Settings > Playback manages Resolution, Maximum Bitrate, Audio Language, Skip Back/Forward, Lower quality when buffering, Connection speed, HDR, Episodes controls, Spoilers, and Reset; see [docs/settings.md](../settings.md) for the complete row list, styling, and AVPlay exclusions.
+Hidden Libraries restores via Settings > Server > Restore All Libraries (writing `[]` and refreshing Browse on exit).
 
-Maximum Bitrate offers Apple's discrete caps. A stored cap that is not in that list stays in descending order and selected. The picker has no separate kbps field or Save action.
-No limit writes JSON null; Use Profile Setting deletes only this device's row when device scope is advertised.
-Profile-only definitions retain Use inherited default and delete only the profile row.
-Remote Back returns focus to the Maximum Bitrate row.
-
-Explicit profile defaults, this TV's overrides and the effective value/source remain separate.
-Audio Language, Resolution and Maximum Bitrate edit this device only when both the discovered definition and capabilities advertise `profile_device`; otherwise they retain profile scope.
-Both seek intervals remain profile-only.
-Use Profile Setting clears only the device row, revealing the profile or server default.
-Audio library and series choices may still take priority.
-Device audio pickers offer No preference only for a legacy stored null, which remains selected without rewriting it; a new no-preference save clears the device row.
-These writes retain the captured profile proof and stable device headers through the existing API/session owner.
-Writes are never automatically resent; uncertain answers reconcile the explicit row and effective value before a user-triggered retry.
-Profile authority changes discard late answers and remove the screen.
-Unsupported capabilities, platforms, schema shapes or profile scopes do not expose these controls.
-
-The pinned [Apple TV Settings](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift) separates resolution and bitrate into two pickers, using discrete presets from [SiloQualityPresets.swift](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Networking/SiloQualityPresets.swift) and [SettingsViewModel.swift:742](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Screens/Settings/SettingsViewModel.swift#L742).
-The selected fixture definitions remain an exact subset of the pinned public manifest; see [src/contracts/v2/README.md](../../src/contracts/v2/README.md).
-Native tests verify write/readback and exact playback start request fields; desktop tests do not prove real server playback, Chromium 108 rendering, or physical-TV behavior ([docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md)).
+- Explicit profile defaults, this TV's `profile_device` overrides, and effective values remain separate (`Audio Language`, `Resolution`, and `Maximum Bitrate` use `profile_device` when advertised; seek intervals remain profile-only).
+- `No limit` writes JSON `null`; `Use Profile Setting` deletes only the device row; `Use inherited default` deletes only the profile row. Deprecated `Original` and unfamiliar stored values display without rewriting on read.
+- Writes serialize without automatic replay, reconcile explicit and effective state on Retry after uncertain answers, and cancel cleanly on Authority changes.
+- Reference: [silo-apple `TVPlaybackSettingsView.swift`](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift), [src/contracts/v2/README.md](../../src/contracts/v2/README.md), and [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md).

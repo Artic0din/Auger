@@ -141,9 +141,9 @@ They intercept it first, in an earlier phase of the DOM event path.
 | 3 | Card actions (`cardActions.ts`) | `document`, capture | Registered while its menu or failure alert is open. Up and Down move through the single column, Left and Right stay put, a fresh Enter chooses on its release, Back closes; then `stopImmediatePropagation`. |
 | 4 | `Skyline.onKey` | container, capture | Menus, dwell panels, Down into a panel, Back inside the shell. |
 | 4 | Settings (`settings.ts`) | container, capture | Left to the categories and the credits scroll. |
-| 6 | `FocusHost.onKey`, `ScreenHost.onKey`, player `onKey` | `document`, bubble | Ordinary movement. `FocusHost` returns at once if `event.defaultPrevented`. |
-| 7 | App `onBack` (`src/app.ts`) | `window`, bubble | Opens the Exit dialog on an unhandled Back. |
-| 8 | Select release (`selectRelease.ts`) | `window`, bubble | Takes the browser's click from an Enter no earlier listener prevented, and clicks the same button on Enter's `keyup`. |
+| 5 | `FocusHost.onKey`, `ScreenHost.onKey`, player `onKey` | `document`, bubble | Ordinary movement. `FocusHost` returns at once if `event.defaultPrevented`. |
+| 6 | App `onBack` (`src/app.ts`) | `window`, bubble | Opens the Exit dialog on an unhandled Back. |
+| 7 | Select release (`selectRelease.ts`) | `window`, bubble | Takes the browser's click from an Enter no earlier listener prevented, and clicks the same button on Enter's `keyup`. |
 
 `app.test.ts` asserts the result: with the Exit dialog open, Down and Right send no requests and do not move browse focus.
 
@@ -292,52 +292,25 @@ Fetching belongs to explicit activation (Enter), to a view loading, or to a one-
 - The library flyout appears 150 ms after a library row is focused and reads nothing.
 - Settings category focus only previews loaded controls; requests and writes need activation.
 
-## Change Account and Profiles pressed looks
+## Pressed looks (Apple TV parity)
 
-These values were checked against upstream `Silo-Server/silo-apple` main at `1d4b6248f86766b616312ececcee37912886ab51`.
-The Change Account view is entirely inside `#if os(tvOS)`; the profile picker uses `TVProfileTile` and the shared button styles through its tvOS branches.
+CSS pressed feedback uses `data-pressed` from `selectRelease.ts` with `test/ui/support/pressed.ts` (`assertPressedLook`) covering normal and reduced motion. Values were checked against `silo-apple` `1d4b6248`, `dce56e3c`, and `71a3beb9` (tvOS paths only; CSS spring approximations still require native capture comparison).
 
-| Controls | Focus | Held Select | Apple source at that revision |
-| --- | --- | --- | --- |
-| Change Account server rows and Add server | Scale 1; colours ease out over 120 ms | Scale 0.98, snapped | [TVChangeAccountView.swift:309–331](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/tvOS/Screens/Auth/TVChangeAccountView.swift#L309-L331) |
-| Change Account account cards and Add account | Scale 1.03; ease out over 120 ms | Scale 0.98 replaces the focus scale, snapped | [TVChangeAccountView.swift:306,343–369](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/tvOS/Screens/Auth/TVChangeAccountView.swift#L306-L369) |
-| Profile tiles and Add | Avatar scale 1.12; focus spring response 0.32, damping 0.72 | Whole tile opacity 0.8, snapped; focus scale stays | [ProfileTile.swift:29–36,116–120,239–243,298–312](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L29-L36), [focus and style](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L116-L120), [pressed](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L239-L243), [Add](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileTile.swift#L298-L312) |
-| Profile picker Change account and Sign out | Scale 1.06; focus spring | Opacity 0.7, snapped | [MarqueeControls.swift:137–143](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/DesignSystem/Marquee/MarqueeControls.swift#L137-L143), [tvOS footer callers](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/ProfileSelectionView.swift#L410-L469) |
-| Create Profile: Create | Scale 1.055; focus spring | Opacity 0.8; ease in/out over 120 ms | [ViewExtensions.swift:444–455](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Extensions/ViewExtensions.swift#L444-L455), [caller](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L311-L315) |
-| Create Profile: Cancel, Shuffle avatars and library Retry | Scale 1.04; ease out over 120 ms | Opacity 0.75, snapped | [SiloButtonStyles.swift:37–62](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Theme/SiloButtonStyles.swift#L37-L62), [tvOS Cancel](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L180-L200), [Retry](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L545-L558), [Shuffle](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Screens/Profiles/CreateProfileView.swift#L649-L664) |
+| Control family | Focus | Held Select |
+| --- | --- | --- |
+| Change Account server rows, Add server | Scale `1`; colors `120ms ease-out` | Scale `0.98`, snapped |
+| Change Account account cards, Add account | Scale `1.03`; `120ms ease-out` | Scale `0.98` (replaces focus scale), snapped |
+| Profile tiles and Add | Avatar scale `1.12`; `320ms` spring | Tile opacity `0.8`, snapped (focus scale stays) |
+| Profile picker footer (Change account, Sign out) | Scale `1.06`; `320ms` spring | Opacity `0.7`, snapped |
+| Create Profile: Create / Cancel, Shuffle, Retry | Scale `1.055` spring / `1.04` `120ms ease-out` | Opacity `0.8` (`120ms`) / `0.75` snapped |
+| Request detail & Details Play compact pills | Scale `1.025` (box set Play: none) | CSS `scale: 0.98` (multiplies focus), `120ms ease-out` |
+| Watch Party buttons | No scale (`stabilizesFocusMotion`) | Scale `0.98`, `120ms ease-out` |
+| Player options panel rows | Row highlight, no scale | Scale `0.98`, `120ms ease-out` |
+| Series season pills & Watch Party picker pills | No scale | Scale `0.98`, snapped |
+| Series episode cards (anchored rail) | Card lift `1.05` | Opacity `0.96`, `120ms ease-out` (lift stays) |
+| Details popover rows | Row highlight | Opacity `0.94`, snapped |
 
-The shared [SiloTheme.swift:164–173](https://github.com/Silo-Server/silo-apple/blob/1d4b6248f86766b616312ececcee37912886ab51/iosApp/iosApp/Theme/SiloTheme.swift#L164-L173) supplies `fastDuration = 0.12` and `spring(response: 0.35, dampingFraction: 0.85)`.
-The footer and primary button reuse the top bar's existing CSS spring approximation: 320 ms with `cubic-bezier(.3,.25,.2,1.02)`.
-The profile tiles retain their existing 320 ms CSS focus treatment.
-CSS focus curves are approximations, so source values and desktop tests do not establish native motion parity.
-Change Account animates a registered focus-scale property separately from its transform, so pressing and releasing snap to the requested scale even during a focus transition.
-Create Profile's extra bottom Cancel uses the same ghost style as its header Cancel.
-Reduced motion removes transitions and the tile, footer and primary focus growth; the Change Account and ghost-chip scales remain, as in their Apple styles.
-`test/ui/accountsParity.test.ts` and `test/ui/profiles.test.ts` render each control focused and held, sample transition timing, and verify one activation on release in both motion modes.
-Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
-
-## Pill buttons and Details extras pressed looks
-
-Checked against upstream `Silo-Server/silo-apple` main at `dce56e3c5f0ad137ee8208fb79c7ffd0e9210135`.
-Each source file is inside `#if os(tvOS)`, or reaches this control through a tvOS branch.
-
-| Controls | Focus | Held Select | Apple source |
-| --- | --- | --- | --- |
-| Request detail actions (Request, status, Follow, Cancel) | Scale 1.025 (compact pill) | 0.98 of the focus scale, easeOut 0.12 s | [TVDetailActions.swift:737,745,771,775](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L737), [RequestDetailView.swift:398](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/Requests/Detail/RequestDetailView.swift#L398) |
-| Watch Party buttons | No scale (`stabilizesFocusMotion`) | 0.98, easeOut 0.12 s | [WatchPartyComponents.swift:389](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyComponents.swift#L389) |
-| Series season pills and the Watch Party picker's | No scale | 0.98, snapped | [TVSeriesDetailView.swift:1291](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L1291), [WatchPartyMediaPicker.swift:891](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Screens/WatchParty/WatchPartyMediaPicker.swift#L891) |
-| Series episode cards (anchored rail) | Card lift 1.05 | Opacity 0.96, easeOut 0.12 s; the lift stays and the 0.97 art scale of plain cards does not apply | [TVEpisodeRail.swift:477-481,506](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVEpisodeRail.swift#L477-L481), [TVCardFocusStyle.swift:153,158](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Components/TVCardFocusStyle.swift#L153) |
-| Details popover rows | Row highlight | Opacity 0.94, snapped | [TVActionPopoverMenu.swift:128](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/tvOS/Screens/Detail/TVActionPopoverMenu.swift#L128) |
-| Details Play (`TVPrimaryPillButton`, compact pill) | Scale 1.025; box set Play none (`stabilizesFocusMotion`) | 0.98 of the focus scale, easeOut 0.12 s | [TVDetailActions.swift:32-37,769-777](https://github.com/Silo-Server/silo-apple/blob/71a3beb9c0c4b6774b5caca452dfec66f208ac8f/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L769-L777) |
-| Player options panel rows (option, track and picker rows) | Row highlight, no scale | 0.98, easeOut 0.12 s | [TVPlayerInfoHUD.swift:450,479,482](https://github.com/Silo-Server/silo-apple/blob/71a3beb9c0c4b6774b5caca452dfec66f208ac8f/iosApp/iosApp/Screens/Player/tvOS/TVPlayerInfoHUD.swift#L479) |
-
-The press scale on pills is the individual CSS `scale` property, so it multiplies the focus `transform` and leaves the focus rules alone.
-`SiloTheme.fastDuration` is 0.12 s ([SiloTheme.swift:178](https://github.com/Silo-Server/silo-apple/blob/dce56e3c5f0ad137ee8208fb79c7ffd0e9210135/iosApp/iosApp/Theme/SiloTheme.swift#L178)), which is `--silo-fast`, so Reduce Motion drops the animation and keeps the look.
-Request detail's Follow and Cancel pills now grow to 1.025 on focus like the main action, as the same style does on Apple TV.
-Details Play now grows to 1.025 on focus and presses to 0.98 of that, as Apple's compact pill does; the circle actions already pressed to 0.95.
-The player's panel rows press to 0.98. Transport buttons draw no pressed look, which matches Apple: they are a focusable image with a tap gesture, not a button style (`TVPlayerTransportCluster.swift:101-135`). The panel's tab pills (0.97) and circle buttons (0.96), the end-of-playback deck, and the skip and buffering pills are still unmatched.
-`test/ui/support/pressed.ts` (`assertPressedLook`) renders each control focused and held, in both motion modes, and checks the look, its timing and that a cancelled press runs nothing.
-Same-state Samsung TV and Apple TV captures remain a separate acceptance check.
+Player transport buttons draw no pressed look (matching Apple's tap-gesture images). Player tab pills (`0.97`), circle buttons (`0.96`), end-of-playback deck, and skip/buffering pills remain unmatched. Reduced motion drops focus animations and spring growth while retaining Change Account and ghost-chip scales.
 
 ## Reduced Motion
 
@@ -370,7 +343,7 @@ Swept once for #605 (`rg "getBoundingClientRect\(\)\.(left|right)|offsetLeft|scr
 | --- | --- | --- |
 | `browseFocus` `nearestItem`, `overlappingNearest`, `navigationX`, `centreAt` | nearest by centre x, overlap of two boxes | safe: symmetric |
 | `browseFocus` `columnAtOrPastCenter` (Search People to grid) | first column at or past the person's centre | was not safe; now `startsAtOrPast` (`inlineAxis.ts`). Search is mirrored, so in Arabic it runs the right-to-left branch |
-| `browseFocus` aligned landing (`spatial: "aligned"`, Person filmography filters) | the intersecting item closest to the focused item's start edge (its left edge left to right, its right edge right to left) | was not safe; now `startOffset` (`inlineAxis.ts`). Person pages are pinned left to right today |
+| `browseFocus` aligned landing (`spatial: "aligned"`, Person filmography filters) | the intersecting item closest to the focused item's start edge (its left edge left to right, its right edge right to left) | safe: `startOffset` (`inlineAxis.ts`) handles RTL; Person (`person:`) is in `MIRRORED_VIEW` |
 | `browseFocus` `intersects`, `insideRow`, `searchRail` clip test | box overlaps a frame | safe: symmetric |
 | `browseFocus` row `scrollLeft` snapshot (`visits`, `applyVisit`) | saves and restores a row's scroll | not safe across a direction change; `reconcileLanguage` calls `revealFocused` when the direction flips |
 | `skylineScroll` row reveal | physical delta, insets swapped, `Math.min(0, ...)` when rtl | safe |

@@ -60,7 +60,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Skyline top bar (saved TV menu order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
+| Skyline top bar (fixed `visibleRoots` order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
 | Home rows in server order, Continue Watching resume, Explore all, 20-card cap | ✅ | ✅ | ✅ | Resume goes straight to the player. First-load wait tracked in #78. Android: `TvHomeScreen` |
 | Home marquee (logo, meta chips, scores, aired date, cast) | ✅ | ✅ | ✅ | Apple: `TVFocusMarquee`. Sharper backdrops open (#88). Android: `TvFocusMarquee` |
 | Poster badges, watched checks, poster size (Compact/Standard/Large) | ✅ | ✅ | ✅ | Size is set in Settings › General. Android: `TvMediaCard` overlays and watched badge, Poster Size setting |
@@ -163,7 +163,7 @@ File pointers are repository-relative.
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
 | In-player audio track switch | ✅ | ✅ | ✅ | Server replans. On direct play the server keeps the original file and AVPlay switches the track (`client_selected_audio_track_v1`, #507). Audible change not confirmed on a TV (#11) |
-| Preplay audio and file-version picker | ✅ | ✅ | ✅ | Tizen choice lasts one attempt; Apple persists per title or series. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow` |
+| Preplay audio and file-version picker | ✅ | ✅ | ✅ | Tizen persists explicit audio picks per title or series (`PUT`/`DELETE /audio-prefs/{key}`); version picks stay visit-only. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow` |
 | Preplay subtitle picker (including Off) | ✅ | ✅ | ✅ | Tizen offers catalog tracks, Auto and Off, resolved against the authoritative playback inventory. Saved series preferences gate every cached episode until confirmed; sidecars without a stream index remain visit-only. Downloaded choices use the in-player menu. Native comparison remains pending. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow`; Auto policy not rechecked here |
 | Text subtitles (VTT/SRT, ASS dialogue) in an app overlay | ✅ | ✅ | ✅ | Captions not yet verified on a TV or simulator (#80). Android: Media3 `SubtitleManager` |
 | Embedded subtitle burn-in | ✅ | ✅ | ✅ | Server burns in when transcoding is allowed. Android: server plans render, convert or burn-in. Apple: server burn-in (`needsBurnIn`) |

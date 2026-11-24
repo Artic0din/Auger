@@ -46,11 +46,6 @@ Apple passes overlay data through `MediaCard.posterImage` on all three pages; ov
 The existing session supplies profile and PIN proof headers.
 `GET /history` has a different response shape and is not consumed here.
 
-`personalLists.ts` exports `PersonalSource`, `PersonalFilter`, `PersonalListCapability`, `decodePersonalListCapability`, `personalListCapability`, `personalQuery`, `readPersonalPage`, `personalView` and `PERSONAL_TITLES`.
-The capability helper is read-only and deliberately has no item mutation or membership controller.
-Details owns item mutations and membership confirmation.
+`src/ui/personalLists.ts` owns read-only capability checks, page queries, and list rendering; Details owns item mutations and membership confirmation.
 Personal pages preserve the `item` route identity and refresh their current page on Back.
-Browser tests remove Watchlist and Favorites membership through the production Details controls against a coherent fake server, retaining page-three focus and preserving the other list.
-The shared route additions are `personal`, `RouteHandlers.personalFilter`, the three catalog query source literals and the optional Skyline profile `personal` callback.
-
 Desktop Chromium validates behavior, bounded DOM, and focus geometry; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for Chromium 108, signed `.wgt`, and physical-TV proof boundaries.

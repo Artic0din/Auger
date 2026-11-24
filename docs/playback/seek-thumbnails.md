@@ -17,11 +17,7 @@ A local seek can land paused beneath a newly opened scrub without discarding tha
 A moved selection committed before that seek lands is retained by the playback controller, which serializes it after the pending callback and keeps the latest Play/Pause intent.
 Only the latest queued target runs, and a queued reanchor records resume without playing the outgoing transport.
 Back, suspension, replacement loading and teardown discard the queued commit.
-Native AVPlay and same-state Apple/Samsung comparison remain pending; these source revisions do not identify an installed Apple build.
-
-Apple download commits `9720d636288de77ab71ce219db851fa9f7fbe08c` and `b3d08d444b75dc078d3047730db72e0c4456e79b` add no reachable tvOS download journey here.
-`SeriesDownloadSheet.swift` and `OfflineBrowse.swift` are guarded by `#if !os(tvOS)`, and `TVMainTabView` does not pass the offline download identity to the player.
-Shared streaming hooks in #892 maintain the offline preference ledger; this client has no downloads owner or ledger to port.
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed-package and physical-TV proof gates.
 
 ## Contract and ownership
 
