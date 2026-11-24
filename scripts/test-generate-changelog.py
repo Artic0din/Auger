@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -21,6 +22,7 @@ spec.loader.exec_module(changelog)
 
 Commit = changelog.CommitMessage
 Category = changelog.Category
+UserSection = changelog.UserSection
 
 
 def sections(*commits):
@@ -162,18 +164,143 @@ class FormatTest(unittest.TestCase):
         self.assertEqual({Category.IMPROVEMENTS: ["- General maintenance and stability improvements."]}, sections())
 
     def test_release_body(self):
-        notes = changelog.build_notes("0.2.0", "2026-01-31", [Commit("feat(player): add chapters"), Commit("fix: stop a crash")])
+        commits = [Commit("feat(player): add chapters"), Commit("fix: stop a crash")]
+        notes = changelog.build_notes("0.2.0", "2026-01-31", commits)
         self.assertEqual(
-            "# Updates - Auger v0.2.0 (2026-01-31)\n\n"
-            "## ✨ New Features\n\n- **Playback**: Add chapters\n\n"
-            "## 🐛 Fixes\n\n- Stop a crash\n",
-            notes.release_body(),
+            "Released: 2026-01-31\n\n"
+            "## New\n\n- **Playback**: Add chapters\n\n"
+            "## Fixed\n\n- Stop a crash\n",
+            changelog.build_user_notes("0.2.0", "2026-01-31", commits, {}).render(),
         )
         self.assertEqual(
             "## [0.2.0] - 2026-01-31\n\n"
             "### ✨ New Features\n\n- **Playback**: Add chapters\n\n"
             "### 🐛 Fixes\n\n- Stop a crash\n",
             notes.changelog_entry(),
+        )
+
+
+def user_notes(*commits, bodies=None):
+    commits = [c if isinstance(c, Commit) else Commit(c) for c in commits]
+    return changelog.build_user_notes("1.0.0", "2026-01-31", commits, bodies or {})
+
+
+def user_sections(*commits, bodies=None):
+    return {section: list(items) for section, items in user_notes(*commits, bodies=bodies).sections}
+
+
+def pr_body(release_notes):
+    return f"## Problem\n\nA crash.\n\n## Approach\n\nA fix.\n\n{release_notes}\n\n## Validation\n\n- Tests pass.\n"
+
+
+class UserReleaseNotesTest(unittest.TestCase):
+    def test_categorized_release_notes(self):
+        body = pr_body(
+            "## Release Notes\n\n<!-- Write for Samsung TV users. -->\n\n"
+            "### Highlights\n\nChapters arrive in the player.\nPick one to jump there.\n\nSecond paragraph.\n\n"
+            "### ✨ New Features\n\n- Chapter list in the player\n- Chapter thumbnails\n  load as you scroll.\n\n"
+            "### Improvements\n\n* Faster seeking\n\n"
+            "### Security\n\n- Sign-in tokens stay out of logs\n\n"
+            "### Bug Fixes\n\nPlayback no longer stalls after a pause.\n\n"
+            "### Breaking Changes\n\n- Sign in again after updating"
+        )
+        self.assertEqual(
+            "Released: 2026-01-31\n\n"
+            "## Breaking Changes\n\n- Sign in again after updating\n\n"
+            "## Highlights\n\nChapters arrive in the player. Pick one to jump there.\n\nSecond paragraph.\n\n"
+            "## New\n\n- Chapter list in the player\n- Chapter thumbnails load as you scroll.\n\n"
+            "## Improved\n\n- Faster seeking\n\n"
+            "## Security\n\n- Sign-in tokens stay out of logs\n\n"
+            "## Fixed\n\n- Playback no longer stalls after a pause.\n",
+            user_notes("feat(player): add chapters (#5)", bodies={5: body}).render(),
+        )
+
+    def test_unsectioned_notes_follow_the_commit_type(self):
+        bodies = {n: pr_body(f"### Release Notes\n\nNote {n}.") for n in range(1, 7)}
+        self.assertEqual(
+            {
+                UserSection.BREAKING: ["Note 5."],
+                UserSection.NEW: ["Note 1."],
+                UserSection.IMPROVED: ["Note 2.", "Note 6."],
+                UserSection.SECURITY: ["Note 4."],
+                UserSection.FIXED: ["Note 3."],
+            },
+            user_sections(
+                "feat: a (#1)", "perf: b (#2)", "fix: c (#3)", "fix(security): d (#4)", "chore!: e (#5)", "chore: f (#6)",
+                bodies=bodies,
+            ),
+        )
+        # Notes from two pull requests repeat once.
+        self.assertEqual({UserSection.FIXED: ["Note 3."]}, user_sections("fix: c (#3)", "fix: d (#3)", bodies=bodies))
+
+    def test_no_user_change_is_left_out_unless_breaking(self):
+        for note in ("None", "N/A", "No user-visible changes", "*No user-facing change.*", "`none`"):
+            with self.subTest(note):
+                bodies = {1: pr_body(f"## Release Notes\n\n{note}")}
+                self.assertEqual({}, user_sections("feat: hidden (#1)", bodies=bodies))
+                self.assertEqual(
+                    {UserSection.BREAKING: ["Drop Tizen 7"]}, user_sections("feat!: drop Tizen 7 (#1)", bodies=bodies)
+                )
+        self.assertEqual(
+            "Released: 2026-01-31\n\n## Improved\n\n- General maintenance and stability improvements.\n",
+            user_notes("feat: hidden (#1)", bodies={1: pr_body("## Release Notes\n\nNone")}).render(),
+        )
+
+    def test_breaking_commit_keeps_its_warning_when_the_notes_skip_it(self):
+        body = pr_body("## Release Notes\n\n### New\n\n- Settings sync")
+        self.assertEqual(
+            {UserSection.BREAKING: ["**Settings**: Settings reset once"], UserSection.NEW: ["Settings sync"]},
+            user_sections(Commit("feat(settings): sync (#1)", "BREAKING CHANGE: settings reset once"), bodies={1: body}),
+        )
+
+    def test_comment_only_notes_fall_back(self):
+        comment_only = "## Release Notes\n\n<!-- Write for Samsung TV users,\nor None. -->\n"
+        self.assertEqual(
+            {UserSection.FIXED: ["Subtitles stay in sync."]},
+            user_sections("fix: sync subtitles (#1)", bodies={1: pr_body(comment_only) + "\nRelease note: Subtitles stay in sync."}),
+        )
+        self.assertEqual(
+            {UserSection.FIXED: ["Sync subtitles"]}, user_sections("fix: sync subtitles (#1)", bodies={1: pr_body(comment_only)})
+        )
+
+    def test_legacy_release_note_line(self):
+        bodies = {1: "Fixes the grid.\n\nrelease note:  The grid keeps focus after Back.\n", 2: "Release note: None"}
+        self.assertEqual(
+            {UserSection.FIXED: ["The grid keeps focus after Back."]},
+            user_sections("fix(ui): keep focus (#1)", "fix: internal (#2)", bodies=bodies),
+        )
+
+    def test_commits_without_a_pr_body_use_the_commit(self):
+        self.assertEqual(
+            {UserSection.NEW: ["**Playback**: Add chapters"], UserSection.FIXED: ["Stop a crash"]},
+            user_sections("feat(player): add chapters (#5)", "fix: stop a crash", bodies={9: pr_body("## Release Notes\n\nX")}),
+        )
+
+    def test_fenced_code_blocks_are_not_treated_as_headings(self):
+        body = (
+            "## Approach\n\n```markdown\n## Release Notes\n\nFake example.\n```\n\n"
+            "## Release Notes\n\n### New\n\n- Real feature.\n\n```sh\n# shell comment\n```\n\n- After code fence.\n\n"
+            "## Validation\n\n- Passed.\n"
+        )
+        self.assertEqual(
+            {UserSection.NEW: ["Real feature.", "```sh # shell comment ```", "After code fence."]},
+            user_sections("feat: example (#1)", bodies={1: body}),
+        )
+
+    def test_empty_subheadings_fall_back_to_commit(self):
+        body = pr_body("## Release Notes\n\n### New\n\n### Fixed\n")
+        self.assertEqual(
+            {UserSection.FIXED: ["Stop a crash"]},
+            user_sections("fix: stop a crash (#1)", bodies={1: body}),
+        )
+
+    def test_revert_does_not_fall_back_to_reverted_pr_notes(self):
+        self.assertEqual(
+            {UserSection.FIXED: ["Reverted: Add search"]},
+            user_sections(
+                'Revert "feat: add search (#12)" (#20)',
+                bodies={12: pr_body("## Release Notes\n\nAdded search.")},
+            ),
         )
 
 
@@ -252,10 +379,20 @@ class GitRepoIntegrationTest(unittest.TestCase):
         code, body = run("release", "--version", "0.2.0", "--date", "2026-01-31", "--from", "v0.1.0", "--to", target)
         self.assertEqual(0, code)
         self.assertEqual(
-            "# Updates - Auger v0.2.0 (2026-01-31)\n\n"
-            "## ✨ New Features\n\n- **Playback**: Add chapters\n\n"
-            "## 🐛 Fixes\n\n- Stop a crash\n",
+            "Released: 2026-01-31\n\n"
+            "## New\n\n- **Playback**: Add chapters\n\n"
+            "## Fixed\n\n- Stop a crash\n",
             body,
+        )
+        pr_notes = self.repo / "pr-notes.json"
+        pr_notes.write_text('[{"number": 5, "body": "## Release Notes\\n\\nPick a chapter to jump to it."}]', encoding="utf-8")
+        code, body = run(
+            "release", "--version", "0.2.0", "--date", "2026-01-31", "--from", "v0.1.0", "--to", target,
+            "--pr-notes-file", str(pr_notes),
+        )
+        self.assertEqual(0, code)
+        self.assertEqual(
+            "Released: 2026-01-31\n\n## New\n\n- Pick a chapter to jump to it.\n\n## Fixed\n\n- Stop a crash\n", body
         )
 
         path = self.repo / "CHANGELOG.md"
@@ -280,6 +417,21 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(1, run("release", "--version", "1.2", "--date", "2026-01-31")[0])
         self.assertEqual(1, run("release", "--version", "1.2.0", "--date", "31/01/2026")[0])
         self.assertEqual(1, run("release", "--version", "1.2.0", "--from", "v9.9.9")[0])
+
+    def test_rejects_invalid_pr_notes_file(self):
+        self.commit("fix: a (#1)")
+        cases = ("{not json", '"a string"', "[1, 2]", '{"abc": "body"}', '{"1": 2}', '[{"number": true, "body": ""}]')
+        for text in cases:
+            with self.subTest(text):
+                path = self.repo / "pr-notes.json"
+                path.write_text(text, encoding="utf-8")
+                err = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    code = changelog.main(["release", "--version", "1.2.0", "--pr-notes-file", str(path)])
+                self.assertEqual(1, code)
+                self.assertIn("::error::", err.getvalue())
+        path.write_text('{"1": null}', encoding="utf-8")
+        self.assertEqual(0, run("release", "--version", "1.2.0", "--pr-notes-file", str(path))[0])
 
 
 def extract_job_block(workflow_text: str, job_name: str) -> str:
@@ -343,13 +495,30 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             stub_bin = root / "bin"
             stub_bin.mkdir()
             gh_log = root / "gh.log"
+            gh_api_log = root / "gh-api.log"
+            pr_bodies = root / "pr-bodies"
+            pr_bodies.mkdir()
+            (pr_bodies / "5.md").write_text(
+                "## Problem\n\nNo chapters.\n\n## Release Notes\n\n<!-- Write for Samsung TV users. -->\n\n"
+                "### New\n\n- Pick a chapter from the player to jump straight to it.\n\n## Validation\n\n- Tests.\n",
+                encoding="utf-8",
+            )
 
+            # Release JSON fixtures run through the workflow's real --jq expressions; PR #6 fails to load.
             gh_stub = stub_bin / "gh"
             gh_stub.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
                 'if [[ "${1:-}" == "release" && "${2:-}" == "view" ]]; then\n'
-                "  exit 1\n"
+                '  [[ -n "${RELEASE_JSON:-}" ]] || exit 1\n'
+                '  if [[ "${4:-}" == "--json" ]]; then jq -r "${7}" <<< "${RELEASE_JSON}"; fi\n'
+                "  exit 0\n"
+                "fi\n"
+                'if [[ "${1:-}" == "api" && "${2:-}" == repos/Artic0din/Auger-Tizen/pulls/* ]]; then\n'
+                '  printf "%s\\n" "$*" >> "${GH_API_LOG}"\n'
+                '  [[ "${3:-} ${4:-}" == "--jq .body // \\"\\"" && -f "${PR_BODIES}/${2##*/}.md" ]] || exit 1\n'
+                '  cat "${PR_BODIES}/${2##*/}.md"\n'
+                "  exit 0\n"
                 "fi\n"
                 'if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then\n'
                 "  exit 0\n"
@@ -376,6 +545,8 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 "GH_TOKEN": "test-token",
                 "GH_REPO": "Artic0din/Auger-Tizen",
                 "GH_LOG": str(gh_log),
+                "GH_API_LOG": str(gh_api_log),
+                "PR_BODIES": str(pr_bodies),
             }
 
             def git(cwd: Path, *args: str) -> str:
@@ -403,7 +574,8 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             prev_tag_sha = git(work, "rev-parse", "HEAD")
             git(work, "tag", "v0.1.0")
 
-            git(work, "commit", "--quiet", "--allow-empty", "-m", "feat(player): add chapters")
+            git(work, "commit", "--quiet", "--allow-empty", "-m", "fix: stop a crash (#6)")
+            git(work, "commit", "--quiet", "--allow-empty", "-m", "feat(player): add chapters (#5)")
             target_sha = git(work, "rev-parse", "HEAD")
             git(work, "push", "--quiet", "-u", "origin", "main", "--tags")
 
@@ -433,9 +605,46 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             outputs = dict(line.split("=", 1) for line in github_output.read_text(encoding="utf-8").splitlines())
             self.assertEqual(prev_tag_sha, outputs["previous_sha"])
             notes_text = (publish_temp / "notes.md").read_text(encoding="utf-8")
-            self.assertIn("- **Playback**: Add chapters", notes_text)
+            self.assertTrue(notes_text.startswith(f"Released: {outputs['release_date']}\n\n## New\n\n"), notes_text)
+            self.assertIn("## New\n\n- Pick a chapter from the player to jump straight to it.\n", notes_text)
+            self.assertNotIn("Add chapters", notes_text)
+            self.assertIn("## Fixed\n\n- Stop a crash\n", notes_text, "an unreadable PR falls back to its commit")
+            self.assertIn("::warning::Could not read PR #6", publish_run.stdout)
+            self.assertEqual(
+                ['api repos/Artic0din/Auger-Tizen/pulls/5 --jq .body // ""', 'api repos/Artic0din/Auger-Tizen/pulls/6 --jq .body // ""'],
+                gh_api_log.read_text(encoding="utf-8").splitlines(),
+            )
             self.assertNotIn("- Old bug", notes_text)
             self.assertNotIn("Initial feature", notes_text)
+            self.assertIn(
+                "## Install or update\n\n- **Apps2Samsung (recommended).** Open Apps2Samsung, find **Auger** under "
+                "**Media servers & players**, and install or update in one click. Do not add this repository as a custom source.\n",
+                notes_text,
+            )
+            self.assertNotIn("as a source,", notes_text)
+            self.assertNotIn("github.com/Artic0din/Auger-Tizen` as", notes_text)
+            self.assertTrue(
+                notes_text.endswith(
+                    "\n\nFull technical details in [CHANGELOG.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CHANGELOG.md). "
+                    "Need help? See [Reporting Bugs](https://github.com/Artic0din/Auger-Tizen/blob/main/docs/reporting-bugs.md).\n"
+                ),
+                notes_text,
+            )
+
+            # A retry keeps the date of the release already published, in the new and the legacy body format.
+            for body, date in (("Released: 2026-03-04\n\n## New", "2026-03-04"), ("# Updates - Auger v0.2.0 (2026-02-01)\n", "2026-02-01")):
+                with self.subTest(body=body):
+                    github_output.write_text("", encoding="utf-8")
+                    retry = subprocess.run(
+                        ["bash", "-euo", "pipefail", "-c", notes_script],
+                        cwd=work,
+                        env={**publish_env, "RELEASE_JSON": json.dumps({"isDraft": False, "body": body, "publishedAt": "2026-05-05T00:00:00Z"})},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(0, retry.returncode, retry.stderr)
+                    self.assertIn(f"release_date={date}\n", github_output.read_text(encoding="utf-8"))
+                    self.assertTrue((publish_temp / "notes.md").read_text(encoding="utf-8").startswith(f"Released: {date}\n"))
 
             # Move v0.1.0 to an older still-reachable commit before the changelog job runs.
             git(work, "tag", "-f", "v0.1.0", older_sha)
@@ -464,7 +673,9 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
 
             committed = git(origin, "show", "refs/heads/main:CHANGELOG.md")
             self.assertIn(f"## [0.2.0] - {outputs['release_date']}", committed)
-            self.assertIn("- **Playback**: Add chapters", committed)
+            self.assertIn("### ✨ New Features\n\n- **Playback**: Add chapters\n", committed)
+            self.assertIn("### 🐛 Fixes\n\n- Stop a crash\n", committed)
+            self.assertNotIn("Pick a chapter", committed, "CHANGELOG.md stays the technical commit record")
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
             self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))
