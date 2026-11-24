@@ -83,7 +83,7 @@ body:
     id: playback-details
     attributes:
       label: Playback details
-      description: "For playback problems: while playing, press **Down** on the Samsung remote to open the options panel, then press **Left** twice to open **Stats** (or press **Up** > **Down** > **Options** > **Stats**). Include **Playback**, **Video**, **Dynamic range**, **Audio**, **Subtitles**, **Diagnostics**, and **Delivery**, plus your audio setup (TV speakers, soundbar, or receiver). A phone photo of the **Stats** tab below also works."
+      description: "For playback problems: while playing, wait until the playback controls are hidden, press **Down** on the Samsung remote to open the options panel on **Video**, then move one tab toward **Info** (**Left** in left-to-right layouts) to open **Stats** (or press **Up** > **Down** > **Options** > **Stats**). Include **Playback**, **Video**, **Dynamic range**, **Audio**, **Subtitles**, **Diagnostics**, and **Delivery**, plus your audio setup (TV speakers, soundbar, or receiver). A phone photo of the **Stats** tab below also works."
   - type: textarea
     id: screenshots
     attributes:

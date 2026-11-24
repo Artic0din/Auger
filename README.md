@@ -36,8 +36,9 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 Auger ships through Apps2Samsung and GitHub Releases.
 Install it in one of two ways:
 
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (recommended):** add this repository as a source (`github.com/Artic0din/Auger-Tizen`), then install from it.
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (recommended):** open Apps2Samsung, find **Auger** under **Media servers & players**, and install it directly from the official community catalog.
   Apps2Samsung signs `Auger.wgt` with your own Samsung certificate and updates it in one click when a new release ships.
+  Do not add this repository as a custom source; doing so creates a duplicate `Unverified · Auger-Tizen` entry alongside the official listing.
 - **Sideload from source:** public releases are signed with the Tizen SDK public certificate (no personal TV DUIDs), so direct `tizen install` requires building and signing locally with your own Samsung TV certificate profile; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
@@ -72,48 +73,19 @@ Neither step supplies missing browser APIs or CSS support.
 `npm test` runs both strict type checks, the production build, native contract/session/player tests and Playwright screen/composition tests.
 See [test/README.md](test/README.md) for the test boundaries, and [Samsung simulator evidence](docs/evidence/simulator-evidence.md) for the simulator recipe, signed-package identity checks and Apple TV comparisons.
 
-### Sign and package
+### Sign, package, and release
 
-Packaging signs with a Tizen Studio Certificate Manager security profile.
-Never commit certificates, profile XML or passwords.
+Packaging signs `dist/Auger.wgt` with a local Tizen Studio Certificate Manager security profile (`export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`).
+Keep certificates, profile XML, and passwords outside Git.
+CI packages PR and `main` builds with the Tizen SDK public distributor certificate (`.github/workflows/tizen-build.yml`), and the Release workflow tags `vX.Y.Z` and publishes `Auger.wgt` on GitHub Releases; see [Releasing](docs/releasing.md) for signing, Apps2Samsung, and sideloading details.
 
-```sh
-export TIZEN_SECURITY_PROFILE="YourProfileName"
-./scripts/build-wgt.sh
-```
-
-The script builds the package staging directory and writes `dist/Auger.wgt`.
-
-CI builds the same package on every pull request and push to main (`.github/workflows/tizen-build.yml`).
-It signs with the Tizen SDK public distributor certificate (never embedding personal Samsung TV certificates or DUIDs) and uploads `Auger.wgt` with its SHA-256 as the `auger-wgt` artifact.
-Apps2Samsung re-signs the release `.wgt` with each user's own Samsung certificate; direct TV sideloading signs locally with your own Certificate Manager profile.
-
-### Release
-
-After CI passes on `main`, the Release workflow reads the Conventional Commits since the last tag, tags `vX.Y.Z`, and publishes `Auger.wgt` on GitHub Releases; see [Releasing](docs/releasing.md).
-
-<details>
-<summary>Repository layout</summary>
-
-- `app/` holds the package manifest (`config.xml`), HTML entry, icon, fonts, and third-party marks.
-- `src/api/`, `src/session/`, and `src/contracts/v2/` own `/api/v2` transport, sessions, active Profile Authority, and contract decoders.
-- `src/ui/` owns screens and remote focus; `src/player/` owns AVPlay playback.
-- `scripts/` holds build, packaging, fixture sync, and release scripts; `test/` holds native and Playwright screen tests.
-- `assets/readme/` holds the images on this page.
-- [GLOSSARY.md](GLOSSARY.md) and [docs/domain-model.md](docs/domain-model.md) define canonical terms and entity rules.
-- `docs/` holds behavior, focus, API, feature, and validation docs; use [docs/README.md](docs/README.md) as the index and [docs/app-behaviour.md](docs/app-behaviour.md) for current runtime behavior.
-- [AGENTS.md](AGENTS.md) holds coding-agent context pointers, platform invariants, and parity gates.
-
-</details>
+For repository layout, canonical domain terms, and full documentation pointers, see [AGENTS.md](AGENTS.md) and [docs/README.md](docs/README.md).
 
 ## Contributing
 
 Right now, the most helpful way to contribute is a clear, accurate issue.
-We implement and review changes through our own workflow, so a good issue usually helps us more than a pull request.
-
-Pull requests are welcome when a accompanied by an issue.
-We close other pull requests without review.
-[CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful, and [docs/reporting-bugs.md](docs/reporting-bugs.md) shows where to find your TV model, Auger version, and the player's **Stats** tab.
+Pull requests are welcome when accompanied by an issue; we close other pull requests without review.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for issue guidelines, validation steps, and pull request conventions, and [docs/reporting-bugs.md](docs/reporting-bugs.md) for where to find your TV model, Auger version, and the player's **Stats** tab.
 
 Problems with the server or its API belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose), not here.
 

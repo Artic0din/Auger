@@ -36,22 +36,6 @@ The Samsung manual entry adds Back to saved servers and holds Back while connect
 Discovery and nearby-phone setup remain outside this delivery.
 Removal keeps its confirmation focused with a loading label until storage answers; failures offer Back without removing the failed saved entry.
 
-## Native capture journeys
+## Native capture scope
 
-1. Sign in, open the avatar menu, choose Change Account, and capture the current card.
-2. Move Left to the server rail, Up and Down between servers, then Right into the account cards; record focus and Back.
-3. Capture Add server in the rail and Add an account in the pane.
-4. Choose Add an account, sign in to a second account on the same server, and capture both account cards and profile counts.
-5. Choose each account; capture the picker even for one profile without a PIN unless Remember was chosen.
-6. Revoke one account in the test server, choose it, and capture SIGN IN AGAIN and the sign-in username.
-7. Open Settings > Server > Accounts; capture account rows, Add an account and Remove Server.
-8. Open Sign Out, capture Cancel focused, cancel it, then repeat and confirm; verify other accounts remain.
-9. Restart with the server offline after migration and verify no account entry has disappeared.
-10. With two saved servers, open Change Account, press Back to the rail, move Down to the other server and press Select; verify focus enters that server's account pane without a request on rail focus.
-11. Move Down to Add an account, Left to the rail and Select; verify the last account-pane card regains focus.
-12. Choose Add server, press Back on manual entry, and verify saved servers and credentials remain; repeat with an unreachable address and Back from its error.
-13. In Settings > Server > Accounts, choose Remove Server, cancel, then confirm on a test server; record the pending label and focus, storage failure and retry, and verify the other server still opens.
-14. Start Add an account, return to Change Account while its answer is delayed, open the saved account and release the delayed answer; verify the profile picker stays open.
-
-Before capture, record the Apple installed build separately from the source revision and the Samsung candidate SHA, signed WGT hash, installed asset identity and actual capture dimensions.
-Use the same saved servers, accounts, selected card, focus and scroll state on both platforms; mask all private server and account fields before sharing.
+Follow [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt` asset verification and Apple TV comparison, covering: server-rail and account-pane focus/Back transitions (remembered last card on Select), Add server and Add an account flows (including unreachable address and delayed-answer cancellation), single-profile picker presentation, expired `SIGN IN AGAIN` state, Settings > Server > Accounts sign-out and Remove Server confirmations (including storage-failure Retry), and offline relaunch preservation.

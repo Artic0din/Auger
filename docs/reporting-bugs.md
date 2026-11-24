@@ -39,9 +39,9 @@ For Direct Play, Remux, Transcode, audio, subtitle, HDR, or stuttering issues, t
 
 - **Fastest way (while video is playing and controls are hidden):**
   1. Press **Down** on the remote to open the player options panel (it opens on **Video**).
-  2. Press **Left** twice to highlight **Stats**.
+  2. Move one tab toward **Info** (**Left** in left-to-right layouts) to highlight **Stats**.
 - **From the playback controls:**
-  1. Press **Up** (or **Select**) to show the timeline and transport bar.
+  1. Press **Up** to show the timeline and transport bar.
   2. Press **Down** to move onto the transport buttons, then move **Right** to the **Options** button (beside Close) and press **Select**.
   3. Move along the top tab bar (`Info`, `Stats`, `Video`, `Audio`, `Subtitles`, `Chapters`) to **Stats**.
 

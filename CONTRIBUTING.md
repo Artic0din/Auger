@@ -34,15 +34,12 @@ the repository's Security tab, not in a public issue.
 
 ## Pull requests
 
-Pull requests are welcome when accompanied by an issue. 
+Pull requests are welcome when accompanied by an issue.
 The rest of this guide applies to those pull requests.
 
 ## Before you start
 
-Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before
-implementing a feature, navigation or behavior change, large refactor, or work
-that changes the shared server contract. Documentation, narrow fixes, and
-well-scoped parity corrections can go straight to a pull request.
+Open or link an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before opening a pull request so changes stay scoped and tracked.
 
 This repository owns Auger, a third-party Samsung TV (Tizen) client for Silo.
 Server/API work belongs in the upstream
@@ -60,14 +57,13 @@ A running Silo Server is required for live sign-in, browsing, and playback valid
 
 ## Validate your change
 
-Run focused tests while iterating. Before opening a pull request, run the main local checks:
+Run focused tests while iterating. Before opening a pull request, run the full test suite and any matching script checks from `.github/workflows/ci-scripts.yml`:
 
 ```sh
 npm test
-python3 scripts/test-release-version.py
 ```
 
-`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and compare it with Apple TV following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
+`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs all script and guard tests in `.github/workflows/ci-scripts.yml`, repository baseline checks, and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and compare it with Apple TV following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
 
 ## Open the pull request
 
