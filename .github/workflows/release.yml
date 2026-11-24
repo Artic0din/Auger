@@ -217,9 +217,19 @@ jobs:
 
       - name: Publish the release
         run: |
+          # If the tag already exists in git, verify it points to TARGET_SHA
+          # before touching any release (GitHub ignores --target when the tag
+          # already exists).
+          if gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" > /dev/null 2>&1; then
+            tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
+            if [[ "${tag_sha}" != "${TARGET_SHA}" ]]; then
+              echo "::error::Tag ${TAG} already points to ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
+              exit 1
+            fi
+          fi
+
           # Check an existing release first so an already-published retry does
-          # not fail on extra API calls, and never silently accepts a tag that
-          # belongs to a different commit.
+          # not fail on extra API calls.
           release_state="missing"
           if gh release view "${TAG}" > /dev/null 2>&1; then
             is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
