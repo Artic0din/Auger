@@ -482,6 +482,70 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             self.assertEqual(0, rerun.returncode, rerun.stderr)
             self.assertEqual(head_after_first, git(origin, "rev-parse", "refs/heads/main"))
 
+            # Simulate a competing commit advancing main on the first push attempt; the retry must preserve it and record v0.2.1.
+            competing_dir = root / "competing"
+            git(root, "clone", "--quiet", str(origin), str(competing_dir))
+            (competing_dir / "NOTES.txt").write_text("concurrent commit\n", encoding="utf-8")
+            git(competing_dir, "add", "NOTES.txt")
+            git(competing_dir, "commit", "--quiet", "-m", "docs: concurrent note")
+            competing_sha = git(competing_dir, "rev-parse", "HEAD")
+
+            marker = root / "raced-once"
+            hook = origin / "hooks" / "pre-receive"
+            hook.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                f'if [[ ! -f "{marker}" ]]; then\n'
+                f'  touch "{marker}"\n'
+                f'  env -u GIT_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_QUARANTINE_PATH git -C "{competing_dir}" push --quiet origin HEAD:main\n'
+                "  exit 1\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+
+            retry_run = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", changelog_script],
+                cwd=work,
+                env={**changelog_env_vars, "VERSION": "0.2.1", "TAG": "v0.2.1"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, retry_run.returncode, retry_run.stderr)
+            self.assertTrue(marker.exists(), "expected first push attempt to race and trigger retry")
+            self.assertEqual("concurrent commit", git(origin, "show", "refs/heads/main:NOTES.txt"))
+            self.assertIn(f"## [0.2.1] - {outputs['release_date']}", git(origin, "show", "refs/heads/main:CHANGELOG.md"))
+            self.assertEqual(competing_sha, git(origin, "rev-parse", "refs/heads/main^"))
+
+            # Manual dispatch guard walks back past CHANGELOG.md-only commits to the passing code commit.
+            prepare_block = extract_job_block(workflow_text, "prepare")
+            build_guard_script = extract_step_run(prepare_block, "Require Tizen Builds to have passed on this commit")
+            tip_sha = git(origin, "rev-parse", "refs/heads/main")
+            git(work, "fetch", "--quiet", "origin", "main")
+            git(work, "checkout", "--quiet", "--detach", tip_sha)
+            gh_stub.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "${1:-}" == "run" && "${2:-}" == "list" ]]; then\n'
+                '  commit=""\n'
+                '  while [[ $# -gt 0 ]]; do\n'
+                '    if [[ "$1" == "--commit" ]]; then commit="$2"; shift 2; else shift; fi\n'
+                "  done\n"
+                f'  if [[ "${{commit}}" == "{competing_sha}" ]]; then echo "success"; fi\n'
+                "  exit 0\n"
+                "fi\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            guard_ok = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", build_guard_script],
+                cwd=work,
+                env={**base_env, "GITHUB_REPOSITORY": "Artic0din/Auger-Tizen", "TARGET_SHA": tip_sha},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, guard_ok.returncode, guard_ok.stderr)
+
     def test_release_signing_guard_requires_public_profile_without_personal_secrets(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
         wgt_block = extract_job_block(workflow_text, "wgt")

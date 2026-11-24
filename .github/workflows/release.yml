@@ -96,12 +96,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
-          conclusion="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow tizen-build.yml \
-            --branch main --commit "${TARGET_SHA}" --limit 1 --json conclusion --jq '.[0].conclusion // ""')"
-          if [[ "${conclusion}" != "success" ]]; then
-            echo "::error::Tizen Builds has not passed on ${TARGET_SHA::9} (${conclusion:-still running or missing}). Release once it is green."
+          # Bot CHANGELOG.md commits pushed with GITHUB_TOKEN do not trigger Tizen Builds.
+          # Walk back past any single-parent commits that modified only CHANGELOG.md so manual
+          # dispatches validate the exact code tree that passed Tizen Builds.
+          checked_sha="${TARGET_SHA}"
+          while true; do
+            conclusion="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow tizen-build.yml \
+              --branch main --commit "${checked_sha}" --limit 1 --json conclusion --jq '.[0].conclusion // ""')"
+            if [[ "${conclusion}" == "success" ]]; then
+              exit 0
+            fi
+            parents="$(git rev-list --parents -n 1 "${checked_sha}")"
+            parent_count="$(( $(wc -w <<< "${parents}") - 1 ))"
+            changed_files="$(git diff-tree --no-commit-id --name-only -r --root "${checked_sha}")"
+            if [[ "${parent_count}" -eq 1 && "${changed_files}" == "CHANGELOG.md" ]]; then
+              checked_sha="$(git rev-parse "${checked_sha}^")"
+              continue
+            fi
+            echo "::error::Tizen Builds has not passed on ${checked_sha::9} (${conclusion:-still running or missing}). Release once it is green."
             exit 1
-          fi
+          done
 
       - name: Choose the version
         id: version
