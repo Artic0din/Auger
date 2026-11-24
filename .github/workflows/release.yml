@@ -5,8 +5,8 @@ name: Release
 # (or skips the release when none needs one), and this workflow signs Auger.wgt
 # with the Tizen SDK public distributor certificate (no personal TV DUIDs),
 # reserves the tag, publishes it on a GitHub Release with notes from
-# scripts/generate-changelog.py, and opens a pull request to record the notes
-# in CHANGELOG.md. Run it by hand to force a bump or a version. See docs/releasing.md.
+# scripts/generate-changelog.py, and commits the notes directly to CHANGELOG.md
+# on main. Run it by hand to force a bump or a version. See docs/releasing.md.
 
 on:
   workflow_run:
@@ -344,17 +344,15 @@ jobs:
             --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
 
   changelog:
-    name: Open CHANGELOG.md pull request
+    name: Update CHANGELOG.md on main
     needs: [prepare, publish]
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write # push the changelog branch
-      pull-requests: write # open the CHANGELOG.md pull request
+      contents: write # push the CHANGELOG.md commit to main
     env:
       GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
       PREVIOUS_SHA: ${{ needs.publish.outputs.previous_sha }}
@@ -368,44 +366,39 @@ jobs:
           fetch-depth: 0 # commit history for generate-changelog.py
           persist-credentials: false
 
-      - name: Open a pull request to record the release in CHANGELOG.md
+      - name: Commit the release notes to CHANGELOG.md on main
         run: |
-          # Separate job so a transient PR failure can be retried with "Re-run failed jobs"
-          # after the GitHub Release is already live.
+          # Separate job so a transient push failure can be retried with "Re-run failed jobs"
+          # after the GitHub Release is already live. Pushes using GITHUB_TOKEN do not trigger
+          # downstream workflows, so this cannot cause a release loop.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
           git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
-          branch="docs/changelog-v${VERSION}"
           generator="${RUNNER_TEMP}/changelog-generator"
           mkdir -p "${generator}"
           cp scripts/generate-changelog.py scripts/release-version.py "${generator}/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')"
-          if [[ -n "${existing}" ]]; then
-            echo "Changelog PR #${existing} is already open for ${TAG}; leaving it untouched."
-            exit 0
-          fi
-          git_auth fetch --quiet origin main
-          if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
-            echo "CHANGELOG.md on main already records ${VERSION}."
-            exit 0
-          fi
-          if git_auth fetch --quiet origin "${branch}" 2>/dev/null; then
-            git checkout --quiet -B "${branch}" "origin/${branch}"
-          else
-            git checkout --quiet -B "${branch}" origin/main
-          fi
-          python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
-            --date "${RELEASE_DATE}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
-          if ! git diff --quiet CHANGELOG.md; then
+          for attempt in 1 2 3; do
+            git_auth fetch --quiet origin main
+            if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
+              echo "CHANGELOG.md on main already records ${VERSION}."
+              exit 0
+            fi
+            git checkout --quiet -B changelog-update origin/main
+            python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
+              --date "${RELEASE_DATE}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
+            if git diff --quiet CHANGELOG.md; then
+              echo "CHANGELOG.md on main already records ${VERSION}."
+              exit 0
+            fi
             git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md
-            git_auth push origin "HEAD:${branch}"
-          elif git merge-base --is-ancestor "${branch}" origin/main; then
-            echo "CHANGELOG.md on main already records ${VERSION}."
-            exit 0
-          fi
-          pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
-          gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
-            --title "docs(changelog): record v${VERSION} release notes" \
-            --body "${pr_body}"
+            if git_auth push origin HEAD:main; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "Failed to push CHANGELOG.md update to main after 3 attempts." >&2
+              exit 1
+            fi
+            echo "Push to main raced with another commit (attempt ${attempt}/3); retrying on latest main."
+          done

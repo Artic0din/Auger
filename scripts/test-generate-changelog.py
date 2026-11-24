@@ -334,7 +334,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
         self.assertNotIn("PREVIOUS_TAG", changelog_env)
 
         notes_script = extract_step_run(publish_block, "Write the release notes")
-        changelog_script = extract_step_run(changelog_block, "Open a pull request to record the release in CHANGELOG.md")
+        changelog_script = extract_step_run(changelog_block, "Commit the release notes to CHANGELOG.md on main")
 
         with tempfile.TemporaryDirectory() as tmp_name:
             root = Path(tmp_name)
@@ -462,12 +462,25 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             )
             self.assertEqual(0, changelog_run.returncode, changelog_run.stderr)
 
-            committed = git(origin, "show", "refs/heads/docs/changelog-v0.2.0:CHANGELOG.md")
+            committed = git(origin, "show", "refs/heads/main:CHANGELOG.md")
             self.assertIn(f"## [0.2.0] - {outputs['release_date']}", committed)
             self.assertIn("- **Playback**: Add chapters", committed)
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
-            self.assertIn("--head docs/changelog-v0.2.0", gh_log.read_text(encoding="utf-8"))
+            self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))
+            self.assertFalse(gh_log.exists(), "changelog job should push directly to main without opening a PR")
+
+            # Re-running the changelog job for the same version is a no-op.
+            head_after_first = git(origin, "rev-parse", "refs/heads/main")
+            rerun = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", changelog_script],
+                cwd=work,
+                env=changelog_env_vars,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, rerun.returncode, rerun.stderr)
+            self.assertEqual(head_after_first, git(origin, "rev-parse", "refs/heads/main"))
 
     def test_release_signing_guard_requires_public_profile_without_personal_secrets(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
