@@ -20,6 +20,12 @@ export interface SubtitleDisplayView {
     readonly message: string;
 }
 
+export type SubtitleDisplayLoadResult =
+    | { readonly kind: "loaded"; readonly readAppearance: boolean; readonly readSync: boolean }
+    | { readonly kind: "legacy" }
+    | { readonly kind: "failed" }
+    | { readonly kind: "aborted" };
+
 const FAILED = "Couldn't save that change. Try again.";
 const MARKER_PREFIX = "silo.native.player.leftoverDeviceSubtitleOffsetCleared.";
 const OWED_DELETE_PREFIX = "silo.native.player.pendingDeviceSettingWrites.";
@@ -79,7 +85,7 @@ export class SubtitleDisplay {
 
     destroy(): void { this.abort.abort(); }
 
-    async load(): Promise<void> {
+    async load(): Promise<SubtitleDisplayLoadResult> {
         let effectiveSupported = false;
         try {
             const capability = await this.call(operations.capabilities());
@@ -87,7 +93,7 @@ export class SubtitleDisplay {
             const support = subtitleControlSupport(contract, capability);
             effectiveSupported = support.styling || support.delay || support.deviceScope;
             const device = support.deviceScope ? await this.call(operations.deviceAppearance(this.profileId, this.session.http.deviceId)) : false;
-            if (this.abort.signal.aborted) return;
+            if (this.abort.signal.aborted) return { kind: "aborted" };
             this.manifest = decodeSettingsCapabilities(capability).manifestRevision;
             this.revisionScope = subtitleSettingsScope(this.session, this.profileId);
             this.deviceOverride = device;
@@ -100,21 +106,25 @@ export class SubtitleDisplay {
                 support.styling ? this.call(subtitleOperations.subtitleAppearance(this.profileId)) : this.appearance,
                 support.delay ? this.call(subtitleOperations.subtitleSync()) : this.delayMs,
             ]);
-            if (this.abort.signal.aborted) return;
+            if (this.abort.signal.aborted) return { kind: "aborted" };
             this.support = support;
             this.syncScopes = allowedScopes(contract, SYNC_KEY);
             this.appearance = appearance;
             this.delayMs = readDelay;
             await this.finishLeftoverClear();
-            if (this.abort.signal.aborted) return;
+            if (this.abort.signal.aborted) return { kind: "aborted" };
             this.loaded = true;
             this.onChange(appearance, this.delayMs);
+            this.changed();
+            return { kind: "loaded", readAppearance: support.styling, readSync: support.delay };
         } catch (error) {
-            if (this.abort.signal.aborted) return;
+            if (this.abort.signal.aborted) return { kind: "aborted" };
             this.loaded = true;
-            if (!(error instanceof ApiError && error.status === 404 && !effectiveSupported)) this.message = "Could not load subtitle preferences. Reopen playback to retry.";
+            const legacy = error instanceof ApiError && error.status === 404 && !effectiveSupported;
+            if (!legacy) this.message = "Could not load subtitle preferences. Reopen playback to retry.";
+            this.changed();
+            return legacy ? { kind: "legacy" } : { kind: "failed" };
         }
-        this.changed();
     }
 
     adopt(appearance: SubtitleAppearance, sync: number): void {
