@@ -15,6 +15,7 @@ Read the matching reference before editing a branch of the codebase.
 - **Browse, Details, Search, Person, Requests, Accounts, or Watch Party.** Use the feature specs in [docs/README.md](docs/README.md#features).
 - **Porting from Apple TV or Android TV.** Read [docs/upstream-design-notes.md](docs/upstream-design-notes.md).
 - **Tests, fake clocks, and flake hunting.** Read [test/README.md](test/README.md).
+- **CI checks, required ruleset contexts, and workflows.** Read [docs/ci-checks.md](docs/ci-checks.md).
 - **Simulator capture, signed `.wgt` verification, and Apple TV comparison.** Read [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md).
 - **Releases, sideloading, and Apps2Samsung.** Read [docs/releasing.md](docs/releasing.md).
 - **Fonts and third-party marks.** Read [app/fonts/README.md](app/fonts/README.md) and [app/third-party/README.md](app/third-party/README.md).

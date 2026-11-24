@@ -26,6 +26,7 @@ Read the matching reference before changing its area.
 - **Player options HUD.** [player-hud.md](player-hud.md) documents the Info, Stats, Video, Audio, Subtitles, and Chapters tabs.
 - **Reporting bugs.** [reporting-bugs.md](reporting-bugs.md) explains what to include in a bug report and where to find TV details, Auger version, and the player's Stats tab.
 - **Tests and flake hunting.** [test/README.md](../test/README.md) documents native and UI suites, fake clocks, and concurrency locks.
+- **CI checks and workflows.** [ci-checks.md](ci-checks.md) documents every pull request check, required ruleset context, and post-merge workflow.
 - **Releases and sideloading.** [releasing.md](releasing.md) documents automatic releases, Apps2Samsung, and sideloading.
 - **Fonts and third-party marks.** [app/fonts/README.md](../app/fonts/README.md) and [app/third-party/README.md](../app/third-party/README.md) document bundled fonts and trademark assets.
 - **Upstream TV specs.** [upstream-design-notes.md](upstream-design-notes.md) links the `silo-apple` and `silo-android` design specs relevant to TV clients.
