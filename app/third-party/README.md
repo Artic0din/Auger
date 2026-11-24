@@ -1,7 +1,7 @@
 # Third-party marks
 
 These files are other companies' trademarks.
-They are not Silo's and are not covered by this repository's license.
+They are not Auger's and are not covered by this repository's license.
 
 | File | Mark | Source | SHA-256 |
 |---|---|---|---|
@@ -10,5 +10,5 @@ They are not Silo's and are not covered by this repository's license.
 TMDB's [API terms of use](https://www.themoviedb.org/api-terms-of-use), section 3, require its logo to identify TMDB data,
 less prominent than the app's own marks,
 and the notice shown in Settings > Server > Acknowledgements.
-Silo shows the logo beside TMDB scores and in Acknowledgements, as silo-apple does (`ThirdPartyLogos.xcassets`).
+Auger shows the logo beside TMDB scores and in Acknowledgements, as silo-apple does (`ThirdPartyLogos.xcassets`).
 Keep the file unmodified.

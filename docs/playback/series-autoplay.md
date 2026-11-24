@@ -1,6 +1,6 @@
 # Series autoplay
 
-Extends manual next-episode continuation with a 10-second countdown, Cancel autoplay, pre-end Up Next prompts, and On Deck offers ([#12](https://github.com/Artic0din/silo-tizen/issues/12)).
+Extends manual next-episode continuation with a 10-second countdown, Cancel autoplay, pre-end Up Next prompts, and On Deck offers ([#12](https://github.com/Artic0din/Auger-Tizen/issues/12)).
 
 The pinned server settings manifest at `cc8514943289045e7b9f7ac8d36d4968bfe93926` defines `playback.auto_play_next` as a remote boolean, introduced in revision 1, default true.
 Its resolution order is `profile_device`, `profile`, `default`.

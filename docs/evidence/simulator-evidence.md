@@ -15,7 +15,7 @@ export TIZEN_SECURITY_PROFILE="YourProfileName"
 shasum -a 256 dist/Auger.wgt
 ```
 
-The `silo-tizen-wgt` artifact from a Tizen Builds CI run is the same signed package, with its hash in `Auger.wgt.sha256`. Record the source commit, uncommitted-diff identity (if any), package SHA-256, and simulator version, and keep a backup of any installed candidate you need to restore.
+The `auger-wgt` artifact from a Tizen Builds CI run is the same signed package, with its hash in `Auger.wgt.sha256`. Record the source commit, uncommitted-diff identity (if any), package SHA-256, and simulator version, and keep a backup of any installed candidate you need to restore.
 
 ## Launch on macOS
 

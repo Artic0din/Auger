@@ -4,16 +4,12 @@
 
 Closes #NNN
 <!-- One "Closes #NNN" line per issue this change fully resolves, so GitHub closes it
-when the PR merges into main. Use "Closes Silo-Server/<repo>#NNN" for an issue in
-another repository. Delete the line when the PR only partly addresses an issue. -->
+when the PR merges into main. Delete the line when the PR only partly addresses an
+issue. -->
 Related issue: #NNN
 <!-- An epic, sub-issue, or partly addressed issue this work serves and that should
 stay open, or "N/A". An open issue is not required — the Problem section below must
 stand on its own. -->
-Validation tasks: #NNN C1
-<!-- Until 1.0 ships: v1.0 board tasks and cases this change unblocks or changes,
-e.g. "unblocks #1144 C3; changes #1200 C1". Write "none" when no validation task is
-affected. -->
 
 A short plain-language summary: what goes wrong, who it affects, and what this
 change does about it. Details come after.

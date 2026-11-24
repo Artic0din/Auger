@@ -1,6 +1,6 @@
 # Native API v2 on Tizen
 
-The Silo Samsung TV client talks to the server only through the native `/api/v2` API.
+Auger talks to the Silo server only through the native `/api/v2` API.
 This page lists every operation the app calls, how each one is authenticated, and how failures are handled.
 The code is the source of truth.
 Each section cites the file that defines the operation.

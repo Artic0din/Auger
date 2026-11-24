@@ -23,17 +23,17 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 
 ## Install
 
-Auger is not in the Samsung TV store and will not be submitted to it.
+Auger ships through Apps2Samsung and GitHub Releases.
 Install it in one of two ways:
 
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Artic0din/Auger`), then install from it.
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Artic0din/Auger-Tizen`), then install from it.
   Apps2Samsung signs the app with your own Samsung certificate, so it installs on your TV without being listed in ours.
   It updates in one click when the app's version changes.
-  It compares the version (for example `0.1.0`), not the build number, so to get a newer build of the same version, install it again from the source.
-- **Sideload:** download a versioned build and its `.sha256` checksum from [Releases](https://github.com/Artic0din/Auger/releases).
+- **Sideload:** download `Auger.wgt` and its `Auger.wgt.sha256` checksum from [Releases](https://github.com/Artic0din/Auger-Tizen/releases).
   It is signed with the maintainer's certificate, so it installs only on TVs listed in it; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
+Upgrading from a `0.1.0-beta.*` build also requires uninstalling first because the Tizen package ID changed to `AugerTv001.Auger`; subsequent builds with `AugerTv001.Auger` update in place within the same install method.
 Uninstalling removes its data, so you sign in again afterwards.
 
 ## Build from source
@@ -77,12 +77,12 @@ export TIZEN_SECURITY_PROFILE="YourProfileName"
 The script builds the package staging directory and writes `dist/Auger.wgt`.
 
 CI builds the same package on every pull request and push to main (`.github/workflows/tizen-build.yml`).
-On main and same-repository pull requests it signs with the maintainer's Samsung certificate from repository secrets and uploads `Auger.wgt` with its SHA-256 as the `silo-tizen-wgt` artifact.
+On main and same-repository pull requests it signs with the maintainer's Samsung certificate from repository secrets and uploads `Auger.wgt` with its SHA-256 as the `auger-wgt` artifact.
 That certificate lists the TVs it may install on, so a CI-signed package installs only on those TVs.
 
 ### Release
 
-Builds are made by the Release workflow from `main` and published on GitHub Releases; see [Releasing](docs/releasing.md).
+After CI passes on `main`, the Release workflow reads the Conventional Commits since the last tag, tags `vX.Y.Z`, and publishes `Auger.wgt` on GitHub Releases; see [Releasing](docs/releasing.md).
 
 <details>
 <summary>Repository layout</summary>
@@ -103,7 +103,7 @@ Builds are made by the Release workflow from `main` and published on GitHub Rele
 Right now, the most helpful way to contribute is a clear, accurate issue.
 We implement and review changes through our own workflow, and pull request volume has outgrown what we can review carefully, so a good issue usually helps us more than a pull request.
 
-Pull requests are still welcome from contributors who've had one merged in a Silo repository, or when a maintainer asks for one.
+Pull requests are welcome when a maintainer asks for one in an issue comment.
 We close other pull requests without review.
 [CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful.
 
@@ -111,21 +111,19 @@ Problems with the server or its API belong in [silo-server](https://github.com/S
 
 ## Credits
 
-- **Silo.** Auger exists because of [Silo](https://siloserver.org), built by Silo Media L.L.C. and its contributors.
-  Auger began as Silo's own Samsung TV client and is now maintained independently.
+- **Silo.** Auger is an independent client for [Silo](https://siloserver.org), the media server built by Silo Media L.L.C. and its contributors.
 - **Silo's TV apps.** The interface follows Silo's [Skyline design guide](https://github.com/Silo-Server/silo-apple/blob/main/docs/skyline-design-guide.md).
   Behavior is ported from [silo-apple](https://github.com/Silo-Server/silo-apple) and compared with [silo-android](https://github.com/Silo-Server/silo-android), both under the same AGPL license.
 - **Silo's brand page.** The Auger mark's three signal colors and the wordmark's typeface match the ones on [siloserver.org/brand](https://siloserver.org/brand).
   The mark itself is a different shape, as that page asks of clients.
   The wordmark is set in Plus Jakarta Sans, under the SIL Open Font License, and converted to outlines.
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)** makes installing without the store practical.
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)** makes installing on your own TV practical.
 - **Libraries, fonts and marks.** uqr, unicode-segmenter, ThumbHash, Inter, Roboto Mono and the TMDB logo keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License and trademarks
 
-Auger is licensed under `AGPL-3.0-or-later` with an additional permission under AGPL section 7 allowing distribution through the Samsung TV Apps store despite its signing, DRM, and redistribution terms.
-See [LICENSE](LICENSE) and [APPSTORE-EXCEPTION.md](APPSTORE-EXCEPTION.md).
-A second additional permission allows combining it with platform SDKs; see [PLATFORM-EXCEPTION.md](PLATFORM-EXCEPTION.md).
+Auger is licensed under `AGPL-3.0-or-later`; see [LICENSE](LICENSE).
+An additional permission under AGPL section 7 allows combining it with platform SDKs; see [PLATFORM-EXCEPTION.md](PLATFORM-EXCEPTION.md).
 
 Silo and the Silo logo are trademarks of Silo Media L.L.C.
 Auger uses the Silo name only to say what it connects to, which Silo's [trademark policy](https://github.com/Silo-Server/siloserver.org/blob/main/TRADEMARK.md) and [brand guidelines](https://siloserver.org/brand#usage) allow without permission.
@@ -133,7 +131,7 @@ Auger is not an official Silo product, and Silo Media L.L.C. does not operate, s
 Official Silo software comes only from the [Silo-Server](https://github.com/Silo-Server) organization on GitHub, [siloserver.org](https://siloserver.org), and app-store listings published by Silo Media L.L.C.
 
 The Auger mark and wordmark are this project's own artwork, and this repository ships no Silo logo, wordmark or icon files.
-[TRADEMARK.md](TRADEMARK.md) keeps a copy of Silo's policy for reference.
+[TRADEMARK.md](TRADEMARK.md) summarizes Auger's trademark notice and links to Silo's canonical policy.
 
 Samsung, Tizen, Apple TV, TMDB and other names belong to their owners.
 Third-party code, fonts and marks retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,4 +1,4 @@
-# Silo Tizen docs
+# Auger docs
 
 Index of documentation for Auger on Samsung TV (Tizen 8.0 or later). Start with [README.md](../README.md) for install and build setup, [FEATURES.md](../FEATURES.md) for the Apple TV and Android TV parity inventory, and [AGENTS.md](../AGENTS.md) for platform invariants.
 
@@ -8,8 +8,8 @@ Index of documentation for Auger on Samsung TV (Tizen 8.0 or later). Start with 
 - Top bar follows the Server's saved TV menu, falling back to Home, Movies, Series, For You, and Calendar with Search to the left. Movies and Series appear only when a matching or mixed Library exists.
 - Music browsing is not built. Audiobooks is opt-in (Settings, General, Show Audiobooks) with browsing and detail only, no playback.
 - Requests appears only when enabled by the Server for the active Profile.
-- Diagnostics reports are blocked until Silo Server accepts a Tizen diagnostics platform ([#138](https://github.com/Artic0din/silo-tizen/issues/138)).
-- Ships via sideloading and Apps2Samsung; not submitted to the Samsung TV store ([#732](https://github.com/Artic0din/silo-tizen/issues/732)).
+- Diagnostics reports are blocked until Silo Server accepts a Tizen diagnostics platform ([#138](https://github.com/Artic0din/Auger-Tizen/issues/138)).
+- Ships through Apps2Samsung and GitHub Releases ([Releasing](releasing.md)).
 
 ## Core references
 
@@ -23,7 +23,7 @@ Read the matching reference before changing its area.
 - **Offline browse cache.** [offline-browse.md](offline-browse.md) documents Home, For You, and Details snapshot caching and recovery.
 - **Translations and RTL.** [translation.md](translation.md) documents string catalog usage, mirrored views, and remaining English copy.
 - **Player options HUD.** [player-hud.md](player-hud.md) documents the Info, Stats, Video, Audio, Subtitles, and Chapters tabs.
-- **Releases and sideloading.** [releasing.md](releasing.md) documents tester builds, Apps2Samsung, and sideloading.
+- **Releases and sideloading.** [releasing.md](releasing.md) documents automatic releases, Apps2Samsung, and sideloading.
 - **Upstream TV specs.** [upstream-design-notes.md](upstream-design-notes.md) links the `silo-apple` and `silo-android` design specs relevant to TV clients.
 - **Upstream parity drift snapshot.** `parity/upstream-snapshot.json` records the upstream state `FEATURES.md` was last reviewed against (`scripts/parity-drift.py`).
 

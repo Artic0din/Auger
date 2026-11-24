@@ -6,7 +6,7 @@ The styling reference is tvOS-only silo-apple [`fc86b2019762ac10224140e1ad721a0c
 The two Settings source files below are unchanged from `8655b06b077ab09a4604073ab3f9718fbfe66c6d`, the Apple simulator revision identified in issue #484.
 
 - [TVSettingsView.swift:242-258](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L242-L258) uses 22 pt medium category symbols in 34 pt slots, and regular 16 pt subtitles at 0.62 opacity.
-  The [same-state Apple capture supplied for the follow-up](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/484-settings-styling/cmp484-rail.png) measures approximately 24 × 24 px of General gear ink, 26 × 20 px for Playback, 24 × 22 px for Subtitles and 24 × 20 px for Server at 1920 × 1080.
+  The [same-state Apple capture supplied for the follow-up](https://raw.githubusercontent.com/Artic0din/Auger-Tizen/evidence/484-settings-styling/cmp484-rail.png) measures approximately 24 × 24 px of General gear ink, 26 × 20 px for Playback, 24 × 22 px for Subtitles and 24 × 20 px for Server at 1920 × 1080.
   The original SVG substitutes keep the 34 px slots and use per-symbol proportions with approximately 1.7–2 px medium strokes.
   These are capture measurements, not values specified by the Swift font size.
   [The category symbols at lines 675-681](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L675-L681) include `gearshape` for General.
@@ -14,7 +14,7 @@ The two Settings source files below are unchanged from `8655b06b077ab09a4604073a
   [TVSettingsComponents.swift:313-325](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L313-L325) uses the same symbol at 18 pt semibold and 0.55 opacity for picker rows.
   Settings draws these as rounded SVG strokes instead of font-dependent text chevrons.
 - [TVSettingsView.swift:182-208](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsView.swift#L182-L208) puts Sign Out after the categories and a spacer with a 24 pt minimum, with 6 pt stack gaps and 10 pt top padding on the following version line.
-  **Source/capture distinction:** Swift allows the spacer to expand; the [second same-state capture](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/484-settings-styling/cmp484b-rail.png) shows about 135 px between the Server and Sign Out baselines, compared with about 120 px on Samsung at `68efd0ee`.
+  **Source/capture distinction:** Swift allows the spacer to expand; the [second same-state capture](https://raw.githubusercontent.com/Artic0din/Auger-Tizen/evidence/484-settings-styling/cmp484b-rail.png) shows about 135 px between the Server and Sign Out baselines, compared with about 120 px on Samsung at `68efd0ee`.
   The old minimum-only translation (6 + 24 + 6 = 36 px between row bounds) underfilled this gap.
   Tizen now uses the capture's 50 px between row bounds, equivalent to a 38 px expanded spacer and both 6 px stack gaps.
   [TVSettingsComponents.swift:198-202](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift#L198-L202) adds 15 pt of vertical and 20 pt of horizontal padding inside each rail row, including Sign Out, and fills the rail width.
@@ -128,7 +128,7 @@ Source: [silo-apple `dce56e3c`](https://github.com/Silo-Server/silo-apple/tree/d
 
 Platform limits, which Apple does not have:
 
-- Screen translation coverage, right-to-left mirroring, and remaining English strings are tracked in [translation.md](translation.md) (single source of truth; see [#571](https://github.com/Artic0din/silo-tizen/issues/571)).
+- Screen translation coverage, right-to-left mirroring, and remaining English strings are tracked in [translation.md](translation.md) (single source of truth; see [#571](https://github.com/Artic0din/Auger-Tizen/issues/571)).
 - Apple also writes the choice as the app's system language (`AppleLanguages`) and reads a change made in system settings back as this device's value. Tizen has no per-app system language, so neither direction exists here.
 
 ### Settings text
@@ -143,7 +143,7 @@ A screen builds its text when it draws, so a language change repaints Settings a
 - A failed skip-interval save reads Apple's message for its interval (`player.seekInterval.saveConnection…`, `saveUnsupported…`, silo-apple `SeekIntervalPreferences.writeFailureMessage`) when the request never reached the server or its answer did not parse, or when a 422 names the key. Apple's English replaces Tizen's generic line for these two causes. Every other failure keeps Tizen's own wording, including the 429 retry-after seconds and the 403 and 422 advice, because Apple's single `saveRejected…` line has no room for them (#592, option A).
 - A key a language lacks shows the English text, as Apple's does for a key outside a language's table.
 
-Catalog vendoring, per-language trimming, and on-demand loading (`catalog/<tag>.js`, keeping only English in `main.js`) are documented in [src/i18n/catalog/README.md](../src/i18n/catalog/README.md). On the S95C, bundling every language into `main.js` slowed first paint by 277 ms ([#595](https://github.com/Artic0din/silo-tizen/issues/595)).
+Catalog vendoring, per-language trimming, and on-demand loading (`catalog/<tag>.js`, keeping only English in `main.js`) are documented in [src/i18n/catalog/README.md](../src/i18n/catalog/README.md). On the S95C, bundling every language into `main.js` slowed first paint by 277 ms ([#595](https://github.com/Artic0din/Auger-Tizen/issues/595)).
 
 ### Home and navigation text
 
@@ -224,7 +224,7 @@ A row that nothing on this TV acts on stays hidden.
 | Deinterlacing, Deinterlacing Field Rate | AVPlay has no deinterlacer or cadence setter. Same section. |
 | Lossless Multichannel Audio | This client has no decoder for the lossless codecs, and the server has no lossless target. Same section. |
 | TrueHD Atmos and DTS:X | Apple hides it too in Silo builds, and Samsung decodes neither codec. Same section. |
-| Still Watching prompt | Apple's EPISODES row sets how many episodes auto-play before Up Next waits for the viewer (`TVPlaybackSettingsView.swift:275-279`). Samsung has no such guard yet, so the row would save a value nothing reads. Tracked in [#796](https://github.com/Artic0din/silo-tizen/issues/796). |
+| Still Watching prompt | Apple's EPISODES row sets how many episodes auto-play before Up Next waits for the viewer (`TVPlaybackSettingsView.swift:275-279`). Samsung has no such guard yet, so the row would save a value nothing reads. Tracked in [#796](https://github.com/Artic0din/Auger-Tizen/issues/796). |
 | Use Device Settings | tvOS reads Media Accessibility caption preferences (`SystemCaptionAppearance.swift`). Samsung captions are the app overlay. No TV caption-style API is available, so the switch would not change language, behavior, or appearance. |
 | Diagnostics | Open issue #218, parked. |
 

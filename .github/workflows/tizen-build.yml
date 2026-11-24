@@ -4,7 +4,7 @@ name: Tizen Builds
 # With the signing secrets (main and same-repository pull requests), the .wgt is
 # signed with the maintainer's Samsung certificate and uploaded. Fork pull
 # requests sign with a throwaway certificate to check packaging only.
-# release.yml only releases a commit this workflow passed on main.
+# release.yml runs automatically after this workflow succeeds on main.
 
 on:
   push:
@@ -123,7 +123,7 @@ jobs:
         if: steps.signing.outputs.signing == 'samsung'
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: silo-tizen-wgt
+          name: auger-wgt
           path: |
             dist/Auger.wgt
             dist/Auger.wgt.sha256

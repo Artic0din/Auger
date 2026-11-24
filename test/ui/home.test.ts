@@ -386,7 +386,7 @@ journey("library tabs that arrive on Calendar keep Up on the new bar", async tv 
     await tv.page.locator('[data-focus="calendar"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.eventually(async () => await tv.page.locator('.browse[data-view="calendar"] [data-focus="filter:following"]').count() === 1 && await tv.page.locator('.browse[data-view="calendar"] [data-focus="previous-week"]').count() === 1 && await tv.page.getByText("Loading the week.", { exact: true }).count() === 0, "Calendar settled");
-    // The week chevron (`previous-week`) used to be the first focusable, and Up from it was expected to land on `calendar`.
+    // The week chevron (`previous-week`) was once the first focusable, and Up from it was expected to land on `calendar`.
     // That press now stops on the filter row (`filter:following`); the bar is the next Up from there.
     await tv.page.locator('[data-focus="filter:following"]').focus();
     heldCalendarLibraries.release();

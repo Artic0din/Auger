@@ -1,10 +1,9 @@
-# Contributing to Silo Tizen
+# Contributing to Auger
 
 > [!IMPORTANT]
-> The most helpful way to contribute to Silo right now is a clear, accurate
-> issue. Pull requests are welcome from contributors who've had one merged in a
-> Silo repository, or when a maintainer asks for one. We close other pull
-> requests without review.
+> The most helpful way to contribute to Auger right now is a clear, accurate
+> issue. Pull requests are welcome when a maintainer asks for one in an issue
+> comment. We close other pull requests without review.
 
 ## Why we're asking for issues
 
@@ -15,20 +14,16 @@ the change ourselves from a precise issue takes less time, and it keeps every
 change on one workflow with the same tests and the same review.
 
 This is about review capacity, not the quality of anyone's work, and it applies
-whether or not you used AI. We'll revisit it as Silo approaches 1.0. Thank you
-for taking the time to write things up well.
+whether or not you used AI. Thank you for taking the time to write things up
+well.
 
 ## Write a useful issue
 
-Open an [issue](https://github.com/Artic0din/silo-tizen/issues) for problems
-in the Samsung TV app. Server and API problems belong in
-[`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose).
-Search first; if an issue already covers the problem, add what's new there.
-
-Using Claude Code or Codex? The
-[Silo troubleshooting skill](https://github.com/Silo-Server/silo-troubleshooting-skill)
-helps you collect these details and drafts the issue, then has independent
-reviewers check it against your evidence before you post it.
+Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) for problems
+in the Samsung TV app. Server and API problems belong in the upstream
+[`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose)
+repository. Search first; if an issue already covers the problem, add what's
+new there.
 
 - One problem or proposal per issue.
 - Describe what you observed before any theory about the cause.
@@ -41,40 +36,35 @@ reviewers check it against your evidence before you post it.
 - If you found the cause or have a fix in mind, add it under a Technical notes
   heading, apart from what you observed. Point to the files involved; a short
   code excerpt is fine. We may implement it differently.
-- Disclose AI use, as described in the
-  [Silo contribution guide](https://github.com/Silo-Server/.github/blob/main/CONTRIBUTING.md#ai-assisted-contributions).
+- Disclose AI use: name the harness, tools, and models you used, and how
+  much of the issue they wrote.
 
 Report security vulnerabilities privately with **Report a vulnerability** on
 the repository's Security tab, not in a public issue.
 
 ## Pull requests
 
-Pull requests are welcome from contributors who've had a pull request merged in
-a Silo repository, and from anyone a maintainer has asked for one, usually in
-an issue comment. The rest of this guide applies to those pull requests.
+Pull requests are welcome when a maintainer asks for one, usually in an issue
+comment. The rest of this guide applies to those pull requests.
 
 We close other pull requests without review. That isn't a judgment of the
 work. If the problem still matters, open an issue for it and link the closed
 pull request; we may use the code as a reference.
 
-The [Silo contribution guide](https://github.com/Silo-Server/.github/blob/main/CONTRIBUTING.md)
-covers project-wide coordination, focused changes, evidence, AI disclosure, and
-pull request expectations. Those requirements apply here; this guide adds the
-Tizen-specific workflow.
-
 ## Before you start
 
-Open an [issue](https://github.com/Artic0din/silo-tizen/issues) before
+Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before
 implementing a feature, navigation or behavior change, large refactor, or work
 that changes the shared server contract. Documentation, narrow fixes, and
 well-scoped parity corrections can go straight to a pull request.
 
-This repository owns the Samsung TV (Tizen) client. Server/API work belongs in
-[`silo-server`](https://github.com/Silo-Server/silo-server), and shared client
-behavior should be checked against
+This repository owns Auger, a third-party Samsung TV (Tizen) client for Silo.
+Server/API work belongs in the upstream
+[`silo-server`](https://github.com/Silo-Server/silo-server) repository. Client
+behavior is checked against the upstream
 [`silo-apple`](https://github.com/Silo-Server/silo-apple) and
-[`silo-android`](https://github.com/Silo-Server/silo-android); the Apple TV app
-is the reference for TV behavior.
+[`silo-android`](https://github.com/Silo-Server/silo-android) apps, which are
+read-only references; the Apple TV app is the reference for TV behavior.
 
 ## Development setup
 
@@ -147,24 +137,22 @@ request can merge without it.
 
 Use a Conventional Commit title, fill in the pull request template, explain
 which surfaces are affected, paste the actual validation results, and call out
-any server, Apple or Android coordination. Read
-the [AI-assisted contribution policy](https://github.com/Silo-Server/silo-server/blob/main/docs/ai-contributions.md)
-and include its disclosure block.
+any server, Apple or Android compatibility concerns. Fill in the template's
+AI Disclosure section: the harness, tools, and models used, the level of AI
+involvement, and any adversarial review, or "none" and "No AI used".
 
 ## Licensing of contributions
 
-Silo Tizen is licensed under `AGPL-3.0-or-later` with the additional
-permissions in [APPSTORE-EXCEPTION.md](APPSTORE-EXCEPTION.md) (app store
-distribution) and [PLATFORM-EXCEPTION.md](PLATFORM-EXCEPTION.md) (platform
-libraries).
+Auger is licensed under `AGPL-3.0-or-later` with the additional permission
+in [PLATFORM-EXCEPTION.md](PLATFORM-EXCEPTION.md) (platform libraries).
 
 By submitting a contribution, you agree that it is licensed under those
-same terms, the AGPL *including* the additional permissions. If you cannot
-agree to the additional permissions, say so in your pull request before it
+same terms, the AGPL *including* the additional permission. If you cannot
+agree to the additional permission, say so in your pull request before it
 is merged.
 
 You retain copyright in your contribution; no assignment is requested.
 
 ## Instructions for coding agents
 
-Read [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it) and [GLOSSARY.md](GLOSSARY.md) before changing the repository. The organization-wide contribution guide and AI-assisted contribution policy apply equally to agent and human authors.
+Read [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it) and [GLOSSARY.md](GLOSSARY.md) before changing the repository. This guide and the pull request template's AI Disclosure apply equally to agent and human authors.

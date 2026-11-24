@@ -1,6 +1,6 @@
 # Details layout and preplay evidence
 
-This is a bounded Details improvement for [#92](https://github.com/Artic0din/silo-tizen/issues/92), not a whole-screen Apple parity PASS.
+This is a bounded Details improvement for [#92](https://github.com/Artic0din/Auger-Tizen/issues/92), not a whole-screen Apple parity PASS.
 These historical captures show one row of movie actions, Version/Audio/Subtitles dialogs, personal actions in More, and series season chips with an inline episode rail.
 Current Details controls are documented in [Details actions](../../features/details-actions.md).
 Issue #92 remains open for the differences below.
@@ -87,7 +87,7 @@ An earlier unexplained Calendar personal-action failure is not claimed fixed by 
 ## Remaining differences and limits
 
 1. Series still uses Next episode and opens episode information before playback.
-   Direct play and Play/Resume S#:E# behavior remain [#93](https://github.com/Artic0din/silo-tizen/issues/93).
+   Direct play and Play/Resume S#:E# behavior remain [#93](https://github.com/Artic0din/Auger-Tizen/issues/93).
 2. Subtitle selection lasts for this Details visit/play attempt.
    Apple-style persistent title/series overrides are not implemented here; downloaded subtitle choices remain in the player's authoritative inventory menu.
    Auto is resolved during playback preparation, so the passive Details summary states intent rather than an unverified effective track.

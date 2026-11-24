@@ -1,5 +1,5 @@
 name: Bug report
-description: Report something broken in the Samsung TV (Tizen) app
+description: Report something broken in Auger (Samsung TV / Tizen)
 title: "[bug] "
 labels: ["bug"]
 body:
@@ -8,9 +8,9 @@ body:
       value: |
         Report behavior you reproduced yourself. Keep what you observed separate from any theory about the cause. Redact credentials, tokens, personal data, server addresses, and private media details, and mark each redaction.
 
-        [Reporting a problem](https://siloserver.org/docs/report-a-problem) explains where to find versions, stats, and diagnostics. Using Claude Code or Codex? The [Silo troubleshooting skill](https://github.com/Silo-Server/silo-troubleshooting-skill) helps you collect the details and drafts this report, then has independent reviewers check it before you post. Problems that also happen in the web app usually come from the server and belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose). Problems in the Apple apps belong in [silo-apple](https://github.com/Silo-Server/silo-apple/issues/new/choose), and problems in the Android apps belong in [silo-android](https://github.com/Silo-Server/silo-android/issues/new/choose).
+        Problems that also happen in the web app usually come from the server and belong in the upstream [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose). Problems in Silo's Apple apps belong in [silo-apple](https://github.com/Silo-Server/silo-apple/issues/new/choose), and problems in Silo's Android apps belong in [silo-android](https://github.com/Silo-Server/silo-android/issues/new/choose).
 
-        Fabricated or AI-hallucinated reports are an immediate block. Read [CONTRIBUTING.md](https://github.com/Silo-Server/silo-tizen/blob/main/CONTRIBUTING.md) first.
+        Fabricated or AI-hallucinated reports are an immediate block. Read [CONTRIBUTING.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CONTRIBUTING.md) first.
   - type: textarea
     id: what-happened
     attributes:
@@ -62,7 +62,7 @@ body:
     attributes:
       label: Installed from
       options:
-        - "Samsung TV Apps"
+        - "Apps2Samsung"
         - ".wgt from GitHub Releases"
         - "Built from source"
         - "Other"
@@ -80,12 +80,6 @@ body:
     attributes:
       label: Playback details
       description: "For playback problems. In the player, **Info and options** > **Stats**; the **Audio** tab shows whether audio is passed through or decoded to PCM. Include the delivery or route, container, video, audio, and dynamic range, plus the subtitle format and your audio setup (TV speakers, soundbar, receiver)."
-  - type: input
-    id: diagnostics-reference
-    attributes:
-      label: Diagnostics report reference
-      description: "In the app, open **Settings > Diagnostics**, send to **Silo Diagnostics**, and choose **Copy reference ID**. **Start Diagnostic Capture** records while you reproduce the problem."
-      placeholder: SILO-XXXXXXXX
   - type: textarea
     id: screenshots
     attributes:

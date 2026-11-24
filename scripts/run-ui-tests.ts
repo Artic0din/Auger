@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 // A fixed path rather than os.tmpdir(): agent sandboxes can set their own TMPDIR, which would hide the lock.
-const LOCK = "/tmp/silo-tizen-ui-suite.lock";
+const LOCK = "/tmp/auger-ui-suite.lock";
 const POLL_MS = 5000;
 const UNOWNED_LOCK_MS = 30_000;
 

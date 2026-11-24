@@ -1,8 +1,8 @@
 {
-  "name": "silo-tizen",
+  "name": "auger",
   "private": true,
   "type": "module",
-  "description": "Silo client for Samsung Tizen TVs",
+  "description": "Third-party Silo client for Samsung Tizen TVs",
   "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=26"

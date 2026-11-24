@@ -1,6 +1,6 @@
 # Triage labels
 
-Map canonical skill role names to the exact GitHub label strings used in `Artic0din/silo-tizen`.
+Map canonical skill role names to the exact GitHub label strings used in `Artic0din/Auger-Tizen`.
 
 | Skill role | Repository label | Meaning |
 | --- | --- | --- |
