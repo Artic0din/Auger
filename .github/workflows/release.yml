@@ -219,13 +219,19 @@ jobs:
         run: |
           # If the tag already exists in git, verify it points to TARGET_SHA
           # before touching any release (GitHub ignores --target when the tag
-          # already exists).
-          if gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" > /dev/null 2>&1; then
+          # already exists). Continue only on a confirmed 404 or verified match.
+          tag_status=0
+          tag_resp="$(gh api -i "repos/${GH_REPO}/git/ref/tags/${TAG}" 2>&1)" || tag_status=$?
+          tag_http="$(printf '%s\n' "${tag_resp}" | sed -n '1s/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p')"
+          if [[ "${tag_status}" -eq 0 ]]; then
             tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
             if [[ "${tag_sha}" != "${TARGET_SHA}" ]]; then
               echo "::error::Tag ${TAG} already points to ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
               exit 1
             fi
+          elif [[ "${tag_http}" != "404" ]]; then
+            echo "::error::Could not verify tag ${TAG} (HTTP ${tag_http:-unknown}). Re-run failed jobs."
+            exit 1
           fi
 
           # Check an existing release first so an already-published retry does

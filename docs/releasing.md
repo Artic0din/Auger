@@ -54,7 +54,7 @@ Release notes are generated from merged pull requests and grouped by `.github/re
    Every release raises `X.Y.Z` in `app/config.xml`, so Apps2Samsung's updater sees every release.
 
 Upgrading from a `0.1.0-beta.*` build requires uninstalling the older build first, because the package ID is now `AugerTv001.Auger` and Tizen treats a new package ID as a separate app.
-Uninstalling removes saved sign-in data, so you sign in again once; releases from `v0.2.0` onward update in place.
+Uninstalling removes saved sign-in data, so you sign in again once; subsequent builds with `AugerTv001.Auger` update in place within the same install method (Apps2Samsung or sideloading).
 
 ### Community catalog
 

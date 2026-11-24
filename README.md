@@ -33,7 +33,7 @@ Install it in one of two ways:
   It is signed with the maintainer's certificate, so it installs only on TVs listed in it; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
-Upgrading from a `0.1.0-beta.*` build also requires uninstalling first because the Tizen package ID changed to `AugerTv001.Auger`.
+Upgrading from a `0.1.0-beta.*` build also requires uninstalling first because the Tizen package ID changed to `AugerTv001.Auger`; subsequent builds with `AugerTv001.Auger` update in place within the same install method.
 Uninstalling removes its data, so you sign in again afterwards.
 
 ## Build from source
