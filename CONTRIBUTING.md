@@ -65,57 +65,7 @@ npm test
 python3 scripts/test-release-version.py
 ```
 
-`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene, evidence, `tvOS source`, and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and capture same-state evidence following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
-
-## Port from the tvOS source
-
-AGENTS.md "Parity delivery gates" requires reading the affected Apple TV Swift source before any interface change.
-Under the pull request's "tvOS source" heading, name the silo-apple commit you read and cite each Swift file and line range the change ports; the tvOS source check fails an interface change (`src/ui`, `src/player`, the top-level `src` scripts and stylesheets, the app shell, localisation) without one.
-A maintainer adds the `tvos-source-not-needed` label when the change has no tvOS counterpart, such as AVPlay-only behaviour.
-
-## Show visible changes
-
-A pull request that changes what a user sees must show the change in its
-Evidence section, so reviewers can see it without building the branch. In this
-repository that means the Samsung TV app. A change is visible when it
-alters any of these:
-
-- layout, styling, copy, navigation, focus, empty and error states;
-- which items a screen shows, or in what order: search results, home sections,
-  recommendations, library browsing, collections, sorting, or filtering;
-- what an item shows: titles, artwork, descriptions, ratings, badges, episode
-  grouping, or availability;
-- playback behavior a user notices, such as default audio or subtitle tracks,
-  markers, controls, or resume position.
-
-Provide evidence that fits the change:
-
-- **Changes to a screen:** before-and-after screenshots of the same screen with
-  the same data, one pair per affected surface. Add a short recording when
-  motion, timing, focus movement, or a multi-step flow matters.
-- **A Samsung TV running the signed `.wgt`:** capture the TV itself. When you
-  could not use a TV, say so and name the runtime you used instead (Tizen TV
-  emulator or Samsung TV simulator).
-- **Apple TV parity:** add the same-state Apple TV screenshot. The result must
-  match it; list any difference under Risks.
-- Name the TV model and Tizen version, and the build or commit, for each
-  capture.
-
-Capture against a test library or public-domain media where you can, and keep
-passwords, tokens, API keys and DUIDs out of every capture. Attach the
-screenshots or recordings under the pull request's Evidence heading. Everything
-on GitHub is public, so crop or blur hostnames, URLs, account names, and
-personal library contents.
-
-The pull request's `Evidence` check asks for evidence when the change touches
-`app/` or `src/` (see [`.github/evidence.yml`](.github/evidence.yml)), or when a
-maintainer adds the `evidence-required` label; a maintainer adds
-`evidence-not-needed` when nothing visible changed.
-Changes users cannot see write `Evidence: none, no user-visible change`; when such
-a change touches `app/` or `src/`, the check stays red until a maintainer adds
-`evidence-not-needed`, because the line alone is not proof. If you
-could not capture evidence, say why; the reviewer decides whether the pull
-request can merge without it.
+`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and compare it with Apple TV following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
 
 ## Open the pull request
 

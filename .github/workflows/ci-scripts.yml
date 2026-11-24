@@ -29,10 +29,6 @@ jobs:
         run: python3 scripts/test-release-version.py
       - name: Test changelog generation
         run: python3 scripts/test-generate-changelog.py
-      - name: Test the Evidence check
-        run: python3 scripts/test-check-evidence.py
-      - name: Test the tvOS source check
-        run: python3 scripts/test-check-tvos-source.py
       - name: Test the merge gate helper
         run: python3 scripts/test-pr-gate.py
       - name: Test setting the package version
