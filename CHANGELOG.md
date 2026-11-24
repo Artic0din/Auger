@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.3.0] - 2026-11-24
+
+### ✨ New Features
+
+- **Settings**: Add local Diagnostics tab with relay and QR report handoff
+
+### 🐛 Fixes
+
+- Hide Add Profile when the account's profile limit is reached
+
 ## [0.2.1] - 2026-11-24
 
 ### 🐛 Fixes
