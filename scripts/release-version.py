@@ -1,215 +1,292 @@
 #!/usr/bin/env python3
-"""Pick the version, build number and tag for a release from the repo's tags.
+"""Pick the next release version and tag from Conventional Commits.
 
-Every Release run makes a tester build tagged vX.Y.Z-beta.B:
+The next version bumps the latest vX.Y.Z tag by the largest change since it:
 
-- X.Y.Z is the store version the build belongs to (the widget version in
-  app/config.xml). It stays the same for every tester build until that
-  version is released on the Samsung TV store; the next run then starts a new
-  version with bump=minor/patch.
-- B is the build number: one counter for the whole repository, one higher
-  than the highest build in any existing tag. It never resets.
+- a breaking change (`feat!:`, `fix(ui)!:`, or a `BREAKING CHANGE:` line in the
+  body) bumps the major version;
+- `feat` bumps the minor version;
+- `fix`, `perf` and `revert` (or a `Revert "..."` subject) bump the patch;
+- anything else (`docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`,
+  merge commits) makes no release.
 
-A store release (promote.yml) later tags the same commit vX.Y.Z.
+Older tester tags (vX.Y.Z-beta.B, vX.Y.Z+B) count as their X.Y.Z, below an
+exact vX.Y.Z tag of the same version. A commit that is already at or behind
+the latest published vX.Y.Z tag makes no release, so re-running is safe.
+
+With --published-tags-file, only the exact vX.Y.Z tags listed in that file
+(one per line, from the published GitHub Releases) count as published. An
+exact tag missing from it was reserved by a publish run that never finished:
+on the target commit it is recovered (bump=recover), elsewhere the next
+version goes past it while the commits since the last published tag still
+count. Without the file every exact vX.Y.Z tag counts as published.
 
 Tizen widget versions are X.Y.Z with X and Y at most 255 and Z at most 65535,
 so every version this script picks is checked against those limits.
 
-Commands print key=value lines for $GITHUB_OUTPUT:
+Prints key=value lines for $GITHUB_OUTPUT:
 
-    release-version.py next --bump build|minor|patch [--version X.Y.Z] [--draft vX.Y.Z ...]
-    release-version.py beta vX.Y.Z-beta.B
-    release-version.py store-notes LIMIT < generated-notes.md
+    release-version.py next [--bump auto|patch|minor|major] [--version X.Y.Z] [--target HEAD]
+                            [--published-tags-file PATH]
 """
 
 import argparse
+from dataclasses import dataclass
+from enum import IntEnum
+from pathlib import Path
 import re
 import subprocess
 import sys
+from typing import AbstractSet, Iterable, Optional
 
-TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+(\d+))?")
-BETA = re.compile(r"beta\.(\d+)")
+TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+HEADER = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+(?P<description>.+)", re.IGNORECASE)
+BREAKING = re.compile(r"^BREAKING[- ]CHANGE:", re.MULTILINE)
+PATCH_TYPES = {"fix", "perf", "revert"}
+MANUAL_BUMPS = ("patch", "minor", "major")
+
+TIZEN_MAX_MAJOR = 255
+TIZEN_MAX_MINOR = 255
+TIZEN_MAX_PATCH = 65535
+
+# git log separators: unit separator between subject and body, record separator after each commit.
+FIELD_END = "\x1f"
+RECORD_END = "\x1e"
 
 
 class ReleaseError(Exception):
     pass
 
 
-def parse_tag(name):
-    """Return (version, prerelease, build) for a release tag, else None.
+class BumpLevel(IntEnum):
+    NONE = 0
+    PATCH = 1
+    MINOR = 2
+    MAJOR = 3
 
-    The build comes from -beta.B, or from the +B suffix older tags used
-    (v1.0.0+21, v1.0.1-rc.2+3).
-    """
+
+@dataclass(frozen=True, order=True)
+class SemVer:
+    major: int
+    minor: int
+    patch: int
+
+    @property
+    def text(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+    def bump(self, level: BumpLevel) -> "SemVer":
+        if level == BumpLevel.MAJOR:
+            return SemVer(self.major + 1, 0, 0)
+        if level == BumpLevel.MINOR:
+            return SemVer(self.major, self.minor + 1, 0)
+        if level == BumpLevel.PATCH:
+            return SemVer(self.major, self.minor, self.patch + 1)
+        return self
+
+    def check_tizen_limits(self) -> None:
+        if self.major > TIZEN_MAX_MAJOR or self.minor > TIZEN_MAX_MINOR or self.patch > TIZEN_MAX_PATCH:
+            raise ReleaseError(
+                f"{self.text} doesn't fit a Tizen version (major and minor <= 255, patch <= 65535)."
+            )
+
+
+@dataclass(frozen=True)
+class TagInfo:
+    name: str
+    version: SemVer
+    is_prerelease: bool
+
+
+@dataclass(frozen=True)
+class CommitMessage:
+    subject: str
+    body: str = ""
+
+
+@dataclass(frozen=True)
+class ReleasePlan:
+    should_release: bool
+    version: str
+    tag: str
+    previous_tag: str
+    bump: str
+
+
+def parse_tag(name: str) -> Optional[TagInfo]:
     match = TAG.fullmatch(name)
     if not match:
         return None
-    version = tuple(int(part) for part in match.group(1, 2, 3))
-    prerelease = match.group(4)
-    beta = BETA.fullmatch(prerelease or "")
-    if beta:
-        build = int(beta.group(1))
-    elif match.group(5):
-        build = int(match.group(5))
+    major, minor, patch = (int(part) for part in match.group(1, 2, 3))
+    return TagInfo(name, SemVer(major, minor, patch), is_prerelease=name != f"v{major}.{minor}.{patch}")
+
+
+def natural_key(name: str) -> tuple[tuple[int, int | str], ...]:
+    return tuple((0, int(part)) if part.isdigit() else (1, part) for part in re.split(r"(\d+)", name))
+
+
+def latest_tag(tags: Iterable[str]) -> Optional[TagInfo]:
+    parsed = [tag for name in tags if (tag := parse_tag(name))]
+    return max(parsed, key=lambda tag: (tag.version, 0 if tag.is_prerelease else 1, natural_key(tag.name)), default=None)
+
+
+def classify_commit(commit: CommitMessage) -> BumpLevel:
+    header = HEADER.fullmatch(commit.subject.strip())
+    if (header and header.group("bang")) or BREAKING.search(commit.body):
+        return BumpLevel.MAJOR
+    kind = header.group("type").lower() if header else ""
+    if kind == "feat":
+        return BumpLevel.MINOR
+    if kind in PATCH_TYPES or commit.subject.startswith('Revert "'):
+        return BumpLevel.PATCH
+    return BumpLevel.NONE
+
+
+def parse_version(text: str) -> SemVer:
+    match = VERSION.fullmatch(text.removeprefix("v"))
+    if not match:
+        raise ReleaseError(f"Version must look like 1.2.0, got {text!r}.")
+    major, minor, patch = (int(part) for part in match.groups())
+    return SemVer(major, minor, patch)
+
+
+def exact_tags(tags: Iterable[str]) -> set[str]:
+    return {name for name in tags if (tag := parse_tag(name)) and not tag.is_prerelease}
+
+
+def previous_release(tags: Iterable[str], published_exact_tags: AbstractSet[str]) -> Optional[TagInfo]:
+    """The newest tag that is a published release or a tester tag: the start of the release notes."""
+    return latest_tag(
+        name for name in tags if name in published_exact_tags or ((tag := parse_tag(name)) and tag.is_prerelease)
+    )
+
+
+def plan_release(
+    tags: Iterable[str],
+    commits: Iterable[CommitMessage],
+    mode: str = "auto",
+    explicit_version: str = "",
+    target_already_released: bool = False,
+    published_exact_tags: Optional[AbstractSet[str]] = None,
+    unpublished_target_tag: Optional[TagInfo] = None,
+) -> ReleasePlan:
+    tags = list(tags)
+    published = exact_tags(tags) if published_exact_tags is None else published_exact_tags
+    prev = previous_release(tags, published)
+    previous_tag = prev.name if prev else ""
+    # Bump from the highest tag of all, so a new version never collides with an unpublished one.
+    highest = latest_tag(tags)
+    base = highest.version if highest else SemVer(0, 0, 0)
+
+    if mode != "auto" and mode not in MANUAL_BUMPS:
+        raise ReleaseError(f"Unknown bump {mode!r}.")
+    if target_already_released:
+        return ReleasePlan(False, "", "", previous_tag, "none")
+    if unpublished_target_tag is not None and (
+        not explicit_version or parse_version(explicit_version) == unpublished_target_tag.version
+    ):
+        unpublished_target_tag.version.check_tizen_limits()
+        return ReleasePlan(True, unpublished_target_tag.version.text, unpublished_target_tag.name, previous_tag, "recover")
+
+    if explicit_version:
+        target = parse_version(explicit_version)
+        if highest and target <= highest.version:
+            raise ReleaseError(f"{target.text} is not newer than the latest tag, {highest.name}.")
+        bump = "explicit"
+    elif mode == "auto":
+        level = max((classify_commit(commit) for commit in commits), default=BumpLevel.NONE)
+        if level == BumpLevel.NONE:
+            return ReleasePlan(False, "", "", previous_tag, "none")
+        target = base.bump(level)
+        bump = level.name.lower()
     else:
-        build = None
-    return version, prerelease, build
+        target = base.bump(BumpLevel[mode.upper()])
+        bump = mode
+
+    target.check_tizen_limits()
+    return ReleasePlan(True, target.text, f"v{target.text}", previous_tag, bump)
 
 
-def version_text(version):
-    return ".".join(str(part) for part in version)
-
-
-def check_limits(version, build):
-    major, minor, patch = version
-    if major > 255 or minor > 255 or patch > 65535:
-        raise ReleaseError(f"{version_text(version)} doesn't fit a Tizen version (major and minor <= 255, patch <= 65535).")
-    if build < 1:
-        raise ReleaseError(f"Build {build} must be 1 or more.")
-
-
-def next_release(tags, bump, version=None, drafts=()):
-    tags = [*tags, *drafts]
-    parsed = {name: tag for name in tags if (tag := parse_tag(name))}
-    # Only an exact vX.Y.Z tag marks a store release. Older tags with build
-    # metadata (v1.0.0+21) were tester builds.
-    released = {tag[0] for name, tag in parsed.items() if tag[1] is None and "+" not in name}
-    latest_release = max(released, default=None)
-    with_builds = [(tag[2], name) for name, tag in parsed.items() if tag[2] is not None]
-    previous_build, previous_tag = max(with_builds, default=(0, None))
-    betas = [(tag[2], tag[0]) for tag in parsed.values() if BETA.fullmatch(tag[1] or "")]
-    # A hotfix can ship while a newer version is still in testing, so continue
-    # the newest version that hasn't been released.
-    unreleased = [beta for beta in betas if beta[1] not in released]
-
-    if version:
-        match = VERSION.fullmatch(version.removeprefix("v"))
-        if not match:
-            raise ReleaseError(f"Version must look like 1.2.0, got {version!r}.")
-        target = tuple(int(part) for part in match.groups())
-    elif bump == "build":
-        if not betas:
-            raise ReleaseError("There is no tester build to continue yet. Pass the version to start with, for example 1.0.0.")
-        if not unreleased:
-            raise ReleaseError(
-                "There is no unreleased version to add a build to. "
-                "Run with bump=minor (new features) or bump=patch (fixes only) to start the next version."
-            )
-        target = max(unreleased)[1]
-    elif latest_release is None:
-        raise ReleaseError("Nothing has been released yet, so there is nothing to bump. Pass an explicit version.")
-    elif bump == "minor":
-        target = (latest_release[0], latest_release[1] + 1, 0)
-    elif bump == "patch":
-        target = (latest_release[0], latest_release[1], latest_release[2] + 1)
-    else:
-        raise ReleaseError(f"Unknown bump {bump!r}.")
-
-    if latest_release is not None and target <= latest_release:
-        raise ReleaseError(
-            f"{version_text(target)} is not newer than the latest release, {version_text(latest_release)}."
-        )
-
-    build = previous_build + 1
-    check_limits(target, build)
-    return {
-        "version": version_text(target),
-        "build": str(build),
-        "tag": f"v{version_text(target)}-beta.{build}",
-        "previous_tag": previous_tag or "",
-    }
-
-
-def beta_release(name):
-    tag = parse_tag(name)
-    if not tag or not BETA.fullmatch(tag[1] or ""):
-        raise ReleaseError(f"{name!r} is not a tester build tag like v1.2.0-beta.42.")
-    version, _, build = tag
-    check_limits(version, build)
-    return {
-        "version": version_text(version),
-        "build": str(build),
-        "tag": name,
-        "release_tag": f"v{version_text(version)}",
-    }
-
-
-ENTRY = re.compile(r"\* (.+?)(?: by @\S+)?(?: in https://\S+)?")
-CONVENTIONAL = re.compile(r"([a-z]+)(?:\([^)]*\))?!?: ", re.IGNORECASE)
-USER_FACING = {"feat", "fix", "perf"}
-
-
-def store_notes(markdown, limit):
-    """Plain-text store notes from GitHub's generated release notes.
-
-    Keeps the entries filed under Features or Fixes, plus any other entry whose
-    Conventional Commit type is feat, fix or perf (not every pull request is
-    labeled). Drops PR links, authors and the type prefix, and fits the result
-    into the store's length limit.
-    """
-    lines, labeled = [], False
-    for line in markdown.splitlines():
-        if line.startswith("#"):
-            labeled = "Features" in line or "Fixes" in line
+def parse_git_log(output: str) -> list[CommitMessage]:
+    commits = []
+    for record in output.split(RECORD_END):
+        record = record.lstrip("\n")
+        if not record:
             continue
-        match = ENTRY.fullmatch(line.strip())
-        if not match:
-            continue
-        text = match.group(1)
-        prefix = CONVENTIONAL.match(text)
-        if not labeled and not (prefix and prefix.group(1).lower() in USER_FACING):
-            continue
-        if prefix:
-            text = text[prefix.end():]
-        lines.append(f"• {text[:1].upper()}{text[1:]}")
-    if not lines:
-        return "Bug fixes and improvements."
-
-    more = "• And more."
-    notes = []
-    for line in lines:
-        reserve = 0 if len(notes) + 1 == len(lines) else len(more) + 1
-        if len("\n".join(notes + [line])) + reserve > limit:
-            notes.append(more)
-            break
-        notes.append(line)
-    return "\n".join(notes)
+        subject, _, body = record.partition(FIELD_END)
+        commits.append(CommitMessage(subject, body.strip()))
+    return commits
 
 
-def git_tags():
-    return subprocess.run(
-        ["git", "tag", "--list", "v*"], check=True, capture_output=True, text=True
-    ).stdout.split()
+def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], check=check, capture_output=True, text=True)
 
 
-def main(argv):
+def tags_at(target: str) -> list[str]:
+    return git("tag", "--points-at", target, "--list", "v*").stdout.split()
+
+
+def is_already_released(target: str, published_exact_tags: AbstractSet[str], tags: Iterable[str]) -> bool:
+    """True when target is at or behind a published vX.Y.Z tag. Unpublished tags don't count."""
+    latest_published = latest_tag(name for name in tags if name in published_exact_tags)
+    if latest_published and git("merge-base", "--is-ancestor", target, latest_published.name, check=False).returncode == 0:
+        return True
+    return any(name in published_exact_tags for name in tags_at(target))
+
+
+def unpublished_tag_on_target(target: str, published_exact_tags: AbstractSet[str]) -> Optional[TagInfo]:
+    """The highest exact vX.Y.Z tag on target that has no published release, left by an unfinished run."""
+    return latest_tag(name for name in exact_tags(tags_at(target)) if name not in published_exact_tags)
+
+
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     next_parser = commands.add_parser("next")
-    next_parser.add_argument("--bump", choices=["build", "minor", "patch"], default="build")
+    next_parser.add_argument("--bump", choices=["auto", *MANUAL_BUMPS], default="auto")
     next_parser.add_argument("--version", default="")
-    # A draft store release (vX.Y.Z) has no git tag yet but counts as released.
-    next_parser.add_argument("--draft", action="append", default=[])
-    beta_parser = commands.add_parser("beta")
-    beta_parser.add_argument("tag")
-    notes_parser = commands.add_parser("store-notes")
-    notes_parser.add_argument("limit", type=int)
+    next_parser.add_argument("--target", default="HEAD")
+    next_parser.add_argument(
+        "--published-tags-file",
+        type=Path,
+        help="Tag names of the published releases, one per line. Default: every exact vX.Y.Z tag.",
+    )
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "store-notes":
-            print(store_notes(sys.stdin.read(), args.limit))
-            return 0
-        if args.command == "next":
-            result = next_release(git_tags(), args.bump, args.version, args.draft)
+        target = git("rev-parse", "--verify", f"{args.target}^{{commit}}").stdout.strip()
+        tags = git("tag", "--list", "v*").stdout.split()
+        if args.published_tags_file is None:
+            published = exact_tags(tags)
         else:
-            result = beta_release(args.tag)
+            published = exact_tags(args.published_tags_file.read_text(encoding="utf-8").split())
+        prev = previous_release(tags, published)
+        log_range = f"{prev.name}..{target}" if prev else target
+        commits = parse_git_log(git("log", f"--format=%s{FIELD_END}%b{RECORD_END}", log_range).stdout)
+        plan = plan_release(
+            tags,
+            commits,
+            args.bump,
+            args.version,
+            target_already_released=is_already_released(target, published, tags),
+            published_exact_tags=published,
+            unpublished_target_tag=unpublished_tag_on_target(target, published),
+        )
+    except OSError as error:
+        print(f"::error::Could not read the published tags: {error}", file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as error:
+        print(f"::error::git {' '.join(error.cmd[1:])} failed: {error.stderr.strip()}", file=sys.stderr)
+        return 1
     except ReleaseError as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
-    for key, value in result.items():
-        print(f"{key}={value}")
+    print(f"should_release={'true' if plan.should_release else 'false'}")
+    print(f"version={plan.version}")
+    print(f"tag={plan.tag}")
+    print(f"previous_tag={plan.previous_tag}")
+    print(f"bump={plan.bump}")
     return 0
 
 

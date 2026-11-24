@@ -1,13 +1,12 @@
 # Secondary subtitles
 
-Part of [#522](https://github.com/Artic0din/silo-tizen/issues/522). Apple behaviour is read from silo-apple `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane.trackRows`, `PlayerViewModel.selectSecondarySubtitle`, `AetherSubtitleOverlay.swift`).
-There is no server endpoint for it: a secondary track is a second set of cues the player draws.
+Secondary subtitle rendering in the player's Subtitles tab ([#522](https://github.com/Artic0din/Auger-Tizen/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane.trackRows`, `PlayerViewModel.selectSecondarySubtitle`, `AetherSubtitleOverlay.swift`). There is no Server endpoint for secondary subtitles; the player draws a second set of cues locally.
 
 ## What the Subtitles tab does
 
 - Under the tracks, a SECONDARY heading, then Off and every other text track, as the tracks are listed. The primary's own row is dimmed and does nothing (`isDisabled: track.trackId == selectedSubtitleId`).
 - Select reads the track's sidecar from the plan inventory (`url`, with the account's media token) and draws its cues as a second line in the primary's style.
-- The second line sits 17% from the edge at the top and bottom, and 36% in the lower third (the primary: 8%, 8% here and 25% in the lower third); Apple's inset for the second line, from `defaultPlacement`.
+- The second line sits 17% from the edge at the top and bottom, and 36% in the lower third (the primary sits 8% from top and bottom, and 27% in the lower third per `src/player/subtitleView.ts`); Apple's inset for the second line, from `defaultPlacement`.
 - It ends when the primary is turned off, becomes the same track, or stops being drawn by the app.
 
 ## The limit

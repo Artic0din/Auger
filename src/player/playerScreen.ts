@@ -603,6 +603,16 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     cancelAutoplay.type = "button";
     cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
     cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
+    // PlayerView.autoPlayToggle: below the actions while there is a next item, it flips Auto-play next for this TV.
+    const autoPlay = el("button", "player-autoplay-toggle");
+    autoPlay.type = "button";
+    autoPlay.setAttribute("data-focus", "auto-play");
+    autoPlay.hidden = true;
+    autoPlay.addEventListener("click", () => controls.toggleAutoNext());
+    const showAutoPlay = (autoNext: boolean | undefined): void => {
+        autoPlay.hidden = autoNext === undefined;
+        autoPlay.textContent = translate(autoNext === true ? "upNext.autoPlayOn" : "upNext.autoPlayOff");
+    };
     // PlayerView.actionRow: Play Now and the ring, then Keep Watching and Close. The rows are only boxes on the Up Next card; the error page
     // lays its buttons out as before.
     const primaryRow = el("div", "player-actions-row player-actions-primary");
@@ -610,7 +620,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
     secondaryRow.append(keep, cancelAutoplay, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, deck);
+    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlay, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -1007,6 +1017,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         hud.hidden = !menuOpen;
         tracksButton.setAttribute("aria-expanded", String(menuOpen));
         next.hidden = true;
+        // Up Next sets the toggle below; hiding it here first would drop its focus on every redraw.
+        if (view.phase !== "completion" && prompt === undefined) autoPlay.hidden = true;
         keep.hidden = prompt === undefined;
         eyebrow.hidden = view.phase !== "completion" && prompt === undefined;
         synopsis.hidden = eyebrow.hidden;
@@ -1088,6 +1100,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
+                showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext);
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
                 failureTitle.classList.toggle("player-next-working", loading);
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
@@ -1100,6 +1113,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             next.hidden = view.state !== "ready" || view.next === undefined;
             labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
             retry.hidden = view.state !== "failed" || !view.retryable;
+            showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
@@ -1684,7 +1698,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
             // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
-            const rows = [[next, retry], [keep, cancelAutoplay, back], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+            const rows = [[next, retry], [keep, cancelAutoplay, back], [autoPlay], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
             const current = rows[row];
@@ -1693,6 +1707,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else if (key === "back") controls.keepWatching();
             else if (key === "enter") (current?.[column] ?? rows[0]?.[0])?.click();
             else if (current === undefined) rows[0]?.[0]?.focus();
+            // PlayerView.autoPlayToggle's onMoveCommand: Up returns to the preferred action, not the row above.
+            else if (layout === "up" && document.activeElement === autoPlay) rows[0]?.[0]?.focus();
             else if (layout === "left" || layout === "right") current[Math.max(0, Math.min(current.length - 1, column + (layout === "left" ? -1 : 1)))]?.focus();
             // With no row that way, focus stays where it is; a row change lands on that row's first button.
             else if (layout === "up" || layout === "down") rows[row + (layout === "up" ? -1 : 1)]?.[0]?.focus();

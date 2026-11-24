@@ -15,10 +15,8 @@ The passive hero previews the focused request using already loaded data; focus p
 Its copy stays anchored above the row band as title and synopsis heights change.
 A wrapped title reduces the synopsis to two lines; available provider ratings stay on the metadata line.
 Two-line titles fill the first line as Apple TV does, never leave one word alone on the second, and keep the server's title text unchanged.
-The root top bar opens global Search and its independent Available to request rail.
-A new bar-owned Search starts empty; Back returns to its originating root tab.
-Requests is pushed from the profile menu and has no Search button or top bar.
-Back from a request detail retains the Search query and restores its result after an invalidated supplement refresh, unless the person moved focus or edited the query.
+Requests is pushed from the profile menu and has no Search button or top bar; global Search (opened from the root top bar) carries an independent Available to request rail.
+Back from a request detail opened from Search retains the query and restores its result after an invalidated supplement refresh, unless the viewer moved focus or edited the query.
 Search uses the existing state renderer for accessible progress, no-results copy and a centered catalog error with Try Again.
 A failed People lookup leaves usable title results without another error panel or retry control; a new query tries People again.
 A pending People lookup prevents premature No results but leaves catalog errors and Try Again visible.
@@ -102,17 +100,7 @@ The backdrop scrolls with the hero while the page tint stays.
 The design of the Series destination page belongs to #92.
 A status detail whose copy is tall enough to pass the hero edge hides the action, as on Apple TV (decision: match Apple).
 
-## Evidence and remaining gates
-
-Native Apple captures and hierarchy geometry from a Device Hub simulator were inspected read-only; no private hierarchy or media is included here.
-Later comparisons use original 1920×1080 Apple pixels exported read-only from the same simulator, without upscaling.
-The installed Apple source SHA is unproven.
-The pinned Apple source below is a historical behavioral reference, not provenance for the installed app.
-Part of the parent TVRequestsPage and the RequestProgress, RequestDisplayState, RequestMediaCard and RequestsHubViewModel source was unavailable during implementation and was not recovered.
-Exact visual parity is not accepted: the final package still needs signed Apple/Samsung comparison and keyboard verification.
-The paint corrections have bounded source and signed Samsung runtime proof, which does not establish whole-feature acceptance.
-The Apple Requests detail source deliberately uses split title text rather than a title logo.
-No live backend mutations were used for candidate proof.
+## Runtime and authority
 
 All operations pass through the native adapter and `session.call` with active profile authority.
 Create, cancel, remove, follow and unfollow never replay after a transport failure or session refresh.

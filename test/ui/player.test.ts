@@ -1003,31 +1003,59 @@ test("Up Next draws its text at Apple's points times the cap scale, in every sta
         await check("a title with no episode code", [[".player-next-up .player-title", 34, "700", ":1369-1372 seriesTitleSize, bold"]]);
         await show(page, { ...playing(TRACKS), upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
         await check("while the next item is looked up", [[".player-next-up .player-title", 42, "600", ":1327-1328 titleSize, semibold"]]);
-        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined });
+        await page.route("**/images/bright-still.svg", route => route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ffffff"/></svg>' }));
+        const brightDeck = [{ contentId: "movie:bright", fileId: "9", title: "Bright", startSeconds: 0, backdropUrl: "/images/bright-still.svg" }];
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, deck: brightDeck });
         await check("with nothing to follow", [
             [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
             [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
         ]);
         // finishedContent (:1340-1343) draws finishedMessage, which is also the failed lookup's sentence (:1613-1630), white at 0.62 and
-        // 560 wide. Over the darkest page Up Next draws (a white still at 0.18 under black at 0.78), that is above 4.5:1.
-        const message = async (): Promise<{ color: string; opacity: string; maxWidth: string; contrast: number }> => page.locator(".player-next-up .player-error-text").evaluate(node => {
-            const css = getComputedStyle(node);
-            const [r = 0, g = 0, b = 0] = css.color.match(/[\d.]+/g)!.map(Number);
-            const alpha = Number(css.opacity);
-            const backdrop = 255 * 0.18 * (1 - 0.78);
-            const mix = (channel: number): number => channel * alpha + backdrop * (1 - alpha);
-            const linear = (channel: number): number => { const c = channel / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-            const luminance = (red: number, green: number, blue: number): number => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
-            const text = luminance(mix(r), mix(g), mix(b));
-            const ground = luminance(backdrop, backdrop, backdrop);
-            return { color: css.color, opacity: css.opacity, maxWidth: css.maxWidth, contrast: Math.round((text + 0.05) / (ground + 0.05) * 100) / 100 };
-        });
+        // 560 wide. Over a rendered bright white still behind Up Next's dimming layers, contrast must stay above 4.5:1.
+        const message = async (): Promise<{ color: string; opacity: string; maxWidth: string; contrast: number; backdrop: readonly [number, number, number] }> => {
+            await page.locator(".player-next-card img").evaluate(node => {
+                const img = node as HTMLImageElement;
+                return img.complete ? undefined : new Promise<void>(done => {
+                    img.addEventListener("load", () => done(), { once: true });
+                    img.addEventListener("error", () => done(), { once: true });
+                });
+            });
+            await page.clock.runFor(50);
+            const box = await page.locator(".player-next-up .player-error-text").boundingBox();
+            assert.ok(box !== null, "finished message box");
+            const pixelPng = await page.screenshot({ clip: { x: Math.max(0, Math.round(box.x - 40)), y: Math.round(box.y + box.height / 2), width: 1, height: 1 } });
+            return page.locator(".player-next-up .player-error-text").evaluate(async (node, pngBytes) => {
+                const backdropNode = document.querySelector<HTMLElement>(".player-next-backdrop");
+                if (backdropNode === null || backdropNode.hidden) throw new Error("Up Next backdrop must be rendered for the contrast check");
+                const bitmap = await createImageBitmap(new Blob([new Uint8Array(pngBytes)], { type: "image/png" }));
+                const canvas = document.createElement("canvas");
+                canvas.width = 1;
+                canvas.height = 1;
+                const ctx = canvas.getContext("2d")!;
+                ctx.drawImage(bitmap, 0, 0);
+                bitmap.close();
+                const [bgR = 0, bgG = 0, bgB = 0] = ctx.getImageData(0, 0, 1, 1).data;
+                const css = getComputedStyle(node);
+                const [r = 0, g = 0, b = 0] = css.color.match(/[\d.]+/g)!.map(Number);
+                const alpha = Number(css.opacity);
+                const mix = (fg: number, bg: number): number => fg * alpha + bg * (1 - alpha);
+                const linear = (channel: number): number => { const c = channel / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+                const luminance = (red: number, green: number, blue: number): number => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+                const text = luminance(mix(r, bgR), mix(g, bgG), mix(b, bgB));
+                const ground = luminance(bgR, bgG, bgB);
+                const lighter = Math.max(text, ground);
+                const darker = Math.min(text, ground);
+                return { color: css.color, opacity: css.opacity, maxWidth: css.maxWidth, contrast: Math.round((lighter + 0.05) / (darker + 0.05) * 100) / 100, backdrop: [bgR, bgG, bgB] as const };
+            }, [...pixelPng]);
+        };
         const finished = await message();
-        assert.deepEqual({ ...finished, contrast: undefined }, { color: "rgb(255, 255, 255)", opacity: "0.62", maxWidth: "560px", contrast: undefined }, "the finished message");
-        assert.ok(finished.contrast >= 4.5, `contrast ${finished.contrast}:1`);
-        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "failed", retryable: true, next: undefined });
+        assert.deepEqual({ color: finished.color, opacity: finished.opacity, maxWidth: finished.maxWidth }, { color: "rgb(255, 255, 255)", opacity: "0.62", maxWidth: "560px" }, "the finished message");
+        assert.ok(finished.backdrop.some(channel => channel > 0), `bright still rendered through backdrop: ${JSON.stringify(finished.backdrop)}`);
+        assert.ok(finished.contrast >= 4.5, `contrast ${finished.contrast}:1 over backdrop ${JSON.stringify(finished.backdrop)}`);
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "failed", retryable: true, next: undefined, deck: brightDeck });
         const failed = await message();
         assert.deepEqual([failed.color, failed.opacity], ["rgb(255, 255, 255)", "0.62"], "a failed lookup's sentence is the same text, not error red");
+        assert.ok(failed.contrast >= 4.5, `failed lookup contrast ${failed.contrast}:1 over backdrop ${JSON.stringify(failed.backdrop)}`);
     } finally { await page.close(); }
 });
 
@@ -1149,6 +1177,64 @@ test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on 
         assert.deepEqual(layout.labels, ["Play Now", "Keep Watching", "Close"], "the symbols add no text");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
         assert.equal(await page.locator('[data-focus="back"] svg').count(), 0, "the error page's Go Back has no symbol");
+    } finally { await page.close(); }
+});
+
+// PlayerView.autoPlayFooter and autoPlayToggle (silo-apple 449ba47 PlayerView.swift:1263-1270, 1293-1300, 1544-1556, 1640-1652,
+// 1755-1772): below the actions, "Auto-play is On/Off" at 19 pt semibold, white 0.54 (0.92 focused, with a 1.5 pt capsule at 0.55 and
+// a 1.04 scale). Down from the actions reaches it, Up returns to the preferred action, and Up from On Deck comes back to it (#759).
+test("Up Next's Auto-play toggle sits below the actions, names the setting and flips it from the remote (#759)", async () => {
+    const { page } = await open();
+    try {
+        const hud = { chapters: [], chapterState: "failed" as const, stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit" as const, busy: false };
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13 };
+        const card = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0 };
+        const prompt = (autoNext: boolean): PlaybackView => ({ ...playing(TRACKS), hud: { ...hud, autoNext }, upNext: { next, deck: [card], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        await show(page, prompt(true));
+        const toggle = page.locator('[data-focus="auto-play"]');
+        assert.equal(await toggle.innerText(), "Auto-play is On");
+        const tops = await page.evaluate(() => ['[data-focus="keep-watching"]', '[data-focus="auto-play"]', '[data-focus="deck:movie:other"]'].map(selector => document.querySelector(selector)!.getBoundingClientRect().top));
+        assert.ok(tops[0]! < tops[1]! && tops[1]! < tops[2]!, `below the actions and above On Deck: ${tops.join(", ")}`);
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const style = (): Promise<{ size: string; weight: string; color: string; ring: string; scale: string; padding: string }> => toggle.evaluate(async node => {
+            // Read after the focus transition settles.
+            await Promise.all(node.getAnimations().map(animation => animation.finished));
+            const css = getComputedStyle(node);
+            return { size: css.fontSize, weight: css.fontWeight, color: css.color, ring: css.boxShadow, scale: css.scale, padding: css.padding };
+        });
+        const resting = await style();
+        assert.ok(Math.abs(parseFloat(resting.size) - 19 * cap) < 0.01, `19 pt times the cap scale: ${resting.size}`);
+        assert.deepEqual([resting.weight, resting.color, resting.padding, resting.scale], ["600", "rgba(255, 255, 255, 0.54)", "10px 22px", "none"]);
+        assert.equal(await focused(page), "play-next");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "keep-watching");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play", "Down from the actions");
+        const lit = await style();
+        assert.equal(lit.color, "rgba(255, 255, 255, 0.92)");
+        assert.ok(lit.ring.includes("rgba(255, 255, 255, 0.55)") && lit.ring.includes("1.5px"), `the capsule ring: ${lit.ring}`);
+        assert.equal(lit.scale, "1.04");
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next", "Up returns to the preferred action, not the row above");
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:movie:other");
+        await remote(page, UP);
+        assert.equal(await focused(page), "auto-play", "Up from On Deck");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["toggleAutoNext"]);
+        await show(page, prompt(false));
+        assert.equal(await toggle.innerText(), "Auto-play is Off");
+        assert.equal(await focused(page), "auto-play", "focus stays on the toggle");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 9 });
+        assert.equal(await toggle.innerText(), "Auto-play is On", "the finished card has it too");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 9 });
+        assert.equal(await toggle.isHidden(), true, "not without the setting");
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, autoNext: true });
+        assert.equal(await toggle.isHidden(), true, "nor without a next item");
+        await show(page, { ...playing(TRACKS), hud: { ...hud, autoNext: true }, upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
+        assert.equal(await toggle.isHidden(), true, "nor while the next item is looked up");
     } finally { await page.close(); }
 });
 

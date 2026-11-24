@@ -1,8 +1,8 @@
 {
-  "name": "silo-tizen",
+  "name": "auger",
   "private": true,
   "type": "module",
-  "description": "Silo client for Samsung Tizen TVs",
+  "description": "Third-party Silo client for Samsung Tizen TVs",
   "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=26"
@@ -13,7 +13,8 @@
     "test:native": "node --test --test-timeout=15000 \"test/native/*.test.ts\"",
     "test": "npm run build && npm run test:native && npm run test:ui",
     "sync:translations": "node scripts/sync-translations.ts",
-    "test:ui": "node --test --test-concurrency=2 --test-timeout=60000 \"test/ui/*.test.ts\""
+    "test:ui": "node scripts/run-ui-tests.ts",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

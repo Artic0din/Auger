@@ -276,7 +276,11 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const hint = el("span", "settings-picker-hint");
             const icon = el("span", "settings-back-icon", "↩"); icon.setAttribute("aria-hidden", "true");
             hint.append(icon, el("span", "", translate("settings.picker.menuToClose")));
-            card.append(el("p", "settings-picker-subtitle", translate("settings.picker.chooseOption")), hint);
+            // TVSettingsComponents.swift:713-724: "Choose an option" sits under the title; a divider closes the header (:748-750).
+            const subtitle = el("p", "settings-picker-subtitle", translate("settings.picker.chooseOption"));
+            const title = card.querySelector(".browse-title");
+            if (title === null) card.append(subtitle); else { title.classList.add("settings-picker-title"); title.after(subtitle); }
+            card.append(hint, el("div", "settings-picker-divider"));
         }
         const privacyCopy = card.querySelector(".settings-privacy-copy");
         if (privacyCopy !== null) privacyCopy.append(...controls.map(item => item.element));
@@ -534,7 +538,10 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const info = (title: string, value: string): HTMLElement => {
                 const row = el("div", "settings-info-row"); row.append(el("span", "", title), el("span", "settings-row-value", value)); return row;
             };
-            body.append(el("h3", "settings-section-header", translate("settings.activeServer.headerTv")), info(translate("settings.activeServer.server"), actions?.serverName ?? session.http.base.baseUrl), info(translate("settings.activeServer.address"), session.http.base.baseUrl));
+            body.append(el("h3", "settings-section-header", translate("settings.activeServer.headerTv")), info(translate("settings.activeServer.server"), actions?.serverName ?? session.http.base.baseUrl));
+            // TVSettingsView.swift:514-517: Address only when the Server row shows a name, not the URL itself.
+            const address = session.http.base.baseUrl;
+            if (address !== "" && (actions?.serverName ?? address) !== address) body.append(info(translate("settings.activeServer.address"), address));
             const policy = actionButton("privacy", translate("settings.about.privacyPolicy"), () => { privacy = true; render(); });
 
             if (accounts) {
@@ -758,6 +765,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 if (row.id === "advisory-age" || row.member === "textOutline") { item.element.setAttribute("role", "switch"); item.element.setAttribute("aria-label", row.title); item.element.setAttribute("aria-checked", String(value === true)); }
                 rows.push(item); body.appendChild(item.element);
                 if (row.id === "advisory-age") body.appendChild(el("p", "settings-value", translate("settings.general.showAdvisoryAgeFooter")));
+                if (row.id === "metadata-language") body.appendChild(el("p", "settings-value", translate("settings.metadataLanguageNote")));
                 if (row.id === "poster-size" && state.client.get(row.key)?.isSet) {
                     const inherited = button("poster-profile-default", translate("settings.cards.useProfileDefault"), () => { void state.reset(row.key); });
                     rows.push(inherited); body.appendChild(inherited.element);

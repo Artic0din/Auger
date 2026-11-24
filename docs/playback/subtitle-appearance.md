@@ -1,6 +1,6 @@
 # Profile subtitles
 
-Issue [#64](https://github.com/Artic0din/silo-tizen/issues/64) uses the native contract pinned by [SOURCE](../../src/contracts/v2/SOURCE).
+Issue [#64](https://github.com/Artic0din/Auger-Tizen/issues/64) uses the native contract pinned by [SOURCE](../../src/contracts/v2/SOURCE).
 `getEffectiveSubtitleAppearance` reads `/settings/subtitle-appearance/effective` with the captured profile and stable device headers.
 Its `effective_value` is a JSON string containing a sparse appearance override.
 The client merges it over the complete manifest defaults, validates fonts, colors, opacity and enums, and uses a readable default if the preference cannot be read.
@@ -26,7 +26,7 @@ Episode subtitle menus expose an explicit action to keep the current track choic
 Playback choices remain transient unless this action is selected.
 Writes are never automatically repeated, and a failure leaves playback running with a visible message.
 
-Text downloads use HTTPS, omit ambient credentials, reject redirects, have a 15-second timeout and a 4 MiB acceptance limit.
+Text downloads use HTTPS (or HTTP only when the Server is HTTP), omit ambient credentials, reject redirects, enforce a 60-second idle timeout with no total timeout (`SUBTITLE_IDLE_TIMEOUT_MS` in `src/api/http.ts`), and stop at 4 MiB.
 Authority changes, new plans and teardown cancel stale loads; loading/failure notices appear in the subtitles menu.
 Caption text is assigned through `textContent`, never executable HTML.
 Desktop/native tests establish rendering, timing, safe text, preference validation, failure behavior and series-write requests.
