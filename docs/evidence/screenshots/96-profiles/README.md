@@ -45,7 +45,7 @@ The Samsung NW.js runtime reports actual Chromium `137.0.7151.69`, logical viewp
 Its simulated TV user agent advertises an older Chrome version; that string is not the actual engine version.
 The simulator disables web security, so successful requests do not establish production CORS behavior.
 The package requires Tizen 8.0 and the build targets Chromium 108, but this simulator does not establish that physical runtime's behavior.
-Only Samsung was running; no physical TV was used, following Ryan's simulator-only instruction.
+Only Samsung was running; no physical TV was used, following the simulator-only instruction.
 
 ## Source and calibration
 
