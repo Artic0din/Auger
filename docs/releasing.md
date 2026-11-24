@@ -6,9 +6,9 @@ Auger ships through [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)
 ## Automatic releases and tags
 
 The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Builds** succeeds on a `main` push.
-`scripts/release-version.py` reads the Conventional Commit messages since the latest `v*` tag and picks the bump:
+`scripts/release-version.py` reads the Conventional Commit messages since the latest published release (or tester tag) and picks the bump:
 
-| Commits since the latest tag | Bump |
+| Commits since the latest release | Bump |
 | --- | --- |
 | `feat!:`, `fix(ui)!:` or any type with `!`, or a body line starting `BREAKING CHANGE:` | major (`1.4.2` to `2.0.0`) |
 | `feat` | minor (`1.4.2` to `1.5.0`) |
@@ -16,8 +16,13 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 | only `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` or merge commits | no release |
 
 The largest bump wins.
-When the workflow releases, it writes `X.Y.Z` into `app/config.xml`, signs the `.wgt` with the maintainer's Samsung certificate, and creates the `vX.Y.Z` tag together with the release.
-A commit that is already at or behind the latest `vX.Y.Z` tag never releases again, so re-runs are safe.
+When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the maintainer's Samsung certificate.
+It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and records the release notes in `CHANGELOG.md`.
+A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
+
+Only tags with a published GitHub Release count as released.
+If a run stops after reserving its tag, the next run on that commit publishes the same version (`bump=recover`).
+A run on a newer commit picks a version past the unpublished tag, and its notes still cover every commit since the last published release.
 
 Tizen limits widget versions to `[0-255].[0-255].[0-65535]`, and the script refuses a version outside that range.
 
@@ -32,8 +37,10 @@ The commit must have passed **Tizen Builds**.
 - `bump: patch`, `minor` or `major` forces that bump from the latest tag.
 - `version: X.Y.Z` releases exactly that version, which must be newer than the latest tag.
 
+No mode releases a commit that is already released.
+
 If a run fails, use **Re-run failed jobs**.
-The publish step refreshes both assets and release notes on any leftover draft, skips tags that are already published, and never demotes a newer Latest release.
+The publish step refreshes both assets and release notes on any leftover draft, skips tags that are already published, refuses a tag that points at another commit, and never demotes a newer Latest release.
 
 ## Release artifacts
 
@@ -42,12 +49,41 @@ Each release carries two files:
 - `Auger.wgt`, the signed package, with `<widget version="X.Y.Z">` in its `config.xml`.
 - `Auger.wgt.sha256`, its checksum.
 
-Every release is marked Latest, so `https://github.com/Artic0din/Auger/releases/latest/download/Auger.wgt` always serves the newest build.
-Release notes are generated from merged pull requests and grouped by `.github/release.yml`.
+Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/releases/latest/download/Auger.wgt` always serves the newest build.
+
+## Release notes and the changelog
+
+`scripts/generate-changelog.py` writes each release's notes from the commits since the previous release, in plain language for people who use Auger.
+It reads commits with the same Conventional Commit rules as the version bump and groups them:
+
+| Section | Commits |
+| --- | --- |
+| ⚠️ Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
+| ✨ New Features | `feat` |
+| 🔧 Improvements | `perf` |
+| 🔒 Security | `fix` with the `security` or `sec` scope, or a subject about a security problem, vulnerability, CVE or secret leak |
+| 🐛 Fixes | `fix`, `revert`, or a `Revert "..."` subject |
+
+It leaves out `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` and merge commits unless they are breaking.
+Each bullet drops the type prefix and the `(#123)` suffix, starts with a capital, and leads with the scope's area, such as `- **Playback**: Add chapters` for `feat(player): add chapters (#12)`.
+Fixes read as plain sentences.
+A release with no user-facing commits reads `General maintenance and stability improvements.`
+
+The Release workflow uses the notes as the GitHub Release body, under an Install section.
+After publishing, it adds the same notes as `## [X.Y.Z] - YYYY-MM-DD` below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes a `docs(changelog): record vX.Y.Z release notes` commit to `main`.
+A changelog that already has the version stays unchanged.
+If `main` refuses the push, the run warns and the release stays published; add the section with:
+
+```sh
+python3 scripts/generate-changelog.py update --file CHANGELOG.md --version X.Y.Z --from vPREVIOUS --to vX.Y.Z
+```
+
+Preview notes locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`.
+`.github/release.yml` groups only the notes from GitHub's **Generate release notes** button.
 
 ## Installing and updating with Apps2Samsung
 
-1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger`, or use **Settings > Installing > Your sources** in the app.
+1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger-Tizen`, or use **Settings > Installing > Your sources** in the app.
 2. Install Auger from that source.
    Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so your TV needs no listing in the maintainer's certificate.
 3. Update with one click.
@@ -58,14 +94,14 @@ Uninstalling removes saved sign-in data, so you sign in again once; subsequent b
 
 ### Community catalog
 
-[`docs/apps2samsung/Artic0din__Auger.json`](apps2samsung/Artic0din__Auger.json) is a manifest for the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages).
+[`docs/apps2samsung/Artic0din__Auger-Tizen.json`](apps2samsung/Artic0din__Auger-Tizen.json) is a manifest for the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages).
 It is ready to submit to that repository's `packages/` folder once it is reviewed and a first `vX.Y.Z` release is live.
 
 ## Sideloading a build
 
 The maintainer's certificate lists the TV DUIDs it allows, so a sideloaded build installs only on those TVs.
 
-1. Download `Auger.wgt` and `Auger.wgt.sha256` from [GitHub Releases](https://github.com/Artic0din/Auger/releases).
+1. Download `Auger.wgt` and `Auger.wgt.sha256` from [GitHub Releases](https://github.com/Artic0din/Auger-Tizen/releases).
 2. Check the file with `sha256sum --check Auger.wgt.sha256`.
 3. On a listed TV in Developer Mode, install it through Tizen Studio Device Manager or run `tizen install -n Auger.wgt -t <device>`.
 

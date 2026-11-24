@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+<!-- changelog:releases -->
+
+## [Earlier changes]
+
 ### Added
 
 - Every user-facing change on `main` now ships as a GitHub Release: after CI passes, the Release workflow picks `vX.Y.Z` from the Conventional Commits since the last tag and publishes `Auger.wgt` with `Auger.wgt.sha256`, so Apps2Samsung updates in one click. An Apps2Samsung community catalog manifest is ready to submit.
@@ -84,7 +88,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- The app's Tizen package ID is now `AugerTv001.Auger`, and the repository is `Artic0din/Auger`. Uninstall an existing install before installing this build, because Tizen treats a new package ID as a different app; uninstalling removes its data, so you sign in again afterwards.
+- The app's Tizen package ID is now `AugerTv001.Auger`, and the repository is `Artic0din/Auger-Tizen`. Uninstall an existing install before installing this build, because Tizen treats a new package ID as a different app; uninstalling removes its data, so you sign in again afterwards.
 - The README presents Auger as an independent, third-party Silo client, with the Auger wordmark, a how-it-works diagram, credits to Silo, and Silo's trademark notice, and its install steps point at this repository.
 - Auto-play next now saves for this TV only, from the player and from Up Next, as on Apple TV, so the change always takes effect here (#759).
 - The README and release docs describe installing through Apps2Samsung or by sideloading a build from GitHub Releases (#732).

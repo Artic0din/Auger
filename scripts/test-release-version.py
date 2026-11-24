@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
+import contextlib
 import importlib.util
+import io
+import os
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 
@@ -32,7 +37,7 @@ class ClassifyCommitTest(unittest.TestCase):
             'Revert "feat: add search"': Bump.PATCH,
             "feat!: drop Tizen 7": Bump.MAJOR,
             "fix(ui)!: change the remote keys": Bump.MAJOR,
-            "Merge pull request #5 from Artic0din/Auger": Bump.NONE,
+            "Merge pull request #5 from Artic0din/Auger-Tizen": Bump.NONE,
             "update readme": Bump.NONE,
             "feat:missing space": Bump.NONE,
         }
@@ -147,6 +152,38 @@ class ExplicitVersionTest(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "look like"):
             plan(BETAS, explicit_version="1.2")
 
+    def test_already_released_target_makes_no_release(self):
+        result = plan(["v0.1.0"], "feat: a", explicit_version="0.2.0", target_already_released=True)
+        self.assertEqual(release.ReleasePlan(False, "", "", "v0.1.0", "none"), result)
+
+    def test_must_be_newer_than_an_unpublished_tag(self):
+        with self.assertRaisesRegex(release.ReleaseError, "not newer than the latest tag, v0.2.0"):
+            plan(["v0.1.0", "v0.2.0"], explicit_version="0.2.0", published_exact_tags={"v0.1.0"})
+
+
+class UnpublishedTagTest(unittest.TestCase):
+    def test_recovers_the_tag_on_the_target(self):
+        tag = release.parse_tag("v0.1.1")
+        result = plan(["v0.1.0", "v0.1.1"], "fix: a", published_exact_tags={"v0.1.0"}, unpublished_target_tag=tag)
+        self.assertEqual(release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0", "recover"), result)
+        self.assertEqual("recover", plan(["v0.1.0", "v0.1.1"], mode="major", unpublished_target_tag=tag).bump)
+
+    def test_explicit_version_skips_recovery(self):
+        tag = release.parse_tag("v0.1.1")
+        result = plan(
+            ["v0.1.0", "v0.1.1"], explicit_version="0.2.0", published_exact_tags={"v0.1.0"}, unpublished_target_tag=tag
+        )
+        self.assertEqual(release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "explicit"), result)
+
+    def test_bumps_past_an_unpublished_tag_elsewhere(self):
+        result = plan(["v0.1.0", "v0.2.0"], "fix: a", published_exact_tags={"v0.1.0"})
+        self.assertEqual(release.ReleasePlan(True, "0.2.1", "v0.2.1", "v0.1.0", "patch"), result)
+        self.assertEqual("v0.3.0", plan(["v0.1.0", "v0.2.0"], mode="minor", published_exact_tags={"v0.1.0"}).tag)
+
+    def test_tester_tags_count_as_previous_without_a_release(self):
+        result = plan([*BETAS, "v0.1.0"], "fix: a", published_exact_tags=set())
+        self.assertEqual(release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0-beta.3", "patch"), result)
+
 
 class TizenLimitsTest(unittest.TestCase):
     def test_limits(self):
@@ -174,6 +211,96 @@ class ParseGitLogTest(unittest.TestCase):
             release.parse_git_log(output),
         )
         self.assertEqual([], release.parse_git_log(""))
+
+
+class GitRepoIntegrationTest(unittest.TestCase):
+    """Runs `next` against a real temporary repository."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        self.git("init", "--quiet", "--initial-branch=main")
+        self.published = self.repo / "published-tags.txt"
+        self.published.write_text("", encoding="utf-8")
+
+    def git(self, *args):
+        env = {
+            **os.environ,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        }
+        return subprocess.run(
+            ["git", *args], cwd=self.repo, env=env, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def commit(self, subject, tag="", published=True):
+        self.git("commit", "--quiet", "--allow-empty", "-m", subject)
+        if tag:
+            self.git("tag", tag)
+            if published:
+                with self.published.open("a", encoding="utf-8") as tags:
+                    tags.write(f"{tag}\n")
+        return self.git("rev-parse", "HEAD")
+
+    def next(self, *args):
+        cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(0, release.main(["next", *args]))
+        finally:
+            os.chdir(cwd)
+        return dict(line.split("=", 1) for line in out.getvalue().splitlines())
+
+    def next_published(self, *args):
+        return self.next(*args, "--published-tags-file", str(self.published))
+
+    def test_published_tagged_commit_makes_no_release(self):
+        self.commit("feat: add search", "v0.1.0")
+        for args in ((), ("--bump", "patch"), ("--version", "0.2.0")):
+            with self.subTest(args):
+                self.assertEqual("false", self.next_published(*args)["should_release"])
+                self.assertEqual("false", self.next(*args)["should_release"])
+
+    def test_ancestor_of_a_published_tag_makes_no_release(self):
+        older = self.commit("feat: add search")
+        self.commit("fix: stop a crash", "v0.1.0")
+        result = self.next_published("--target", older)
+        self.assertEqual("false", result["should_release"])
+        self.assertEqual("v0.1.0", result["previous_tag"])
+
+    def test_log_range_starts_at_the_published_tag(self):
+        self.commit("feat: add search", "v0.1.0")
+        target = self.commit("fix: stop crash")
+        self.assertEqual(
+            {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "patch"},
+            self.next_published("--target", target),
+        )
+
+    def test_recovers_an_unpublished_tag_on_the_target(self):
+        self.commit("feat: add search", "v0.1.0")
+        target = self.commit("fix: stop crash", "v0.1.1", published=False)
+        self.assertEqual(
+            {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "recover"},
+            self.next_published("--target", target),
+        )
+        # Without the release list every exact tag counts as published.
+        self.assertEqual("false", self.next("--target", target)["should_release"])
+
+    def test_bumps_past_an_unpublished_tag_on_an_older_commit(self):
+        self.commit("feat: add search", "v0.1.0")
+        self.commit("feat: new feature", "v0.2.0", published=False)
+        target = self.commit("fix: typo")
+        self.assertEqual(
+            {"should_release": "true", "version": "0.3.0", "tag": "v0.3.0", "previous_tag": "v0.1.0", "bump": "minor"},
+            self.next_published("--target", target),
+        )
 
 
 if __name__ == "__main__":

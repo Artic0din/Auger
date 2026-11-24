@@ -1,11 +1,12 @@
 name: Release
 
 # Releases main after Tizen Builds passes on it. scripts/release-version.py
-# picks vX.Y.Z from the Conventional Commits since the latest tag (or skips the
-# release when none needs one), and this workflow signs Auger.wgt with the
-# maintainer's Samsung certificate and publishes it on a GitHub Release that
-# creates the tag. Run it by hand to force a bump or a version. See
-# docs/releasing.md.
+# picks vX.Y.Z from the Conventional Commits since the latest published release
+# (or skips the release when none needs one), and this workflow signs Auger.wgt
+# with the maintainer's Samsung certificate, reserves the tag, publishes it on a
+# GitHub Release with notes from scripts/generate-changelog.py, and records the
+# notes in CHANGELOG.md on main. Run it by hand to force a bump or a version.
+# See docs/releasing.md.
 
 on:
   workflow_run:
@@ -54,6 +55,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read # check Tizen Builds on the commit
@@ -104,12 +106,17 @@ jobs:
       - name: Choose the version
         id: version
         env:
+          GH_TOKEN: ${{ github.token }}
           BUMP: ${{ inputs.bump || 'auto' }}
           VERSION: ${{ inputs.version }}
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
-          python3 scripts/release-version.py next --bump "${BUMP}" --version "${VERSION}" --target "${TARGET_SHA}" |
-            tee -a "${GITHUB_OUTPUT}"
+          # A tag without a published release was left by an unfinished run, so
+          # only published releases count as released.
+          gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | select(.draft == false) | .tag_name' > "${RUNNER_TEMP}/published-tags.txt"
+          python3 scripts/release-version.py next --bump "${BUMP}" --version "${VERSION}" --target "${TARGET_SHA}" \
+            --published-tags-file "${RUNNER_TEMP}/published-tags.txt" | tee -a "${GITHUB_OUTPUT}"
 
       - name: Summarize
         env:
@@ -196,8 +203,9 @@ jobs:
     needs: [prepare, wgt]
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write # create the release and its tag
+      contents: write # create the tag and release, and record the notes on main
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -206,34 +214,42 @@ jobs:
       PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
       TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
     steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.target_sha }}
+          fetch-depth: 0 # the commits since the previous tag, for the notes
+          persist-credentials: false
+
       - name: Download the .wgt
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: auger-release-wgt
-          path: wgt
+          path: ${{ runner.temp }}/wgt
 
       - name: Verify the checksum
-        run: (cd wgt && sha256sum --check Auger.wgt.sha256)
+        run: (cd "${RUNNER_TEMP}/wgt" && sha256sum --check Auger.wgt.sha256)
+
+      - name: Write the release notes
+        run: |
+          release_date="$(date -u +%Y-%m-%d)"
+          echo "RELEASE_DATE=${release_date}" >> "${GITHUB_ENV}"
+          {
+            python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
+              ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}"
+            echo
+            echo "## Install"
+            echo
+            echo "- **Apps2Samsung:** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it."
+            echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
+          } > "${RUNNER_TEMP}/notes.md"
+          cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Publish the release
+        env:
+          WGT: ${{ runner.temp }}/wgt
+          NOTES: ${{ runner.temp }}/notes.md
         run: |
-          # If the tag already exists in git, verify it points to TARGET_SHA
-          # before touching any release (GitHub ignores --target when the tag
-          # already exists). Continue only on a confirmed 404 or verified match.
-          tag_status=0
-          tag_resp="$(gh api -i "repos/${GH_REPO}/git/ref/tags/${TAG}" 2>&1)" || tag_status=$?
-          tag_http="$(printf '%s\n' "${tag_resp}" | sed -n '1s/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p')"
-          if [[ "${tag_status}" -eq 0 ]]; then
-            tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
-            if [[ "${tag_sha}" != "${TARGET_SHA}" ]]; then
-              echo "::error::Tag ${TAG} already points to ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
-              exit 1
-            fi
-          elif [[ "${tag_http}" != "404" ]]; then
-            echo "::error::Could not verify tag ${TAG} (HTTP ${tag_http:-unknown}). Re-run failed jobs."
-            exit 1
-          fi
-
           # Check an existing release first so an already-published retry does
           # not fail on extra API calls.
           release_state="missing"
@@ -249,6 +265,26 @@ jobs:
               exit 1
             fi
             release_state="draft"
+          fi
+
+          # Reserve the tag on TARGET_SHA before any release exists. Creating
+          # the ref is atomic, so two runs can never publish one tag for two
+          # commits. A 422 means the ref exists, which is fine only when it
+          # already points at TARGET_SHA (a retry, or a run that stopped after
+          # reserving it; release-version.py plans that as bump=recover).
+          ref_status=0
+          ref_resp="$(gh api -i "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${TARGET_SHA}" 2>&1)" || ref_status=$?
+          ref_http="$(printf '%s\n' "${ref_resp}" | sed -n 's/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -n 1)"
+          if [[ "${ref_status}" -eq 0 ]]; then
+            echo "Reserved ${TAG} on ${TARGET_SHA::9}."
+          elif [[ "${ref_http}" != "422" ]]; then
+            echo "::error::Could not reserve tag ${TAG} (HTTP ${ref_http:-unknown}). Re-run failed jobs."
+            exit 1
+          fi
+          tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
+          if [[ "${tag_sha}" != "${TARGET_SHA}" ]]; then
+            echo "::error::Tag ${TAG} points to ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
+            exit 1
           fi
 
           # Never roll Latest backward if a newer stable release published
@@ -272,28 +308,47 @@ jobs:
           PY
           )"
 
-          {
-            gh api "repos/${GH_REPO}/releases/generate-notes" \
-              -f tag_name="${TAG}" -f target_commitish="${TARGET_SHA}" \
-              ${PREVIOUS_TAG:+-f previous_tag_name="${PREVIOUS_TAG}"} --jq .body
-            echo
-            echo "### Install"
-            echo
-            echo "- **Apps2Samsung:** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it."
-            echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
-          } > notes.md
-
           # "Re-run failed jobs" re-runs this whole job. For a leftover draft,
           # replace both assets from this run's verified bundle and update
-          # target and notes so a retry never mixes artifacts across commits.
+          # notes so a retry never mixes artifacts across commits.
           if [[ "${release_state}" == "draft" ]]; then
-            gh release upload "${TAG}" --clobber wgt/Auger.wgt wgt/Auger.wgt.sha256
-            gh release edit "${TAG}" --target "${TARGET_SHA}" --title "Auger ${VERSION}" \
-              --notes-file notes.md --draft=false --prerelease=false "${latest_flag}"
+            gh release upload "${TAG}" --clobber "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+            gh release edit "${TAG}" --title "Auger ${VERSION}" \
+              --notes-file "${NOTES}" --draft=false --prerelease=false "${latest_flag}"
             echo "${TAG} is published with its .wgt."
             exit 0
           fi
 
-          # The release creates the tag on the target commit, so a failed run never leaves a tag behind.
-          gh release create "${TAG}" --target "${TARGET_SHA}" "${latest_flag}" \
-            --title "Auger ${VERSION}" --notes-file notes.md wgt/Auger.wgt wgt/Auger.wgt.sha256
+          # --verify-tag publishes on the reserved tag and never creates or moves one.
+          gh release create "${TAG}" --verify-tag "${latest_flag}" \
+            --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+
+      - name: Record the release in CHANGELOG.md
+        run: |
+          # The release is already out, so a failure here warns instead of failing the run.
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
+          git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
+          generator="${RUNNER_TEMP}/changelog-generator"
+          mkdir -p "${generator}"
+          cp scripts/generate-changelog.py scripts/release-version.py "${generator}/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Rebuilds the commit on a fresh main each attempt, so a main that
+          # moved during publish never conflicts. The update is idempotent.
+          # Bash ignores -e inside a function called from `if`, so each step checks itself.
+          record() {
+            git_auth fetch --quiet origin main || return 1
+            git checkout --quiet -B changelog-update origin/main || return 1
+            python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
+              --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}" || return 1
+            if git diff --quiet CHANGELOG.md; then
+              echo "CHANGELOG.md on main already records ${VERSION}."
+              return 0
+            fi
+            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
+            git_auth push origin HEAD:main
+          }
+          if ! record && ! record; then
+            echo "::warning::Could not record ${TAG} in CHANGELOG.md on main. Add its section by running scripts/generate-changelog.py update."
+          fi

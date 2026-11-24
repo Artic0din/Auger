@@ -12,7 +12,14 @@ The next version bumps the latest vX.Y.Z tag by the largest change since it:
 
 Older tester tags (vX.Y.Z-beta.B, vX.Y.Z+B) count as their X.Y.Z, below an
 exact vX.Y.Z tag of the same version. A commit that is already at or behind
-the latest exact release tag makes no release, so re-running is safe.
+the latest published vX.Y.Z tag makes no release, so re-running is safe.
+
+With --published-tags-file, only the exact vX.Y.Z tags listed in that file
+(one per line, from the published GitHub Releases) count as published. An
+exact tag missing from it was reserved by a publish run that never finished:
+on the target commit it is recovered (bump=recover), elsewhere the next
+version goes past it while the commits since the last published tag still
+count. Without the file every exact vX.Y.Z tag counts as published.
 
 Tizen widget versions are X.Y.Z with X and Y at most 255 and Z at most 65535,
 so every version this script picks is checked against those limits.
@@ -20,19 +27,21 @@ so every version this script picks is checked against those limits.
 Prints key=value lines for $GITHUB_OUTPUT:
 
     release-version.py next [--bump auto|patch|minor|major] [--version X.Y.Z] [--target HEAD]
+                            [--published-tags-file PATH]
 """
 
 import argparse
 from dataclasses import dataclass
 from enum import IntEnum
+from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Iterable, Optional
+from typing import AbstractSet, Iterable, Optional
 
 TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
-HEADER = re.compile(r"([a-z]+)(?:\([^)]*\))?(!)?:\s+.+", re.IGNORECASE)
+HEADER = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+(?P<description>.+)", re.IGNORECASE)
 BREAKING = re.compile(r"^BREAKING[- ]CHANGE:", re.MULTILINE)
 PATCH_TYPES = {"fix", "perf", "revert"}
 MANUAL_BUMPS = ("patch", "minor", "major")
@@ -124,9 +133,9 @@ def latest_tag(tags: Iterable[str]) -> Optional[TagInfo]:
 
 def classify_commit(commit: CommitMessage) -> BumpLevel:
     header = HEADER.fullmatch(commit.subject.strip())
-    if (header and header.group(2)) or BREAKING.search(commit.body):
+    if (header and header.group("bang")) or BREAKING.search(commit.body):
         return BumpLevel.MAJOR
-    kind = header.group(1).lower() if header else ""
+    kind = header.group("type").lower() if header else ""
     if kind == "feat":
         return BumpLevel.MINOR
     if kind in PATCH_TYPES or commit.subject.startswith('Revert "'):
@@ -142,35 +151,56 @@ def parse_version(text: str) -> SemVer:
     return SemVer(major, minor, patch)
 
 
+def exact_tags(tags: Iterable[str]) -> set[str]:
+    return {name for name in tags if (tag := parse_tag(name)) and not tag.is_prerelease}
+
+
+def previous_release(tags: Iterable[str], published_exact_tags: AbstractSet[str]) -> Optional[TagInfo]:
+    """The newest tag that is a published release or a tester tag: the start of the release notes."""
+    return latest_tag(
+        name for name in tags if name in published_exact_tags or ((tag := parse_tag(name)) and tag.is_prerelease)
+    )
+
+
 def plan_release(
     tags: Iterable[str],
     commits: Iterable[CommitMessage],
     mode: str = "auto",
     explicit_version: str = "",
     target_already_released: bool = False,
+    published_exact_tags: Optional[AbstractSet[str]] = None,
+    unpublished_target_tag: Optional[TagInfo] = None,
 ) -> ReleasePlan:
-    prev = latest_tag(tags)
-    base = prev.version if prev else SemVer(0, 0, 0)
+    tags = list(tags)
+    published = exact_tags(tags) if published_exact_tags is None else published_exact_tags
+    prev = previous_release(tags, published)
     previous_tag = prev.name if prev else ""
+    # Bump from the highest tag of all, so a new version never collides with an unpublished one.
+    highest = latest_tag(tags)
+    base = highest.version if highest else SemVer(0, 0, 0)
+
+    if mode != "auto" and mode not in MANUAL_BUMPS:
+        raise ReleaseError(f"Unknown bump {mode!r}.")
+    if target_already_released:
+        return ReleasePlan(False, "", "", previous_tag, "none")
+    if unpublished_target_tag is not None and not explicit_version:
+        unpublished_target_tag.version.check_tizen_limits()
+        return ReleasePlan(True, unpublished_target_tag.version.text, unpublished_target_tag.name, previous_tag, "recover")
 
     if explicit_version:
         target = parse_version(explicit_version)
-        if prev and target <= prev.version:
-            raise ReleaseError(f"{target.text} is not newer than the latest tag, {prev.name}.")
+        if highest and target <= highest.version:
+            raise ReleaseError(f"{target.text} is not newer than the latest tag, {highest.name}.")
         bump = "explicit"
     elif mode == "auto":
         level = max((classify_commit(commit) for commit in commits), default=BumpLevel.NONE)
-        if target_already_released or level == BumpLevel.NONE:
+        if level == BumpLevel.NONE:
             return ReleasePlan(False, "", "", previous_tag, "none")
         target = base.bump(level)
         bump = level.name.lower()
-    elif mode in MANUAL_BUMPS:
-        if target_already_released:
-            return ReleasePlan(False, "", "", previous_tag, "none")
+    else:
         target = base.bump(BumpLevel[mode.upper()])
         bump = mode
-    else:
-        raise ReleaseError(f"Unknown bump {mode!r}.")
 
     target.check_tizen_limits()
     return ReleasePlan(True, target.text, f"v{target.text}", previous_tag, bump)
@@ -191,11 +221,21 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], check=check, capture_output=True, text=True)
 
 
-def is_already_released(target: str, prev: Optional[TagInfo]) -> bool:
-    if prev and not prev.is_prerelease and git("merge-base", "--is-ancestor", target, prev.name, check=False).returncode == 0:
+def tags_at(target: str) -> list[str]:
+    return git("tag", "--points-at", target, "--list", "v*").stdout.split()
+
+
+def is_already_released(target: str, published_exact_tags: AbstractSet[str], tags: Iterable[str]) -> bool:
+    """True when target is at or behind a published vX.Y.Z tag. Unpublished tags don't count."""
+    latest_published = latest_tag(name for name in tags if name in published_exact_tags)
+    if latest_published and git("merge-base", "--is-ancestor", target, latest_published.name, check=False).returncode == 0:
         return True
-    pointing = git("tag", "--points-at", target, "--list", "v*").stdout.split()
-    return any((tag := parse_tag(name)) and not tag.is_prerelease for name in pointing)
+    return any(name in published_exact_tags for name in tags_at(target))
+
+
+def unpublished_tag_on_target(target: str, published_exact_tags: AbstractSet[str]) -> Optional[TagInfo]:
+    """The highest exact vX.Y.Z tag on target that has no published release, left by an unfinished run."""
+    return latest_tag(name for name in exact_tags(tags_at(target)) if name not in published_exact_tags)
 
 
 def main(argv: list[str]) -> int:
@@ -205,15 +245,35 @@ def main(argv: list[str]) -> int:
     next_parser.add_argument("--bump", choices=["auto", *MANUAL_BUMPS], default="auto")
     next_parser.add_argument("--version", default="")
     next_parser.add_argument("--target", default="HEAD")
+    next_parser.add_argument(
+        "--published-tags-file",
+        type=Path,
+        help="Tag names of the published releases, one per line. Default: every exact vX.Y.Z tag.",
+    )
     args = parser.parse_args(argv)
 
     try:
         target = git("rev-parse", "--verify", f"{args.target}^{{commit}}").stdout.strip()
         tags = git("tag", "--list", "v*").stdout.split()
-        prev = latest_tag(tags)
+        if args.published_tags_file is None:
+            published = exact_tags(tags)
+        else:
+            published = exact_tags(args.published_tags_file.read_text(encoding="utf-8").split())
+        prev = previous_release(tags, published)
         log_range = f"{prev.name}..{target}" if prev else target
         commits = parse_git_log(git("log", f"--format=%s{FIELD_END}%b{RECORD_END}", log_range).stdout)
-        plan = plan_release(tags, commits, args.bump, args.version, is_already_released(target, prev))
+        plan = plan_release(
+            tags,
+            commits,
+            args.bump,
+            args.version,
+            target_already_released=is_already_released(target, published, tags),
+            published_exact_tags=published,
+            unpublished_target_tag=unpublished_tag_on_target(target, published),
+        )
+    except OSError as error:
+        print(f"::error::Could not read the published tags: {error}", file=sys.stderr)
+        return 1
     except subprocess.CalledProcessError as error:
         print(f"::error::git {' '.join(error.cmd[1:])} failed: {error.stderr.strip()}", file=sys.stderr)
         return 1
