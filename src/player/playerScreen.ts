@@ -2028,8 +2028,19 @@ export function startPlayback(
         screen?.destroy();
         controller.destroy();
     };
-    const playbackErrorText = (error: PlaybackError): string =>
-        error.kind === "terminal" ? `${error.reason}: ${error.message}` : error.kind === "server" && error.reason !== undefined ? ("text" in error.reason ? error.reason.text : "status" in error.reason ? `HTTP ${error.reason.status}` : "app_update_required") : "";
+    // Record only structured codes or validated HTTP status; never forward free-form server text that could contain account names or media titles.
+    const playbackErrorText = (error: PlaybackError): string => {
+        if (error.kind === "terminal") return /^[a-z0-9_.-]{1,48}$/i.test(error.reason) ? error.reason : "terminal_error";
+        if (error.kind !== "server" || error.reason === undefined) return "";
+        const reason = error.reason;
+        if ("text" in reason) return "server_error";
+        if ("status" in reason) {
+            return typeof reason.status === "number" && Number.isInteger(reason.status) && reason.status >= 100 && reason.status <= 599
+                ? `HTTP ${reason.status}`
+                : "server_error";
+        }
+        return "app_update_required";
+    };
     const controller = new PlaybackController({
         session: server.session,
         avplay: platform.avplay,

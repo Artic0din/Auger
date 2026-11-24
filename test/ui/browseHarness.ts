@@ -12,6 +12,7 @@ import type { ThemeAudioOutput } from "../../src/ui/themeMusic.ts";
 import { ExperimentalFeatures, type ExperimentalFeature } from "../../src/session/experimentalFeatures.ts";
 import { appLanguageCacheKey } from "../../src/ui/appLanguagePreferences.ts";
 import { storeBranding } from "../../src/ui/brandingCache.ts";
+import { DiagnosticsCollector } from "../../src/diagnostics.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
 
 export interface BrowseHarness {
@@ -37,6 +38,8 @@ export interface BrowseHarness {
     seedAppLanguage(choice: string): void;
     /** Keeps a branding answer naming this server, as an earlier launch's branding read left it. */
     seedServerName(name: string): void;
+    /** Seeds a playback snapshot and event into the shared Diagnostics collector. */
+    seedDiagnostics(): void;
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -70,6 +73,7 @@ if (root === null) {
 let server: ConnectedServer | undefined;
 let profileName: string | undefined;
 let browse: Browse | undefined;
+let diagnostics: DiagnosticsCollector | undefined;
 const publicStorage = new MemoryPublicStorage();
 
 function connected(): ConnectedServer {
@@ -147,8 +151,10 @@ const harness: BrowseHarness = {
     },
     mount(offerSignOut = false) {
         document.getElementById("successor")?.remove();
+        diagnostics ??= new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: connected().server.serverVersion });
         browse = mountBrowse(root, {
             server: connected(),
+            diagnostics,
             ...(profileName === undefined ? {} : { profileName }),
             publicStorage,
             themeOutput: grant => recordingTheme(grant.url),
@@ -177,6 +183,19 @@ const harness: BrowseHarness = {
     },
     seedServerName(name) {
         storeBranding(publicStorage, connected().session.http.base.baseUrl, { serverName: name, markUrl: undefined, accentColor: undefined });
+    },
+    seedDiagnostics() {
+        diagnostics ??= new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
+        diagnostics.recordPlaybackStats({
+            nowPlaying: [],
+            playback: [
+                { label: "Playback", value: "Remuxed · MKV" },
+                { label: "Video", value: "HEVC · 3840×2160 · 23.976 fps" },
+            ],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Server Remux HLS" }, { label: "Source", value: "silo.example.test" }],
+        });
+        diagnostics.recordEvent("app", "seeded test event");
     },
     cacheOffline(route = "home") {
         const server = connected();

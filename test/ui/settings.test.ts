@@ -1718,10 +1718,13 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, issueNumber: 901, reportId: "AUG-901" }) });
     });
     try {
+        await tv.page.evaluate(() => window.browseHarness.seedDiagnostics());
         await openSettings(tv);
         await tv.page.locator('[data-focus="diagnostics"]').click();
         await tv.page.locator('[data-focus="send-diagnostics"]').waitFor();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Send a redacted bug report directly to GitHub, or share via QR code.");
+        await tv.page.getByText("Remuxed · MKV", { exact: true }).waitFor();
+        await tv.page.getByText("Recorded events", { exact: true }).waitFor();
 
         // Primary action: 1-click Send Diagnostics Report with confirmation modal.
         await tv.page.locator('[data-focus="send-diagnostics"]').click();
@@ -1731,6 +1734,7 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         assert.equal(sentPayloads.length, 1);
         assert.ok(!sentPayloads[0]!.includes("silo.example.test"), "server hostname must never be sent to relay");
         assert.equal(JSON.parse(sentPayloads[0]!).app, "0.0.1");
+        assert.equal(JSON.parse(sentPayloads[0]!).play.m, "Remuxed · MKV");
 
         // Backup action: Share via QR Code.
         await tv.page.locator('[data-focus="share-diagnostics"]').click();
@@ -1745,12 +1749,16 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         const decoded = decodeDiagnosticsReportHash(reportUrl.slice(reportUrl.indexOf("#")));
         assert.equal(decoded?.app, "0.0.1");
         assert.equal(decoded?.tv, "Samsung TV");
+        assert.equal(decoded?.play?.m, "Remuxed · MKV");
 
-        // Close the QR modal and verify focus returns to Share via QR Code, then Clear Session Log works.
+        // Close the QR modal and verify focus returns to Share via QR Code, then Clear Session Log actually clears seeded playback + events.
         await tv.remote(10009);
         assert.equal(await tv.focused(), "share-diagnostics");
         await tv.page.locator('[data-focus="clear-diagnostics"]').click();
         await tv.page.getByText("Session log cleared.", { exact: true }).waitFor();
+        await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
+        await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+        assert.equal(await tv.page.getByText("Remuxed · MKV", { exact: true }).count(), 0);
 
         // Load the actual zero-backend pages/report/index.html with the emitted #d= hash in Playwright.
         const helperPage = await browser.newPage();

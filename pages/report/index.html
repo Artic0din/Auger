@@ -384,20 +384,19 @@
             copyBtn.classList.remove("copied");
           }, 2500);
         }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(discordText).then(done, function () {
-            rawBox.closest("details").open = true;
-            rawBox.focus();
-            rawBox.select();
-            document.execCommand("copy");
-            done();
-          });
-        } else {
+        function fallbackCopy() {
           rawBox.closest("details").open = true;
           rawBox.focus();
           rawBox.select();
-          document.execCommand("copy");
-          done();
+          var ok = false;
+          try { ok = document.execCommand("copy") === true; } catch (_err) { ok = false; }
+          if (ok) done();
+          else copyBtn.textContent = "Copy failed — copy the selected text below";
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(discordText).then(done, fallbackCopy);
+        } else {
+          fallbackCopy();
         }
       });
     })();

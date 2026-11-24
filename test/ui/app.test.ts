@@ -2565,3 +2565,59 @@ test("a secure-platform startup failure has a focused retry and can recover", as
         await tv.page.context().close();
     }
 });
+
+appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
+    await signIn(tv);
+    // Start real playback through AVPlay preparation so startPlayback's controller.subscribe populates the shared DiagnosticsCollector.
+    await startMovie(tv);
+    await leavePlayer(tv);
+    await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Open Settings > Diagnostics and confirm the recorded playback plan and event appear.
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("Direct play · MP4", { exact: true }).waitFor();
+    await tv.page.getByText("Original HTTP", { exact: true }).waitFor();
+    await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Trigger a structured terminal failure; Diagnostics records the structured code.
+    playback.next.push({ terminal: "source_unreadable" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("terminal: source_unreadable", { exact: true }).waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Trigger a server error with a free-form message containing a private title and account name; Diagnostics must not record the free-form text.
+    tv.fake.script("/playback/start", problem(422, "validation_failed", "Private Movie Title for alice cannot play"));
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("server: server_error", { exact: true }).waitFor();
+    const paneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(!paneText.includes("Private Movie Title"), "free-form server movie title must never enter diagnostics");
+    assert.ok(!paneText.includes("alice"), "free-form server account name must never enter diagnostics");
+
+    // Clear Session Log removes both playback and event history.
+    await tv.page.locator('[data-focus="clear-diagnostics"]').click();
+    await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
+    await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+});

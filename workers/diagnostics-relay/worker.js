@@ -147,28 +147,68 @@ export function formatGitHubIssue(payload) {
   return { title, body: lines.join("\n") };
 }
 
-async function checkRateLimit(request, cache) {
-  if (!cache) return { allowed: true };
+const isolateBuckets = new Map();
+
+async function checkRateLimit(request, env, limiter) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const binding = limiter ?? env?.DIAGNOSTICS_RATE_LIMITER;
+  if (binding && typeof binding.limit === "function") {
+    const result = await binding.limit({ key: ip });
+    return result?.success === true ? { allowed: true } : { allowed: false, retryAfter: RATE_LIMIT_WINDOW_SECONDS };
+  }
+  // Synchronous in-isolate atomic counter fallback when no Cloudflare Rate Limit binding is attached.
   const bucket = Math.floor(Date.now() / (RATE_LIMIT_WINDOW_SECONDS * 1000));
-  const key = new Request(`https://rate-limit.internal/${encodeURIComponent(ip)}/${bucket}`);
-  const hit = await cache.match(key);
-  const count = hit ? Number(await hit.text()) || 0 : 0;
+  const key = `${ip}:${bucket}`;
+  const count = isolateBuckets.get(key) ?? 0;
   if (count >= RATE_LIMIT_MAX_REQUESTS) {
     return { allowed: false, retryAfter: RATE_LIMIT_WINDOW_SECONDS };
   }
-  await cache.put(
-    key,
-    new Response(String(count + 1), {
-      headers: { "Cache-Control": `max-age=${RATE_LIMIT_WINDOW_SECONDS}` },
-    }),
-  );
+  isolateBuckets.set(key, count + 1);
+  if (isolateBuckets.size > 1000) {
+    for (const existingKey of isolateBuckets.keys()) {
+      if (!existingKey.endsWith(`:${bucket}`)) isolateBuckets.delete(existingKey);
+    }
+  }
   return { allowed: true };
+}
+
+async function readBoundedBody(request, maxBytes) {
+  const declared = Number(request.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await request.body?.cancel(); } catch { /* ignore cancel errors */ }
+    return { tooLarge: true, text: "" };
+  }
+  if (!request.body) return { tooLarge: false, text: "" };
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          return { tooLarge: true, text: "" };
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { tooLarge: false, text: new TextDecoder("utf-8").decode(merged) };
 }
 
 export async function handleRequest(request, env, deps = {}) {
   const fetchFn = deps.fetch ?? fetch;
-  const cache = deps.cache !== undefined ? deps.cache : (typeof caches !== "undefined" ? caches.default : undefined);
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -185,7 +225,7 @@ export async function handleRequest(request, env, deps = {}) {
     return jsonResponse({ ok: false, error: "relay_not_configured" }, 503);
   }
 
-  const limit = await checkRateLimit(request, cache);
+  const limit = await checkRateLimit(request, env, deps.rateLimiter);
   if (!limit.allowed) {
     return jsonResponse(
       { ok: false, error: "rate_limited" },
@@ -194,14 +234,14 @@ export async function handleRequest(request, env, deps = {}) {
     );
   }
 
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+  const body = await readBoundedBody(request, MAX_BODY_BYTES);
+  if (body.tooLarge) {
     return jsonResponse({ ok: false, error: "payload_too_large" }, 413);
   }
 
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(body.text);
   } catch {
     return jsonResponse({ ok: false, error: "invalid_json" }, 400);
   }

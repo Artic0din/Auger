@@ -162,9 +162,11 @@ function payloadFromSnapshot(snapshot: DiagnosticsSnapshot, logLimit: number, no
         };
         if (Object.keys(candidate).length > 0) play = candidate;
     }
-    const log = events
-        .slice(-logLimit)
-        .map(event => `${event.at} [${event.kind}] ${redactDiagnosticText(event.text, MAX_EVENT_TEXT)}`);
+    const log = logLimit <= 0
+        ? []
+        : events
+            .slice(-logLimit)
+            .map(event => `${event.at} [${event.kind}] ${redactDiagnosticText(event.text, MAX_EVENT_TEXT)}`);
     return {
         v: 1,
         app: cleanOptional(device.appVersion, 32) ?? "unknown",
@@ -439,6 +441,7 @@ export class DiagnosticsCollector {
             }
         }
         // Deliberately omit `Source` from `stats.engine`, because it contains the user's server hostname.
+        // Clear any prior playback's error once a new or active playback reports stats (the historical error stays in `events`).
         const next: DiagnosticsPlayback = {
             playback: cleanOptional(readRow(stats.playback, "Playback"), 64),
             video: cleanOptional(readRow(stats.playback, "Video"), 72),
@@ -448,7 +451,6 @@ export class DiagnosticsCollector {
             delivery: cleanOptional(readRow(stats.engine, "Delivery"), 48),
             status: cleanOptional(readRow(stats.stream, "Playback status"), 32),
             ...(diagnostics.length === 0 ? {} : { diagnostics }),
-            ...(this.lastPlayback?.error === undefined ? {} : { error: this.lastPlayback.error }),
         };
         const signature = [next.playback, next.delivery, next.video, next.dynamicRange, next.audio, next.subtitles].join("|");
         const planChanged = signature !== this.lastPlanSignature && (next.playback !== undefined || next.delivery !== undefined);

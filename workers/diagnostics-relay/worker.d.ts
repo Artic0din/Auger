@@ -1,16 +1,16 @@
+export interface RelayRateLimiter {
+    limit(options: { readonly key: string }): Promise<{ readonly success: boolean }>;
+}
+
 export interface RelayEnv {
     readonly GITHUB_TOKEN?: string;
     readonly GITHUB_REPO?: string;
-}
-
-export interface RelayCache {
-    match(request: Request): Promise<Response | undefined>;
-    put(request: Request, response: Response): Promise<void>;
+    readonly DIAGNOSTICS_RATE_LIMITER?: RelayRateLimiter;
 }
 
 export interface RelayDeps {
     readonly fetch?: (input: string, init?: RequestInit) => Promise<Response>;
-    readonly cache?: RelayCache;
+    readonly rateLimiter?: RelayRateLimiter;
 }
 
 export function handleRequest(request: Request, env: RelayEnv, deps?: RelayDeps): Promise<Response>;
