@@ -85,14 +85,18 @@ class NoiseTest(unittest.TestCase):
         noise = [f"{kind}(repo): tidy" for kind in ("docs", "chore", "ci", "test", "refactor", "style", "build")]
         noise += [
             "fix(ci): fail Evidence links that do not load",
+            "fix(ci): patch CVE-2026-1234 in fixture tooling",
             "fix(docs): fix broken link",
             "perf(test): speed up fixture setup",
             "Merge pull request #5 from Artic0din/Auger-Tizen",
             "docs(changelog): record v1.0.0 release notes",
             "update readme",
         ]
-        result = sections(*noise, "fix: real fix")
-        self.assertEqual({Category.FIXES: ["- Real fix"]}, result)
+        result = sections(*noise, "fix: real fix", "feat(build): add user-facing support")
+        self.assertEqual(
+            {Category.FEATURES: ["- **Build**: Add user-facing support"], Category.FIXES: ["- Real fix"]},
+            result,
+        )
 
     def test_breaking_noise_is_kept(self):
         self.assertEqual({Category.BREAKING: ["- Rename settings keys"]}, sections("chore!: rename settings keys"))

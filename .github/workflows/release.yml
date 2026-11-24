@@ -235,9 +235,15 @@ jobs:
         run: |
           release_date="$(date -u +%Y-%m-%d)"
           if gh release view "${TAG}" > /dev/null 2>&1; then
-            published_at="$(gh release view "${TAG}" --json isDraft,publishedAt --jq 'if .isDraft then "" else (.publishedAt // "") end')"
-            if [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
-              release_date="${BASH_REMATCH[0]}"
+            body_date="$(gh release view "${TAG}" --json isDraft,body \
+              --jq 'if .isDraft then "" else ((.body // "") | capture("^# Updates - Auger v[^ ]+ \\((?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})\\)")? .d // "") end')"
+            if [[ "${body_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              release_date="${body_date}"
+            else
+              published_at="$(gh release view "${TAG}" --json isDraft,publishedAt --jq 'if .isDraft then "" else (.publishedAt // "") end')"
+              if [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+                release_date="${BASH_REMATCH[0]}"
+              fi
             fi
           fi
           echo "RELEASE_DATE=${release_date}" >> "${GITHUB_ENV}"
@@ -347,6 +353,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           record_pr() {
+            existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')" || return 1
+            if [[ -n "${existing}" ]]; then
+              echo "Changelog PR #${existing} is already open for ${TAG}; leaving it untouched."
+              return 0
+            fi
             git_auth fetch --quiet origin main || return 1
             git checkout --quiet -B "${branch}" origin/main || return 1
             python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
@@ -356,14 +367,8 @@ jobs:
               return 0
             fi
             git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
-            git_auth fetch --quiet origin "${branch}" 2>/dev/null || true
-            git_auth push --force-with-lease origin "HEAD:${branch}" || return 1
-            existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')"
-            if [[ -n "${existing}" ]]; then
-              echo "Updated existing changelog PR #${existing}."
-              return 0
-            fi
-            pr_body="$(printf 'Adds the release notes for %s to `CHANGELOG.md`.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
+            git_auth push origin "HEAD:${branch}" || return 1
+            pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
             gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
               --title "docs(changelog): record v${VERSION} release notes" \
               --body "${pr_body}"

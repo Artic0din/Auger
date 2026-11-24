@@ -211,9 +211,10 @@ def entries_for(commit: CommitMessage) -> list[Entry]:
     scope_parts = [part.strip().lower() for part in scope.split(",") if part.strip()]
     category_name = CATEGORY_BY_TYPE.get(kind)
     category = Category[category_name] if category_name else None
-    if category is not None and scope_parts and all(part in INTERNAL_SCOPES for part in scope_parts):
+    is_internal = kind in ("fix", "perf") and bool(scope_parts) and all(part in INTERNAL_SCOPES for part in scope_parts)
+    if is_internal:
         category = None
-    if category and any(part in SECURITY_SCOPES for part in scope_parts):
+    elif category and any(part in SECURITY_SCOPES for part in scope_parts):
         category = Category.SECURITY
     elif kind == "fix" and SECURITY_WORDS.search(description):
         category = Category.SECURITY
