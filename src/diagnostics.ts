@@ -1,6 +1,8 @@
 import type { Clock } from "./api/clock.ts";
 import { systemClock } from "./api/clock.ts";
+import type { PlanSource } from "./contracts/v2/playback.ts";
 import type { PlaybackStats } from "./player/playerHUD.ts";
+import type { PublicStorage } from "./session/deviceIdentity.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -10,12 +12,37 @@ const MAX_EVENTS = 12;
 const MAX_EVENT_TEXT = 96;
 const MAX_URL_LENGTH = 960;
 const SEND_TIMEOUT_MS = 15000;
+const AUTO_REPORT_KEY = "auger.diagnostics.autoReport";
+const AUTO_SENT_KEY = "auger.diagnostics.autoSent";
+const MAX_AUTO_SENT_ENTRIES = 24;
+export const AUTO_REPORT_COOLDOWN_MS = 15 * 60 * 1000;
+
+export type DiagnosticsCategory = "playback" | "audio_subtitles" | "buffering" | "app_ui";
+
+export const DIAGNOSTICS_CATEGORIES: readonly { readonly id: DiagnosticsCategory; readonly label: string }[] = [
+    { id: "playback", label: "Playback failed" },
+    { id: "audio_subtitles", label: "Audio / Subtitles" },
+    { id: "buffering", label: "Buffering / Quality" },
+    { id: "app_ui", label: "App / Navigation" },
+];
+
+export function diagnosticsCategoryLabel(category: DiagnosticsCategory): string {
+    return DIAGNOSTICS_CATEGORIES.find(entry => entry.id === category)?.label ?? category;
+}
+
+export type DiagnosticsSendStatus = "created" | "updated" | "duplicate";
 
 export type DiagnosticsSendResult =
-    | { readonly ok: true; readonly reportId: string; readonly issueNumber?: number | undefined }
+    | { readonly ok: true; readonly reportId: string; readonly issueNumber?: number | undefined; readonly status?: DiagnosticsSendStatus | undefined }
     | { readonly ok: false; readonly message: string };
 
 export type DiagnosticsFetch = (input: string, init: RequestInit) => Promise<Response>;
+
+export interface DiagnosticsRuntimeEnvironment {
+    readonly memory?: string | undefined;
+    readonly deviceRam?: string | undefined;
+    readonly screen?: string | undefined;
+}
 
 export interface DiagnosticsDeviceInfo {
     readonly appVersion: string;
@@ -25,6 +52,24 @@ export interface DiagnosticsDeviceInfo {
     readonly browser?: string | undefined;
     readonly hdrSupported?: boolean | undefined;
     readonly serverVersion?: string | undefined;
+    readonly memory?: string | undefined;
+    readonly deviceRam?: string | undefined;
+    readonly screen?: string | undefined;
+    readonly uptimeMinutes?: number | undefined;
+}
+
+export interface DiagnosticsPlanDetails {
+    readonly source: PlanSource;
+    readonly sourceBitrateKbps?: number | undefined;
+    readonly durationSeconds?: number | undefined;
+    readonly streamProtocol?: string | undefined;
+    readonly streamContainer?: string | undefined;
+    readonly activeQuality?: string | undefined;
+    readonly subtitleMode?: string | undefined;
+    readonly subtitleSource?: string | undefined;
+    readonly subtitleCodec?: string | undefined;
+    readonly subtitleDelivery?: string | undefined;
+    readonly positionSeconds?: number | undefined;
 }
 
 export interface DiagnosticsPlayback {
@@ -35,6 +80,11 @@ export interface DiagnosticsPlayback {
     readonly subtitles?: string | undefined;
     readonly delivery?: string | undefined;
     readonly status?: string | undefined;
+    readonly source?: string | undefined;
+    readonly stream?: string | undefined;
+    readonly subtitleDetail?: string | undefined;
+    readonly position?: string | undefined;
+    readonly rebuffers?: number | undefined;
     readonly diagnostics?: readonly string[] | undefined;
     readonly error?: string | undefined;
 }
@@ -59,6 +109,11 @@ export interface DiagnosticsPayloadPlayback {
     readonly s?: string;
     readonly d?: string;
     readonly st?: string;
+    readonly src?: string;
+    readonly tr?: string;
+    readonly sub?: string;
+    readonly pos?: string;
+    readonly rb?: number;
     readonly n?: readonly string[];
     readonly e?: string;
 }
@@ -67,11 +122,17 @@ export interface DiagnosticsPayloadV1 {
     readonly v: 1;
     readonly app: string;
     readonly tv: string;
+    readonly cat?: DiagnosticsCategory;
+    readonly auto?: true;
     readonly fw?: string;
     readonly os?: string;
     readonly ua?: string;
     readonly hdr?: boolean;
     readonly srv?: string;
+    readonly mem?: string;
+    readonly ram?: string;
+    readonly scr?: string;
+    readonly up?: number;
     readonly play?: DiagnosticsPayloadPlayback;
     readonly log?: readonly string[];
 }
@@ -109,6 +170,16 @@ function localTime(nowMs: number): string {
     return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+/** Deterministic 8-hex FNV-1a digest for local snapshot dedup and failure fingerprinting (non-cryptographic). */
+export function fnv1aHex(input: string): string {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < input.length; index++) {
+        hash ^= input.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 function encodeBase64Url(text: string): string {
     const bytes = new TextEncoder().encode(text);
     let binary = "";
@@ -129,12 +200,158 @@ function decodeBase64Url(encoded: string): string | undefined {
     }
 }
 
-function payloadFromSnapshot(snapshot: DiagnosticsSnapshot, logLimit: number, noteLimit: number): DiagnosticsPayloadV1 {
+function readObjectProperty(value: unknown, key: string): unknown {
+    return typeof value === "object" && value !== null && key in value ? Reflect.get(value, key) : undefined;
+}
+
+function formatMb(bytes: number): number {
+    return Math.max(0, Math.round(bytes / (1024 * 1024)));
+}
+
+/** Reads zero-privilege runtime memory and display metrics exposed by Chromium on Tizen. */
+export function readRuntimeEnvironment(): DiagnosticsRuntimeEnvironment {
+    let memory: string | undefined;
+    try {
+        const perf = readObjectProperty(globalThis, "performance");
+        const mem = readObjectProperty(perf, "memory");
+        const used = readObjectProperty(mem, "usedJSHeapSize");
+        const total = readObjectProperty(mem, "totalJSHeapSize");
+        const limit = readObjectProperty(mem, "jsHeapSizeLimit");
+        if (typeof used === "number" && Number.isFinite(used) && typeof total === "number" && Number.isFinite(total)) {
+            const limitPart = typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? ` (limit ${formatMb(limit)} MB)` : "";
+            memory = `${formatMb(used)} / ${formatMb(total)} MB${limitPart}`;
+        }
+    } catch {
+        // Optional browser metric.
+    }
+    let deviceRam: string | undefined;
+    try {
+        const nav = readObjectProperty(globalThis, "navigator");
+        const ram = readObjectProperty(nav, "deviceMemory");
+        if (typeof ram === "number" && Number.isFinite(ram) && ram > 0) {
+            deviceRam = `${ram} GB`;
+        }
+    } catch {
+        // Optional browser metric.
+    }
+    let screen: string | undefined;
+    try {
+        const scr = readObjectProperty(globalThis, "screen");
+        const width = readObjectProperty(scr, "width");
+        const height = readObjectProperty(scr, "height");
+        if (typeof width === "number" && Number.isFinite(width) && width > 0 && typeof height === "number" && Number.isFinite(height) && height > 0) {
+            screen = `${Math.round(width)}x${Math.round(height)}`;
+        }
+    } catch {
+        // Optional browser metric.
+    }
+    return {
+        ...(memory === undefined ? {} : { memory }),
+        ...(deviceRam === undefined ? {} : { deviceRam }),
+        ...(screen === undefined ? {} : { screen }),
+    };
+}
+
+function formatClockTime(seconds: number): string {
+    const clamped = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(clamped / 3600);
+    const minutes = Math.floor((clamped % 3600) / 60);
+    const secs = clamped % 60;
+    const pad = (value: number): string => String(value).padStart(2, "0");
+    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(secs)}` : `${minutes}:${pad(secs)}`;
+}
+
+function formatBitrate(kbps: number): string {
+    return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} Kbps`;
+}
+
+function formatApproxSize(durationSeconds: number, bitrateKbps: number): string | undefined {
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || !Number.isFinite(bitrateKbps) || bitrateKbps <= 0) return undefined;
+    const megabytes = (durationSeconds * bitrateKbps) / 8000;
+    if (megabytes >= 1024) return `~${(megabytes / 1024).toFixed(1)} GB`;
+    if (megabytes >= 1) return `~${Math.round(megabytes)} MB`;
+    return undefined;
+}
+
+function formatSourceSummary(details: DiagnosticsPlanDetails): string | undefined {
+    const src = details.source;
+    const container = src.container?.trim().toUpperCase();
+    const codec = src.videoCodec?.trim().toUpperCase();
+    const res = src.width !== undefined && src.width > 0 && src.height !== undefined && src.height > 0 ? `${src.width}x${src.height}` : undefined;
+    const fps = src.frameRate !== undefined && Number.isFinite(src.frameRate) && src.frameRate > 0 ? `${src.frameRate.toFixed(2).replace(/\.?0+$/, "")}fps` : undefined;
+    const dr = src.dolbyVisionProfile !== undefined
+        ? `DV P${src.dolbyVisionProfile}`
+        : src.dynamicRange !== undefined && src.dynamicRange.trim() !== ""
+            ? src.dynamicRange.trim().toUpperCase()
+            : undefined;
+    const bitrate = details.sourceBitrateKbps !== undefined && details.sourceBitrateKbps > 0 ? formatBitrate(details.sourceBitrateKbps) : undefined;
+    const duration = details.durationSeconds !== undefined && details.durationSeconds > 0 ? formatClockTime(details.durationSeconds) : undefined;
+    const approxSize = details.durationSeconds !== undefined && details.sourceBitrateKbps !== undefined
+        ? formatApproxSize(details.durationSeconds, details.sourceBitrateKbps)
+        : undefined;
+    const parts = [
+        container,
+        [codec, res, fps].filter(Boolean).join(" "),
+        dr,
+        bitrate,
+        duration === undefined ? approxSize : approxSize === undefined ? duration : `${duration} (${approxSize})`,
+    ].filter((part): part is string => part !== undefined && part !== "");
+    return parts.length === 0 ? undefined : cleanOptional(parts.join(" · "), 110);
+}
+
+function formatStreamSummary(details: DiagnosticsPlanDetails): string | undefined {
+    const protocol = details.streamProtocol === "http_progressive"
+        ? "HTTP"
+        : details.streamProtocol === "hls"
+            ? "HLS"
+            : details.streamProtocol?.toUpperCase();
+    const container = details.streamContainer?.trim().toUpperCase();
+    const quality = details.activeQuality?.trim();
+    const parts = [protocol, container, quality].filter((part): part is string => part !== undefined && part !== "");
+    return parts.length === 0 ? undefined : cleanOptional(parts.join(" · "), 64);
+}
+
+function formatSubtitleDetail(details: DiagnosticsPlanDetails): string | undefined {
+    const mode = details.subtitleMode?.trim();
+    if (mode === undefined || mode === "") return undefined;
+    if (mode === "off") return "off";
+    const track = [details.subtitleSource, details.subtitleCodec?.toUpperCase()].filter(Boolean).join(" ");
+    const delivery = details.subtitleDelivery === undefined ? undefined : `(${details.subtitleDelivery})`;
+    const parts = [mode, [track, delivery].filter(Boolean).join(" ")].filter(Boolean);
+    return cleanOptional(parts.join(" · "), 80);
+}
+
+function formatPosition(positionSeconds: number | undefined, durationSeconds: number | undefined): string | undefined {
+    if (positionSeconds === undefined || !Number.isFinite(positionSeconds) || positionSeconds < 0) return undefined;
+    const pos = formatClockTime(positionSeconds);
+    if (durationSeconds === undefined || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return pos;
+    return `${pos} / ${formatClockTime(durationSeconds)}`;
+}
+
+export interface DiagnosticsPayloadOptions {
+    readonly category?: DiagnosticsCategory | undefined;
+    readonly auto?: boolean | undefined;
+}
+
+function payloadFromSnapshot(
+    snapshot: DiagnosticsSnapshot,
+    logLimit: number,
+    noteLimit: number,
+    includeExtended: boolean,
+    options?: DiagnosticsPayloadOptions,
+): DiagnosticsPayloadV1 {
     const { device, lastPlayback, events } = snapshot;
     const fw = cleanOptional(device.firmware, 48);
     const os = cleanOptional(device.tizenVersion, 32);
     const ua = cleanOptional(device.browser, 32);
     const srv = cleanOptional(device.serverVersion, 48);
+    const mem = includeExtended ? cleanOptional(device.memory, 48) : undefined;
+    const ram = includeExtended ? cleanOptional(device.deviceRam, 16) : undefined;
+    const scr = includeExtended ? cleanOptional(device.screen, 20) : undefined;
+    const up = includeExtended && typeof device.uptimeMinutes === "number" && Number.isFinite(device.uptimeMinutes) && device.uptimeMinutes >= 0
+        ? Math.floor(device.uptimeMinutes)
+        : undefined;
+
     let play: DiagnosticsPayloadPlayback | undefined;
     if (lastPlayback !== undefined) {
         const notes = (lastPlayback.diagnostics ?? [])
@@ -148,6 +365,13 @@ function payloadFromSnapshot(snapshot: DiagnosticsSnapshot, logLimit: number, no
         const s = cleanOptional(lastPlayback.subtitles, 64);
         const d = cleanOptional(lastPlayback.delivery, 48);
         const st = cleanOptional(lastPlayback.status, 32);
+        const src = includeExtended ? cleanOptional(lastPlayback.source, 110) : undefined;
+        const tr = includeExtended ? cleanOptional(lastPlayback.stream, 64) : undefined;
+        const sub = includeExtended ? cleanOptional(lastPlayback.subtitleDetail, 80) : undefined;
+        const pos = includeExtended ? cleanOptional(lastPlayback.position, 24) : undefined;
+        const rb = includeExtended && typeof lastPlayback.rebuffers === "number" && Number.isInteger(lastPlayback.rebuffers) && lastPlayback.rebuffers > 0
+            ? lastPlayback.rebuffers
+            : undefined;
         const e = cleanOptional(lastPlayback.error, 120);
         const candidate: DiagnosticsPayloadPlayback = {
             ...(m === undefined ? {} : { m }),
@@ -157,6 +381,11 @@ function payloadFromSnapshot(snapshot: DiagnosticsSnapshot, logLimit: number, no
             ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
+            ...(src === undefined ? {} : { src }),
+            ...(tr === undefined ? {} : { tr }),
+            ...(sub === undefined ? {} : { sub }),
+            ...(pos === undefined ? {} : { pos }),
+            ...(rb === undefined ? {} : { rb }),
             ...(notes.length === 0 ? {} : { n: notes }),
             ...(e === undefined ? {} : { e }),
         };
@@ -171,25 +400,48 @@ function payloadFromSnapshot(snapshot: DiagnosticsSnapshot, logLimit: number, no
         v: 1,
         app: cleanOptional(device.appVersion, 32) ?? "unknown",
         tv: cleanOptional(device.tvModel, 48) ?? "Samsung TV",
+        ...(options?.category === undefined ? {} : { cat: options.category }),
+        ...(options?.auto === true ? { auto: true as const } : {}),
         ...(fw === undefined ? {} : { fw }),
         ...(os === undefined ? {} : { os }),
         ...(ua === undefined ? {} : { ua }),
         ...(device.hdrSupported === undefined ? {} : { hdr: device.hdrSupported }),
         ...(srv === undefined ? {} : { srv }),
+        ...(mem === undefined ? {} : { mem }),
+        ...(ram === undefined ? {} : { ram }),
+        ...(scr === undefined ? {} : { scr }),
+        ...(up === undefined ? {} : { up }),
         ...(play === undefined ? {} : { play }),
         ...(log.length === 0 ? {} : { log }),
     };
 }
 
-export function diagnosticsPayload(snapshot: DiagnosticsSnapshot): DiagnosticsPayloadV1 {
-    return payloadFromSnapshot(snapshot, MAX_EVENTS, 4);
+export function diagnosticsPayload(snapshot: DiagnosticsSnapshot, options?: DiagnosticsPayloadOptions): DiagnosticsPayloadV1 {
+    return payloadFromSnapshot(snapshot, MAX_EVENTS, 4, true, options);
 }
 
-/** Sends a redacted v1 diagnostics payload to the Auger Cloudflare Worker relay, which files a GitHub issue. */
+/** Stable failure fingerprint matching the Cloudflare Worker's grouping key. */
+export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?: DiagnosticsCategory): string {
+    const play = snapshot.lastPlayback;
+    const key = [
+        cleanOptional(snapshot.device.appVersion, 32) ?? "unknown",
+        cleanOptional(snapshot.device.tvModel, 48) ?? "Samsung TV",
+        play?.error ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|"),
+    ].join("\n");
+    return fnv1aHex(key);
+}
+
+/** Sends a redacted v1 diagnostics payload to the Auger Cloudflare Worker relay, which deduplicates and files a GitHub issue. */
 export async function sendDiagnosticsReport(
     snapshot: DiagnosticsSnapshot,
     fetchFn: DiagnosticsFetch,
-    options?: { readonly relayUrl?: string; readonly signal?: AbortSignal; readonly timeoutMs?: number },
+    options?: {
+        readonly relayUrl?: string;
+        readonly signal?: AbortSignal;
+        readonly timeoutMs?: number;
+        readonly category?: DiagnosticsCategory | undefined;
+        readonly auto?: boolean | undefined;
+    },
 ): Promise<DiagnosticsSendResult> {
     const controller = new AbortController();
     const relayUrl = options?.relayUrl ?? DIAGNOSTICS_RELAY_URL;
@@ -204,11 +456,11 @@ export async function sendDiagnosticsReport(
         const response = await fetchFn(relayUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(diagnosticsPayload(snapshot)),
+            body: JSON.stringify(diagnosticsPayload(snapshot, { category: options?.category, auto: options?.auto })),
             signal: controller.signal,
         });
         if (response.status === 429) {
-            return { ok: false, message: "Too many reports sent recently. Wait a few minutes or use Share via QR Code." };
+            return { ok: false, message: "Please wait a minute before sending another report, or use Share via QR Code." };
         }
         if (!response.ok) {
             return { ok: false, message: `Could not send report (HTTP ${response.status}). Try again or use Share via QR Code.` };
@@ -220,7 +472,14 @@ export async function sendDiagnosticsReport(
         const reportId = typeof obj?.reportId === "string" && obj.reportId.trim() !== ""
             ? obj.reportId.trim()
             : issueNumber !== undefined ? `#${issueNumber}` : "sent";
-        return { ok: true, reportId, ...(issueNumber === undefined ? {} : { issueNumber }) };
+        const rawStatus = obj?.status;
+        const status: DiagnosticsSendStatus | undefined = rawStatus === "created" || rawStatus === "updated" || rawStatus === "duplicate" ? rawStatus : undefined;
+        return {
+            ok: true,
+            reportId,
+            ...(issueNumber === undefined ? {} : { issueNumber }),
+            ...(status === undefined ? {} : { status }),
+        };
     } catch {
         return { ok: false, message: "Could not reach the diagnostics relay. Check the TV's internet connection or use Share via QR Code." };
     } finally {
@@ -231,7 +490,7 @@ export async function sendDiagnosticsReport(
 
 /**
  * Builds the zero-backend report helper URL with all redacted diagnostics strictly inside the `#d=` fragment.
- * Trims oldest log lines first so the QR code stays compact and scannable from across a room.
+ * Trims oldest log lines first, then optional extended metrics, so the QR code stays scannable from across a room.
  */
 export function buildDiagnosticsReportUrl(
     snapshot: DiagnosticsSnapshot,
@@ -239,15 +498,16 @@ export function buildDiagnosticsReportUrl(
     maxUrlLength = MAX_URL_LENGTH,
 ): string {
     const format = (payload: DiagnosticsPayloadV1): string => `${baseUrl}#d=${encodeBase64Url(JSON.stringify(payload))}`;
-    for (let logLimit = snapshot.events.length; logLimit >= 0; logLimit--) {
-        const url = format(payloadFromSnapshot(snapshot, logLimit, 3));
-        if (url.length <= maxUrlLength) return url;
+    for (const includeExtended of [true, false]) {
+        for (let logLimit = snapshot.events.length; logLimit >= 0; logLimit--) {
+            const url = format(payloadFromSnapshot(snapshot, logLimit, 3, includeExtended));
+            if (url.length <= maxUrlLength) return url;
+        }
+        for (const noteLimit of [2, 1, 0]) {
+            const url = format(payloadFromSnapshot(snapshot, 0, noteLimit, includeExtended));
+            if (url.length <= maxUrlLength) return url;
+        }
     }
-    for (const noteLimit of [2, 1, 0]) {
-        const url = format(payloadFromSnapshot(snapshot, 0, noteLimit));
-        if (url.length <= maxUrlLength) return url;
-    }
-    // Last-resort minimal payload: device identity + app/server version only.
     const fw = cleanOptional(snapshot.device.firmware, 48);
     const os = cleanOptional(snapshot.device.tizenVersion, 32);
     const srv = cleanOptional(snapshot.device.serverVersion, 48);
@@ -272,6 +532,16 @@ function readOptionalStringArray(record: Record<string, unknown>, key: string): 
     if (!Array.isArray(value)) return undefined;
     const items = value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
     return items.length === 0 ? undefined : items;
+}
+
+function readOptionalNonNegInt(record: Record<string, unknown>, key: string): number | undefined {
+    const value = record[key];
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function readOptionalCategory(record: Record<string, unknown>, key: string): DiagnosticsCategory | undefined {
+    const value = record[key];
+    return value === "playback" || value === "audio_subtitles" || value === "buffering" || value === "app_ui" ? value : undefined;
 }
 
 /** Decodes a `#d=<base64url>` hash fragment back into a validated v1 diagnostics payload. */
@@ -302,6 +572,11 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         const s = readOptionalString(playObj, "s");
         const d = readOptionalString(playObj, "d");
         const st = readOptionalString(playObj, "st");
+        const src = readOptionalString(playObj, "src");
+        const tr = readOptionalString(playObj, "tr");
+        const sub = readOptionalString(playObj, "sub");
+        const pos = readOptionalString(playObj, "pos");
+        const rb = readOptionalNonNegInt(playObj, "rb");
         const n = readOptionalStringArray(playObj, "n");
         const e = readOptionalString(playObj, "e");
         const candidate: DiagnosticsPayloadPlayback = {
@@ -312,25 +587,41 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
             ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
+            ...(src === undefined ? {} : { src }),
+            ...(tr === undefined ? {} : { tr }),
+            ...(sub === undefined ? {} : { sub }),
+            ...(pos === undefined ? {} : { pos }),
+            ...(rb === undefined ? {} : { rb }),
             ...(n === undefined ? {} : { n }),
             ...(e === undefined ? {} : { e }),
         };
         if (Object.keys(candidate).length > 0) play = candidate;
     }
+    const cat = readOptionalCategory(obj, "cat");
     const fw = readOptionalString(obj, "fw");
     const os = readOptionalString(obj, "os");
     const ua = readOptionalString(obj, "ua");
     const srv = readOptionalString(obj, "srv");
+    const mem = readOptionalString(obj, "mem");
+    const ram = readOptionalString(obj, "ram");
+    const scr = readOptionalString(obj, "scr");
+    const up = readOptionalNonNegInt(obj, "up");
     const log = readOptionalStringArray(obj, "log");
     return {
         v: 1,
         app: obj.app,
         tv: obj.tv,
+        ...(cat === undefined ? {} : { cat }),
+        ...(obj.auto === true ? { auto: true as const } : {}),
         ...(fw === undefined ? {} : { fw }),
         ...(os === undefined ? {} : { os }),
         ...(ua === undefined ? {} : { ua }),
         ...(typeof obj.hdr === "boolean" ? { hdr: obj.hdr } : {}),
         ...(srv === undefined ? {} : { srv }),
+        ...(mem === undefined ? {} : { mem }),
+        ...(ram === undefined ? {} : { ram }),
+        ...(scr === undefined ? {} : { scr }),
+        ...(up === undefined ? {} : { up }),
         ...(play === undefined ? {} : { play }),
         ...(log === undefined ? {} : { log }),
     };
@@ -342,6 +633,7 @@ export function formatDeviceDetails(payload: DiagnosticsPayloadV1): string {
         payload.fw === undefined ? undefined : `Firmware ${payload.fw}`,
         payload.os,
         payload.ua,
+        payload.scr,
     ].filter((part): part is string => part !== undefined && part !== "").join(", ");
 }
 
@@ -351,10 +643,15 @@ export function formatPlaybackDetails(payload: DiagnosticsPayloadV1): string {
     const lines = [
         play.m === undefined ? undefined : `Playback: ${play.m}`,
         play.d === undefined ? undefined : `Delivery: ${play.d}`,
+        play.tr === undefined ? undefined : `Stream: ${play.tr}`,
+        play.src === undefined ? undefined : `Source file: ${play.src}`,
         play.v === undefined ? undefined : `Video: ${play.v}`,
         play.dr === undefined ? undefined : `Dynamic range: ${play.dr}`,
         play.a === undefined ? undefined : `Audio: ${play.a}`,
         play.s === undefined ? undefined : `Subtitles: ${play.s}`,
+        play.sub === undefined ? undefined : `Subtitle mode: ${play.sub}`,
+        play.pos === undefined ? undefined : `Position: ${play.pos}`,
+        play.rb === undefined ? undefined : `Rebuffers: ${play.rb}`,
         play.st === undefined ? undefined : `Status: ${play.st}`,
         ...(play.n ?? []).map((note, index) => `${index === 0 ? "Diagnostics: " : "  "}${note}`),
         play.e === undefined ? undefined : `Last error: ${play.e}`,
@@ -364,7 +661,11 @@ export function formatPlaybackDetails(payload: DiagnosticsPayloadV1): string {
 
 export function formatTechnicalNotes(payload: DiagnosticsPayloadV1): string {
     const lines: string[] = [];
+    if (payload.cat !== undefined) lines.push(`Category: ${diagnosticsCategoryLabel(payload.cat)}`);
     if (payload.hdr !== undefined) lines.push(`HDR TV support: ${payload.hdr ? "Yes" : "No"}`);
+    if (payload.mem !== undefined) lines.push(`JS heap: ${payload.mem}`);
+    if (payload.ram !== undefined) lines.push(`Device RAM: ${payload.ram}`);
+    if (payload.up !== undefined) lines.push(`App uptime: ${payload.up}m`);
     if (payload.log !== undefined && payload.log.length > 0) {
         lines.push("Recent events (redacted):");
         for (const entry of payload.log) lines.push(`- ${entry}`);
@@ -407,14 +708,114 @@ export function buildGitHubBugReportUrl(payload: DiagnosticsPayloadV1, issueBase
 export class DiagnosticsCollector {
     private device: DiagnosticsDeviceInfo;
     private readonly clock: Clock;
+    private readonly startedAt: number;
+    private readonly storage: PublicStorage | undefined;
+    private readonly runtimeProbe: () => DiagnosticsRuntimeEnvironment;
     private lastPlayback: DiagnosticsPlayback | undefined;
     private readonly events: DiagnosticsEvent[] = [];
     private lastPlanSignature: string | undefined;
+    private rebufferCount = 0;
+    private lastSentHash: string | undefined;
+    private lastSentReportId: string | undefined;
+    private autoReport: boolean;
+    private lastAutoSendAt = -Infinity;
+    private readonly autoSentKeys = new Set<string>();
     private readonly listeners = new Set<() => void>();
 
-    constructor(device: DiagnosticsDeviceInfo, clock: Clock = systemClock) {
+    constructor(
+        device: DiagnosticsDeviceInfo,
+        clock: Clock = systemClock,
+        storage?: PublicStorage,
+        runtimeProbe: () => DiagnosticsRuntimeEnvironment = readRuntimeEnvironment,
+    ) {
         this.device = { ...device };
         this.clock = clock;
+        this.startedAt = clock.now();
+        this.storage = storage;
+        this.runtimeProbe = runtimeProbe;
+        this.autoReport = this.readStoredFlag(AUTO_REPORT_KEY);
+        for (const key of this.readStoredKeys(AUTO_SENT_KEY)) this.autoSentKeys.add(key);
+    }
+
+    get autoReportEnabled(): boolean {
+        return this.autoReport;
+    }
+
+    setAutoReportEnabled(enabled: boolean): void {
+        if (this.autoReport === enabled) return;
+        this.autoReport = enabled;
+        try {
+            if (enabled) this.storage?.setItem(AUTO_REPORT_KEY, "1");
+            else this.storage?.removeItem(AUTO_REPORT_KEY);
+        } catch {
+            // Storage failure still keeps the setting for this session.
+        }
+        this.emit();
+    }
+
+    hasReportableData(): boolean {
+        return this.lastPlayback !== undefined || this.events.length > 0;
+    }
+
+    /** Stable content hash ignoring volatile runtime counters (memory, uptime, playback position) for instant duplicate-click detection. */
+    stableSnapshotHash(category?: DiagnosticsCategory): string {
+        const play = this.lastPlayback;
+        return fnv1aHex(JSON.stringify({
+            app: this.device.appVersion,
+            tv: this.device.tvModel,
+            fw: this.device.firmware,
+            srv: this.device.serverVersion,
+            cat: category,
+            play: play === undefined ? undefined : {
+                m: play.playback,
+                d: play.delivery,
+                v: play.video,
+                dr: play.dynamicRange,
+                a: play.audio,
+                s: play.subtitles,
+                src: play.source,
+                tr: play.stream,
+                sub: play.subtitleDetail,
+                rb: play.rebuffers,
+                n: play.diagnostics,
+                e: play.error,
+            },
+            events: this.events.map(event => `${event.kind}:${event.text}`),
+        }));
+    }
+
+    duplicateSendReportId(category?: DiagnosticsCategory): string | undefined {
+        if (this.lastSentHash === undefined || this.lastSentReportId === undefined) return undefined;
+        return this.stableSnapshotHash(category) === this.lastSentHash ? this.lastSentReportId : undefined;
+    }
+
+    markManualSent(category: DiagnosticsCategory | undefined, reportId: string): void {
+        this.lastSentHash = this.stableSnapshotHash(category);
+        this.lastSentReportId = reportId;
+    }
+
+    canAutoReport(): boolean {
+        if (!this.autoReport || !this.hasReportableData()) return false;
+        const now = this.clock.now();
+        if (now - this.lastAutoSendAt < AUTO_REPORT_COOLDOWN_MS) return false;
+        const key = `${this.device.appVersion}:${diagnosticsFingerprint(this.snapshot())}`;
+        return !this.autoSentKeys.has(key);
+    }
+
+    markAutoReported(): void {
+        const key = `${this.device.appVersion}:${diagnosticsFingerprint(this.snapshot())}`;
+        this.lastAutoSendAt = this.clock.now();
+        this.autoSentKeys.add(key);
+        while (this.autoSentKeys.size > MAX_AUTO_SENT_ENTRIES) {
+            const oldest = this.autoSentKeys.values().next().value;
+            if (oldest === undefined) break;
+            this.autoSentKeys.delete(oldest);
+        }
+        try {
+            this.storage?.setItem(AUTO_SENT_KEY, JSON.stringify([...this.autoSentKeys]));
+        } catch {
+            // In-memory dedup still guards the current session.
+        }
     }
 
     setServerVersion(version: string | undefined): void {
@@ -424,10 +825,18 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
-    recordPlaybackStats(stats: PlaybackStats): void {
+    recordRebuffer(): void {
+        this.rebufferCount++;
+        if (this.lastPlayback !== undefined) {
+            this.lastPlayback = { ...this.lastPlayback, rebuffers: this.rebufferCount };
+        }
+        this.pushEvent("playback", `rebuffer #${this.rebufferCount}`);
+        this.emit();
+    }
+
+    recordPlaybackStats(stats: PlaybackStats, details?: DiagnosticsPlanDetails): void {
         const readRow = (rows: readonly { readonly label: string; readonly value: string }[], label: string): string | undefined =>
             rows.find(row => row.label === label)?.value;
-        // Collect Diagnostics + any continuation lines (empty label immediately following Diagnostics).
         const diagnostics: string[] = [];
         let collectingDiagnostics = false;
         for (const row of stats.playback) {
@@ -440,9 +849,12 @@ export class DiagnosticsCollector {
                 collectingDiagnostics = false;
             }
         }
-        // Deliberately omit `Source` from `stats.engine`, because it contains the user's server hostname.
-        // Clear any prior playback's error once a new or active playback reports stats (the historical error stays in `events`).
-        const next: DiagnosticsPlayback = {
+        const source = details === undefined ? this.lastPlayback?.source : formatSourceSummary(details);
+        const stream = details === undefined ? this.lastPlayback?.stream : formatStreamSummary(details);
+        const subtitleDetail = details === undefined ? this.lastPlayback?.subtitleDetail : formatSubtitleDetail(details);
+        const position = details === undefined ? this.lastPlayback?.position : formatPosition(details.positionSeconds, details.durationSeconds);
+
+        const nextBase: DiagnosticsPlayback = {
             playback: cleanOptional(readRow(stats.playback, "Playback"), 64),
             video: cleanOptional(readRow(stats.playback, "Video"), 72),
             dynamicRange: cleanOptional(readRow(stats.playback, "Dynamic range"), 40),
@@ -450,12 +862,23 @@ export class DiagnosticsCollector {
             subtitles: cleanOptional(readRow(stats.playback, "Subtitles"), 64),
             delivery: cleanOptional(readRow(stats.engine, "Delivery"), 48),
             status: cleanOptional(readRow(stats.stream, "Playback status"), 32),
+            ...(source === undefined ? {} : { source }),
+            ...(stream === undefined ? {} : { stream }),
+            ...(subtitleDetail === undefined ? {} : { subtitleDetail }),
+            ...(position === undefined ? {} : { position }),
             ...(diagnostics.length === 0 ? {} : { diagnostics }),
         };
-        const signature = [next.playback, next.delivery, next.video, next.dynamicRange, next.audio, next.subtitles].join("|");
-        const planChanged = signature !== this.lastPlanSignature && (next.playback !== undefined || next.delivery !== undefined);
+        const signature = [nextBase.playback, nextBase.delivery, nextBase.video, nextBase.dynamicRange, nextBase.audio, nextBase.subtitles, nextBase.source, nextBase.subtitleDetail].join("|");
+        const planChanged = signature !== this.lastPlanSignature && (nextBase.playback !== undefined || nextBase.delivery !== undefined);
+        if (planChanged) this.rebufferCount = 0;
+        const next: DiagnosticsPlayback = {
+            ...nextBase,
+            ...(this.rebufferCount > 0 ? { rebuffers: this.rebufferCount } : {}),
+        };
         const unchanged = JSON.stringify(this.lastPlayback) === JSON.stringify(next);
         if (unchanged && !planChanged) return;
+        // Deliberately omit `Source` from `stats.engine`, because it contains the user's server hostname.
+        // Clear any prior playback's error once a new or active playback reports stats (the historical error stays in `events`).
         this.lastPlayback = next;
         if (planChanged) {
             this.lastPlanSignature = signature;
@@ -465,11 +888,17 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
-    recordPlaybackError(kind: string, message: string): void {
+    recordPlaybackError(kind: string, message: string, positionSeconds?: number, durationSeconds?: number): void {
         const cleanedKind = redactDiagnosticText(kind, 32);
         const cleanedMessage = redactDiagnosticText(message, 120);
         const combined = cleanedMessage === "" ? cleanedKind : `${cleanedKind}: ${cleanedMessage}`;
-        this.lastPlayback = { ...this.lastPlayback, status: "Failed", error: combined };
+        const position = formatPosition(positionSeconds, durationSeconds) ?? this.lastPlayback?.position;
+        this.lastPlayback = {
+            ...this.lastPlayback,
+            status: "Failed",
+            error: combined,
+            ...(position === undefined ? {} : { position }),
+        };
         this.pushEvent("playback", `error ${combined}`);
         this.emit();
     }
@@ -480,16 +909,27 @@ export class DiagnosticsCollector {
     }
 
     clear(): void {
-        if (this.lastPlayback === undefined && this.events.length === 0 && this.lastPlanSignature === undefined) return;
+        if (this.lastPlayback === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined) return;
         this.lastPlayback = undefined;
         this.events.length = 0;
         this.lastPlanSignature = undefined;
+        this.rebufferCount = 0;
+        this.lastSentHash = undefined;
+        this.lastSentReportId = undefined;
         this.emit();
     }
 
     snapshot(): DiagnosticsSnapshot {
+        const runtime = this.runtimeProbe();
+        const uptimeMinutes = Math.max(0, Math.floor((this.clock.now() - this.startedAt) / 60000));
         return {
-            device: { ...this.device },
+            device: {
+                ...this.device,
+                ...(runtime.memory === undefined ? {} : { memory: runtime.memory }),
+                ...(runtime.deviceRam === undefined ? {} : { deviceRam: runtime.deviceRam }),
+                ...(runtime.screen === undefined ? {} : { screen: runtime.screen }),
+                uptimeMinutes,
+            },
             ...(this.lastPlayback === undefined ? {} : { lastPlayback: { ...this.lastPlayback } }),
             events: [...this.events],
         };
@@ -498,6 +938,21 @@ export class DiagnosticsCollector {
     subscribe(listener: () => void): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
+    }
+
+    private readStoredFlag(key: string): boolean {
+        try { return this.storage?.getItem(key) === "1"; } catch { return false; }
+    }
+
+    private readStoredKeys(key: string): readonly string[] {
+        try {
+            const raw = this.storage?.getItem(key);
+            if (raw === null || raw === undefined) return [];
+            const parsed: unknown = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+        } catch {
+            return [];
+        }
     }
 
     private pushEvent(kind: DiagnosticsEvent["kind"], text: string): void {

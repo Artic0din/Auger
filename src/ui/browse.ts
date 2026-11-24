@@ -50,7 +50,7 @@ import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
 import { personQuery } from "./personFilmography.ts";
 import { PersonMetadataRefresh } from "./personMetadataRefresh.ts";
 import { mountSettings, type SettingsScreen } from "./settings.ts";
-import { DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
+import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
 import { signOutRemovesServer } from "./signOutConfirmation.ts";
 import type { CardOverlayPrefs } from "./cardOverlays.ts";
 import { PresentationSettings } from "./presentationSettings.ts";
@@ -103,7 +103,7 @@ export interface BrowseOptions {
     readonly profileAvatarText?: string;
     readonly clock?: Clock;
     readonly diagnostics?: DiagnosticsCollector;
-    readonly sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal) => Promise<DiagnosticsSendResult>;
+    readonly sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal, category?: DiagnosticsCategory) => Promise<DiagnosticsSendResult>;
     readonly publicStorage?: PublicStorage;
     /** Protected storage for the Home and For You snapshot artwork, which is signed. */
     readonly keyManager?: TizenKeyManager;
@@ -3021,7 +3021,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
                 ...(options.onSwitchServer === undefined ? {} : { switchServer: options.onSwitchServer }),
-            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs, options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock), options.sendDiagnostics);
+            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs, options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock, options.publicStorage), options.sendDiagnostics);
             syncThemeMusic();
         },
         personal: (source, anchor = "profiles") => {

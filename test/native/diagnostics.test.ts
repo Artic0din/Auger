@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Clock } from "../../src/api/clock.ts";
 import {
+    AUTO_REPORT_COOLDOWN_MS,
     buildDiagnosticsReportUrl,
     buildGitHubBugReportUrl,
     decodeDiagnosticsReportHash,
@@ -12,6 +13,7 @@ import {
     redactDiagnosticText,
     sendDiagnosticsReport,
 } from "../../src/diagnostics.ts";
+import { MemoryPublicStorage } from "./support/keyManager.ts";
 import { handleRequest } from "../../workers/diagnostics-relay/worker.js";
 
 function fakeClock(startMs: number): Clock & { set(ms: number): void } {
@@ -206,9 +208,14 @@ test("sendDiagnosticsReport posts redacted payload to the relay and handles succ
     assert.ok(capturedBody.includes("<url>") && capturedBody.includes("<ip>") && capturedBody.includes("<redacted>"));
     assert.deepEqual(okResult, { ok: true, reportId: "AUG-901", issueNumber: 901 });
 
+    const updatedResult = await sendDiagnosticsReport(collector.snapshot(), async () =>
+        new Response(JSON.stringify({ ok: true, status: "updated", issueNumber: 901, reportId: "AUG-901" }), { status: 200 }),
+    { category: "buffering" });
+    assert.deepEqual(updatedResult, { ok: true, status: "updated", reportId: "AUG-901", issueNumber: 901 });
+
     const limited = await sendDiagnosticsReport(collector.snapshot(), async () => new Response("", { status: 429 }));
     assert.equal(limited.ok, false);
-    assert.match(limited.message, /Too many reports/);
+    assert.match(limited.message, /wait a minute/i);
 
     const failed = await sendDiagnosticsReport(collector.snapshot(), async () => new Response("", { status: 502 }));
     assert.equal(failed.ok, false);
@@ -228,10 +235,27 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
             return { success: next <= 5 };
         },
     };
-    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    const posted: { method: string; url: string; body: Record<string, unknown> }[] = [];
+    const openIssues: { number: number; body: string; comments: number }[] = [];
+    let nextIssueNumber = 888;
     const fakeFetch = async (url: string, init?: RequestInit): Promise<Response> => {
-        posted.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown> });
-        return new Response(JSON.stringify({ number: 888 }), { status: 201 });
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "GET" && url.includes("/issues?state=open&labels=diagnostics")) {
+            return new Response(JSON.stringify(openIssues), { status: 200 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        posted.push({ method, url, body });
+        if (method === "POST" && url.endsWith("/issues")) {
+            const num = nextIssueNumber++;
+            openIssues.push({ number: num, body: String(body.body ?? ""), comments: 0 });
+            return new Response(JSON.stringify({ number: num }), { status: 201 });
+        }
+        if (method === "POST" && url.endsWith("/comments")) {
+            const target = openIssues.find(entry => url.endsWith(`/issues/${entry.number}/comments`));
+            if (target) target.comments++;
+            return new Response(JSON.stringify({ id: 1 }), { status: 201 });
+        }
+        return new Response("not found", { status: 404 });
     };
     const env = { GITHUB_TOKEN: "test-secret-not-real", GITHUB_REPO: "Artic0din/Auger-Tizen", DIAGNOSTICS_RATE_LIMITER: atomicLimiter };
 
@@ -269,16 +293,90 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
 
     const payload = {
         v: 1,
-        app: "0.2.1",
+        app: "0.3.0",
         tv: "UE50CU7095",
+        cat: "playback",
         fw: "1650",
         os: "Tizen 8.0",
         hdr: true,
-        play: { m: "Remuxed · MKV", e: "Failed https://private.lan/video?token=secret999" },
+        mem: "64 / 128 MB (limit 512 MB)",
+        ram: "4 GB",
+        scr: "1920x1080",
+        up: 12,
+        play: {
+            m: "Remuxed · MKV",
+            d: "Server Remux HLS",
+            tr: "HLS · MP4 · 1080p",
+            src: "MKV · HEVC 3840x2160 23.98fps · DV P7 · 24.0 Mbps · 2:00:00 (~21.6 GB)",
+            sub: "burn_in · embedded ASS (burn_in_only)",
+            pos: "12:34 / 2:00:00",
+            rb: 2,
+            e: "Failed https://private.lan/video?token=secret999",
+        },
         log: ["01:02:03 [playback] error 192.168.1.10"],
     };
 
-    // Concurrent requests against the same IP respect the atomic quota and advertise the 60 s binding Retry-After.
+    // 1. First report creates a new `diagnostics` + `needs-triage` issue with fingerprint + state markers.
+    const first = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.10" },
+            body: JSON.stringify(payload),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(first.status, 201);
+    assert.deepEqual(await first.json(), { ok: true, status: "created", issueNumber: 888, reportId: "AUG-888" });
+    assert.equal(posted.length, 1);
+    assert.equal(posted[0]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues");
+    assert.deepEqual(posted[0]?.body.labels, ["diagnostics", "needs-triage"]);
+    const issueBody = String(posted[0]?.body.body ?? "");
+    assert.ok(!issueBody.includes("private.lan"));
+    assert.ok(!issueBody.includes("secret999"));
+    assert.ok(!issueBody.includes("192.168.1.10"));
+    assert.ok(issueBody.includes("UE50CU7095"));
+    assert.ok(issueBody.includes("64 / 128 MB (limit 512 MB)"));
+    assert.ok(issueBody.includes("burn_in · embedded ASS (burn_in_only)"));
+    assert.ok(issueBody.includes("<!-- auger-fp:"));
+
+    // 2. Identical follow-up (even with different uptime/memory/position) returns `duplicate` with ZERO new issues or comments.
+    const dup = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.11" },
+            body: JSON.stringify({ ...payload, up: 45, mem: "80 / 128 MB (limit 512 MB)", play: { ...payload.play, pos: "15:00 / 2:00:00" } }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(dup.status, 200);
+    assert.deepEqual(await dup.json(), { ok: true, status: "duplicate", issueNumber: 888, reportId: "AUG-888" });
+    assert.equal(posted.length, 1, "identical retry must not open an issue or post a comment");
+
+    // 3. Same fingerprint with new firmware + new log line posts a single compact diff comment on #888 instead of opening a second issue.
+    const diff = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.12" },
+            body: JSON.stringify({
+                ...payload,
+                fw: "1661",
+                log: [...payload.log, "01:05:00 [playback] rebuffer #3"],
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(diff.status, 200);
+    assert.deepEqual(await diff.json(), { ok: true, status: "updated", issueNumber: 888, reportId: "AUG-888" });
+    assert.equal(posted.length, 2);
+    assert.equal(posted[1]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues/888/comments");
+    const commentBody = String(posted[1]?.body.body ?? "");
+    assert.ok(commentBody.includes("**Firmware:** `1650` → `1661`"));
+    assert.ok(commentBody.includes("rebuffer #3"));
+
+    // 4. Concurrent requests against the same IP respect the atomic quota and advertise the 60 s binding Retry-After.
     const responses = await Promise.all(Array.from({ length: 7 }, () => handleRequest(
         new Request("https://auger-diagnostics.plaintextlab.com/report", {
             method: "POST",
@@ -289,16 +387,83 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         { fetch: fakeFetch },
     )));
     const statuses = responses.map(res => res.status).sort((a, b) => a - b);
-    assert.deepEqual(statuses, [201, 201, 201, 201, 201, 429, 429]);
+    assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429]);
     for (const denied of responses.filter(res => res.status === 429)) {
         assert.equal(denied.headers.get("Retry-After"), "60");
     }
-    assert.equal(posted.length, 5);
-    assert.equal(posted[0]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues");
-    assert.deepEqual(posted[0]?.body.labels, ["bug", "needs-triage"]);
-    const issueBody = String(posted[0]?.body.body ?? "");
-    assert.ok(!issueBody.includes("private.lan"));
-    assert.ok(!issueBody.includes("secret999"));
-    assert.ok(!issueBody.includes("192.168.1.10"));
-    assert.ok(issueBody.includes("UE50CU7095"));
+});
+
+test("DiagnosticsCollector captures runtime memory, source/subtitle telemetry, duplicate-send guard, and opt-in auto-report cooldown", () => {
+    const clock = fakeClock(Date.UTC(2026, 10, 25, 2, 0, 0));
+    const storage = new MemoryPublicStorage();
+    const collector = new DiagnosticsCollector(
+        { appVersion: "0.3.0", tvModel: "QE65S95C", firmware: "1650" },
+        clock,
+        storage,
+        () => ({ memory: "48 / 96 MB (limit 512 MB)", deviceRam: "4 GB", screen: "3840x2160" }),
+    );
+    assert.equal(collector.autoReportEnabled, false, "auto-reporting must be off by default");
+    assert.equal(collector.hasReportableData(), false);
+    assert.equal(collector.canAutoReport(), false);
+
+    clock.set(clock.now() + 5 * 60 * 1000);
+    collector.recordPlaybackStats(
+        {
+            nowPlaying: [],
+            playback: [{ label: "Playback", value: "Transcoded · MKV" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Server Transcode HLS" }],
+        },
+        {
+            source: { container: "mkv", videoCodec: "hevc", width: 3840, height: 2160, frameRate: 23.976, dynamicRange: "dolby_vision", dolbyVisionProfile: 7 },
+            sourceBitrateKbps: 24000,
+            durationSeconds: 7200,
+            streamProtocol: "hls",
+            streamContainer: "mpegts",
+            activeQuality: "1080p",
+            subtitleMode: "burn_in",
+            subtitleSource: "embedded",
+            subtitleCodec: "ass",
+            subtitleDelivery: "burn_in_only",
+            positionSeconds: 754,
+        },
+    );
+    collector.recordRebuffer();
+
+    const snap = collector.snapshot();
+    assert.equal(snap.device.memory, "48 / 96 MB (limit 512 MB)");
+    assert.equal(snap.device.deviceRam, "4 GB");
+    assert.equal(snap.device.screen, "3840x2160");
+    assert.equal(snap.device.uptimeMinutes, 5);
+    assert.match(snap.lastPlayback?.source ?? "", /MKV · HEVC 3840x2160 23\.98fps · DV P7 · 24\.0 Mbps · 2:00:00 \(~21\.1 GB\)/);
+    assert.equal(snap.lastPlayback?.stream, "HLS · MPEGTS · 1080p");
+    assert.equal(snap.lastPlayback?.subtitleDetail, "burn_in · embedded ASS (burn_in_only)");
+    assert.equal(snap.lastPlayback?.position, "12:34 / 2:00:00");
+    assert.equal(snap.lastPlayback?.rebuffers, 1);
+
+    // Local unchanged-snapshot guard catches duplicate manual sends in 0ms.
+    assert.equal(collector.duplicateSendReportId("playback"), undefined);
+    collector.markManualSent("playback", "AUG-901");
+    assert.equal(collector.duplicateSendReportId("playback"), "AUG-901");
+    assert.equal(collector.duplicateSendReportId("buffering"), undefined, "switching category allows sending with new context");
+
+    // Opt-in auto-reporting persists across launches and enforces per-fingerprint + 15-minute cooldowns.
+    collector.setAutoReportEnabled(true);
+    assert.equal(storage.getItem("auger.diagnostics.autoReport"), "1");
+    collector.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
+    assert.equal(collector.canAutoReport(), true);
+    collector.markAutoReported();
+    assert.equal(collector.canAutoReport(), false, "same fingerprint must not auto-report twice");
+
+    // Different error within 15-minute cooldown is still blocked until cooldown elapses.
+    collector.recordPlaybackError("terminal", "unsupported_codec", 760, 7200);
+    assert.equal(collector.canAutoReport(), false, "15-minute cooldown blocks rapid auto-reports");
+    clock.set(clock.now() + AUTO_REPORT_COOLDOWN_MS + 1000);
+    assert.equal(collector.canAutoReport(), true);
+
+    // A fresh collector backed by the same storage restores opt-in and remembers previously auto-sent fingerprints.
+    const reloaded = new DiagnosticsCollector({ appVersion: "0.3.0", tvModel: "QE65S95C", firmware: "1650" }, clock, storage);
+    assert.equal(reloaded.autoReportEnabled, true);
+    reloaded.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
+    assert.equal(reloaded.canAutoReport(), false, "persisted fingerprint dedup survives app restarts");
 });

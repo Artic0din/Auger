@@ -65,6 +65,7 @@ import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
 
 /** What browse hands over: one file of one catalog item. */
 export interface PlayRequest {
@@ -824,6 +825,30 @@ export class PlaybackController implements PlayerControls {
             if (index !== -1) {
                 this.listeners.splice(index, 1);
             }
+        };
+    }
+
+    diagnosticsDetails(): DiagnosticsPlanDetails | undefined {
+        const attempt = this.attempt;
+        const plan = attempt?.plan;
+        if (attempt === undefined || plan === undefined) return undefined;
+        const subtitleTrack = plan.subtitle.trackId === undefined
+            ? undefined
+            : plan.subtitle.inventory.find(entry => entry.trackId === plan.subtitle.trackId);
+        return {
+            source: plan.source,
+            ...(plan.sourceBitrateKbps === undefined ? {} : { sourceBitrateKbps: plan.sourceBitrateKbps }),
+            ...(plan.durationSeconds === undefined ? {} : { durationSeconds: plan.durationSeconds }),
+            ...(plan.streamProtocol === undefined ? {} : { streamProtocol: plan.streamProtocol }),
+            ...(plan.streamContainer === undefined ? {} : { streamContainer: plan.streamContainer }),
+            ...(plan.activeQuality === undefined ? {} : { activeQuality: plan.activeQuality }),
+            subtitleMode: plan.subtitle.mode,
+            ...(subtitleTrack === undefined ? {} : {
+                subtitleSource: subtitleTrack.source,
+                subtitleDelivery: subtitleTrack.delivery,
+                ...(subtitleTrack.codec === undefined ? {} : { subtitleCodec: subtitleTrack.codec }),
+            }),
+            positionSeconds: attempt.sourceSeconds,
         };
     }
 

@@ -52,7 +52,32 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     const diagnostics = new DiagnosticsCollector(
         options.diagnostics ?? { appVersion: options.player?.appVersion ?? APP_VERSION, tvModel: options.core.deviceName ?? "Samsung TV" },
         options.core.clock,
+        options.core.publicStorage,
     );
+    const autoReportController = new AbortController();
+    let autoReportInFlight = false;
+    const triggerAutoReport = (): void => {
+        if (destroyed || autoReportInFlight || !diagnostics.canAutoReport()) return;
+        autoReportInFlight = true;
+        diagnostics.markAutoReported();
+        void sendDiagnosticsReport(diagnostics.snapshot(), activeCore.fetch, { signal: autoReportController.signal, auto: true })
+            .catch(() => undefined)
+            .finally(() => { autoReportInFlight = false; });
+    };
+    const onWindowError = (event: ErrorEvent): void => {
+        if (destroyed) return;
+        const name = event.error instanceof Error && event.error.name ? event.error.name : "Error";
+        const detail = typeof event.message === "string" && event.message.trim() !== "" ? event.message : "uncaught_error";
+        diagnostics.recordEvent("app", `uncaught ${name}: ${detail}`);
+        triggerAutoReport();
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+        if (destroyed) return;
+        const reason: unknown = event.reason;
+        const label = reason instanceof Error ? `${reason.name}: ${reason.message}` : "unhandled_rejection";
+        diagnostics.recordEvent("app", `rejection ${label}`);
+        triggerAutoReport();
+    };
     const transient = new Map<string, string>();
     let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
         secrets: openSecretStore(undefined),
@@ -239,7 +264,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         const content = mountBrowse(root, {
             server,
             diagnostics,
-            sendDiagnostics: (collector, signal) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal }),
+            sendDiagnostics: (collector, signal, category) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal, category }),
             profileName: active.profile.name,
             ...(avatar === undefined ? {} : { profileAvatarUrl: avatar }),
             ...(text === undefined ? {} : { profileAvatarText: text }),
@@ -275,7 +300,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics);
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, triggerAutoReport);
     };
 
     const onBack = (event: KeyboardEvent): void => {
@@ -309,6 +334,9 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             return;
         }
         destroyed = true;
+        autoReportController.abort();
+        window.removeEventListener("error", onWindowError);
+        window.removeEventListener("unhandledrejection", onUnhandledRejection);
         window.removeEventListener("keydown", onBack);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibility);
@@ -321,6 +349,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         startup?.destroy(); startup = undefined;
     };
 
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
     window.addEventListener("keydown", onBack);
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
