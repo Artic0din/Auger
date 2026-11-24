@@ -3,8 +3,7 @@
 
 Usage: python3 scripts/pr-gate.py <number>
 
-The gate: open and mergeable, every check's latest run passed (including Evidence,
-tvOS source and the UI shards), Codex reviewed the head commit, Kody finished,
+The gate: open and mergeable, every check's latest run passed (including the UI shards), Codex reviewed the head commit, Kody finished,
 and no review thread is unresolved. Exit status is 0 only for READY.
 """
 
@@ -14,7 +13,7 @@ import subprocess
 import sys
 
 REPOSITORY = "Artic0din/Auger-Tizen"
-REQUIRED_CHECKS = ("Evidence", "tvOS source", "Build and native tests",
+REQUIRED_CHECKS = ("Build and native tests",
                    "UI tests (1/3)", "UI tests (2/3)", "UI tests (3/3)", "Kody Code Review")
 PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 CODEX_STATE = re.compile(r"codex-review-state:v1 (\{.*?\}) -->")

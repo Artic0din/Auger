@@ -33,21 +33,21 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(f"READY {HEAD}", gate.verdict(ready_pr(), [{"isResolved": True, "path": "a", "line": 1}]))
 
     def test_a_later_passing_run_replaces_a_stale_failure(self):
-        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", "FAILURE", "2026-11-22T05:00:00Z")]
+        rollup = ready_pr()["statusCheckRollup"] + [check("Build and native tests", "FAILURE", "2026-11-22T05:00:00Z")]
         self.assertTrue(gate.verdict(ready_pr(statusCheckRollup=rollup), []).startswith("READY"))
-        rollup.append(check("Evidence", "FAILURE", "2026-11-22T07:00:00Z"))
-        self.assertEqual("check not passing: Evidence=FAILURE", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
+        rollup.append(check("Build and native tests", "FAILURE", "2026-11-22T07:00:00Z"))
+        self.assertEqual("check not passing: Build and native tests=FAILURE", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_a_running_check_is_pending(self):
         rollup = ready_pr()["statusCheckRollup"] + [check("Kody Code Review", None, "2026-11-22T07:00:00Z", "IN_PROGRESS")]
         self.assertEqual("check not passing: Kody Code Review=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_a_queued_rerun_outranks_an_older_pass(self):
-        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "0001-01-01T00:00:00Z", "QUEUED")]
-        self.assertEqual("check not passing: Evidence=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
+        rollup = ready_pr()["statusCheckRollup"] + [check("Build and native tests", None, "0001-01-01T00:00:00Z", "QUEUED")]
+        self.assertEqual("check not passing: Build and native tests=PENDING", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_a_stuck_older_run_does_not_mask_a_newer_pass(self):
-        rollup = ready_pr()["statusCheckRollup"] + [check("Evidence", None, "2026-11-22T05:00:00Z", "IN_PROGRESS")]
+        rollup = ready_pr()["statusCheckRollup"] + [check("Build and native tests", None, "2026-11-22T05:00:00Z", "IN_PROGRESS")]
         self.assertTrue(gate.verdict(ready_pr(statusCheckRollup=rollup), []).startswith("READY"))
 
     def test_unknown_mergeability_asks_for_a_retry(self):
@@ -59,8 +59,8 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual("conflicts with main: merge main into the branch", result)
 
     def test_a_required_check_that_never_reported_fails(self):
-        rollup = [c for c in ready_pr()["statusCheckRollup"] if c["name"] != "tvOS source"]
-        self.assertEqual("check not reported: tvOS source", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
+        rollup = [c for c in ready_pr()["statusCheckRollup"] if c["name"] != "UI tests (3/3)"]
+        self.assertEqual("check not reported: UI tests (3/3)", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_codex_must_have_completed_the_head_commit(self):
         for comments in ([], [codex("0" * 40)], [codex(HEAD, "running")], [codex(HEAD), codex("0" * 40)],

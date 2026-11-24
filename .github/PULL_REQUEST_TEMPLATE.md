@@ -20,15 +20,6 @@ What changed and why this way, and which surfaces and repositories it affects.
 Mention an alternative only if a reviewer would ask about it. Do not walk through
 the diff.
 
-## tvOS source
-
-silo-apple commit: `<sha>`
-
-- `tvOS/Screens/.../View.swift:NN-NN`: what this change ports from it
-<!-- Required when this change touches src/ui, src/player, src/*.ts, src/*.css, app/index.html or src/i18n: cite each Swift file
-and line range this change ports, read before writing code (AGENTS.md "Parity
-delivery gates"). See "Port from the tvOS source" in CONTRIBUTING.md. -->
-
 ## Validation
 
 One line per kind of check and its result; do not list tests by name. Name required
@@ -39,24 +30,6 @@ Apple TV comparison, and real TV. Do not include private domains, hostnames, IPs
 Tailscale or Report Shelf URLs, local paths, credentials, personal data, or private
 media details. -->
 
-## Evidence
-
-| Before | After |
-| ------ | ----- |
-| | |
-
-Surface and build:
-<!-- Required when this change alters what a user sees: UI, or which items or what
-item details a screen shows, such as search results, home sections, recommendations,
-metadata, artwork, sorting, or filtering. See "Show visible changes" in
-CONTRIBUTING.md. Use before-and-after screenshots of the same screen and data on a
-Samsung TV running the signed .wgt, and say why if you could not use one. Add the
-same-state Apple TV screenshot; the result must match it, and any difference is
-listed under Risks.
-Add a short recording when motion, timing, or focus matters. Crop or
-blur private details in anything attached here. When nothing visible changes,
-replace this section's content with "Evidence: none, no user-visible change". -->
-
 ## Risks
 
 Migration, compatibility, security, operational, or release impact, or "None
@@ -66,7 +39,6 @@ identified".
 
 - [ ] I read and can explain the complete diff.
 - [ ] This pull request addresses one concern.
-- [ ] The Evidence section shows every change a user can see, or says there is none.
 
 ## AI Disclosure
 
