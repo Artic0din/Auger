@@ -19,7 +19,7 @@ The maintainer's certificate lists allowed TV DUIDs, so a sideloaded build insta
 
 ## Installing with Apps2Samsung
 
-1. Add this repository as a source in [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (`apps2samsung-cli sources add github.com/Silo-Server/silo-tizen`) and install from it. Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV needs no listing in the maintainer's certificate.
+1. Add this repository as a source in [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (`apps2samsung-cli sources add github.com/Artic0din/Auger`) and install from it. Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV needs no listing in the maintainer's certificate.
 2. When upgrading to a newer build with the same widget version in `config.xml`, install from the source again because Apps2Samsung's update button compares only `X.Y.Z`, not the build number.
 3. Uninstall the existing app before switching between a sideloaded build and Apps2Samsung in either direction because their signatures differ; uninstalling clears app data.
 

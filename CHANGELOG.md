@@ -83,6 +83,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The README now presents Auger as an independent, third-party Silo client, with the Auger wordmark, a how-it-works diagram, credits to Silo, and Silo's trademark notice. The screenshot that still showed the Silo logo is removed, and the install steps point at this repository's current address.
 - Auto-play next now saves for this TV only, from the player and from Up Next, as on Apple TV, so the change always takes effect here (#759).
 - The README and release docs now describe installing by sideloading or through Apps2Samsung. The Samsung TV store path is dropped: the app will not be submitted to it (#732).
 - The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
