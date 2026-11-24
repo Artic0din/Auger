@@ -7,6 +7,7 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { DIAGNOSTICS_RELAY_URL } from "../../src/diagnostics.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
@@ -2567,6 +2568,11 @@ test("a secure-platform startup failure has a focused retry and can recover", as
 });
 
 appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
+    const autoPayloads: string[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        autoPayloads.push(route.request().postData() ?? "");
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" }) });
+    });
     await signIn(tv);
     // Start real playback through AVPlay preparation so startPlayback's controller.subscribe populates the shared DiagnosticsCollector.
     await startMovie(tv);
@@ -2575,21 +2581,33 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Open Settings > Diagnostics and confirm the recorded playback plan and event appear.
+    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, and event appear.
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
     await tv.page.getByText("Direct play · MP4", { exact: true }).waitFor();
     await tv.page.getByText("Original HTTP", { exact: true }).waitFor();
+    await tv.page.getByText("HTTP · MP4", { exact: true }).waitFor();
+    await tv.page.getByText("Source file", { exact: true }).waitFor();
+    await tv.page.getByText("Subtitle mode", { exact: true }).waitFor();
     await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+
+    // Opt in to Automatic Error Reports so the upcoming terminal failure fires one redacted auto-report silently.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.remote(10009);
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Trigger a structured terminal failure; Diagnostics records the structured code.
+    // Trigger a structured terminal failure; Diagnostics records the structured code and fires one opt-in auto-report.
     playback.next.push({ terminal: "source_unreadable" });
     await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
+    await tv.eventually(async () => autoPayloads.length === 1, "opt-in automatic error report posted");
+    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string } };
+    assert.equal(autoJson.auto, true);
+    assert.equal(autoJson.play?.e, "terminal: source_unreadable");
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
@@ -2612,6 +2630,7 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
     await tv.page.getByText("server: server_error", { exact: true }).waitFor();
+    assert.equal(autoPayloads.length, 1, "non-fatal server errors and cooldown must not send duplicate automatic reports");
     const paneText = await tv.page.locator(".settings-pane").innerText();
     assert.ok(!paneText.includes("Private Movie Title"), "free-form server movie title must never enter diagnostics");
     assert.ok(!paneText.includes("alice"), "free-form server account name must never enter diagnostics");
@@ -2620,4 +2639,26 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.locator('[data-focus="clear-diagnostics"]').click();
     await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
     await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+
+    // Uncaught window error and unhandled rejection stay silent when auto-report is Off, and send safe error class names (never free-form messages) when On.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "false");
+    await tv.page.evaluate(() => {
+        window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("Secret Movie for alice"), message: "Secret Movie for alice" }));
+    });
+    assert.equal(autoPayloads.length, 1, "disabled auto-report must not post on uncaught window errors");
+
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.jump(16 * 60 * 1000);
+    await tv.page.evaluate(() => {
+        const rejection = new Event("unhandledrejection") as Event & { reason?: unknown };
+        rejection.reason = new RangeError("Private Title for bob");
+        window.dispatchEvent(rejection);
+    });
+    await tv.eventually(async () => autoPayloads.length === 2, "enabled auto-report posts safe error class on unhandled rejection");
+    const crashJson = JSON.parse(autoPayloads[1]!) as { auto?: boolean; err?: string };
+    assert.equal(crashJson.auto, true);
+    assert.equal(crashJson.err, "RangeError");
+    assert.ok(!autoPayloads[1]!.includes("Private Title") && !autoPayloads[1]!.includes("bob"), "uncaught error messages must never leave the TV");
 });

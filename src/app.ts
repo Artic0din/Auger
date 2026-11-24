@@ -1,5 +1,5 @@
 import { startPlayback, type PlayerPlatform, type PlayerScreen } from "./player/playerScreen.ts";
-import { DiagnosticsCollector, type DiagnosticsDeviceInfo, sendDiagnosticsReport } from "./diagnostics.ts";
+import { DiagnosticsCollector, type DiagnosticsDeviceInfo, diagnosticsFingerprint, sendDiagnosticsReport } from "./diagnostics.ts";
 import { connect, type ConnectedServer, type SessionCoreDeps } from "./session/core.ts";
 import type { LogoutResult } from "./session/session.ts";
 import { mountBrowse, type Browse, type PlayRequest } from "./ui/browse.ts";
@@ -52,7 +52,38 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     const diagnostics = new DiagnosticsCollector(
         options.diagnostics ?? { appVersion: options.player?.appVersion ?? APP_VERSION, tvModel: options.core.deviceName ?? "Samsung TV" },
         options.core.clock,
+        options.core.publicStorage,
     );
+    const autoReportController = new AbortController();
+    let autoReportInFlight = false;
+    const triggerAutoReport = (source: "playback" | "app"): void => {
+        if (destroyed || autoReportInFlight) return;
+        const snapshot = diagnostics.snapshot();
+        const fp = diagnosticsFingerprint(snapshot, undefined, source);
+        if (!diagnostics.canAutoReport(fp)) return;
+        autoReportInFlight = true;
+        diagnostics.markAutoAttempt();
+        void sendDiagnosticsReport(snapshot, activeCore.fetch, { signal: autoReportController.signal, auto: true })
+            .then(result => {
+                if (result.ok) diagnostics.markAutoDelivered(fp);
+            }, () => undefined)
+            .finally(() => { autoReportInFlight = false; });
+    };
+    const classifyError = (value: unknown, fallback: string): string => {
+        if (value instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(value.name)) return value.name;
+        return fallback;
+    };
+    const onWindowError = (event: ErrorEvent): void => {
+        if (destroyed) return;
+        // Record only a safe error class identifier; never forward free-form messages that could contain account names or media titles.
+        diagnostics.recordAppError(classifyError(event.error, "UncaughtError"));
+        triggerAutoReport("app");
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+        if (destroyed) return;
+        diagnostics.recordAppError(classifyError(event.reason, "UnhandledRejection"));
+        triggerAutoReport("app");
+    };
     const transient = new Map<string, string>();
     let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
         secrets: openSecretStore(undefined),
@@ -239,7 +270,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         const content = mountBrowse(root, {
             server,
             diagnostics,
-            sendDiagnostics: (collector, signal) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal }),
+            sendDiagnostics: (collector, signal, category) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal, category }),
             profileName: active.profile.name,
             ...(avatar === undefined ? {} : { profileAvatarUrl: avatar }),
             ...(text === undefined ? {} : { profileAvatarText: text }),
@@ -275,7 +306,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics);
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, () => triggerAutoReport("playback"));
     };
 
     const onBack = (event: KeyboardEvent): void => {
@@ -309,6 +340,9 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             return;
         }
         destroyed = true;
+        autoReportController.abort();
+        window.removeEventListener("error", onWindowError);
+        window.removeEventListener("unhandledrejection", onUnhandledRejection);
         window.removeEventListener("keydown", onBack);
         window.removeEventListener("pagehide", onPageHide);
         document.removeEventListener("visibilitychange", onVisibility);
@@ -321,6 +355,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         startup?.destroy(); startup = undefined;
     };
 
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
     window.addEventListener("keydown", onBack);
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);

@@ -1715,26 +1715,50 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
     const sentPayloads: string[] = [];
     await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
         sentPayloads.push(route.request().postData() ?? "");
-        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, issueNumber: 901, reportId: "AUG-901" }) });
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 901, reportId: "AUG-901" }) });
     });
     try {
-        await tv.page.evaluate(() => window.browseHarness.seedDiagnostics());
         await openSettings(tv);
         await tv.page.locator('[data-focus="diagnostics"]').click();
         await tv.page.locator('[data-focus="send-diagnostics"]').waitFor();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Send a redacted bug report directly to GitHub, or share via QR code.");
+
+        // Empty session blocks blank manual reports with a clear hint instead of hitting the relay.
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.getByText("Play something or reproduce an issue first, or use Share via QR Code.", { exact: true }).waitFor();
+        assert.equal(sentPayloads.length, 0);
+
+        // Automatic Error Reports defaults to Off and toggles On/Off cleanly.
+        const autoRow = tv.page.locator('[data-focus="auto-diagnostics"]');
+        assert.equal(await autoRow.getAttribute("aria-checked"), "false");
+        await autoRow.click();
+        assert.equal(await autoRow.getAttribute("aria-checked"), "true");
+        await autoRow.click();
+        assert.equal(await autoRow.getAttribute("aria-checked"), "false");
+
+        await tv.page.evaluate(() => window.browseHarness.seedDiagnostics());
         await tv.page.getByText("Remuxed · MKV", { exact: true }).waitFor();
         await tv.page.getByText("Recorded events", { exact: true }).waitFor();
 
-        // Primary action: 1-click Send Diagnostics Report with confirmation modal.
+        // Primary action: Send Diagnostics Report opens the 4-button triage picker.
         await tv.page.locator('[data-focus="send-diagnostics"]').click();
-        await tv.page.locator('[data-focus="confirm-send-diagnostics"]').waitFor();
-        await tv.page.locator('[data-focus="confirm-send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-audio_subtitles"]').waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-buffering"]').waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-app_ui"]').waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
         await tv.page.getByText("Report sent — GitHub issue #901 (AUG-901).", { exact: true }).waitFor();
         assert.equal(sentPayloads.length, 1);
         assert.ok(!sentPayloads[0]!.includes("silo.example.test"), "server hostname must never be sent to relay");
         assert.equal(JSON.parse(sentPayloads[0]!).app, "0.0.1");
+        assert.equal(JSON.parse(sentPayloads[0]!).cat, "playback");
         assert.equal(JSON.parse(sentPayloads[0]!).play.m, "Remuxed · MKV");
+
+        // Re-sending the exact same category & state is blocked locally in 0ms without a second network request.
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
+        await tv.page.getByText("Already sent as AUG-901. Play or reproduce a new issue to send another.", { exact: true }).waitFor();
+        assert.equal(sentPayloads.length, 1);
 
         // Backup action: Share via QR Code.
         await tv.page.locator('[data-focus="share-diagnostics"]').click();

@@ -27,7 +27,7 @@ import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatu
 import { applyLayoutDirection } from "../i18n/direction.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
-import { buildDiagnosticsReportUrl, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReport } from "../diagnostics.ts";
+import { buildDiagnosticsReportUrl, DIAGNOSTICS_CATEGORIES, type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReport } from "../diagnostics.ts";
 
 type Category = "general" | "playback" | "subtitles" | "diagnostics" | "server";
 const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", diagnostics: "player.settings.diagnostics", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
@@ -66,13 +66,13 @@ function settingsChevron(): SVGSVGElement {
     return icon;
 }
 
-export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences, diagnostics?: DiagnosticsCollector, sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal) => Promise<DiagnosticsSendResult>): SettingsScreen {
+export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences, diagnostics?: DiagnosticsCollector, sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal, category?: DiagnosticsCategory) => Promise<DiagnosticsSendResult>): SettingsScreen {
     const container = el("section", "browse settings");
     container.setAttribute("aria-label", translate("settings.title"));
     root.appendChild(container);
     const host = new FocusHost(container);
     const diagnosticsCollector = diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
-    const submitDiagnostics = sendDiagnostics ?? ((collector, signal) => sendDiagnosticsReport(collector.snapshot(), (url, init) => window.fetch(url, init), { signal }));
+    const submitDiagnostics = sendDiagnostics ?? ((collector, signal, category) => sendDiagnosticsReport(collector.snapshot(), (url, init) => window.fetch(url, init), { signal, category }));
     let category: Category = "general";
     let picker: Picker | undefined;
     let extraPicker: SettingsRow | undefined;
@@ -421,18 +421,37 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             return;
         }
         if (confirmingDiagnosticsSend) {
-            const runSend = (): void => {
+            const runSend = (chosen: DiagnosticsCategory): void => {
                 if (diagnosticsSending) return;
+                const existingId = diagnosticsCollector.duplicateSendReportId(chosen);
+                if (existingId !== undefined) {
+                    confirmingDiagnosticsSend = false;
+                    diagnosticsStatus = { kind: "ok", text: `Already sent as ${existingId}. Play or reproduce a new issue to send another.` };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                    return;
+                }
+                // Snapshot the hash before submitting so events arriving mid-request are not swallowed as already sent.
+                const submittedHash = diagnosticsCollector.stableSnapshotHash(chosen);
                 diagnosticsSending = true;
                 diagnosticsStatus = undefined;
                 render();
-                void submitDiagnostics(diagnosticsCollector, diagnosticsSendController.signal).then(result => {
+                void submitDiagnostics(diagnosticsCollector, diagnosticsSendController.signal, chosen).then(result => {
                     if (torn) return;
                     diagnosticsSending = false;
                     confirmingDiagnosticsSend = false;
-                    diagnosticsStatus = result.ok
-                        ? { kind: "ok", text: result.issueNumber !== undefined ? `Report sent — GitHub issue #${result.issueNumber} (${result.reportId}).` : `Report sent — Reference ${result.reportId}.` }
-                        : { kind: "error", text: result.message };
+                    if (result.ok) {
+                        diagnosticsCollector.markManualSent(chosen, result.reportId, submittedHash);
+                        const okText = result.status === "duplicate"
+                            ? `Already tracked (${result.reportId}). Thanks for confirming.`
+                            : result.status === "updated"
+                                ? `Added to existing report (${result.reportId}).`
+                                : result.issueNumber !== undefined
+                                    ? `Report sent — GitHub issue #${result.issueNumber} (${result.reportId}).`
+                                    : `Report sent — Reference ${result.reportId}.`;
+                        diagnosticsStatus = { kind: "ok", text: okText };
+                    } else {
+                        diagnosticsStatus = { kind: "error", text: result.message };
+                    }
                     render({ zone: "settings-rows", key: "send-diagnostics" });
                 }, () => {
                     if (torn) return;
@@ -442,8 +461,11 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     render({ zone: "settings-rows", key: "send-diagnostics" });
                 });
             };
-            const sendButton = actionButton("confirm-send-diagnostics", diagnosticsSending ? "Sending…" : "Send Report", runSend);
-            sendButton.element.setAttribute("aria-disabled", String(diagnosticsSending));
+            const categoryButtons = DIAGNOSTICS_CATEGORIES.map(entry => {
+                const item = actionButton(`send-diagnostics-${entry.id}`, diagnosticsSending ? "Sending…" : entry.label, () => runSend(entry.id));
+                item.element.setAttribute("aria-disabled", String(diagnosticsSending));
+                return item;
+            });
             const cancelButton = actionButton("cancel-send-diagnostics", translate("common.cancel"), back);
             cancelButton.element.setAttribute("aria-disabled", String(diagnosticsSending));
             showModal(
@@ -451,11 +473,11 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 "Send Diagnostics Report",
                 [
                     el("h1", "browse-title", "Send Diagnostics Report"),
-                    el("p", "settings-value", "Sends redacted TV model, firmware, Auger version, Silo server version, last playback stats, and recent error log to create a GitHub diagnostics issue."),
+                    el("p", "settings-value", "Choose what best matches the issue. Redacted TV, memory, playback, and error details will be sent to GitHub."),
                     el("p", "settings-value", "Server addresses, account names, tokens, and media titles are never included."),
                     ...(diagnosticsSending ? [el("p", "browse-text", "Sending diagnostics report…")] : []),
                 ],
-                [sendButton, cancelButton],
+                [...categoryButtons, cancelButton],
             );
             return;
         }
@@ -613,7 +635,15 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         };
         if (category === "diagnostics") {
             const snapshot = diagnosticsCollector.snapshot();
-            const send = actionButton("send-diagnostics", "Send Diagnostics Report", () => { confirmingDiagnosticsSend = true; render(); });
+            const send = actionButton("send-diagnostics", "Send Diagnostics Report", () => {
+                if (!diagnosticsCollector.hasReportableData()) {
+                    diagnosticsStatus = { kind: "ok", text: "Play something or reproduce an issue first, or use Share via QR Code." };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                    return;
+                }
+                confirmingDiagnosticsSend = true;
+                render();
+            });
             send.element.classList.add("settings-server-action");
             send.element.prepend(navigationIcon("requests"));
             send.element.appendChild(navigationIcon("chevron-right"));
@@ -621,23 +651,49 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             share.element.classList.add("settings-server-action");
             share.element.prepend(navigationIcon("diagnostics"));
             share.element.appendChild(navigationIcon("qr"));
+            const autoOn = diagnosticsCollector.autoReportEnabled;
+            const autoToggle = button("auto-diagnostics", "Automatic Error Reports", () => {
+                diagnosticsCollector.setAutoReportEnabled(!diagnosticsCollector.autoReportEnabled);
+                render({ zone: "settings-rows", key: "auto-diagnostics" });
+            });
+            autoToggle.element.appendChild(el("span", "settings-row-value", onOffText(autoOn)));
+            autoToggle.element.setAttribute("role", "switch");
+            autoToggle.element.setAttribute("aria-label", "Automatic Error Reports");
+            autoToggle.element.setAttribute("aria-checked", String(autoOn));
             const clear = actionButton("clear-diagnostics", "Clear Session Log", () => { diagnosticsCollector.clear(); diagnosticsStatus = { kind: "ok", text: "Session log cleared." }; render({ zone: "settings-rows", key: "send-diagnostics" }); });
             clear.element.classList.add("settings-server-action");
             clear.element.prepend(navigationIcon("reset"));
-            rows.push(send, share, clear);
-            body.append(send.element, share.element, clear.element);
+            rows.push(send, share, autoToggle, clear);
+            body.append(
+                send.element,
+                share.element,
+                autoToggle.element,
+                el("p", "settings-value", "Automatically sends a redacted report on fatal playback errors or crashes (at most once per issue)."),
+                clear.element,
+            );
             if (diagnosticsStatus !== undefined) {
                 const note = el("p", diagnosticsStatus.kind === "error" ? "browse-text browse-error settings-warning" : "settings-value", diagnosticsStatus.text);
                 note.setAttribute("role", diagnosticsStatus.kind === "error" ? "alert" : "status");
                 body.appendChild(note);
             }
-            const deviceText = formatDeviceDetails({ v: 1, app: snapshot.device.appVersion, tv: snapshot.device.tvModel, ...(snapshot.device.firmware === undefined ? {} : { fw: snapshot.device.firmware }), ...(snapshot.device.tizenVersion === undefined ? {} : { os: snapshot.device.tizenVersion }), ...(snapshot.device.browser === undefined ? {} : { ua: snapshot.device.browser }) });
+            const deviceText = formatDeviceDetails({
+                v: 1,
+                app: snapshot.device.appVersion,
+                tv: snapshot.device.tvModel,
+                ...(snapshot.device.firmware === undefined ? {} : { fw: snapshot.device.firmware }),
+                ...(snapshot.device.tizenVersion === undefined ? {} : { os: snapshot.device.tizenVersion }),
+                ...(snapshot.device.browser === undefined ? {} : { ua: snapshot.device.browser }),
+                ...(snapshot.device.screen === undefined ? {} : { scr: snapshot.device.screen }),
+            });
             body.append(
                 el("h3", "settings-section-header", "DEVICE"),
                 info("TV", deviceText),
                 info("Auger Version", snapshot.device.appVersion),
                 ...(snapshot.device.serverVersion === undefined ? [] : [info("Silo Server", snapshot.device.serverVersion)]),
                 ...(snapshot.device.hdrSupported === undefined ? [] : [info("HDR Support", snapshot.device.hdrSupported ? "Yes" : "No")]),
+                ...(snapshot.device.memory === undefined ? [] : [info("JS Heap", snapshot.device.memory)]),
+                ...(snapshot.device.deviceRam === undefined ? [] : [info("Device RAM", snapshot.device.deviceRam)]),
+                ...(snapshot.device.uptimeMinutes === undefined ? [] : [info("Uptime", `${snapshot.device.uptimeMinutes}m`)]),
             );
             body.append(el("h3", "settings-section-header", "LAST PLAYBACK"));
             const last = snapshot.lastPlayback;
@@ -646,10 +702,15 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             } else {
                 if (last.playback !== undefined) body.appendChild(info("Playback", last.playback));
                 if (last.delivery !== undefined) body.appendChild(info("Delivery", last.delivery));
+                if (last.stream !== undefined) body.appendChild(info("Stream", last.stream));
+                if (last.source !== undefined) body.appendChild(info("Source file", last.source));
                 if (last.video !== undefined) body.appendChild(info("Video", last.video));
                 if (last.dynamicRange !== undefined) body.appendChild(info("Dynamic range", last.dynamicRange));
                 if (last.audio !== undefined) body.appendChild(info("Audio", last.audio));
                 if (last.subtitles !== undefined) body.appendChild(info("Subtitles", last.subtitles));
+                if (last.subtitleDetail !== undefined) body.appendChild(info("Subtitle mode", last.subtitleDetail));
+                if (last.position !== undefined) body.appendChild(info("Position", last.position));
+                if (last.rebuffers !== undefined && last.rebuffers > 0) body.appendChild(info("Rebuffers", String(last.rebuffers)));
                 if (last.status !== undefined) body.appendChild(info("Status", last.status));
                 if (last.diagnostics !== undefined && last.diagnostics.length > 0) body.appendChild(info("Diagnostics", last.diagnostics.join(" · ")));
                 if (last.error !== undefined) body.appendChild(info("Last error", last.error));

@@ -218,6 +218,17 @@
         return items.length > 0 ? items : undefined;
       }
 
+      function readInt(obj, key) {
+        return typeof obj[key] === "number" && isFinite(obj[key]) && Math.floor(obj[key]) === obj[key] && obj[key] >= 0 ? obj[key] : undefined;
+      }
+
+      var CATEGORY_LABELS = {
+        playback: "Playback failed",
+        audio_subtitles: "Audio / Subtitles",
+        buffering: "Buffering / Quality",
+        app_ui: "App / Navigation",
+      };
+
       function parseHash(hash) {
         var trimmed = hash.charAt(0) === "#" ? hash.slice(1) : hash;
         var match = /(?:^|&)d=([^&]+)/.exec(trimmed);
@@ -238,6 +249,11 @@
             s: readStr(parsed.play, "s"),
             d: readStr(parsed.play, "d"),
             st: readStr(parsed.play, "st"),
+            src: readStr(parsed.play, "src"),
+            tr: readStr(parsed.play, "tr"),
+            sub: readStr(parsed.play, "sub"),
+            pos: readStr(parsed.play, "pos"),
+            rb: readInt(parsed.play, "rb"),
             n: readStrList(parsed.play, "n"),
             e: readStr(parsed.play, "e"),
           };
@@ -246,18 +262,23 @@
           v: 1,
           app: parsed.app,
           tv: parsed.tv,
+          cat: typeof parsed.cat === "string" && CATEGORY_LABELS[parsed.cat] ? parsed.cat : undefined,
           fw: readStr(parsed, "fw"),
           os: readStr(parsed, "os"),
           ua: readStr(parsed, "ua"),
           hdr: typeof parsed.hdr === "boolean" ? parsed.hdr : undefined,
           srv: readStr(parsed, "srv"),
+          mem: readStr(parsed, "mem"),
+          ram: readStr(parsed, "ram"),
+          scr: readStr(parsed, "scr"),
+          up: readInt(parsed, "up"),
           play: play,
           log: readStrList(parsed, "log"),
         };
       }
 
       function formatDevice(p) {
-        return [p.tv, p.fw ? "Firmware " + p.fw : undefined, p.os, p.ua].filter(Boolean).join(", ");
+        return [p.tv, p.fw ? "Firmware " + p.fw : undefined, p.os, p.ua, p.scr].filter(Boolean).join(", ");
       }
 
       function formatPlayback(p) {
@@ -266,10 +287,15 @@
         var lines = [];
         if (play.m) lines.push("Playback: " + play.m);
         if (play.d) lines.push("Delivery: " + play.d);
+        if (play.tr) lines.push("Stream: " + play.tr);
+        if (play.src) lines.push("Source file: " + play.src);
         if (play.v) lines.push("Video: " + play.v);
         if (play.dr) lines.push("Dynamic range: " + play.dr);
         if (play.a) lines.push("Audio: " + play.a);
         if (play.s) lines.push("Subtitles: " + play.s);
+        if (play.sub) lines.push("Subtitle mode: " + play.sub);
+        if (play.pos) lines.push("Position: " + play.pos);
+        if (typeof play.rb === "number" && play.rb > 0) lines.push("Rebuffers: " + play.rb);
         if (play.st) lines.push("Status: " + play.st);
         if (play.n) {
           play.n.forEach(function (note, idx) {
@@ -282,7 +308,11 @@
 
       function formatNotes(p) {
         var lines = [];
+        if (p.cat && CATEGORY_LABELS[p.cat]) lines.push("Category: " + CATEGORY_LABELS[p.cat]);
         if (typeof p.hdr === "boolean") lines.push("HDR TV support: " + (p.hdr ? "Yes" : "No"));
+        if (p.mem) lines.push("JS heap: " + p.mem);
+        if (p.ram) lines.push("Device RAM: " + p.ram);
+        if (typeof p.up === "number") lines.push("App uptime: " + p.up + "m");
         if (p.log && p.log.length > 0) {
           lines.push("Recent events (redacted):");
           p.log.forEach(function (entry) { lines.push("- " + entry); });
