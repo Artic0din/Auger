@@ -208,6 +208,7 @@ jobs:
       contents: write # create the tag and release
     outputs:
       release_date: ${{ steps.notes.outputs.release_date }}
+      previous_sha: ${{ steps.notes.outputs.previous_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -249,9 +250,14 @@ jobs:
             fi
           fi
           echo "release_date=${release_date}" >> "${GITHUB_OUTPUT}"
+          previous_sha=""
+          if [[ -n "${PREVIOUS_TAG}" ]]; then
+            previous_sha="$(git rev-parse --verify "${PREVIOUS_TAG}^{commit}")"
+          fi
+          echo "previous_sha=${previous_sha}" >> "${GITHUB_OUTPUT}"
           {
             python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
-              ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}"
+              ${previous_sha:+--from "${previous_sha}"} --to "${TARGET_SHA}"
             echo
             echo "## Install"
             echo
@@ -355,7 +361,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
-      PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+      PREVIOUS_SHA: ${{ needs.publish.outputs.previous_sha }}
       TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
       RELEASE_DATE: ${{ needs.publish.outputs.release_date }}
     steps:
@@ -395,7 +401,7 @@ jobs:
             git checkout --quiet -B "${branch}" origin/main
           fi
           python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
-            --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}"
+            --date "${RELEASE_DATE}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
           if ! git diff --quiet CHANGELOG.md; then
             git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md
             git_auth push origin "HEAD:${branch}"
