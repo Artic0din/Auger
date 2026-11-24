@@ -181,7 +181,7 @@ The server's returned effective file, tracks, warnings and source/player timelin
 The controller retains protocol 3, saved quality/cap settings, capability gates and bounded identical-body start resends with the same attempt identity.
 
 The contract is pinned to [server cc851494](https://github.com/Silo-Server/silo-server/blob/cc8514943289045e7b9f7ac8d36d4968bfe93926/internal/apiv2/playback.go), with [Apple's fresh resume state at f334794](https://github.com/Silo-Server/silo-apple/blob/f33479404712737499b22365430db1885cf6c6ab/iosApp/iosApp/Screens/Detail/DetailResumeState.swift) as the interaction reference.
-Production-entry desktop Chromium tests use synthetic Silo, KeyManager, and AVPlay ports in normal and reduced motion; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for hardware and native comparison gates ([#11](https://github.com/Artic0din/silo-tizen/issues/11)).
+Production-entry desktop Chromium tests use synthetic Silo, KeyManager, and AVPlay ports in normal and reduced motion; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for hardware and native comparison gates ([#11](https://github.com/Artic0din/Auger/issues/11)).
 
 ## Text Search
 
@@ -299,7 +299,7 @@ Apple's [`AppRouter.swift:1127–1130,1154–1163`](https://github.com/Silo-Serv
 At Apple main `fc86b2019762ac10224140e1ad721a0c04532072`, [`TVMainTabView.swift:220–226`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift#L220-L226) requests avatar focus after Add Profile dismissal.
 Its [`focusTopMenuIfVisible:1210–1239`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift#L1210-L1239) only guards the navigation stack being empty; it does not test grid scrolling or bar visibility.
 Browse is embedded in the root at [`TVLibraryTypeTabView.swift:108–121`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryTypeTabView.swift#L108-L121), so this guard does not explain the observed difference.
-The supplied live comparison built from that SHA returned Movies Browse to Sort ([sequence](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/466-profile-return/a490-seq.png)) and Home to the avatar ([capture](https://raw.githubusercontent.com/Artic0din/silo-tizen/evidence/466-profile-return/a490-home-after.png)).
+The supplied live comparison built from that SHA returned Movies Browse to Sort ([sequence](https://raw.githubusercontent.com/Artic0din/Auger/evidence/466-profile-return/a490-seq.png)) and Home to the avatar ([capture](https://raw.githubusercontent.com/Artic0din/Auger/evidence/466-profile-return/a490-home-after.png)).
 Tizen follows those observed return targets.
 Sort is also Apple's explicit Browse content-entry target: [`TVLibraryGridView.swift:245–249`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryGridView.swift#L245-L249) requests the controls, and [`TVBrowseFilterUI.swift:81–88`](https://github.com/Silo-Server/silo-apple/blob/fc86b2019762ac10224140e1ad721a0c04532072/iosApp/iosApp/tvOS/Screens/Libraries/TVBrowseFilterUI.swift#L81-L88) focuses Sort.
 The reason tvOS's avatar claim loses on the captured Browse dismissal remains unverified; no scroll-visibility rule is inferred from the helper's name.
@@ -459,7 +459,7 @@ The [focused poster capture](../evidence/screenshots/107-home/home-poster.png) i
 The simulator uses Chromium 137 with a legacy Tizen user-agent string, so it establishes this software runtime's rendering rather than physical Tizen 8/AVPlay compatibility.
 The [actual S95C capture](../evidence/screenshots/107-home/home-actual-tv.png) records PR #112's `117314f` build on Tizen 9 / Chromium 120; restored and fresh device-code sign-in, profile selection, Home and native AVPlay playback were exercised.
 AVPlay reported H.264 1920×1080 with stereo audio and a position advancing from 184367 to 185369 ms over a one-second sample; start, progress and stop requests succeeded, and the app returned to Home.
-The debugger reported no uncaught JavaScript exceptions or HTTP error responses, but did record blocked data-image and plugin-object policy errors tracked in [#113](https://github.com/Artic0din/silo-tizen/issues/113), plus one loading failure without diagnostic text.
+The debugger reported no uncaught JavaScript exceptions or HTTP error responses, but did record blocked data-image and plugin-object policy errors tracked in [#113](https://github.com/Artic0din/Auger/issues/113), plus one loading failure without diagnostic text.
 The physical-TV capture was made with the debugger attached and `document.hasFocus` false, so it does not establish focused appearance or full visual parity; physical Tizen 8 and other media formats remain untested.
 Expanded Home/library section rows use a continuous grid with 60-card reads and a six-card near-end trigger, following the pinned `SectionCatalogView` and shared `CatalogGrid` owners.
 Focus movement alone never reads data; overlapping pages are deduplicated and thin pages keep reading toward six new visible cards or the end.

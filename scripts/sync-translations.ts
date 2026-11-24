@@ -39,8 +39,8 @@ const SERVER_KEY_PREFIXES: readonly string[] = ["home.section.", "error."];
 export const PLATFORM_EXCEPTIONS: readonly string[] = ["settings.skipIntervals.footerVideo"];
 
 /**
- * The keys whose text names the TV app, which #733 renamed from Silo to Auger in every language. silo-translations still says Silo,
- * so the sync renames them again. Text about the server (Silo server, its address, its errors, the Silo account) keeps Silo.
+ * The keys whose text names the TV app. silo-translations names Silo's own app Silo, so the sync substitutes Auger in every
+ * language. Text about the server (Silo server, its address, its errors, the Silo account) keeps Silo.
  */
 export const APP_NAME_KEYS: readonly string[] = [
     "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
@@ -49,7 +49,7 @@ export const APP_NAME_KEYS: readonly string[] = [
     "settings.general.pairingSharedAskEveryTime", "settings.profileLaunch.afterOneHour.detail", "settings.profileLaunch.afterTwelveHours.detail",
     "settings.profileLaunch.askEveryLaunch.detail", "update.appRequired",
 ];
-// Plain text, not a word match: a translation can inflect the name ("Silos", "Silo'nun"), and #733 renamed the stem.
+// Plain text, not a word match: a translation can inflect the name ("Silos", "Silo'nun"), so the stem is substituted.
 const UPSTREAM_APP_NAME = /Silo/g;
 const APP_NAME = "Auger";
 

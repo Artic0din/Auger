@@ -2,7 +2,7 @@
 
 Screens read their text from the vendored catalog through `translate(key, args)` (`src/i18n/translate.ts`), in the language the app shows.
 A key a language lacks shows English.
-How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](../src/i18n/catalog/README.md); the plan is on [#571](https://github.com/Artic0din/silo-tizen/issues/571).
+How the catalog is vendored and refreshed is in [`src/i18n/catalog/README.md`](../src/i18n/catalog/README.md); the plan is on [#571](https://github.com/Artic0din/Auger/issues/571).
 
 ## Rules for a screen
 
@@ -75,7 +75,7 @@ Arabic reads right to left, as on Apple TV, where the root view sets `\.layoutDi
 - Player: mirrors except transport, scrubber, and time row (`dir="ltr"`, matching `TVPlayerControls.swift:325,555,557,575`). Options panel, Up Next panel/preview (`upNextPreviewLeft`, `src/player/upNextPreview.ts`), buffering card, skip pill, and status line mirror; `.player` applies `applyScreenDirection`, uses logical CSS properties, and isolates titles/tracks/chapters/captions with `unicode-bidi: plaintext`. A late-landing language redraws the panel, preview rectangle, and caption box together.
 - Requests, Calendar, PIN screen, Add Profile, Sign-in (server address, TV code, password, server not ready, plain-HTTP prompt, Switch Server entry; matching `MarqueeLayout.swift:318-357`, with code digits left to right), and Profile picker (`translated: true` in `src/ui/profilePicker.ts`, since #654).
 
-**Not yet mirrored ([#571](https://github.com/Artic0din/silo-tizen/issues/571)):**
+**Not yet mirrored ([#571](https://github.com/Artic0din/Auger/issues/571)):**
 
 - Details rails (episodes, season pills, cast) mirror and scroll with negative RTL offsets, while their CSS spacing still uses LTR values.
 - Collections and For You stay left to right under the mirrored top bar and shared Home hero scene.

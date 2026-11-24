@@ -1,6 +1,6 @@
 # Domain docs
 
-Single-context domain documentation layout for `silo-tizen`.
+Single-context domain documentation layout for `auger`.
 
 ## Before exploring, read these
 

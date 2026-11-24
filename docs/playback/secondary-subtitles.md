@@ -1,6 +1,6 @@
 # Secondary subtitles
 
-Secondary subtitle rendering in the player's Subtitles tab ([#522](https://github.com/Artic0din/silo-tizen/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane.trackRows`, `PlayerViewModel.selectSecondarySubtitle`, `AetherSubtitleOverlay.swift`). There is no Server endpoint for secondary subtitles; the player draws a second set of cues locally.
+Secondary subtitle rendering in the player's Subtitles tab ([#522](https://github.com/Artic0din/Auger/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane.trackRows`, `PlayerViewModel.selectSecondarySubtitle`, `AetherSubtitleOverlay.swift`). There is no Server endpoint for secondary subtitles; the player draws a second set of cues locally.
 
 ## What the Subtitles tab does
 

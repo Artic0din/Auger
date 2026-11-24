@@ -33,7 +33,7 @@ Remote focus stays reachable during finalization, resolution, failure and exhaus
 Pre-end Up Next prompts, Show Next Up timing, 10 s autoplay countdowns, and On Deck behavior are documented in [Series autoplay](series-autoplay.md).
 
 The source contracts are pinned to [server cc85149](https://github.com/Artic0din/silo-server/tree/cc8514943289045e7b9f7ac8d36d4968bfe93926), including WatchDetail, WatchFileVersion, Season, Episode and PlaybackMutation in OpenAPI and the stop finalization handler.
-Behavioral tests use synthetic server data and fake AVPlay; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed-package and physical-TV gates ([#12](https://github.com/Artic0din/silo-tizen/issues/12)).
+Behavioral tests use synthetic server data and fake AVPlay; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed-package and physical-TV gates ([#12](https://github.com/Artic0din/Auger/issues/12)).
 
 ## Quality and seek controls
 

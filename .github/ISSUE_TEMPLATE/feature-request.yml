@@ -1,14 +1,14 @@
 name: Feature request
-description: Suggest an improvement to the Samsung TV (Tizen) app
+description: Suggest an improvement to Auger (Samsung TV / Tizen)
 title: "[feature] "
 labels: ["enhancement", "feature-request"]
 body:
   - type: markdown
     attributes:
       value: |
-        A request is most useful when it explains the problem you hit, with a concrete example, rather than prescribing a solution. One request per issue. Requests that need new server behavior belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose).
+        A request is most useful when it explains the problem you hit, with a concrete example, rather than prescribing a solution. One request per issue.
 
-        Silo will not accept Live TV, OTA/DVB tuners, IPTV, EPG/XMLTV guides, DVR, or `.strm` remote-stream files; [Project non-goals](https://github.com/Silo-Server/silo-server/blob/main/docs/non-goals.md) explains why.
+        Auger implements features that Silo's `/api/v2` API supports. Requests that need new server behavior belong in the upstream [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose) repository.
   - type: textarea
     id: problem
     attributes:
@@ -91,5 +91,5 @@ body:
       options:
         - label: I searched open and closed issues, including ones closed as not planned, and this is not already requested
           required: true
-        - label: This is not one of Silo's non-goals
+        - label: This works with what Silo's server already supports, or I filed the server part in silo-server
           required: true

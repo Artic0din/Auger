@@ -18,19 +18,19 @@ Read the matching reference before editing a branch of the codebase.
 
 ## Workspace and module boundaries
 
-This repository owns only the Silo Samsung TV client, a plain Tizen web app (`.wgt`) targeting Tizen 8.0 or later (Chromium 108).
+This repository owns Auger, a third-party Samsung TV client for Silo, a plain Tizen web app (`.wgt`) targeting Tizen 8.0 or later (Chromium 108).
 
 - `app/` holds the package manifest (`config.xml`), HTML entry, icons, fonts, and third-party marks.
 - `src/api/`, `src/session/`, and `src/contracts/v2/` own `/api/v2` transport, sessions, active Profile Authority, and contract decoders.
 - `src/ui/` owns screens and remote focus; `src/player/` owns AVPlay playback.
 - `test/native/` holds `node:test` suites; `test/ui/` holds Playwright screen tests; `scripts/` holds build, packaging, and release scripts; `docs/` holds specs and validation notes.
 
-This repo sits beside sibling Silo repositories.
+Silo's own repositories are read-only upstream references.
 
-- Treat `silo-server` as read-only upstream. Keep all code edits and GitHub issues inside `Artic0din/silo-tizen`.
+- Treat `silo-server` as read-only upstream. Keep all code edits and GitHub issues inside `Artic0din/Auger`.
 - Use `silo-apple` (tvOS) as the TV behavior and layout reference, and compare `silo-android` for shared TV behavior.
 - Port code only from `silo-apple` and `silo-android` (same AGPL license), keeping ports minimal and idiomatic for TypeScript on Tizen. Never copy from `jellyfin-web` or `jellyfin-tizen`.
-- Check whether `silo-server` or other clients need coordinated work when touching auth, API models, playback, browsing, or metadata. Keep server concerns out of this repository.
+- Check compatibility with upstream `silo-server` when touching auth, API models, playback, browsing, or metadata. Server issues belong in upstream `silo-server`; keep server concerns out of this repository.
 
 ## Parity delivery gates
 
@@ -61,7 +61,7 @@ See `package.json` for standard scripts (`npm ci`, `npm run build`, `npm test`, 
 - `python3 scripts/test-release-version.py` tests the release version script.
 - `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-commit>` re-vendors API v2 fixtures. Regenerate with this script instead of hand-editing `src/contracts/v2/fixtures/`.
 - `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh` packages and signs `dist/Auger.wgt`.
-- `tizen install -n dist/Auger.wgt -t <device>` and `tizen run -p Sil0Tv0001.Silo -t <device>` install and launch on a Developer Mode TV.
+- `tizen install -n dist/Auger.wgt -t <device>` and `tizen run -p AugerTv001.Auger -t <device>` install and launch on a Developer Mode TV.
 
 The proof bar requires a built signed `.wgt` and passing simulator parity gates, with physical-TV validation as the final hardware gate. Desktop Chromium proves behavior, not Chromium 108 rendering or AVPlay. The Samsung simulator launches with `--disable-web-security`, so simulator requests do not prove browser CORS, LAN discovery, pinned local certificates, or physical-TV acceptance.
 

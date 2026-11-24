@@ -60,7 +60,7 @@ The historical profile-menu capture is the native 1920×1080 `S18a-profile-menu`
 The Manage Servers capture is the earlier 960×540 `tvos-manage-servers-http-active` frame; no fresh build identity is claimed for it.
 No Apple Sign Out confirmation frame is available.
 The attempted fresh Apple capture session was closed without app interaction because its required `device-interaction` skill was unavailable; the Apple simulator was shut down afterward.
-The saved-server list is tracked in [#127](https://github.com/Artic0din/silo-tizen/issues/127); Sign Out & Remove Server remains under #107.
+The saved-server list is tracked in [#127](https://github.com/Artic0din/Auger/issues/127); Sign Out & Remove Server remains under #107.
 Both are client work, not proven Tizen limitations.
 Samsung's NW.js simulator disables web security, so these server requests do not prove packaged-origin CORS behavior, physical-Tizen policy enforcement or successful AVPlay playback.
 The simulator was left signed in on Home with focus on its first Continue Watching card; the temporary focus-emulation helper was stopped.

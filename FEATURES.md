@@ -1,7 +1,7 @@
-# Silo Tizen: Feature List
+# Auger: Feature List
 
-Inventory of what the Samsung TV client does today, and a tracker for parity with the Apple TV (tvOS) and Android TV apps.
-The app ships by sideloading and through Apps2Samsung, not the Samsung TV store ([Releasing](docs/releasing.md)).
+Auger is a third-party Samsung TV client for Silo. This list inventories what it does today and tracks compatibility and parity with Silo's Apple TV (tvOS) and Android TV apps.
+Auger ships through Apps2Samsung and GitHub Releases ([Releasing](docs/releasing.md)).
 
 Checked against the code on 3 Nov 2026 (Tizen rows reconciled against `src/` on 24 Nov 2026); update a row in the pull request that changes it.
 
@@ -22,7 +22,7 @@ File pointers are repository-relative.
 
 > **Validation note:** Almost every row is verified by native tests and desktop Chromium with fake Silo and AVPlay implementations, plus signed-package checks in Samsung's TV simulator.
 > The composed app has run on one physical TV, an S95C on Tizen 9: device-code sign-in, profile selection, catalog reads, relaunch restore, direct play, seek, one audio-track replan, and sign-out.
-> Tizen 8.0 hardware, the TV keyboard, remux/transcode, audible track changes and store builds are still open (#14, #13, #11; see [App behaviour](docs/app-behaviour.md#validation-limits)).
+> Tizen 8.0 hardware, the TV keyboard, remux/transcode and audible track changes are still open (#14, #13, #11; see [App behaviour](docs/app-behaviour.md#validation-limits)).
 > Rows say "not yet validated on a TV" only where the docs call out a specific gap.
 
 ---
@@ -205,9 +205,9 @@ File pointers are repository-relative.
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
 | Tizen 8.0+ web app (`.wgt`), AVPlay, `internet` / `tv.inputdevice` / `productinfo` privileges | ✅ | ➖ | ➖ | Apple ships a native tvOS app. Android ships a native APK (`androidTvApp`) |
-| Signed builds on GitHub Releases | ✅ | ✅ | ✅ | Apple: TestFlight. Android: Release workflow publishes Play beta and GitHub prerelease APKs; Promote workflow creates the production draft |
+| Signed builds on GitHub Releases | ✅ | ✅ | ✅ | Tizen: the Release workflow publishes signed `.wgt` builds with checksums ([Releasing](docs/releasing.md)). Apple: TestFlight. Android: Release workflow publishes Play beta and GitHub prerelease APKs |
 | Samsung TV hardware beta | 🟡 | ✅ | ✅ | One S95C (Tizen 9) checked; Tizen 8.0 hardware open (#14). Android: Play beta track and sideload beta APKs |
-| Samsung store certification and release | ➖ | ✅ | 🟡 | Not pursued: the app ships by sideloading and through Apps2Samsung (#732). Android: Promote drafts a Play production release, but no store release has shipped (`docs/releasing.md`) |
+| Apps2Samsung distribution | ✅ | ➖ | ➖ | Apps2Samsung installs from this repository and signs with the viewer's own Samsung certificate ([Releasing](docs/releasing.md)) |
 | Remote keys (arrows, Enter, Back, media keys), Reduced Motion | ✅ | ✅ | 🟡 | Focus rules in [TV focus](docs/tv-focus.md). Android: D-pad and media keys handled (`TvPlayerRemoteKeyBridge`); Reduced Motion not found |
 
 ---

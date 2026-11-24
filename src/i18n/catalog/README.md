@@ -6,7 +6,7 @@
 
 - **Included keys:** keys shipped by Apple (no `x-platforms`, or naming `apple`) because tvOS is the parity target and uses the ICU subset supported by `src/i18n/icu.ts`. Metadata and `Info.plist` prompts are excluded; any message outside the supported ICU subset stops sync.
 - **Android exception:** `PLATFORM_EXCEPTIONS` in `scripts/sync-translations.ts` also vendors `settings.skipIntervals.footerVideo` because Apple's copy names the Siri Remote.
-- **Brand substitution:** `APP_NAME_KEYS` in `scripts/sync-translations.ts` replaces `Silo` with `Auger` in app-name strings ([#733](https://github.com/Artic0din/silo-tizen/issues/733)) while keeping `Silo` in Server references. Sync fails for review if an English `APP_NAME_KEYS` entry stops containing `Silo`; add new app-name keys to `APP_NAME_KEYS`.
+- **Brand substitution:** `APP_NAME_KEYS` in `scripts/sync-translations.ts` substitutes `Auger` for upstream's `Silo` app name in app-name strings while keeping `Silo` in Server references. Sync fails for review if an English `APP_NAME_KEYS` entry stops containing `Silo`; add new app-name keys to `APP_NAME_KEYS`.
 - **Per-language trimming:** `en.json` keeps the full Apple keyset. Each of the other 21 shipped languages keeps only keys named as literal strings in `src/` plus every `home.section.*` and `error.*` key (`SERVER_KEY_PREFIXES` in `scripts/sync-translations.ts`), saving ~5 MB in the `.wgt`. A test pins every non-English file to the exact keys in use, so adding or removing a screen key requires a fresh sync.
 
 ## Package loading

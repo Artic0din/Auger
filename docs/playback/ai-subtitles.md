@@ -1,6 +1,6 @@
 # AI subtitles
 
-In-player AI subtitle translation and transcription ([#65](https://github.com/Artic0din/silo-tizen/issues/65), [#522](https://github.com/Artic0din/silo-tizen/issues/522)). Completed text tracks render through the app subtitle overlay ([Profile subtitles](subtitle-appearance.md)).
+In-player AI subtitle translation and transcription ([#65](https://github.com/Artic0din/Auger/issues/65), [#522](https://github.com/Artic0din/Auger/issues/522)). Completed text tracks render through the app subtitle overlay ([Profile subtitles](subtitle-appearance.md)).
 
 The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes these profile-scoped operations:
 
@@ -11,7 +11,7 @@ The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes 
 | `createSubtitleAIJob` | `POST /subtitles/ai/translate` | Send once with file, kind, source index/language, target language and source position. |
 | `getSubtitleAIJob` | `GET /subtitles/ai/jobs/{job_id}` | Poll pending/running jobs every two seconds; verify job, file, kind, source index and language identity. |
 
-The Subtitles tab has one OPTIONS row, AI Subtitles…, that opens a language menu ([#522](https://github.com/Artic0din/silo-tizen/issues/522), `SubtitleTranslateMenu` in silo-apple `main`).
+The Subtitles tab has one OPTIONS row, AI Subtitles…, that opens a language menu ([#522](https://github.com/Artic0din/Auger/issues/522), `SubtitleTranslateMenu` in silo-apple `main`).
 The viewer picks a language and the player picks the method, as Apple's `route(to:)` does:
 
 1. **Translate** an existing text subtitle in another language (or with none known): an English one first, then the shown, then the first. The track's server index (`combined_index`) is `source_index`.

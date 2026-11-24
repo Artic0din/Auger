@@ -1,4 +1,4 @@
-// Settings > Server > Acknowledgements: the outside services whose data Silo shows, then the open
+// Settings > Server > Acknowledgements: the outside services whose data Auger shows, then the open
 // source code built into this app. Copy follows silo-apple 1a7ccee `Screens/Settings/ThirdPartyCredits.swift`
 // and `OpenSourceAcknowledgementsView.swift` (TVOpenSourceAcknowledgementsOverlay), listing only the
 // services this app names or shows.
@@ -33,7 +33,7 @@ const credits = (): readonly Credit[] => [
 ];
 
 const OPEN_SOURCE: readonly string[] = [
-    "Auger for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/silo-tizen",
+    "Auger for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/Auger",
     "ThumbHash decoder by Evan Wallace — MIT License",
     "unicode-segmenter by Hyeseong Kim — MIT License",
     "uqr — MIT License",
@@ -45,7 +45,7 @@ export function acknowledgementsDocument(): HTMLElement {
     for (const credit of credits()) {
         const row = el("div", "acknowledgements-credit");
         if (credit.logo !== undefined) {
-            // The logo replaces the name, smaller than Silo's own marks as TMDB's terms ask.
+            // The logo replaces the name, smaller than Auger's own marks as TMDB's terms ask.
             const logo = el("img", "acknowledgements-logo");
             logo.src = credit.logo;
             logo.alt = credit.name;

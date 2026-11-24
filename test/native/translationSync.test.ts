@@ -65,8 +65,8 @@ test("a refresh with no --languages keeps every shipped language, so the imports
     assert.throws(() => languagesToSync(["--nope"]), /usage/);
 });
 
-/** The 16 keys #733 renamed (`git show dca21368 -- src/i18n/catalog`), written out so the list in the script is checked, not echoed. */
-const RENAMED_BY_733 = [
+/** The 16 keys whose text names the TV app, written out so the list in the script is checked, not echoed. */
+const APP_NAMING_KEYS = [
     "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
     "profiles.rememberOffer.bodyAppleTv", "search.initial", "settings.about.trademarkNotice", "settings.appLanguage.footer",
     "settings.appLanguage.unshippedFooter", "settings.bufferingQuality.description", "settings.general.pairingShared",
@@ -74,10 +74,10 @@ const RENAMED_BY_733 = [
     "settings.profileLaunch.askEveryLaunch.detail", "update.appRequired",
 ];
 /** An English catalog with every app-name key, each naming Silo once. */
-const englishNames = (): Record<string, string> => Object.fromEntries(RENAMED_BY_733.map(key => [key, `${key} by Silo`]));
+const englishNames = (): Record<string, string> => Object.fromEntries(APP_NAMING_KEYS.map(key => [key, `${key} by Silo`]));
 
-// #733 renamed the TV app to Auger by hand in the vendored files; silo-translations still says Silo. The sync reapplies the rename to the
-// keys that name the app, and leaves text about the server alone (#802).
+// silo-translations names Silo's own app Silo. The sync substitutes Auger in the keys that name the app, and leaves text about the
+// server alone (#802).
 test("a sync names the app Auger where a message names the app, and keeps Silo where it names the server (#802)", () => {
     const branded = brandCatalog({ "search.initial": "Search Silo", "settings.general.pairingShared": "Silos menyer och Silo på andra", "server.address": "Your Silo server's address" });
     assert.deepEqual(branded, { "search.initial": "Search Auger", "settings.general.pairingShared": "Augers menyer och Auger på andra", "server.address": "Your Silo server's address" });
@@ -94,7 +94,7 @@ test("an English app-name message that is missing, or no longer says Silo, stops
     assert.deepEqual(brandCatalog({ "player.error.connectionLost": "Connessione persa" }), { "player.error.connectionLost": "Connessione persa" });
 });
 
-// No listed message in any language at 857d5235 uses Silo for the server ("the server", "this server" instead), so a plain swap matches #733.
+// No listed message in any language at 857d5235 uses Silo for the server ("the server", "this server" instead), so a plain swap is safe.
 // An English one that starts to is held for review rather than renamed to "Auger server".
 test("an English app-name message that names the Silo server or account stops the sync for review (#802)", () => {
     assert.throws(() => brandCatalog({ ...englishNames(), "update.appRequired": "Update Silo to keep using this Silo server." }, true), /update\.appRequired/);
@@ -115,7 +115,7 @@ test("building English catalogs holds a missing app-name key, or one naming the 
 });
 
 test("the sync builds each catalog with the app renamed: English, a translation scoped to the keys in use, and server text untouched (#802)", () => {
-    const english = { ...Object.fromEntries(RENAMED_BY_733.map(key => [key, `${key} by Silo`])), "server.unreachable": "The Silo server can't be reached", "unused.key": "Silo elsewhere" };
+    const english = { ...Object.fromEntries(APP_NAMING_KEYS.map(key => [key, `${key} by Silo`])), "server.unreachable": "The Silo server can't be reached", "unused.key": "Silo elsewhere" };
     const german = { "search.initial": "Silo durchsuchen", "update.appRequired": "Aktualisiere Silo", "server.unreachable": "Der Silo-Server ist nicht erreichbar", "unused.key": "Silo" };
     const catalogs = buildCatalogs(english, new Map([["de", german]]), ['translate("search.initial")', 'translate("update.appRequired")', 'translate("server.unreachable")'], ["en", "de"]);
     assert.equal(catalogs.get("en")?.["search.initial"], "search.initial by Auger");
@@ -124,7 +124,7 @@ test("the sync builds each catalog with the app renamed: English, a translation 
 });
 
 test("every vendored language already has the rename the sync applies, so a fresh sync changes nothing (#802)", () => {
-    assert.deepEqual([...APP_NAME_KEYS].sort(), [...RENAMED_BY_733].sort(), "exactly the keys #733 renamed");
+    assert.deepEqual([...APP_NAME_KEYS].sort(), [...APP_NAMING_KEYS].sort(), "exactly the keys that name the app");
     for (const tag of SHIPPED_LANGUAGES) {
         const messages = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
         for (const key of APP_NAME_KEYS) {

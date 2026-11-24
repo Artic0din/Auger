@@ -1,6 +1,6 @@
 # Tizen TV Focus Guidance
 
-This note documents how remote focus works in the Silo Tizen client.
+This note documents how remote focus works in Auger.
 Read it before you change navigation, menus, grids, dialogs or custom controls.
 It is the Tizen counterpart of silo-apple's `docs/tvos-focus.md`.
 

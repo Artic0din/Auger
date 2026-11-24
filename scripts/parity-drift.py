@@ -37,7 +37,7 @@ class DriftError(Exception):
 
 
 def fetch(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "silo-tizen-parity-drift"})
+    request = urllib.request.Request(url, headers={"User-Agent": "auger-parity-drift"})
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token and url.startswith("https://api.github.com/"):
         request.add_header("Authorization", f"Bearer {token}")

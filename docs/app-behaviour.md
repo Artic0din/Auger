@@ -34,7 +34,7 @@ The TV interface follows the [Skyline design guide](https://github.com/Silo-Serv
 - Movie and episode Details persist explicit audio and subtitle choices on the Server (`PUT /audio-prefs/{key}`, `PUT /subtitle-prefs/{key}`) and clear them on Auto (`DELETE`); version selection remains visit-only and pins its source through playback ([preplay behavior](features/skyline-browse-shell.md#preplay-audio-subtitles-and-resume)).
 - Resume checks fresh Profile progress for up to 3 s; Play from start sends source position 0.
 - `visibilitychange` suspends the active pipeline and revalidates Authority and media authorization before restoring it.
-- Mid-stream connection loss pauses playback and retries at the saved source position with bounded backoff, preserving playing or paused intent ([playback recovery](playback/playback-quality.md#lifecycle-and-connection-recovery), [#13](https://github.com/Artic0din/silo-tizen/issues/13)).
+- Mid-stream connection loss pauses playback and retries at the saved source position with bounded backoff, preserving playing or paused intent ([playback recovery](playback/playback-quality.md#lifecycle-and-connection-recovery), [#13](https://github.com/Artic0din/Auger/issues/13)).
 - Cold launches use the normal Server resume flow and never restore an in-memory pipeline.
 
 ## Validation limits
