@@ -3096,9 +3096,10 @@ detailTest("series current episode keeps its outline while season chips own focu
         const art = card?.querySelector(".browse-art");
         const title = card?.querySelector(".browse-card-title");
         if (card === null || art === null || art === undefined || title === null || title === undefined || !card.isConnected) return null;
-        return { outline: getComputedStyle(art).outline, color: getComputedStyle(title).color };
-    }, null, value => value.outline === "rgba(255, 255, 255, 0.7) solid 4px" && value.color === "rgb(255, 255, 255)", "current episode outline");
-    assert.equal(currentPaint.outline, "rgba(255, 255, 255, 0.7) solid 4px");
+        const artStyle = getComputedStyle(art);
+        return { outline: `${artStyle.outlineWidth} ${artStyle.outlineStyle} ${artStyle.outlineColor}`, color: getComputedStyle(title).color };
+    }, null, value => value.outline === "4px solid rgba(255, 255, 255, 0.7)" && value.color === "rgb(255, 255, 255)", "current episode outline");
+    assert.equal(currentPaint.outline, "4px solid rgba(255, 255, 255, 0.7)");
     assert.equal(currentPaint.color, "rgb(255, 255, 255)");
     await tv.page.locator('[data-focus="season:2"]').click();
     await tv.page.locator('.details-episodes [data-focus="episode:s1e21"]').waitFor();

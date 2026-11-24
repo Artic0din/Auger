@@ -85,9 +85,9 @@ test("collection collage tiles outline the whole tile and cast portraits keep th
         await page.addStyleTag({ content: "* { transition: none !important; }" });
         const tile = page.locator(".discovery-collection");
         await tile.focus();
-        assert.deepEqual(await tile.evaluate(node => { const style = getComputedStyle(node); return [style.transform, style.outline, style.boxShadow]; }), ["matrix(1.05, 0, 0, 1.05, 0, 0)", "rgba(255, 255, 255, 0.7) solid 4px", "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px"]);
+        assert.deepEqual(await tile.evaluate(node => { const style = getComputedStyle(node); return [style.transform, `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`, style.boxShadow]; }), ["matrix(1.05, 0, 0, 1.05, 0, 0)", "4px solid rgba(255, 255, 255, 0.7)", "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px"]);
         await page.locator(".details-person").focus();
-        assert.deepEqual(await page.locator(".details-photo").evaluate(node => { const style = getComputedStyle(node); return [style.transform, style.outline, style.boxShadow]; }), ["none", "rgba(255, 255, 255, 0.7) solid 4px", "rgba(0, 0, 0, 0.35) 0px 6px 28px 0px"]);
+        assert.deepEqual(await page.locator(".details-photo").evaluate(node => { const style = getComputedStyle(node); return [style.transform, `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`, style.boxShadow]; }), ["none", "4px solid rgba(255, 255, 255, 0.7)", "rgba(0, 0, 0, 0.35) 0px 6px 28px 0px"]);
         await page.emulateMedia({ reducedMotion: "reduce" });
         await tile.focus();
         assert.equal(await tile.evaluate(node => getComputedStyle(node).transform), "none");
@@ -107,13 +107,13 @@ for (const [name, root, section, row, card] of surfaces) {
                 const subtitle = node.querySelector<HTMLElement>(".browse-card-subtitle");
                 if (!art || !title || !subtitle) throw new Error("missing card");
                 const style = getComputedStyle(art);
-                return { weight: [getComputedStyle(title).fontWeight, getComputedStyle(subtitle).fontWeight], transform: style.transform, outline: style.outline, shadow: style.boxShadow, drop: getComputedStyle(title).transform, glow: getComputedStyle(title).textShadow, pseudo: getComputedStyle(art, "::after").backgroundImage, height: art.offsetHeight, gap: parseFloat(getComputedStyle(title).marginTop) };
+                return { weight: [getComputedStyle(title).fontWeight, getComputedStyle(subtitle).fontWeight], transform: style.transform, outline: `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`, shadow: style.boxShadow, drop: getComputedStyle(title).transform, glow: getComputedStyle(title).textShadow, pseudo: getComputedStyle(art, "::after").backgroundImage, height: art.offsetHeight, gap: parseFloat(getComputedStyle(title).marginTop) };
             });
             const rest = await read();
             await page.locator("button").focus();
             const focused = await read();
             await t.test("lift", () => assert.equal(focused.transform, "matrix(1.05, 0, 0, 1.05, 0, 0)"));
-            await t.test("outline", () => assert.equal(focused.outline, "rgba(255, 255, 255, 0.7) solid 4px"));
+            await t.test("outline", () => assert.equal(focused.outline, "4px solid rgba(255, 255, 255, 0.7)"));
             const posterShadow = "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px";
             // Continue Watching used to share that single poster shadow.
             const continueShadow = `${posterShadow}, rgba(0, 0, 0, 0.5) 0px 10px 40px 0px`;
