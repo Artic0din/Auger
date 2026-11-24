@@ -101,11 +101,12 @@ It is ready to submit to that repository's `packages/` folder once it is reviewe
 ## Sideloading a build
 
 Public GitHub Releases use the Tizen SDK public distributor certificate so no personal TV DUID is embedded in public artifacts.
-To sideload directly onto a Samsung TV in Developer Mode, sign with your own local Samsung certificate profile:
+To sideload directly onto a Samsung TV in Developer Mode, build and sign locally with your own Samsung certificate profile:
 
 1. Create a Samsung author and distributor certificate profile in Tizen Studio Certificate Manager for your TV's DUID.
-2. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
-3. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>`.
+2. Check out the release tag you want to install (`git checkout vX.Y.Z`) and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z`.
+3. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
+4. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>` (then `git checkout -- app/config.xml` if you want a clean working tree).
 
 ## Switching between Apps2Samsung and a sideloaded build
 

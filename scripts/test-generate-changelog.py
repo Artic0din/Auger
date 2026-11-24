@@ -469,6 +469,89 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             self.assertNotIn("Initial feature", committed)
             self.assertIn("--head docs/changelog-v0.2.0", gh_log.read_text(encoding="utf-8"))
 
+    def test_release_signing_guard_requires_public_profile_without_personal_secrets(self):
+        workflow_text = (SCRIPT_DIR.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        wgt_block = extract_job_block(workflow_text, "wgt")
+        self.assertNotIn("TIZEN_AUTHOR_", wgt_block)
+        self.assertNotIn("TIZEN_DISTRIBUTOR_", wgt_block)
+
+        guard_lines = wgt_block.splitlines()
+        guard_index = next(
+            i for i, line in enumerate(guard_lines) if line == "      - name: Require the public Tizen certificate"
+        )
+        condition = guard_lines[guard_index + 1].strip()
+        self.assertEqual("if: steps.signing.outputs.signing != 'public'", condition)
+
+        guard_script = extract_step_run(wgt_block, "Require the public Tizen certificate")
+        for signing_value, expected_blocked in (("public", False), ("samsung", True), ("throwaway", True), ("", True)):
+            with self.subTest(signing=signing_value):
+                would_run = signing_value != "public"
+                self.assertEqual(expected_blocked, would_run)
+                if would_run:
+                    guard_run = subprocess.run(
+                        ["bash", "-euo", "pipefail", "-c", guard_script],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(0, guard_run.returncode)
+
+        # Run create-signing-profile.sh against a stub SDK even when personal cert env vars are set.
+        with tempfile.TemporaryDirectory() as tmp_name:
+            root = Path(tmp_name)
+            sdk_root = root / "tizen-studio"
+            cli_dir = sdk_root / "tools/ide/bin"
+            jdk_dir = sdk_root / "jdk/bin"
+            dist_dir = sdk_root / "tools/certificate-generator/certificates/distributor"
+            for directory in (cli_dir, jdk_dir, dist_dir):
+                directory.mkdir(parents=True)
+            (sdk_root / "org.tizen.common_1.0.jar").write_text("", encoding="utf-8")
+            (sdk_root / "slf4j-api-1.0.jar").write_text("", encoding="utf-8")
+            dist_p12 = dist_dir / "tizen-distributor-signer.p12"
+            dist_p12.write_text("public-distributor", encoding="utf-8")
+
+            tizen_stub = cli_dir / "tizen"
+            tizen_stub.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "${1:-}" == "certificate" ]]; then\n'
+                '  out_dir="${!#}"\n'
+                '  printf "author" > "${out_dir}/auger-public.p12"\n'
+                "fi\n",
+                encoding="utf-8",
+            )
+            javac_stub = jdk_dir / "javac"
+            javac_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            java_stub = jdk_dir / "java"
+            java_stub.write_text("#!/usr/bin/env bash\ncat\n", encoding="utf-8")
+            for stub in (tizen_stub, javac_stub, java_stub):
+                stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+
+            runner_temp = root / "runner-temp"
+            runner_temp.mkdir()
+            github_env = root / "github-env.txt"
+            github_output = root / "github-output.txt"
+            env = {
+                **os.environ,
+                "PATH": f"{cli_dir}{os.pathsep}{os.environ['PATH']}",
+                "RUNNER_TEMP": str(runner_temp),
+                "GITHUB_ENV": str(github_env),
+                "GITHUB_OUTPUT": str(github_output),
+                "TIZEN_AUTHOR_P12_B64": "should-be-ignored",
+                "TIZEN_DISTRIBUTOR_P12_B64": "should-be-ignored",
+            }
+            profile_run = subprocess.run(
+                ["bash", str(SCRIPT_DIR / "ci/create-signing-profile.sh")],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, profile_run.returncode, profile_run.stderr)
+            self.assertEqual("signing=public\n", github_output.read_text(encoding="utf-8"))
+            self.assertEqual("TIZEN_SECURITY_PROFILE=auger-public\n", github_env.read_text(encoding="utf-8"))
+            profiles_xml = (runner_temp / "tizen-signing/profiles.xml").read_text(encoding="utf-8")
+            self.assertIn(f'distributor="1" key="{dist_p12}"', profiles_xml)
+            self.assertNotIn("should-be-ignored", profiles_xml)
+
 
 if __name__ == "__main__":
     unittest.main()
