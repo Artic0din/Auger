@@ -8,7 +8,9 @@
 ## Write a useful issue
 
 Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) for problems
-in the Samsung TV app. Server and API problems belong in the upstream
+in the Samsung TV app. See [docs/reporting-bugs.md](docs/reporting-bugs.md) for
+where to find your TV model, Auger version, and the player's **Stats** tab. Server
+and API problems belong in the upstream
 [`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose)
 repository. Search first; if an issue already covers the problem, add what's
 new there.

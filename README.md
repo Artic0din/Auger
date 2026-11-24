@@ -113,7 +113,7 @@ We implement and review changes through our own workflow, so a good issue usuall
 
 Pull requests are welcome when a accompanied by an issue.
 We close other pull requests without review.
-[CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful, and [docs/reporting-bugs.md](docs/reporting-bugs.md) shows where to find your TV model, Auger version, and the player's **Stats** tab.
 
 Problems with the server or its API belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose), not here.
 

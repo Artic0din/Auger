@@ -23,6 +23,7 @@ Read the matching reference before changing its area.
 - **Offline browse cache.** [offline-browse.md](offline-browse.md) documents Home, For You, and Details snapshot caching and recovery.
 - **Translations and RTL.** [translation.md](translation.md) documents string catalog usage, mirrored views, and remaining English copy.
 - **Player options HUD.** [player-hud.md](player-hud.md) documents the Info, Stats, Video, Audio, Subtitles, and Chapters tabs.
+- **Reporting bugs.** [reporting-bugs.md](reporting-bugs.md) explains what to include in a bug report and where to find TV details, Auger version, and the player's Stats tab.
 - **Releases and sideloading.** [releasing.md](releasing.md) documents automatic releases, Apps2Samsung, and sideloading.
 - **Upstream TV specs.** [upstream-design-notes.md](upstream-design-notes.md) links the `silo-apple` and `silo-android` design specs relevant to TV clients.
 - **Upstream parity drift snapshot.** `parity/upstream-snapshot.json` records the upstream state `FEATURES.md` was last reviewed against (`scripts/parity-drift.py`).
