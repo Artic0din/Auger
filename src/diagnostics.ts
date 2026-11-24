@@ -98,6 +98,7 @@ export interface DiagnosticsEvent {
 export interface DiagnosticsSnapshot {
     readonly device: DiagnosticsDeviceInfo;
     readonly lastPlayback?: DiagnosticsPlayback | undefined;
+    readonly lastAppError?: string | undefined;
     readonly events: readonly DiagnosticsEvent[];
 }
 
@@ -124,6 +125,7 @@ export interface DiagnosticsPayloadV1 {
     readonly tv: string;
     readonly cat?: DiagnosticsCategory;
     readonly auto?: true;
+    readonly err?: string;
     readonly fw?: string;
     readonly os?: string;
     readonly ua?: string;
@@ -396,12 +398,14 @@ function payloadFromSnapshot(
         : events
             .slice(-logLimit)
             .map(event => `${event.at} [${event.kind}] ${redactDiagnosticText(event.text, MAX_EVENT_TEXT)}`);
+    const err = cleanOptional(snapshot.lastAppError, 64);
     return {
         v: 1,
         app: cleanOptional(device.appVersion, 32) ?? "unknown",
         tv: cleanOptional(device.tvModel, 48) ?? "Samsung TV",
         ...(options?.category === undefined ? {} : { cat: options.category }),
         ...(options?.auto === true ? { auto: true as const } : {}),
+        ...(err === undefined ? {} : { err }),
         ...(fw === undefined ? {} : { fw }),
         ...(os === undefined ? {} : { os }),
         ...(ua === undefined ? {} : { ua }),
@@ -421,12 +425,18 @@ export function diagnosticsPayload(snapshot: DiagnosticsSnapshot, options?: Diag
 }
 
 /** Stable failure fingerprint matching the Cloudflare Worker's grouping key. */
-export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?: DiagnosticsCategory): string {
+export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?: DiagnosticsCategory, source?: "playback" | "app"): string {
     const play = snapshot.lastPlayback;
+    const appErr = cleanOptional(snapshot.lastAppError, 64);
+    const sig = source === "playback" && play?.error !== undefined
+        ? play.error
+        : appErr !== undefined
+            ? `app:${appErr}`
+            : play?.error ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|");
     const key = [
         cleanOptional(snapshot.device.appVersion, 32) ?? "unknown",
         cleanOptional(snapshot.device.tvModel, 48) ?? "Samsung TV",
-        play?.error ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|"),
+        sig,
     ].join("\n");
     return fnv1aHex(key);
 }
@@ -598,6 +608,7 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         if (Object.keys(candidate).length > 0) play = candidate;
     }
     const cat = readOptionalCategory(obj, "cat");
+    const err = readOptionalString(obj, "err");
     const fw = readOptionalString(obj, "fw");
     const os = readOptionalString(obj, "os");
     const ua = readOptionalString(obj, "ua");
@@ -613,6 +624,7 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         tv: obj.tv,
         ...(cat === undefined ? {} : { cat }),
         ...(obj.auto === true ? { auto: true as const } : {}),
+        ...(err === undefined ? {} : { err }),
         ...(fw === undefined ? {} : { fw }),
         ...(os === undefined ? {} : { os }),
         ...(ua === undefined ? {} : { ua }),
@@ -712,6 +724,7 @@ export class DiagnosticsCollector {
     private readonly storage: PublicStorage | undefined;
     private readonly runtimeProbe: () => DiagnosticsRuntimeEnvironment;
     private lastPlayback: DiagnosticsPlayback | undefined;
+    private lastAppError: string | undefined;
     private readonly events: DiagnosticsEvent[] = [];
     private lastPlanSignature: string | undefined;
     private rebufferCount = 0;
@@ -754,7 +767,7 @@ export class DiagnosticsCollector {
     }
 
     hasReportableData(): boolean {
-        return this.lastPlayback !== undefined || this.events.length > 0;
+        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0;
     }
 
     /** Stable content hash ignoring volatile runtime counters (memory, uptime, playback position) for instant duplicate-click detection. */
@@ -766,6 +779,7 @@ export class DiagnosticsCollector {
             fw: this.device.firmware,
             srv: this.device.serverVersion,
             cat: category,
+            err: this.lastAppError,
             play: play === undefined ? undefined : {
                 m: play.playback,
                 d: play.delivery,
@@ -789,21 +803,27 @@ export class DiagnosticsCollector {
         return this.stableSnapshotHash(category) === this.lastSentHash ? this.lastSentReportId : undefined;
     }
 
-    markManualSent(category: DiagnosticsCategory | undefined, reportId: string): void {
-        this.lastSentHash = this.stableSnapshotHash(category);
+    markManualSent(category: DiagnosticsCategory | undefined, reportId: string, submittedHash?: string): void {
+        this.lastSentHash = submittedHash ?? this.stableSnapshotHash(category);
         this.lastSentReportId = reportId;
     }
 
-    canAutoReport(): boolean {
+    canAutoReport(fingerprint?: string): boolean {
         if (!this.autoReport || !this.hasReportableData()) return false;
         const now = this.clock.now();
         if (now - this.lastAutoSendAt < AUTO_REPORT_COOLDOWN_MS) return false;
-        const key = `${this.device.appVersion}:${diagnosticsFingerprint(this.snapshot())}`;
+        const fp = fingerprint ?? diagnosticsFingerprint(this.snapshot());
+        const key = `${this.device.appVersion}:${fp}`;
         return !this.autoSentKeys.has(key);
     }
 
-    markAutoReported(): void {
-        const key = `${this.device.appVersion}:${diagnosticsFingerprint(this.snapshot())}`;
+    markAutoAttempt(): void {
+        this.lastAutoSendAt = this.clock.now();
+    }
+
+    markAutoDelivered(fingerprint?: string): void {
+        const fp = fingerprint ?? diagnosticsFingerprint(this.snapshot());
+        const key = `${this.device.appVersion}:${fp}`;
         this.lastAutoSendAt = this.clock.now();
         this.autoSentKeys.add(key);
         while (this.autoSentKeys.size > MAX_AUTO_SENT_ENTRIES) {
@@ -816,6 +836,18 @@ export class DiagnosticsCollector {
         } catch {
             // In-memory dedup still guards the current session.
         }
+    }
+
+    beginPlaybackSession(): void {
+        this.rebufferCount = 0;
+        this.lastPlanSignature = undefined;
+    }
+
+    recordAppError(code: string): void {
+        const cleaned = /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(code) ? code : "Error";
+        this.lastAppError = cleaned;
+        this.pushEvent("app", `error ${cleaned}`);
+        this.emit();
     }
 
     setServerVersion(version: string | undefined): void {
@@ -870,7 +902,6 @@ export class DiagnosticsCollector {
         };
         const signature = [nextBase.playback, nextBase.delivery, nextBase.video, nextBase.dynamicRange, nextBase.audio, nextBase.subtitles, nextBase.source, nextBase.subtitleDetail].join("|");
         const planChanged = signature !== this.lastPlanSignature && (nextBase.playback !== undefined || nextBase.delivery !== undefined);
-        if (planChanged) this.rebufferCount = 0;
         const next: DiagnosticsPlayback = {
             ...nextBase,
             ...(this.rebufferCount > 0 ? { rebuffers: this.rebufferCount } : {}),
@@ -889,6 +920,7 @@ export class DiagnosticsCollector {
     }
 
     recordPlaybackError(kind: string, message: string, positionSeconds?: number, durationSeconds?: number): void {
+        this.lastAppError = undefined;
         const cleanedKind = redactDiagnosticText(kind, 32);
         const cleanedMessage = redactDiagnosticText(message, 120);
         const combined = cleanedMessage === "" ? cleanedKind : `${cleanedKind}: ${cleanedMessage}`;
@@ -909,8 +941,9 @@ export class DiagnosticsCollector {
     }
 
     clear(): void {
-        if (this.lastPlayback === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined) return;
+        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined) return;
         this.lastPlayback = undefined;
+        this.lastAppError = undefined;
         this.events.length = 0;
         this.lastPlanSignature = undefined;
         this.rebufferCount = 0;
@@ -931,6 +964,7 @@ export class DiagnosticsCollector {
                 uptimeMinutes,
             },
             ...(this.lastPlayback === undefined ? {} : { lastPlayback: { ...this.lastPlayback } }),
+            ...(this.lastAppError === undefined ? {} : { lastAppError: this.lastAppError }),
             events: [...this.events],
         };
     }

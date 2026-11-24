@@ -130,6 +130,7 @@ export function validatePayload(raw) {
     : [];
 
   const cat = typeof raw.cat === "string" && Object.hasOwn(CATEGORY_LABELS, raw.cat) ? raw.cat : undefined;
+  const err = sanitize(raw.err, 64);
 
   return {
     v: 1,
@@ -137,6 +138,7 @@ export function validatePayload(raw) {
     tv,
     cat,
     auto: raw.auto === true ? true : undefined,
+    err,
     fw: sanitize(raw.fw, 48),
     os: sanitize(raw.os, 32),
     ua: sanitize(raw.ua, 32),
@@ -154,8 +156,9 @@ export function validatePayload(raw) {
 /** Deterministic issue grouping fingerprint: same app version, TV model, and error/playback signature. */
 export function computeFingerprint(payload) {
   const play = payload.play;
-  const sig = play?.e
-    ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
+  const sig = payload.err
+    ? `app:${payload.err}`
+    : play?.e ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
   return fnv1aHex([payload.app, payload.tv, sig].join("\n"));
 }
 
@@ -167,6 +170,7 @@ function stableState(payload) {
     os: payload.os,
     srv: payload.srv,
     cat: payload.cat,
+    err: payload.err,
     m: play?.m,
     d: play?.d,
     tr: play?.tr,
@@ -206,6 +210,7 @@ const DIFF_FIELDS = [
   ["os", "Tizen OS"],
   ["srv", "Silo server"],
   ["cat", "Category"],
+  ["err", "App error"],
   ["m", "Playback"],
   ["d", "Delivery"],
   ["tr", "Stream"],
@@ -291,7 +296,8 @@ export function formatGitHubIssue(payload) {
 
   const titleParts = [`[diagnostics] ${payload.tv}`, `Auger ${payload.app}`];
   if (categoryLabel) titleParts.push(categoryLabel);
-  if (payload.play?.e) titleParts.push(payload.play.e.slice(0, 48));
+  if (payload.err) titleParts.push(payload.err.slice(0, 48));
+  else if (payload.play?.e) titleParts.push(payload.play.e.slice(0, 48));
   else if (payload.play?.m) titleParts.push(payload.play.m);
   const title = titleParts.join(" · ").slice(0, 140);
 
@@ -309,6 +315,7 @@ export function formatGitHubIssue(payload) {
     "| Field | Value |",
     "| --- | --- |",
     `| Report source | ${sourceLabel} |`,
+    ...(payload.err ? [`| App error | ${payload.err} |`] : []),
     `| TV | ${deviceLine} |`,
     `| Auger version | ${payload.app} |`,
     ...(payload.srv ? [`| Silo server | ${payload.srv} |`] : []),
@@ -427,21 +434,67 @@ function githubHeaders(token) {
   };
 }
 
+const MAX_ISSUE_LOOKUP_PAGES = 5;
+const inFlightFingerprints = new Map();
+
+function nextLinkUrl(linkHeader) {
+  if (typeof linkHeader !== "string") return undefined;
+  const match = /<([^>]+)>;\s*rel="next"/.exec(linkHeader);
+  return match?.[1];
+}
+
 async function findMatchingOpenIssue(fetchFn, repo, token, fingerprint) {
-  try {
-    const response = await fetchFn(
-      `https://api.github.com/repos/${repo}/issues?state=open&labels=diagnostics&per_page=100`,
-      { method: "GET", headers: githubHeaders(token) },
-    );
-    if (!response.ok) return undefined;
+  const marker = `<!-- auger-fp:${fingerprint} -->`;
+  let nextUrl = `https://api.github.com/repos/${repo}/issues?state=open&labels=diagnostics&per_page=100`;
+  for (let page = 0; page < MAX_ISSUE_LOOKUP_PAGES && nextUrl; page++) {
+    let response;
+    try {
+      response = await fetchFn(nextUrl, { method: "GET", headers: githubHeaders(token) });
+    } catch {
+      return { ok: false, status: 502 };
+    }
+    if (!response.ok) return { ok: false, status: response.status };
     const issues = await response.json();
-    if (!Array.isArray(issues)) return undefined;
-    const marker = `<!-- auger-fp:${fingerprint} -->`;
-    return issues.find(
+    if (!Array.isArray(issues)) return { ok: false, status: 502 };
+    const match = issues.find(
       (entry) => entry && typeof entry === "object" && !entry.pull_request && typeof entry.body === "string" && entry.body.includes(marker),
     );
+    if (match) return { ok: true, issue: match };
+    nextUrl = nextLinkUrl(response.headers?.get?.("Link"));
+  }
+  return { ok: true, issue: undefined };
+}
+
+async function issueHasCommentHash(fetchFn, repo, token, issueNumber, hashMarker) {
+  try {
+    const response = await fetchFn(
+      `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=10`,
+      { method: "GET", headers: githubHeaders(token) },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const comments = await response.json();
+    if (!Array.isArray(comments)) return { ok: false, status: 502 };
+    const found = comments.some((entry) => entry && typeof entry.body === "string" && entry.body.includes(hashMarker));
+    return { ok: true, found };
   } catch {
-    return undefined;
+    return { ok: false, status: 502 };
+  }
+}
+
+async function serializeByFingerprint(fingerprint, task) {
+  const previous = inFlightFingerprints.get(fingerprint) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const tail = previous.then(() => current);
+  inFlightFingerprints.set(fingerprint, tail);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (inFlightFingerprints.get(fingerprint) === tail) {
+      inFlightFingerprints.delete(fingerprint);
+    }
   }
 }
 
@@ -491,52 +544,68 @@ export async function handleRequest(request, env, deps = {}) {
 
   const repo = env.GITHUB_REPO || DEFAULT_REPO;
   const issue = formatGitHubIssue(payload);
-  const existing = await findMatchingOpenIssue(fetchFn, repo, env.GITHUB_TOKEN, issue.fingerprint);
 
-  if (existing && typeof existing.number === "number") {
-    const reportId = `AUG-${existing.number}`;
-    const hashMarker = `<!-- auger-hash:${issue.contentHash} -->`;
-    if (existing.body.includes(hashMarker) || (typeof existing.comments === "number" && existing.comments >= MAX_DIFF_COMMENTS_PER_ISSUE)) {
-      return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+  return serializeByFingerprint(issue.fingerprint, async () => {
+    const lookup = await findMatchingOpenIssue(fetchFn, repo, env.GITHUB_TOKEN, issue.fingerprint);
+    if (!lookup.ok) {
+      return jsonResponse({ ok: false, error: "github_error", status: lookup.status }, 502);
     }
-    const previousState = decodeEmbeddedState(existing.body);
-    const diffBody = formatDiffComment(previousState, payload, issue.contentHash);
-    if (diffBody === null) {
-      return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+    const existing = lookup.issue;
+
+    if (existing && typeof existing.number === "number") {
+      const reportId = `AUG-${existing.number}`;
+      const hashMarker = `<!-- auger-hash:${issue.contentHash} -->`;
+      if (existing.body.includes(hashMarker) || (typeof existing.comments === "number" && existing.comments >= MAX_DIFF_COMMENTS_PER_ISSUE)) {
+        return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+      }
+      if (typeof existing.comments === "number" && existing.comments > 0) {
+        const commentCheck = await issueHasCommentHash(fetchFn, repo, env.GITHUB_TOKEN, existing.number, hashMarker);
+        if (!commentCheck.ok) {
+          return jsonResponse({ ok: false, error: "github_error", status: commentCheck.status }, 502);
+        }
+        if (commentCheck.found) {
+          return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+        }
+      }
+      const previousState = decodeEmbeddedState(existing.body);
+      const diffBody = formatDiffComment(previousState, payload, issue.contentHash);
+      if (diffBody === null) {
+        return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+      }
+      const commentResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues/${existing.number}/comments`, {
+        method: "POST",
+        headers: githubHeaders(env.GITHUB_TOKEN),
+        body: JSON.stringify({ body: diffBody }),
+      });
+      if (!commentResponse.ok) {
+        return jsonResponse({ ok: false, error: "github_error", status: commentResponse.status }, 502);
+      }
+      return jsonResponse({ ok: true, status: "updated", issueNumber: existing.number, reportId }, 200);
     }
-    const commentResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues/${existing.number}/comments`, {
+
+    const ghResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues`, {
       method: "POST",
       headers: githubHeaders(env.GITHUB_TOKEN),
-      body: JSON.stringify({ body: diffBody }),
+      body: JSON.stringify({
+        title: issue.title,
+        body: issue.body,
+        labels: ["diagnostics", "needs-triage"],
+      }),
     });
-    if (!commentResponse.ok) {
-      return jsonResponse({ ok: false, error: "github_error", status: commentResponse.status }, 502);
+
+    if (!ghResponse.ok) {
+      return jsonResponse({ ok: false, error: "github_error", status: ghResponse.status }, 502);
     }
-    return jsonResponse({ ok: true, status: "updated", issueNumber: existing.number, reportId }, 200);
-  }
 
-  const ghResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues`, {
-    method: "POST",
-    headers: githubHeaders(env.GITHUB_TOKEN),
-    body: JSON.stringify({
-      title: issue.title,
-      body: issue.body,
-      labels: ["diagnostics", "needs-triage"],
-    }),
+    const created = await ghResponse.json();
+    const issueNumber = typeof created?.number === "number" ? created.number : undefined;
+    return jsonResponse({
+      ok: true,
+      status: "created",
+      issueNumber,
+      reportId: issueNumber !== undefined ? `AUG-${issueNumber}` : "AUG-SENT",
+    }, 201);
   });
-
-  if (!ghResponse.ok) {
-    return jsonResponse({ ok: false, error: "github_error", status: ghResponse.status }, 502);
-  }
-
-  const created = await ghResponse.json();
-  const issueNumber = typeof created?.number === "number" ? created.number : undefined;
-  return jsonResponse({
-    ok: true,
-    status: "created",
-    issueNumber,
-    reportId: issueNumber !== undefined ? `AUG-${issueNumber}` : "AUG-SENT",
-  }, 201);
 }
 
 export default {

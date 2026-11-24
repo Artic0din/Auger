@@ -1,5 +1,5 @@
 import { startPlayback, type PlayerPlatform, type PlayerScreen } from "./player/playerScreen.ts";
-import { DiagnosticsCollector, type DiagnosticsDeviceInfo, sendDiagnosticsReport } from "./diagnostics.ts";
+import { DiagnosticsCollector, type DiagnosticsDeviceInfo, diagnosticsFingerprint, sendDiagnosticsReport } from "./diagnostics.ts";
 import { connect, type ConnectedServer, type SessionCoreDeps } from "./session/core.ts";
 import type { LogoutResult } from "./session/session.ts";
 import { mountBrowse, type Browse, type PlayRequest } from "./ui/browse.ts";
@@ -56,27 +56,33 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     );
     const autoReportController = new AbortController();
     let autoReportInFlight = false;
-    const triggerAutoReport = (): void => {
-        if (destroyed || autoReportInFlight || !diagnostics.canAutoReport()) return;
+    const triggerAutoReport = (source: "playback" | "app"): void => {
+        if (destroyed || autoReportInFlight) return;
+        const snapshot = diagnostics.snapshot();
+        const fp = diagnosticsFingerprint(snapshot, undefined, source);
+        if (!diagnostics.canAutoReport(fp)) return;
         autoReportInFlight = true;
-        diagnostics.markAutoReported();
-        void sendDiagnosticsReport(diagnostics.snapshot(), activeCore.fetch, { signal: autoReportController.signal, auto: true })
-            .catch(() => undefined)
+        diagnostics.markAutoAttempt();
+        void sendDiagnosticsReport(snapshot, activeCore.fetch, { signal: autoReportController.signal, auto: true })
+            .then(result => {
+                if (result.ok) diagnostics.markAutoDelivered(fp);
+            }, () => undefined)
             .finally(() => { autoReportInFlight = false; });
+    };
+    const classifyError = (value: unknown, fallback: string): string => {
+        if (value instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(value.name)) return value.name;
+        return fallback;
     };
     const onWindowError = (event: ErrorEvent): void => {
         if (destroyed) return;
-        const name = event.error instanceof Error && event.error.name ? event.error.name : "Error";
-        const detail = typeof event.message === "string" && event.message.trim() !== "" ? event.message : "uncaught_error";
-        diagnostics.recordEvent("app", `uncaught ${name}: ${detail}`);
-        triggerAutoReport();
+        // Record only a safe error class identifier; never forward free-form messages that could contain account names or media titles.
+        diagnostics.recordAppError(classifyError(event.error, "UncaughtError"));
+        triggerAutoReport("app");
     };
     const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
         if (destroyed) return;
-        const reason: unknown = event.reason;
-        const label = reason instanceof Error ? `${reason.name}: ${reason.message}` : "unhandled_rejection";
-        diagnostics.recordEvent("app", `rejection ${label}`);
-        triggerAutoReport();
+        diagnostics.recordAppError(classifyError(event.reason, "UnhandledRejection"));
+        triggerAutoReport("app");
     };
     const transient = new Map<string, string>();
     let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
@@ -300,7 +306,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, triggerAutoReport);
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, () => triggerAutoReport("playback"));
     };
 
     const onBack = (event: KeyboardEvent): void => {

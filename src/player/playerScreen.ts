@@ -2071,6 +2071,7 @@ export function startPlayback(
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
     });
     if (diagnostics !== undefined) {
+        diagnostics.beginPlaybackSession();
         let lastErrorKey: string | undefined;
         let wasBuffering = false;
         stopDiagnostics = controller.subscribe(view => {

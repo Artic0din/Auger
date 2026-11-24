@@ -9,7 +9,9 @@ import {
     DIAGNOSTICS_RELAY_URL,
     DIAGNOSTICS_REPORT_URL,
     DiagnosticsCollector,
+    diagnosticsFingerprint,
     formatDiscordDiagnostics,
+    readRuntimeEnvironment,
     redactDiagnosticText,
     sendDiagnosticsReport,
 } from "../../src/diagnostics.ts";
@@ -237,11 +239,29 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     };
     const posted: { method: string; url: string; body: Record<string, unknown> }[] = [];
     const openIssues: { number: number; body: string; comments: number }[] = [];
+    const issueComments = new Map<number, { body: string }[]>();
     let nextIssueNumber = 888;
+    let failLookupOnce = false;
+    let paginatePageTwo = false;
     const fakeFetch = async (url: string, init?: RequestInit): Promise<Response> => {
         const method = (init?.method ?? "GET").toUpperCase();
         if (method === "GET" && url.includes("/issues?state=open&labels=diagnostics")) {
+            if (failLookupOnce) {
+                failLookupOnce = false;
+                return new Response("upstream error", { status: 503 });
+            }
+            if (paginatePageTwo && !url.includes("page=2")) {
+                return new Response(JSON.stringify([{ number: 700, body: "unrelated", comments: 0 }]), {
+                    status: 200,
+                    headers: { Link: `<https://api.github.com/repos/Artic0din/Auger-Tizen/issues?state=open&labels=diagnostics&per_page=100&page=2>; rel="next"` },
+                });
+            }
             return new Response(JSON.stringify(openIssues), { status: 200 });
+        }
+        if (method === "GET" && url.includes("/comments?per_page=10")) {
+            const match = /\/issues\/(\d+)\/comments/.exec(url);
+            const num = match?.[1] ? Number(match[1]) : 0;
+            return new Response(JSON.stringify(issueComments.get(num) ?? []), { status: 200 });
         }
         const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
         posted.push({ method, url, body });
@@ -252,7 +272,12 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         }
         if (method === "POST" && url.endsWith("/comments")) {
             const target = openIssues.find(entry => url.endsWith(`/issues/${entry.number}/comments`));
-            if (target) target.comments++;
+            if (target) {
+                target.comments++;
+                const list = issueComments.get(target.number) ?? [];
+                list.push({ body: String(body.body ?? "") });
+                issueComments.set(target.number, list);
+            }
             return new Response(JSON.stringify({ id: 1 }), { status: 201 });
         }
         return new Response("not found", { status: 404 });
@@ -355,15 +380,16 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     assert.equal(posted.length, 1, "identical retry must not open an issue or post a comment");
 
     // 3. Same fingerprint with new firmware + new log line posts a single compact diff comment on #888 instead of opening a second issue.
+    const updatedPayload = {
+        ...payload,
+        fw: "1661",
+        log: [...payload.log, "01:05:00 [playback] rebuffer #3"],
+    };
     const diff = await handleRequest(
         new Request("https://auger-diagnostics.plaintextlab.com/report", {
             method: "POST",
             headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.12" },
-            body: JSON.stringify({
-                ...payload,
-                fw: "1661",
-                log: [...payload.log, "01:05:00 [playback] rebuffer #3"],
-            }),
+            body: JSON.stringify(updatedPayload),
         }),
         env,
         { fetch: fakeFetch },
@@ -375,6 +401,57 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     const commentBody = String(posted[1]?.body.body ?? "");
     assert.ok(commentBody.includes("**Firmware:** `1650` → `1661`"));
     assert.ok(commentBody.includes("rebuffer #3"));
+
+    // 3b. Retrying the exact same updated follow-up (firmware 1 -> 2 -> 2) detects the prior comment hash and returns `duplicate`.
+    const diffRetry = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.13" },
+            body: JSON.stringify(updatedPayload),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(diffRetry.status, 200);
+    assert.deepEqual(await diffRetry.json(), { ok: true, status: "duplicate", issueNumber: 888, reportId: "AUG-888" });
+    assert.equal(posted.length, 2, "retrying an already-posted diff comment must not post a second comment");
+
+    // 3c. Pagination follows Link rel="next" to find an open match on page 2, and lookup failure returns retryable 502 instead of opening a duplicate.
+    paginatePageTwo = true;
+    const pagedMatch = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.14" },
+            body: JSON.stringify(payload),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    paginatePageTwo = false;
+    assert.equal(pagedMatch.status, 200);
+    assert.deepEqual(await pagedMatch.json(), { ok: true, status: "duplicate", issueNumber: 888, reportId: "AUG-888" });
+
+    failLookupOnce = true;
+    const lookupFailed = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.15" },
+            body: JSON.stringify(payload),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(lookupFailed.status, 502);
+    assert.equal(posted.length, 2, "failed GitHub issue lookup must return retryable 502 without creating a duplicate issue");
+
+    // 3d. Concurrent first reports for the same new fingerprint serialize cleanly into 1 created + 1 duplicate.
+    const burstPayload = { v: 1, app: "0.3.0", tv: "QE65S95C", err: "RangeError", auto: true };
+    const [burstA, burstB] = await Promise.all([
+        handleRequest(new Request("https://auger-diagnostics.plaintextlab.com/report", { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.20" }, body: JSON.stringify(burstPayload) }), env, { fetch: fakeFetch }),
+        handleRequest(new Request("https://auger-diagnostics.plaintextlab.com/report", { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.21" }, body: JSON.stringify(burstPayload) }), env, { fetch: fakeFetch }),
+    ]);
+    const burstStatuses = [await burstA.json(), await burstB.json()].map((item: { status: string }) => item.status).sort();
+    assert.deepEqual(burstStatuses, ["created", "duplicate"]);
 
     // 4. Concurrent requests against the same IP respect the atomic quota and advertise the 60 s binding Retry-After.
     const responses = await Promise.all(Array.from({ length: 7 }, () => handleRequest(
@@ -441,29 +518,88 @@ test("DiagnosticsCollector captures runtime memory, source/subtitle telemetry, d
     assert.equal(snap.lastPlayback?.position, "12:34 / 2:00:00");
     assert.equal(snap.lastPlayback?.rebuffers, 1);
 
-    // Local unchanged-snapshot guard catches duplicate manual sends in 0ms.
+    // Mid-playback subtitle/track changes preserve accumulated rebuffers; only beginPlaybackSession resets them.
+    collector.recordPlaybackStats(
+        {
+            nowPlaying: [],
+            playback: [{ label: "Playback", value: "Transcoded · MKV" }, { label: "Subtitles", value: "Off" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Server Transcode HLS" }],
+        },
+    );
+    assert.equal(collector.snapshot().lastPlayback?.rebuffers, 1, "track changes within the same playback must preserve rebuffer count");
+    collector.beginPlaybackSession();
+    collector.recordPlaybackStats({
+        nowPlaying: [],
+        playback: [{ label: "Playback", value: "Transcoded · MKV" }],
+        stream: [{ label: "Playback status", value: "Playing" }],
+        engine: [{ label: "Delivery", value: "Server Transcode HLS" }],
+    });
+    assert.equal(collector.snapshot().lastPlayback?.rebuffers, undefined, "new playback session resets rebuffer count");
+
+    // Local unchanged-snapshot guard catches duplicate manual sends in 0ms, and honours explicit submittedHash.
     assert.equal(collector.duplicateSendReportId("playback"), undefined);
-    collector.markManualSent("playback", "AUG-901");
-    assert.equal(collector.duplicateSendReportId("playback"), "AUG-901");
+    const submittedHash = collector.stableSnapshotHash("playback");
+    collector.recordEvent("app", "new event arriving while POST is in flight");
+    collector.markManualSent("playback", "AUG-901", submittedHash);
+    assert.equal(collector.duplicateSendReportId("playback"), undefined, "events arriving during in-flight send must not be marked already sent");
+    collector.markManualSent("playback", "AUG-902");
+    assert.equal(collector.duplicateSendReportId("playback"), "AUG-902");
     assert.equal(collector.duplicateSendReportId("buffering"), undefined, "switching category allows sending with new context");
 
-    // Opt-in auto-reporting persists across launches and enforces per-fingerprint + 15-minute cooldowns.
+    // Opt-in auto-reporting persists delivered fingerprints only after success and distinguishes distinct app errors.
     collector.setAutoReportEnabled(true);
     assert.equal(storage.getItem("auger.diagnostics.autoReport"), "1");
     collector.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
-    assert.equal(collector.canAutoReport(), true);
-    collector.markAutoReported();
-    assert.equal(collector.canAutoReport(), false, "same fingerprint must not auto-report twice");
-
-    // Different error within 15-minute cooldown is still blocked until cooldown elapses.
-    collector.recordPlaybackError("terminal", "unsupported_codec", 760, 7200);
-    assert.equal(collector.canAutoReport(), false, "15-minute cooldown blocks rapid auto-reports");
+    const playbackFp = diagnosticsFingerprint(collector.snapshot(), undefined, "playback");
+    assert.equal(collector.canAutoReport(playbackFp), true);
+    // Failed attempt triggers cooldown without permanently suppressing the fingerprint.
+    collector.markAutoAttempt();
+    assert.equal(collector.canAutoReport(playbackFp), false, "15-minute cooldown throttles retries after failed attempt");
     clock.set(clock.now() + AUTO_REPORT_COOLDOWN_MS + 1000);
-    assert.equal(collector.canAutoReport(), true);
+    assert.equal(collector.canAutoReport(playbackFp), true, "failed attempt does not permanently suppress fingerprint");
+    collector.markAutoDelivered(playbackFp);
+    clock.set(clock.now() + AUTO_REPORT_COOLDOWN_MS + 1000);
+    assert.equal(collector.canAutoReport(playbackFp), false, "delivered fingerprint stays suppressed for this app version");
 
-    // A fresh collector backed by the same storage restores opt-in and remembers previously auto-sent fingerprints.
+    // Distinct app errors receive distinct fingerprints even after playback errors.
+    collector.recordAppError("TypeError");
+    const typeErrFp = diagnosticsFingerprint(collector.snapshot(), undefined, "app");
+    collector.recordAppError("RangeError");
+    const rangeErrFp = diagnosticsFingerprint(collector.snapshot(), undefined, "app");
+    assert.notEqual(typeErrFp, playbackFp);
+    assert.notEqual(typeErrFp, rangeErrFp);
+    assert.equal(collector.canAutoReport(rangeErrFp), true);
+
+    // A fresh collector backed by the same storage restores opt-in and remembers previously delivered fingerprints.
     const reloaded = new DiagnosticsCollector({ appVersion: "0.3.0", tvModel: "QE65S95C", firmware: "1650" }, clock, storage);
     assert.equal(reloaded.autoReportEnabled, true);
     reloaded.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
-    assert.equal(reloaded.canAutoReport(), false, "persisted fingerprint dedup survives app restarts");
+    assert.equal(reloaded.canAutoReport(diagnosticsFingerprint(reloaded.snapshot(), undefined, "playback")), false, "persisted fingerprint dedup survives app restarts");
+});
+
+test("readRuntimeEnvironment formats Chromium memory, device RAM, and screen when present and omits missing metrics", () => {
+    const origPerf = Object.getOwnPropertyDescriptor(globalThis, "performance");
+    const origNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const origScreen = Object.getOwnPropertyDescriptor(globalThis, "screen");
+    try {
+        Object.defineProperty(globalThis, "performance", { configurable: true, value: { memory: { usedJSHeapSize: 64 * 1024 * 1024, totalJSHeapSize: 128 * 1024 * 1024, jsHeapSizeLimit: 512 * 1024 * 1024 } } });
+        Object.defineProperty(globalThis, "navigator", { configurable: true, value: { deviceMemory: 4 } });
+        Object.defineProperty(globalThis, "screen", { configurable: true, value: { width: 1920, height: 1080 } });
+        assert.deepEqual(readRuntimeEnvironment(), {
+            memory: "64 / 128 MB (limit 512 MB)",
+            deviceRam: "4 GB",
+            screen: "1920x1080",
+        });
+
+        Object.defineProperty(globalThis, "performance", { configurable: true, value: {} });
+        Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+        Object.defineProperty(globalThis, "screen", { configurable: true, value: undefined });
+        assert.deepEqual(readRuntimeEnvironment(), {});
+    } finally {
+        if (origPerf) Object.defineProperty(globalThis, "performance", origPerf);
+        if (origNav) Object.defineProperty(globalThis, "navigator", origNav);
+        if (origScreen) Object.defineProperty(globalThis, "screen", origScreen);
+        else delete (globalThis as Record<string, unknown>).screen;
+    }
 });

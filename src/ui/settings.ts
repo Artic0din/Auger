@@ -430,6 +430,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     render({ zone: "settings-rows", key: "send-diagnostics" });
                     return;
                 }
+                // Snapshot the hash before submitting so events arriving mid-request are not swallowed as already sent.
+                const submittedHash = diagnosticsCollector.stableSnapshotHash(chosen);
                 diagnosticsSending = true;
                 diagnosticsStatus = undefined;
                 render();
@@ -438,7 +440,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     diagnosticsSending = false;
                     confirmingDiagnosticsSend = false;
                     if (result.ok) {
-                        diagnosticsCollector.markManualSent(chosen, result.reportId);
+                        diagnosticsCollector.markManualSent(chosen, result.reportId, submittedHash);
                         const okText = result.status === "duplicate"
                             ? `Already tracked (${result.reportId}). Thanks for confirming.`
                             : result.status === "updated"

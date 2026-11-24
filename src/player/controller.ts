@@ -832,9 +832,15 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.attempt;
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined) return undefined;
-        const subtitleTrack = plan.subtitle.trackId === undefined
+        const shownId = shownSubtitle(attempt, plan);
+        const subtitleTrack = shownId === undefined
             ? undefined
-            : plan.subtitle.inventory.find(entry => entry.trackId === plan.subtitle.trackId);
+            : plan.subtitle.inventory.find(entry => entry.trackId === shownId);
+        const subtitleMode = shownId === undefined
+            ? "off"
+            : attempt.subtitleOverride !== undefined
+                ? (subtitleTrack?.delivery === "burn_in_only" ? "burn_in" : "render")
+                : plan.subtitle.mode;
         return {
             source: plan.source,
             ...(plan.sourceBitrateKbps === undefined ? {} : { sourceBitrateKbps: plan.sourceBitrateKbps }),
@@ -842,7 +848,7 @@ export class PlaybackController implements PlayerControls {
             ...(plan.streamProtocol === undefined ? {} : { streamProtocol: plan.streamProtocol }),
             ...(plan.streamContainer === undefined ? {} : { streamContainer: plan.streamContainer }),
             ...(plan.activeQuality === undefined ? {} : { activeQuality: plan.activeQuality }),
-            subtitleMode: plan.subtitle.mode,
+            subtitleMode,
             ...(subtitleTrack === undefined ? {} : {
                 subtitleSource: subtitleTrack.source,
                 subtitleDelivery: subtitleTrack.delivery,

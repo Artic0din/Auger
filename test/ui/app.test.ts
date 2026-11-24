@@ -2639,4 +2639,26 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.locator('[data-focus="clear-diagnostics"]').click();
     await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
     await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+
+    // Uncaught window error and unhandled rejection stay silent when auto-report is Off, and send safe error class names (never free-form messages) when On.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "false");
+    await tv.page.evaluate(() => {
+        window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("Secret Movie for alice"), message: "Secret Movie for alice" }));
+    });
+    assert.equal(autoPayloads.length, 1, "disabled auto-report must not post on uncaught window errors");
+
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.jump(16 * 60 * 1000);
+    await tv.page.evaluate(() => {
+        const rejection = new Event("unhandledrejection") as Event & { reason?: unknown };
+        rejection.reason = new RangeError("Private Title for bob");
+        window.dispatchEvent(rejection);
+    });
+    await tv.eventually(async () => autoPayloads.length === 2, "enabled auto-report posts safe error class on unhandled rejection");
+    const crashJson = JSON.parse(autoPayloads[1]!) as { auto?: boolean; err?: string };
+    assert.equal(crashJson.auto, true);
+    assert.equal(crashJson.err, "RangeError");
+    assert.ok(!autoPayloads[1]!.includes("Private Title") && !autoPayloads[1]!.includes("bob"), "uncaught error messages must never leave the TV");
 });
