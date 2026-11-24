@@ -130,7 +130,7 @@ export function validatePayload(raw) {
     : [];
 
   const cat = typeof raw.cat === "string" && Object.hasOwn(CATEGORY_LABELS, raw.cat) ? raw.cat : undefined;
-  const err = sanitize(raw.err, 64);
+  const err = typeof raw.err === "string" && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(raw.err) ? raw.err : undefined;
 
   return {
     v: 1,
@@ -454,7 +454,12 @@ async function findMatchingOpenIssue(fetchFn, repo, token, fingerprint) {
       return { ok: false, status: 502 };
     }
     if (!response.ok) return { ok: false, status: response.status };
-    const issues = await response.json();
+    let issues;
+    try {
+      issues = await response.json();
+    } catch {
+      return { ok: false, status: 502 };
+    }
     if (!Array.isArray(issues)) return { ok: false, status: 502 };
     const match = issues.find(
       (entry) => entry && typeof entry === "object" && !entry.pull_request && typeof entry.body === "string" && entry.body.includes(marker),
