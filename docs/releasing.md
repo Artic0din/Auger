@@ -84,18 +84,19 @@ Preview notes locally with `python3 scripts/generate-changelog.py release --vers
 
 ## Installing and updating with Apps2Samsung
 
-1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger-Tizen`, or use **Settings > Installing > Your sources** in the app.
-2. Install Auger from that source.
+Auger is listed in the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages/blob/main/packages/Artic0din__Auger-Tizen.json), which automatically tracks each new `vX.Y.Z` GitHub Release.
+
+1. Open Apps2Samsung and find **Auger** under **Media servers & players**.
+2. Install Auger directly from the catalog.
    Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so it installs straight onto your TV.
 3. Update with one click.
    Every release raises `X.Y.Z` in `app/config.xml`, so Apps2Samsung's updater sees every release.
 
+Do not add `github.com/Artic0din/Auger-Tizen` as a custom source unless you are testing an unlisted build.
+Adding it alongside the community catalog creates a duplicate `Unverified · Auger-Tizen` entry, which can be removed in Apps2Samsung under **Settings > Installing > Your sources**.
+
 Upgrading from a `0.1.0-beta.*` build requires uninstalling the older build first, because the package ID is now `AugerTv001.Auger` and Tizen treats a new package ID as a separate app.
 Uninstalling removes saved sign-in data, so you sign in again once; subsequent builds with `AugerTv001.Auger` update in place within the same install method (Apps2Samsung or sideloading).
-
-### Community catalog
-
-Auger is listed in the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages/blob/main/packages/Artic0din__Auger-Tizen.json), which automatically tracks each new `vX.Y.Z` GitHub Release.
 
 ## Sideloading a build
 
