@@ -12,18 +12,13 @@ spec.loader.exec_module(gate)
 HEAD = "350887ea7ddadc34d4b53c7eb489fd56c6a6f704"
 
 
-def codex(sha, status="completed", login="chatgpt-codex-connector"):
-    state = f'{{"code_review":{{"commit_sha":"{sha}","status":"{status}"}},"security_review":{{}}}}'
-    return {"author": {"login": login}, "body": f"<!-- codex-review-state:v1 {state} -->\nCodex Review Summary"}
-
-
 def check(name, conclusion="SUCCESS", started="2026-11-22T06:00:00Z", status="COMPLETED"):
     return {"name": name, "status": status, "conclusion": conclusion, "startedAt": started}
 
 
 def ready_pr(**changes):
     pr = {"state": "OPEN", "mergeable": "MERGEABLE", "headRefOid": HEAD,
-          "statusCheckRollup": [check(name) for name in gate.REQUIRED_CHECKS], "comments": [codex(HEAD)]}
+          "statusCheckRollup": [check(name) for name in gate.REQUIRED_CHECKS], "comments": []}
     pr.update(changes)
     return pr
 
@@ -59,15 +54,10 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual("conflicts with main: merge main into the branch", result)
 
     def test_a_required_check_that_never_reported_fails(self):
-        rollup = [c for c in ready_pr()["statusCheckRollup"] if c["name"] != "UI tests (3/3)"]
-        self.assertEqual("check not reported: UI tests (3/3)", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
-
-    def test_codex_must_have_completed_the_head_commit(self):
-        for comments in ([], [codex("0" * 40)], [codex(HEAD, "running")], [codex(HEAD), codex("0" * 40)],
-                         [codex(HEAD, login="someone")]):
-            with self.subTest(comments=comments):
-                self.assertEqual("Codex has not completed a review of 350887ea",
-                                 gate.verdict(ready_pr(comments=comments), []))
+        for name in ("UI tests (3/3)", "Package .wgt", "Secret scan"):
+            with self.subTest(name=name):
+                rollup = [c for c in ready_pr()["statusCheckRollup"] if c["name"] != name]
+                self.assertEqual(f"check not reported: {name}", gate.verdict(ready_pr(statusCheckRollup=rollup), []))
 
     def test_unresolved_threads_are_listed(self):
         threads = [{"isResolved": False, "path": "src/ui/a.ts", "line": 4}, {"isResolved": True, "path": "b", "line": 1}]

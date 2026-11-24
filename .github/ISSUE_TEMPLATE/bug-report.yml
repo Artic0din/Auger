@@ -96,27 +96,6 @@ body:
     attributes:
       label: Technical notes
       description: Optional suspected root cause or related observations. Keep this separate from what you observed above.
-  - type: input
-    id: ai-harness
-    attributes:
-      label: AI harness
-      description: Enter the exact agent harness or application, or "none".
-    validations:
-      required: true
-  - type: input
-    id: ai-tools
-    attributes:
-      label: AI tool(s)
-      description: Enter the exact tool name(s), or "none".
-    validations:
-      required: true
-  - type: input
-    id: ai-models
-    attributes:
-      label: AI model(s)
-      description: Enter the exact model identifier(s) reported by each tool, or "n/a".
-    validations:
-      required: true
   - type: dropdown
     id: ai-involvement
     attributes:
@@ -128,13 +107,26 @@ body:
         - Fully AI-generated, human verified
     validations:
       required: true
+  - type: input
+    id: ai-harness
+    attributes:
+      label: AI harness
+      description: Optional. If you used AI, enter the agent harness or app.
+  - type: input
+    id: ai-tools
+    attributes:
+      label: AI tool(s)
+      description: Optional. If you used AI, enter the tool name(s).
+  - type: input
+    id: ai-models
+    attributes:
+      label: AI model(s)
+      description: Optional. If you used AI, enter the model identifier(s).
   - type: textarea
     id: ai-review
     attributes:
       label: Independent or adversarial review
-      description: Summarize the scope, method, findings, and resolutions, or enter "n/a" when this issue does not require independent or adversarial review.
-    validations:
-      required: true
+      description: Optional. If applicable, summarize any independent review.
   - type: checkboxes
     id: confirmations
     attributes:

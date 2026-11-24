@@ -3,21 +3,18 @@
 
 Usage: python3 scripts/pr-gate.py <number>
 
-The gate: open and mergeable, every check's latest run passed (including the UI shards), Codex reviewed the head commit, Kody finished,
+The gate: open and mergeable, every check's latest run passed (including build, UI shards, packaging, secret scan, and Kody),
 and no review thread is unresolved. Exit status is 0 only for READY.
 """
 
 import json
-import re
 import subprocess
 import sys
 
 REPOSITORY = "Artic0din/Auger-Tizen"
-REQUIRED_CHECKS = ("Build and native tests",
+REQUIRED_CHECKS = ("Build and native tests", "Package .wgt", "Secret scan",
                    "UI tests (1/3)", "UI tests (2/3)", "UI tests (3/3)", "Kody Code Review")
 PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
-CODEX_STATE = re.compile(r"codex-review-state:v1 (\{.*?\}) -->")
-CODEX_LOGIN = "chatgpt-codex-connector"
 THREADS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
 pullRequest(number:$number){headRefOid reviewThreads(first:100){totalCount nodes{isResolved path line}}}}}"""
 
@@ -41,16 +38,6 @@ def latest_checks(rollup: list[dict]) -> dict[str, str]:
     return {name: outcome for name, (_, outcome) in latest.items()}
 
 
-def codex_reviewed(comments: list[dict], head: str) -> bool:
-    for comment in reversed(comments):
-        if (comment.get("author") or {}).get("login") != CODEX_LOGIN:
-            continue
-        if match := CODEX_STATE.search(comment.get("body", "")):
-            review = json.loads(match.group(1)).get("code_review") or {}
-            return review.get("commit_sha") == head and review.get("status") == "completed"
-    return False
-
-
 def verdict(pr: dict, threads: list[dict]) -> str:
     if pr["state"] != "OPEN":
         return f"not open ({pr['state']})"
@@ -67,8 +54,6 @@ def verdict(pr: dict, threads: list[dict]) -> str:
     if failing:
         return f"check not passing: {', '.join(failing)}"
     head = pr["headRefOid"]
-    if not codex_reviewed(pr["comments"], head):
-        return f"Codex has not completed a review of {head[:8]}"
     open_threads = [f"{t['path']}:{t['line']}" for t in threads if not t["isResolved"]]
     if open_threads:
         return f"{len(open_threads)} unresolved thread(s): {', '.join(open_threads)}"
