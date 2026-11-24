@@ -168,7 +168,14 @@ class UnpublishedTagTest(unittest.TestCase):
         self.assertEqual(release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0", "recover"), result)
         self.assertEqual("recover", plan(["v0.1.0", "v0.1.1"], mode="major", unpublished_target_tag=tag).bump)
 
-    def test_explicit_version_skips_recovery(self):
+    def test_explicit_version_recovers_matching_unpublished_tag(self):
+        tag = release.parse_tag("v1.3.7")
+        result = plan(
+            ["v0.1.0", "v1.3.7"], explicit_version="1.3.7", published_exact_tags={"v0.1.0"}, unpublished_target_tag=tag
+        )
+        self.assertEqual(release.ReleasePlan(True, "1.3.7", "v1.3.7", "v0.1.0", "recover"), result)
+
+    def test_explicit_version_skips_recovery_for_higher_override(self):
         tag = release.parse_tag("v0.1.1")
         result = plan(
             ["v0.1.0", "v0.1.1"], explicit_version="0.2.0", published_exact_tags={"v0.1.0"}, unpublished_target_tag=tag
@@ -289,6 +296,10 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(
             {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "recover"},
             self.next_published("--target", target),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "recover"},
+            self.next_published("--target", target, "--version", "0.1.1"),
         )
         # Without the release list every exact tag counts as published.
         self.assertEqual("false", self.next("--target", target)["should_release"])

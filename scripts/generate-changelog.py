@@ -52,8 +52,13 @@ RELEASES_MARKER = "<!-- changelog:releases -->"
 NO_CHANGES = "General maintenance and stability improvements."
 PR_SUFFIX = re.compile(r"(?:\s*\(#\d+\))+\s*$")
 BREAKING_FOOTER = re.compile(r"^BREAKING[- ]CHANGE:[ \t]*(.*)$", re.MULTILINE)
+TRAILER = re.compile(r"^(?:[A-Za-z][A-Za-z0-9-]*:[ \t]|[A-Za-z][A-Za-z0-9-]* #)")
 SECURITY_SCOPES = {"security", "sec"}
-SECURITY_WORDS = re.compile(r"\b(?:security|vulnerab\w*|cve-\d|secret leak\w*)", re.IGNORECASE)
+INTERNAL_SCOPES = {"ci", "docs", "test", "tests", "scripts", "deps", "build"}
+SECURITY_WORDS = re.compile(
+    r"\b(?:vulnerab\w*|cve-\d+(?:-\d+)*|secret leak\w*|xss|csrf|ssrf|sql injection|command injection|auth bypass|privilege escalation)\b",
+    re.IGNORECASE,
+)
 CATEGORY_BY_TYPE = {"feat": "FEATURES", "perf": "IMPROVEMENTS", "fix": "FIXES", "revert": "FIXES"}
 
 SCOPE_LABELS = {
@@ -165,12 +170,24 @@ def clean(description: str) -> str:
 
 
 def breaking_text(body: str) -> str:
-    """The paragraph after `BREAKING CHANGE:`, joined into one line."""
+    """The paragraph after `BREAKING CHANGE:`, stopping at a blank line or next trailer."""
     match = BREAKING_FOOTER.search(body)
     if not match:
         return ""
-    paragraph = body[match.start(1):].split("\n\n", 1)[0]
-    return " ".join(line.strip() for line in paragraph.splitlines() if line.strip())
+    lines = []
+    first = match.group(1).strip()
+    if first:
+        lines.append(first)
+    rest = body[match.end():]
+    if rest.startswith("\r\n"):
+        rest = rest[2:]
+    elif rest.startswith("\n"):
+        rest = rest[1:]
+    for line in rest.splitlines():
+        if not line.strip() or TRAILER.match(line):
+            break
+        lines.append(line.strip())
+    return " ".join(lines)
 
 
 def entries_for(commit: CommitMessage) -> list[Entry]:
@@ -191,9 +208,12 @@ def entries_for(commit: CommitMessage) -> list[Entry]:
     else:
         kind, scope, description = "", "", clean(subject)
 
+    scope_parts = [part.strip().lower() for part in scope.split(",") if part.strip()]
     category_name = CATEGORY_BY_TYPE.get(kind)
     category = Category[category_name] if category_name else None
-    if category and scope.strip().lower() in SECURITY_SCOPES:
+    if category is not None and scope_parts and all(part in INTERNAL_SCOPES for part in scope_parts):
+        category = None
+    if category and any(part in SECURITY_SCOPES for part in scope_parts):
         category = Category.SECURITY
     elif kind == "fix" and SECURITY_WORDS.search(description):
         category = Category.SECURITY
@@ -233,17 +253,31 @@ def read_commits(start: str, end: str) -> list[CommitMessage]:
 
 
 def insert_entry(changelog: str, version: str, entry: str) -> Optional[str]:
-    """The changelog with entry added, or None when it already lists version."""
+    """Insert entry in descending SemVer order, or return None if version is already listed."""
     if re.search(rf"^## \[{re.escape(version)}\]", changelog, re.MULTILINE):
         return None
+    target_version = release.parse_version(version)
     marker = re.search(rf"^{re.escape(RELEASES_MARKER)}[ \t]*\n?", changelog, re.MULTILINE)
     if marker:
-        at = marker.end()
+        search_from = marker.end()
     else:
-        # After the Unreleased section, else before the first release heading.
         unreleased = re.search(r"^## \[Unreleased\].*$", changelog, re.MULTILINE | re.IGNORECASE)
-        following = re.compile(r"^## ", re.MULTILINE).search(changelog, unreleased.end() if unreleased else 0)
-        at = following.start() if following else len(changelog)
+        search_from = unreleased.end() if unreleased else 0
+
+    at: Optional[int] = None
+    for heading in re.finditer(r"^## \[([^\]]+)\]", changelog[search_from:], re.MULTILINE):
+        heading_text = heading.group(1)
+        if re.fullmatch(r"\d+\.\d+\.\d+", heading_text):
+            if target_version > release.parse_version(heading_text):
+                at = search_from + heading.start()
+                break
+        else:
+            # First non-SemVer section (such as [Earlier changes]): insert before it.
+            at = search_from + heading.start()
+            break
+    if at is None:
+        at = len(changelog)
+
     before = changelog[:at].rstrip("\n")
     rest = changelog[at:].lstrip("\n")
     return f"{before}\n\n{entry.rstrip()}\n" + (f"\n{rest}" if rest else "")

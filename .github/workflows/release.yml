@@ -4,9 +4,9 @@ name: Release
 # picks vX.Y.Z from the Conventional Commits since the latest published release
 # (or skips the release when none needs one), and this workflow signs Auger.wgt
 # with the maintainer's Samsung certificate, reserves the tag, publishes it on a
-# GitHub Release with notes from scripts/generate-changelog.py, and records the
-# notes in CHANGELOG.md on main. Run it by hand to force a bump or a version.
-# See docs/releasing.md.
+# GitHub Release with notes from scripts/generate-changelog.py, and opens a
+# pull request to record the notes in CHANGELOG.md. Run it by hand to force a
+# bump or a version. See docs/releasing.md.
 
 on:
   workflow_run:
@@ -205,7 +205,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write # create the tag and release, and record the notes on main
+      contents: write # create the tag, release, and changelog branch
+      pull-requests: write # open the CHANGELOG.md pull request
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -233,6 +234,12 @@ jobs:
       - name: Write the release notes
         run: |
           release_date="$(date -u +%Y-%m-%d)"
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            published_at="$(gh release view "${TAG}" --json isDraft,publishedAt --jq 'if .isDraft then "" else (.publishedAt // "") end')"
+            if [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+              release_date="${BASH_REMATCH[0]}"
+            fi
+          fi
           echo "RELEASE_DATE=${release_date}" >> "${GITHUB_ENV}"
           {
             python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
@@ -242,6 +249,9 @@ jobs:
             echo
             echo "- **Apps2Samsung:** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it."
             echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
+            if [[ "${PREVIOUS_TAG}" == *-beta.* ]]; then
+              echo "- **Upgrading from \`0.1.0-beta.*\`:** uninstall the older build first, because the Tizen package ID changed to \`AugerTv001.Auger\`. Uninstalling clears saved sign-in data, so you sign in again once; subsequent \`AugerTv001.Auger\` releases update in place within the same install method."
+            fi
           } > "${RUNNER_TEMP}/notes.md"
           cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -323,23 +333,22 @@ jobs:
           gh release create "${TAG}" --verify-tag "${latest_flag}" \
             --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
 
-      - name: Record the release in CHANGELOG.md
+      - name: Open a pull request to record the release in CHANGELOG.md
         run: |
           # The release is already out, so a failure here warns instead of failing the run.
+          # Opening a PR keeps main off untested bot commits and respects branch-PR rules.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
           git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
+          branch="docs/changelog-v${VERSION}"
           generator="${RUNNER_TEMP}/changelog-generator"
           mkdir -p "${generator}"
           cp scripts/generate-changelog.py scripts/release-version.py "${generator}/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Rebuilds the commit on a fresh main each attempt, so a main that
-          # moved during publish never conflicts. The update is idempotent.
-          # Bash ignores -e inside a function called from `if`, so each step checks itself.
-          record() {
+          record_pr() {
             git_auth fetch --quiet origin main || return 1
-            git checkout --quiet -B changelog-update origin/main || return 1
+            git checkout --quiet -B "${branch}" origin/main || return 1
             python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
               --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}" || return 1
             if git diff --quiet CHANGELOG.md; then
@@ -347,8 +356,18 @@ jobs:
               return 0
             fi
             git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
-            git_auth push origin HEAD:main
+            git_auth fetch --quiet origin "${branch}" 2>/dev/null || true
+            git_auth push --force-with-lease origin "HEAD:${branch}" || return 1
+            existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')"
+            if [[ -n "${existing}" ]]; then
+              echo "Updated existing changelog PR #${existing}."
+              return 0
+            fi
+            pr_body="$(printf 'Adds the release notes for %s to `CHANGELOG.md`.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
+            gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
+              --title "docs(changelog): record v${VERSION} release notes" \
+              --body "${pr_body}"
           }
-          if ! record && ! record; then
-            echo "::warning::Could not record ${TAG} in CHANGELOG.md on main. Add its section by running scripts/generate-changelog.py update."
+          if ! record_pr; then
+            echo "::warning::Could not open a changelog PR for ${TAG} (enable 'Allow GitHub Actions to create and approve pull requests' in repository Actions settings, or run scripts/generate-changelog.py update locally)."
           fi

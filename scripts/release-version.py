@@ -183,7 +183,9 @@ def plan_release(
         raise ReleaseError(f"Unknown bump {mode!r}.")
     if target_already_released:
         return ReleasePlan(False, "", "", previous_tag, "none")
-    if unpublished_target_tag is not None and not explicit_version:
+    if unpublished_target_tag is not None and (
+        not explicit_version or parse_version(explicit_version) == unpublished_target_tag.version
+    ):
         unpublished_target_tag.version.check_tizen_limits()
         return ReleasePlan(True, unpublished_target_tag.version.text, unpublished_target_tag.name, previous_tag, "recover")
 

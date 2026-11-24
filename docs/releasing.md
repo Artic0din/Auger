@@ -17,7 +17,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 
 The largest bump wins.
 When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the maintainer's Samsung certificate.
-It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and records the release notes in `CHANGELOG.md`.
+It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and opens a pull request to record the release notes in `CHANGELOG.md`.
 A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
 
 Only tags with a published GitHub Release count as released.
@@ -61,18 +61,18 @@ It reads commits with the same Conventional Commit rules as the version bump and
 | ⚠️ Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
 | ✨ New Features | `feat` |
 | 🔧 Improvements | `perf` |
-| 🔒 Security | `fix` with the `security` or `sec` scope, or a subject about a security problem, vulnerability, CVE or secret leak |
+| 🔒 Security | `fix` with the `security` or `sec` scope, or a subject naming a vulnerability, CVE, or secret leak |
 | 🐛 Fixes | `fix`, `revert`, or a `Revert "..."` subject |
 
-It leaves out `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` and merge commits unless they are breaking.
+It leaves out `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`, internal-scope fixes (`ci`, `docs`, `test`, `scripts`, `deps`, `build`), and merge commits unless they are breaking.
 Each bullet drops the type prefix and the `(#123)` suffix, starts with a capital, and leads with the scope's area, such as `- **Playback**: Add chapters` for `feat(player): add chapters (#12)`.
 Fixes read as plain sentences.
 A release with no user-facing commits reads `General maintenance and stability improvements.`
 
-The Release workflow uses the notes as the GitHub Release body, under an Install section.
-After publishing, it adds the same notes as `## [X.Y.Z] - YYYY-MM-DD` below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes a `docs(changelog): record vX.Y.Z release notes` commit to `main`.
+The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
+After publishing, it pushes a `docs/changelog-vX.Y.Z` branch inserting `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and opens a pull request against `main` (never pushing bot commits directly to `main`).
 A changelog that already has the version stays unchanged.
-If `main` refuses the push, the run warns and the release stays published; add the section with:
+If GitHub Actions pull request creation is disabled in repository settings, the run warns and the release stays published; enable **Allow GitHub Actions to create and approve pull requests** or add the section locally with:
 
 ```sh
 python3 scripts/generate-changelog.py update --file CHANGELOG.md --version X.Y.Z --from vPREVIOUS --to vX.Y.Z

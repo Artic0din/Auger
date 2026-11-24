@@ -63,12 +63,15 @@ class CategoryTest(unittest.TestCase):
         )
 
     def test_security_from_the_subject(self):
-        for subject in ("fix(auth): close a security hole", "fix: patch CVE-2026-1234", "fix(player): stop a secret leak"):
+        for subject in ("fix(auth): fix auth bypass vulnerability", "fix: patch CVE-2026-1234", "fix(player): stop a secret leak"):
             with self.subTest(subject):
                 self.assertIn(Category.SECURITY, sections(subject))
         self.assertEqual(
-            {Category.SECURITY: ["- **Sign-In**: Close a security hole"]}, sections("fix(auth): close a security hole")
+            {Category.SECURITY: ["- **Sign-In**: Fix auth bypass vulnerability"]},
+            sections("fix(auth): fix auth bypass vulnerability"),
         )
+        # Cosmetic UI wording mentioning "security" stays under Fixes.
+        self.assertEqual({Category.FIXES: ["- Security badge is clipped"]}, sections("fix: security badge is clipped"))
         # Only fixes move on wording alone.
         self.assertIn(Category.FEATURES, sections("feat: show security settings"))
 
@@ -80,13 +83,23 @@ class CategoryTest(unittest.TestCase):
 class NoiseTest(unittest.TestCase):
     def test_internal_commits_are_left_out(self):
         noise = [f"{kind}(repo): tidy" for kind in ("docs", "chore", "ci", "test", "refactor", "style", "build")]
-        noise += ["Merge pull request #5 from Artic0din/Auger-Tizen", "docs(changelog): record v1.0.0 release notes", "update readme"]
+        noise += [
+            "fix(ci): fail Evidence links that do not load",
+            "fix(docs): fix broken link",
+            "perf(test): speed up fixture setup",
+            "Merge pull request #5 from Artic0din/Auger-Tizen",
+            "docs(changelog): record v1.0.0 release notes",
+            "update readme",
+        ]
         result = sections(*noise, "fix: real fix")
         self.assertEqual({Category.FIXES: ["- Real fix"]}, result)
 
     def test_breaking_noise_is_kept(self):
         self.assertEqual({Category.BREAKING: ["- Rename settings keys"]}, sections("chore!: rename settings keys"))
-        footer = Commit("chore(settings): rename keys", "Renames every key.\n\nBREAKING CHANGE: settings reset\nonce on update")
+        footer = Commit(
+            "chore(settings): rename keys",
+            "Renames every key.\n\nBREAKING CHANGE: settings reset\nonce on update\nRefs: #123\nReviewed-by: Maintainer",
+        )
         self.assertEqual({Category.BREAKING: ["- **Settings**: Settings reset once on update"]}, sections(footer))
 
     def test_breaking_footer_keeps_the_feature_when_distinct(self):
@@ -173,6 +186,18 @@ class InsertEntryTest(unittest.TestCase):
             twice,
         )
         self.assertIsNone(changelog.insert_entry(twice, "0.2.0", self.entry("0.2.0")))
+
+    def test_inserts_in_descending_semver_order(self):
+        text = f"{HEADER}<!-- changelog:releases -->\n\n## [Earlier changes]\n\n- Old.\n"
+        first = changelog.insert_entry(text, "1.2.0", self.entry("1.2.0"))
+        second = changelog.insert_entry(first, "1.1.0", self.entry("1.1.0"))
+        third = changelog.insert_entry(second, "1.3.0", self.entry("1.3.0"))
+        self.assertEqual(
+            f"{HEADER}<!-- changelog:releases -->\n\n"
+            f"{self.entry('1.3.0')}\n{self.entry('1.2.0')}\n{self.entry('1.1.0')}\n"
+            f"## [Earlier changes]\n\n- Old.\n",
+            third,
+        )
 
     def test_without_a_marker(self):
         after_unreleased = changelog.insert_entry(f"{HEADER}## [0.1.0] - 2025-01-01\n", "0.2.0", self.entry("0.2.0"))
