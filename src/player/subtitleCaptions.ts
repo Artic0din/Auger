@@ -465,7 +465,7 @@ export class SubtitleCaptions {
         if (readSync && !this.legacySyncRead) {
             this.legacySyncRead = true;
             void this.session.call({ ...operations.subtitleSync(), profileScoped: true, signal: this.signal }).then(sync => {
-                if (!current() || this.display?.editedAppearance) return;
+                if (!current() || this.display?.editedDelay) return;
                 this.delayMs = sync;
                 this.display?.adopt(this.appearance, sync);
                 this.onChanged();

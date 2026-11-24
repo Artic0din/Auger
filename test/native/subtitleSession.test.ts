@@ -274,7 +274,7 @@ async function rig(storage?: PublicStorage) {
     return { h, clock, host, session, profileId: owner.id };
 }
 
-function scriptModernSettings(fake: FakeSilo, appearanceFontSize = "xlarge", syncMs = 500): void {
+function scriptModernSettings(fake: FakeSilo, deviceId: string, appearanceFontSize = "xlarge", syncMs = 500): void {
     fake.script("/settings/contract/capabilities", {
         status: 200,
         body: { api_version: 1, revision: "r1", manifest_revision: 19, state: "available", allowed: true, scopes: ["profile", "profile_device"], supports_batched_effective: true, supports_atomic_shortcuts: true, client_families: ["tv"] },
@@ -290,8 +290,14 @@ function scriptModernSettings(fake: FakeSilo, appearanceFontSize = "xlarge", syn
             ],
         },
     });
-    fake.script("/settings/values?scope=profile_device&keys=playback.subtitle_appearance", { status: 200, body: { items: [] } });
-    fake.script("/settings/values?scope=profile_device&keys=player.subtitle_sync_ms", { status: 200, body: { items: [] } });
+    fake.script("/settings/values?scope=profile_device&keys=playback.subtitle_appearance", {
+        status: 200,
+        body: { revision: 19, items: [{ key: "playback.subtitle_appearance", scope: "profile_device", profile_id: "p-owner", device_id: deviceId, is_set: false }] },
+    });
+    fake.script("/settings/values?scope=profile_device&keys=player.subtitle_sync_ms", {
+        status: 200,
+        body: { revision: 19, items: [{ key: "player.subtitle_sync_ms", scope: "profile_device", profile_id: "p-owner", device_id: deviceId, is_set: false }] },
+    });
     fake.script("/settings/subtitle-appearance/effective", { status: 200, body: { profile_id: "p-owner", effective_value: JSON.stringify({ ...DEFAULT_APPEARANCE, fontSize: appearanceFontSize }) } });
     fake.script("/settings/values/effective?keys=player.subtitle_sync_ms", { status: 200, body: { items: [{ key: "player.subtitle_sync_ms", value: syncMs }] } });
 }
@@ -362,7 +368,7 @@ test("modern settings contract reads effective appearance and sync delay exactly
     const storage = new MemoryStorage();
     const { h, clock, host, session, profileId } = await rig(storage);
     try {
-        scriptModernSettings(h.fake, "xxlarge", 1000);
+        scriptModernSettings(h.fake, h.core.session.http.deviceId, "xxlarge", 1000);
         h.fake.script("/captions/en.vtt?token=synthetic", { status: 200, text: "WEBVTT\n\n00:12.000 --> 00:14.000\nHello" });
         const plan = makePlan(h.fake.origin);
         host.plan = plan;
@@ -370,6 +376,10 @@ test("modern settings contract reads effective appearance and sync delay exactly
 
         session.onPlanAdopted(plan, profileId);
         await flush(clock);
+
+        const display = session.trackViewSlice(plan).subtitleTools?.display;
+        assert.equal(display?.styling, true, "SubtitleDisplay loaded modern styling contract");
+        assert.equal(display?.delay, true, "SubtitleDisplay loaded modern delay contract");
 
         const appearanceReads = h.fake.requests.filter(req => req.path.startsWith("/settings/subtitle-appearance/effective"));
         const syncReads = h.fake.requests.filter(req => req.path === "/settings/values/effective?keys=player.subtitle_sync_ms");
@@ -406,6 +416,93 @@ test("legacy 404 settings server defers preference read until an artifact loads 
         assert.equal(h.fake.requests.filter(req => req.path.startsWith("/settings/subtitle-appearance")).length, 1);
         assert.ok(session.trackViewSlice(artifactPlan).notices.includes("Some subtitle preferences could not be loaded; using defaults."));
     } finally { session.destroy(); }
+});
+
+test("partial modern contract fetches only the missing setting and preserves edited appearance when legacy delay lands", async () => {
+    // 1. Styling-only modern contract: appearance read once via SubtitleDisplay, delay read lazily; editing fontSize must not drop pending delay.
+    {
+        const storage = new MemoryStorage();
+        const { h, clock, host, session, profileId } = await rig(storage);
+        try {
+            h.fake.script("/settings/contract/capabilities", {
+                status: 200,
+                body: { api_version: 1, revision: "r1", manifest_revision: 19, state: "available", allowed: true, scopes: ["profile", "profile_device"], supports_batched_effective: true, supports_atomic_shortcuts: true, client_families: ["tv"] },
+            });
+            h.fake.script("/settings/contract", {
+                status: 200,
+                body: { api_version: 1, revision: 19, definitions: [{ key: "playback.subtitle_appearance", introduced_in: 1, allowed_scopes: ["profile", "profile_device"] }] },
+            });
+            h.fake.script("/settings/values?scope=profile_device&keys=playback.subtitle_appearance", {
+                status: 200,
+                body: { revision: 19, items: [{ key: "playback.subtitle_appearance", scope: "profile_device", profile_id: "p-owner", device_id: h.core.session.http.deviceId, is_set: false }] },
+            });
+            h.fake.script("/settings/subtitle-appearance/effective", { status: 200, body: { profile_id: "p-owner", effective_value: JSON.stringify({ ...DEFAULT_APPEARANCE, fontSize: "xlarge" }) } });
+            h.fake.script("/settings/values/playback.subtitle_appearance?scope=profile", { status: 200, body: { revision: 20, key: "playback.subtitle_appearance", scope: "profile", value: { ...DEFAULT_APPEARANCE, fontSize: "small" } } });
+            const syncHold = h.fake.hold("/settings/values/effective?keys=player.subtitle_sync_ms");
+            h.fake.script("/settings/values/effective?keys=player.subtitle_sync_ms", { status: 200, body: { items: [{ key: "player.subtitle_sync_ms", value: 1500 }] } });
+            h.fake.script("/captions/en.vtt?token=synthetic", { status: 200, text: "WEBVTT\n\n00:11.000 --> 00:14.000\nStyled" });
+
+            const plan = makePlan(h.fake.origin);
+            host.plan = plan;
+            host.sourceSeconds = 13.5;
+            session.onPlanAdopted(plan, profileId);
+            await flush(clock);
+            assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.styling, true);
+            assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.delay, false);
+
+            // Edit fontSize while the legacy delay read is still in flight.
+            session.applyTool({ kind: "size", size: "small" });
+            await flush(clock);
+            assert.equal(session.captionsView(plan, false)?.appearance.fontSize, "small");
+
+            // Now let the legacy delay read resolve: delayMs applies without overwriting fontSize.
+            syncHold.release();
+            await flush(clock);
+
+            const captions = session.captionsView(plan, false);
+            assert.equal(captions?.appearance.fontSize, "small", "edited appearance is preserved");
+            assert.equal(captions?.instant, 12, "pending legacy delay read still applies after appearance edit");
+            assert.equal(h.fake.requests.filter(req => req.path.startsWith("/settings/subtitle-appearance/effective")).length, 1, "supported appearance is not re-read");
+            assert.equal(h.fake.requests.filter(req => req.path === "/settings/values/effective?keys=player.subtitle_sync_ms").length, 1, "missing sync is fetched once");
+        } finally { session.destroy(); }
+    }
+
+    // 2. Delay-only modern contract: sync read once via SubtitleDisplay, appearance read lazily on artifact load.
+    {
+        const storage = new MemoryStorage();
+        const { h, clock, host, session, profileId } = await rig(storage);
+        try {
+            h.fake.script("/settings/contract/capabilities", {
+                status: 200,
+                body: { api_version: 1, revision: "r1", manifest_revision: 19, state: "available", allowed: true, scopes: ["profile", "profile_device"], supports_batched_effective: true, supports_atomic_shortcuts: true, client_families: ["tv"] },
+            });
+            h.fake.script("/settings/contract", {
+                status: 200,
+                body: { api_version: 1, revision: 19, definitions: [{ key: "player.subtitle_sync_ms", introduced_in: 1, allowed_scopes: ["profile", "profile_device"] }] },
+            });
+            h.fake.script("/settings/values?scope=profile_device&keys=player.subtitle_sync_ms", {
+                status: 200,
+                body: { revision: 19, items: [{ key: "player.subtitle_sync_ms", scope: "profile_device", profile_id: "p-owner", device_id: h.core.session.http.deviceId, is_set: false }] },
+            });
+            h.fake.script("/settings/values/effective?keys=player.subtitle_sync_ms", { status: 200, body: { items: [{ key: "player.subtitle_sync_ms", value: 1000 }] } });
+            h.fake.script("/settings/subtitle-appearance/effective", { status: 200, body: { profile_id: "p-owner", effective_value: JSON.stringify({ ...DEFAULT_APPEARANCE, fontSize: "xxlarge" }) } });
+            h.fake.script("/captions/en.vtt?token=synthetic", { status: 200, text: "WEBVTT\n\n00:11.000 --> 00:14.000\nTimed" });
+
+            const plan = makePlan(h.fake.origin);
+            host.plan = plan;
+            host.sourceSeconds = 13.5;
+            session.onPlanAdopted(plan, profileId);
+            await flush(clock);
+            assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.styling, false);
+            assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.delay, true);
+
+            const captions = session.captionsView(plan, false);
+            assert.equal(captions?.appearance.fontSize, "xxlarge", "missing appearance is fetched and applied");
+            assert.equal(captions?.instant, 12.5, "supported delay is kept");
+            assert.equal(h.fake.requests.filter(req => req.path === "/settings/values/effective?keys=player.subtitle_sync_ms").length, 1, "supported delay is not re-read");
+            assert.equal(h.fake.requests.filter(req => req.path.startsWith("/settings/subtitle-appearance/effective")).length, 1, "missing appearance is fetched once");
+        } finally { session.destroy(); }
+    }
 });
 
 // --- 3. Direct Play embedded switch state machine ---
