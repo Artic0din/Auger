@@ -205,8 +205,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write # create the tag, release, and changelog branch
-      pull-requests: write # open the CHANGELOG.md pull request
+      contents: write # create the tag and release
+    outputs:
+      release_date: ${{ steps.notes.outputs.release_date }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -232,6 +233,7 @@ jobs:
         run: (cd "${RUNNER_TEMP}/wgt" && sha256sum --check Auger.wgt.sha256)
 
       - name: Write the release notes
+        id: notes
         run: |
           release_date="$(date -u +%Y-%m-%d)"
           if gh release view "${TAG}" > /dev/null 2>&1; then
@@ -246,7 +248,7 @@ jobs:
               fi
             fi
           fi
-          echo "RELEASE_DATE=${release_date}" >> "${GITHUB_ENV}"
+          echo "release_date=${release_date}" >> "${GITHUB_OUTPUT}"
           {
             python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
               ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}"
@@ -339,10 +341,35 @@ jobs:
           gh release create "${TAG}" --verify-tag "${latest_flag}" \
             --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
 
+  changelog:
+    name: Open CHANGELOG.md pull request
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the changelog branch
+      pull-requests: write # open the CHANGELOG.md pull request
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+      TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
+      RELEASE_DATE: ${{ needs.publish.outputs.release_date }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.target_sha }}
+          fetch-depth: 0 # commit history for generate-changelog.py
+          persist-credentials: false
+
       - name: Open a pull request to record the release in CHANGELOG.md
         run: |
-          # The release is already out, so a failure here warns instead of failing the run.
-          # Opening a PR keeps main off untested bot commits and respects branch-PR rules.
+          # Separate job so a transient PR failure can be retried with "Re-run failed jobs"
+          # after the GitHub Release is already live.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
           git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
           branch="docs/changelog-v${VERSION}"
@@ -352,36 +379,31 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          record_pr() {
-            existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')" || return 1
-            if [[ -n "${existing}" ]]; then
-              echo "Changelog PR #${existing} is already open for ${TAG}; leaving it untouched."
-              return 0
-            fi
-            git_auth fetch --quiet origin main || return 1
-            if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
-              echo "CHANGELOG.md on main already records ${VERSION}."
-              return 0
-            fi
-            if git_auth fetch --quiet origin "${branch}" 2>/dev/null; then
-              git checkout --quiet -B "${branch}" "origin/${branch}" || return 1
-            else
-              git checkout --quiet -B "${branch}" origin/main || return 1
-            fi
-            python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
-              --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}" || return 1
-            if ! git diff --quiet CHANGELOG.md; then
-              git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
-              git_auth push origin "HEAD:${branch}" || return 1
-            elif git merge-base --is-ancestor "${branch}" origin/main; then
-              echo "CHANGELOG.md on main already records ${VERSION}."
-              return 0
-            fi
-            pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
-            gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
-              --title "docs(changelog): record v${VERSION} release notes" \
-              --body "${pr_body}"
-          }
-          if ! record_pr; then
-            echo "::warning::Could not open a changelog PR for ${TAG} (enable 'Allow GitHub Actions to create and approve pull requests' in repository Actions settings, or run scripts/generate-changelog.py update locally)."
+          existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')"
+          if [[ -n "${existing}" ]]; then
+            echo "Changelog PR #${existing} is already open for ${TAG}; leaving it untouched."
+            exit 0
           fi
+          git_auth fetch --quiet origin main
+          if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
+            echo "CHANGELOG.md on main already records ${VERSION}."
+            exit 0
+          fi
+          if git_auth fetch --quiet origin "${branch}" 2>/dev/null; then
+            git checkout --quiet -B "${branch}" "origin/${branch}"
+          else
+            git checkout --quiet -B "${branch}" origin/main
+          fi
+          python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
+            --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}"
+          if ! git diff --quiet CHANGELOG.md; then
+            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md
+            git_auth push origin "HEAD:${branch}"
+          elif git merge-base --is-ancestor "${branch}" origin/main; then
+            echo "CHANGELOG.md on main already records ${VERSION}."
+            exit 0
+          fi
+          pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
+          gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
+            --title "docs(changelog): record v${VERSION} release notes" \
+            --body "${pr_body}"

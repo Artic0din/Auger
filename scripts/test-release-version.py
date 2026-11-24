@@ -304,6 +304,17 @@ class GitRepoIntegrationTest(unittest.TestCase):
         # Without the release list every exact tag counts as published.
         self.assertEqual("false", self.next("--target", target)["should_release"])
 
+    def test_beta_tag_on_target_is_not_recovered(self):
+        target = self.commit("feat: beta build", "v0.1.0-beta.3", published=False)
+        self.assertEqual(
+            {"should_release": "false", "version": "", "tag": "", "previous_tag": "v0.1.0-beta.3", "bump": "none"},
+            self.next_published("--target", target),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0-beta.3", "bump": "minor"},
+            self.next_published("--target", target, "--bump", "minor"),
+        )
+
     def test_bumps_past_an_unpublished_tag_on_an_older_commit(self):
         self.commit("feat: add search", "v0.1.0")
         self.commit("feat: new feature", "v0.2.0", published=False)
