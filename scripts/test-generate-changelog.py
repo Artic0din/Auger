@@ -332,6 +332,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
         self.assertEqual("${{ needs.publish.outputs.previous_sha }}", changelog_env["PREVIOUS_SHA"])
         self.assertEqual("${{ needs.publish.outputs.release_date }}", changelog_env["RELEASE_DATE"])
         self.assertNotIn("PREVIOUS_TAG", changelog_env)
+        self.assertIn("\n    environment: changelog\n", changelog_block, "the deploy key is scoped to the main-only changelog environment")
 
         notes_script = extract_step_run(publish_block, "Write the release notes")
         changelog_script = extract_step_run(changelog_block, "Commit the release notes to CHANGELOG.md on main")
@@ -442,6 +443,9 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             git(work, "push", "--quiet", "-f", "origin", "refs/tags/v0.1.0")
             git(work, "checkout", "--quiet", "--detach", target_sha)
 
+            # The job checks out without credentials, so a push to origin must fail here as it would in Release.
+            git(work, "remote", "set-url", "--push", "origin", str(root / "no-push-to-origin"))
+
             changelog_temp = root / "changelog-temp"
             changelog_temp.mkdir()
             changelog_env_vars = {
@@ -452,6 +456,12 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 "PREVIOUS_SHA": outputs["previous_sha"],
                 "TARGET_SHA": target_sha,
                 "RELEASE_DATE": outputs["release_date"],
+                "GITHUB_REPOSITORY": "Artic0din/Auger-Tizen",
+                "CHANGELOG_DEPLOY_KEY": "test-deploy-key",
+                # Route the job's SSH push to GitHub into the local bare origin.
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": f"url.{origin}.insteadOf",
+                "GIT_CONFIG_VALUE_0": "git@github.com:Artic0din/Auger-Tizen.git",
             }
             changelog_run = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", changelog_script],
@@ -468,6 +478,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
             self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))
+            self.assertIn("[skip ci]", git(origin, "log", "-1", "--format=%B", "refs/heads/main"), "the deploy-key push must not start Tizen Builds or Release")
             self.assertFalse(gh_log.exists(), "changelog job should push directly to main without opening a PR")
 
             # Re-running the changelog job for the same version is a no-op.
