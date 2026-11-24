@@ -364,6 +364,8 @@ jobs:
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The changelog environment only deploys from main, so branch and PR runs cannot read the deploy key.
+    environment: changelog
     permissions:
       contents: read # the CHANGELOG.md push uses the deploy key, which bypasses the main ruleset
     env:

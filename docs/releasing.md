@@ -17,7 +17,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 
 The largest bump wins.
 When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the Tizen SDK public distributor certificate (no personal Samsung TV certificates or DUIDs).
-It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and opens a pull request to record the release notes in `CHANGELOG.md`.
+It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and commits the release notes to `CHANGELOG.md` on `main`.
 A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
 
 Only tags with a published GitHub Release count as released.
@@ -71,7 +71,7 @@ A release with no user-facing commits reads `General maintenance and stability i
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
 After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
-It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
+It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, a secret of the `changelog` environment that only `main` can deploy to, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
 A changelog that already has the version stays unchanged.
 If the changelog job fails after the release is published, use **Re-run failed jobs** to retry only the changelog update, or add the section locally with:
 

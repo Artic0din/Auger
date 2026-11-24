@@ -452,6 +452,12 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 "PREVIOUS_SHA": outputs["previous_sha"],
                 "TARGET_SHA": target_sha,
                 "RELEASE_DATE": outputs["release_date"],
+                "GITHUB_REPOSITORY": "Artic0din/Auger-Tizen",
+                "CHANGELOG_DEPLOY_KEY": "test-deploy-key",
+                # Route the job's SSH push to GitHub into the local bare origin.
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": f"url.{origin}.insteadOf",
+                "GIT_CONFIG_VALUE_0": "git@github.com:Artic0din/Auger-Tizen.git",
             }
             changelog_run = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", changelog_script],
@@ -468,6 +474,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
             self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))
+            self.assertIn("[skip ci]", git(origin, "log", "-1", "--format=%B", "refs/heads/main"), "the deploy-key push must not start Tizen Builds or Release")
             self.assertFalse(gh_log.exists(), "changelog job should push directly to main without opening a PR")
 
             # Re-running the changelog job for the same version is a no-op.
