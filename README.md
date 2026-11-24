@@ -85,7 +85,7 @@ For repository layout, canonical domain terms, and full documentation pointers, 
 
 Right now, the most helpful way to contribute is a clear, accurate issue.
 Pull requests are welcome when accompanied by an issue; we close other pull requests without review.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for issue guidelines, validation steps, and pull request conventions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for issue guidelines, validation steps, and pull request conventions, and [docs/reporting-bugs.md](docs/reporting-bugs.md) for where to find your TV model, Auger version, and the player's **Stats** tab.
 
 Problems with the server or its API belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose), not here.
 

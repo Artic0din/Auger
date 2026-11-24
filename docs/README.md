@@ -24,6 +24,7 @@ Read the matching reference before changing its area.
 - **Offline browse cache.** [offline-browse.md](offline-browse.md) documents Home, For You, and Details snapshot caching and recovery.
 - **Translations and RTL.** [translation.md](translation.md) documents string catalog usage, mirrored views, and remaining English copy; [src/i18n/catalog/README.md](../src/i18n/catalog/README.md) documents catalog vendoring and trimming.
 - **Player options HUD.** [player-hud.md](player-hud.md) documents the Info, Stats, Video, Audio, Subtitles, and Chapters tabs.
+- **Reporting bugs.** [reporting-bugs.md](reporting-bugs.md) explains what to include in a bug report and where to find TV details, Auger version, and the player's Stats tab.
 - **Tests and flake hunting.** [test/README.md](../test/README.md) documents native and UI suites, fake clocks, and concurrency locks.
 - **Releases and sideloading.** [releasing.md](releasing.md) documents automatic releases, Apps2Samsung, and sideloading.
 - **Fonts and third-party marks.** [app/fonts/README.md](../app/fonts/README.md) and [app/third-party/README.md](../app/third-party/README.md) document bundled fonts and trademark assets.
