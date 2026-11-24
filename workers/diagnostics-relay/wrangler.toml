@@ -1,0 +1,10 @@
+name = "auger-diagnostics"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+routes = [
+  { pattern = "auger-diagnostics.plaintextlab.com", custom_domain = true }
+]
+
+[vars]
+GITHUB_REPO = "Artic0din/Auger-Tizen"

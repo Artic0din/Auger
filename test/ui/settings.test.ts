@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
+import { decodeDiagnosticsReportHash, DIAGNOSTICS_RELAY_URL, DIAGNOSTICS_REPORT_URL } from "../../src/diagnostics.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
@@ -253,7 +255,7 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
             return { width: Number(first.getBoundingClientRect().width.toFixed(3)), height: Number(first.getBoundingClientRect().height.toFixed(3)), pitch: Number((second.getBoundingClientRect().top - first.getBoundingClientRect().top).toFixed(3)), icons: document.querySelectorAll('.settings-category-icon').length };
         });
         // The focused 490×82 row grows around its centre by Apple's 1.012.
-        assert.deepEqual(rail, { width: 495.88, height: 82.984, pitch: 88.492, icons: 4 });
+        assert.deepEqual(rail, { width: 495.88, height: 82.984, pitch: 88.492, icons: 5 });
         const railDetails = await tv.page.evaluate(() => ({
             signOutIcon: document.querySelector('[data-focus="settings-signout"] svg') !== null,
             iconSize: getComputedStyle(document.querySelector('.settings-category-icon svg')!).width,
@@ -928,12 +930,12 @@ test("Subtitles, the profile account line and sign-out confirmation follow Apple
     settings.profileSubtitles = true;
     try {
         await openSettings(tv);
-        assert.deepEqual(await tv.page.locator(".settings-categories [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["settings-profile", "general", "playback", "subtitles", "server", "settings-signout"]);
+        assert.deepEqual(await tv.page.locator(".settings-categories [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["settings-profile", "general", "playback", "subtitles", "diagnostics", "server", "settings-signout"]);
         const profile = tv.page.locator('[data-focus="settings-profile"]');
         assert.equal(await profile.locator(".settings-profile-name").textContent(), "Laura");
         assert.equal(await profile.locator(".settings-profile-account").textContent(), "laura");
         assert.equal(await tv.page.locator(".settings-version").textContent(), "Auger 0.0.1");
-        assert.equal(await tv.page.getByRole("button", { name: /Diagnostics/ }).count(), 0);
+        assert.equal(await tv.page.getByRole("button", { name: /^Diagnostics,/ }).count(), 1);
         assert.equal(await tv.page.locator('[data-focus="subtitles"] .settings-category-detail').textContent(), "Language and appearance");
         // The version uses siloSecondaryText at 0.7 (TVSettingsView.swift:201-203, #773); category subtitles dim the row foreground instead.
         const secondary = await tv.page.locator('[data-focus="subtitles"] .settings-category-detail, .settings-version').evaluateAll(nodes => nodes.map(node => ({ color: getComputedStyle(node).color, opacity: getComputedStyle(node).opacity })));
@@ -1696,7 +1698,7 @@ test("Down from Sign Out, the last rail item, stays on it in every pane", async 
     const { tv } = await setup();
     try {
         await openSettings(tv);
-        for (const category of ["general", "playback", "subtitles", "server"]) {
+        for (const category of ["general", "playback", "subtitles", "diagnostics", "server"]) {
             await tv.page.locator(`[data-focus="${category}"]`).focus();
             await tv.page.locator('[data-focus="settings-signout"]').focus();
             await tv.page.keyboard.press("ArrowDown");
@@ -1704,5 +1706,68 @@ test("Down from Sign Out, the last rail item, stays on it in every pane", async 
             await tv.page.keyboard.press("ArrowUp");
             assert.notEqual(await tv.focused(), "settings-signout", `${category}: Up still leaves Sign Out`);
         }
+    } finally { await tv.page.context().close(); }
+});
+
+test("Diagnostics sends a redacted report to the relay and offers the QR helper as backup (#847)", async () => {
+    const { tv } = await setup();
+    const helperHtml = readFileSync(new URL("../../pages/report/index.html", import.meta.url), "utf8");
+    const sentPayloads: string[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        sentPayloads.push(route.request().postData() ?? "");
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, issueNumber: 901, reportId: "AUG-901" }) });
+    });
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics"]').waitFor();
+        assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Send a redacted bug report directly to GitHub, or share via QR code.");
+
+        // Primary action: 1-click Send Diagnostics Report with confirmation modal.
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="confirm-send-diagnostics"]').waitFor();
+        await tv.page.locator('[data-focus="confirm-send-diagnostics"]').click();
+        await tv.page.getByText("Report sent — GitHub issue #901 (AUG-901).", { exact: true }).waitFor();
+        assert.equal(sentPayloads.length, 1);
+        assert.ok(!sentPayloads[0]!.includes("silo.example.test"), "server hostname must never be sent to relay");
+        assert.equal(JSON.parse(sentPayloads[0]!).app, "0.0.1");
+
+        // Backup action: Share via QR Code.
+        await tv.page.locator('[data-focus="share-diagnostics"]').click();
+        const card = tv.page.locator(".settings-privacy-card");
+        await card.waitFor();
+        const reportUrl = await card.getAttribute("data-report-url") ?? "";
+        assert.ok(reportUrl.startsWith(`${DIAGNOSTICS_REPORT_URL}#d=`));
+        assert.ok(reportUrl.length <= 960);
+        assert.ok(!reportUrl.includes("silo.example.test"), "server hostname must never be included in QR URL");
+        const qrPath = await tv.page.locator(".settings-privacy-qr svg path").getAttribute("d") ?? "";
+        assert.ok(qrPath.length > 50, "QR SVG path is drawn");
+        const decoded = decodeDiagnosticsReportHash(reportUrl.slice(reportUrl.indexOf("#")));
+        assert.equal(decoded?.app, "0.0.1");
+        assert.equal(decoded?.tv, "Samsung TV");
+
+        // Close the QR modal and verify focus returns to Share via QR Code, then Clear Session Log works.
+        await tv.remote(10009);
+        assert.equal(await tv.focused(), "share-diagnostics");
+        await tv.page.locator('[data-focus="clear-diagnostics"]').click();
+        await tv.page.getByText("Session log cleared.", { exact: true }).waitFor();
+
+        // Load the actual zero-backend pages/report/index.html with the emitted #d= hash in Playwright.
+        const helperPage = await browser.newPage();
+        try {
+            await helperPage.route("https://artic0din.github.io/Auger-Tizen/report/**", route => route.fulfill({ status: 200, contentType: "text/html", body: helperHtml }));
+            await helperPage.goto(reportUrl);
+            await helperPage.locator("#content").waitFor({ state: "visible" });
+            assert.equal(await helperPage.locator("#empty").isVisible(), false);
+            const rawText = await helperPage.locator("#raw-text").inputValue();
+            assert.ok(rawText.includes("**Auger Bug Report**"));
+            assert.ok(rawText.includes("Auger: 0.0.1"));
+            const githubHref = await helperPage.locator("#open-github").getAttribute("href") ?? "";
+            const githubUrl = new URL(githubHref);
+            assert.equal(githubUrl.searchParams.get("template"), "bug-report.yml");
+            assert.equal(githubUrl.searchParams.get("app-version"), "0.0.1");
+            assert.ok(githubUrl.searchParams.get("device-details")?.includes("Samsung TV"));
+        } finally { await helperPage.close(); }
+        assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });

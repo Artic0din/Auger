@@ -53,7 +53,7 @@
 .settings-scope { margin: -12px 0 40px; color: var(--silo-secondary); font-size: 26px; }
 .browse.settings { overflow: hidden; height: 100vh; box-sizing: border-box; padding: 108px 164px 44px; }
 .settings-panes { display: flex; align-items: stretch; gap: 52px; height: 100%; min-height: 0; }
-.settings-categories { width: 490px; flex-shrink: 0; display: flex; flex-direction: column; padding: 24px 0 100px; }
+.settings-categories { width: 490px; flex-shrink: 0; display: flex; flex-direction: column; padding: 24px 0 24px; }
 .settings-pane { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 22px 64px; }
 .settings-pane-header { display: flex; align-items: center; gap: 20px; padding: 0 24px; margin: 0 0 10px; }
 .settings-header-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; background: #ffffff12; flex-shrink: 0; }
@@ -96,7 +96,7 @@
 .settings-profile-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .settings-controls .browse-button,
 .settings-categories .browse-button { display: block; width: 100%; margin: 0 0 8px; border-radius: 14px; text-align: start; }
-.settings-categories .browse-button { display: flex; align-items: center; gap: 16px; box-sizing: border-box; height: 82px; padding: 15px 20px; margin-bottom: 6px; }
+.settings-categories .browse-button { display: flex; align-items: center; flex-shrink: 0; gap: 16px; box-sizing: border-box; height: 82px; padding: 15px 20px; margin-bottom: 6px; }
 /* TVSettingsRailRowStyle (TVSettingsComponents.swift:183-220): clear fill and no stroke at rest, selected fill when current, white platter on focus. */
 .settings-categories .browse-button:not(.settings-signout) { border: 0; background: transparent; box-shadow: none; }
 .settings-categories .settings-profile { height: 98px; margin-bottom: 28px; gap: 18px; }

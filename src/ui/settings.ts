@@ -27,12 +27,15 @@ import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatu
 import { applyLayoutDirection } from "../i18n/direction.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
+import { buildDiagnosticsReportUrl, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReport } from "../diagnostics.ts";
 
-type Category = "general" | "playback" | "subtitles" | "server";
-const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
-const CATEGORY_DETAILS = { general: "settings.rail.general", playback: "settings.railDescription.playback", subtitles: "settings.rail.subtitles", server: "settings.rail.server" } as const satisfies Record<Category, MessageKey>;
-const CATEGORY_ICONS = { general: "gearshape", playback: "playback", subtitles: "subtitles", server: "switch-server" } as const;
-const CATEGORY_BLURBS = { general: "settings.blurb.generalAppleTv", playback: "settings.blurb.playbackAppleTv", subtitles: "settings.blurb.subtitles", server: "settings.blurb.serverAppleTv" } as const satisfies Record<Category, MessageKey>;
+type Category = "general" | "playback" | "subtitles" | "diagnostics" | "server";
+const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", diagnostics: "player.settings.diagnostics", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
+const CATEGORY_DETAILS = { general: "settings.rail.general", playback: "settings.railDescription.playback", subtitles: "settings.rail.subtitles", server: "settings.rail.server" } as const;
+const CATEGORY_ICONS = { general: "gearshape", playback: "playback", subtitles: "subtitles", diagnostics: "diagnostics", server: "switch-server" } as const;
+const CATEGORY_BLURBS = { general: "settings.blurb.generalAppleTv", playback: "settings.blurb.playbackAppleTv", subtitles: "settings.blurb.subtitles", server: "settings.blurb.serverAppleTv" } as const;
+const DIAGNOSTICS_DETAIL = "Reports and support";
+const DIAGNOSTICS_BLURB = "Send a redacted bug report directly to GitHub, or share via QR code.";
 const FEATURE_TITLES = { watchParty: "settings.experimental.watchParty" } as const satisfies Record<ExperimentalFeature, MessageKey>;
 /** First sentence of SettingsViewModel.hdrFooterText (136-143), without "without Dolby Vision". The tvOS original-file sentence is omitted; see docs/settings.md. */
 // After STREAMING, as TVPlaybackSettingsView.swift:248. The Lossless and TrueHD sentences at 251-257 are not on this pane.
@@ -63,22 +66,29 @@ function settingsChevron(): SVGSVGElement {
     return icon;
 }
 
-export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences): SettingsScreen {
+export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences, diagnostics?: DiagnosticsCollector, sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal) => Promise<DiagnosticsSendResult>): SettingsScreen {
     const container = el("section", "browse settings");
     container.setAttribute("aria-label", translate("settings.title"));
     root.appendChild(container);
     const host = new FocusHost(container);
+    const diagnosticsCollector = diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
+    const submitDiagnostics = sendDiagnostics ?? ((collector, signal) => sendDiagnosticsReport(collector.snapshot(), (url, init) => window.fetch(url, init), { signal }));
     let category: Category = "general";
     let picker: Picker | undefined;
     let extraPicker: SettingsRow | undefined;
     let confirmingPlaybackReset = false;
     let pendingPlaybackReset: SettingsKey[] = [];
     let privacy = false;
+    let diagnosticsQr = false;
+    let confirmingDiagnosticsSend = false;
+    let diagnosticsSending = false;
+    let diagnosticsStatus: { readonly kind: "ok" | "error"; readonly text: string } | undefined;
+    const diagnosticsSendController = new AbortController();
     let paneSnapshot: HTMLElement | undefined;
     let activeModal: string | undefined;
     let modalPaneTop = 0;
     let confirmingAppearanceReset = false;
-    let returnRow: Picker | "acknowledgements" | "subtitle-forced" = "acknowledgements";
+    let returnRow: Picker | "acknowledgements" | "subtitle-forced" | "send-diagnostics" | "share-diagnostics" = "acknowledgements";
     let acknowledging = false;
     let confirmingSignOut = false;
     let choosingLaunch = false;
@@ -112,6 +122,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const connection = new ConnectionSpeed(session, () => { if (!torn) render(host.focused()); });
     const stopSpoilers = spoilers?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
     const stopThemeMusic = themeMusic?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
+    const stopDiagnostics = diagnosticsCollector.subscribe(() => { if (!torn && (category === "diagnostics" || diagnosticsQr)) render(host.focused()); });
     // A language change repaints Settings, but not under a held Select: it waits for the release, as Browse's reconcileLanguage does.
     let repaintAfterRelease = false;
     const stopAppLanguage = appLanguage?.subscribe(() => {
@@ -138,6 +149,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         stopSpoilers();
         stopThemeMusic();
         stopAppLanguage();
+        stopDiagnostics();
+        diagnosticsSendController.abort();
         document.removeEventListener("keyup", onKeyUp);
         launchController.abort();
         stopAuthority();
@@ -158,6 +171,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (confirmingPlaybackReset) { if (state.busy) return; confirmingPlaybackReset = false; pendingPlaybackReset = []; render({ zone: "settings-rows", key: "reset-playback" }); }
         else if (confirmingAppearanceReset) { confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
         else if (privacy) { privacy = false; render({ zone: "settings-rows", key: "privacy" }); }
+        else if (confirmingDiagnosticsSend) { if (diagnosticsSending) return; confirmingDiagnosticsSend = false; render({ zone: "settings-rows", key: "send-diagnostics" }); }
+        else if (diagnosticsQr) { diagnosticsQr = false; render({ zone: "settings-rows", key: "share-diagnostics" }); }
         else if (extraPicker !== undefined) { const key = extraPicker.id; extraPicker = undefined; render({ zone: "settings-rows", key }); }
         else if (choosingLaunch) { choosingLaunch = false; render({ zone: "settings-rows", key: "remember-profile" }); }
         else if (choosingLanguage) { choosingLanguage = false; render({ zone: "settings-rows", key: "app-language" }); }
@@ -272,7 +287,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
         }
         card.append(...content);
-        if (name !== "settings:privacy") {
+        if (name !== "settings:privacy" && name !== "settings:diagnostics-qr") {
             const hint = el("span", "settings-picker-hint");
             const icon = el("span", "settings-back-icon", "↩"); icon.setAttribute("aria-hidden", "true");
             hint.append(icon, el("span", "", translate("settings.picker.menuToClose")));
@@ -405,6 +420,64 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             host.show({ name: "settings:reset-appearance", content: [el("h1", "browse-title", translate("settings.subtitles.resetTitleApple")), el("p", "settings-value", state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile")), ...feedback(), zoneNode("settings-controls", controls)], zones: [{ id: "settings-picker", layout: "column", items: controls }], focus: { zone: "settings-picker", key: "cancel" }, back });
             return;
         }
+        if (confirmingDiagnosticsSend) {
+            const runSend = (): void => {
+                if (diagnosticsSending) return;
+                diagnosticsSending = true;
+                diagnosticsStatus = undefined;
+                render();
+                void submitDiagnostics(diagnosticsCollector, diagnosticsSendController.signal).then(result => {
+                    if (torn) return;
+                    diagnosticsSending = false;
+                    confirmingDiagnosticsSend = false;
+                    diagnosticsStatus = result.ok
+                        ? { kind: "ok", text: result.issueNumber !== undefined ? `Report sent — GitHub issue #${result.issueNumber} (${result.reportId}).` : `Report sent — Reference ${result.reportId}.` }
+                        : { kind: "error", text: result.message };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                }, () => {
+                    if (torn) return;
+                    diagnosticsSending = false;
+                    confirmingDiagnosticsSend = false;
+                    diagnosticsStatus = { kind: "error", text: "Could not send report. Try again or use Share via QR Code." };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                });
+            };
+            const sendButton = actionButton("confirm-send-diagnostics", diagnosticsSending ? "Sending…" : "Send Report", runSend);
+            sendButton.element.setAttribute("aria-disabled", String(diagnosticsSending));
+            const cancelButton = actionButton("cancel-send-diagnostics", translate("common.cancel"), back);
+            cancelButton.element.setAttribute("aria-disabled", String(diagnosticsSending));
+            showModal(
+                "settings:send-diagnostics",
+                "Send Diagnostics Report",
+                [
+                    el("h1", "browse-title", "Send Diagnostics Report"),
+                    el("p", "settings-value", "Sends redacted TV model, firmware, Auger version, Silo server version, last playback stats, and recent error log to create a GitHub diagnostics issue."),
+                    el("p", "settings-value", "Server addresses, account names, tokens, and media titles are never included."),
+                    ...(diagnosticsSending ? [el("p", "browse-text", "Sending diagnostics report…")] : []),
+                ],
+                [sendButton, cancelButton],
+            );
+            return;
+        }
+        if (diagnosticsQr) {
+            const done = actionButton("back", translate("common.done"), back);
+            const reportUrl = buildDiagnosticsReportUrl(diagnosticsCollector.snapshot());
+            const code = qrCode(reportUrl, "Diagnostics Report QR code", "L");
+            const image = el("div", "settings-privacy-qr");
+            if (code !== undefined) { code.style.width = "360px"; code.style.height = "360px"; image.appendChild(code); }
+            const copy = el("div", "settings-privacy-copy");
+            copy.append(
+                el("h1", "browse-title", "Share Diagnostics"),
+                el("p", "settings-value", "Scan this QR code with your phone camera to copy a report for Discord or open a pre-filled GitHub bug report."),
+                el("p", "settings-value", "All details stay inside the link fragment and are never sent to a server."),
+            );
+            const handoff = el("div", "settings-privacy-card");
+            handoff.dataset.reportUrl = reportUrl;
+            handoff.append(image, copy);
+            copy.prepend(navigationIcon("diagnostics"));
+            showModal("settings:diagnostics-qr", "Share Diagnostics", [handoff], [done]);
+            return;
+        }
         if (privacy) {
             const done = actionButton("back", translate("common.done"), back);
             const code = qrCode("https://siloserver.org/privacy", "Privacy Policy QR code");
@@ -494,14 +567,15 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (acknowledging) { renderAcknowledgements(); return; }
         if (picker !== undefined) { renderPicker(); return; }
         activeModal = undefined;
-        const categories = (["general", "playback", "subtitles", "server"] as const).map(id => {
-            const item = actionButton(id, translate(CATEGORY_LABELS[id]), () => { category = id; returnRow = id === "general" ? "acknowledgements" : id === "playback" ? "quality" : id === "subtitles" ? subtitleEntry() : "acknowledgements"; render(rowFocus()); });
+        const categories = (["general", "playback", "subtitles", "diagnostics", "server"] as const).map(id => {
+            const item = actionButton(id, translate(CATEGORY_LABELS[id]), () => { category = id; returnRow = id === "general" ? "acknowledgements" : id === "playback" ? "quality" : id === "subtitles" ? subtitleEntry() : id === "diagnostics" ? "send-diagnostics" : "acknowledgements"; render(rowFocus()); });
             const icon = el("span", "settings-category-icon");
             icon.append(navigationIcon(CATEGORY_ICONS[id]));
+            const detail = id === "diagnostics" ? DIAGNOSTICS_DETAIL : translate(CATEGORY_DETAILS[id]);
             const copy = el("span", "settings-category-copy");
-            copy.append(el("span", "settings-category-title", translate(CATEGORY_LABELS[id])), el("span", "settings-category-detail", translate(CATEGORY_DETAILS[id])));
+            copy.append(el("span", "settings-category-title", translate(CATEGORY_LABELS[id])), el("span", "settings-category-detail", detail));
             item.element.replaceChildren(icon, copy);
-            item.element.setAttribute("aria-label", `${translate(CATEGORY_LABELS[id])}, ${translate(CATEGORY_DETAILS[id])}`);
+            item.element.setAttribute("aria-label", `${translate(CATEGORY_LABELS[id])}, ${detail}`);
             item.element.setAttribute("aria-current", id === category ? "page" : "false");
             item.element.addEventListener("focus", () => { if (category !== id) { category = id; render({ zone: "settings-categories", key: id }); } });
             return item;
@@ -528,16 +602,69 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         body.dataset.scrollKey = `settings-pane:${category}`;
         const header = el("div", "settings-pane-header");
         const tile = el("span", "settings-header-icon"); tile.append(navigationIcon(CATEGORY_ICONS[category]));
-        const headerCopy = el("div", ""); headerCopy.append(el("h2", "browse-section-title", translate(CATEGORY_LABELS[category])), el("p", "settings-blurb", translateTv(CATEGORY_BLURBS[category])));
+        const headerCopy = el("div", ""); headerCopy.append(el("h2", "browse-section-title", translate(CATEGORY_LABELS[category])), el("p", "settings-blurb", category === "diagnostics" ? DIAGNOSTICS_BLURB : translateTv(CATEGORY_BLURBS[category])));
         header.append(tile, headerCopy);
         body.append(header, ...feedback());
         if (category === "playback") connection.watch();
         else connection.unwatch();
         const pickers: readonly Picker[] = category === "playback" ? ["quality", "bitrate", "audio", "seek-back", "seek-forward"] : [];
+        const info = (title: string, value: string): HTMLElement => {
+            const row = el("div", "settings-info-row"); row.append(el("span", "", title), el("span", "settings-row-value", value)); return row;
+        };
+        if (category === "diagnostics") {
+            const snapshot = diagnosticsCollector.snapshot();
+            const send = actionButton("send-diagnostics", "Send Diagnostics Report", () => { confirmingDiagnosticsSend = true; render(); });
+            send.element.classList.add("settings-server-action");
+            send.element.prepend(navigationIcon("requests"));
+            send.element.appendChild(navigationIcon("chevron-right"));
+            const share = actionButton("share-diagnostics", "Share via QR Code", () => { diagnosticsQr = true; render(); });
+            share.element.classList.add("settings-server-action");
+            share.element.prepend(navigationIcon("diagnostics"));
+            share.element.appendChild(navigationIcon("qr"));
+            const clear = actionButton("clear-diagnostics", "Clear Session Log", () => { diagnosticsCollector.clear(); diagnosticsStatus = { kind: "ok", text: "Session log cleared." }; render({ zone: "settings-rows", key: "send-diagnostics" }); });
+            clear.element.classList.add("settings-server-action");
+            clear.element.prepend(navigationIcon("reset"));
+            rows.push(send, share, clear);
+            body.append(send.element, share.element, clear.element);
+            if (diagnosticsStatus !== undefined) {
+                const note = el("p", diagnosticsStatus.kind === "error" ? "browse-text browse-error settings-warning" : "settings-value", diagnosticsStatus.text);
+                note.setAttribute("role", diagnosticsStatus.kind === "error" ? "alert" : "status");
+                body.appendChild(note);
+            }
+            const deviceText = formatDeviceDetails({ v: 1, app: snapshot.device.appVersion, tv: snapshot.device.tvModel, ...(snapshot.device.firmware === undefined ? {} : { fw: snapshot.device.firmware }), ...(snapshot.device.tizenVersion === undefined ? {} : { os: snapshot.device.tizenVersion }), ...(snapshot.device.browser === undefined ? {} : { ua: snapshot.device.browser }) });
+            body.append(
+                el("h3", "settings-section-header", "DEVICE"),
+                info("TV", deviceText),
+                info("Auger Version", snapshot.device.appVersion),
+                ...(snapshot.device.serverVersion === undefined ? [] : [info("Silo Server", snapshot.device.serverVersion)]),
+                ...(snapshot.device.hdrSupported === undefined ? [] : [info("HDR Support", snapshot.device.hdrSupported ? "Yes" : "No")]),
+            );
+            body.append(el("h3", "settings-section-header", "LAST PLAYBACK"));
+            const last = snapshot.lastPlayback;
+            if (last === undefined) {
+                body.appendChild(el("p", "settings-value", "No playback recorded yet in this session."));
+            } else {
+                if (last.playback !== undefined) body.appendChild(info("Playback", last.playback));
+                if (last.delivery !== undefined) body.appendChild(info("Delivery", last.delivery));
+                if (last.video !== undefined) body.appendChild(info("Video", last.video));
+                if (last.dynamicRange !== undefined) body.appendChild(info("Dynamic range", last.dynamicRange));
+                if (last.audio !== undefined) body.appendChild(info("Audio", last.audio));
+                if (last.subtitles !== undefined) body.appendChild(info("Subtitles", last.subtitles));
+                if (last.status !== undefined) body.appendChild(info("Status", last.status));
+                if (last.diagnostics !== undefined && last.diagnostics.length > 0) body.appendChild(info("Diagnostics", last.diagnostics.join(" · ")));
+                if (last.error !== undefined) body.appendChild(info("Last error", last.error));
+            }
+            body.append(el("h3", "settings-section-header", "SESSION LOG"));
+            if (snapshot.events.length === 0) {
+                body.appendChild(el("p", "settings-value", "No events recorded yet."));
+            } else {
+                body.appendChild(info("Recorded events", String(snapshot.events.length)));
+                for (const event of snapshot.events.slice(-4)) {
+                    body.appendChild(el("p", "settings-value", `${event.at} [${event.kind}] ${event.text}`));
+                }
+            }
+        }
         if (category === "server") {
-            const info = (title: string, value: string): HTMLElement => {
-                const row = el("div", "settings-info-row"); row.append(el("span", "", title), el("span", "settings-row-value", value)); return row;
-            };
             body.append(el("h3", "settings-section-header", translate("settings.activeServer.headerTv")), info(translate("settings.activeServer.server"), actions?.serverName ?? session.http.base.baseUrl));
             // TVSettingsView.swift:514-517: Address only when the Server row shows a name, not the URL itself.
             const address = session.http.base.baseUrl;

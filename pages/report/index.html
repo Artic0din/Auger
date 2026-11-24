@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none';" />
+  <title>Auger Diagnostics Report</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #0f1115;
+      --surface: #181c23;
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #f3f5f8;
+      --muted: #9aa4b2;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #16a34a;
+      --secondary-bg: rgba(255, 255, 255, 0.08);
+      --secondary-hover: rgba(255, 255, 255, 0.14);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --surface: #ffffff;
+        --border: rgba(15, 23, 42, 0.12);
+        --text: #0f172a;
+        --muted: #475569;
+        --secondary-bg: rgba(15, 23, 42, 0.06);
+        --secondary-hover: rgba(15, 23, 42, 0.12);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px 16px 40px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.45;
+    }
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+      letter-spacing: -0.01em;
+    }
+    .privacy {
+      margin: 0 0 20px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin: 0 0 20px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font: 600 1rem/1.2 inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary.copied { background: var(--success); }
+    .btn-secondary {
+      background: var(--secondary-bg);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-secondary:hover { background: var(--secondary-hover); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    dl {
+      display: grid;
+      grid-template-columns: minmax(110px, 36%) 1fr;
+      gap: 8px 12px;
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    dt { color: var(--muted); }
+    dd { margin: 0; word-break: break-word; }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 0.88rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    li + li { margin-top: 6px; }
+    details {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font: 0.85rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      resize: vertical;
+    }
+    .empty {
+      padding: 20px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .empty a { color: var(--accent); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Auger Diagnostics Report</h1>
+    <p class="privacy">
+      Decoded locally in your browser from the link fragment. Nothing on this page is sent to any server until you paste it into Discord or submit a GitHub issue yourself.
+    </p>
+
+    <section id="empty" class="empty" hidden>
+      <p><strong>No diagnostics payload found in this link.</strong></p>
+      <p>On your Samsung TV, open <strong>Settings &rarr; Diagnostics &rarr; Share Diagnostics</strong> and scan the QR code with your phone camera.</p>
+      <p><a href="https://github.com/Artic0din/Auger-Tizen/blob/main/docs/reporting-bugs.md">Read the Auger Bug Reporting Guide</a></p>
+    </section>
+
+    <div id="content" hidden>
+      <div class="actions">
+        <button id="copy-discord" class="btn btn-primary" type="button">Copy for Discord</button>
+        <a id="open-github" class="btn btn-secondary" href="https://github.com/Artic0din/Auger-Tizen/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">Open Pre-filled GitHub Bug Report</a>
+      </div>
+
+      <section class="card">
+        <h2>Device &amp; App</h2>
+        <dl id="device-rows"></dl>
+      </section>
+
+      <section id="playback-card" class="card" hidden>
+        <h2>Last Playback</h2>
+        <dl id="playback-rows"></dl>
+      </section>
+
+      <section id="log-card" class="card" hidden>
+        <h2>Recent Events (Redacted)</h2>
+        <ul id="log-rows"></ul>
+      </section>
+
+      <details>
+        <summary>Inspect or manually copy report text</summary>
+        <textarea id="raw-text" readonly aria-label="Formatted report text"></textarea>
+      </details>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var ISSUE_BASE = "https://github.com/Artic0din/Auger-Tizen/issues/new";
+
+      function decodeBase64Url(encoded) {
+        if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
+        var padded = encoded.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (encoded.length % 4)) % 4);
+        try {
+          var binary = atob(padded);
+          var bytes = new Uint8Array(binary.length);
+          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch (_err) {
+          return null;
+        }
+      }
+
+      function readStr(obj, key) {
+        return typeof obj[key] === "string" && obj[key].trim() !== "" ? obj[key] : undefined;
+      }
+
+      function readStrList(obj, key) {
+        if (!Array.isArray(obj[key])) return undefined;
+        var items = obj[key].filter(function (v) { return typeof v === "string" && v.trim() !== ""; });
+        return items.length > 0 ? items : undefined;
+      }
+
+      function parseHash(hash) {
+        var trimmed = hash.charAt(0) === "#" ? hash.slice(1) : hash;
+        var match = /(?:^|&)d=([^&]+)/.exec(trimmed);
+        if (!match || !match[1]) return null;
+        var jsonText = decodeBase64Url(match[1]);
+        if (!jsonText) return null;
+        var parsed;
+        try { parsed = JSON.parse(jsonText); } catch (_err) { return null; }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+        if (parsed.v !== 1 || typeof parsed.app !== "string" || typeof parsed.tv !== "string") return null;
+        var play;
+        if (parsed.play && typeof parsed.play === "object" && !Array.isArray(parsed.play)) {
+          play = {
+            m: readStr(parsed.play, "m"),
+            v: readStr(parsed.play, "v"),
+            dr: readStr(parsed.play, "dr"),
+            a: readStr(parsed.play, "a"),
+            s: readStr(parsed.play, "s"),
+            d: readStr(parsed.play, "d"),
+            st: readStr(parsed.play, "st"),
+            n: readStrList(parsed.play, "n"),
+            e: readStr(parsed.play, "e"),
+          };
+        }
+        return {
+          v: 1,
+          app: parsed.app,
+          tv: parsed.tv,
+          fw: readStr(parsed, "fw"),
+          os: readStr(parsed, "os"),
+          ua: readStr(parsed, "ua"),
+          hdr: typeof parsed.hdr === "boolean" ? parsed.hdr : undefined,
+          srv: readStr(parsed, "srv"),
+          play: play,
+          log: readStrList(parsed, "log"),
+        };
+      }
+
+      function formatDevice(p) {
+        return [p.tv, p.fw ? "Firmware " + p.fw : undefined, p.os, p.ua].filter(Boolean).join(", ");
+      }
+
+      function formatPlayback(p) {
+        if (!p.play) return "";
+        var play = p.play;
+        var lines = [];
+        if (play.m) lines.push("Playback: " + play.m);
+        if (play.d) lines.push("Delivery: " + play.d);
+        if (play.v) lines.push("Video: " + play.v);
+        if (play.dr) lines.push("Dynamic range: " + play.dr);
+        if (play.a) lines.push("Audio: " + play.a);
+        if (play.s) lines.push("Subtitles: " + play.s);
+        if (play.st) lines.push("Status: " + play.st);
+        if (play.n) {
+          play.n.forEach(function (note, idx) {
+            lines.push((idx === 0 ? "Diagnostics: " : "  ") + note);
+          });
+        }
+        if (play.e) lines.push("Last error: " + play.e);
+        return lines.join("\n");
+      }
+
+      function formatNotes(p) {
+        var lines = [];
+        if (typeof p.hdr === "boolean") lines.push("HDR TV support: " + (p.hdr ? "Yes" : "No"));
+        if (p.log && p.log.length > 0) {
+          lines.push("Recent events (redacted):");
+          p.log.forEach(function (entry) { lines.push("- " + entry); });
+        }
+        return lines.join("\n");
+      }
+
+      function formatDiscord(p) {
+        var lines = [
+          "**Auger Bug Report**",
+          "What happened: ",
+          "Steps to reproduce: ",
+          "",
+          "TV: " + formatDevice(p),
+          "Auger: " + p.app,
+        ];
+        if (p.srv) lines.push("Silo Server: " + p.srv);
+        var playback = formatPlayback(p);
+        if (playback) lines.push("", "**Last Playback**", playback);
+        var notes = formatNotes(p);
+        if (notes) lines.push("", "**Diagnostics**", notes);
+        return lines.join("\n");
+      }
+
+      function buildGitHubUrl(p) {
+        var params = new URLSearchParams();
+        params.set("template", "bug-report.yml");
+        params.set("device-details", formatDevice(p));
+        params.set("app-version", p.app);
+        if (p.srv) params.set("server-version", p.srv);
+        var playback = formatPlayback(p);
+        if (playback) params.set("playback-details", playback);
+        var notes = formatNotes(p);
+        if (notes) params.set("technical-notes", notes);
+        return ISSUE_BASE + "?" + params.toString();
+      }
+
+      function addRow(list, label, value) {
+        if (!value) return;
+        var dt = document.createElement("dt");
+        dt.textContent = label;
+        var dd = document.createElement("dd");
+        dd.textContent = value;
+        list.append(dt, dd);
+      }
+
+      var payload = parseHash(window.location.hash);
+      if (!payload) {
+        document.getElementById("empty").hidden = false;
+        return;
+      }
+
+      document.getElementById("content").hidden = false;
+      var deviceList = document.getElementById("device-rows");
+      addRow(deviceList, "TV Model", payload.tv);
+      addRow(deviceList, "Firmware", payload.fw);
+      addRow(deviceList, "Tizen OS", payload.os);
+      addRow(deviceList, "Web Engine", payload.ua);
+      addRow(deviceList, "HDR Support", typeof payload.hdr === "boolean" ? (payload.hdr ? "Yes" : "No") : undefined);
+      addRow(deviceList, "Auger Version", payload.app);
+      addRow(deviceList, "Silo Server", payload.srv);
+
+      if (payload.play) {
+        var playList = document.getElementById("playback-rows");
+        addRow(playList, "Playback", payload.play.m);
+        addRow(playList, "Delivery", payload.play.d);
+        addRow(playList, "Video", payload.play.v);
+        addRow(playList, "Dynamic Range", payload.play.dr);
+        addRow(playList, "Audio", payload.play.a);
+        addRow(playList, "Subtitles", payload.play.s);
+        addRow(playList, "Status", payload.play.st);
+        if (payload.play.n) addRow(playList, "Diagnostics", payload.play.n.join(" | "));
+        addRow(playList, "Last Error", payload.play.e);
+        if (playList.childElementCount > 0) document.getElementById("playback-card").hidden = false;
+      }
+
+      if (payload.log && payload.log.length > 0) {
+        var logList = document.getElementById("log-rows");
+        payload.log.forEach(function (entry) {
+          var li = document.createElement("li");
+          li.textContent = entry;
+          logList.appendChild(li);
+        });
+        document.getElementById("log-card").hidden = false;
+      }
+
+      var discordText = formatDiscord(payload);
+      var rawBox = document.getElementById("raw-text");
+      rawBox.value = discordText;
+      document.getElementById("open-github").href = buildGitHubUrl(payload);
+
+      var copyBtn = document.getElementById("copy-discord");
+      copyBtn.addEventListener("click", function () {
+        function done() {
+          copyBtn.textContent = "Copied — paste into Discord";
+          copyBtn.classList.add("copied");
+          setTimeout(function () {
+            copyBtn.textContent = "Copy for Discord";
+            copyBtn.classList.remove("copied");
+          }, 2500);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(discordText).then(done, function () {
+            rawBox.closest("details").open = true;
+            rawBox.focus();
+            rawBox.select();
+            document.execCommand("copy");
+            done();
+          });
+        } else {
+          rawBox.closest("details").open = true;
+          rawBox.focus();
+          rawBox.select();
+          document.execCommand("copy");
+          done();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

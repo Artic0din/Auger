@@ -180,7 +180,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Settings categories | 🟡 | ✅ | ✅ | Tizen: General, Playback, Subtitles, Server; Diagnostics is owned by #137. Android: General, Playback, Subtitles, Diagnostics, Server (`TvSettingsCategory`) |
+| Settings categories | ✅ | ✅ | ✅ | Tizen: General, Playback, Subtitles, Diagnostics, Server (#847). Android: General, Playback, Subtitles, Diagnostics, Server (`TvSettingsCategory`) |
 | Hidden libraries | ✅ | ✅ | ✅ | Apple: `HiddenLibraryPreference` applied in `TVMainTabView`; no tvOS editor. Android: `TvMainShell` leaves hidden libraries out |
 | Preferred audio, quality, maximum bitrate, seek intervals | ✅ | ✅ | ✅ | Server-confirmed writes |
 | Autoplay, Next Up, Skip Intros, Skip Credits switches | ✅ | ✅ | ✅ | Playback Settings has Auto-Play Next Episode, Show Next Up, Skip Intros and Skip Credits, saved to the server and drawn only when the server defines the key. Apple: `TVPlaybackSettingsView`. Android: `TvSettingsScreen` |
@@ -197,7 +197,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Diagnostics reports | 🚧 | ✅ | ✅ | #137, blocked by #138 (server does not accept a Tizen diagnostics platform). Android: `TvDiagnosticsReportScreen` |
+| Diagnostics reports | ✅ | ✅ | ✅ | Tizen: 1-click **Send Diagnostics Report** (Cloudflare Worker relay → GitHub issue) plus zero-backend **Share via QR Code** backup (#847); first-party server upload is not used for third-party clients (#138). Android: `TvDiagnosticsReportScreen` |
 | Notifications inbox | ➖ | ➖ | ✅ | No inbox screen found in the Apple tree. Android: `TvInboxScreen` |
 
 ## Platform & release
@@ -215,7 +215,7 @@ File pointers are repository-relative.
 ## Platform summary
 
 **Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests and AVPlay playback with audio, text subtitles and AI subtitles.
-It has no music browsing, audiobook playback, diagnostics, Smart Hub row or sleep timer.
+It has no music browsing, audiobook playback, Smart Hub row or sleep timer.
 Its playback speed is limited to 1× and 2× on direct-file plans.
 Watch Party is partly built and off by default: the lobby, Ready and voting work, and synchronized playback waits on #13 ([Watch Party](docs/features/watch-party.md)).
 
