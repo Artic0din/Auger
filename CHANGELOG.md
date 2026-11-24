@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.2.1] - 2026-11-24
+
+### 🐛 Fixes
+
+- Draw Up Next's text at Apple's points times the cap scale
+
 ## [0.2.0] - 2026-11-24
 
 ### ✨ New Features
