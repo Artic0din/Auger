@@ -99,9 +99,9 @@ After CI passes on `main`, the Release workflow reads the Conventional Commits s
 ## Contributing
 
 Right now, the most helpful way to contribute is a clear, accurate issue.
-We implement and review changes through our own workflow, and pull request volume has outgrown what we can review carefully, so a good issue usually helps us more than a pull request.
+We implement and review changes through our own workflow, so a good issue usually helps us more than a pull request.
 
-Pull requests are welcome when a maintainer asks for one in an issue comment.
+Pull requests are welcome when a accompanied by an issue comment.
 We close other pull requests without review.
 [CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful.
 
@@ -109,14 +109,9 @@ Problems with the server or its API belong in [silo-server](https://github.com/S
 
 ## Credits
 
-- **Silo.** Auger is an independent client for [Silo](https://siloserver.org), the media server built by Silo Media L.L.C. and its contributors.
+- **Silo.** Auger is an independent client for [Silo](https://siloserver.org).
 - **Silo's TV apps.** The interface follows Silo's [Skyline design guide](https://github.com/Silo-Server/silo-apple/blob/main/docs/skyline-design-guide.md).
-  Behavior is ported from [silo-apple](https://github.com/Silo-Server/silo-apple) and compared with [silo-android](https://github.com/Silo-Server/silo-android), both under the same AGPL license.
-- **Silo's brand page.** The Auger mark's three signal colors and the wordmark's typeface match the ones on [siloserver.org/brand](https://siloserver.org/brand).
-  The mark itself is a different shape, as that page asks of clients.
-  The wordmark is set in Plus Jakarta Sans, under the SIL Open Font License, and converted to outlines.
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)** makes installing on your own TV practical.
-- **Libraries, fonts and marks.** uqr, unicode-segmenter, ThumbHash, Inter, Roboto Mono and the TMDB logo keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+  Behavior is ported from [silo-apple](https://github.com/Silo-Server/silo-apple) and compared with [silo-android](https://github.com/Silo-Server/silo-android).
 
 ## License and trademarks
 
@@ -124,11 +119,8 @@ Auger is licensed under `AGPL-3.0-or-later`; see [LICENSE](LICENSE).
 An additional permission under AGPL section 7 allows combining it with platform SDKs; see [PLATFORM-EXCEPTION.md](PLATFORM-EXCEPTION.md).
 
 Silo and the Silo logo are trademarks of Silo Media L.L.C.
-Auger uses the Silo name only to say what it connects to, which Silo's [trademark policy](https://github.com/Silo-Server/siloserver.org/blob/main/TRADEMARK.md) and [brand guidelines](https://siloserver.org/brand#usage) allow without permission.
-Auger is not an official Silo product, and Silo Media L.L.C. does not operate, sponsor or endorse it.
-Official Silo software comes only from the [Silo-Server](https://github.com/Silo-Server) organization on GitHub, [siloserver.org](https://siloserver.org), and app-store listings published by Silo Media L.L.C.
 
-The Auger mark and wordmark are this project's own artwork, and this repository ships no Silo logo, wordmark or icon files.
+The Auger mark and wordmark are this project's own artwork.
 [TRADEMARK.md](TRADEMARK.md) summarizes Auger's trademark notice and links to Silo's canonical policy.
 
 Samsung, Tizen, Apple TV, TMDB and other names belong to their owners.
