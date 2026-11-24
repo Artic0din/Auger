@@ -101,7 +101,7 @@ After CI passes on `main`, the Release workflow reads the Conventional Commits s
 Right now, the most helpful way to contribute is a clear, accurate issue.
 We implement and review changes through our own workflow, so a good issue usually helps us more than a pull request.
 
-Pull requests are welcome when a accompanied by an issue comment.
+Pull requests are welcome when a accompanied by an issue.
 We close other pull requests without review.
 [CONTRIBUTING.md](CONTRIBUTING.md) explains what makes an issue useful.
 
