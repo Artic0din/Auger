@@ -21,6 +21,16 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 2. **Browse.** Auger reads your libraries through Silo's native `/api/v2`, and nothing else.
 3. **Play.** The server plans Direct Play, Remux or an HLS Transcode from what the TV can decode, and Samsung's AVPlay plays it.
 
+## Screenshots
+
+| Home | Movies |
+| --- | --- |
+| ![Auger Home screen](./assets/readme/home.jpg) | ![Auger Movies library](./assets/readme/movies.jpg) |
+
+| Series Details | Search |
+| --- | --- |
+| ![Auger Series Details](./assets/readme/series-details.jpg) | ![Auger Search](./assets/readme/search.jpg) |
+
 ## Install
 
 Auger ships through Apps2Samsung and GitHub Releases.
