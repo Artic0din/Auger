@@ -56,9 +56,11 @@ class VerdictTest(unittest.TestCase):
     def test_a_required_check_that_never_reported_fails(self):
         for name in (
             "Playwright UI tests (shard 3/3)",
+            "All build and test checks",
             "Package and sign .wgt",
             "Gitleaks secret scan",
             "API v2 guard and automation script tests",
+            "Standards / Repository baseline",
             "Standards / Pull request hygiene",
         ):
             with self.subTest(name=name):

@@ -92,8 +92,10 @@ Keep the `main` ruleset (`Settings > Rules > Rulesets > main`) aligned with thes
 - `Standards / Repository baseline`
 - `Standards / Pull request hygiene`
 
-When renaming a required check in a pull request, update the `main` ruleset as that pull request lands.
-Updating the ruleset before merge breaks open pull requests still running the previous workflow names, and leaving the old names in the ruleset blocks subsequent pull requests after merge.
+When renaming a required check, the pull request that renames it emits only the new context, so GitHub will keep waiting on the old required context unless handled in one of two ways:
+
+- **Direct switch (requires ruleset bypass).** Let an admin merge the rename pull request with a bypass and immediately replace the old required contexts in the `main` ruleset with the new ones. Do not switch the ruleset before merge, or open pull requests running the previous workflow names will be blocked.
+- **Staged switch (no bypass).** Merge a first pull request that reports both old and new contexts, update open pull requests and switch the `main` ruleset and `scripts/pr-gate.py` to the new contexts, then merge a follow-up pull request that drops the old contexts.
 
 `scripts/pr-gate.py <PR>` checks the required check runs (including `Kody Code Review` and all three Playwright UI shards) plus mergeability and unresolved review threads before merging.
 
@@ -116,7 +118,7 @@ Run the local equivalents before opening a pull request:
 npm test                                    # Typecheck, build, native unit tests, and Playwright UI tests
 bash scripts/ci/check-no-api-v1.sh          # /api/v1 path guard
 gitleaks git --staged --redact              # Secret scan on staged changes
-python3 scripts/pr-gate.py <PR_NUMBER>      # Merge gate status for an open PR
+python3 scripts/pr-gate.py 123              # Merge gate status (replace 123 with the PR number)
 ```
 
 See [test/README.md](../test/README.md) for test boundaries and flake-hunting flags, and [Samsung simulator validation](evidence/simulator-evidence.md) for `.wgt` signing and simulator verification.
