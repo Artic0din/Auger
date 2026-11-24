@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { RECONNECT_STABLE_MS } from "../../src/player/playbackRecovery.ts";
 import { PlaybackController, type PlaybackView, type PlayRequest } from "../../src/player/controller.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -292,7 +293,7 @@ test("retired restore cannot mark a preparing user replacement started", async (
     r.avplay.finishRestore();
     await r.h.clock.advance(0);
     assert.equal(last(r.views).phase, "loading", "retired native callback cannot mark new preparation playing");
-    await r.h.clock.advance(60000);
+    await r.h.clock.advance(15000);
     assert.equal(replans(r.h).length, 2, "replacement startup watchdog remains armed");
     r.controller.destroy();
 });
@@ -560,10 +561,13 @@ test("a prepared replacement that loses its session starts one replacement", asy
 
 test("the stable reconnect window starts when the replacement plays", async () => {
     const r = await rig();
-    await play(r);
+    const id = await play(r);
+    // The replan answer is held, not the prepare, so the wait outlasts the window without meeting the startup bound.
+    const held = r.h.fake.hold(`/playback/${id}/replan`, true);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
     await r.h.clock.advance(1000);
-    await r.h.clock.advance(29000);
+    await r.h.clock.advance(RECONNECT_STABLE_MS - 1000);
+    held.release();
     await resumePlan(r);
     await r.h.clock.advance(1000);
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
@@ -574,6 +578,27 @@ test("the stable reconnect window starts when the replacement plays", async () =
     r.controller.destroy();
 });
 
+test("a reconnect whose replacement never prepares stays a reconnect until the replan budget ends it", async () => {
+    const r = await rig();
+    await play(r);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(1000);
+    assert.equal(replans(r.h).length, 1);
+    // Each hung prepare costs the startup bound (15 s) plus the next resend delay; the reconnect budget is not what ends it.
+    for (let second = 0; second < 55; second++) {
+        await r.h.clock.advance(1000);
+        const view = last(r.views);
+        assert.equal(view.phase, "loading");
+        assert.equal(view.phase === "loading" && view.detail, "reconnecting");
+    }
+    await r.h.clock.advance(5000);
+    assert.equal(replans(r.h).length, 4, "the reconnect replan and three failure replans");
+    const end = last(r.views);
+    assert.equal(end.phase === "error" && end.error.kind, "playback_failed");
+    assert.equal(stops(r.h), 1);
+    r.controller.destroy();
+});
+
 test("a hidden pending prepare retains its startup deadline", async () => {
     const r = await rig();
     await play(r);
@@ -581,14 +606,14 @@ test("a hidden pending prepare retains its startup deadline", async () => {
     await r.h.clock.advance(1000);
     assert.equal(replans(r.h).length, 1);
     r.controller.suspend();
-    await r.h.clock.advance(30000);
+    await r.h.clock.advance(7000);
     r.controller.restore();
     await r.h.clock.advance(0);
     assert.equal(replans(r.h).length, 1, "show does not duplicate the pending preparation");
-    await r.h.clock.advance(29999);
+    await r.h.clock.advance(7999);
     assert.equal(replans(r.h).length, 1);
     await r.h.clock.advance(1);
-    assert.equal(replans(r.h).length, 2, "the original 60-second startup deadline still fires");
+    assert.equal(replans(r.h).length, 2, "the original 15-second startup deadline still fires");
     assert.equal(replans(r.h)[1]?.operation, "failure_recovery");
     r.controller.destroy();
 });
@@ -628,6 +653,70 @@ test("a pending preparation cannot play before foreground authority is revalidat
     await r.h.clock.advance(0);
     assert.equal(r.avplay.calls.filter(call => call === "play").length, 2);
     assert.equal(r.avplay.state, "PLAYING");
+    r.controller.destroy();
+});
+
+// The start's own reads (markers, versions) may answer after the app is hidden and shown again.
+for (const stage of ["foreground validation", "AVPlay restore"] as const) test(`a late start read cannot hide Restoring during ${stage}`, async () => {
+    const r = await rig();
+    const markers = r.h.fake.hold("/markers/files/42", true);
+    const versions = r.h.fake.hold("/catalog/items/movie-1/versions", true);
+    await play(r);
+    r.controller.suspend();
+    const gate = stage === "foreground validation" ? r.h.fake.hold("/playback/capabilities", true) : undefined;
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    if (gate === undefined) {
+        assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 1, "restore is waiting on AVPlay");
+    }
+    markers.release();
+    versions.release();
+    await r.h.clock.advance(0);
+    assert.deepEqual([last(r.views).phase, last(r.views).phase === "loading" ? (last(r.views) as { detail?: string }).detail : undefined], ["loading", "restoring"]);
+    gate?.release();
+    await r.h.clock.advance(0);
+    if (gate !== undefined) assert.equal(last(r.views).phase, "loading", "AVPlay restore still pending");
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
+    r.controller.destroy();
+});
+
+test("a reconnect that replaces the transport of a pending restore plays without waiting for the obsolete restore", async () => {
+    const r = await rig();
+    await play(r);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 1, "restore is waiting on AVPlay");
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(1000);
+    await resumePlan(r);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(last(r.views).phase, "playing", "the replacement transport is not held behind the Restoring overlay");
+    r.avplay.tick(13000);
+    assert.equal(last(r.views).phase, "playing");
+    r.controller.destroy();
+});
+
+test("an obsolete restore answering does not lift the Restoring overlay of the newer restore", async () => {
+    const r = await rig();
+    await play(r);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("restoreAsync")).length, 2);
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    r.avplay.tick(13000);
+    await r.h.clock.advance(0);
+    assert.deepEqual([last(r.views).phase, (last(r.views) as { detail?: string }).detail], ["loading", "restoring"], "the newer restore is still pending");
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
     r.controller.destroy();
 });
 

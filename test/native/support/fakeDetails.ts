@@ -16,7 +16,11 @@ export class FakeDetails extends FakeCatalog {
     capability = true;
     /** Home and catalog cards carry `user_state` and, while in progress, `progress_updated_at`, as the server sends them. */
     cardUserState = false;
+    /** Cards carry `user_state.not_interested`, as a server that has the mark sends it; off, they read as an older server's, so a card menu offers no Not Interested row. */
+    sendsNotInterested = false;
     empty = false;
+    /** Date facts movie:m0001's detail sends (`release_date`, `air_date`, `first_air_date`, `last_air_date`). */
+    readonly factDates: Record<string, string> = {};
     extras: readonly Record<string, unknown>[] = [];
     videos: readonly Record<string, unknown>[] = [];
     readonly mutations: string[] = [];
@@ -50,7 +54,7 @@ export class FakeDetails extends FakeCatalog {
         const card = super.card(id);
         if (!this.cardUserState) return card;
         return { ...card, ...(card.position_seconds === undefined ? {} : { progress_updated_at: "2026-11-01T10:00:00.123456Z" }),
-            user_state: { played: this.playedFor(id, "p-owner"), is_favorite: this.personalMembers("p-owner", "favorites").has(id), in_watchlist: this.personalMembers("p-owner", "watchlist").has(id), not_interested: false } };
+            user_state: { played: this.playedFor(id, "p-owner"), is_favorite: this.personalMembers("p-owner", "favorites").has(id), in_watchlist: this.personalMembers("p-owner", "watchlist").has(id), ...(this.sendsNotInterested ? { not_interested: false } : {}) } };
     }
 
     private playedFor(id: string, profileId: string | undefined): boolean {
@@ -145,6 +149,7 @@ export class FakeDetails extends FakeCatalog {
                 cast: [{ person_id: "7", name: "River Vale", character: "Alex", order: 0, photo_url: "/art/river.svg" }, { name: "Morgan Lane", character: "Sam", order: 1 }],
                 crew: [{ person_id: "7", name: "River Vale", job: "Director", photo_url: "/art/river.svg" }],
                 ratings: [{ source: "imdb", name: "IMDb", score: 81, display: "8.1" }], studios: ["North Studio"], countries: ["AU"], original_language: "en",
+                ...this.factDates,
                 versions: [{ file_id: "42", duration: 5400, resolution: "2160p", codec_video: "hevc", codec_audio: "aac", hdr: true, edition_raw: "Original", audio_tracks: this.audioFiles.get("42")?.audio, subtitle_tracks: this.subtitleFiles.get("42") }, { file_id: "43", duration: 1200, resolution: "1080p", codec_video: "h264", codec_audio: "aac", hdr: false, edition_raw: "Short cut", audio_tracks: this.audioFiles.get("43")?.audio, subtitle_tracks: this.subtitleFiles.get("43") }],
                 user_data: this.neverPlayed.has("movie:m0001") && !this.personalMembers(profileId, "watched").has("movie:m0001") ? undefined : { played: this.personalMembers(profileId, "watched").has("movie:m0001"), position_seconds: this.progress.get("movie:m0001"), last_file_id: "42" },
             } };

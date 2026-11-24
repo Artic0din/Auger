@@ -1,6 +1,6 @@
 # Native API v2 on Tizen
 
-The Silo Samsung TV client talks to the server only through the native `/api/v2` API.
+Auger talks to the Silo server only through the native `/api/v2` API.
 This page lists every operation the app calls, how each one is authenticated, and how failures are handled.
 The code is the source of truth.
 Each section cites the file that defines the operation.
@@ -29,6 +29,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
 - **Timeout.** The default is 15 s (`DEFAULT_TIMEOUT_MS`). Callers may override it per request.
   Subtitle files (`NativeHttp.subtitleText`) have no total limit and fail after 60 s with no bytes, Apple's `sidecarIdleTimeout`: the server streams an embedded-track extract as it demuxes, which takes minutes on a large remux.
   They stop at 4 MiB.
+  A body the origin breaks off, or leaves quiet for 60 s, after the answer began is `SubtitleTruncated` and carries the text that arrived. `downloadSubtitle` (`src/player/subtitleRefetch.ts`) shows those cues and fetches again after 2, 5, 10, 10 and 10 s, Apple's `sidecarTruncationRetryDelaysSeconds`, keeping the largest partial; a refetch that fails outright is retried too, but a first fetch that never got going fails as before.
 - **Headers on every request.**
   - `Accept: application/json, application/problem+json`
   - `X-Silo-Device-Id`
@@ -252,7 +253,6 @@ External subtitle paths use the catalog `file_name`, matching Apple; embedded tr
 Explicit Off writes index `-1`, empty language/path and mode `off`.
 Ordinary picks omit `show_forced_subtitles` so they do not pin an inherited profile setting.
 Fresh effective subtitle signatures seed Details using Apple's language/label scoring; explicit Auto remains Auto for the retained visit.
-This is source work only, pending independent review and native Apple/Samsung parity.
 
 All of these are Bearer plus Profile.
 The server applies library access and content limits, so the client does not filter.
@@ -308,6 +308,7 @@ All are Bearer plus Profile.
 | Operation | Method and path | Retry |
 | --- | --- | --- |
 | personal-list capability | `GET /capabilities/personal-lists` | safe |
+| rating sources shown (`ratingSources`, `src/api/ratingOperations.ts`) | `GET /capabilities/ratings`; only `state: "available"` counts, and its `sources[].source` names decide whether Browse's Sort lists RT Critic and RT Audience. Read with the first Browse load, not on a focus move | safe |
 | membership | `GET /watchlist/{id}/membership` and `GET /favorites/{id}/membership` | safe |
 | add to watchlist or favorites | `PUT /watchlist/{id}`, `PUT /favorites/{id}` | never |
 | remove from watchlist or favorites | `DELETE /watchlist/{id}`, `DELETE /favorites/{id}` | never |
@@ -371,10 +372,10 @@ Empty weeks show the filter-specific Apple copy and links to the other two filte
 The existing shell, focus host, artwork fallback, session invalidation and remote Back chain retain ownership.
 Loading has a blank focusable 320-pixel placeholder; empty weeks have a calendar icon and light primary filter links, without an extra Back button.
 Errors without retained data use the shared error mapping and placeholder builder: triangle, headline, message and a 200-pixel Try Again button.
-As in Apple, a quiet refresh retains cached events rather than replacing them with a loading page.
+As in Apple, a quiet refresh retains cached events rather than replacing them with a loading page, and a refresh that fails over a week with events shows nothing more (`CalendarViewModel.load` sets its error only while `days.isEmpty`); the next Calendar visit reads the week again. A failure over an empty week shows the error page, with Sign In Again first after a 401.
 Today updates the week and selected date without requesting filter focus; Tizen keeps a valid focus target on the selected strip day when Today disappears.
 The bundled Inter font and SVG symbol substitutes still require native comparison against SF Pro and SF Symbols.
-Desktop UI checks cover remote behavior and both motion settings; signed Samsung, matched Apple captures and physical-TV calibration remain separate acceptance gates.
+Desktop UI checks cover remote behavior and both motion settings; see [docs/evidence/simulator-evidence.md](evidence/simulator-evidence.md) for signed `.wgt`, Apple TV comparison, and hardware acceptance gates.
 
 ### Requests
 
@@ -511,6 +512,14 @@ URLs failing `isPermittedUrl` fail the playback.
 The code comment calls this a "Gate C candidate" from silo-server's `docs/playback-api.md` (at the commit in `src/contracts/v2/SOURCE`), so the server's acceptance of the `token` query on stream and subtitle URLs is not marked final.
 On `visibilitychange` the stream URL is rebuilt with a fresh token (`urlWithToken`).
 
+Before `open`, a `server_remux_hls` or `server_transcode_hls` plan has its playlist read with that same address (`NativeHttp.playlistHeads`: the first 64 KiB, no headers, one 5 s limit for all reads).
+When it is a master, the first video variant it lists (the address after the first `#EXT-X-STREAM-INF`) is read too; subtitle and audio rendition playlists are not.
+A playlist with `#EXT-X-DEFINE`, or a `{$` left in a segment address, is not given to AVPlay: `prepareAsync` on it stops the page's JavaScript until the TV closes Silo (#650, #314), so no timer can catch it.
+On the S95C the master is version 3 and clean, and the define is on line 3 of the version 8 video variant.
+The player shows the playback error page and the console logs the reason.
+A playlist that cannot be read here (refused, no answer, another origin) is no verdict, and AVPlay gets it as before.
+A define only in a rendition playlist would still be missed.
+
 Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
 After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
 A selection without its `index`, a stream with no matching AUDIO row, or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
@@ -575,7 +584,12 @@ AI subtitles (`src/player/subtitleAI.ts`):
 
 Subtitle search (`src/player/subtitleSearch.ts`) stays offered until provider status says the viewer is not allowed, the state is not `available`, or providers are not enabled. A failed probe is not retried and does not change that. Search and download are each sent once. A stored subtitle is selected through the existing track owner. An uncertain download is not sent again while the menu stays open.
 
-Subtitle delay and appearance (`src/player/subtitleDisplay.ts`) are shown only when the settings contract advertises `player.subtitle_sync_ms` and `playback.subtitle_appearance`, and only while the selected subtitle is not burn-in or text AVPlay is drawing itself. An embedded track the plan sends as a subtitle `artifact` (such as a forced SubRip track on direct play) is drawn by this app, so both stay available. A scope is a name, or `{ "scope", "introduced_in" }` from that revision; delay's profile scope starts at revision 19. Delay is clamped to ±10000 ms and written at profile scope, or `profile_device` when "Only on this TV" is on or the manifest revision is below 19. The offset moves cues this app draws. AVPlay has no subtitle-offset call, so text it draws itself is not shifted; a TV has to confirm whether that platform can move its own TEXT track.
+Subtitle delay and appearance (`src/player/subtitleDisplay.ts`):
+
+- **Visibility:** shown only when the settings contract advertises `player.subtitle_sync_ms` and `playback.subtitle_appearance` respectively, and only while the selected subtitle is drawn by the app overlay (including an embedded track sent as a subtitle `artifact` on Direct Play), never for burn-in or AVPlay-rendered tracks.
+- **Scope and clamping:** delay clamps to ±10000 ms and writes at `profile` scope (introduced at manifest revision 19), or `profile_device` when "Only on this TV" is on or manifest revision is below 19.
+- **Embedded text on Direct Play (#538):** on the S95C, AVPlay accepts `setSubtitlePosition` without moving its own text events, so `original_http` declares `subtitles.embedded_text: false` and the Server sends embedded text tracks as artifacts drawn by the app. Choosing an embedded track on Direct Play replans for its artifact over the open stream rather than switching AVPlay's TEXT track.
+- **Fallback and lost replans:** if an artifact fails to load (exceeds 4 MiB or read error) or the Server refuses the replan, AVPlay draws the embedded track (matched by `stream_index` unless language differs, then by language) and hides delay/appearance rows. If the replan answer is lost, AVPlay draws the track meanwhile and the identical request (same `replan_request_id`) resends every 5, 10, 15, and then 30 s (or after the 15 s lease on `409 replan_in_progress`) until the Server replays its stored decision (silo-server playback-protocol-v3 §2.3), adopting the plan without reopening playback. Subtitle rows stay selectable while the switch is in flight and apply the latest pick when it settles.
 
 ### Theme music
 

@@ -9,7 +9,7 @@ import { translate } from "../../src/i18n/translate.ts";
 import { FakeHome } from "../native/support/fakeHome.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 // The expected German text is read here, in the test process; the page loads the same file the way the app does.
 registerSourceCatalogs();
@@ -34,7 +34,7 @@ class KeyedHome extends FakeHome {
     }
 }
 
-async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly cached?: string; readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean } = {}): Promise<void> {
+async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHome, releaseLanguage: () => void, holds: readonly { release(): void }[]) => Promise<void>, options: { readonly cached?: string; readonly stored?: string; readonly empty?: boolean; readonly holdLanguage?: boolean; readonly keyedLanguageHold?: boolean } = {}): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
     const catalog = new KeyedHome();
     if (options.empty === true) {
@@ -58,20 +58,28 @@ async function withHome(body: (tv: Tv, settings: FakeSettings, catalog: KeyedHom
         if (options.cached !== undefined) await tv.page.evaluate(choice => window.browseHarness.seedAppLanguage(choice), options.cached);
         // The profile's language answers late: Home draws in English first.
         // A hold answers one read, and Browse makes several effective reads at launch; hold the first few.
-        if (options.holdLanguage === true) held = Array.from({ length: 8 }, () => tv.fake.hold("/settings/values/effective", true));
+        // Some tests need the language read itself held whatever order the launch reads come in: it takes its own hold, registered first, in place of one of the eight.
+        const keyed = options.holdLanguage === true && options.keyedLanguageHold === true ? [tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true)] : [];
+        if (options.holdLanguage === true) held = [...keyed, ...Array.from({ length: 8 - keyed.length }, () => tv.fake.hold("/settings/values/effective", true))];
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
+        // The top bar paints a frame after Home's view appears; the tests read its first draw.
+        await tv.page.locator(".skyline-roots [data-focus]").first().waitFor();
+        await afterPaint(tv);
         await body(tv, settings, catalog, () => held.forEach(hold => hold.release()), held);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 }
 
 const rootTitles = (tv: Tv): Promise<string[]> => tv.page.locator(".skyline-roots [data-focus]").evaluateAll(nodes => nodes.map(node => node.textContent ?? ""));
+// The libraries answer on their own read, which can land after the first draw and after the language.
+const libraryTabs = (tv: Tv): Promise<void> => tv.eventually(async () => (await rootTitles(tv)).length === 5, "the library tabs");
 const sectionTitles = (tv: Tv): Promise<string[]> => tv.page.locator('[data-view="home"] .browse-section-title').allInnerTexts();
 
 test("the top bar and Home's row titles read in German, and a row the server wrote without a key keeps its text", async () => {
     await withHome(async tv => {
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar");
+        await libraryTabs(tv);
         assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
         assert.equal(await tv.page.locator('[data-focus="search"]').getAttribute("aria-label"), de("topBar.search"));
         assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-label"), de("topBar.profileButton"));
@@ -90,6 +98,7 @@ test("the top bar and Home's row titles read in German, and a row the server wro
 
 test("in English the rows show the server's text as sent, even for a row that carries a key", async () => {
     await withHome(async tv => {
+        await libraryTabs(tv);
         assert.deepEqual(await rootTitles(tv), ["Home", "Movies", "Series", "For You", "Calendar"]);
         const titles = await sectionTitles(tv);
         assert.ok(titles.includes("Continue Watching") && titles.includes("Recently Added in Movies") && titles.includes("Server Picks"), titles.join(" | "));
@@ -170,6 +179,7 @@ test("an empty Home and a Home still loading read in German", async () => {
 
 test("picking German in Settings relabels the top bar and Home when Settings closes", async () => {
     await withHome(async tv => {
+        await libraryTabs(tv);
         assert.deepEqual(await rootTitles(tv), ["Home", "Movies", "Series", "For You", "Calendar"]);
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.page.keyboard.press("Enter");
@@ -181,8 +191,68 @@ test("picking German in Settings relabels the top bar and Home when Settings clo
         for (let presses = 0; presses < 4 && !await tv.page.locator('[data-view="home"]').isVisible(); presses++) await tv.remote(BACK);
         await tv.page.locator('[data-view="home"]').waitFor();
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar after Settings");
+        await libraryTabs(tv);
         assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
         await tv.eventually(async () => (await sectionTitles(tv)).includes(de("home.section.continueWatching")), "German row titles after Settings");
+    });
+});
+
+test("the Home hero's runtime reads in the new language after Settings, with the same card selected (#609)", async () => {
+    await withHome(async tv => {
+        const meta = (): Promise<string> => tv.page.evaluate(() => Array.from(document.querySelectorAll(".skyline-meta-line")).map(node => node.textContent ?? "").join(" | "));
+        // English first: the hero's runtime arrives with the card's details.
+        await tv.eventually(async () => /1h 30m(?!in)/.test(await meta()), "the hero's runtime in English");
+        const shown = await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus");
+        const marqueeTitle = (): Promise<string> => tv.page.locator(".skyline-marquee-layer:not(.skyline-outgoing) .skyline-title").first().innerText();
+        const heroTitle = await marqueeTitle();
+        assert.notEqual(heroTitle, "", "the marquee shows a title");
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator('[data-focus="app-language"]').waitFor();
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio", { name: "Deutsch", exact: true }).click();
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === de("settings.title"), "Settings in German");
+        for (let presses = 0; presses < 4 && !await tv.page.locator('[data-view="home"]').isVisible(); presses++) await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar after Settings");
+        assert.equal(await tv.page.locator('[data-view="home"] [data-focus]').first().getAttribute("data-focus"), shown, "the same card is still first");
+        assert.equal(await marqueeTitle(), heroTitle, "the marquee still shows the same card");
+        await tv.eventually(async () => /1h 30min/.test(await meta()), `the hero's runtime in German, got "${await meta()}"`);
+    });
+});
+
+test("the Home hero keeps its enriched line in the new language when Settings is opened from a screen without enrichment (Calendar) and closes onto Home (#609)", async () => {
+    await withHome(async tv => {
+        const marquee = (): Promise<{ title: string; meta: string; detail: string }> => tv.page.evaluate(() => {
+            const layer = document.querySelector(".skyline-marquee-layer:not(.skyline-outgoing)");
+            const text = (selector: string): string => Array.from(layer?.querySelectorAll(selector) ?? []).map(node => node.textContent ?? "").join(" | ");
+            return { title: text(".skyline-title"), meta: text(".skyline-meta-line"), detail: text(".skyline-detail-line") };
+        });
+        await tv.eventually(async () => /1h 30m(?!in)/.test((await marquee()).meta), "the hero's runtime in English");
+        const english = await marquee();
+        assert.notEqual(english.detail, "", "the detail line has arrived");
+        // The card's detail read is not asked again in time: what Home already knew of it has to carry the German repaint.
+        await tv.page.route("**/api/v2/catalog/items/**", () => undefined);
+        // Calendar shows no marquee, so Home's card stays the one the marquee holds while Settings is open.
+        await tv.page.locator('[data-focus="calendar"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="calendar"]').waitFor();
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await tv.page.locator('[data-focus="app-language"]').waitFor();
+        await tv.page.locator('[data-focus="app-language"]').click();
+        await tv.page.getByRole("radio", { name: "Deutsch", exact: true }).click();
+        await tv.eventually(async () => await tv.page.locator(".settings-panes h1.browse-title").innerText() === de("settings.title"), "Settings in German");
+        // Settings closes onto Home (TVSettingsView.exitSettingsToHome), whichever page opened it.
+        for (let presses = 0; presses < 4 && !await tv.page.locator('[data-view="home"]').isVisible(); presses++) await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.forYou")), "German top bar");
+        await tv.eventually(async () => /1h 30min/.test((await marquee()).meta), `the hero's runtime in German, got "${(await marquee()).meta}"`);
+        const german = await marquee();
+        assert.equal(german.title, english.title, "the marquee shows the same card");
+        assert.notEqual(german.detail, "", "the detail line is still there");
     });
 });
 
@@ -194,7 +264,7 @@ test("a language that arrives while a top-bar button has focus keeps focus on th
         releaseLanguage();
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar");
         assert.equal(await tv.focused(), "calendar", "the viewer's button keeps focus when the bar is rebuilt");
-    }, { stored: "de", holdLanguage: true });
+    }, { stored: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a language that arrives during playback shows on the top bar when browse resumes", async () => {
@@ -280,7 +350,10 @@ test("a late answer that differs from the kept language redraws the screen once 
         assert.equal(await tv.focused(), key);
         releaseLanguage();
         await tv.eventually(async () => (await sectionTitles(tv)).includes(de("home.section.recentlyAddedIn", { library: "Movies" })), "German rows");
-        assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
+        const expected = ["topBar.home", "topBar.movies", "topBar.series", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0]));
+        // The libraries answer on their own read, which can land after the language file.
+        await tv.eventually(async () => (await rootTitles(tv)).join("|") === expected.join("|"), "German top bar with the libraries");
+        assert.deepEqual(await rootTitles(tv), expected);
         assert.equal(await tv.focused(), key, "focus is restored by section and item id");
     }, { stored: "de", cached: "", holdLanguage: true });
 });

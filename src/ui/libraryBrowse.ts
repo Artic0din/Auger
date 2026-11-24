@@ -8,31 +8,70 @@ import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { CatalogFilters, CatalogQueryRequest, FilterGroup, FilterRule, Order } from "../contracts/v2/discovery.ts";
 import { scopeOf } from "./browseModel.ts";
 
-export type SortKey = "title" | "added_at" | "release_date" | "year" | "rating_imdb" | "runtime" | "resolution" | "author" | "narrator" | "series";
-/** CatalogSortKey.available(for: .movie / .series), in display order, with the label's catalog key (CatalogSortKey.label) and natural order. */
+export type SortKey = "title" | "added_at" | "release_date" | "last_air_date" | "latest_episode_added" | "year" | "content_rating" | "runtime" | "rating_imdb" | "rating_tmdb" | "rating_rt_critic" | "rating_rt_audience" | "resolution" | "bitrate" | "progress" | "date_viewed" | "plays" | "author" | "narrator" | "series";
+/** BrowseMediaType: the media family of a library, which selects its sort vocabulary. */
+export type BrowseMediaType = "movie" | "series" | "audiobook" | "mixed";
+
+/**
+ * CatalogSortKey (CatalogSortKey.swift at silo-apple 6eea7cf7): every sort in the enum's order, which is the list's order,
+ * with its label's catalog key (CatalogSortKey.label) and the direction a newly picked sort starts in (defaultOrder).
+ * The key is the server's `sort` field.
+ */
 export const SORT_KEYS: readonly { readonly key: SortKey; readonly name: MessageKey; readonly order: Order }[] = [
     { key: "title", name: "catalog.sort.title", order: "asc" },
     { key: "added_at", name: "catalog.sort.added", order: "desc" },
     { key: "release_date", name: "catalog.sort.released", order: "desc" },
+    { key: "last_air_date", name: "catalog.sort.latestEpisodeAirDate", order: "desc" },
+    { key: "latest_episode_added", name: "catalog.sort.latestEpisodeAdded", order: "desc" },
     { key: "year", name: "catalog.sort.year", order: "desc" },
-    { key: "rating_imdb", name: "catalog.sort.imdbRating", order: "desc" },
+    { key: "content_rating", name: "catalog.sort.contentRating", order: "asc" },
     { key: "runtime", name: "catalog.sort.duration", order: "desc" },
+    { key: "rating_imdb", name: "catalog.sort.imdbRating", order: "desc" },
+    { key: "rating_tmdb", name: "catalog.sort.tmdbRating", order: "desc" },
+    { key: "rating_rt_critic", name: "catalog.sort.rtCriticRating", order: "desc" },
+    { key: "rating_rt_audience", name: "catalog.sort.rtAudienceRating", order: "desc" },
     { key: "resolution", name: "catalog.sort.resolution", order: "desc" },
-];
-
-/** CatalogSortKey.available(for: .audiobook), in display order. */
-const AUDIOBOOK_SORT_KEYS: typeof SORT_KEYS = [
-    { key: "title", name: "catalog.sort.title", order: "asc" },
+    { key: "bitrate", name: "catalog.sort.bitrate", order: "desc" },
+    { key: "progress", name: "catalog.sort.progress", order: "desc" },
+    { key: "date_viewed", name: "catalog.sort.dateViewed", order: "desc" },
+    { key: "plays", name: "catalog.sort.plays", order: "desc" },
     { key: "author", name: "catalog.sort.author", order: "asc" },
     { key: "narrator", name: "catalog.sort.narrator", order: "asc" },
     { key: "series", name: "catalog.sort.series", order: "asc" },
-    { key: "added_at", name: "catalog.sort.added", order: "desc" },
-    { key: "runtime", name: "catalog.sort.duration", order: "desc" },
 ];
 
-/** The sort keys a library of this type offers. */
-export function sortKeysFor(libraryType: string): typeof SORT_KEYS {
-    return libraryType === "audiobooks" ? AUDIOBOOK_SORT_KEYS : SORT_KEYS;
+/** BrowseMediaType.from(libraryType:); a music library reads as movies, as Apple's does. */
+export function browseMediaType(libraryType: string): BrowseMediaType {
+    return libraryType === "mixed" ? "mixed" : libraryType === "audiobooks" ? "audiobook" : libraryType === "series" ? "series" : "movie";
+}
+
+/** CatalogSortKey.applies(to:): whether the key orders a library of this media type, as the web client decides. */
+export function applies(key: SortKey, mediaType: BrowseMediaType): boolean {
+    switch (key) {
+        case "last_air_date": case "latest_episode_added": return mediaType === "series";
+        case "content_rating": case "rating_imdb": case "rating_tmdb": case "rating_rt_critic": case "rating_rt_audience": case "resolution": return mediaType !== "audiobook";
+        case "author": case "narrator": case "series": return mediaType === "audiobook";
+        default: return true;
+    }
+}
+
+/** CatalogSortKey.ratingSource: the rating source a rating sort needs the server to show. */
+function ratingSource(key: SortKey): string | undefined {
+    return key === "rating_rt_critic" ? "rt_critic" : key === "rating_rt_audience" ? "rt_audience" : undefined;
+}
+
+const NO_SOURCES: ReadonlySet<string> = new Set();
+
+/**
+ * CatalogSortKey.available: the sorts a library of this type offers, in Apple's order. A rating sort is listed only while the
+ * server shows its source, and `current`, the sort in use, is always listed so a saved sort stays visible and can be changed.
+ */
+export function sortKeysFor(libraryType: string, shownRatingSources: ReadonlySet<string> = NO_SOURCES, current?: SortKey): typeof SORT_KEYS {
+    const mediaType = browseMediaType(libraryType);
+    return SORT_KEYS.filter(entry => {
+        const source = ratingSource(entry.key);
+        return entry.key === current || applies(entry.key, mediaType) && (source === undefined || shownRatingSources.has(source));
+    });
 }
 
 export type Facet = "genre" | "decade" | "watchStatus" | "contentRating" | "resolution" | "dynamicRange" | "studio" | "network" | "country" | "audioLanguage" | "subtitleLanguage" | "originalLanguage";
@@ -64,7 +103,7 @@ export interface BrowseFilter {
 export const DEFAULT_FILTER: BrowseFilter = { sort: "title", order: undefined, matchAll: true, values: {}, prefix: undefined };
 
 export function sortKey(key: SortKey): (typeof SORT_KEYS)[number] {
-    return SORT_KEYS.find(entry => entry.key === key) ?? AUDIOBOOK_SORT_KEYS.find(entry => entry.key === key) ?? SORT_KEYS[0] as (typeof SORT_KEYS)[number];
+    return SORT_KEYS.find(entry => entry.key === key) ?? SORT_KEYS[0] as (typeof SORT_KEYS)[number];
 }
 
 /** A sort's name in the shown language. */
@@ -83,10 +122,14 @@ export function effectiveOrder(filter: BrowseFilter): Order {
 
 /** CatalogSortKey.directionLabel. */
 export function directionLabel(key: SortKey, order: Order): string {
-    if (key === "title" || key === "author" || key === "narrator" || key === "series") return translate(order === "asc" ? "library.direction.az" : "library.direction.za");
-    if (key === "release_date" || key === "year" || key === "added_at") return translate(order === "asc" ? "library.direction.oldest" : "library.direction.newest");
-    if (key === "runtime") return translate(order === "asc" ? "library.direction.shortest" : "library.direction.longest");
-    return translate(order === "asc" ? "library.direction.lowest" : "library.direction.highest");
+    const asc = order === "asc";
+    switch (key) {
+        case "title": case "content_rating": case "author": case "narrator": case "series": return translate(asc ? "library.direction.az" : "library.direction.za");
+        case "added_at": case "release_date": case "last_air_date": case "latest_episode_added": case "year": case "date_viewed": return translate(asc ? "library.direction.oldest" : "library.direction.newest");
+        case "runtime": return translate(asc ? "library.direction.shortest" : "library.direction.longest");
+        case "plays": return translate(asc ? "library.direction.fewest" : "library.direction.most");
+        case "rating_imdb": case "rating_tmdb": case "rating_rt_critic": case "rating_rt_audience": case "resolution": case "bitrate": case "progress": return translate(asc ? "library.direction.lowest" : "library.direction.highest");
+    }
 }
 
 /** Picking the active key flips its order; another key starts at its natural order. */
@@ -217,7 +260,7 @@ export class BrowsePrefs {
         if (raw == null) return undefined;
         try {
             const value = JSON.parse(raw) as Partial<BrowseFilter>;
-            const sort = sortKeysFor(library.type).find(entry => entry.key === value.sort)?.key ?? "title";
+            const sort = SORT_KEYS.find(entry => entry.key === value.sort && applies(entry.key, browseMediaType(library.type)))?.key ?? "title";
             const order = value.order === "asc" || value.order === "desc" ? value.order : undefined;
             const values: Partial<Record<Facet, readonly string[]>> = {};
             for (const { facet } of FACETS) {

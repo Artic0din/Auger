@@ -309,7 +309,7 @@ detailTest("An unanswered favourite is Apple's Change Not Confirmed alert, and D
     await tv.page.locator('[data-focus="favorites"]').click();
     const alert = tv.page.getByRole("alertdialog", { name: "Change Not Confirmed", exact: true });
     await alert.waitFor();
-    assert.equal(await alert.locator(".signin-alert-text").textContent(), "Silo sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.");
+    assert.equal(await alert.locator(".signin-alert-text").textContent(), "Auger sent this change but the server didn't answer, so it won't be sent again. Discard the held change to reload this item and try again.");
     // PersonalStateNoticeAlert: the destructive Discard Held Change sits above OK, and OK keeps focus.
     assert.deepEqual(await alert.locator("button").allTextContents(), ["Discard Held Change", "OK"]);
     assert.equal(await tv.focused(), "alert-ok");
@@ -460,12 +460,11 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             assert.equal(fake.createdRooms[0]?.selection_mode, "host_pick");
             await tv.eventually(async () => fake.selectedContentId === "movie:m0001", "the title is the room's selection");
-            // tvOS pushes the lobby over Details: Back leaves the party to its entry, whose Back moves to the bar like the
-            // profile-menu entry, and the next Back returns to the title.
+            // tvOS pushes the lobby over Details: Back leaves the party to its entry, which is full screen with no bar, so
+            // the next Back returns to the title.
             await tv.remote(10009);
             await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
-            await tv.remote(10009);
-            await tv.eventually(async () => (await tv.page.evaluate(() => document.activeElement?.closest(".browse-nav") !== null)), "Back focuses the bar");
+            assert.equal(await tv.page.locator(".browse-nav").count(), 0, "the entry has no top bar");
             await tv.remote(10009);
             await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
         } finally { await tv.page.context().close(); }

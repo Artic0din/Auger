@@ -5,15 +5,18 @@
 
 import type { DeviceCodeView } from "../session/deviceLogin.ts";
 import { actionRow, card, cardSymbol, headline, type IconName, lead, marqueeScreen, noteChips, serverCard, type SymbolTone, spinner } from "./marquee.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { qrCode } from "./qr.ts";
 import { type Control, el, type Note, type Screen } from "./screen.ts";
-import { actionTakesFocus, codeLead, type CodeStatus, isTerminal, statusLine } from "./signInText.ts";
+import { actionTakesFocus, codeLead, type CodeStatus, isTerminal, signInTitle, statusLine } from "./signInText.ts";
 
 export interface CodeView {
     readonly status: CodeStatus;
     /** The code to show; only while the status keeps one on screen (QRLoginViewModel.showsCode). */
     readonly code: DeviceCodeView | undefined;
     readonly serverName: string;
+    /** Started from Change Account to add an account: the headline reads "Add an account on …". */
+    readonly addingAccount: boolean;
     /** host[:port], for the server card and "Can't reach …". */
     readonly host: string;
     readonly secure: boolean;
@@ -52,7 +55,12 @@ export function codeScreen(view: CodeView): CodeScreen {
         } else if (!SPINNING.has(next.kind) && spinning) {
             status.removeChild(current);
         }
-        statusText.textContent = statusLine(next, view.host);
+        const line = statusLine(next, view.host);
+        statusText.textContent = line;
+        // A device-login failure with no Apple key is English; a status that follows it may be Arabic, so the mark is set afresh.
+        statusText.removeAttribute("lang");
+        statusText.removeAttribute("dir");
+        markEnglishOnly(statusText, line);
     };
     setStatus(view.status);
 
@@ -72,7 +80,7 @@ export function codeScreen(view: CodeView): CodeScreen {
     }
     cardContent.push(status);
 
-    const title = headline(`Sign in to ${view.serverName}`);
+    const title = headline(signInTitle(view.serverName, view.addingAccount));
     title.setAttribute("data-server-headline", "");
     const copy = [
         ...noteChips(view.notes),
@@ -91,6 +99,7 @@ export function codeScreen(view: CodeView): CodeScreen {
             controls: view.controls,
             focus: hasAction && actionTakesFocus(view.status) ? "retry" : view.rest,
             back: view.back,
+            translated: true,
         },
         update: setStatus,
     };

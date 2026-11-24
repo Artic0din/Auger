@@ -46,6 +46,10 @@ export class FakeAVPlay implements AVPlay {
     /** AUDIO index from the last `setSelectTrack`; until then the stream's first AUDIO row plays. */
     audioIndex: number | undefined;
     silentSubtitle = false;
+    /** AVPlay on the S95C rejects `getTotalTrackInfo` while a `seekTo` is outstanding (#751); off by default. */
+    rejectTrackInfoDuringSeek = false;
+    /** Between suspend() and a restore. */
+    private suspendedPlayer = false;
     private stream = 0;
     private readonly prepares: Pending[] = [];
     private readonly seeks: (Pending & { readonly ms: number })[] = [];
@@ -66,6 +70,7 @@ export class FakeAVPlay implements AVPlay {
     }
 
     close(): void {
+        this.suspendedPlayer = false;
         this.require("close", ["NONE", "IDLE", "READY", "PLAYING", "PAUSED"]);
         this.calls.push("close");
         this.state = "NONE";
@@ -108,6 +113,7 @@ export class FakeAVPlay implements AVPlay {
     suspend(): void {
         this.require("suspend", ["READY", "PLAYING", "PAUSED"]);
         this.calls.push("suspend");
+        this.suspendedPlayer = true;
     }
 
     restoreAsync(url: string | null, resumeTime: number | null, prepare: boolean, success: () => void, error: (error: AVPlayAsyncError) => void): void {
@@ -138,6 +144,7 @@ export class FakeAVPlay implements AVPlay {
 
     getTotalTrackInfo(): readonly AVPlayTrackInfo[] {
         this.require("getTotalTrackInfo", ["PLAYING", "PAUSED"]);
+        if (this.rejectTrackInfoDuringSeek && this.seeks.length > 0) throw new DOMException("seeking", "InvalidStateError");
         this.calls.push("getTotalTrackInfo");
         return this.rows;
     }
@@ -157,8 +164,8 @@ export class FakeAVPlay implements AVPlay {
         }
         this.calls.push(`setSelectTrack ${trackType} ${trackIndex}`);
         if (trackType === "TEXT") {
+            // Selecting a TEXT track does not unhide subtitles: only setSilentSubtitle(false) does, as AVPlay documents the two calls separately.
             this.textIndex = trackIndex;
-            this.silentSubtitle = false;
         } else {
             this.audioIndex = trackIndex;
         }
@@ -166,6 +173,8 @@ export class FakeAVPlay implements AVPlay {
 
     setSilentSubtitle(hidden: boolean): void {
         this.require("setSilentSubtitle", ["IDLE", "PLAYING", "PAUSED"]);
+        // A suspended player refuses to change subtitle visibility until it is restored (#745 review).
+        if (this.suspendedPlayer) throw new DOMException("suspended", "InvalidStateError");
         this.calls.push(`setSilentSubtitle ${hidden}`);
         this.silentSubtitle = hidden;
         if (hidden) this.textIndex = undefined;
@@ -226,6 +235,7 @@ export class FakeAVPlay implements AVPlay {
         if (pending.ms > 0) {
             this.positionMs = pending.ms;
         }
+        this.suspendedPlayer = false;
         pending.success();
     }
 

@@ -18,7 +18,7 @@ import { operations } from "../api/operations.ts";
 import type { Card, CardOverlay, MarqueeAudioTrack, MarqueeDetail, MarqueeFile } from "../contracts/v2/catalog.ts";
 import { resolutionLabel } from "./cardPresentation.ts";
 import { translate } from "../i18n/translate.ts";
-import { formatPersonDate } from "./personHero.ts";
+import { airDateText } from "./personHero.ts";
 
 /** `SiloTheme.Skyline.marqueeRestDebounceMilliseconds` at silo-apple 2ef3a171. */
 export const MARQUEE_REST_MILLISECONDS = 150;
@@ -119,6 +119,17 @@ export class HomeEnrichment {
             }
         }
         this.pump(ids.map(id => ({ id, revision: undefined })), prewarm.signal, FOR_YOU_PREWARM_CONCURRENCY);
+    }
+
+    /** A focused card that is no title (a collection): it has no detail to read, and the previous card's wait and read end, so a late answer cannot land on it. */
+    leave(): void {
+        this.cancelRest();
+        this.cancelRest = () => undefined;
+        this.pendingRead = undefined;
+        this.focusController?.abort();
+        this.focusController = undefined;
+        this.focusedId = undefined;
+        this.focusRevision = undefined;
     }
 
     /**
@@ -280,7 +291,7 @@ export class HomeEnrichment {
         const detail = this.entries.get(id)?.detail;
         if (detail === undefined) return undefined;
         const parts: string[] = [];
-        const aired = detail.airDate === undefined || detail.airDate.trim() === "" ? undefined : formatPersonDate(detail.airDate);
+        const aired = detail.airDate === undefined || detail.airDate.trim() === "" ? undefined : airDateText(detail.airDate);
         if (aired !== undefined) parts.push(translate("home.airedOn", { date: aired }));
         const cast = detail.cast.map((credit, position) => ({ credit, position }))
             .sort((a, b) => (a.credit.order ?? Number.MAX_SAFE_INTEGER) - (b.credit.order ?? Number.MAX_SAFE_INTEGER) || a.position - b.position)
@@ -350,7 +361,11 @@ function selectedAudioTrack(file: MarqueeFile): MarqueeAudioTrack | undefined {
     return tracks.find(track => track.isDefault === true) ?? tracks[0];
 }
 
-function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
+/**
+ * The saved file's audio layout, which doubles as the overlay's value key (a per-value image is looked up by it), so it stays the
+ * English text in every language: translating it would stop an image configured under `Stereo` from matching.
+ */
+export function compactAudioLayout(track: MarqueeAudioTrack | undefined): string | undefined {
     if (track === undefined) return undefined;
     const layout = nonEmpty(track.layout);
     if (layout !== undefined) {

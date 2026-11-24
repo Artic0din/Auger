@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { pressPin } from "./support/pin.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 async function picker(tv: Tv): Promise<void> {
     await tv.page.fill("#signin-address", "silo.example.test");
@@ -92,6 +92,17 @@ test("Change account from the composed picker preserves saved credentials and re
         assert.equal(await tv.page.evaluate(() => window.appHarness.keyManager.items.size), saved);
         assert.equal(tv.fake.revokedSessions.size, 0);
         assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); await browser.close(); }
+});
+
+test("the profile picker shows the Auger lockup, not a SILO text mark", async () => {
+    const browser = await launchBrowser();
+    const tv = await openTv(browser, { app: "application" });
+    try {
+        await picker(tv);
+        const marks = await tv.page.locator('[data-screen="profiles"] .signin-wordmark, .profiles-flow .signin-wordmark').evaluateAll(nodes => nodes.map(node => ({ tag: node.tagName, alt: node.getAttribute("alt"), text: (node.textContent ?? "").trim() })));
+        assert.ok(marks.length > 0, "the picker carries a wordmark");
+        for (const mark of marks) assert.deepEqual(mark, { tag: "IMG", alt: "Auger", text: "" });
     } finally { await tv.page.context().close(); await browser.close(); }
 });
 
@@ -216,6 +227,9 @@ test("Switch Profile during an outage keeps root Back and the remembered profile
         await tv.page.locator('[data-screen="remember-profile"]').waitFor();
         await tv.page.keyboard.press("Enter");
         await tv.page.locator('[data-view="home"] .browse-card').first().waitFor();
+        // A late Home answer rewrites the stored snapshot; take it once the answers have landed so the outage cannot be blamed for that write.
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+        await afterPaint(tv);
         const snapshot = await tv.page.evaluate(() => window.appHarness.storage.getItem("silo.browseSnapshots.v1"));
         assert.match(snapshot ?? "", /\/home\/sections/);
         const devices = tv.fake.devices.size;
@@ -365,7 +379,7 @@ test("the remember offer is Apple TV's centred alert over the picker, and Back a
         await tv.page.locator('[data-focus="profile:p-owner"]').click();
         const alert = tv.page.getByRole("alertdialog", { name: "Open Laura automatically?" });
         await alert.waitFor();
-        assert.equal(await alert.locator("p").textContent(), "Silo can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
+        assert.equal(await alert.locator("p").textContent(), "Auger can skip Who's Watching and open this profile when it starts on this TV. You can change this later in Settings > General > Profile Selection.");
         assert.deepEqual(await alert.locator("button").allTextContents(), ["Ask Every Time", "Remember"], "the cancel button comes first, as in the tvOS alert");
         assert.equal(await tv.focused(), "remember", "focus starts on Remember");
         const layout = await alert.evaluate(node => {

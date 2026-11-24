@@ -5,29 +5,40 @@ import { requestProgress, type RequestProgress } from "./requestProgress.ts";
 import { el } from "./screen.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { balanceTwoLineText } from "./textLayout.ts";
+import { shownLocale } from "../i18n/format.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { translate } from "../i18n/translate.ts";
+import { runtimeText } from "./cardPresentation.ts";
 
 const palette = new Map<string, Tints>();
 export function requestTrack(progress: RequestProgress, labels = false): HTMLElement {
     const track = el("div", "requests-track");
     track.dataset.requestDisplay = progress.display;
     track.setAttribute("aria-label", progress.long);
-    for (const [index, label] of ["Requested", "Approved", "Downloading", "In your library"].entries()) {
+    for (const [index, label] of [translate("requests.stage.requested"), translate("requests.stage.approved"), translate("requests.stage.downloading"), translate("requests.stage.library")].entries()) {
         const step = el("span", "requests-step", labels ? label : "");
         step.dataset.state = index < progress.completed ? "complete" : index === progress.current ? "current" : "future";
         track.appendChild(step);
     }
     return track;
 }
-export function requestMetadata(title: RequestTitle | MediaRequest): string {
-    const requested = "createdAt" in title && title.createdAt !== undefined ? `Requested ${requestDate(title.createdAt)}` : undefined;
-    return [title.year, title.mediaType === "series" ? "Series" : "Movie", requested].filter(value => value !== undefined && value !== "").join(" · ");
+/** Apple's `marqueeContent` meta parts, which `TVFocusMarquee.metaText` joins with " · " into one `Text`. */
+function requestMetadataParts(title: RequestTitle | MediaRequest): string[] {
+    const requested = "createdAt" in title && title.createdAt !== undefined ? translate("requests.requestedOn", { date: requestDate(title.createdAt) }) : undefined;
+    return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter((value): value is string => value !== undefined && value !== "");
 }
+export function requestMetadata(title: RequestTitle | MediaRequest): string { return requestMetadataParts(title).join(" · "); }
 
-export function requestDate(instant: number): string { return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(instant)); }
+/** Apple's `.dateTime.month(.abbreviated).day().locale(AppLanguage.formattingLocale)`. */
+export function requestDate(instant: number): string { return new Intl.DateTimeFormat(shownLocale(), { month: "short", day: "numeric" }).format(new Date(instant)); }
 
 export function requestQuality(targets: MediaRequest["targets"]): string | undefined {
-    const phases = new Map([["completed", "done"], ["downloading", "downloading"], ["queued", "queued"], ["approved", "queued"], ["pending", "pending"], ["failed", "failed"]]);
-    const progress = (targets?.length ?? 0) > 1 ? targets?.flatMap(target => target.quality && phases.has(target.status) ? [`${target.quality} ${phases.get(target.status)}`] : []) : undefined;
+    const phases = new Map<string, (quality: string) => string>([
+        ["completed", quality => translate("requests.target.done", { quality })], ["downloading", quality => translate("requests.target.downloading", { quality })],
+        ["queued", quality => translate("requests.target.queued", { quality })], ["approved", quality => translate("requests.target.queued", { quality })],
+        ["pending", quality => translate("requests.target.pending", { quality })], ["failed", quality => translate("requests.target.failed", { quality })],
+    ]);
+    const progress = (targets?.length ?? 0) > 1 ? targets?.flatMap(target => { const phase = phases.get(target.status); return target.quality && phase !== undefined ? [phase(target.quality)] : []; }) : undefined;
     return (progress?.length ? progress : targets?.map(target => target.quality).filter(Boolean))?.join(" · ") || undefined;
 }
 
@@ -73,10 +84,10 @@ function detailTitle(title: string): HTMLElement {
 function detailMetadata(title: RequestTitle | MediaRequest): HTMLElement {
     const row = el("div", "requests-metadata requests-detail-metadata");
     if ("contentRating" in title && title.contentRating) row.appendChild(el("span", "requests-rating-chip", title.contentRating));
-    if (title.year) row.appendChild(el("span", "", String(title.year)));
+    if (title.year) row.appendChild(el("span", "", integerText(title.year)));
     if (title.mediaType === "series") {
-        if ("numberOfSeasons" in title && title.numberOfSeasons !== undefined && title.numberOfSeasons > 0) row.appendChild(el("span", "", `${title.numberOfSeasons} season${title.numberOfSeasons === 1 ? "" : "s"}`));
-    } else if ("runtime" in title && title.runtime !== undefined) row.appendChild(el("span", "", `${Math.floor(title.runtime / 60)}h ${title.runtime % 60}m`));
+        if ("numberOfSeasons" in title && title.numberOfSeasons !== undefined && title.numberOfSeasons > 0) row.appendChild(el("span", "", translate("requests.detail.seasons", { count: title.numberOfSeasons })));
+    } else if ("runtime" in title) { const runtime = runtimeText(title.runtime); if (runtime !== undefined) row.appendChild(el("span", "", runtime)); }
     const rating = requestRating(title); if (rating !== undefined) row.appendChild(rating);
     if ("genres" in title) for (const genre of title.genres?.slice(0, 3) ?? []) row.appendChild(el("span", "", genre));
     return row;
@@ -91,9 +102,9 @@ function requestRating(title: RequestTitle | MediaRequest): HTMLElement | undefi
 function detailProgress(title: RequestTitle | MediaRequest, progress: RequestProgress): HTMLElement {
     const block = el("div", "requests-detail-progress"); const fields = el("div", "requests-summary");
     const field = (label: string, value: string | HTMLElement): void => { const column = el("div", "requests-summary-field"); column.append(el("div", "requests-summary-label", label), typeof value === "string" ? el("div", "requests-summary-value", value) : value); fields.appendChild(column); };
-    field("STATUS", requestStatusLabel(progress, progress.long));
-    if ("createdAt" in title && title.createdAt !== undefined) field("REQUESTED", requestDate(title.createdAt));
-    if ("targets" in title) { const quality = requestQuality(title.targets); if (quality !== undefined) field("QUALITY", quality); }
+    field(translate("requests.strip.status"), requestStatusLabel(progress, progress.long));
+    if ("createdAt" in title && title.createdAt !== undefined) field(translate("requests.strip.requested"), requestDate(title.createdAt));
+    if ("targets" in title) { const quality = requestQuality(title.targets); if (quality !== undefined) field(translate("requests.strip.quality"), quality); }
     const track = requestTrack(progress, true); track.classList.add("requests-track-labels");
     block.append(fields, track); return block;
 }
@@ -108,10 +119,10 @@ export function requestHero(title: RequestTitle | MediaRequest, baseUrl: string,
     // Apple's detail progress excludes unavailable: the action says so, and nothing was requested (RequestDetailViewModel.progress).
     const titleProgress = requestProgress(title), progress = detail && titleProgress?.display === "unavailable" ? undefined : titleProgress;
     if (detail) {
-        if (progress?.display !== "inLibrary") copy.appendChild(el("div", "requests-eyebrow", progress === undefined ? "Not in your library" : "Requested"));
+        if (progress?.display !== "inLibrary") copy.appendChild(el("div", "requests-eyebrow", translate(progress === undefined ? "requests.detail.eyebrowNotInLibrary" : "requests.detail.eyebrowRequested")));
         copy.append(detailTitle(title.title), detailMetadata(metadata ?? title));
     } else {
-        const metadata = el("p", "requests-metadata"); metadata.appendChild(el("span", "", requestMetadata(title)));
+        const metadata = el("p", "requests-metadata"); metadata.appendChild(el("span", "requests-meta", requestMetadata(title)));
         const rating = requestRating(title); if (rating !== undefined) metadata.appendChild(rating);
         copy.append(el("h1", "requests-hero-title", title.title), metadata);
     }
@@ -121,7 +132,7 @@ export function requestHero(title: RequestTitle | MediaRequest, baseUrl: string,
         else if (!detail) { const status = el("div", "requests-progress"); status.append(requestStatusLabel(progress, progress.long), requestTrack(progress)); copy.appendChild(status); }
     }
     if (detail) {
-        const credit = metadata?.director ? `Directed by ${metadata.director}` : metadata?.creators?.length ? `Created by ${metadata.creators.slice(0, 2).join(", ")}` : undefined;
+        const credit = metadata?.director ? translate("detail.directedBy", { names: metadata.director }) : metadata?.creators?.length ? translate("requests.createdBy", { names: metadata.creators.slice(0, 2).join(", ") }) : undefined;
         if (credit !== undefined) copy.appendChild(el("p", "requests-credit", credit));
     }
     if (detail) root.dataset.hasStatus = String(progress !== undefined && progress.display !== "inLibrary");
@@ -168,7 +179,7 @@ export function requestsLoadingPage(): HTMLElement {
     const marquee = group("requests-loading-marquee", block,
         group("requests-loading-meta", skeleton(118, 22, .12), skeleton(82, 22, .12), skeleton(150, 22, .12)),
         group("requests-loading-copy", skeleton(720, 18, .12), skeleton(610, 18, .12)),
-        group("requests-loading-status", spinner, el("span", "requests-loading-label", "Loading Requests")));
+        group("requests-loading-status", spinner, el("span", "requests-loading-label", translate("requests.loading"))));
     const cards = Array.from({ length: 8 }, (_, index) => group("requests-loading-card", skeleton(176, 264, .09 + index % 3 * .01, 12), skeleton(176 * .76, 18, .14), skeleton(176 * .38, 18 * .8, .09)));
     return group("requests-loading", marquee, group("requests-loading-rail", skeleton(300, 28, .14), group("requests-loading-cards", ...cards)));
 }

@@ -1,9 +1,14 @@
-import { CAPTION_FAILED, type PlaybackView } from "./controller.ts";
+import { translate } from "../i18n/translate.ts";
+import { textIsRightToLeft } from "../i18n/direction.ts";
+import type { PlaybackView } from "./controller.ts";
+import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+
+const SCREEN_WIDTH = 1920;
 
 export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => void {
     const viewport = document.createElement("div");
-    Object.assign(viewport.style, { position: "absolute", inset: "0", width: "1920px", height: "1080px", pointerEvents: "none", transformOrigin: "0 0" });
+    Object.assign(viewport.style, { position: "absolute", inset: "0", width: `${SCREEN_WIDTH}px`, height: "1080px", pointerEvents: "none", transformOrigin: "0 0" });
     parent.appendChild(viewport);
     const layer = document.createElement("div");
     layer.className = "player-captions";
@@ -11,13 +16,21 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
     const text = document.createElement("span");
     layer.appendChild(text);
     viewport.appendChild(layer);
+    // SECONDARY: the second line, in the primary's style, further from the edge it hugs.
+    const secondaryLayer = document.createElement("div");
+    secondaryLayer.className = "player-captions-secondary";
+    secondaryLayer.setAttribute("aria-live", "off");
+    const secondaryText = document.createElement("span");
+    secondaryLayer.appendChild(secondaryText);
+    viewport.appendChild(secondaryLayer);
     // ASSSubtitleLayer.status: the failure stays over the video until the track loads or changes.
     const status = document.createElement("div");
     status.className = "player-caption-status";
-    status.textContent = CAPTION_FAILED;
     viewport.appendChild(status);
     return view => {
-        viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? "translate(180px, 112px) scale(0.3958333333333333)" : "none";
+        // Apple's `player.subtitles.dataLoadFailed`, read on every draw so a language that lands later shows.
+        status.textContent = translate("player.subtitles.dataLoadFailed");
+        viewport.style.transform = (view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined ? `translate(${upNextPreviewLeft(SCREEN_WIDTH, textIsRightToLeft())}px, ${UP_NEXT_PREVIEW.top}px) scale(${UP_NEXT_PREVIEW.width / SCREEN_WIDTH})` : "none";
         const captions = view.phase === "playing" || view.phase === "paused" ? view.captions : undefined;
         text.textContent = captions?.text ?? "";
         layer.hidden = !captions?.text;
@@ -26,21 +39,40 @@ export function mountSubtitles(parent: HTMLElement): (view: PlaybackView) => voi
         layer.dataset.cues = String(captions?.cueCount ?? 0);
         layer.dataset.at = captions?.instant === undefined ? "" : captions.instant.toFixed(1);
         status.hidden = captions?.status !== "failed";
+        secondaryText.textContent = captions?.secondaryText ?? "";
+        secondaryLayer.hidden = !captions?.secondaryText;
         if (captions === undefined) return;
         applySubtitleAppearance(layer, text, captions.appearance);
+        applySubtitleAppearance(secondaryLayer, secondaryText, captions.appearance, true);
     };
 }
 
-export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance): void {
-        layer.style.top = style.position === "top" ? "8%" : "auto";
-        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? "25%" : "8%";
+/** Apple's tvOS cue sizes in points on the 1080-line playfield (SubtitleAppearance.swift:38-45 at silo-apple 449ba47). */
+const SUBTITLE_POINTS = { small: 43, medium: 51, large: 58, xlarge: 74, xxlarge: 88 } as const;
+
+/**
+ * A cue's CSS font size at `scale` of the playfield (the Settings preview is 0.5, SubtitleAppearancePreview.swift:21).
+ * Apple draws the generic families in SF (AetherSubtitleOverlay.swift:571-590). Tizen's bundled Inter stands in for SF Pro, so
+ * sans-serif takes the cap scale as every Inter text does; Samsung's serif and monospace faces and a named family are not SF
+ * stand-ins, so they draw at raw points, as Apple draws a named family (#789).
+ */
+export function subtitleFontSize(style: SubtitleAppearance, scale = 1): string {
+    const points = SUBTITLE_POINTS[style.fontSize] * scale;
+    return style.fontFamily === "sans-serif" ? `calc(${points}px * var(--silo-sf-cap-scale))` : `${points}px`;
+}
+
+export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false): void {
+        // AetherSubtitleOverlay.defaultPlacement (:376-434): the primary's inset is 8% at the top and bottom and 27% in the lower
+        // third; the second line's is 17% and 36%. Apple places the two independently, so a tall primary can reach the second line.
+        layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
+        layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? (secondary ? "36%" : "27%") : secondary ? "17%" : "8%";
         // AetherSubtitleOverlay draws the generic families semibold and a named family at its own weight.
         // Samsung's generic sans-serif face has no semibold, so sans-serif uses the bundled Inter (theme.css).
         const bundledSans = style.fontFamily === "sans-serif";
         const generic = bundledSans || style.fontFamily === "serif" || style.fontFamily === "monospace";
         text.style.fontFamily = `${bundledSans ? "Inter" : style.fontFamily}, sans-serif`;
         text.style.fontWeight = generic ? "600" : "";
-        text.style.fontSize = `${{ small: 28, medium: 36, large: 44, xlarge: 54, xxlarge: 64 }[style.fontSize]}px`;
+        text.style.fontSize = subtitleFontSize(style);
         const rgba = (color: string, opacity: number): string => `rgba(${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)},${opacity / 100})`;
         text.style.color = rgba(style.fontColor, style.textOpacity);
         text.style.backgroundColor = style.backgroundStyle === "box" ? rgba(style.backgroundColor, style.backgroundOpacity) : "transparent";

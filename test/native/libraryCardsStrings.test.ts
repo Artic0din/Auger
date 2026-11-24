@@ -51,7 +51,9 @@ test("an air date reads as the shown language writes it, and Aired follows it", 
 
 test("the library's sort and filter labels read in German and keep Apple's order", () => {
     inLanguage("de", () => {
-        assert.deepEqual(SORT_KEYS.map(entry => sortLabel(entry.key)), ["Titel", "Hinzugefügt am", "Erscheinungsdatum", "Jahr", "IMDb-Bewertung", "Dauer", "Auflösung"]);
+        assert.deepEqual(SORT_KEYS.map(entry => sortLabel(entry.key)), ["Titel", "Hinzugefügt am", "Erscheinungsdatum", "Sendedatum der neuesten Folge", "Neueste Folge hinzugefügt", "Jahr", "Altersfreigabe", "Dauer", "IMDb-Bewertung", "TMDB-Bewertung", "RT-Kritikerbewertung", "RT-Publikumsbewertung", "Auflösung", "Bitrate", "Fortschritt", "Zuletzt angesehen", "Wiedergaben", "Autor", "Sprecher", "Serie"]);
+        assert.equal(directionLabel("plays", "asc"), translate("library.direction.fewest"));
+        assert.equal(directionLabel("plays", "desc"), translate("library.direction.most"));
         assert.equal(directionLabel("title", "asc"), "A–Z");
         assert.equal(directionLabel("added_at", "desc"), translate("library.direction.newest"));
         assert.equal(translate("library.direction.newest"), "Neueste");
@@ -67,8 +69,8 @@ test("the library's sort and filter labels read in German and keep Apple's order
     });
     // A series' author, narrator and series sorts are A–Z, as Apple's CatalogSortKey.directionLabel has them.
     for (const key of ["author", "narrator", "series"] as const) assert.equal(directionLabel(key, "asc"), "A–Z");
-    assert.deepEqual(sortKeysFor("audiobooks").map(entry => sortLabel(entry.key)), ["Title", "Author", "Narrator", "Series", "Date Added", "Duration"]);
-    assert.deepEqual(SORT_KEYS.map(entry => sortLabel(entry.key)), ["Title", "Date Added", "Release Date", "Year", "IMDb Rating", "Duration", "Resolution"]);
+    assert.deepEqual(sortKeysFor("audiobooks").map(entry => sortLabel(entry.key)), ["Title", "Date Added", "Release Date", "Year", "Duration", "Bitrate", "Progress", "Date Viewed", "Plays", "Author", "Narrator", "Series"]);
+    assert.deepEqual(sortKeysFor("movies").map(entry => sortLabel(entry.key)), ["Title", "Date Added", "Release Date", "Year", "Content Rating", "Duration", "IMDb Rating", "TMDB Rating", "Resolution", "Bitrate", "Progress", "Date Viewed", "Plays"]);
     assert.deepEqual(FACETS.map(entry => facetTitle(entry.facet)).slice(0, 3), ["Genre", "Decade", "Watch Status"]);
 });
 
@@ -93,7 +95,8 @@ const KEYS: readonly MessageKey[] = [
     "filters.eyebrowList", "filters.eyebrowValues", "filters.decade", "filters.value.hdr", "filters.value.dolby_vision", "filters.value.unwatched", "filters.value.inProgress",
     "filters.value.watched", "filters.value.favorited", "filters.value.watchlist", "library.direction.az", "library.direction.za", "library.direction.oldest",
     "library.direction.newest", "library.direction.shortest", "library.direction.longest", "library.direction.lowest", "library.direction.highest",
-    ...SORT_KEYS.map(entry => entry.name), ...sortKeysFor("audiobooks").map(entry => entry.name), ...FACETS.map(entry => entry.name),
+    "library.direction.fewest", "library.direction.most",
+    ...SORT_KEYS.map(entry => entry.name), ...FACETS.map(entry => entry.name),
 ];
 const ARGS = { season: "2", episode: "7", time: "14m", date: "12 Mar", first: "2021", last: "2023", code: "S02E07", title: "Pilot", name: "Movies", facet: "Genre", letter: "A", count: 3, count_text: "3", year: "2020" };
 

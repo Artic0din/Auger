@@ -1,16 +1,86 @@
 /* Native player, 1920x1080, Chromium 108. */
 
+/* Server text (titles, overviews, chapter and track names) takes its base direction from its own first letter, so an Arabic title is not reordered by the words around it. */
+/* The player reads in the direction of its text (`dir` on `.player`); the transport, the scrubber and its time row pin `dir="ltr"`. Offsets are logical so the rest mirrors, as Apple's SwiftUI layout does. */
+.player-title,
+.player-series,
+.player-info-title,
+.player-info-meta,
+.player-info-value,
+.player-choice-label,
+.player-choice-detail,
+.player-next-synopsis,
+.player-next-card,
+/* A cue reads in its own direction whatever the interface language is: Apple's subtitle Text takes its direction from its content, and the overlay is not under `.mediaLayoutDirection()`. */
+.player-captions,
+.player-captions-secondary { unicode-bidi: plaintext; }
+
 .player-error.player-next-up {
-    padding: 112px 180px 260px 980px;
+    padding: 112px 0 260px;
+    padding-inline: 980px 180px;
     overflow-y: auto;
     background: transparent;
 }
 .player-next-up .player-title { font-size: 42px; }
 .player-next-eyebrow { font-size: 18px; text-transform: uppercase; opacity: .52; }
 .player-next-synopsis { font-size: 22px; line-height: 1.4; }
-.player-next-up .player-button { margin: 18px 20px 0 0; }
+/* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
+.player-next-series { margin: 0; font-size: 34px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-next-series[hidden] { display: none; }
+/* PlayerView.metadata(for:): captionSize 19 pt, medium, white at 0.46. */
+.player-next-meta { margin: 0; font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .46; }
+.player-next-meta[hidden] { display: none; }
+.player-next-up .player-title.player-next-episode-title { font-size: 25px; font-weight: 600; }
+.player-next-code { margin-inline-end: 4px; opacity: .62; }
+/* CountdownRing: 58 px, a 3 px track at 12% white and the remaining part in white with round ends, the seconds at 24 bold rounded. */
+.player-countdown { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin: 18px 0 0; margin-inline-end: 20px; vertical-align: top; }
+.player-countdown[hidden] { display: none; }
+/* PlayerView.actionRow: Play Now and the ring 56 apart, then Keep Watching and Close 20 apart, 18 between the rows. Elsewhere the rows are no box. */
+.player-actions-row { display: contents; }
+.player-next-up .player-actions-row { display: flex; align-items: center; margin: 18px 0 0; }
+.player-next-up .player-actions-primary { gap: 56px; }
+.player-next-up .player-actions-secondary { gap: 20px; }
+.player-next-up .player-actions-row > .player-button,
+.player-next-up .player-actions-row > .player-countdown { margin: 0; }
+.player-next-up .player-actions-row > .player-button { display: inline-flex; align-items: center; }
+.player-next-up .player-actions-row > [hidden] { display: none; }
+/* AutoPlayToggleButtonStyle (PlayerView.swift:1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
+   and a 1.04 scale when focused, 0.98 when pressed. */
+.player-autoplay-toggle {
+    align-self: flex-start;
+    margin: 18px 0 0;
+    padding: 10px 22px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, .54);
+    font: inherit;
+    font-size: calc(19px * var(--silo-sf-cap-scale));
+    font-weight: 600;
+    outline: none;
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0);
+    transition: color 180ms ease-in-out, box-shadow 180ms ease-in-out, scale var(--silo-fast) ease-out;
+}
+.player-autoplay-toggle:focus { color: rgba(255, 255, 255, .92); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); scale: 1.04; }
+.player-autoplay-toggle[data-pressed] { scale: .98; }
+.player-autoplay-toggle[hidden] { display: none; }
+/* The Label's symbol before its words: 26 px with 16 between, as Apple's 24-32 pt symbols at 16-18 spacing. */
+.player-button-symbol { display: inline-flex; flex: none; width: 26px; height: 26px; margin-inline-end: 16px; }
+.player-button-symbol svg { width: 100%; height: 100%; }
+.player-countdown svg { position: absolute; inset: 0; width: 58px; height: 58px; }
+.player-countdown circle { fill: none; stroke-width: 3; }
+.player-countdown-track { stroke: rgba(255, 255, 255, 0.12); }
+.player-countdown-progress { stroke: #ffffff; stroke-linecap: round; }
+.player-countdown-seconds { position: relative; font-size: 24px; font-weight: 700; font-family: ui-rounded, var(--silo-font, sans-serif); color: #ffffff; }
+/* PlayerView.backgroundImage: the still fills the page, blurred 44 and scaled 1.12 at 0.18, under 0.78 black. */
+.player-next-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.player-next-backdrop[hidden] { display: none; }
+.player-next-backdrop-art { position: absolute; inset: 0; background-size: cover; background-position: center; transform: scale(1.12); filter: blur(44px); opacity: 0.18; }
+.player-next-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.78); }
+.player-next-up .player-button { margin: 18px 0 0; margin-inline-end: 20px; }
 .player-next-deck {
-    margin: 34px 0 0 -800px;
+    margin: 34px 0 0;
+    margin-inline-start: -800px;
     display: flex;
     gap: 40px;
     overflow-x: auto;
@@ -29,7 +99,8 @@
 }
 .player-next-deck[hidden] { display: none; }
 
-.player-captions {
+.player-captions,
+.player-captions-secondary {
     position: absolute;
     left: 8%;
     right: 8%;
@@ -78,7 +149,8 @@
     display: none;
 }
 
-.player-captions span {
+.player-captions span,
+.player-captions-secondary span {
     padding: 4px 12px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
@@ -150,7 +222,7 @@
  */
 .player-button.player-skip {
     position: absolute;
-    right: 160px;
+    inset-inline-end: 160px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -211,6 +283,11 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.24);
 }
 
+.player[dir="rtl"] .player-skip.player-skip-segment:focus,
+.player[dir="rtl"] .player-skip.player-skip-segment.player-skip-lit {
+    transform-origin: left bottom;
+}
+
 /* With the controls hidden, or the options panel up (Apple's isHUDPresented), both pills drop to the corner. */
 .player-overlay-hidden ~ .player-skip.player-skip-intro,
 .player-overlay-hidden ~ .player-skip.player-skip-segment,
@@ -234,6 +311,10 @@
     transform: scaleX(0);
     transform-origin: left center;
     animation: player-skip-fill 5000ms linear forwards;
+}
+
+.player[dir="rtl"] .player-skip-fill {
+    transform-origin: right center;
 }
 
 .player-skip.player-skip-intro:focus .player-skip-fill,
@@ -267,7 +348,7 @@
 /* The muted confirmation above the Watch Intro pill. A sibling of the pill so the focus scale leaves it alone (VStack spacing 10, trailing 24). */
 .player-skip-caption {
     position: absolute;
-    right: 184px;
+    inset-inline-end: 184px;
     bottom: 542px;
     transition: bottom 220ms ease-out;
     color: rgba(255, 255, 255, 0.72);
@@ -295,7 +376,7 @@
 .player-alerts {
     position: absolute;
     top: 112px;
-    right: 80px;
+    inset-inline-end: 80px;
     z-index: 3;
     display: flex;
     flex-direction: column;
@@ -430,6 +511,10 @@
     animation: player-buffering-drain 15000ms linear forwards;
 }
 
+.player[dir="rtl"] .player-buffering-fill {
+    transform-origin: right center;
+}
+
 @keyframes player-buffering-drain {
     from { transform: scaleX(1); }
     to { transform: scaleX(0); }
@@ -474,7 +559,7 @@
 .player-status {
     position: absolute;
     top: 64px;
-    right: 80px;
+    inset-inline-end: 80px;
     z-index: 3;
     margin: 0;
     font-size: 20px;
@@ -648,6 +733,11 @@
     color: #ffffff;
 }
 
+/* The display above outranks the hidden attribute, so a hidden button (Show Up Next with nothing next) would still draw its ring. */
+.player-transport .player-button[hidden] {
+    display: none;
+}
+
 .player-glyph {
     display: flex;
     align-items: center;
@@ -710,12 +800,18 @@
     font-size: 30px;
     line-height: 1.35;
     color: var(--silo-error-ink);
+    /* Apple's connection-lost message is a title line and a body line; an English message keeps its own direction in Arabic. */
+    white-space: pre-line;
+    unicode-bidi: plaintext;
 }
 
 /* tvOS PlayerView.errorView is pinned to the top. siloBody is 26 regular white.
    siloError is #B00020. Buttons reuse SiloPrimaryButtonStyle as ported on
    .requests-failure .browse-button, with the player's min-width of 140. */
+/* A SwiftUI Text in the screen-tall VStack truncates before the buttons leave the screen: the message gives way, with an ellipsis. */
 .player-error.player-error-wall {
+    display: flex;
+    flex-direction: column;
     padding: 0;
     text-align: center;
 }
@@ -750,6 +846,13 @@
 }
 
 .player-error-wall .player-error-text {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    /* 26 lines of 35.1 px fit above the buttons on a 1080-line screen. */
+    -webkit-line-clamp: 26;
     margin: 0 auto 16px;
     padding: 0 16px;
     font-size: 26px;
@@ -759,6 +862,7 @@
 }
 
 .player-error-wall .player-error-actions {
+    flex: none;
     display: flex;
     flex-direction: row;
     justify-content: center;
@@ -917,6 +1021,45 @@
 }
 
 /*
+ * HUDScrollablePane's focus (TVPlayerInfoHUD.swift:361-375): a 2 pt stroke at 86 % white, 10 pt outside the pane's 18 pt
+ * continuous rounded rectangle, and the pane scaled to 1.01, easeOut fastDuration. The ring sits on the scroll container,
+ * so its own overflow cannot clip it.
+ */
+.player-menu-info,
+.player-menu-stats {
+    border-radius: 18px;
+    outline: 2px solid transparent;
+    /*
+     * A scroll container clips its content to its rounded corners, so the pane takes Apple's 10 pt ring gap as padding inside its edge, with
+     * the ring drawn on that edge, and a matching negative margin keeps the content where it was. The rounded edge then never reaches the text.
+     */
+    margin: -10px;
+    padding: 10px;
+    /* Focus scrolls the pane's content into view: the same inset keeps that from hiding the padding. */
+    scroll-padding: 10px;
+    outline-offset: 0;
+    transition: transform var(--silo-fast) ease-out, outline-color var(--silo-fast) ease-out;
+}
+
+.player-menu-list.player-menu-pane-active.player-menu-info,
+.player-menu-list.player-menu-pane-active.player-menu-stats {
+    height: calc(100% + 20px);
+}
+
+.player-menu-info:has(> [data-focus="info"]:focus),
+.player-menu-stats:has(> [data-focus="stats"]:focus) {
+    outline-color: rgba(255, 255, 255, 0.86);
+    transform: scale(1.01);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-menu-info,
+    .player-menu-stats {
+        transition: none;
+    }
+}
+
+/*
  * HUDPickerDialog (TVPlayerInfoHUD.swift:1042-1104): 620 wide, 34/28 padding, 28 corner, 18% stroke, centred over the
  * pane it opened from, which dims to 28%. It spans the panel's padded content, so the status line sits behind it too.
  */
@@ -1071,7 +1214,7 @@
 .player-setting-value {
     flex: 0 1 auto;
     min-width: 0;
-    margin-left: 32px;
+    margin-inline-start: 32px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1085,13 +1228,18 @@
     flex: none;
     width: 11px;
     height: 15px;
-    margin-left: -4px;
+    margin-inline-start: -4px;
     color: rgba(255, 255, 255, 0.45);
 }
 
 .player-setting-chevron svg {
     width: 100%;
     height: 100%;
+}
+
+/* chevron.forward points the way the row reads: left in a right-to-left layout. */
+.player[dir="rtl"] .player-setting-chevron svg {
+    transform: scaleX(-1);
 }
 
 .player-setting:focus .player-setting-value {
@@ -1102,6 +1250,73 @@
     color: rgba(0, 0, 0, 0.55);
 }
 
+/*
+ * timingRows (TVPlayerInfoHUD.swift): the running job's bar is SubtitleSyncProgressBar, an HStack(spacing: 14) of a linear
+ * ProgressView tinted white at 85% and a 20pt monospaced-digit percent in a 60pt trailing slot, padded 14 by 8, with the
+ * phase under it at 17pt and 55%. tvOS draws the ProgressView itself, so the bar's 8 px thickness and 20% white track are
+ * estimates until they are measured on an Apple TV capture (PR #574); source gives only the tint.
+ */
+.player-sync-progress {
+    padding: 8px 14px;
+}
+
+.player-sync-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.player-sync-track {
+    flex: 1;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.player-sync-fill {
+    display: block;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.player-sync-percent {
+    min-width: 60px;
+    text-align: right;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: var(--silo-secondary);
+}
+
+.player-sync-phase {
+    margin: 6px 0 0;
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* The line under the rows: padded 14 by 4 and 10, 17pt. Error is (1, 0.55, 0.55), warning siloWarning at 90%. */
+.player-sync-note {
+    margin: 0;
+    padding: 4px 14px 10px;
+    font-size: 17px;
+}
+
+.player-sync-note-error {
+    color: #ff8c8c;
+}
+
+.player-sync-note-warning {
+    color: rgba(255, 193, 7, 0.9);
+}
+
+.player-sync-note-plain {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.player-sync-note-hint {
+    color: rgba(255, 255, 255, 0.45);
+}
+
 .player-info {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1109,18 +1324,56 @@
     outline: none;
 }
 
-.player-info-title {
+/* PaneColumn: a VStack(spacing: 14) of the heading and each line (TVPlayerInfoHUD.swift:314-333). */
+.player-info-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.player-info-column > .player-menu-heading,
+.player-info-column > p {
     margin: 0;
+}
+
+/* InfoPane's title lines (TVPlayerInfoHUD.swift:623-653): series 16 semibold at 60 % with 1.8 tracking, title 34
+ * semibold on two lines at most, episode 22 medium at 75 %, year and runtime 20 at 65 %, overview 20 at 75 %. */
+.player-info-series {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-info-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     font-size: 34px;
     font-weight: 600;
     line-height: 1.15;
 }
 
+.player-info-episode {
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* Year and runtime are joined by "  ·  " (InfoPane.metaBits); the doubled spaces stay. */
 .player-info-meta {
-    margin: 8px 0 0;
+    white-space: pre-wrap;
     font-size: 20px;
     color: rgba(255, 255, 255, 0.65);
     font-variant-numeric: tabular-nums;
+}
+
+.player-info-column > .player-info-overview {
+    padding-top: 4px;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .player-info-row {
@@ -1137,6 +1390,64 @@
     font-weight: 400;
     color: rgba(255, 255, 255, 0.7);
     font-variant-numeric: tabular-nums;
+}
+
+/*
+ * PlaybackStatsPanel, tvOS two-column layout (PlaybackStatsPanel.swift:33-38, :103-160): HStack(spacing: 34) of two Grids
+ * with a 1 px divider at 12 %. Each Grid has 24 px between label and value and 10 px between rows; the label column is
+ * trailing-aligned. Headings 13 semibold uppercase at 52 %, labels 20 medium at 74 %, values 20 regular white.
+ */
+.player-stats {
+    display: flex;
+    gap: 34px;
+    outline: none;
+}
+
+.player-stats-column {
+    display: grid;
+    flex: 1 1 0;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-content: start;
+    align-items: baseline;
+    gap: 10px 24px;
+    min-width: 0;
+}
+
+.player-stats-divider {
+    flex: none;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.player-stats-heading,
+.player-stats-label {
+    justify-self: end;
+    margin: 0;
+    text-align: right;
+}
+
+.player-stats-heading {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.52);
+}
+
+.player-stats-label {
+    font-size: 20px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.74);
+}
+
+/* A value of several words may take a second line (`lineLimit(2)`). */
+.player-stats-value {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
 }
 
 .player-menu-heading {
@@ -1167,8 +1478,13 @@
     font: inherit;
     font-size: 22px;
     font-weight: 500;
-    text-align: left;
-    transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out;
+    text-align: start;
+    transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out, scale var(--silo-fast) ease-out;
+}
+
+/* HUDRowButtonStyle (TVPlayerInfoHUD.swift:450, 479, 482, silo-apple main 71a3beb9): a held panel row scales to 0.98, easeOut fastDuration. */
+.player-menu .player-choice[data-pressed] {
+    scale: 0.98;
 }
 
 .player-choice-copy {
@@ -1231,7 +1547,7 @@
 .player-menu-status {
     position: absolute;
     top: 100%;
-    left: 28px;
+    inset-inline-start: 28px;
     box-sizing: border-box;
     width: max-content;
     max-width: 1044px;
@@ -1258,4 +1574,141 @@
         scroll-behavior: auto;
     }
     .player-spinner-mark { animation: none; }
+}
+
+/*
+ * SubtitleTranslateMenu's tvOS panel (TVSubtitleDialog.swift, SubtitleTranslateMenu.swift): a 32pt semibold title over a 22pt line at 65%,
+ * language rows with a 22pt symbol, a 24pt name, an 18pt hint at 65% and a chevron, the quota line at 16pt and section headings at 14pt.
+ * The job's title and bar are system-drawn on tvOS, so their sizes are measured from Apple's capture, not read from source.
+ */
+.player-ai-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.player-ai-title {
+    margin: 0;
+    padding: 0 16px;
+    font-size: 32px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.player-ai-subtitle {
+    margin: 8px 0 22px;
+    padding: 0 16px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.player-ai-menu .player-menu-heading {
+    margin: 10px 0 0;
+    padding: 0 12px 8px;
+    font-size: 14px;
+    letter-spacing: 1.2px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-ai-row {
+    gap: 18px;
+    padding: 18px 20px;
+    border-radius: 12px;
+    font-size: 24px;
+}
+
+.player-ai-row .player-setting-glyph {
+    flex: none;
+    width: 34px;
+    opacity: 0.8;
+}
+
+.player-ai-row .player-choice-detail {
+    font-size: 18px;
+    line-height: 22px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.player-ai-row:focus .player-choice-detail {
+    color: rgba(0, 0, 0, 0.62);
+}
+
+.player-ai-row .player-setting-chevron {
+    width: 11px;
+    margin-left: 0;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.player-ai-row:focus .player-setting-chevron {
+    color: rgba(0, 0, 0, 0.55);
+}
+
+.player-ai-quota {
+    margin: 0;
+    padding: 6px 16px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-ai-quota-exhausted {
+    color: #ffc107;
+}
+
+.player-ai-quota-note {
+    margin: 0;
+    padding: 0 16px 4px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-ai-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 12px;
+}
+
+/* ProgressView(.linear) is system-drawn on tvOS: the same estimate as the Subtitles tab's sync bar, 8 px of white at 85% over a 20% white track. */
+.player-ai-track {
+    display: block;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.player-ai-fill {
+    display: block;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.player-ai-job {
+    margin: 0;
+    font-size: 29px;
+    font-weight: 600;
+}
+
+.player-ai-progress-message,
+.player-ai-failure {
+    margin: 0;
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.player-ai-failure {
+    padding: 8px 12px;
+    font-size: 22px;
+}
+
+/* SubtitlesPane: the SECONDARY heading is 14pt semibold, tracked 1.6, white at 45%, padded 20 above, 4 below and 14 leading. */
+.player-menu-heading-secondary {
+    margin: 0;
+    padding: 20px 0 4px 14px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.player-captions-secondary[hidden] {
+    display: none;
 }

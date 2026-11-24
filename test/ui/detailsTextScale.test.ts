@@ -135,7 +135,7 @@ const SF_WIDTHS: readonly { selector: string; text: string; width: number }[] = 
     { selector: ".browse > .browse-section-title", text: "Cast & Crew", width: 201.36 },
     { selector: ".browse > .browse-section-title", text: "Related Movies", width: 247.42 },
     { selector: ".details-editorial .details-director", text: "Directed by River Vale", width: 215.7 },
-    { selector: '[data-focus="audio"] .details-action-label', text: "Audio Tracks", width: 151.9 },
+    { selector: '[data-focus="audio"] .details-action-label', text: "Audio", width: 68.68 },
     { selector: '[data-focus="resume"] .details-action-label', text: "Resume 20:00", width: 193.93 },
     { selector: ".details-people .browse-card-title", text: "Morgan Lane", width: 119.32 },
     { selector: ".details-people .browse-card-subtitle", text: "Sam", width: 33.71 },
@@ -154,13 +154,29 @@ detailTest("movie Details text runs within 2% of SF Pro's width at Apple's size"
     await tv.page.locator(".details-facts-table").waitFor();
     await tv.page.locator(".details-editorial .requests-title-secondary").waitFor();
     await tv.page.evaluate(() => document.fonts.ready);
-    const widths = await tv.page.evaluate(rows => rows.map(({ selector, text }) => {
-        const node = [...document.querySelectorAll(selector)].find(candidate => (candidate.textContent ?? "").trim() === text);
-        if (node === undefined) return { text, width: Number.NaN };
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        return { text, width: Math.round(range.getBoundingClientRect().width * 10) / 10 };
-    }), SF_WIDTHS.map(({ selector, text }) => ({ selector, text })));
+    // Resume holds focus, settled at its 1.025 focus scale, as it does once the page's opening focus lands.
+    await tv.page.locator('[data-focus="resume"]').evaluate(node => { (node as HTMLElement).focus(); for (const animation of node.getAnimations()) animation.finish(); });
+    // One read: Resume's focus and scale are checked in the same task as the widths, so they describe the measured state.
+    const { resume, widths } = await tv.page.evaluate(rows => {
+        const scaleOf = (element: Element): number => {
+            const css = getComputedStyle(element);
+            return new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale));
+        };
+        const resumeNode = document.querySelector('[data-focus="resume"]');
+        const resumeState = { focused: resumeNode !== null && document.activeElement === resumeNode, scale: resumeNode === null ? 1 : scaleOf(resumeNode) };
+        return { resume: resumeState, widths: rows.map(({ selector, text }) => {
+            const node = [...document.querySelectorAll(selector)].find(candidate => (candidate.textContent ?? "").trim() === text);
+            if (node === undefined) return { text, width: Number.NaN };
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            // Layout width: a focused control's own scale (Play and Resume grow to 1.025) would widen the rect. Only the control's
+            // scale comes out; the page's stage scale above it is part of what the SF Pro widths were measured at.
+            const control = node.closest("[data-focus]");
+            return { text, width: Math.round(range.getBoundingClientRect().width / (control === null ? 1 : scaleOf(control)) * 10) / 10 };
+        }) };
+    }, SF_WIDTHS.map(({ selector, text }) => ({ selector, text })));
+    assert.equal(resume.focused, true, "Resume holds focus as the widths are read");
+    assert.ok(resume.scale > 1, `Resume is grown by its focus scale, not ${resume.scale}`);
     for (const [index, { text, width }] of widths.entries()) {
         const expected = SF_WIDTHS[index]!.width;
         assert.ok(Math.abs(width / expected - 1) < 0.02, `${text}: ${width}px against SF Pro's ${expected}px`);

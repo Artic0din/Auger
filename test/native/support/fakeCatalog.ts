@@ -26,7 +26,7 @@ export interface FakeTitle {
     readonly lastAirDate?: string;
 }
 
-interface LibraryRow { id: string; sectionType?: string; title: string; /** The catalog key and arguments the server sends beside a title it wrote. */ titleKey?: string; titleArgs?: Record<string, string>; items: string[] }
+interface LibraryRow { id: string; sectionType?: string; title: string; /** The catalog key and arguments the server sends beside a title it wrote. */ titleKey?: string; titleArgs?: Record<string, string>; items: string[]; /** The `total_count` the server reports, when it differs from the cards sent. */ totalCount?: number; /** The cards of a row of collections, as the server sends them. */ collections?: Record<string, unknown>[] }
 interface Household {
     readonly libraries: { id: string; name: string; type: string; sort_order: number }[];
     hidden: number[] | null;
@@ -46,6 +46,8 @@ export class FakeCatalog implements CatalogRoutes {
     /** content id -> resume position in seconds. */
     readonly progress = new Map<string, number>();
     readonly fileIds = new Map<string, string>();
+    /** content id -> file ids of further versions after the first, for a title that offers a Versions choice. */
+    readonly moreFileIds = new Map<string, readonly string[]>();
     readonly removed = new Set<string>();
     /** Cards dismissed from Continue Watching and Next Up; other rows keep them. */
     readonly homeDismissed = new Set<string>();
@@ -56,6 +58,10 @@ export class FakeCatalog implements CatalogRoutes {
     persistStops = true;
     /** Episode cards and rows carry still artwork and a description the spoiler switches can hide. */
     episodeStills = false;
+    /** With `episodeStills`, what an episode's catalog item carries as its backdrop: its still, nothing, an empty `backdrop_url`, or the series backdrop. */
+    itemStill: "still" | "none" | "empty" | "series" = "still";
+    /** With `episodeStills`, what a season row sends as an episode's still: the still, none, or an empty `still_url`. */
+    rowStill: "still" | "none" | "empty" = "still";
     private readonly failures = new Map<string, Reply[]>();
     private readonly collectionLibraries = new Map<string, string>();
     private readonly searchContinuations = new Map<string, { q: string; type: string | null; household: Household; offset: number }>();
@@ -166,7 +172,7 @@ export class FakeCatalog implements CatalogRoutes {
             const sections = household.sections.map((section) => {
                 const dismissible = ["continue_watching", "in_progress", "next_up"].includes(section.sectionType ?? section.id);
                 const items = section.items.filter((id) => this.visible(household, id) && !(dismissible && this.homeDismissed.has(id))).map((id) => this.card(id));
-                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, ...(section.titleKey === undefined ? {} : { title_key: section.titleKey }), ...(section.titleArgs === undefined ? {} : { title_args: section.titleArgs }), total_count: items.length, items };
+                return { ...template, id: section.id, section_type: section.sectionType ?? section.id, title: section.title, ...(section.titleKey === undefined ? {} : { title_key: section.titleKey }), ...(section.titleArgs === undefined ? {} : { title_args: section.titleArgs }), total_count: section.totalCount ?? section.collections?.length ?? items.length, items, ...(section.collections === undefined ? {} : { collections: section.collections }) };
             });
             return { status: 200, body: { sections } };
         }
@@ -190,13 +196,13 @@ export class FakeCatalog implements CatalogRoutes {
             const rows = household.librarySections ?? (titles.length === 0 ? [] : [{ id: "library-picks", sectionType: "recently_added", title: "Library Picks", items: titles.slice(0, 24).map(title => title.id) }]);
             const sectionBody = (row: LibraryRow): Record<string, unknown> => {
                 const items = row.items.filter(item => this.visible(household, item)).map(item => this.card(item));
-                return { id: row.id, section_type: row.sectionType ?? row.id, title: row.title, total_count: items.length, items };
+                return { id: row.id, section_type: row.sectionType ?? row.id, title: row.title, total_count: row.totalCount ?? row.collections?.length ?? items.length, items, ...(row.collections === undefined ? {} : { collections: row.collections }) };
             };
             if (library[3] !== undefined) {
                 const row = rows.find(item => item.id === decodeURIComponent(library[3] ?? ""));
                 return row === undefined ? problem(404, "not_found", "Not found") : { status: 200, body: sectionBody(row) };
             }
-            return { status: 200, body: { sections: rows.map(sectionBody).filter(section => arrayOf(section.items).length > 0) } };
+            return { status: 200, body: { sections: rows.map(sectionBody).filter(section => arrayOf(section.items).length > 0 || arrayOf(section.collections ?? []).length > 0) } };
         }
         if (library?.[2] === "collections" && library[3] === undefined) {
             if (titles.length === 0) return { status: 200, body: { library_id: id, collections: [], groups: [], ungrouped: { sort_order: 1, collections: [] } } };
@@ -285,7 +291,7 @@ export class FakeCatalog implements CatalogRoutes {
                         episode_number: episode.episode,
                         title: episode.title,
                         user_data: { ...toRecord(template.user_data), played: episode.episode === 1 },
-                        ...(this.episodeStills ? { still_url: `/art/${encodeURIComponent(episode.id)}-still.svg`, still_is_episode_still: true } : {}),
+                        ...(!this.episodeStills || this.rowStill === "none" ? {} : { still_url: this.rowStill === "empty" ? "" : `/art/${encodeURIComponent(episode.id)}-still.svg`, still_is_episode_still: true }),
                         files: this.episodeFiles.get(episode.id) ?? [{ file_id: this.fileIds.get(episode.id) ?? `f-${episode.id}`, resolution: "1080p", hdr: false, file_size: 1 }],
                     })),
                 },
@@ -358,7 +364,15 @@ export class FakeCatalog implements CatalogRoutes {
         if (series !== undefined) {
             Object.assign(card, { series_id: series.id, series_title: series.title, season_number: title.season, episode_number: title.episode });
         }
-        if (this.episodeStills && title.type === "episode") {
+        if (this.episodeStills && title.type === "episode" && this.itemStill === "none") {
+            card.backdrop_url = undefined;
+        } else if (this.episodeStills && title.type === "episode" && this.itemStill === "empty") {
+            card.backdrop_url = "";
+            card.backdrop_is_episode_still = true;
+        } else if (this.episodeStills && title.type === "episode" && this.itemStill === "series") {
+            card.backdrop_url = `/art/${encodeURIComponent(series?.id ?? id)}-backdrop.svg`;
+            card.backdrop_is_episode_still = false;
+        } else if (this.episodeStills && title.type === "episode") {
             card.backdrop_url = `/art/${encodeURIComponent(id)}-still.svg`;
             card.backdrop_is_episode_still = true;
             card.poster_is_episode_still = true;
@@ -382,7 +396,7 @@ export class FakeCatalog implements CatalogRoutes {
             overview: `A synthetic ${title.type} for the browse tests.`,
             runtime: 90,
             duration_seconds: 5400,
-            versions: title.type === "series" ? [] : [{ ...version, file_id: this.fileIds.get(id) ?? `f-${id}`, duration: 5400 }],
+            versions: title.type === "series" ? [] : [this.fileIds.get(id) ?? `f-${id}`, ...this.moreFileIds.get(id) ?? []].map(fileId => ({ ...version, file_id: fileId, duration: 5400 })),
             user_data: { watched_count: 0, unplayed_count: 1, in_progress_count: 0, played: false, position_seconds: this.progress.get(id), last_file_id: this.fileIds.get(id) ?? `f-${id}` },
         };
         if (title.type === "series") {

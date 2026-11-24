@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Create the Tizen security profile CI signs with, and export its name as TIZEN_SECURITY_PROFILE.
-# With TIZEN_AUTHOR_P12_B64 set, it uses the maintainer's Samsung author and distributor
-# certificates from the repository secrets. Without them (fork pull requests), it makes a
-# throwaway author certificate so packaging is still checked; that .wgt is never shipped.
-# Prints signing=samsung or signing=throwaway to GITHUB_OUTPUT when it is set.
+# Always generates a fresh author certificate paired with the Tizen SDK's public default
+# distributor certificate so public CI artifacts and GitHub Releases never embed personal
+# Samsung TV certificates or DUIDs. Apps2Samsung re-signs the .wgt with each user's own
+# Samsung certificate; personal sideloading signs locally with TIZEN_SECURITY_PROFILE.
+# Prints signing=public to GITHUB_OUTPUT when it is set.
 # The certificates stay in $RUNNER_TEMP/tizen-signing for packaging; the workflow removes them.
 set -euo pipefail
 
@@ -75,42 +76,25 @@ PY
     chmod 600 "${work_dir}/profiles.xml"
 }
 
-if [[ -n "${TIZEN_AUTHOR_P12_B64:-}" ]]; then
-    for name in TIZEN_AUTHOR_PASSWORD TIZEN_DISTRIBUTOR_P12_B64 TIZEN_DISTRIBUTOR_PASSWORD; do
-        if [[ -z "${!name:-}" ]]; then
-            echo "error: ${name} is not set; all four signing secrets are required." >&2
-            exit 1
-        fi
-    done
-    profile="silo-release"
-    signing="samsung"
-    printf '%s' "${TIZEN_AUTHOR_P12_B64}" | base64 --decode > "${work_dir}/author.p12"
-    printf '%s' "${TIZEN_DISTRIBUTOR_P12_B64}" | base64 --decode > "${work_dir}/distributor.p12"
-    author_password="$(encrypt_password "${TIZEN_AUTHOR_PASSWORD}")"
-    distributor_password="$(encrypt_password "${TIZEN_DISTRIBUTOR_PASSWORD}")"
-    write_profile "${profile}" "${work_dir}/author.p12" "${author_password}" \
-        "${work_dir}/distributor.p12" "${distributor_password}"
-else
-    profile="silo-ci-throwaway"
-    signing="throwaway"
-    password="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
-    tizen certificate -a silo-ci -p "${password}" -f silo-ci -- "${work_dir}"
-    # The CLI's output directory varies by version; a missing search root is not an error.
-    author_p12="$(find_one "${work_dir}" "${HOME}"/tizen-*data/keystore -name silo-ci.p12)"
-    if [[ -z "${author_p12}" ]]; then
-        echo "error: tizen certificate did not create silo-ci.p12." >&2
-        exit 1
-    fi
-    # The SDK's public default distributor certificate and its documented password.
-    distributor_p12="${sdk_root}/tools/certificate-generator/certificates/distributor/tizen-distributor-signer.p12"
-    if [[ ! -f "${distributor_p12}" ]]; then
-        echo "error: ${distributor_p12} is missing from the SDK." >&2
-        exit 1
-    fi
-    author_password="$(encrypt_password "${password}")"
-    distributor_password="$(encrypt_password "tizenpkcs12passfordsigner")"
-    write_profile "${profile}" "${author_p12}" "${author_password}" "${distributor_p12}" "${distributor_password}"
+profile="auger-public"
+signing="public"
+password="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+tizen certificate -a auger-public -p "${password}" -f auger-public -- "${work_dir}"
+# The CLI's output directory varies by version; a missing search root is not an error.
+author_p12="$(find_one "${work_dir}" "${HOME}"/tizen-*data/keystore -name auger-public.p12)"
+if [[ -z "${author_p12}" ]]; then
+    echo "error: tizen certificate did not create auger-public.p12." >&2
+    exit 1
 fi
+# The SDK's public default distributor certificate and its documented password (no TV DUIDs).
+distributor_p12="${sdk_root}/tools/certificate-generator/certificates/distributor/tizen-distributor-signer.p12"
+if [[ ! -f "${distributor_p12}" ]]; then
+    echo "error: ${distributor_p12} is missing from the SDK." >&2
+    exit 1
+fi
+author_password="$(encrypt_password "${password}")"
+distributor_password="$(encrypt_password "tizenpkcs12passfordsigner")"
+write_profile "${profile}" "${author_p12}" "${author_password}" "${distributor_p12}" "${distributor_password}"
 
 # `tizen package` reads profiles only from the file named in its CLI configuration.
 tizen cli-config "profiles.path=${work_dir}/profiles.xml"

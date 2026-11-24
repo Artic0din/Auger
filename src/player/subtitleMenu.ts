@@ -1,10 +1,13 @@
+import { translate, translateTv } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
+import { heading } from "./headings.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
-import { chevronForwardIcon, magnifyingGlassIcon } from "./playerIcons.ts";
-import { appearanceSummary, BACKGROUND_COLORS, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import type { SyncTimingView } from "./subtitleSync.ts";
+import { chevronForwardIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
+import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
 
-/** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PLAYBACK and SYNC rows. */
+/** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
     | { readonly kind: "tracks" }
     | { readonly kind: "appearance" }
@@ -81,40 +84,36 @@ export function overlayPicker(list: HTMLElement, pane: Extract<SubtitlePane, { k
     list.append(behind, picker);
 }
 
-function named(table: readonly (readonly [string, string])[], id: string): string {
-    return table.find(row => row[0] === id)?.[1] ?? id;
-}
-
 export function pickerFor(tracks: TrackView, field: string): Omit<Extract<SubtitlePane, { kind: "picker" }>, "origin"> | undefined {
     const display = tracks.subtitleTools?.display;
     if (display === undefined) return undefined;
     const appearance = display.appearance;
-    if (field === "delay") return { kind: "picker", title: "Subtitle Delay", field, selected: String(display.delayMs), options: delayOptions(display.delayMs) };
-    if (field === "fontSize") return { kind: "picker", title: "Subtitle Size", field, selected: appearance.fontSize, options: FONT_SIZES.map(([id, label]) => ({ id, label })) };
-    if (field === "position") return { kind: "picker", title: "Subtitle Position", field, selected: appearance.position, options: POSITIONS.map(([id, label]) => ({ id, label })) };
-    if (field === "fontFamily") return { kind: "picker", title: "Subtitle Font", field, selected: appearance.fontFamily, options: FONT_FAMILIES.map(([id, label]) => ({ id, label })) };
-    if (field === "fontColor") return { kind: "picker", title: "Text Color", field, selected: appearance.fontColor, options: FONT_COLORS.map(([id, label]) => ({ id, label })) };
-    if (field === "textOpacity") return { kind: "picker", title: "Text Opacity", field, selected: String(appearance.textOpacity), options: opacityOptions(appearance.textOpacity, 25) };
-    if (field === "textOutline") return { kind: "picker", title: "Outline", field, selected: String(appearance.textOutline), options: [{ id: "true", label: "On" }, { id: "false", label: "Off" }] };
-    if (field === "textOutlineColor") return { kind: "picker", title: "Outline Color", field, selected: appearance.textOutlineColor, options: BACKGROUND_COLORS.map(([id, label]) => ({ id, label })) };
-    if (field === "backgroundStyle") return { kind: "picker", title: "Subtitle Style", field, selected: appearance.backgroundStyle, options: STYLES.map(([id, label]) => ({ id, label })) };
-    if (field === "backgroundColor") return { kind: "picker", title: "Background Color", field, selected: appearance.backgroundColor, options: BACKGROUND_COLORS.map(([id, label]) => ({ id, label })) };
-    if (field === "backgroundOpacity") return { kind: "picker", title: "Background Opacity", field, selected: String(appearance.backgroundOpacity), options: opacityOptions(appearance.backgroundOpacity, 0) };
+    if (field === "delay") return { kind: "picker", title: translate("player.settings.subtitleDelayTitle"), field, selected: String(display.delayMs), options: delayOptions(display.delayMs) };
+    if (field === "fontSize") return { kind: "picker", title: translate("player.hud.pickerSubtitleSize"), field, selected: appearance.fontSize, options: choiceOptions(FONT_SIZES) };
+    if (field === "position") return { kind: "picker", title: translate("player.hud.pickerSubtitlePosition"), field, selected: appearance.position, options: choiceOptions(POSITIONS) };
+    if (field === "fontFamily") return { kind: "picker", title: translate("player.hud.pickerSubtitleFont"), field, selected: appearance.fontFamily, options: choiceOptions(FONT_FAMILIES) };
+    if (field === "fontColor") return { kind: "picker", title: translate("player.hud.pickerTextColor"), field, selected: appearance.fontColor, options: choiceOptions(FONT_COLORS) };
+    if (field === "textOpacity") return { kind: "picker", title: translate("player.subtitles.style.textOpacityLabel"), field, selected: String(appearance.textOpacity), options: opacityOptions(appearance.textOpacity, 25) };
+    if (field === "textOutline") return { kind: "picker", title: translate("player.hud.subtitleOutline"), field, selected: String(appearance.textOutline), options: [{ id: "true", label: translate("options.on") }, { id: "false", label: translate("options.off") }] };
+    if (field === "textOutlineColor") return { kind: "picker", title: translate("player.hud.pickerOutlineColor"), field, selected: appearance.textOutlineColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "backgroundStyle") return { kind: "picker", title: translate("player.hud.pickerSubtitleStyle"), field, selected: appearance.backgroundStyle, options: choiceOptions(STYLES) };
+    if (field === "backgroundColor") return { kind: "picker", title: translate("player.hud.pickerBackgroundColor"), field, selected: appearance.backgroundColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "backgroundOpacity") return { kind: "picker", title: translate("player.subtitles.style.backgroundOpacityLabel"), field, selected: String(appearance.backgroundOpacity), options: opacityOptions(appearance.backgroundOpacity, 0) };
     return undefined;
 }
 
 export function appearanceDetail(appearance: SubtitleAppearance, field: string): string {
     switch (field) {
-        case "fontSize": return named(FONT_SIZES, appearance.fontSize);
-        case "position": return named(POSITIONS, appearance.position);
-        case "fontFamily": return named(FONT_FAMILIES, appearance.fontFamily);
-        case "fontColor": return named(FONT_COLORS, appearance.fontColor);
+        case "fontSize": return choiceLabel(FONT_SIZES, appearance.fontSize);
+        case "position": return choiceLabel(POSITIONS, appearance.position);
+        case "fontFamily": return choiceLabel(FONT_FAMILIES, appearance.fontFamily);
+        case "fontColor": return choiceLabel(FONT_COLORS, appearance.fontColor);
         case "textOpacity": return `${appearance.textOpacity}%`;
-        case "textOutline": return appearance.textOutline ? "On" : "Off";
-        case "textOutlineColor": return named(BACKGROUND_COLORS, appearance.textOutlineColor);
-        case "backgroundStyle": return appearance.backgroundStyle === "outline" ? "Outline" : named(STYLES, appearance.backgroundStyle);
-        case "backgroundColor": return named(BACKGROUND_COLORS, appearance.backgroundColor);
-        case "backgroundOpacity": return appearance.backgroundOpacity === 0 ? "Off" : `${appearance.backgroundOpacity}%`;
+        case "textOutline": return appearance.textOutline ? translate("options.on") : translate("options.off");
+        case "textOutlineColor": return choiceLabel(BACKGROUND_COLORS, appearance.textOutlineColor);
+        case "backgroundStyle": return appearance.backgroundStyle === "outline" ? translate("player.subtitles.background.outline") : choiceLabel(STYLES, appearance.backgroundStyle);
+        case "backgroundColor": return choiceLabel(BACKGROUND_COLORS, appearance.backgroundColor);
+        case "backgroundOpacity": return appearance.backgroundOpacity === 0 ? translate("options.off") : `${appearance.backgroundOpacity}%`;
         default: return "";
     }
 }
@@ -126,26 +125,27 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
     if (pane.kind === "appearance") {
         const display = tools.display;
         if (display === undefined) return;
-        list.append(el("h2", "player-menu-heading", "APPEARANCE"));
-        list.append(choice("subtitle-appearance-back", "Back", false));
+        list.append(el("h2", "player-menu-heading", heading("player.hud.subtitleAppearance")));
+        list.append(choice("subtitle-appearance-back", translate("common.back"), false));
         const rows = ["backgroundStyle", "fontSize", "position", "fontFamily", "fontColor", ...(display.textOpacity ? ["textOpacity"] : []), "textOutline", "textOutlineColor", "backgroundColor", "backgroundOpacity"];
-        const titles: Record<string, string> = { backgroundStyle: "Style", fontSize: "Size", position: "Position", fontFamily: "Font", fontColor: "Text color", textOpacity: "Text opacity", textOutline: "Outline", textOutlineColor: "Outline color", backgroundColor: "Background color", backgroundOpacity: "Background opacity" };
+        // Apple's row names (`player.subtitles.style.*`) where its English is Tizen's; the rest keep their wording.
+        const titles: Record<string, string> = { backgroundStyle: translate("player.subtitles.style.backgroundStyle"), fontSize: translate("player.subtitles.style.size"), position: translate("player.subtitles.style.position"), fontFamily: translate("player.subtitles.style.font"), fontColor: "Text color", textOpacity: "Text opacity", textOutline: translate("player.hud.subtitleOutline"), textOutlineColor: "Outline color", backgroundColor: "Background color", backgroundOpacity: "Background opacity" };
         for (const field of rows) list.append(choice(`subtitle-appearance:${field}`, titles[field] ?? field, false, appearanceDetail(display.appearance, field)));
         return;
     }
     const search = tools.search;
     if (search.phase !== "closed") {
         list.append(el("h2", "player-menu-heading", "SEARCH"));
-        list.append(choice("subtitle-search-back", search.phase === "languages" ? "Back" : "Choose another language", false));
+        list.append(choice("subtitle-search-back", search.phase === "languages" ? translate("common.back") : translate("subtitleSearch.chooseAnother"), false));
         if (search.phase === "searching") {
             list.append(el("p", "player-menu-note", search.status));
-            list.append(choice("subtitle-search-cancel", "Cancel", false));
+            list.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
         } else if (search.phase === "failed") {
             if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
             if (search.canRetry) list.append(choice("subtitle-search-retry", "Try Again", false));
         } else if (search.phase === "languages") {
             if (!search.offered && search.unavailableReason !== "") list.append(el("p", "player-menu-note", search.unavailableReason));
-            for (const item of [...search.suggested, ...search.other]) list.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint));
+            for (const item of [...search.suggested, ...search.other]) list.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint === undefined ? undefined : translate(item.hint)));
         } else {
             for (const warning of search.warnings) list.append(el("p", "player-menu-note", warning));
             if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
@@ -156,6 +156,47 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
         }
         return;
     }
+}
+
+/** The running job: ProgressView beside its whole percentage, with the phase under it. Neither takes focus. */
+function syncProgress(progress: NonNullable<SyncTimingView["progress"]>): HTMLElement {
+    const block = el("div", "player-sync-progress");
+    block.setAttribute("role", "progressbar");
+    block.setAttribute("aria-label", translate("player.subtitleSync.progressLabel"));
+    block.setAttribute("aria-valuemin", "0");
+    block.setAttribute("aria-valuemax", "100");
+    block.setAttribute("aria-valuenow", String(progress.percent));
+    const track = el("span", "player-sync-track");
+    const fill = el("span", "player-sync-fill");
+    fill.style.width = `${Math.min(100, Math.max(0, progress.percent))}%`;
+    track.append(fill);
+    const bar = el("div", "player-sync-bar");
+    bar.append(track, el("span", "player-sync-percent", `${progress.percent}%`));
+    block.append(bar);
+    if (progress.phase !== "") block.append(el("p", "player-sync-phase", progress.phase));
+    return block;
+}
+
+/**
+ * SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main): Sync to Audio, the running job's progress, Reset Timing,
+ * then the note. The rows stay enabled while a request runs so focus never lands on a row that just went inert; a refusal
+ * swaps Sync to Audio for a dimmed row that cannot hold focus.
+ */
+function syncRows(timing: SyncTimingView | undefined): HTMLElement[] {
+    if (timing === undefined) return [];
+    if (timing.forbidden !== undefined) {
+        const row = settingRow("subtitle-sync", translate("player.tracks.syncToAudioButton"), "", { chevron: false, detail: timing.forbidden, icon: waveformIcon() });
+        row.removeAttribute("data-focus");
+        row.disabled = true;
+        row.setAttribute("data-unavailable", "true");
+        return [row];
+    }
+    const rows: HTMLElement[] = [];
+    if (timing.canSync) rows.push(settingRow("subtitle-sync", translate(timing.inProgress ? "player.tracks.syncing" : "player.tracks.syncToAudioButton"), "", { chevron: false, icon: waveformIcon() }));
+    if (timing.progress !== undefined) rows.push(syncProgress(timing.progress));
+    if (timing.canReset) rows.push(settingRow("subtitle-reset-timing", translate("player.tracks.resetTimingButton"), "", { chevron: false, icon: uturnBackwardIcon() }));
+    if (timing.note !== undefined) rows.push(el("p", `player-sync-note player-sync-note-${timing.note.tone}`, timing.note.text));
+    return rows;
 }
 
 function group(heading: string, rows: readonly HTMLElement[]): HTMLElement[] {
@@ -169,23 +210,23 @@ function group(heading: string, rows: readonly HTMLElement[]): HTMLElement[] {
 
 /**
  * SubtitlesPane.optionRows (TVPlayerInfoHUD.swift, silo-apple main e958f58): one scrolling column of OPTIONS (what supplies subtitles:
- * `source`, then Search), TIMING (Delay) and STYLE (Appearance, then the device switch). A group with no row is left out, and a column with
+ * `source`, then Search), TIMING (Delay, then Sync to Audio and Reset Timing) and STYLE (Appearance, then the device switch). A group with no row is left out, and a column with
  * none has no heading. Delay and style act on overlay cues only, so they wait for `overlay`.
  */
 export function optionColumn(tracks: TrackView, source: readonly HTMLElement[]): HTMLElement {
     const tools = tracks.subtitleTools;
     const display = tools?.overlay === true ? tools.display : undefined;
     const options = [...source];
-    if (tools?.search.offered === true) options.push(settingRow("subtitle-search", "Search Subtitles…", "", { icon: magnifyingGlassIcon() }));
-    const timing = display?.delay === true ? [settingRow("subtitle-delay", "Delay", delayLabel(display.delayMs))] : [];
+    if (tools?.search.offered === true) options.push(settingRow("subtitle-search", translate("options.searchSubtitles"), "", { icon: magnifyingGlassIcon() }));
+    const timing = [...(display?.delay === true ? [settingRow("subtitle-delay", translate("player.hud.delay"), delayLabel(display.delayMs))] : []), ...syncRows(tracks.syncTiming)];
     const style: HTMLElement[] = [];
     if (display?.styling === true) {
-        style.push(settingRow("subtitle-appearance", "Appearance", "", { detail: appearanceSummary(display.appearance), glyph: "Aa" }));
-        if (display.deviceScope) style.push(settingRow("subtitle-device", "Only on this TV", display.deviceOverride ? "On" : "Off", { chevron: false, pressed: display.deviceOverride }));
+        style.push(settingRow("subtitle-appearance", translate("player.hud.subtitleAppearance"), "", { detail: appearanceSummary(display.appearance), glyph: "Aa" }));
+        if (display.deviceScope) style.push(settingRow("subtitle-device", translateTv("player.hud.onlyOnThisAppleTv"), display.deviceOverride ? translate("options.on") : translate("options.off"), { chevron: false, pressed: display.deviceOverride }));
     }
     const column = el("div", "player-menu-column player-menu-column-options");
     const rows = el("div", "player-menu-column-rows");
-    rows.append(...group("OPTIONS", options), ...group("TIMING", timing), ...group("STYLE", style));
+    rows.append(...group(heading("player.hud.options"), options), ...group(heading("player.tracks.timing"), timing), ...group(heading("player.hud.style"), style));
     column.append(rows);
     return column;
 }

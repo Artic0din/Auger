@@ -14,6 +14,8 @@ import { resolutionLabel, runtimeText } from "./cardPresentation.ts";
 import { applyStyle, css, hexColor, type OverlayStyle, parseStyle, type Preset, PRESET_STYLES, type PresetId, PRESETS, readableText, type Rgba, type Shadow } from "./overlayPresets.ts";
 import { el } from "./screen.ts";
 import { menuIcon } from "./navigationIcon.ts";
+import { integerText } from "../i18n/numbers.ts";
+import { type MessageKey, translate } from "../i18n/translate.ts";
 
 /** OverlayTypes.swift:44-65: the top-right corner belongs to the watch status, so badges use the side rails. */
 type Position = "top-left" | "bottom-left" | "bottom-right" | "left-edge" | "right-edge";
@@ -77,7 +79,7 @@ function hdrIcon(value: string | undefined): Icon | undefined {
 }
 
 /** OverlayRegistry.swift:391-434: the English status every client recognises, which is also the value key, or the value itself. */
-function showStatus(value: string | undefined): string | undefined {
+function showStatusKey(value: string | undefined): string | undefined {
     const raw = nonEmpty(value);
     if (raw === undefined) return undefined;
     const lowered = raw.toLowerCase();
@@ -85,6 +87,16 @@ function showStatus(value: string | undefined): string | undefined {
     if (lowered === "ended") return "Ended";
     if (lowered === "cancelled" || lowered === "canceled") return "Cancelled";
     return lowered === "upcoming" || lowered === "planned" ? "Upcoming" : raw;
+}
+
+const SHOW_STATUS_LABELS: Readonly<Record<string, MessageKey>> = { Returning: "overlays.returning", Ended: "overlays.ended", Cancelled: "overlays.cancelled", Upcoming: "overlays.upcoming" };
+
+/** `formatShowStatus`: the badge's label in the shown language; a status Apple does not recognise shows as sent. The value key stays the English status. */
+function showStatusLabel(value: string | undefined): string | undefined {
+    const key = showStatusKey(value);
+    // An own property only: a status named like an object's (`constructor`) is an unrecognised one and shows as sent.
+    const message = key !== undefined && Object.hasOwn(SHOW_STATUS_LABELS, key) ? SHOW_STATUS_LABELS[key] : undefined;
+    return message === undefined ? key : translate(message);
 }
 
 /** OverlayRegistry.swift:109-113: the parts the item has, joined by a space. */
@@ -127,20 +139,20 @@ const REGISTRY: readonly OverlayDef[] = [
     { id: "aspect_ratio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "layout", value: card => nonEmpty(card.overlay?.aspectRatio), valueKey: card => nonEmpty(card.overlay?.aspectRatio) },
     { id: "release_type", position: "bottom-left", enabled: true, iconCapable: false, value: card => nonEmpty(card.overlay?.releaseType), valueKey: card => nonEmpty(card.overlay?.releaseType) },
     { id: "edition", position: "bottom-left", enabled: false, iconCapable: false, value: card => nonEmpty(card.overlay?.edition), valueKey: card => nonEmpty(card.overlay?.edition) },
-    { id: "multi_audio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "languages", value: card => card.overlay?.multiAudio === true ? "Multi-Audio" : undefined },
-    { id: "multi_sub", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "subtitles", value: card => card.overlay?.multiSub === true ? "CC" : undefined },
+    { id: "multi_audio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "languages", value: card => card.overlay?.multiAudio === true ? translate("overlays.multiAudio") : undefined },
+    { id: "multi_sub", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "subtitles", value: card => card.overlay?.multiSub === true ? translate("overlays.subtitles") : undefined },
     rating("rating_imdb", "IMDb", "#f5c518", card => decimalScore(card.ratingImdb)),
     rating("rating_tmdb", "TMDB", "#01b4e4", card => decimalScore(card.ratingTmdb)),
     rating("rating_rt", "RT", "#fa320a", card => percentScore(card.ratingRtCritic)),
     rating("rating_rt_audience", "RT Audience", "#fa6400", card => percentScore(card.ratingRtAudience)),
     { id: "content_rating", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "shield", value: card => card.contentRating, valueKey: card => nonEmpty(card.contentRating) },
     { id: "advisory_age", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "users", value: card => card.advisoryAge !== undefined && card.advisoryAge > 0 ? `${card.advisoryAge}+` : undefined },
-    { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? String(card.year) : undefined },
+    { id: "year", position: "bottom-left", enabled: false, iconCapable: false, value: card => card.year !== undefined && card.year > 0 ? integerText(card.year) : undefined },
     { id: "runtime", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "clock", value: card => runtimeText(card.runtimeMinutes) },
     { id: "original_language", position: "bottom-left", enabled: false, iconCapable: true, staticIcon: "globe", value: card => languageName(card.originalLanguage), valueKey: card => nonEmpty(card.originalLanguage) },
     { id: "studio", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "building", value: card => firstNonEmpty(card.studios), valueKey: card => firstNonEmpty(card.studios) },
     { id: "network", position: "bottom-right", enabled: false, iconCapable: true, staticIcon: "tv", value: card => firstNonEmpty(card.networks), valueKey: card => firstNonEmpty(card.networks) },
-    { id: "show_status", position: "right-edge", enabled: false, iconCapable: true, staticIcon: "tv", value: card => showStatus(card.showStatus), valueKey: card => showStatus(card.showStatus) },
+    { id: "show_status", position: "right-edge", enabled: false, iconCapable: true, staticIcon: "tv", value: card => showStatusLabel(card.showStatus), valueKey: card => showStatusKey(card.showStatus) },
     // Ribbons whose data the server does not send yet; kept so stored documents keep their entries.
     { id: "imdb_top_250", position: "right-edge", enabled: false, accent: "#f5c518", iconCapable: true, staticIcon: "ribbon", value: () => undefined },
     { id: "rt_certified_fresh", position: "right-edge", enabled: false, accent: "#fa320a", iconCapable: false, value: () => undefined },

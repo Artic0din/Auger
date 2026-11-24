@@ -1,3 +1,7 @@
+import { applyScreenDirection } from "../i18n/direction.ts";
+import { shownLocale } from "../i18n/format.ts";
+import { onCatalogLoaded, translate, translateTv } from "../i18n/translate.ts";
+import { lateRedraw } from "./selectRelease.ts";
 import { AccountDirectory, accountsByRecentUse, profileCountLabel, serversByRecentUse, type SavedAccount } from "../session/accounts.ts";
 import type { ConnectedServer, SessionCoreDeps } from "../session/core.ts";
 import { signOutSavedAccount } from "../session/core.ts";
@@ -16,6 +20,7 @@ export interface AccountsScreen { destroy(): void }
 export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current: ConnectedServer | undefined,
     open: (account: SavedAccount | undefined, address?: string, inPlace?: boolean) => Promise<void> | void, back: () => void, manage = false, onCurrentSignOut?: () => void): AccountsScreen {
     const container = el("section", "accounts-screen");
+    applyScreenDirection(container);
     const backdrop = new MarqueeBackdrop(core.clock ?? systemClock);
     // TVChangeAccountView does not write MarqueeScene. The stage stays wherever the previous
     // screen left it: 2 after Who's watching, 1 after a sign-in screen, 0 before a server answers.
@@ -34,7 +39,12 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     /** ChangeAccountModel.openingAccountId: the account being opened while Change Account stays up. */
     let opening: { readonly id: string } | undefined;
     let overflow: readonly OverflowColumn[] = [];
-    const destroy = (): void => { if (destroyed) return; destroyed = true; for (const column of overflow) column.disconnect(); host.destroy(); backdrop.destroy(); container.remove(); };
+    /** A confirmation, the expired-session dialog or an error is on screen in place of the list. */
+    let dialogOpen = false;
+    // A language file that lands after the screen drew (a cold start) redraws it in that language, once no dialog, press or operation is in the way.
+    const late = lateRedraw(() => dialogOpen || removalPending || opening !== undefined, () => { applyScreenDirection(container); render(); });
+    const stopCatalog = onCatalogLoaded(() => { if (!destroyed) late.arrived(); });
+    const destroy = (): void => { if (destroyed) return; destroyed = true; stopCatalog(); late.clear(); for (const column of overflow) column.disconnect(); host.destroy(); backdrop.destroy(); container.remove(); };
     const go = (account: SavedAccount | undefined, address?: string): void => { if (opening !== undefined) return; destroy(); void open(account, address); };
     // The card spins until the app replaces this screen or the switch cannot open quietly. Like Apple, nothing cancels it.
     const choose = (row: SavedAccount): void => {
@@ -54,15 +64,17 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     /** Redraws in place: focus stays in the column it was in. */
     const refresh = (zone = host.focused()?.zone): void => { render(zone === "servers", zone === "accounts"); };
     const showError = (message: string, returnZone?: string): void => {
+        dialogOpen = true;
         const leave = (): void => returnZone === undefined ? render() : refresh(returnZone);
-        const retry = actionButton("retry", "Back", leave);
+        const retry = actionButton("retry", translate("common.back"), leave);
         host.show({ name: "accounts-error", content: [el("h1", "accounts-title", message), retry.element], zones: [{ id: "error", layout: "column", items: [retry] }], focus: { zone: "error", key: "retry" }, back: leave });
     };
     const confirm = (targets: readonly SavedAccount[], removeServer: boolean): void => {
+        dialogOpen = true;
         const dismiss = (): void => { render(false, false, removeServer); };
         let panel: HTMLElement = el("div", "skyline-selector");
-        const cancel = actionButton("cancel", "Cancel", dismiss);
-        const accept = actionButton("confirm", removeServer ? "Remove" : "Sign Out", () => {
+        const cancel = actionButton("cancel", translate("common.cancel"), dismiss);
+        const accept = actionButton("confirm", translate(removeServer ? "servers.remove.confirm" : "settings.accounts.signOut"), () => {
             if (removalPending) return;
             removalPending = true;
             cancel.element.setAttribute("disabled", "");
@@ -82,13 +94,13 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
             })().catch((error: unknown) => { removalPending = false; if (!destroyed) showError(error instanceof Error ? error.message : "Could not sign out"); });
         });
         const address = targets[0]?.baseUrl;
-        const serverName = address ? cachedBranding(core.publicStorage, address)?.serverName ?? new URL(address).host : "the server";
+        const serverName = address ? cachedBranding(core.publicStorage, address)?.serverName ?? new URL(address).host : translate("account.fallback.thisServer");
         const dialog = { id: "dialog", layout: "row" as const, items: [cancel, accept] };
         const view = { name: "accounts-confirm", zones: [dialog], focus: { zone: "dialog", key: "cancel" }, back: dismiss };
         if (removeServer) {
             accept.element.classList.add("skyline-destructive");
-            const signsOut = targets.length === 1 ? `This signs out of ${targets[0]?.username ?? "its account"}.`
-                : targets.length > 1 ? `This signs out of its ${targets.length} accounts.` : undefined;
+            const signsOut = targets.length === 1 ? translate("account.removeServer.signsOutOne", { account: targets[0]?.username ?? translate("account.fallback.itsAccount") })
+                : targets.length > 1 ? translate("account.removeServer.signsOutMany", { count: targets.length }) : undefined;
             const scrim = el("div", "skyline-dropdown-scrim");
             scrim.setAttribute("data-confirmation", "true");
             scrim.addEventListener("click", () => { if (!removalPending) dismiss(); });
@@ -98,7 +110,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
             panel.style.left = "50%";
             panel.style.right = "auto";
             panel.style.top = "50%";
-            const title = el("h2", "skyline-confirm-title", `Remove ${serverName}?`);
+            const title = el("h2", "skyline-confirm-title", translate("servers.remove.title", { server: serverName }));
             title.id = "accounts-remove-title";
             panel.setAttribute("aria-labelledby", title.id);
             const header = el("div", "skyline-confirm-header");
@@ -131,6 +143,10 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
     };
     function render(railFocus = false, enterPane = false, focusFirst = false): void {
         if (removalPending) return;
+        // Drawing the list afresh reads the shown language, so a redraw that was waiting is done.
+        dialogOpen = false;
+        applyScreenDirection(container);
+        late.clear();
         const rows = accountsByRecentUse(directory.list());
         const addresses = serversByRecentUse(rows, activeAddress);
         if (manage) {
@@ -140,7 +156,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
             icon.append(navigationIcon("switch-server"));
             icon.setAttribute("aria-hidden", "true");
             const copy = el("div", "");
-            copy.append(el("h1", "", "Accounts"), el("p", "", "Servers and the accounts signed in to them on this TV."));
+            copy.append(el("h1", "", translate("accounts.title")), el("p", "", translateTv("servers.accounts.blurbAppleTv")));
             header.append(icon, copy); panel.append(header);
             const controls: FocusItem[] = [];
             const paneRow = (key: string, title: string, action: () => void, value?: string, destructive = false): FocusItem => {
@@ -160,16 +176,16 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
                 const serverName = cachedBranding(core.publicStorage, address)?.serverName ?? new URL(address).host;
                 panel.append(el("h2", "accounts-section-header", serverName.toUpperCase()));
                 for (const row of rows.filter(row => row.baseUrl === address)) {
-                    const detail = row.needsSignIn ? "Sign in again" : profileCountLabel(row.profileCount);
+                    const detail = row.needsSignIn ? translate("accounts.badge.signInAgain") : profileCountLabel(row.profileCount);
                     const item = paneRow(row.id, row.username, () => row.needsSignIn ? expired(row) : confirm([row], false), detail);
                     controls.push(item); panel.append(item.element);
                 }
-                const add = paneRow(`add:${address}`, `Add an account on ${serverName}`, () => go(undefined, address));
-                const remove = paneRow(`remove:${address}`, "Remove Server", () => confirm(rows.filter(row => row.baseUrl === address), true), undefined, true);
+                const add = paneRow(`add:${address}`, translate("accounts.addAccountOnServer", { server: serverName }), () => go(undefined, address));
+                const remove = paneRow(`remove:${address}`, translate("settings.accounts.remove"), () => confirm(rows.filter(row => row.baseUrl === address), true), undefined, true);
                 controls.push(add, remove); panel.append(add.element, remove.element);
             }
-            const add = paneRow("add-server", "Add a server", () => go(undefined));
-            controls.push(add); panel.append(add.element, el("p", "signin-text", "Signing out of an account removes it and its settings from this TV. Signing out of a server's only account removes the server too."));
+            const add = paneRow("add-server", translate("settings.accounts.addServer"), () => go(undefined));
+            controls.push(add); panel.append(add.element, el("p", "signin-text", translateTv("settings.accounts.footerAppleTv")));
             container.classList.add("accounts-management");
             const entry = controls[0] === undefined ? undefined : { zone: "rows", key: controls[0].key };
             host.show({ name: "accounts-settings", content: [panel], zones: [{ id: "rows", layout: "column", items: controls }], focus: entry, back: () => { destroy(); back(); } }, focusFirst ? entry : undefined);
@@ -181,13 +197,13 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         const serverItems = addresses.map(address => {
             const brand = cachedBranding(core.publicStorage, address);
             const item = actionButton(address, brand?.serverName ?? new URL(address).host, () => { selected = address; render(false, true); });
-            const mark = el("img", "accounts-server-mark"); mark.src = brand?.markUrl ?? "icon.png"; mark.alt = "";
+            const mark = el("img", "accounts-server-mark"); mark.src = brand?.markUrl ?? "img/auger-mark.png"; mark.alt = "";
             item.element.prepend(mark);
             item.element.addEventListener("focus", () => { if (selected !== address) { selected = address; paneEntry = undefined; render(true); } });
             item.element.setAttribute("aria-selected", String(address === selected));
             return item;
         });
-        const addServer = actionButton("add-server", "Add server", () => go(undefined));
+        const addServer = actionButton("add-server", translate("accounts.addServer"), () => go(undefined));
         const plus = el("span", "accounts-server-mark accounts-plus", "+"); plus.setAttribute("aria-hidden", "true");
         addServer.element.prepend(plus);
         serverItems.push(addServer);
@@ -200,13 +216,13 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
             const count = profileCountLabel(row.profileCount);
             if (count !== undefined) name.append(el("span", "account-count", count));
             if (opening?.id === row.id) { item.element.append(spinner()); item.element.setAttribute("aria-busy", "true"); }
-            else if (row.needsSignIn) item.element.append(accountBadge("SIGN IN AGAIN", true));
-            else if (row.id === current?.accounts.localAccountId) item.element.append(accountBadge("CURRENT", false));
+            else if (row.needsSignIn) item.element.append(accountBadge(translate("accounts.badge.signInAgain").toLocaleUpperCase(shownLocale()), true));
+            else if (row.id === current?.accounts.localAccountId) item.element.append(accountBadge(translate("changeAccount.current").toLocaleUpperCase(shownLocale()), false));
             return item;
         });
         const addAccount = actionButton("add-account", "", () => go(undefined, selected));
-        const name = el("span", "account-name", "Add an account");
-        name.append(el("span", "account-count", `Sign in on ${selected ? cachedBranding(core.publicStorage, selected)?.serverName ?? new URL(selected).host : "a server"}`));
+        const name = el("span", "account-name", translate("changeAccount.addAccount"));
+        name.append(el("span", "account-count", translate("changeAccount.signInOn", { server: selected ? cachedBranding(core.publicStorage, selected)?.serverName ?? new URL(selected).host : translate("account.fallback.thisServer") })));
         addAccount.element.classList.add("account-card");
         addAccount.element.append(el("span", "account-initial", "+"), name);
         if (selected) accounts.push(addAccount);
@@ -219,8 +235,8 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         overflow = [overflowColumn(rail, "accounts-column-rail", previousRail), overflowColumn(pane, "accounts-column-pane", previousPane)];
         for (const column of previousColumns) column.disconnect();
         const columns = el("div", "accounts-columns"); columns.append(...overflow.map(column => column.element));
-        const mark = el("img", "accounts-wordmark"); mark.src = "img/silo-wordmark.png"; mark.alt = "Silo";
-        host.show({ name: "change-account", content: [backdrop.element, scrim, mark, el("h1", "accounts-title", "Change account"), el("p", "signin-text", "Choose a server, then the account to use on it."), columns],
+        const mark = el("img", "accounts-wordmark"); mark.src = "img/auger-wordmark.png"; mark.alt = "Auger";
+        host.show({ name: "change-account", content: [backdrop.element, scrim, mark, el("h1", "accounts-title", translate("accounts.headline")), el("p", "signin-text", translate("accounts.body")), columns],
             zones: [{ id: "servers", layout: "column", right: "accounts", items: serverItems }, { id: "accounts", layout: "column", left: "servers", items: accounts }],
             focus: accounts.length === 0 ? { zone: "servers", key: "add-server" } : { zone: "accounts", key: accounts.find(row => row.key === current?.accounts.localAccountId)?.key ?? accounts[0]!.key },
             back: () => {
@@ -232,9 +248,10 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         for (const column of overflow) column.sync();
     }
     function expired(row: SavedAccount): void {
-        const controls = [actionButton("signin", "Sign in again", () => go(row)), actionButton("signout", "Sign Out", () => confirm([row], false)), actionButton("cancel", "Cancel", render)];
+        dialogOpen = true;
+        const controls = [actionButton("signin", translate("account.signInAgain"), () => go(row)), actionButton("signout", translate("settings.accounts.signOut"), () => confirm([row], false)), actionButton("cancel", translate("common.cancel"), render)];
         const panel = el("div", "accounts-dialog");
-        panel.append(el("h1", "signin-title", `${row.username} needs to sign in again`), ...controls.map(item => item.element));
+        panel.append(el("h1", "signin-title", translate("settings.accounts.expiredTitleAppleTv", { account: row.username })), ...controls.map(item => item.element));
         host.show({ name: "account-expired", content: [panel], zones: [{ id: "choices", layout: "column", items: controls }], focus: { zone: "choices", key: "signin" }, back: render });
     }
     host.listen(); render();

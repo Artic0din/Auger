@@ -85,7 +85,7 @@ test("Connection speed stays hidden without connection_speed_v1 or buffering_qua
         assert.equal(await tv.page.locator('[data-focus="connection-speed"]').count(), 0);
         assert.equal(tv.fake.requests.some(request => request.path === "/playback/connection"), false);
         assert.equal(probes(tv).length, 0);
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS"]);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
@@ -114,7 +114,7 @@ test("Playback shows the stored speed and tests only from Test speed", async () 
         });
         assert.deepEqual(row, { shrink: "0", height: 97, value: "600", line: "400" });
         assert.equal(await tv.page.locator(".settings-connection-budget").textContent(), "Auto plays videos up to 35 Mbps without converting them.");
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "CONNECTION", "STREAMING", "EPISODES", "SPOILERS", "VIDEO"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "CONNECTION", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS"]);
         const order = await tv.page.evaluate(() => {
             const footer = document.querySelector(".settings-quality-footer");
             const connection = [...document.querySelectorAll(".settings-section-header")].find(node => node.textContent === "CONNECTION");
@@ -456,7 +456,7 @@ test("the learned limit shows without connection_speed_v1 and without the mode r
         const row = tv.page.locator('[data-focus="learned-limit"]');
         await row.waitFor();
         assert.equal(await tv.page.locator('[data-focus="buffering-mode"]').count(), 0);
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS"]);
         const reads = tv.fake.requests.filter(request => request.path === "/playback/connection").length;
         await row.focus();
         await tv.page.keyboard.press("Enter");

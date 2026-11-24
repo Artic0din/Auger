@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Silo Tizen is licensed under `AGPL-3.0-or-later`. Third-party dependencies keep their original licenses.
+Auger is licensed under `AGPL-3.0-or-later`. Third-party dependencies keep their original licenses.
 The packaged app carries their full license texts in [`app/THIRD-PARTY-NOTICES.txt`](app/THIRD-PARTY-NOTICES.txt), and Settings > Server > Acknowledgements lists the code libraries on the TV.
 
 ## uqr
@@ -20,7 +20,7 @@ Chromium 108's own `Intl.Segmenter` lacks the Unicode 15.1 Indic conjunct rule.
 
 `app/third-party/tmdb-logo.svg` is TMDB's approved "Alt short (blue)" logo from <https://www.themoviedb.org/about/logos-attribution>, shipped unmodified.
 It is a trademark of TMDB and is not covered by this repository's license.
-Silo shows it next to TMDB scores and in Acknowledgements; keep it unmodified and less prominent than Silo's own branding.
+Auger shows it next to TMDB scores and in Acknowledgements; keep it unmodified and less prominent than Auger's own branding.
 See [`app/third-party/README.md`](app/third-party/README.md).
 
 ## Fonts

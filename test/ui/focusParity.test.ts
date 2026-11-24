@@ -211,8 +211,9 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
                     const neighbor = card?.parentElement?.querySelector(".browse-card:not(:focus) .browse-card-title");
                     if (art == null || title == null || neighbor == null) throw new Error("shelf captions missing");
                     const captions = [...card?.querySelectorAll(".browse-card-title, .browse-card-subtitle") ?? []];
+                    const artStyle = getComputedStyle(art);
                     return {
-                        focused: getComputedStyle(title).color, unfocused: getComputedStyle(neighbor).color, cue: getComputedStyle(art).outline, shadow: getComputedStyle(art).boxShadow,
+                        focused: getComputedStyle(title).color, unfocused: getComputedStyle(neighbor).color, cue: `${artStyle.outlineWidth} ${artStyle.outlineStyle} ${artStyle.outlineColor}`, shadow: artStyle.boxShadow,
                         captions: captions.map(node => {
                             const style = getComputedStyle(node), matrix = new DOMMatrixReadOnly(style.transform);
                             return { linear: [matrix.a, matrix.b, matrix.c, matrix.d], scale: style.scale };
@@ -228,7 +229,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
                 }
                 if (reducedMotion === "reduce") {
                     assert.equal(focused.artGrowth, 0);
-                    assert.equal(style.cue, "rgba(255, 255, 255, 0.7) solid 4px", "reduced motion keeps Apple's shared outline");
+                    assert.equal(style.cue, "4px solid rgba(255, 255, 255, 0.7)", "reduced motion keeps Apple's shared outline");
                     assert.equal(style.shadow, "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px", "reduced motion retains the focused shadow");
                     assert.deepEqual(style.transitions, ["0s", "0s", "0s"], "reduced motion disables artwork and caption transitions");
                 }

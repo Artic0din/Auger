@@ -1,6 +1,7 @@
 import { remoteKey } from "./keys.ts";
 import { listenSelectRelease, releasedSelect, swallowSelect } from "./selectRelease.ts";
 import { actions, button, el } from "./screen.ts";
+import { onCatalogLoaded, translate } from "../i18n/translate.ts";
 
 export interface ExitDialog { destroy(): void; }
 
@@ -11,7 +12,7 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-labelledby", "exit-title");
     const panel = el("div", "app-exit-panel");
-    const title = el("h1", "signin-title", "Exit Silo?");
+    const title = el("h1", "signin-title", "Exit Auger?");
     title.id = "exit-title";
     const status = el("p", "signin-text signin-error");
     status.setAttribute("role", "alert");
@@ -24,6 +25,7 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
             window.removeEventListener("keydown", onKey, true);
             window.removeEventListener("keyup", onRelease, true);
             document.removeEventListener("focusin", onFocus, true);
+            stopCatalog();
             overlay.remove();
             closed();
         }
@@ -39,11 +41,13 @@ export function mountExitDialog(root: HTMLElement, exit: () => void, closed: () 
             exit();
             destroy();
         } catch {
-            status.textContent = "Could not exit Silo.";
+            status.textContent = "Could not exit Auger.";
         }
     };
     const yes = button("exit", "Exit", confirm);
-    const no = button("cancel-exit", "Cancel", cancel);
+    const no = button("cancel-exit", translate("common.cancel"), cancel);
+    // A cold launch can open this before the shown language's file lands: the label is rewritten on the same button, so focus and a held press stay.
+    const stopCatalog = onCatalogLoaded(() => { no.element.textContent = translate("common.cancel"); });
     let focused = no.element;
     const onFocus = (event: FocusEvent): void => {
         if (event.target instanceof HTMLElement) {

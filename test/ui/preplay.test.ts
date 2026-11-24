@@ -4,6 +4,7 @@ import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { leavePlayer } from "./support/leavePlayer.ts";
 import { object } from "../../src/contracts/v2/wire.ts";
 
 class AudioPreferenceDetails extends FakeDetails {
@@ -159,7 +160,8 @@ preplay("switching episodes keeps a failed shared subtitle save blocked until co
 });
 
 preplay("a confirmed series preference refresh clears other episodes' stale track intents but retains versions", async (tv, catalog) => {
-    for (const id of ['episode:s1e11', 'episode:s1e12']) catalog.fileIds.set(id, '42');
+    // Versions opens only with a choice (#720), so each episode offers a second file.
+    for (const id of ['episode:s1e11', 'episode:s1e12']) { catalog.fileIds.set(id, '42'); catalog.moreFileIds.set(id, ['43']); }
     await series(tv);
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();
     await tv.page.getByRole('button', { name: /Play S1:E2|Resume S1:E2/ }).waitFor();
@@ -235,6 +237,8 @@ preplay("series Play refreshes progress saved after an initially unplayed episod
 
 for (const destination of ["series", "season"]) preplay(`${destination} keeps an explicit next-episode version through playback return`, async (tv, catalog, playback) => {
     catalog.fileIds.set("episode:s1e11", "42");
+    // Versions opens only with a choice (#720), so the episode offers a second file.
+    catalog.moreFileIds.set("episode:s1e11", ["43"]);
     playback.items.set("episode:s1e11", ["42"]);
     await series(tv);
     if (destination === "season") {
@@ -244,7 +248,7 @@ for (const destination of ["series", "season"]) preplay(`${destination} keeps an
     await tv.page.locator('[data-focus="version:42"]').click();
     await tv.page.locator('[data-focus="next-episode"]').click();
     await prepare(tv);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="version"]').click();
     assert.equal(await tv.page.locator('[data-focus="version:42"]').getAttribute("aria-checked"), "true");
 });
@@ -256,7 +260,7 @@ for (const embeddedFile of [true, false]) preplay(`local extras ${embeddedFile ?
     assert.ok(tv.fake.requests.some(request => request.path.includes("extra%3A1")), "player resolves the extra watch target");
     assert.equal(starts(tv)[0]?.body?.file_id, "42");
     assert.equal(starts(tv)[0]?.body?.start_position, 0);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('.details-extras').waitFor();
     assert.equal(await tv.focused(), "extra:extra:1");
 }, true, false, catalog => { catalog.extras = [{ content_id: "extra:1", ...(embeddedFile ? { file_id: 42 } : {}), kind: "trailer", title: "Trailer", duration_seconds: 90 }]; });
@@ -323,7 +327,7 @@ preplay("direct episode activation refreshes cached-zero progress and returns to
     assert.equal(starts(tv)[0]?.body?.start_position, 420);
     assert.equal(starts(tv)[0]?.body?.audio_track_id, undefined);
     assert.equal(starts(tv)[0]?.body?.subtitle_track_id, undefined);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();
     await tv.eventually(async () => await tv.focused() === id, "originating episode focus");
     assert.equal(await tv.page.locator('[data-focus="season:1"]').getAttribute("aria-pressed"), "true");
@@ -439,7 +443,7 @@ preplay("series Resume and Start Over keep the series line when the episode item
     assert.equal(await tv.page.locator(".player-series").textContent(), "Harbor Lights");
     assert.equal(await tv.page.locator(".player-title").first().textContent(), "Harbor Lights chapter 1.1");
     assert.equal(await tv.page.locator(".player-episode").textContent(), "S1 · E1");
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();
     await tv.page.locator('[data-focus="start-over-episode"]').click();
     await prepare(tv);
@@ -519,12 +523,17 @@ preplay("series Start Over skips fresh resume and retains automatic selectors", 
     catalog.progress.set("episode:s1e11", 630);
     playback.items.set("episode:s1e11", ["42"]);
     await series(tv);
-    const before = tv.fake.requests.filter(request => request.path.startsWith("/watch/")).length;
+    const before = tv.fake.requests.length;
     await tv.page.locator('[data-focus="start-over-episode"]').click();
     await prepare(tv);
     assert.equal(starts(tv).length, 1);
     assert.equal(starts(tv)[0]?.body?.start_position, 0);
-    assert.equal(tv.fake.requests.filter(request => request.path.startsWith("/watch/")).length, before + 2, "Start Over reads subtitle preferences and chapters but does not look up resume");
+    const sinceClick = tv.fake.requests.slice(before);
+    const started = sinceClick.findIndex(request => request.path === "/playback/start");
+    assert.ok(started >= 0, "Start Over sends START");
+    // Up Next reads the episode's title from the first frame (#698), so only a title read before START would be a resume lookup.
+    assert.deepEqual(sinceClick.slice(0, started).filter(request => request.path.startsWith("/watch/")).map(request => request.path), [], "Start Over does not look up resume");
+    assert.equal(sinceClick.filter(request => request.path.startsWith("/watch/") && request.path.includes("?file_id=")).length, 2, "Start Over reads subtitle preferences and chapters");
 });
 
 for (const failure of ["identity", "files"] as const) {
@@ -604,7 +613,7 @@ for (const reduced of [false, true]) {
         assert.equal(body?.audio_track_id, "file:42:audio:1");
         assert.equal(body?.start_position, 2400.25);
         assert.equal(body?.allow_alternate_versions, undefined);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-focus="play"]').waitFor();
         assert.equal(await tv.focused(), "play", "the initiating Resume disappeared on the newly selected short version");
         assert.equal(starts(tv).length, 1);
@@ -631,7 +640,7 @@ preplay("version change clears old audio, pins the new file and allows a fresh e
     await savedAudio(tv);
     await tv.page.locator('[data-focus="version"]').click();
     await tv.page.locator('[data-focus="version:43"]').click();
-    assert.equal(await tv.page.locator('[data-focus="audio"]').textContent(), "Audio Tracks");
+    assert.equal(await tv.page.locator('[data-focus="audio"]').textContent(), "Audio");
     assert.equal(await tv.page.locator('[data-focus="audio"]').getAttribute('aria-label'), 'Audio: Auto');
     await tv.page.locator('[data-focus="audio"]').click();
     assert.equal(await tv.page.getByRole("radio").count(), 3);
@@ -660,7 +669,7 @@ preplay("Details subtitles resolve a catalog stream choice through the server in
     // External English occupies combined ordinal 0. Signs is the first embedded row, so it is 1.
     assert.equal(starts(tv)[0]?.body?.subtitle_track_id, "file:42:subtitle:1");
     assert.equal(tv.fake.requests.some(request => request.path.endsWith("/replan")), false);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="subtitles"]').click();
     assert.equal(await tv.page.locator('[data-focus="subtitle:0"]').getAttribute("aria-checked"), "true");
     await tv.remote(10009);
@@ -688,7 +697,7 @@ preplay("Resume remains usable while the playback-return Details refresh is pend
     await tv.page.locator('[data-focus="play"]').click();
     await prepare(tv);
     const held = tv.fake.hold("/catalog/items/movie%3Am0001", true);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     const fresh = tv.fake.hold(WATCH, true);
     await tv.page.locator('[data-focus="resume"]').click();
     try {
@@ -718,7 +727,7 @@ preplay("episode Details uses its file audio and restores the initiating Resume 
     assert.equal(starts(tv)[0]?.body?.file_id, "42");
     assert.equal(starts(tv)[0]?.body?.audio_track_id, "file:42:audio:1");
     assert.equal(starts(tv)[0]?.body?.start_position, 420);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="resume"]').waitFor();
     assert.equal(await tv.focused(), "resume");
 });

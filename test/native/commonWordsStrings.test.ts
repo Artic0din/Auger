@@ -1,0 +1,57 @@
+// Generic words on Tizen-only screens (silo-apple d49d7bd): Retry, Back, Try again, Cancel and the buttons whose Apple key reads the same
+// word for the same control now read the catalog, so a German or Arabic viewer does not see an English button under a translated page.
+// A word with no Apple key, or several that disagree (Continue, Delete, Search), stays English and is on #592.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
+
+const english = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/en.json", import.meta.url), "utf8")) as Record<string, string>;
+const read = (path: string): string => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+
+/** [file, the Apple key it reads, the English word it showed, the call that held the literal, the call that reads the key on that same control]. */
+const SITES = [
+    ["src/app.ts", "common.retry", "Retry", 'button("retry", "Retry"', 'button("retry", translate("common.retry")'],
+    ["src/app.ts", "signIn.backToProfiles", "Back to profiles", 'button("accounts", "Back to profiles"', 'button("accounts", translate("signIn.backToProfiles")'],
+    ["src/app.ts", "common.back", "Back", 'button("back", "Back"', 'button("back", translate("common.back")'],
+    ["src/bootstrap.ts", "common.tryAgain", "Try again", 'button("retry", "Try again"', 'button("retry", translate("common.tryAgain")'],
+    ["src/ui/boxSetView.ts", "common.back", "Back", 'actionButton("back", "Back"', 'actionButton("back", translate("common.back")'],
+    ["src/ui/exitDialog.ts", "common.cancel", "Cancel", 'button("cancel-exit", "Cancel"', 'button("cancel-exit", translate("common.cancel")'],
+    ["src/ui/browseDetails.ts", "rowPage.close", "Close", 'actionButton("close-more", "Close"', 'actionButton("close-more", translate("rowPage.close")'],
+    ["src/ui/profiles.ts", "account.signInAgain", "Sign in again", 'button("signin", "Sign in again"', 'button("signin", translate("account.signInAgain")'],
+    ["src/ui/browseRoutes.ts", "account.profiles", "Profiles", 'actionButton("profiles", "Profiles"', 'actionButton("profiles", translate("account.profiles")'],
+] as const;
+
+test("each generic word reads its Apple key on its own control, and the key's English is the word it showed", () => {
+    for (const [file, key, word, literal, call] of SITES) {
+        assert.equal(english[key], word, `${key} is "${word}" in English`);
+        const source = read(file);
+        // The key must sit on the button it labels: a key that moves to another call, a comment or unused code does not pass.
+        assert.ok(source.includes(call), `${file} draws ${call}`);
+        assert.ok(!source.includes(literal), `${file} no longer draws the English literal ${literal}`);
+    }
+});
+
+test("every key is in the German and Arabic files, and each reads differently from English", () => {
+    for (const tag of ["de", "ar"]) {
+        const catalog = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
+        for (const [, key, word] of SITES) {
+            assert.ok(Object.hasOwn(catalog, key), `${tag} has ${key}`);
+            assert.notEqual(catalog[key], word, `${tag} ${key} is translated`);
+        }
+    }
+});
+
+test("English reads exactly as before for every key (the rendered German and Arabic checks are in test/ui/commonWordsLanguage.test.ts)", () => {
+    for (const [, key, word] of SITES) assert.equal(translate(key), word);
+});
+
+test("words with no common Apple key stay English: Continue, Delete, Search, Discard Held Change", () => {
+    assert.ok(read("src/ui/signIn.ts").includes('marqueeButton("continue", "Continue"'));
+    assert.ok(read("src/ui/pinScreen.ts").includes('"Delete"'));
+    assert.ok(read("src/ui/requests.ts").includes('actionButton("submit", "Search"'));
+    assert.ok(read("src/ui/browseDetails.ts").includes('"Discard Held Change"'));
+});

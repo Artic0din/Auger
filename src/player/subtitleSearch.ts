@@ -3,6 +3,7 @@ import type { RequestSpec } from "../api/http.ts";
 import { subtitleSearchOperations as operations } from "../api/subtitleSearchOperations.ts";
 import type { SearchResult } from "../contracts/v2/subtitleSearch.ts";
 import type { NativeSession } from "../session/session.ts";
+import { translate } from "../i18n/translate.ts";
 import { languageChoices, languageLabel, type LanguageChoice } from "./subtitleAppearance.ts";
 
 export type SearchPhase = "closed" | "languages" | "searching" | "results" | "failed";
@@ -24,8 +25,11 @@ export interface SubtitleSearchView {
 
 const SEARCHING = "Searching providers… This can take up to half a minute.";
 export const STORED = "The subtitle was saved but couldn't be turned on now. It will be available the next time you play this video.";
-const UNCONFIRMED = "Silo couldn't confirm the download. If it was saved, it will be available the next time you play this video.";
+const UNCONFIRMED = "Auger couldn't confirm the download. If it was saved, it will be available the next time you play this video.";
 const UNAVAILABLE = "Not set up on this server";
+const ADDING = "Adding subtitle…";
+/** The lines Apple reads from the catalog stay English ids in this state and are worded when the view is read, so a later language file rewords them. */
+const shown = (text: string): string => text === UNAVAILABLE ? translate("subtitleSearch.notSetUpShort") : text === ADDING ? translate("subtitleSearch.adding") : text;
 
 export class SubtitleSearch {
     private readonly session: NativeSession;
@@ -62,9 +66,9 @@ export class SubtitleSearch {
 
     get view(): SubtitleSearchView {
         return {
-            offered: this.offered, unavailableReason: this.unavailableReason, phase: this.phase,
-            suggested: this.suggested, other: this.other, language: this.language, status: this.status,
-            message: this.message, warnings: this.warnings, canRetry: this.canRetry, results: this.results,
+            offered: this.offered, unavailableReason: shown(this.unavailableReason), phase: this.phase,
+            suggested: this.suggested, other: this.other, language: this.language, status: shown(this.status),
+            message: shown(this.message), warnings: this.warnings, canRetry: this.canRetry, results: this.results,
             downloadingKey: this.downloadingKey,
         };
     }
@@ -186,7 +190,7 @@ export class SubtitleSearch {
         const result = this.results.find(item => item.key === key);
         if (result === undefined) return;
         this.downloadingKey = key;
-        this.status = "Adding subtitle…";
+        this.status = ADDING;
         this.message = "";
         this.canRetry = false;
         this.changed();

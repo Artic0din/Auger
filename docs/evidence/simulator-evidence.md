@@ -1,37 +1,29 @@
-# Samsung simulator evidence
+# Samsung simulator validation
 
-The Samsung TV Web Simulator can exercise the packaged Silo screens and remote navigation against a real server.
-It is an NW.js desktop application, not the Tizen software emulator or a physical TV.
-Samsung's [TV Simulator guide](https://developer.samsung.com/smarttv/develop/tools/additional-tools/vscode/tv-simulator.html) covers loading a WGT; the macOS command below records the inspected SDK installation.
-Serialize simulator work on the Mac that also runs Xcode; coordinate ownership before replacing an installed app or changing screens.
+Use the Samsung TV Web Simulator (an NW.js desktop app, not the Tizen software emulator or a physical TV) to test packaged Auger screens and remote navigation against a real Server. See Samsung's [TV Simulator guide](https://developer.samsung.com/smarttv/develop/tools/additional-tools/vscode/tv-simulator.html) for general usage.
 
-## Build the candidate
+Serialize simulator runs on a machine and confirm ownership before replacing an installed app or changing screens.
 
-Use the branch being reviewed, with Node and browser dependencies installed as described in the [README](../../README.md#build).
-Keep the developer security profile and certificates outside the repository.
+## Build and hash the candidate
+
+Run on the branch under review with dependencies installed ([README](../../README.md#build)). Keep certificates and security profiles outside the repository.
 
 ```bash
 npm ci
 export TIZEN_SECURITY_PROFILE="YourProfileName"
 ./scripts/build-wgt.sh
-shasum -a 256 dist/Silo.wgt
+shasum -a 256 dist/Auger.wgt
 ```
 
-The `silo-tizen-wgt` artifact from a Tizen Builds run is the same package, signed in CI for that commit; its `Silo.wgt.sha256` records the hash.
-Record the source commit, uncommitted-diff identity if applicable, package hash and simulator version.
-The package command stages the web app and signs `dist/Silo.wgt`.
-Keep a copy of any installed candidate that must be restored.
+The `auger-wgt` artifact from a Tizen Builds CI run is the same signed package, with its hash in `Auger.wgt.sha256`. Record the source commit, uncommitted-diff identity (if any), package SHA-256, and simulator version, and keep a backup of any installed candidate you need to restore.
 
 ## Launch on macOS
 
-The installed SDK's `tools/sec-tv-simulator/readme.txt` documents the remote-debugging options.
-Run from the simulator directory so its relative resources resolve.
-Use a fresh, private profile for a separate test session; it will not inherit the previous session's sign-in state.
-Do not start this command while another agent or person owns the simulator.
+Run from the simulator directory so relative resources resolve, using a fresh private profile directory so prior sign-in state stays isolated. Confirm no other person or agent owns the simulator first.
 
 ```bash
 simulator_dir="${TIZEN_STUDIO_HOME:-$HOME/tizen-sdk}/tools/sec-tv-simulator"
-simulator_profile="$(mktemp -d "${TMPDIR:-/tmp}/silo-tv-simulator.XXXXXX")"
+simulator_profile="$(mktemp -d "${TMPDIR:-/tmp}/auger-tv-simulator.XXXXXX")"
 cd "$simulator_dir"
 ./nwjs.app/Contents/MacOS/nwjs \
   --user-data-dir="$simulator_profile" \
@@ -39,67 +31,26 @@ cd "$simulator_dir"
   --disableInspector
 ```
 
-Use the simulator's app-loading interface to install the signed `Silo.wgt`, then launch its Silo tile.
-If the simulator reports an install or launch error, verify the loaded files before claiming that the new candidate is running.
-A shell reload and launching the tile can recover the observed `Cannot read properties of null (reading 'location')` launch failure; repeated failure is a blocker, not a successful install.
-Remote debugging is for local inspection; close its clients when finished and do not expose its port to the network.
+Install the signed `Auger.wgt` through the simulator's app loader and launch the Auger tile. If launch throws `Cannot read properties of null (reading 'location')`, reload the shell and launch the tile again; treat repeated failure as a blocker. Keep remote debugging local only and close clients when finished.
 
-## Transport and playback limits
+## Transport, policy, and AVPlay proof boundaries
 
-The app uses Silo's native `/api/v2`.
-At the audited baseline, server entry accepts HTTPS with normal certificate validation.
-Use a valid HTTPS route for that baseline rather than changing the app or disabling certificate checks for a test.
-Later transport changes must be tested as their own candidate.
+- **HTTPS baseline:** test against a valid HTTPS route without adding certificate bypasses or rewriting Server responses.
+- **CORS and engine limits:** Samsung simulator 10.0.6 runs NW.js Chromium 137 with `--disable-web-security` in `nwjs.app/Contents/Resources/app.nw/package.json`. A 200 response there proves neither browser CORS headers nor physical-TV origin policy. Never infer the engine version from the TV user-agent string.
+- **Content Security Policy:** `app/config.xml` keeps `script-src 'self'`, `style-src 'self'`, `img-src * data:` (for the generated grain tile), and `object-src 'self'` (required for Samsung's AVPlay `<object>` per the [AVPlay guide](https://developer.samsung.com/smarttv/develop/guides/multimedia/media-playback/using-avplay.html)). The policy regression test verifies these directives in Chromium; simulator `--disable-web-security` does not prove physical-TV CSP enforcement.
+- **AVPlay limits:** the Web Simulator does not provide working AVPlay playback. Treat failed open/unavailable states there as failure-path evidence only, and keep synthetic AVPlay confined to automated tests. Real video/audio decoding, playback return, and physical-remote checks require a capable emulator or physical TV.
 
-The SDK inspected during the parity audit was Samsung simulator 10.0.6 with an NW.js Chromium 137 runtime.
-Its bundled `nwjs.app/Contents/Resources/app.nw/package.json` declares `--disable-web-security`.
-That is a simulator property, not an application fix: a 200 response there does not prove browser CORS headers, preflights or physical-TV origin policy.
-Do not infer the engine version from the simulator's TV user-agent string.
-Check server responses and the actual target runtime separately.
-Do not add certificate bypasses or rewrite server responses to manufacture acceptance.
+## Capture and verification steps
 
-The package declares its content policy in `app/config.xml`.
-It preserves app-only scripts and styles, allows generated `data:` images for the Swift-derived grain tile, and permits app-origin objects for Samsung's required AVPlay surface.
-The [AVPlay guide](https://developer.samsung.com/smarttv/develop/guides/multimedia/media-playback/using-avplay.html) requires that native object; removing it is not a policy fix.
-The policy regression test enforces the packaged directives in Chromium, checks the real grain image, and rejects a foreign object.
-The simulator's disabled web security cannot prove physical-TV policy enforcement or AVPlay rendering.
-Full physical-TV validation is deferred until simulator parity is complete.
-The policy correction includes a [historical Apple/current Samsung grain comparison](screenshots/113-policy/grain-comparison.png) and the [paired package/installed asset hashes](screenshots/113-policy/installed-sha256.txt).
-The comparison labels its different drift phases, signed-out state and platform substitutions; it is not complete visual acceptance.
+Complete every step before attaching simulator parity evidence to a pull request.
 
-The simulator's AVPlay support did not provide successful playback in the audited runs.
-An unavailable player or failed open is failure-path evidence only.
-Use synthetic AVPlay only in the existing automated harness; never install a stand-in into the package and label its output native playback proof.
-Decoded video, audio, successful playback return and physical-remote behavior need a capable emulator or real TV.
+1. **Verify installed bytes.** Hash the installed app's changed JS, CSS, and assets inside the simulator and confirm they match the signed `Auger.wgt` bytes. The `.wgt` hash alone does not identify what is running.
+2. **Match state across before/after and Apple TV.** Use identical Server, Profile, title, selection, focus, scroll, and settings. Record remote keys, loading/error states, request paths, and statuses without credentials or private hosts.
+3. **Capture native app viewport.** Capture the app viewport (1920×1080 on Samsung), not the desktop or simulator shell. Wait for transitions to settle and confirm with a second frame when needed.
+4. **Pair with real Apple TV.** Capture the matching state in the real Apple TV app and label both source commits and installed build IDs separately. Xcode Apple TV previews at 960×540 for a 1920×1080 logical screen may be paired beside Samsung at 50% only when scales are labeled explicitly; never upscale a preview and label it native.
+5. **Use real TV Back.** Send TV Back key code `10009` for single-Back evidence; macOS `Esc` triggers a second Back in the simulator and invalidates focus-restoration checks. Disclose any CDP focus emulation used while a Mac screen is locked.
+6. **Redact and clean up.** Keep raw captures private (dirs `700`, files `600`) and publish only redacted copies free of sign-in codes, server addresses, account names, DUIDs, credentials, and private media details (titles, artwork, and identifying metadata). Restore any mutated test state (including originally unset values), close Xcode and debugging clients, and release simulator ownership.
 
-## Capture the running app
+## Pull request acceptance
 
-1. Verify the installed app's JavaScript, CSS and other changed assets match the signed WGT bytes.
-   Record hashes for both sides; the package hash alone does not identify the running app.
-2. Reproduce the before and after state with the same server, profile, title and settings.
-   Record remote keys, loading/error behavior, request paths and statuses without credentials or private hosts.
-3. Capture the actual app viewport, not the desktop or simulator shell.
-   Record the native dimensions and wait for transitions to settle; confirm with a second frame when necessary.
-4. For a user-facing PR, capture the matching state in the real Apple TV app and label both sources and their source/build identities.
-   Synthetic browser renders are supplementary and cannot replace this pair.
-5. Preserve raw captures privately and publish only checked, redacted copies.
-   Keep private directories mode 700 and private files mode 600; omit sign-in codes, server addresses, account names and credentials.
-
-The audited Samsung app viewport was 1920×1080.
-Xcode supplied Apple TV previews at 960×540 for a 1920×1080 logical screen.
-A side-by-side canvas may show Samsung at 50% and Apple at 100%, but must label those scales and must not call an upscaled preview a native-resolution capture.
-Mask private information consistently without hiding the UI change being reviewed.
-Report remaining layout or behavior differences; attaching a comparison does not establish that the result matches.
-
-Use the TV Back key code 10009 for single-Back evidence.
-The Mac Esc key produced a second Back in the simulator and is not equivalent for focus-restoration tests.
-If a locked Mac leaves the simulator page hidden, disclose any CDP focus emulation used by the harness; it does not establish real hide/return behavior.
-Keep any test mutation scoped, record it and restore the original state, including an originally unset value.
-Close the Xcode session and debugging clients you opened, and explicitly release simulator ownership.
-
-## PR acceptance
-
-Record each proof separately: automated tests, signed WGT, simulator, Apple TV comparison and real TV.
-For a product UI change, the affected result must match the Apple TV app; unresolved differences remain failed or unverified gates.
-A documentation-only PR should say that it changes no app behavior and should not claim new product acceptance.
-See the [PR template](../../.github/PULL_REQUEST_TEMPLATE.md) for the Evidence section.
+Record each proof layer separately: automated tests, signed `.wgt`, simulator, Apple TV comparison, and physical TV. List every unresolved difference under Risks.

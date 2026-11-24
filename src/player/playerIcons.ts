@@ -44,6 +44,11 @@ export function warningTriangleIcon(): string {
     return svg(`<path fill="currentColor" d="M10.3 3.6a2 2 0 0 1 3.4 0l8.2 14.3a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 9.5v4.5m0 3v.1"/>`);
 }
 
+/** `rectangle.inset.filled`: Up Next's Keep Watching symbol, a picture frame with the picture inset. */
+export function rectangleInsetFilledIcon(): string {
+    return svg(`<rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="5.5" y="8" width="13" height="8" rx="1" fill="currentColor"/>`);
+}
+
 /** `rectangle.stack.fill`: the tvOS Show Up Next episodes icon. */
 export function episodesIcon(): string {
     return svg(`<g fill="currentColor"><path opacity="0.55" d="M7 3.2h11.2A1.6 1.6 0 0 1 19.8 4.8V6H6.2V4.8A1.6 1.6 0 0 1 7 3.2z"/><path opacity="0.8" d="M5 6.2h13.2A1.6 1.6 0 0 1 19.8 7.8V9H4.2V7.8A1.6 1.6 0 0 1 5 6.2z"/><rect x="3" y="9" width="18" height="11" rx="1.8"/></g>`);
@@ -84,4 +89,24 @@ export function sparklesIcon(): string {
         return `M${x} ${y - r}C${x + k} ${y - k} ${x + k} ${y - k} ${x + r} ${y}C${x + k} ${y + k} ${x + k} ${y + k} ${x} ${y + r}C${x - k} ${y + k} ${x - k} ${y + k} ${x - r} ${y}C${x - k} ${y - k} ${x - k} ${y - k} ${x} ${y - r}Z`;
     };
     return svg(`<path fill="currentColor" d="${star(9.5, 13.5, 8)}${star(18.5, 5.5, 3.6)}${star(19, 18, 2.6)}"/>`);
+}
+
+/** `waveform`: the Spoken language and Sync to Audio rows' symbol. Six rounded bars. */
+export function waveformIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M3.5 10v4M7.5 6.5v11M11.5 3.5v17M15.5 7.5v9M19.5 9.5v5"/>`);
+}
+
+/** `globe`: a language row's symbol. */
+export function globeIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></g>`);
+}
+
+/** `star.fill`: the preferred language's symbol. */
+export function starFillIcon(): string {
+    return svg(`<path fill="currentColor" d="m12 2.8 2.7 6 6.5.6-4.9 4.3 1.5 6.4L12 16.7 6.2 20.1l1.5-6.4L2.8 9.4l6.5-.6z"/>`);
+}
+
+/** `arrow.uturn.backward`: the Reset Timing row's symbol. */
+export function uturnBackwardIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.5 4 4 8.5 8.5 13M4 8.5h10a5 5 0 0 1 0 10.5H9"/>`);
 }

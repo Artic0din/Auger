@@ -1,6 +1,8 @@
 // Browser entry for the player screen tests: mounts the real screen over stub controls, so the
 // test sets each playback view and sees which commands the remote keys send. No AVPlay or server.
 
+import { setAppLanguage } from "../../src/i18n/language.ts";
+import { registerCatalog } from "../../src/i18n/translate.ts";
 import type { PlaybackView, PlayerControls } from "../../src/player/controller.ts";
 import { mountPlayerScreen, type PlayerScreen } from "../../src/player/playerScreen.ts";
 
@@ -9,7 +11,11 @@ export interface PlayerHarness {
     /** What `dismissBufferingPill` answers: true while a buffering pill is up. */
     dismissesBufferingPill: boolean;
     readonly skipPillShown: boolean;
+    /** How many times the screen asked the controller to send its view again for a late language. */
+    readonly refreshes: number;
     show(view: PlaybackView): void;
+    /** The shown language; a catalog registers as the packaged file does, so a screen already up redraws. */
+    setLanguage(tag: string, catalog?: Readonly<Record<string, string>>): void;
     destroy(): void;
 }
 
@@ -31,6 +37,7 @@ root.appendChild(sibling);
 const commands: string[] = [];
 let dismissesBufferingPill = false;
 let skipPillShown = false;
+let refreshes = 0;
 let listener: ((view: PlaybackView) => void) | undefined;
 const controls: PlayerControls = {
     setVideo: (kind, value) => commands.push(`setVideo ${kind} ${value}`),
@@ -66,8 +73,12 @@ const controls: PlayerControls = {
     cancelAutoplay: () => commands.push("cancelAutoplay"),
     keepWatching: () => commands.push("keepWatching"),
     saveSeriesSubtitle: () => commands.push("saveSeriesSubtitle"),
-    startSubtitleAI: (kind, language) => commands.push(`startSubtitleAI ${kind} ${language ?? ""}`),
+    startSubtitleAI: language => commands.push(`startSubtitleAI ${language}`),
+    subtitleAIAction: action => commands.push(`subtitleAIAction ${action}`),
     selectAIResult: id => commands.push(`selectAIResult ${id}`),
+    syncSubtitle: key => commands.push(`syncSubtitle ${key}`),
+    resetSubtitleTiming: key => commands.push(`resetSubtitleTiming ${key}`),
+    selectSecondarySubtitle: id => commands.push(`selectSecondarySubtitle ${id ?? "off"}`),
     subtitleTool: action => commands.push(`subtitleTool ${JSON.stringify(action)}`),
     seekThumbnail: async () => undefined,
     selectBufferingPrimary: () => commands.push("selectBufferingPrimary"),
@@ -80,6 +91,8 @@ const controls: PlayerControls = {
     setSkipPillShown: (shown) => {
         skipPillShown = shown;
     },
+    // Not a command either: a late language asks for it, and these stubs have no names built in to send again.
+    refreshView: () => { refreshes++; },
 };
 const screen: PlayerScreen = mountPlayerScreen(root, controls, undefined, "https://media.test");
 
@@ -88,6 +101,11 @@ window.player = {
     get dismissesBufferingPill() { return dismissesBufferingPill; },
     set dismissesBufferingPill(value: boolean) { dismissesBufferingPill = value; },
     get skipPillShown() { return skipPillShown; },
+    get refreshes() { return refreshes; },
     show: (view) => listener?.(view),
+    setLanguage(tag, catalog) {
+        setAppLanguage(tag);
+        if (catalog !== undefined) registerCatalog(tag, catalog);
+    },
     destroy: () => screen.destroy(),
 };

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
 const ENTER = 13;
@@ -293,7 +293,8 @@ for (const reduced of [false, true]) test(`Home series entry stays passive befor
         assert.equal(await primary.textContent(), "Play S1:E1");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
         for (const hold of holds.filter(hold => hold.path === paths[3])) hold.release();
-        await tv.eventually(async () => await tv.page.locator('[data-focus="version"]').getAttribute("aria-disabled") !== "true", "playback detail arrived");
+        // Subtitles enables once the playback choices land; a single-version episode keeps Versions disabled (#720).
+        await tv.eventually(async () => await tv.page.locator('[data-focus="subtitles"]').getAttribute("aria-disabled") !== "true", "playback detail arrived");
         await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(await tv.focused(), "next-episode");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
@@ -307,10 +308,18 @@ test("an empty episode response keeps series entry passive until playback detail
     const catalog = new FakeDetails();
     tv.fake.catalog = catalog;
     const playback = tv.fake.hold("/catalog/items/episode%3As1e11");
+    // Home's prefetch reads answer after Home has drawn; each answer repaints a Home section and Home restores focus to the card by id.
+    const prefetch = [tv.fake.hold("/catalog/items/movie%3Am0001"), tv.fake.hold("/catalog/items/episode%3As1e12")];
     try {
         await signedIn(tv);
         await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", route => route.fulfill({ json: { items: [] } }));
         await tv.page.locator('[data-view="home"] [data-focus="series:s1"]').first().focus();
+        for (const hold of prefetch) hold.release();
+        // The recorder below must see only the entry into Details, so let that repaint and its focus restore finish first.
+        // Nothing else is held yet (the playback read is made on entry), and a just-released hold still counts as held until its promise settles.
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home prefetch answers delivered");
+        await afterPaint(tv);
+        await tv.eventually(async () => await tv.focused() === "series:s1", "Home card focused after the repaint");
         await tv.page.evaluate(() => {
             window.detailsEntryFocus = [];
             document.addEventListener("focusin", () => window.detailsEntryFocus.push(document.activeElement?.getAttribute("data-focus") ?? null));
@@ -330,7 +339,7 @@ test("an empty episode response keeps series entry passive until playback detail
         assert.equal(await primary.textContent(), "Play S1:E1");
         assert.deepEqual(await tv.page.evaluate(() => [...new Set(window.detailsEntryFocus)]), ["loading", "next-episode"]);
         assert.deepEqual(tv.console, []);
-    } finally { playback.release(); await tv.page.context().close(); }
+    } finally { playback.release(); for (const hold of prefetch) hold.release(); await tv.page.context().close(); }
 });
 
 test("a primary action that appears after the viewer moves leaves that control focused", async () => {
@@ -483,8 +492,13 @@ test("a focused episode's read leaves before the dwell repaints Details", async 
         await tv.jump(2000);
         await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').focus();
         await tv.jump(2000);
+        // The focused episode's own read answers late and repaints Details, which would drop the marker set below.
+        await tv.eventually(async () => tv.pendingReplies === 0, "the focused episode's answer delivered");
+        await afterPaint(tv);
         await tv.page.evaluate(() => { window.episodeReadPainted = []; });
         await pauseTvClock(tv);
+        // pauseAt runs the timers due in its margin, and the reads they start answer late; none may repaint Details inside the window below.
+        await tv.eventually(async () => tv.pendingReplies === 0, "the timers' reads answered");
         await tv.remote(39);
         assert.equal(await tv.focused(), "episode:s1e13");
         // Marks the screen the focus move painted; the dwell's repaint replaces it.

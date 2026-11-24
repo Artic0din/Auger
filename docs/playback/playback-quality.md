@@ -1,121 +1,22 @@
-# In-player quality
+# Playback quality, completion, and recovery
 
-## Settings follow-up after the 6 November comparison
-
-The implementation reference for this follow-up is Apple `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`, restricted to tvOS code.
-A signed re-check at Tizen `63821ba` on 6 November passed focus, Back, scroll, pickers, QR, Accounts, pinned rail, scroll reset and stable modal background, as reported in the implementation brief.
-It also confirmed VIDEO skip rows after scrolling farther down.
-These later corrections need a new signed comparison.
-The installed Apple app wins where the source differs.
-
-| Source under `tvOS/Screens/Settings/` | Exact reference |
-| --- | --- |
-| `TVSettingsView.swift:141-144,179-225,242-282,444-465` | Rail width 490, pane gap 52, rail spacing 6, title 48, category title 25/detail 16, rail glyph 22 inside width 34, profile avatar 68 with gap 18, version top inset 10, Sign Out font 27, header tile 72 with icon 34 and gap 20 |
-| `TVSettingsComponents.swift:248-249` | Pane row padding 24 horizontal and 17 vertical; measured installed rows are 66 high with pitch 74, rail rows 82 high with pitch 88 |
-| `TVGeneralSettingsView.swift:24-44,72-102,153-176,183-217` | Paired Profile, launch footer, Cards & Posters, title-art footer, theme music and loop |
-| `TVSubtitleSettingsView.swift:18-20,85-102,105-145,183-193` | Metadata is conditionally under Subtitles; appearance starts with preview and device scope; Outline Color is “—” when outline is off |
-| `TVSettingsComponents.swift:589-630,700-719` | Privacy QR size 320 with padding 22 and gap 54, Done in the text column; picker subtitle and Menu hint |
-| `TVSettingsView.swift:437-439` | Category changes recreate the pane at the top |
-
-Paired Profile stays out because it binds an Apple TV OS user; Samsung has no matching identity owner.
-Theme music and loop stay out because this client has no title-page audio playback owner.
-Use Device Settings stays out because tvOS follows Accessibility caption preferences, with no established Samsung bridge.
-Connection speed is shown and tested from Playback settings. Playback start sends the stored reading as `bandwidth_estimate_kbps` while it is fresh (see [Settings rows](../settings.md)). HDR is in [Settings rows](../settings.md). Dolby Vision is absent: Samsung exposes no Dolby Vision support check, and this client claims no Dolby Vision profile. Audio passthrough and the buffer controls stay out because AVPlay has no control for them (see [Streaming rows AVPlay cannot honour](../settings.md#streaming-rows-avplay-cannot-honour)). Playback lowers quality when it keeps buffering (see [Lower quality when buffering](../settings.md#lower-quality-when-buffering)).
-Watch Party stays behind #54, Diagnostics behind #218, and spoiler controls remain with #212.
-Show Next Up follows Auto-Play Next Episode in EPISODES and edits the timing consumed by the before-end player prompt.
-Its five choices and Use Profile Setting inheritance follow tvOS source `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`, `TVPlaybackSettingsView.swift:264-288,502-508` and `TVSettingsComponents.swift:72-78`.
-No upstream repository needs a write for these changes.
-
-Hidden Libraries no longer opens an editor.
-If a stored effective list is nonempty, Server offers Restore All Libraries, which writes an empty profile list through the existing confirmed Settings writer and refreshes the catalog on exit.
-The list has no local duplicate to clear.
-The recovery action disappears after confirmation; failures keep it available with the existing reload/retry path.
-Accounts covers server management, so the duplicate Manage Servers row is hidden when Accounts is available.
-
-Re-check on the other Mac: all four rail selections, profile/version placement, General top/bottom and descriptions, Playback groups and every picker, Subtitles with metadata AI enabled/disabled and profile/device appearance, outline off/on, Reset cancel/confirm, Server Accounts return and legacy library recovery, Privacy Done/Back, long-pane scrolling, category reset, and modal open/close without background movement.
-Use the same data, focus, viewport and scroll state at native 1920×1080; record remote movement and identify the newly signed package and installed assets.
-No simulator, TV, signed package, live server or native comparison ran for this follow-up.
-
-## Settings reference and remaining parity gates (#104)
-
-Reference: `Silo-Server/silo-apple` at `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`.
-These are source observations, not verification of an installed Apple build.
-All Apple paths below are relative to `iosApp/iosApp/`.
-Tizen retains its existing SettingsState, session authority, launch preference and browse focus owners.
-No server or Apple source changes are required by this supported subset.
-
-| Apple source | Rows, values and ownership | Tizen candidate |
-| --- | --- | --- |
-| `tvOS/Screens/Settings/TVSettingsView.swift:141-225` | 490-point rail, 52-point gap; profile card, General, Playback, Subtitles, conditional Diagnostics, Server, Sign Out, Silo version | Profile card shows the active profile and account line; General, Playback, Subtitles and Server are present; Diagnostics stays out until #218; Sign Out confirmation and package version are present |
-| `tvOS/Screens/Settings/TVGeneralSettingsView.swift:23` | APPLE TV USER: Paired Silo Profile; PROFILE AT LAUNCH: Profile Selection | Launch picker offers Automatic and Every Time through the existing protected launch owner; no Apple TV OS user pairing |
-| `Shared/ProfileLaunchBehavior.swift:5` | Automatic, Every Time, After 1 Hour, After 12 Hours | All four choices use the existing protected ProfileLaunch owner; Automatic uses the last profile on Samsung because there is no Apple TV OS user pairing. |
-| `tvOS/Screens/Settings/TVGeneralSettingsView.swift:166` | TITLE PAGES: Show Title Art, Apply to All Devices, each On/Off | Existing title-art owner and profile/device reconciliation retained |
-| `tvOS/Screens/Settings/TVGeneralSettingsView.swift:50-126` | THEME MUSIC: Play Theme Music, Loop Theme Music; SYNC SOURCE: Use Synced TV Settings; CARDS & POSTERS: Show Advisory Age, Poster Size, Use Profile Default; TOP MENU: Show Audiobooks | Advisory age and TV-family poster editing are supported, including clearing older device overrides and Use Profile Default before the footer. Theme music has no playback owner. Show Audiobooks remains with open PR #230, which supplies the navigation switch and audiobook player. |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:66` | QUALITY: Resolution, Maximum Bitrate, conditional Lower quality when buffering and learned limit Reset; CONNECTION: Connection Speed and test | Resolution, Maximum Bitrate and Connection speed are supported. Test speed measures on press and shows the stored reading. Playback start sends `quality_preference`, `bandwidth_cap_kbps` and a fresh stored `bandwidth_estimate_kbps` (`PlayerViewModel.swift:6214-6218`, `PlaybackSessionBridge.swift:1180-1191`); Apple's automatic background tests are not run. The Lower quality when buffering row and the learned-limit Reset row are supported, and playback follows the mode the row saves (default Automatically) and lowers quality as Apple does. See [Settings rows](../settings.md). |
-| `Networking/SiloQualityPresets.swift:146` | Resolution order Auto, 4K, 1080p, 720p, 480p; bitrate caps 200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500 kbps plus No limit | Same named choices, filtered by server support. A stored cap outside that list stays in descending order and selected. Caps under 1000 kbps use Apple's kbps label. The picker has no separate kbps field |
-| `tvOS/Screens/Settings/TVSettingsComponents.swift:44` | Audio Language from server options; device Use Profile Setting first; legacy No preference retained only when stored | Device scope, legacy null and individual inherited resets retained; language display currently follows server tags |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:174` | STREAMING: Audio Language, HDR, Dolby Vision, Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing, Deinterlacing Field Rate | Audio Language and HDR are offered when the server contract includes the device-only HDR key. Dolby Vision is absent: Samsung exposes no Dolby Vision support check, and this client claims no Dolby Vision profile. Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay omitted, each with its AVPlay limit in [Streaming rows AVPlay cannot honour](../settings.md#streaming-rows-avplay-cannot-honour). The HDR caption follows `streamingFooterText` after the section (`TVPlaybackSettingsView.swift:248-258`), without the Dolby Vision clause or the sentences for rows this pane does not show. See [Settings rows](../settings.md). |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:262-290` | EPISODES: Auto-Play Next Episode, Show Next Up, Skip Intros, Skip Credits | All four rows are consumed by PlaybackController. Show Next Up offers At end, 10 seconds, 30 seconds, 1 minute and 2 minutes before end, with device override and profile inheritance. |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:297-312` | SPOILERS: Blur unwatched episode images, Hide unwatched episode descriptions; profile-wide, revision 17, only unstarted episodes | Remains with #212; no switches are exposed before its episode consumers exist. |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:329-343` | VIDEO and AUDIOBOOKS: Skip Back and Skip Forward; 5, 10, 15, 30, 45, 60, 90 seconds | VIDEO editors restored after the 6 November full-scroll comparison confirmed the running Apple app has these rows. Playback reads server effective intervals (10 s back / 30 s forward defaults); audiobook rows remain with the player in open PR #230. |
-| `tvOS/Screens/Settings/TVPlaybackSettingsView.swift:408-429` | RESET: Use Profile Settings with confirmation | Clears only supported device playback overrides through the existing confirmed writer, preserving profile defaults and profile-owned video intervals. Stops on a failed confirmation; Retry reconciles the failed row and resumes the remaining reset. |
-| `tvOS/Screens/Settings/TVSubtitleSettingsView.swift:37` | PROFILE: Language, Behavior, Show Forced Subtitles; conditional METADATA: Metadata Language | Language, Behavior and Show Forced Subtitles write `playback.subtitle_language`, `playback.subtitle_mode` and `playback.show_forced_subtitles` at profile scope. Metadata Language is offered in Subtitles under METADATA only when metadata AI is enabled, matching `TVSubtitleSettingsView.swift:18-20,85-102`; it invalidates catalog caches after confirmed changes |
-| `tvOS/Screens/Settings/TVSubtitleSettingsView.swift:103` | APPEARANCE: preview, Use Device Settings, Only on This Apple TV, Font Size/Family/Color, Text Opacity, Text Outline, Outline Color, Background Style/Opacity/Color, Position, Reset Appearance confirmation | Preview, scoped appearance writer, renderer and Reset are present. Use Device Settings stays omitted: Samsung has no established equivalent of the tvOS Accessibility caption bridge |
-| `tvOS/Screens/Settings/TVDiagnosticsSettingsPane.swift:12` | FEATURE STATE Status/Destination; CAPTURE Send Reports To, Debug Logging, Crash Reports (Ask/Always/Never); pending reports, Send Diagnostics Now, sent history, None empty states | No Diagnostics pane: needs consent, redaction, capture, queue, expiry, destination and upload owners (#137) |
-| `tvOS/Screens/Settings/TVSettingsView.swift:499-561` | ACTIVE SERVER Server/Address, Accounts; ABOUT App Version, Privacy Policy, Acknowledgements | Server/version info, Accounts owns server management, so its duplicate Manage Servers row is omitted. Privacy QR and credits are present; Watch Party remains gated by #54 |
-| `tvOS/Screens/Settings/TVSettingsView.swift:267-281` | Sign Out invokes the shared account sign-out owner | Samsung retains its signed-recheck-passed confirmation: `Sign out of {account} on {server}?` with Cancel focused and Sign Out. The message matches Who's watching: this server will be removed when it is the only saved account, and it stays saved when another account remains. An unreadable account list says the server stays |
-
-Apple focus follows `docs/tvos-focus.md:131`: Up/Down stays in the current pane; focus on a category previews its pane; Right/OK enters the first available control; Left/Back returns to that category.
-Back from a picker restores its invoking row; cancelling Sign Out restores Sign Out; Back from the rail exits Settings to Home.
-Tizen retains its existing return-to-origin browse behavior, which requires native comparison with Apple's Home exit.
-Apple load binds the active profile and refreshes playback/profile values (`Screens/Settings/SettingsViewModel.swift:330`).
-General independently refreshes title art, theme music and interface preferences; Playback independently refreshes intervals, spoilers and connection state.
-Read/write errors and held changes appear as footers with Retry/Discard; unavailable features are gated and empty report lists read None.
-Tizen keeps its existing Loading settings/Saving, error, Reload settings and uncertain-write Check and retry states; it does not copy Apple's held-write queue.
-
-### Native capture sequence (not executed)
-
-Use the same server, profile, content and saved values on both clients.
-Record the installed Apple build separately from the source revision above.
-Build/sign the Samsung WGT, record its hash and verify the loaded assets before capture.
-Capture actual dimensions without resizing; record remote movement for focus and timing.
-
-1. Open the avatar/profile menu, select Settings, and capture entry on General.
-   Capture Profile Selection with Automatic selected, then Every Time; Back must restore the row.
-   Capture Show Title Art and Apply to All Devices with identical booleans.
-2. Focus Playback in the rail, capture its preview, press Right and capture Resolution focused.
-   Open Resolution and capture Auto, 4K and 1080p; cancel and capture the restored Resolution row.
-   Open Maximum Bitrate and capture 6 Mbps and No limit; use a stored uncommon cap for a separate capture.
-3. Use profile defaults Audio=fr, Resolution=1080p and bitrate=6000, with device overrides Audio=yue-Hant-HK, Resolution=480p and bitrate=null.
-   Capture each picker and its inherited reset; clear each override and verify the profile values did not change.
-   Capture VIDEO Skip Back=10 seconds and Skip Forward=30 seconds, then 15/45 and the restored focus after each choice.
-   Focus Subtitles. Capture Language None, Behavior Auto and Show Forced Subtitles On, then a changed value and Back to that row.
-4. Disconnect the server before opening Settings and capture loading, failure and Reload settings; reconnect and capture recovery.
-   Separately interrupt a fake/test write response and capture Check and retry without a duplicate write.
-   Never change production preferences solely to obtain this proof.
-5. Capture Server/version and Acknowledgements; scroll Down/Up, Back and verify row restoration.
-   Capture the profile card name and account line, and the version line under the rail.
-   Focus Sign Out, open the confirmation with Cancel focused, Cancel, and capture Sign Out focused again.
-   Select the profile card and verify the existing profile picker; do not confirm sign out on a live account for this capture.
-
-Native comparison, signed-package proof and physical-TV acceptance remain outstanding.
-This source candidate does not close #104, #137 or #177.
+Settings rows and AVPlay streaming exclusions live in [docs/settings.md](../settings.md) (see [Streaming rows AVPlay cannot honour](../settings.md#streaming-rows-avplay-cannot-honour) and [Lower quality when buffering](../settings.md#lower-quality-when-buffering)). This page covers episode completion, quality and seek controls, lifecycle recovery, and saved playback defaults.
 
 ## Manual episode completion
 
 Issue #12's bounded first slice offers Play next and Back only after a natural episode EOF.
 PlaybackController retires the transport and waits for an in-flight progress request before sending STOP with a newer sequence and the last observed source position.
 The adopted plan's effective file and source timeline identify the completed edition; unknown or different durations and early EOF never manufacture a full-duration sample.
-Uncertain STOP answers retry the identical installation ID, stop ID, sequence, position and body, preserving Retry-After.
-An explicit Retry after exhausted transient retries retains that same request.
+At an episode's natural end the STOP is sent once, as Apple's `PlaybackSessionBridge.stopSession` sends it: a failure that may clear (a timeout, no answer, a rate limit or a server error) is left to the background and the advance goes on, so a slow server no longer keeps a known next episode from starting (#709). The background resend repeats the identical installation ID, stop ID, sequence, position and body, waits at least its first retry delay and honors Retry-After, so the old session still ends once the server answers; otherwise the server times it out. A refusal or an expired session still ends the advance.
 An expired session during final progress or STOP reporting offers Back without an unusable Retry.
 Fresh watch-read failures remain retryable after STOP is confirmed.
 EOF during a pending track or quality change is retained when a refusal keeps the original transport; adopting a replacement discards that predecessor's EOF.
 Authorization, installation and administrator refusals cannot create a successor session.
 
-A valid STOP receipt is a teardown barrier, not proof that progress or watch-history side effects succeeded.
+A valid STOP receipt, or a STOP left to the background after a failure that may clear, lets the advance go on; neither is proof that progress or watch-history side effects succeeded.
 Fresh watch reads follow the receipt and precede any next offer.
-The panel says Playback ended even when fresh played state remains false or the contract's optional progress is absent.
+The panel says End of playback even when fresh played state remains false or the contract's optional progress is absent.
+Its words are Apple TV's (`PlayerView`, under the `upNext.*` keys), in every shipped language. While the session ends and the next item is worked out it reads Playing Next (Up Next at Random in a Shuffle) over Finding the next episode (Picking at random); Apple has no separate stage for ending the session, so the TV's old Ending playback… is gone. With nothing to follow it reads Finished over End of playback and No next episode is available. (in a Shuffle, Nothing else in this shuffle can play.). A failed lookup reads Couldn't load the next episode. Go back to choose something else., Apple's wording for a card with no On Deck row. A failure while the session ends (the final progress or STOP), before anything is looked up, reads Playback progress could not be recorded. (Apple's `errors.apple.playback.invalidSample`) instead.
 No separate mark-watched write is sent.
 Failed or malformed reads show Retry and Back rather than reporting exhaustion or a saved state.
 
@@ -125,23 +26,23 @@ Regular sequences skip specials, while explicitly playing specials continues onl
 The next title needs both an authorized episode row and a fresh permitted readable version.
 Watched episodes are still eligible; confirmed partial progress may resume, otherwise START receives explicit numeric zero.
 Play next uses the existing planner with a fresh attempt and no previous file's audio or edition selection.
-Movies return to Browse after confirmed teardown; exhausted episode sequences retain a focusable Back action.
+Movies and exhausted episode sequences open Up Next with On Deck offers (requiring manual selection) and a focusable Back action.
 
 Back, backgrounding, teardown and authority changes cancel continuation and fence late answers.
 Remote focus stays reachable during finalization, resolution, failure and exhaustion; focus movement sends no reads.
-Autoplay adds a ten-second countdown with Cancel when the profile's autoplay setting is on; see [Series autoplay](series-autoplay.md).
-There is no pre-EOF prompt, saved autoplay editor, credits policy, queue or cross-title fallback.
+Pre-end Up Next prompts, Show Next Up timing, 10 s autoplay countdowns, and On Deck behavior are documented in [Series autoplay](series-autoplay.md).
 
 The source contracts are pinned to [server cc85149](https://github.com/Artic0din/silo-server/tree/cc8514943289045e7b9f7ac8d36d4968bfe93926), including WatchDetail, WatchFileVersion, Season, Episode and PlaybackMutation in OpenAPI and the stop finalization handler.
-Behavioral tests use synthetic server data and fake AVPlay.
-This source candidate does not close issue #12: signed packaging, real-TV movie EOF and cross-episode playback, AVPlay teardown/start recording, Tizen 8.0 hardware and store acceptance remain parent-owned validation gates.
+Behavioral tests use synthetic server data and fake AVPlay; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed-package and physical-TV gates ([#12](https://github.com/Artic0din/Auger-Tizen/issues/12)).
 
 ## Quality and seek controls
 
 Playback Settings also offers separate video rewind and fast-forward intervals.
 The profile-only remote keys are `player.video_skip_back_seconds` and `player.video_skip_forward_seconds`, introduced in settings manifest revision 9.
 Their numeric choices are 5, 10, 15, 30, 45, 60 and 90 seconds, with inherited defaults of 10 and 30 seconds.
-The controls use server labels, display explicit and effective values, and reset one key with DELETE.
+The controls show each interval as Apple does (`player.seekInterval.choice`: "10 seconds", "10 Sekunden", Arabic digits in Arabic) instead of the manifest's English label, with the catalog's help lines (`settings.skipIntervals.footerVideo` for Video, Android TV's key, because Apple TV's `footerVideoAppleTv` names the Siri Remote and a Samsung remote has arrow keys; `footerAudiobook` for Audiobooks); they display explicit and effective values. A skip picker lists only the seven choices, with no row to clear a stored one, as Apple TV's does (`TVPlaybackSettingsView`, silo-apple 648091a7, line 556); the other pickers keep their reset row, which deletes the key.
+A skip picker opens on the stored choice, or on the first when that choice is not offered, as `TVSettingsPickerSheet.focusSelection` does (silo-apple 648091a7, `TVSettingsComponents.swift` lines 837-839).
+The audiobook pair, `player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds`, has the same shape and is listed under Audiobooks beneath the video pair, as on Apple TV. The audiobook player is not built yet, so nothing reads these values at playback.
 They reuse Settings' pre-write read, post-write confirmation, uncertain-answer reconciliation, busy lock, Retry-After and profile authority fences.
 
 The controller discovers the supported pair before each start and carries it in PlaybackView to buttons, repeated Left/Right previews and dedicated Rewind/Fast Forward keys.
@@ -229,8 +130,8 @@ The existing Skyline tokens and Chrome 108-compatible list layout are reused.
 
 ## Saved Playback settings
 
-Profile menu → Settings → Playback offers Resolution, Maximum Bitrate, Audio Language, Skip Back and Skip Forward.
-General → Hidden libraries retains the same owner and readback behaviour.
+Profile menu > Settings > Playback offers Resolution, Maximum Bitrate, Audio Language, Skip Back, and Skip Forward (plus Lower quality when buffering, conditional Learned limit, Connection speed, HDR, Auto-Play Next Episode, Show Next Up, Skip Intros, Skip Credits, Spoilers, and Reset; see [docs/settings.md](../settings.md)).
+Hidden Libraries no longer opens a Settings editor: when the stored effective list is nonempty, Settings > Server offers Restore All Libraries, which writes an empty profile list and refreshes the catalog on exit.
 Quality choices are filtered by the supported server manifest and use Apple's order and labels: Auto, 4K, 1080p, 720p and 480p.
 Deprecated Original and unfamiliar stored strings are displayed as current values, without becoming new choices or being rewritten during a read.
 New profiles inherit Auto and no cap.
@@ -251,16 +152,6 @@ Writes are never automatically resent; uncertain answers reconcile the explicit 
 Profile authority changes discard late answers and remove the screen.
 Unsupported capabilities, platforms, schema shapes or profile scopes do not expose these controls.
 
-The pinned [Apple TV Settings](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift) separates resolution and bitrate into two pickers.
-Its [quality presets](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Networking/SiloQualityPresets.swift) offer discrete bitrate choices and keep a stored cap that is not in the list.
-This Tizen picker matches that list.
-The #104 scope candidate follows [Apple's device selection owner](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Screens/Settings/SettingsViewModel.swift#L742) and the pinned server revision 24 scopes.
-Native Apple/Samsung comparison remains pending; this candidate does not close #104 or establish Settings parity.
-The binding [Skyline guide](https://github.com/Silo-Server/silo-apple/blob/148d5d70f8b8ce982a827fead2b16f8de40f0f57/docs/skyline-design-guide.md) has SHA-256 `2d42d292e01ab6ee539278b63c286756fc432edf876a9286a33c9e853672cac2`.
-The selected fixture definitions remain an exact subset of the pinned public manifest; provenance is recorded in the contract README.
-
-Native tests write and read back Settings, then start the real PlaybackController repeatedly and assert exact quality and bandwidth request fields.
-The player reads these defaults before every start and publishes the confirmed seek pair through its existing view.
-Native fake-server tests and synthetic desktop captures do not prove real server playback, Chromium 108 rendering, Tizen software emulator behaviour or Samsung TV playback.
-Device override editing, automatic subtitle resolution, trickplay and playback-planner redesign remain outside this slice.
-Issue 29 and whole-app acceptance remain incomplete.
+The pinned [Apple TV Settings](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/tvOS/Screens/Settings/TVPlaybackSettingsView.swift) separates resolution and bitrate into two pickers, using discrete presets from [SiloQualityPresets.swift](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Networking/SiloQualityPresets.swift) and [SettingsViewModel.swift:742](https://github.com/Silo-Server/silo-apple/blob/9723df007baa8e933f5615cc14b13e99a6ee1ea1/iosApp/iosApp/Screens/Settings/SettingsViewModel.swift#L742).
+The selected fixture definitions remain an exact subset of the pinned public manifest; see [src/contracts/v2/README.md](../../src/contracts/v2/README.md).
+Native tests verify write/readback and exact playback start request fields; desktop tests do not prove real server playback, Chromium 108 rendering, or physical-TV behavior ([docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md)).

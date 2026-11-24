@@ -5,7 +5,7 @@ import type { Browser } from "playwright";
 import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 import { assertPressedLook } from "./support/pressed.ts";
 
 let browser: Browser;
@@ -193,7 +193,12 @@ railTest("movie sections follow Apple TV's order and lower-rail radii", async (t
     await tv.page.locator('.box-set-row [data-focus="box-set-explore"]').waitFor();
     await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
     assert.deepEqual(await headings(tv), ["Cast & Crew", "Trailers & More", "Harry Potter Collection", "Related Movies", "Details"]);
-    const radius = (selector: string) => tv.page.locator(selector).first().evaluate(node => getComputedStyle(node).borderTopLeftRadius);
+    // A late answer repaints the rails; a style read of a node that has just been replaced reports an empty value, so read until it holds one.
+    const radius = async (selector: string): Promise<string> => {
+        let value = "";
+        await tv.eventually(async () => { value = await tv.page.locator(selector).first().evaluate(node => getComputedStyle(node).borderTopLeftRadius).catch(() => ""); return value !== ""; }, `${selector} radius`);
+        return value;
+    };
     assert.equal(await radius(".box-set-row .browse-card:not(.skyline-explore) .browse-art"), "12px");
     assert.equal(await radius(".box-set-row .skyline-explore .browse-art"), "12px");
     await tv.page.locator(".details-facts-table").focus();
@@ -311,6 +316,9 @@ railTest("Cast and Related always enter on their first card", async (tv, details
     const people = tv.page.locator(".details-people [data-focus]");
     await people.nth(1).waitFor();
     await tv.page.locator('[data-detail-section="related"] .browse-card').nth(2).waitFor();
+    // A late answer reorders or replaces the rails, so the first card read below would not be the one a press lands on; wait for them to settle.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Details answers delivered");
+    await afterPaint(tv);
     await people.nth(1).focus();
     await tv.remote(38);
     assert.equal(await tv.page.locator(".details-people :focus").count(), 0, "Up leaves the cast rail");

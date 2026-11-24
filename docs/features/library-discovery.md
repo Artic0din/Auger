@@ -3,7 +3,8 @@
 Movies and Series each keep one selected library using the existing server/profile storage key.
 Recommended uses Home's shared Skyline backdrop, marquee and preference-aware media rows.
 Featured rows and rows without supported video destinations are omitted; headings are not focus targets, and Explore All opens the existing library-scoped section catalog.
-Recommended omits collections; Collections is a separate destination, matching Apple TV.
+Recommended omits the Collections tab's collections; Collections is a separate destination, matching Apple TV.
+A row the server marks `collection_posters` is the exception: it is an ordinary Recommended shelf, described under Rows of collections.
 The top-bar cascade provides every supported library destination without a duplicate mode strip.
 Hero enrichment uses the existing bounded queue after accepted loads and cached re-entry, never on focus movement.
 Known artwork capabilities size the initial section read; a late improving answer rereads sections only and merges artwork by retained section/card identity.
@@ -12,7 +13,7 @@ Shared row cards reserve 20px above their buttons during edge reveal, covering t
 The existing scroll owner reads that CSS scroll margin; other controls keep its 12px minimum.
 Browse is a separate whole-library Movies/Series grid, matching the split in Apple's `TVLibraryTypeTabView`.
 It requests 100 cards at a time and prefetches when a card in the last eight rows becomes visible.
-The seven video sorts, typed facet groups and transient A–Z prefix share one query; moving focus alone sends no request.
+Apple's sorts for the library's media type (up to 17 for a series library, listed in [Settings](../settings.md)), typed facet groups and transient A–Z prefix share one query; moving focus alone sends no request.
 Sort applies immediately; Filter edits a draft, applies through Done or Back from its root, and returns from a facet to the facet list on Back.
 Committed sort and filters are remembered per server, profile and library while Preserve sort & filters is enabled; the prefix is never persisted.
 The selected destination is not part of that memory. A new visit opens Recommended, so a saved Browse sort cannot replace the server shelves.
@@ -76,10 +77,7 @@ After relaunch, CDP read-back of the loaded JavaScript and CSS matched the signe
 Inter substitutes for SF Pro; drawn SVGs replace SF Symbols, CSS scale/shadow replaces native parallax/specular focus, and the dark panel gradient approximates the tvOS material.
 The focused Sort direction stays readable instead of copying Apple's low-contrast label.
 The historical Apple Filter frame leaves focus on Search behind the panel; Tizen keeps focus inside the modal instead of reproducing that escape.
-Existing top navigation and the six library mode controls are retained; their complete Apple composition belongs to #94 and is not claimed by this Browse delivery.
-The locked-desktop run used CDP focus emulation in Samsung's software simulator.
-This does not prove native visibility behavior, packaged browser-origin access, physical Tizen 8 behavior or successful AVPlay playback.
-Physical-TV testing remains deferred until simulator parity is complete.
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for simulator runtime limits and physical-TV gates.
 
 ## Expanded-row simulator evidence
 
@@ -128,6 +126,16 @@ Paired native captures and the reported collection's actual artwork request rema
 The existing session/operations boundary is retained; the server web Shuffle module is a thin request wrapper and offers no smaller reusable browser owner here.
 The API fixtures and consumed Shuffle wire fields are pinned to server commit `cc8514943289045e7b9f7ac8d36d4968bfe93926`.
 Optional test screenshots require both `DISCOVERY_CAPTURE` and `DISCOVERY_OUTPUT`; ordinary tests create no evidence directory.
-Desktop fake-server tests exercise discovery, authentication authority and the existing detail/player handoff.
-They do not establish Samsung simulator, actual Tizen 8 Chromium 108, packaged Tizen or physical TV compatibility.
-Home and whole-app parity remain outside this slice, and issue 28 remains open for parent review and remaining acceptance.
+Desktop fake-server tests exercise discovery, Authority, and detail/player handoff; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for simulator, Chromium 108, and physical-TV proof gates.
+
+## Rows of collections
+
+A Home or library row with `section_type` `collection_posters` shows collections instead of titles (silo-apple `TVCollectionsRow`, `TVSkylineSectionFeed` and `SectionCollectionCard` at 6eea7cf7; silo-server `docs/catalog-api.md`, Rows of collections).
+Its `collections` cards decode leniently: a card with an unknown source, or a server collection with no `library_id`, is left out and the rest of the row stays; a malformed backdrop leaves the card without one.
+The row keeps the server's order, is never featured, and shows every card it lists: `item_limit` does not apply.
+It has no Explore all card, because each collection is its own page, and `source=section` answers it with an empty page.
+A row left with no cards is omitted like any empty row, and a library tab's Movies or Series narrowing, Home's card removal and the artwork upgrade pass it through unchanged.
+Cards are the Collections tab's poster card at the title posters' size, keyed by source and id so Back restores the card.
+A focused card previews in the Home hero with its backdrop when the server sent one, else its poster. It is no title, so the hero reads no detail for it and ends the previous card's pending read.
+A server collection opens in its library (the page's own on a library page, so the tab's narrowing carries over); a personal collection opens its own page, read by collection id with no library.
+The hero's meta line for a focused collection is its item count (`collections.itemCount`) and, for another profile's shared collection, `by Name` (`collections.card.byOwner`, silo-apple `CollectionOwnerName`); it has no synopsis. The owner is named from this login's profile list, read once through the profiles adapter when rows that need it are shown (not on focus), and the shown hero is drawn again when it lands. The acting profile's own collection, a server collection and an owner missing from the list have no by line. A failed list read is not retried until the screen is opened again.

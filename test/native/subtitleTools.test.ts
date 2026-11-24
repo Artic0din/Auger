@@ -7,7 +7,11 @@ import { SubtitleDisplay, subtitleSettingsScope } from "../../src/player/subtitl
 import { SubtitleSearch } from "../../src/player/subtitleSearch.ts";
 import { decodeProviderStatus, decodeSearchResponse } from "../../src/contracts/v2/subtitleSearch.ts";
 import { connected, signIn } from "./support/harness.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { fixture, problem } from "./support/fakeSilo.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 
 const FILE = "42";
 const PROVIDERS = "/subtitles/providers/status";
@@ -53,6 +57,15 @@ test("delay, size, position and appearance use Apple's picker values and write s
     assert.equal(delayLabel(0), "0 ms");
     assert.equal(delayLabel(100), "+100 ms");
     assert.equal(delayLabel(-200), "-200 ms");
+    // TVPlayerInfoHUD.swift:979-982 (silo-apple main 9dabb62): LocaleFormat.integer, in the shown language's digits, never grouped (#695).
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(delayLabel(0), "٠ ms");
+        assert.equal(delayLabel(2500), "+٢٥٠٠ ms");
+        assert.equal(delayLabel(-200), "\u061C-٢٠٠ ms", "the Arabic letter mark keeps the minus on the number");
+    } finally { setAppLanguage(null); }
+    assert.equal(delayLabel(2500), "+2500 ms");
+    assert.equal(delayLabel(-0), "0 ms", "a negative zero (a delay stepped back to zero) shows no minus");
     const options = delayOptions(2500);
     assert.equal(options[0]?.id, "-2000");
     assert.equal(options.at(-2)?.id, "2000");
@@ -77,7 +90,7 @@ test("delay, size, position and appearance use Apple's picker values and write s
 test("language rows float the preferred language and sort the rest by name", () => {
     const choices = languageChoices([{ code: "fr", label: "French" }, { code: "en", label: "English" }, { code: "ja" }], "en");
     assert.deepEqual(choices.suggested.map(choice => choice.code), ["en"]);
-    assert.equal(choices.suggested[0]?.hint, "Preferred");
+    assert.equal(choices.suggested[0]?.hint, "subtitleSearch.preferred");
     assert.deepEqual(choices.other.map(choice => choice.code), ["fr", "ja"]);
     assert.equal(choices.other.find(choice => choice.code === "ja")?.label, "Japanese");
 });
@@ -511,4 +524,35 @@ test("the settings contract the Settings screen accepts still loads subtitle pre
     assert.ok(paths.includes("/settings/subtitle-appearance/effective"));
     assert.ok(paths.includes(`/settings/values/effective?keys=${SYNC}`));
     display.destroy();
+});
+
+// SubtitleSearchMenu.swift:320 and PlayerViewModel.swift:9095 (silo-apple main 71a3beb9): the adding line and the not-set-up
+// reason read subtitleSearch.adding and subtitleSearch.notSetUpShort. They are worded when the view is read, so a language
+// file that lands later redraws them.
+test("the not-set-up reason and the adding line read in the shown language, and follow a language change", async () => {
+    const h = await signed();
+    const search = new SubtitleSearch(h.core.session, FILE, () => true, () => undefined);
+    h.fake.script(PROVIDERS, { status: 200, body: { ...available, enabled: false, state: "not_configured", providers: [] } });
+    await search.refresh();
+    assert.equal(search.view.unavailableReason, "Not set up on this server", "English is unchanged");
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(search.view.unavailableReason, "Auf diesem Server nicht eingerichtet");
+        await search.pick("en");
+        assert.equal(search.view.message, "Auf diesem Server nicht eingerichtet");
+        const adding = new SubtitleSearch(h.core.session, FILE, () => true, () => undefined);
+        h.fake.script(PROVIDERS, { status: 200, body: available });
+        h.fake.script(SEARCH, { status: 200, body: { results: [hit], warnings: [] } });
+        await adding.refresh();
+        await adding.pick("en");
+        const held = h.fake.hold(DOWNLOAD);
+        const pending = adding.download(hit.provider + ":" + hit.id);
+        assert.equal(adding.view.status, "Untertitel wird hinzugefügt …");
+        setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+        assert.equal(adding.view.status, "جارٍ إضافة الترجمة…", "a later language rewords the line already shown");
+        held.release();
+        await pending;
+        adding.destroy();
+    } finally { setAppLanguage(null); }
+    search.destroy();
 });

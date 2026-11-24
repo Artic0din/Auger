@@ -12,6 +12,8 @@ import { mountAccounts, type AccountsScreen } from "./ui/accounts.ts";
 import { cachedBranding } from "./ui/brandingCache.ts";
 import { AccountDirectory, AccountVault, type SavedAccount } from "./session/accounts.ts";
 import { openSecretStore } from "./session/secretStore.ts";
+import { onCatalogLoaded, translate } from "./i18n/translate.ts";
+import { lateRedraw } from "./ui/selectRelease.ts";
 
 export interface AppOptions {
     readonly core: SessionCoreDeps;
@@ -28,6 +30,8 @@ interface ProfileRoute {
     readonly sessionExpired?: boolean;
     /** The sign-in was opened from Change Account, so Back returns there. */
     readonly fromAccounts?: boolean;
+    /** Change Account's Add account: a new account, not a saved one to renew (TVLoginView.signInHeadline). */
+    readonly addingAccount?: boolean;
 }
 
 export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
@@ -37,6 +41,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     let player: PlayerScreen | undefined;
     let profile: ProfileHandoff | undefined;
     let exitDialog: ExitDialog | undefined;
+    let reconcileStartup: (() => void) | undefined;
     let destroyed = false;
     let activeServer: ConnectedServer | undefined;
     let accounts: AccountsScreen | undefined;
@@ -81,7 +86,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             try { live.accounts.directory.select(account.id); }
             catch {
                 startup = new ScreenHost(root);
-                const controls = [button("retry", "Retry", () => { startup?.destroy(); startup = undefined; showSignIn(notice, chooseServer, account, address, pickerRequested, route); }), button("accounts", "Back to profiles", () => { startup?.destroy(); startup = undefined; showProfiles(live, { pickerRequested: true }); })];
+                const controls = [button("retry", translate("common.retry"), () => { startup?.destroy(); startup = undefined; showSignIn(notice, chooseServer, account, address, pickerRequested, route); }), button("accounts", translate("signIn.backToProfiles"), () => { startup?.destroy(); startup = undefined; showProfiles(live, { pickerRequested: true }); })];
                 startup.show({ name: "account-selection-error", content: [el("h1", "signin-title", "Could not save the account selection"), actions(controls)], controls, focus: "retry", back: undefined });
                 return;
             }
@@ -95,6 +100,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             ...(account ? { username: account.username } : {}),
             onChangeAccount: () => showAccounts(),
             ...(route?.returnToAccounts ? { returnToAccounts: true } : {}),
+            ...(route?.addingAccount ? { addingAccount: true } : {}),
             ...(route?.sessionExpired ? { sessionExpired: true } : {}),
             ...(pickerRequested || route?.fromAccounts || route?.returnToAccounts ? { onCancel: () => showAccounts() } : {}),
             ...(chooseServer ? { chooseServer: true } : {}),
@@ -169,6 +175,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         const adding = account === undefined;
         showSignIn(undefined, adding && address === undefined, account, address, current, {
             fromAccounts: true,
+            ...(adding ? { addingAccount: true } : {}),
             returnToAccounts: adding || account?.needsSignIn === true,
             skipRemembered: account !== undefined && !current,
         });
@@ -271,7 +278,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             player = undefined;
             options.exit();
             destroy();
-        }, () => { exitDialog = undefined; });
+        }, () => { exitDialog = undefined; window.setTimeout(() => reconcileStartup?.(), 0); });
     };
 
     const onVisibility = (): void => {
@@ -322,20 +329,34 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             else showSignIn(undefined, false, account);
         } catch {
             if (destroyed) return;
-            startup = new ScreenHost(root);
-            const controls = [button("retry", "Retry", () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
-                startup?.destroy(); startup = undefined;
-                activeCore = { ...activeCore, publicStorage: undefined, keyManager: undefined };
-                showSignIn();
-            })];
-            startup.show({ name: "accounts-storage-error", content: [el("h1", "signin-title", "Saved accounts unavailable"), el("p", "signin-text", "Your saved sign-ins have been kept. Retry, or sign in for this session."), actions(controls)], controls, focus: "retry", back: undefined });
+            const host = new ScreenHost(root);
+            startup = host;
+            const draw = (): void => {
+                const controls = [button("retry", translate("common.retry"), () => { void migrate(); }), button("continue", "Continue without saved accounts", () => {
+                    startup?.destroy(); startup = undefined;
+                    activeCore = { ...activeCore, publicStorage: undefined, keyManager: undefined };
+                    showSignIn();
+                })];
+                host.show({ name: "accounts-storage-error", content: [el("h1", "signin-title", "Saved accounts unavailable"), el("p", "signin-text", "Your saved sign-ins have been kept. Retry, or sign in for this session."), actions(controls)], controls, focus: "retry", back: undefined });
+            };
+            draw();
+            // A cold launch fetches the shown language while this draws, so the button is drawn again when the file lands (the focused control stays).
+            let landed = false;
+            const late = lateRedraw(() => exitDialog !== undefined, () => {
+                landed = false;
+                if (startup === host) draw();
+                else { stopCatalog(); reconcileStartup = undefined; }
+            });
+            const stopCatalog = onCatalogLoaded(() => { landed = true; late.arrived(); });
+            // Closing the exit dialog is no key release the redraw can wait for, so it asks again, after Cancel has put focus back.
+            reconcileStartup = () => { if (landed) late.arrived(); };
         }
     };
     void migrate();
     return { destroy };
 }
 
-function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
+export function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
     const container = el("div", "signin");
     root.appendChild(container);
     const host = new ScreenHost(container);
@@ -344,7 +365,7 @@ function unavailablePlayer(root: HTMLElement, back: () => void): PlayerScreen {
         container.remove();
     };
     const close = (): void => { destroy(); back(); };
-    const control = button("back", "Back", close);
+    const control = button("back", translate("common.back"), close);
     host.show({ name: "playback-unavailable", content: [el("h1", "signin-title", "Playback unavailable"), actions([control])], controls: [control], focus: "back", back: close });
     return { destroy };
 }

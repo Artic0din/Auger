@@ -1,7 +1,6 @@
 # AI subtitles
 
-Issue [#65](https://github.com/Artic0din/silo-tizen/issues/65) stacks on `feat/64-subtitle-appearance` at `5dbb374720f9b1ceb6e9747b8377514f2c25fc0b`, as approved, because completed text tracks require that renderer.
-No server changes are required.
+In-player AI subtitle translation and transcription ([#65](https://github.com/Artic0din/Auger-Tizen/issues/65), [#522](https://github.com/Artic0din/Auger-Tizen/issues/522)). Completed text tracks render through the app subtitle overlay ([Profile subtitles](subtitle-appearance.md)).
 
 The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes these profile-scoped operations:
 
@@ -12,8 +11,29 @@ The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes 
 | `createSubtitleAIJob` | `POST /subtitles/ai/translate` | Send once with file, kind, source index/language, target language and source position. |
 | `getSubtitleAIJob` | `GET /subtitles/ai/jobs/{job_id}` | Poll pending/running jobs every two seconds; verify job, file, kind, source index and language identity. |
 
-The selected text subtitle is the translation source; the selected audio track is the transcription source.
-Translation targets come from the pinned settings contract's `playback_subtitle_languages` option set.
+The Subtitles tab has one OPTIONS row, AI Subtitles…, that opens a language menu ([#522](https://github.com/Artic0din/Auger-Tizen/issues/522), `SubtitleTranslateMenu` in silo-apple `main`).
+The viewer picks a language and the player picks the method, as Apple's `route(to:)` does:
+
+1. **Translate** an existing text subtitle in another language (or with none known): an English one first, then the shown, then the first. The track's server index (`combined_index`) is `source_index`.
+2. Otherwise **transcribe** the spoken audio: the selected audio track, else the default, else the first (`source_index` is its server ordinal, `-1` for the server's default when none is known). It is a plain `transcribe` when the language is the spoken one, else `transcribe_translate`.
+3. With translation off and the spoken language unknown, a Spoken language row runs a plain transcription in whatever language the server detects.
+
+The row shows only when the server offers the capability and the file has something to run: a text track with translation on, or audio with transcription on.
+Languages come from the settings contract's `playback_subtitle_languages` option set; the profile's preferred language and the spoken language lead as Suggested.
+With translation off, the spoken language is suggested as Original language even when the option set does not list it: its row only transcribes, which needs no target, and the quota line counts it. With translation on, an unlisted language is not offered, since its row could choose a translation the server cannot serve.
+The audio comes from the catalog's versions read. Once that read has failed, or answered without the playing file, the plan's selected audio is used with its language unknown, so transcription still runs; while it loads, no audio is assumed, so a spoken language is never mistaken for another. A running or failed job's panel stays reachable meanwhile, so an Audio Retry never hides its Cancel, Dismiss or Discard; no new request can start until the audio is known. A plan that names its audio without an ordinal offers no transcription then, since guessing a track could spend quota on the wrong audio.
+A language the server cannot serve now (no quota, or translation off for a language that is not the spoken one) is dimmed and does nothing.
+The quota line shows only while some language relies on transcription, as Apple's does. It reads "used of limit" only when the server sends both numbers, else the remaining count. Quota reads can overlap (a job's end, the menu opening), and only the latest read's answer or failure applies. When the balance cannot be read, SubtitleAI sends no transcription, so those rows are dimmed and the line reads Transcription quota unavailable.
+The menu shows when at least one row is left: a catalog that is empty or failed to load leaves the Spoken language row (translation off, spoken language unknown), else no AI Subtitles… row.
+
+**Running jobs, cancellation, and holds:**
+
+- A running job replaces the language list with its title, progress, Server message, and **Cancel** (`cancelSubtitleAIJob`, best effort).
+- Each start and cancel increments a generation; answers from earlier generations are dropped.
+- Pressing Cancel before the Server returns a job ID cancels that ID once it arrives. Until creation answers, the file is held (**Discard held request**) so a second billable request cannot start (covering every request for that file, unlike Apple's identical-request hold). A definite answer or refusal lifts the hold; an unknown outcome keeps it until Discard.
+- Failures show their message with **Dismiss** (plus **Discard held request** when held). Dismiss closes the menu while preserving a held request's failure notice until Discard. Cancel, Dismiss, and Discard stay active while a track change is pending.
+- A finished job returns to the track list; a completed job with no subtitle result shows "AI job completed without a subtitle result." with Dismiss.
+
 Text translation does not spend the ASR quota; transcription requires a known balance.
 No live delivery is requested: a completed stored track becomes selectable when ready.
 An unknown create outcome is not resent, including on repeated presses in the same playback attempt.
@@ -32,5 +52,6 @@ AI-translated and AI-transcribed labels remain on matching tracks for the playba
 
 Apple reference: `APIv2Client+SubtitleAI.swift`, `APIv2SubtitleAIModels.swift`, `APIv2SubtitleModels.swift` and `SubtitleAIController.swift` at `1a7cceeaf3b2bfc4f889c00487d19b2c6f843940` confirm independent gates, ASR quota, non-retryable creation, opaque job identity and the stored-list ordinal limitation.
 Native tests cover capability gates, quota exhaustion, one-shot creation, identity mismatches, polling, failures, authority cancellation and fresh inventory selection.
-Desktop tests cover D-pad language selection, quota display, blocked transcription and result selection.
+Desktop tests cover the AI Subtitles… row, language rows and hints, dimmed rows, the quota line, a running and a failed job, Cancel, Dismiss and Discard, and result selection.
+The TV draws the menu in the Subtitles pane, as it does Search, not in Apple's floating dialog, and has no live player-surface presentation while a job runs (the menu shows its progress instead).
 Live provider quota consumption, actual generated output, Samsung compositing, signed packaging and hardware remain unproven.

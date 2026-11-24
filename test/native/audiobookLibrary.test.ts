@@ -8,11 +8,16 @@ import { ShowAudiobooks } from "../../src/ui/audiobookPreference.ts";
 import { browseCardDestination, destinationOf, searchScope, visibleLibraries } from "../../src/ui/browseModel.ts";
 import { homeRowLayout } from "../../src/ui/browseViews.ts";
 import { libraryScope } from "../../src/ui/libraryDiscovery.ts";
-import { SORT_KEYS, sortKeysFor } from "../../src/ui/libraryBrowse.ts";
+import { sortKeysFor } from "../../src/ui/libraryBrowse.ts";
 import { navigationRoots } from "../../src/ui/navigation.ts";
 
 const wire = (type: string): Record<string, unknown> => ({ content_id: "audiobook:dune", type, title: "Dune", poster_url: "/art/dune" });
 const card = (type: Card["type"]): Card => ({ id: "audiobook:dune", type, title: "Dune", year: undefined, posterUrl: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined });
+const withoutSeed = (destination: ReturnType<typeof destinationOf>): unknown => {
+    assert.equal(destination?.kind, "audiobook");
+    const { seed: _seed, ...rest } = destination as Extract<NonNullable<typeof destination>, { kind: "audiobook" }>;
+    return rest;
+};
 const library = (id: string, type: UserLibrary["type"]): UserLibrary => ({ id, name: type, type, sortOrder: Number(id) });
 
 test("a card keeps its audiobook media type, under every spelling Apple accepts", () => {
@@ -23,14 +28,22 @@ test("a card keeps its audiobook media type, under every spelling Apple accepts"
 test("audiobook query cards keep their type so they open the audiobook detail", () => {
     const page = decodeCatalogQueryPage({ items: [wire("audiobook")], page: { has_more: false }, total: 1, total_exact: true, window_cursor: "w" });
     assert.equal(page.items[0]?.type, "audiobook");
-    assert.deepEqual(destinationOf(page.items[0] as Card), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
+    assert.deepEqual(withoutSeed(destinationOf(page.items[0] as Card)), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
 });
 
 test("Home, For You and Search open an audiobook card on its own detail", () => {
-    assert.deepEqual(destinationOf(card("audiobook")), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
-    assert.deepEqual(browseCardDestination(card("audiobook")), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
+    assert.deepEqual(withoutSeed(destinationOf(card("audiobook"))), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
+    assert.deepEqual(withoutSeed(browseCardDestination(card("audiobook"))), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
     // A series id on an audiobook never reroutes it to a series page.
-    assert.deepEqual(browseCardDestination({ ...card("audiobook"), seriesId: "series:s", episodeNumber: 2 }), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
+    assert.deepEqual(withoutSeed(browseCardDestination({ ...card("audiobook"), seriesId: "series:s", episodeNumber: 2 })), { kind: "audiobook", id: "audiobook:dune", title: "Dune" });
+});
+
+// silo-apple TVItemDetailRouteSeed(SectionItem): the card's title, year, poster and thumbhash paint the loading frame.
+test("an audiobook card opens its detail with the seed Apple's loading frame paints", () => {
+    const destination = destinationOf({ ...card("audiobook"), year: 1965, posterUrl: "/art/dune", posterThumbhash: "hash" });
+    assert.equal(destination?.kind, "audiobook");
+    const seed = (destination as Extract<NonNullable<typeof destination>, { kind: "audiobook" }>).seed;
+    assert.deepEqual([seed?.type, seed?.title, seed?.year, seed?.posterUrl, seed?.posterThumbhash], ["audiobook", "Dune", 1965, "/art/dune", "hash"]);
 });
 
 test("a row of only audiobooks is square; any other mix keeps Apple's layout", () => {
@@ -79,10 +92,10 @@ test("an audiobook library is scoped by its id alone, as Apple omits the type", 
 
 test("audiobook libraries offer Apple's sort keys, in Apple's order", () => {
     assert.deepEqual(sortKeysFor("audiobooks").map(entry => [entry.key, translate(entry.name), entry.order]), [
-        ["title", "Title", "asc"], ["author", "Author", "asc"], ["narrator", "Narrator", "asc"],
-        ["series", "Series", "asc"], ["added_at", "Date Added", "desc"], ["runtime", "Duration", "desc"],
+        ["title", "Title", "asc"], ["added_at", "Date Added", "desc"], ["release_date", "Release Date", "desc"], ["year", "Year", "desc"],
+        ["runtime", "Duration", "desc"], ["bitrate", "Bitrate", "desc"], ["progress", "Progress", "desc"], ["date_viewed", "Date Viewed", "desc"],
+        ["plays", "Plays", "desc"], ["author", "Author", "asc"], ["narrator", "Narrator", "asc"], ["series", "Series", "asc"],
     ]);
-    assert.deepEqual(sortKeysFor("movies"), SORT_KEYS);
 });
 
 test("Show Audiobooks is off until chosen, kept per profile, and survives unusable storage", () => {

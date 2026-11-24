@@ -14,10 +14,11 @@ import { navigationRoots } from "./navigation.ts";
 import type { PrimaryMenu } from "../contracts/v2/navigation.ts";
 import { menuIcon } from "./navigationIcon.ts";
 import { remoteKey } from "./keys.ts";
-import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
+import { HeroWash, heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { hidesCardOverview, hidesMarqueeBackdrop, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
 import type { LibraryMode } from "./libraryDiscovery.ts";
+import { documentIsRightToLeft } from "../i18n/direction.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { PersonalSource } from "./personalLists.ts";
 import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
@@ -164,6 +165,10 @@ export class Skyline {
     private rowScrolling = false;
     private cancelHoldCap = (): void => undefined;
     private readonly tints = new Map<string, Tints>();
+    /** TVHeroAmbientWash: one tint wash under every backdrop the marquee shows. */
+    private readonly wash: HeroWash;
+    /** The 190 px top scrim every Home backdrop carries, shared: it sits above all of them, so a crossfade blends the art under one strip. */
+    private readonly topScrim = el("div", "skyline-hero-scrim");
     private selected = "home";
     private sharedScene = false;
     private scopes = new Map<VideoTab, string>();
@@ -215,8 +220,8 @@ export class Skyline {
         this.nav.setAttribute("aria-label", "Main navigation");
         this.tabs.setAttribute("role", "tablist");
         const wordmark = el("img", "skyline-wordmark");
-        wordmark.src = "img/silo-wordmark.png";
-        wordmark.alt = "Silo";
+        wordmark.src = "img/auger-wordmark.png";
+        wordmark.alt = "Auger";
         this.nav.append(wordmark, this.tabs, this.tools);
         this.selector.setAttribute("role", "menu");
         this.selector.hidden = true;
@@ -226,6 +231,9 @@ export class Skyline {
         this.flyout.setAttribute("role", "menu");
         this.leaving.setAttribute("aria-hidden", "true");
         this.leaving.inert = true;
+        this.wash = new HeroWash(clock);
+        this.topScrim.hidden = true;
+        this.marquee.prepend(this.wash.element, this.topScrim);
         this.marquee.setAttribute("aria-live", "polite");
         this.marquee.setAttribute("aria-atomic", "true");
         container.addEventListener("focusin", this.onFocus);
@@ -379,6 +387,8 @@ export class Skyline {
         if (this.confirmation) { this.nav.setAttribute("aria-hidden", "true"); this.body.setAttribute("aria-hidden", "true"); }
         else { this.nav.removeAttribute("aria-hidden"); this.body.removeAttribute("aria-hidden"); }
         if (preview && !this.translationArmed) this.armTranslation();
+        // The bar, its menus and the hero layers are the shell's, not the view's: FocusHost leaves their direction to the page.
+        for (const node of [this.scrim, this.nav, this.selector, this.flyout, this.leaving, this.marquee]) node.setAttribute("data-chrome", "");
         return { ...view, prepare, transition: { key: libraryKey ?? selected, group: selected }, content: [this.scrim, this.nav, this.selector, this.flyout, this.leaving, ...(preview ? [this.marquee] : []), this.body], zones: this.confirmation ? zones.filter(zone => zone.id === "selector") : [...zones, ...view.zones], back: selected === "search" ? view.back : () => this.back() };
     }
 
@@ -427,6 +437,11 @@ export class Skyline {
         }
         const badges = layer.querySelector(".skyline-badges");
         if (badges !== null) replaceNodes(badges as HTMLElement, (details.badges ?? marqueeBadges(card.overlay)).map(badge => el("span", "skyline-chip", badge)));
+    }
+
+    /** The card the marquee shows now, with its row. */
+    shownPreview(): { readonly card: Card; readonly row: string } | undefined {
+        return this.shown === undefined ? undefined : { card: this.shown.card, row: this.shown.row };
     }
 
     /**
@@ -543,14 +558,22 @@ export class Skyline {
         const seriesArt = marqueeUsesSeriesArt(card, settings);
         const background = hidesMarqueeBackdrop(card, settings) ? undefined : artworkUrl(seriesArt ? card.seriesBackdropUrl : card.backdropUrl, this.baseUrl);
         const thumbhash = seriesArt ? undefined : card.backdropThumbhash;
-        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null]);
+        // The direction is part of what is drawn: the placeholder bitmap fades toward the text side.
+        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, documentIsRightToLeft()]);
         // A failed image is not kept: the next preview of the same artwork asks for it again.
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");
         layer.setAttribute("aria-hidden", "true");
+        const outgoing = this.art;
+        const fade = animate && this.artShown && outgoing !== undefined;
+        this.topScrim.hidden = background === undefined || !this.sharedScene;
         if (background !== undefined && this.sharedScene) {
-            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true));
-        } else if (background !== undefined) {
+            // The cached or ThumbHash tint comes with the swap and fades in; the tint sampled from the image replaces it as it lands, if this is still the backdrop shown.
+            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true, (tints, sampled) => { if (!sampled) this.wash.show(tints, fade); else if (this.art === layer) this.wash.update(tints); }));
+        } else {
+            this.wash.show(undefined, fade);
+        }
+        if (background !== undefined && !this.sharedScene) {
             const image = el("img", "skyline-backdrop");
             image.alt = "";
             image.referrerPolicy = "no-referrer";
@@ -559,7 +582,6 @@ export class Skyline {
             layer.append(image, el("div", "skyline-scrim"));
         }
         layer.querySelector("img.skyline-backdrop")?.addEventListener("error", () => { layer.dataset.failed = ""; });
-        const outgoing = this.art;
         for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) old.classList.add("skyline-outgoing");
         if (outgoing === undefined) this.marquee.prepend(layer);
         else outgoing.after(layer);
@@ -567,7 +589,6 @@ export class Skyline {
         this.artKey = key;
         this.cancelFade();
         this.cancelFade = () => undefined;
-        const fade = animate && this.artShown && outgoing !== undefined;
         if (background !== undefined) this.artShown = true;
         const clear = (): void => { for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) if (old !== layer) old.remove(); };
         if (!fade) { clear(); return; }
@@ -1034,8 +1055,10 @@ export class Skyline {
         labels.append(el("div", "skyline-profile-title", this.profiles.name), el("div", "skyline-profile-server", (this.profiles.serverName?.() ?? new URL(this.baseUrl).host).toUpperCase()));
         header.append(profileMenuAvatar(this.profiles.name, this.avatarReference, this.avatarText, this.baseUrl, 44), labels);
         replaceNodes(this.selector, [header, ...above.map(item => item.element), el("div", "skyline-menu-divider"), ...below.map(item => item.element)]);
-        this.selector.style.left = "auto";
-        this.selector.style.right = "88px";
+        // The profile button ends the bar, which is the left edge in a right-to-left layout.
+        const rightToLeft = documentIsRightToLeft();
+        this.selector.style.left = rightToLeft ? "88px" : "auto";
+        this.selector.style.right = rightToLeft ? "auto" : "88px";
         this.selector.hidden = false;
         this.anchorOrigin(this.items.find(item => item.key === "profiles")?.element ?? this.selector);
         this.scrim.hidden = true;
@@ -1090,9 +1113,11 @@ export class Skyline {
         this.flyoutItems = this.modeItems(library, this.panelTab);
         this.flyoutItem = this.flyoutItems[0];
         replaceNodes(this.flyout, this.flyoutItems.map(item => item.element));
-        this.flyout.style.left = `${Math.min(1532, this.selector.getBoundingClientRect().right + 18)}px`;
         this.flyout.style.top = `${Math.min(900, row.element.getBoundingClientRect().top)}px`;
         this.flyout.hidden = false;
+        // The sections open beside the library on its trailing side: the left, when the layout is mirrored.
+        const panel = this.selector.getBoundingClientRect();
+        this.flyout.style.left = `${documentIsRightToLeft() ? Math.max(88, panel.left - 18 - this.flyout.offsetWidth) : Math.min(1532, panel.right + 18)}px`;
         this.refresh();
     }
 }

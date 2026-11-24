@@ -10,7 +10,7 @@ The sync also changed error text, device-login capability, playback, user librar
 which contain the selected Settings manifest subsets consumed by this client, and `request_status_ok.json`.
 `request_status_ok.json` is copied unchanged from [`request_status_ok.json`](https://github.com/Silo-Server/silo-server/blob/6e8c68d036fd32c4ec7fe1d328f8286d4a164e60/contracts/api/v2/fixtures/request_status_ok.json) at `6e8c68d036fd32c4ec7fe1d328f8286d4a164e60`, which is newer than the retained snapshot and is the fixture that carries `remove_failed_supported`.
 The sync script keeps that file until its name moves into `SELECTED`.
-That documented exception selects seven definitions unchanged from `contracts/settings/v1/manifest.json` at the retained snapshot (v1, revision 24): `ui.disabled_library_ids`, `playback.audio_language`, `playback.preferred_quality`, `playback.max_bitrate_kbps`, `player.video_skip_back_seconds`, `player.video_skip_forward_seconds` and `ui.title_art`, plus the unchanged `playback_audio_languages` option set.
+That documented exception selects nine definitions unchanged from `contracts/settings/v1/manifest.json` at the retained snapshot (v1, revision 24): `ui.disabled_library_ids`, `playback.audio_language`, `playback.preferred_quality`, `playback.max_bitrate_kbps`, `player.video_skip_back_seconds`, `player.video_skip_forward_seconds`, `player.audiobook_skip_back_seconds`, `player.audiobook_skip_forward_seconds` and `ui.title_art`, plus the unchanged `playback_audio_languages` option set.
 `player.hdr_enabled` is accepted from a live contract when the device-only boolean definition matches. `player.dolby_vision_enabled` is not read or written. Neither key is in this vendored subset.
 The source manifest SHA-256 is `95b716c8b34974e4b97ee96f5c644135c437e09f4a6f2285fb263e3351e6c6ea`.
 `scripts/sync-apiv2-fixtures.sh <server-ref>`, with `SILO_SERVER_REPO` set to a silo-server checkout, re-vendors the fixtures and both Settings subsets from `git show <commit>:<path>` and rewrites `SOURCE`; the Settings subsets are written in manifest order.
@@ -19,6 +19,9 @@ The script prints the manifest revision and SHA-256 so the lines above can be up
 response enum values decode to `"unknown"`, so additive server changes keep working.
 
 ## Operations used
+
+`ratings.ts` consumes `getRatingsCapability` at `SOURCE`, including its unchanged `get_ratings_capability_ok.json` fixture.
+The profile-scoped read lists the rating sources the server shows; only `state: "available"` counts, as silo-apple's `shownRatingSources` decides it.
 
 `trailers.ts` consumes `refreshCatalogItemTrailers` at `SOURCE`, including its unchanged `refresh_catalog_item_trailers_ok.json` fixture.
 The profile-scoped POST is non-retryable and never replayed after refresh; completion is observed through catalog item reads.
@@ -30,6 +33,11 @@ Create and cancel use POST; follow uses PUT; unfollow and removing a failed requ
 Create, cancel, follow and unfollow use the same retry class, including naturally idempotent follows, so an uncertain write requires an explicit read before another attempt.
 `remove_failed_supported` is optional on status. Missing means the server cannot remove a failed request. A non-boolean value is a contract break. The flag is ignored unless requests are available.
 See [Requests](../../../docs/features/requests.md) for capability and navigation behavior.
+
+`subtitleSync.ts` consumes `getSubtitleSyncStatus`, `listSubtitleSync`, `getSubtitleSync`, `startSubtitleSync` and `setSubtitleTiming` at `SOURCE`.
+Sync is offered only when the status is `available` and `allowed`; sidecar files also need `external`. The status's `external` member is required, so a server that predates sync keys reads as sync unavailable.
+Start and the timing write use `retry: never`. Reset Timing reads the subtitle first and sends its `ETag` as `If-Match` on the identity timing (`offset_ms: 0`, `scale: 1`); a missing validator sends nothing.
+See [Subtitle sync](../../../docs/playback/subtitle-sync.md).
 
 `calendar.ts` consumes `getCalendar` from the pinned OpenAPI schema without converting events to catalog cards.
 The weekly query includes the device IANA timezone and an inclusive seven-day window.
@@ -114,7 +122,6 @@ Absent/false flags keep video-only searches; capability read/decode failures rem
 The episode-inclusive request type is limited to text Search and is not added to library, facet, letter or POST source types.
 See [Text Search](../../../docs/features/skyline-browse-shell.md#text-search) for route ownership, continuation and source evidence.
 Unknown members are ignored and response enums are additive; malformed consumed fields fail without echoing values.
-These factories do not implement the library UI or complete issue 28.
 
 ## Audiobooks
 
@@ -128,12 +135,13 @@ Apple behavior is read from `AudiobookPlaybackContext.swift`, `AudiobookProgress
 | `queryCatalogItems` as `queryAudiobooks` | `natural_idempotent` (`profile_scoped`) | Scoped by `library_id` with no `type`, as Apple omits it for audiobook libraries; the author, narrator or series filter is one `match: any` group of `is` rules |
 | `syncProgress` | `non_retryable` (`profile_scoped`) | The only durable resume point; whole-book milliseconds with `force_overwrite`; never resent, so the caller passes `replayAfterRefresh: false` and the next sample carries a fresh position |
 
-Library gating: `listUserLibraries` reports `type: "audiobooks"`, and `audiobookLibraries` drops hidden ones.
+Library gating: `listUserLibraries` reports `type: "audiobooks"` (the decoder also reads `audiobook`, trimmed and case-folded, as silo-apple `isAudiobookLibrary` does, because the server documents the type as free-form), and `audiobookLibraries` drops hidden ones.
 `nav.show_audiobooks` is `client_local` and defaults to false in the manifest, so the opt-in is stored per profile on the device and is never read from or written to the server.
 There is no server capability flag for audiobooks; a server without audiobook libraries simply lists none.
-`player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9); this change only names them.
+`player.audiobook_skip_back_seconds` and `player.audiobook_skip_forward_seconds` are ordinary profile settings (revision 9), decoded and gated exactly as the video pair is; Settings › Playback lists them under Audiobooks.
 
 Parts follow Apple: a version is a part when `presentation_kind` is `audiobook_part` or it carries `codec_audio` or `duration`, ordered by `presentation_part_index` and then numerically by `file_id`.
+A part keeps `file_name`; a book without chapters lists its parts in the picker by that name, or "Part N" when it is empty or absent, as `TVAudiobookChaptersView.partTitle` does.
 Part offsets and chapter starts are summed onto one whole-book timeline; the playback API only knows files.
 The total is the larger of the stitched length and `audiobook.total_duration_seconds`. The resume position never passes a known total (an unknown total of 0 leaves it as the server sent it, where Apple clamps it to 0), and a seek never passes the end of its file.
 One deliberate difference from Apple: a part with no `duration` is sized by its furthest chapter `end_seconds`, never by a chapter start, and a multi-part book with any unknown part length is rejected rather than stitched on a guess.
@@ -154,7 +162,7 @@ Auto omits audio fields; explicit audio IDs use the selected file's audio-array 
 Zero explicitly starts over, while an omitted `start_position` retains server resume semantics for callers that need them.
 Start still declares `retry:"never"`; only the controller resends its identical body and identity through its existing bounded domain retry.
 No per-content preference writes, subtitle start fields or renderer claims are added.
-See [preplay behavior](../../../docs/features/skyline-browse-shell.md#preplay-audio-and-resume).
+See [preplay behavior](../../../docs/features/skyline-browse-shell.md#preplay-audio-subtitles-and-resume).
 
 ## Seek preview reads
 
@@ -229,19 +237,10 @@ The room operations that this layer does not cover yet (suggestion delete, membe
 
 ## Updating the pinned contract
 
-1. Pick the new server commit and copy the same fixture names from its `contracts/api/v2/fixtures/`.
-2. Write the commit SHA to `SOURCE`.
-3. Re-read the OpenAPI schemas and docs for the operations above and update `wire.ts`.
-4. Run the native tests.
+1. Run `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-ref>` to re-vendor fixtures, rebuild both Settings subsets in manifest order, and update `SOURCE`.
+2. Update the manifest revision and SHA-256 printed by the script in the header above, then check OpenAPI schemas and update decoders in `src/contracts/v2/`.
+3. Run `npm run test:native` and `scripts/sync-apiv2-fixtures.test.sh`.
 
 ## Native tests
 
-Commands assume the repository root is the cwd.
-Node 23.6 or later runs the TypeScript sources directly:
-
-```bash
-node --test --test-timeout=15000 test/native/
-```
-
-Type checking needs `allowImportingTsExtensions` (sources import `./x.ts`) and
-`erasableSyntaxOnly` (Node strips types; no enums, namespaces or parameter properties).
+Commands assume the repository root is the cwd. Node.js 26 or later runs TypeScript tests directly (`npm run test:native`). Type checking requires `allowImportingTsExtensions` (explicit `.ts` imports) and `erasableSyntaxOnly` (no enums, namespaces, or parameter properties).

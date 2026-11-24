@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { AUDIO_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
 import { assertSignOutDialog } from "./support/signOutDialog.ts";
 import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
@@ -42,6 +42,19 @@ async function openSettings(tv: Tv): Promise<void> {
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
 }
+
+// TVSettingsView.swift:514-517 (silo-apple 449ba47): a server with a name of its own shows its address on a second row (#773).
+test("the Server pane adds Address under a server's own name (#773)", async () => {
+    const { tv } = await setup();
+    try {
+        await tv.page.evaluate(() => window.browseHarness.seedServerName("Living room library"));
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="server"]').click();
+        await tv.page.locator(".settings-info-row").first().waitFor();
+        const rows = await tv.page.locator(".settings-info-row").evaluateAll(nodes => nodes.map(row => [row.firstElementChild?.textContent, row.querySelector(".settings-row-value")?.textContent]));
+        assert.deepEqual(rows.slice(0, 2), [["Server", "Living room library"], ["Address", "https://silo.example.test"]]);
+    } finally { await tv.page.context().close(); }
+});
 
 test("Settings rail symbols match Apple's per-symbol ink boxes and medium strokes", async () => {
     const { tv } = await setup();
@@ -84,11 +97,11 @@ test("Settings rail subtitles stay regular and muted through focus changes", asy
             const style = getComputedStyle(node);
             return { weight: style.fontWeight, size: style.fontSize, opacity: style.opacity, color: style.color };
         });
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(0, 0, 0)" });
         await tv.page.keyboard.press("ArrowRight");
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(237, 237, 237)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(237, 237, 237)" });
         await tv.page.keyboard.press("ArrowLeft");
-        assert.deepEqual(await appearance(), { weight: "400", size: "16px", opacity: "0.62", color: "rgb(0, 0, 0)" });
+        assert.deepEqual(await appearance(), { weight: "400", size: "15.496px", opacity: "0.62", color: "rgb(0, 0, 0)" });
     } finally { await tv.page.context().close(); }
 });
 
@@ -289,6 +302,26 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
         assert.deepEqual(await tv.page.getByRole("radio").allTextContents(), ["Bottom", "Lower Third", "Top"]);
         assert.equal(await tv.page.getByText("Choose an option", { exact: true }).count(), 1);
         assert.equal(await tv.page.getByText("Menu to close", { exact: true }).count(), 1);
+        // TVSettingsComponents.swift:713-724, 748-750 (#773): title and "Choose an option" 6 pt apart, 42 bold and 19 regular, the hint 17
+        // medium, then a 1 pt siloChromeRestingBorder divider above the options, all times the cap scale.
+        const header = await tv.page.evaluate(() => {
+            const card = document.querySelector<HTMLElement>(".settings-modal[role=dialog]")!;
+            const title = card.querySelector<HTMLElement>(".browse-title")!;
+            const subtitle = card.querySelector<HTMLElement>(".settings-picker-subtitle")!;
+            const hint = card.querySelector<HTMLElement>(".settings-picker-hint")!;
+            const divider = card.querySelector<HTMLElement>(".settings-picker-divider")!;
+            const options = card.querySelector<HTMLElement>(".settings-modal-options")!;
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const css = (node: HTMLElement): CSSStyleDeclaration => getComputedStyle(node);
+            return {
+                follows: title.nextElementSibling === subtitle,
+                gap: Math.round(subtitle.getBoundingClientRect().top - title.getBoundingClientRect().bottom),
+                sizes: [title, subtitle, hint].map(node => Math.round(parseFloat(css(node).fontSize) / cap * 100) / 100),
+                weights: [css(title).fontWeight, css(subtitle).fontWeight, css(hint).fontWeight],
+                divider: { height: divider.getBoundingClientRect().height, color: css(divider).backgroundColor, beforeOptions: divider.nextElementSibling === options },
+            };
+        });
+        assert.deepEqual(header, { follows: true, gap: 6, sizes: [42, 19, 17], weights: ["700", "400", "500"], divider: { height: 1, color: "rgba(255, 255, 255, 0.09)", beforeOptions: true } });
         const during = await tv.page.evaluate(() => ({ rail: document.querySelector('.settings-categories')!.getBoundingClientRect().top, header: document.querySelector('.settings-pane-header')!.getBoundingClientRect().top }));
         assert.equal(during.rail, before.rail, JSON.stringify(await tv.page.evaluate(() => [...document.querySelectorAll(".settings, .settings-panes, .settings-pane, .settings-categories")].map(n => ({name: n.className, height: n.clientHeight, scroll: n.scrollTop, rect: n.getBoundingClientRect().toJSON(), style: getComputedStyle(n).overflowY})))));
         assert.equal(during.header, before.header);
@@ -387,7 +420,8 @@ test("remaining settings expose only honoured rows and save profile appearance",
             const element = node as HTMLElement;
             return { fontSize: element.style.fontSize, align: getComputedStyle(element).textAlign, weight: getComputedStyle(element).fontWeight };
         });
-        assert.deepEqual(caption, { fontSize: "21.5px", align: "center", weight: "600" });
+        // Small's 43 pt at the preview's half size, times the cap scale for the bundled sans-serif (#789).
+        assert.deepEqual(caption, { fontSize: "calc(21.5px * var(--silo-sf-cap-scale))", align: "center", weight: "600" });
         const previewLook = () => tv.page.locator(".settings-subtitle-preview").evaluate(node => {
             const box = node.getBoundingClientRect();
             const text = node.querySelector("span") as HTMLElement;
@@ -415,7 +449,7 @@ test("remaining settings expose only honoured rows and save profile appearance",
             hugsText: true,
             bottomGap: 12,
         });
-        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "25.8px", "the line scales with the Small preview size");
+        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "24.9873px", "the line scales with the Small preview size (25.8 px times the cap scale)");
         await tv.page.getByRole("button", { name: /Position/ }).click();
         await tv.page.getByRole("radio", { name: "Lower Third", exact: true }).click();
         await tv.page.locator('[data-focus="appearance-position"]').waitFor();
@@ -453,8 +487,12 @@ test("remaining settings expose only honoured rows and save profile appearance",
         await tv.page.getByRole("radio", { name: "fr", exact: true }).click();
         await tv.eventually(async () => settings.profile().get("catalog.metadata_language") === "fr", "metadata profile write");
         await tv.page.locator('[data-focus="metadata-language"]').waitFor();
+        // TVSubtitleSettingsView.swift:101: the Metadata Language row's footer (#773).
+        assert.equal(await tv.page.locator('[data-focus="metadata-language"] + .settings-value').textContent(), "Translates descriptions and taglines into your preferred language when available. Titles are never translated.");
         await tv.page.locator('[data-focus="server"]').click();
-        await tv.page.getByText("Address", { exact: true }).waitFor();
+        // TVSettingsView.swift:514-517: Address shows only when the server's name is not its URL (#773).
+        await tv.page.locator(".settings-info-row").first().waitFor();
+        assert.equal(await tv.page.getByText("Address", { exact: true }).count(), 0, "with no server name the Server row already shows the URL");
         await tv.page.getByRole("button", { name: "Privacy Policy", exact: true }).click();
         assert.equal(await tv.page.getByRole("img", { name: "Privacy Policy QR code" }).count(), 1);
         assert.equal(await tv.page.getByRole("button", { name: /HDR|Dolby Vision|Lossless|Seek Cache/ }).count(), 0);
@@ -555,7 +593,7 @@ test("measured Settings pickers centre the selected choice and privacy handoff",
         await tv.page.locator('[data-focus="remember-profile"]').click();
         assert.equal(await tv.page.getByRole("dialog").count(), 1);
         assert.equal(await tv.page.getByRole("radio", { checked: true }).evaluate(node => node === document.activeElement), true);
-        assert.equal(await tv.page.getByRole("dialog").getByText("Show Who's Watching whenever you return to Silo.", { exact: true }).count(), 1);
+        assert.equal(await tv.page.getByRole("dialog").getByText("Show Who's Watching whenever you return to Auger.", { exact: true }).count(), 1);
         assert.equal(await tv.page.locator('.settings-checkmark').count(), 1);
         await tv.remote(10009);
         assert.equal(await tv.focused(), "remember-profile");
@@ -752,9 +790,9 @@ test("profile subtitle editors read and compare profile values while narrower ov
 test("Profile Selection caption follows the chosen launch behavior", async () => {
     const { tv } = await setup();
     const captions = {
-        "Every Time": "Show Who's Watching whenever you return to Silo.",
-        "After 1 Hour": "Show Who's Watching when you've been away from Silo for 1 hour.",
-        "After 12 Hours": "Show Who's Watching when you've been away from Silo for 12 hours.",
+        "Every Time": "Show Who's Watching whenever you return to Auger.",
+        "After 1 Hour": "Show Who's Watching when you've been away from Auger for 1 hour.",
+        "After 12 Hours": "Show Who's Watching when you've been away from Auger for 12 hours.",
         Automatic: "Use the profile selected for the current TV user. A protected profile can reopen without asking for its PIN.",
     } as const;
     try {
@@ -874,7 +912,7 @@ test("Paired Silo Profile shows the profile this TV reopens and opens the profil
         await openSettings(tv);
         assert.equal(await tv.page.locator(".settings-section-header").first().textContent(), "TV USER");
         assert.equal(await tv.page.locator('[data-focus="paired-profile"] .settings-row-value').textContent(), "Not paired");
-        await tv.page.getByText("This TV user context is not set to keep separate app preferences. Silo uses the profile pairing available to the current app context, and you can change it here at any time. Ask Every Time is on, so Silo will still show Who's Watching at launch.", { exact: true }).waitFor();
+        await tv.page.getByText("This TV user context is not set to keep separate app preferences. Auger uses the profile pairing available to the current app context, and you can change it here at any time. Ask Every Time is on, so Auger will still show Who's Watching at launch.", { exact: true }).waitFor();
         await tv.page.locator('[data-focus="remember-profile"]').click();
         await tv.page.getByRole("radio", { name: "Automatic", exact: true }).click();
         await tv.eventually(async () => await tv.page.locator('[data-focus="paired-profile"] .settings-row-value').textContent() === "Laura", "remembered profile name");
@@ -894,12 +932,12 @@ test("Subtitles, the profile account line and sign-out confirmation follow Apple
         const profile = tv.page.locator('[data-focus="settings-profile"]');
         assert.equal(await profile.locator(".settings-profile-name").textContent(), "Laura");
         assert.equal(await profile.locator(".settings-profile-account").textContent(), "laura");
-        assert.equal(await tv.page.locator(".settings-version").textContent(), "Silo 0.0.1");
+        assert.equal(await tv.page.locator(".settings-version").textContent(), "Auger 0.0.1");
         assert.equal(await tv.page.getByRole("button", { name: /Diagnostics/ }).count(), 0);
         assert.equal(await tv.page.locator('[data-focus="subtitles"] .settings-category-detail').textContent(), "Language and appearance");
-        // The version uses siloSecondaryText; category subtitles dim the row foreground instead.
+        // The version uses siloSecondaryText at 0.7 (TVSettingsView.swift:201-203, #773); category subtitles dim the row foreground instead.
         const secondary = await tv.page.locator('[data-focus="subtitles"] .settings-category-detail, .settings-version').evaluateAll(nodes => nodes.map(node => ({ color: getComputedStyle(node).color, opacity: getComputedStyle(node).opacity })));
-        assert.deepEqual(secondary, [{ color: "rgb(237, 237, 237)", opacity: "0.62" }, { color: "rgba(237, 237, 237, 0.6)", opacity: "1" }]);
+        assert.deepEqual(secondary, [{ color: "rgb(237, 237, 237)", opacity: "0.62" }, { color: "rgba(237, 237, 237, 0.6)", opacity: "0.7" }]);
         await tv.page.locator('[data-focus="subtitles"]').click();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Language, behavior, and on-screen appearance.");
         assert.equal(await tv.page.locator('[data-focus="subtitle-language"] .settings-row-value').textContent(), "None");
@@ -956,7 +994,7 @@ test("Apple Settings rail enters the first row, shows separate values and restor
         await tv.page.locator('[data-focus="settings-signout"]').click();
         await tv.page.getByRole("button", { name: "Cancel", exact: true }).click();
         assert.equal(await tv.page.locator(":focus").getAttribute("data-focus"), "settings-signout");
-        assert.equal(await tv.page.getByText(/Silo 0\.0\.1/).count(), 1);
+        assert.equal(await tv.page.getByText(/Auger 0\.0\.1/).count(), 1);
         assert.equal(await tv.page.getByRole("button", { name: /nav.*menu|synced.*menu/i }).count(), 0);
     } finally { await tv.page.context().close(); }
 });
@@ -1070,7 +1108,7 @@ test("quality footer and bitrate labels follow Apple TV", async () => {
 });
 
 const BUFFERING_MODE_KEY = "playback.buffering_quality_mode";
-const BUFFERING_SENTENCES = "What Silo does on Auto when playback keeps buffering. Silo always asks before lowering a quality you picked.";
+const BUFFERING_SENTENCES = "What Auger does on Auto when playback keeps buffering. Auger always asks before lowering a quality you picked.";
 
 test("Lower quality when buffering follows Apple's QUALITY rows and saves for this TV only", async () => {
     const { tv, settings } = await setup(true);
@@ -1143,12 +1181,33 @@ test("Playback restores video skip intervals after episodes and focus moves do n
         await openSettings(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         assert.equal(await tv.page.locator('[data-focus="seek-back"], [data-focus="seek-forward"]').count(), 2);
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS"]);
         const requests = tv.fake.requests.length;
         await tv.page.locator('[data-focus="quality"]').focus();
         await tv.remote(40); await tv.remote(40);
         assert.equal(tv.fake.requests.length, requests);
         assert.equal(tv.fake.requests.filter(r => r.method === "PUT" || r.method === "DELETE").length, 0);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Playback offers audiobook skip intervals in their own group, saved apart from video's", async () => {
+    const { tv, settings } = await setup();
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator('[data-focus="audiobook-seek-back"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="audiobook-seek-back"], [data-focus="audiobook-seek-forward"]').count(), 2);
+        assert.deepEqual(await tv.page.locator('[data-focus="audiobook-seek-back"] .settings-row-value, [data-focus="audiobook-seek-forward"] .settings-row-value').allTextContents(), ["10 seconds", "30 seconds"]);
+        assert.equal(await tv.page.locator(".settings-value", { hasText: "Used by the audiobook player's skip buttons." }).count(), 1);
+        await tv.page.locator('[data-focus="audiobook-seek-back"]').click();
+        await tv.page.getByRole("heading", { name: "Audiobook Skip Back", exact: true }).waitFor();
+        await tv.page.getByRole("radio", { name: "45 seconds", exact: true }).click();
+        await tv.eventually(async () => settings.profile().get(AUDIOBOOK_SEEK_BACK_KEY) === 45, "audiobook back interval saved");
+        await tv.page.getByRole("dialog").waitFor({ state: "detached" });
+        assert.equal(settings.profile().has(SEEK_BACK_KEY), false, "video's interval is not written");
+        assert.equal(await tv.page.locator('[data-focus="audiobook-seek-back"] .settings-row-value').textContent(), "45 seconds");
+        assert.equal(await tv.page.locator('[data-focus="seek-back"] .settings-row-value').textContent(), "10 seconds");
+        assert.equal(await tv.focused(), "audiobook-seek-back", "Back from the picker returns to its row");
     } finally { await tv.page.context().close(); }
 });
 
@@ -1453,6 +1512,9 @@ test("quality controls remain absent for unsupported manifests and empty Playbac
     try {
         const contract = fixture("settings_contract_ok");
         contract.definitions = [];
+        // Home loads the spoiler and theme-music preferences once capabilities arrive, which can be after setup returns; count from after they landed.
+        await tv.eventually(async () => ["keys=catalog.hide_unwatched_episode_images", "keys=ui.theme_music_enabled"].every(key => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes(key))), "Home's preference reads");
+        await tv.eventually(async () => tv.pendingReplies === 0, "the launch reads answered");
         const requests = tv.fake.requests.length;
         tv.fake.script("/settings/contract", { status: 200, body: contract });
         await tv.page.locator('[data-focus="profiles"]').click();
@@ -1483,7 +1545,7 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         assert.equal(order.includes("dolby-vision"), false, order.join(","));
         assert.equal(await tv.page.getByRole("switch", { name: "Dolby Vision", exact: true }).count(), 0);
         assert.ok(audio >= 0 && audio < hdr && order[hdr + 1] === "spoiler-images", order.join(","));
-        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "RESET"]);
+        assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS", "RESET"]);
         assert.equal(await tv.page.locator('[data-focus="hdr"] .settings-row-value').innerText(), "On");
         assert.equal(await tv.page.getByRole("switch", { name: "HDR", exact: true }).getAttribute("aria-checked"), "true");
         // TVPlaybackSettingsView.swift:248-258, after the STREAMING rows. The first sentence of
@@ -1555,7 +1617,7 @@ test("Server settings open Acknowledgements with TMDB's logo and required notice
         await credits.getByText("This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.", { exact: true }).waitFor();
         await credits.getByText("Profile avatars", { exact: true }).waitFor();
         assert.match(await credits.textContent() ?? "", /Davis Uche.*creativecommons\.org\/licenses\/by\/4\.0/);
-        await credits.getByText("These names and logos belong to their owners. Silo is not affiliated with or endorsed by them.", { exact: true }).waitFor();
+        await credits.getByText("These names and logos belong to their owners. Auger is not affiliated with or endorsed by them.", { exact: true }).waitFor();
         await tv.page.keyboard.press("ArrowUp");
         assert.equal(await tv.focused(), "done", "Up from the top of the document reaches Done");
         await tv.page.keyboard.press("ArrowDown");

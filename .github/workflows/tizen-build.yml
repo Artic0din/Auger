@@ -1,10 +1,9 @@
 name: Tizen Builds
 
 # CI gate: tests and a packaged .wgt on main pushes and pull requests.
-# With the signing secrets (main and same-repository pull requests), the .wgt is
-# signed with the maintainer's Samsung certificate and uploaded. Fork pull
-# requests sign with a throwaway certificate to check packaging only.
-# release.yml only releases a commit this workflow passed on main.
+# Packages Auger.wgt with the Tizen SDK public distributor certificate (no
+# personal Samsung TV certificates or DUIDs) and uploads the auger-wgt artifact.
+# release.yml runs automatically after this workflow succeeds on main.
 
 on:
   push:
@@ -21,9 +20,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  # The UI suite is most of the run (about 2,400 tests, each file with its own browser, two files at a time), so it is split across
+  # parallel shards instead of one job growing toward its time limit (#646). `test` keeps the check name the merge gate reads.
+  checks:
+    name: Build and native tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.11.1
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:native
+
+  ui:
+    name: UI tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,7 +58,23 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm test
+      # Some UI tests read the staged package (dist/wgt), so each shard builds it first.
+      - run: npm run build
+      - run: node --test --test-concurrency=2 --test-timeout=60000 --test-shard=${{ matrix.shard }}/3 "test/ui/*.test.ts"
+
+  test:
+    needs: [checks, ui]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every build, native and UI shard passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          UI: ${{ needs.ui.result }}
+        run: |
+          echo "Build and native tests: ${CHECKS}; UI shards: ${UI}"
+          test "${CHECKS}" = success && test "${UI}" = success
 
   package:
     name: Package .wgt
@@ -58,35 +97,31 @@ jobs:
       - name: Create the signing profile
         id: signing
         run: scripts/ci/create-signing-profile.sh
-        env:
-          TIZEN_AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_P12_B64 }}
-          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-          TIZEN_DISTRIBUTOR_P12_B64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_B64 }}
-          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
 
-      - name: Require the Samsung certificate outside pull requests
-        if: github.event_name != 'pull_request' && steps.signing.outputs.signing != 'samsung'
+      - name: Require the public Tizen certificate
+        if: steps.signing.outputs.signing != 'public'
         run: |
-          echo "::error::The TIZEN_* signing secrets are missing, so main cannot produce a TV-installable .wgt."
+          echo "::error::Public Tizen signing profile was not created."
           exit 1
 
       - name: Package and sign
         run: |
           scripts/build-wgt.sh
-          (cd dist && sha256sum Silo.wgt | tee Silo.wgt.sha256)
+          (cd dist && sha256sum Auger.wgt | tee Auger.wgt.sha256)
 
       - name: Show the Tizen CLI log
         if: failure()
         run: find "${HOME}" -path '*cli/logs/cli.log' -exec tail -n 60 {} \;
 
-      - name: Upload the signed .wgt
-        if: steps.signing.outputs.signing == 'samsung'
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - name: Upload the packaged .wgt
+        if: steps.signing.outputs.signing == 'public'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: silo-tizen-wgt
+          name: auger-wgt
+          retention-days: 7
           path: |
-            dist/Silo.wgt
-            dist/Silo.wgt.sha256
+            dist/Auger.wgt
+            dist/Auger.wgt.sha256
           if-no-files-found: error
 
       - name: Remove the signing certificates

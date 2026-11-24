@@ -12,7 +12,7 @@ import {
     roomSocketHandshake, type WatchTogetherCapabilities, watchTogetherSocketSupported,
 } from "../contracts/v2/watchTogether.ts";
 import type { NativeSession } from "../session/session.ts";
-import { errorState } from "./browseRoutes.ts";
+import { errorMessage, errorState } from "./browseRoutes.ts";
 import type { RoomSocketApi } from "./watchPartySocket.ts";
 
 /** The playback features Apple requires of a server before it offers a synchronized party. */
@@ -87,7 +87,7 @@ export function watchPartyFailureText(error: unknown): string {
         const text = detail?.trim() || title.trim();
         if (text !== "") return text;
     }
-    return errorState(error).message;
+    return errorMessage(errorState(error));
 }
 
 /** A random version 4 UUID, lower case, as Apple sends for a new room. */

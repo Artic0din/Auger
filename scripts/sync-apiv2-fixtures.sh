@@ -51,6 +51,7 @@ SELECTED=(
   get_device_login_capability_ok
   get_library_collections_ok
   get_library_section_items_ok
+  get_ratings_capability_ok
   get_system_info_ok
   get_watch_state_ok
   get_watch_trickplay_ok
@@ -112,6 +113,8 @@ SETTINGS_KEYS=(
   playback.max_bitrate_kbps
   player.video_skip_back_seconds
   player.video_skip_forward_seconds
+  player.audiobook_skip_back_seconds
+  player.audiobook_skip_forward_seconds
   ui.title_art
 )
 SETTINGS_OPTION_SETS=(

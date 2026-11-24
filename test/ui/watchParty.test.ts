@@ -3,8 +3,16 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeWatchParty } from "../native/support/fakeWatchParty.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 import { button, menuTitles, openHub, pressDisabled, start } from "./support/watchParty.ts";
+
+// Requests and Watch Party each come from their own read, so list the menu once Requests is in and the answers have landed and painted.
+async function settledMenu(tv: Tv): Promise<string[]> {
+    await tv.eventually(async () => (await menuTitles(tv)).includes("Requests"), "Requests offered");
+    await tv.eventually(async () => tv.pendingReplies === 0, "the capability answers landed");
+    await afterPaint(tv);
+    return await menuTitles(tv);
+}
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -24,7 +32,7 @@ test("the profile menu hides Watch Party until the device turns it on", async ()
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv, new FakeWatchParty(), false);
-        assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"]);
+        assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"]);
     } finally { await tv.page.context().close(); }
 });
 
@@ -33,7 +41,7 @@ test("with the toggle on and the server allowing it, Watch Party sits after Requ
     try {
         const fake = await start(tv);
         await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "Watch Party offered");
-        assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Watch Party", "Settings", "Switch Profile", "Sign Out"]);
+        assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Watch Party", "Settings", "Switch Profile", "Sign Out"]);
         assert.deepEqual([...new Set(fake.capabilityReads)].sort(), ["playback", "watch-together"]);
     } finally { await tv.page.context().close(); }
 });
@@ -73,7 +81,7 @@ test("the entry stays hidden unless the server gate, the room socket and both pl
             await start(tv, fake);
             await tv.eventually(async () => fake.capabilityReads.length >= 2, `${name}: probed`);
             await tv.jump(100);
-            assert.deepEqual(await menuTitles(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"], name);
+            assert.deepEqual(await settledMenu(tv), ["History", "Requests", "Settings", "Switch Profile", "Sign Out"], name);
         } finally { await tv.page.context().close(); }
     }
 });
@@ -113,14 +121,14 @@ test("turning the toggle off removes the entry again", async () => {
     } finally { await tv.page.context().close(); }
 });
 
-test("the hub is a root page under the bar with Apple's copy, Host and Join sections, and focus on Start a party", async () => {
+test("the hub is a full-screen page with no top bar, Apple's copy, Host and Join sections, and focus on Start a party", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
         await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
         await openHub(tv);
-        assert.equal(await tv.page.locator(".browse-nav").count(), 1, "the top bar stays");
-        assert.equal(await button(tv, "home").getAttribute("aria-current"), "page", "the tab underneath stays selected");
+        // Apple pushes the hub (navigateFromBar(.watchParty)), and TVMainTabView draws its bar only while the stack is empty.
+        assert.equal(await tv.page.locator(".browse-nav").count(), 0, "no top bar over the hub");
         assert.equal(await tv.page.locator(".watch-party-title").textContent(), "Watch something\ntogether");
         assert.equal(await tv.page.locator(".watch-party-body").textContent(), "Pick a title, share the code, and everyone's playback stays in step.");
         assert.deepEqual(await tv.page.locator(".watch-party-eyebrow").allTextContents(), ["Watch Party", "Host", "Join"]);
@@ -134,7 +142,7 @@ test("the hub is a root page under the bar with Apple's copy, Host and Join sect
     } finally { await tv.page.context().close(); }
 });
 
-test("remote order walks Start a party, vote and the code field, reaches Join party once a code is typed, and Up from the first row reaches the bar", async () => {
+test("remote order walks Start a party, vote and the code field, reaches Join party once a code is typed, and Up from the first row stays put", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
@@ -149,10 +157,74 @@ test("remote order walks Start a party, vote and the code field, reaches Join pa
         await tv.remote(38); await tv.remote(38); await tv.remote(38);
         assert.equal(await tv.focused(), "create");
         await tv.remote(38);
-        assert.equal(await tv.focused(), "home", "Up from the first row reaches the bar");
+        assert.equal(await tv.focused(), "create", "with no bar above, Up from the first row keeps focus on it");
         await tv.remote(10009);
         await tv.page.locator('.browse[data-view="home"]').waitFor();
-        assert.equal(await tv.focused(), "home", "Back from the bar returns to the tab underneath");
+        assert.equal(await tv.focused(), "home", "Back returns to the tab it opened over, with focus on the bar (barOwnsFocusOnPopToRoot)");
+    } finally { await tv.page.context().close(); }
+});
+
+test("Back on the code field leaves the hub for the tab it opened over", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        await tv.remote(40); await tv.remote(40);
+        assert.equal(await tv.focused(), "code");
+        await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        assert.equal(await tv.focused(), "home");
+    } finally { await tv.page.context().close(); }
+});
+
+test("the code field keeps the Samsung keyboard and takes Apple's tvOS text field look: no box at rest, a light capsule when focused, the hint at the start", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        const look = () => tv.page.evaluate(() => {
+            const field = document.querySelector<HTMLInputElement>('[data-focus="code"]');
+            if (field === null) throw new Error("no code field");
+            const own = getComputedStyle(field), hint = getComputedStyle(field, "::placeholder"), box = field.getBoundingClientRect();
+            return { focused: document.activeElement === field, type: field.type, tag: field.tagName, align: own.textAlign, background: own.backgroundColor, shadow: own.boxShadow, border: own.borderTopWidth, radius: own.borderTopLeftRadius, padding: own.paddingLeft, color: own.color, hint: hint.color, left: box.left, width: box.width, height: box.height };
+        });
+        const rest = await look();
+        assert.equal(rest.tag, "INPUT", "text entry stays the platform input, so the Samsung keyboard opens");
+        assert.equal(rest.type, "text");
+        assert.equal(rest.align, "left", "the hint sits at the start, 30 px in, as Apple TV shows it");
+        assert.equal(rest.padding, "30px");
+        assert.equal(rest.background, "rgba(0, 0, 0, 0)", "no filled box at rest");
+        assert.equal(rest.shadow, "none");
+        assert.equal(rest.border, "0px");
+        assert.equal(rest.hint, "rgba(255, 255, 255, 0.32)", "dim hint, measured from the Apple TV capture");
+        // Apple TV's field frame, from its accessibility hierarchy: 648 by 73, reaching 4 px past the 640 column on each side.
+        assert.deepEqual([rest.left, rest.width, rest.height], [1136, 648, 73]);
+        await tv.remote(40); await tv.remote(40);
+        assert.equal(await tv.focused(), "code");
+        const lit = await look();
+        assert.equal(lit.focused, true);
+        assert.equal(lit.background, "rgb(231, 231, 231)", "Apple TV's focused field is a light grey capsule");
+        assert.equal(lit.radius, "36.5px", "a capsule, half the 73 px height");
+        assert.equal(lit.shadow, "none", "no shadow on Apple TV");
+        assert.equal(lit.color, "rgb(0, 0, 0)");
+        assert.equal(lit.hint, "rgb(179, 179, 185)");
+        assert.equal(lit.align, "left");
+    } finally { await tv.page.context().close(); }
+});
+
+test("the hub's content runs 140 to 1780 px, as on Apple TV: the 88 pt page inset plus the 52 px of a pushed route's safe area", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        const edges = await tv.page.evaluate(() => {
+            const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+            return { intro: box(".watch-party-intro")?.left, actions: box(".watch-party-actions")?.left, actionsRight: box(".watch-party-actions")?.right, actionsWidth: box(".watch-party-actions")?.width };
+        });
+        assert.deepEqual(edges, { intro: 140, actions: 1140, actionsRight: 1780, actionsWidth: 640 });
     } finally { await tv.page.context().close(); }
 });
 

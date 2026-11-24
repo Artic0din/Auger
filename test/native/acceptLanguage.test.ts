@@ -3,8 +3,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { discoverServer } from "../../src/api/discovery.ts";
-import { NativeHttp } from "../../src/api/http.ts";
+import { NativeHttp, type RequestSpec } from "../../src/api/http.ts";
 import { operations } from "../../src/api/operations.ts";
+import { subtitleOperations } from "../../src/api/subtitleOperations.ts";
 import { parseServerUrl } from "../../src/api/serverUrl.ts";
 import { setAppLanguage } from "../../src/i18n/language.ts";
 import { ManualClock } from "./support/clock.ts";
@@ -66,4 +67,18 @@ test("sign-in and the profile list through the session carry it too", async () =
     await h.core.profiles.list();
     assert.ok(h.fake.requests.length > 0);
     assert.deepEqual(languages(h.fake), h.fake.requests.map(() => "en"));
+});
+
+test("subtitle sync reads and writes, and a fresh subtitle download, carry it beside their own headers", async () => {
+    setAppLanguage("es", ["en", "es"], ["en-AU"]);
+    try {
+        const { fake, http } = setup();
+        const specs: readonly RequestSpec<unknown>[] = [subtitleOperations.subtitleSyncStatus(), subtitleOperations.subtitleSyncRead("f1", "k1"), subtitleOperations.subtitleSyncStart("f1", "k1"), subtitleOperations.subtitleTimingReset("f1", "k1", "etag-1")];
+        for (const spec of specs) await http.send(spec).catch(() => undefined);
+        fake.script("/stream/s/subtitles/9.vtt", { status: 200, text: "WEBVTT" });
+        await http.subtitleText(`${http.base.baseUrl}/api/v2/stream/s/subtitles/9.vtt`, new AbortController().signal, true);
+        assert.equal(fake.requests.length, 5);
+        assert.deepEqual(languages(fake), fake.requests.map(() => "es"));
+        assert.equal(fake.requests[3]?.headers["if-match"], "etag-1", "the write keeps its validator");
+    } finally { setAppLanguage(null); }
 });

@@ -236,6 +236,29 @@ test("audiobook libraries need the audiobooks type and must not be hidden", () =
     assert.deepEqual(audiobookLibraries(libraries.filter(library => library.type !== "audiobooks"), []), []);
 });
 
+// silo-apple SiloMediaType.isAudiobookLibrary: trimmed, case-folded "audiobook" or "audiobooks".
+test("an audiobook library is recognised under every spelling Apple TV accepts", () => {
+    const libraries = decodeUserLibraries({ items: [
+        { id: "3", name: "Singular", type: "audiobook", sort_order: 1 },
+        { id: "4", name: "Plural", type: "audiobooks", sort_order: 2 },
+        { id: "5", name: "Loud", type: " AudioBooks ", sort_order: 3 },
+        { id: "6", name: "Book", type: "book", sort_order: 4 },
+    ] });
+    assert.deepEqual(libraries.map(library => library.type), ["audiobooks", "audiobooks", "audiobooks", "unknown"]);
+    assert.deepEqual(audiobookLibraries(libraries, ["4"]).map(library => library.id), ["3", "5"]);
+});
+
+// silo-apple FileVersion.fileName (`file_name`, optional) names a part in the chapterless picker (TVAudiobookChaptersView.partTitle).
+test("a part keeps the file name the server gives it", () => {
+    const body = twoPartBook();
+    const versions = body.versions as Record<string, unknown>[];
+    versions[0] = { ...versions[0], file_name: "Dune - Part 2.m4b" };
+    versions[1] = { ...versions[1], file_name: "" };
+    assert.deepEqual(decodeAudiobook(body).parts.map(part => part.fileName), ["", "Dune - Part 2.m4b"]);
+    assert.deepEqual(decodeAudiobook(twoPartBook()).parts.map(part => part.fileName), [undefined, undefined]);
+    assert.throws(() => decodeAudiobook({ ...body, versions: [{ ...versions[1], file_name: 7 }] }), WireError);
+});
+
 test("the local opt-in and seek keys are the manifest key names", () => {
     assert.equal(SHOW_AUDIOBOOKS_KEY, "nav.show_audiobooks");
     assert.equal(SHOW_AUDIOBOOKS_DEFAULT, false);

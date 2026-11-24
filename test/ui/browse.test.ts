@@ -13,6 +13,7 @@ import type { Reply } from "../native/support/fakeSilo.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_OVERLAYS_KEY, CARD_PRESENTATION_KEY, QUALITY_KEY } from "../../src/contracts/v2/settings.ts";
 import { fixture, problem } from "../native/support/fakeSilo.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 import { afterPaint, detailReads, homeDetailsRead, launchBrowser, openTv, jumpUntil, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
@@ -768,11 +769,8 @@ for (const reduced of [false, true]) {
         assert.ok(scroll > 0, "the later request needs horizontal scrolling");
         // The search's own debounced reads and the rest read of the focused card can still be on their way; count reads only once none is.
         await tv.jump(1000);
-        await tv.eventually(async () => {
-            const requests = tv.fake.requests.length;
-            await tv.jump(0);
-            return tv.pendingReplies <= tv.fake.heldReplies && tv.fake.requests.length === requests;
-        }, "no further reads");
+        // A late answer (the search capabilities) can restart the search once it lands, so each turn also waits for a painted frame.
+        await quiet(tv);
         const reads = tv.fake.requests.length;
         people.release();
         await tv.page.locator('[data-focus="person:edge-0"]').waitFor({ state: "attached" });
@@ -930,6 +928,8 @@ browseTest("Search Done leaves the field for the selected filter, as Apple TV's 
     const reads = tv.fake.requests.length;
     await tv.page.fill("#browse-search", "Tomas"); await tv.remote(IME_DONE);
     assert.equal(await tv.focused(), "search-filter:movie");
+    // A request leaves the page before the fake records it, so wait for the new query's read before looking at the last one.
+    await tv.eventually(async () => browseReads(tv, "/catalog").some(request => request.path.includes("q=Tomas")), "the new query's catalog read");
     assert.equal(new URL(browseReads(tv, "/catalog").slice(-1)[0]?.path ?? "", "https://fake.invalid").searchParams.get("type"), "movie", "focusing the selected filter reads nothing else");
     assert.ok(tv.fake.requests.length > reads);
 }, { catalog: new SearchEdgeCatalog() });
@@ -1307,6 +1307,17 @@ browseTest("Opening a box set focuses Play, keeps member order, and Back returns
     await tv.remote(BACK);
     await shows(tv, "This box set isn't available. Box sets may be turned off for this library, or too few of its movies are here.");
     assert.equal(await tv.page.locator('[data-focus="play"]').count(), 0);
+}, { catalog: new BoxSetCatalog() });
+
+// Box set Play is TVPrimaryPillButton with stabilizesFocusMotion (TVDetailActions.swift:53-67, silo-apple main 71a3beb9): it does not
+// lift when focused and presses from 1 to 0.98 (:770), easeOut fastDuration (:745).
+for (const reduced of [false, true]) browseTest(`Box set Play stays at 1 when focused and presses to 0.98 (reduced motion: ${reduced})`, async tv => {
+    await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+    await showing(tv, "boxSet:12:1241");
+    await assertPressedLook(tv, tv.page.locator('[data-focus="play"].box-set-play'), { focusScale: 1, heldScale: 0.98, heldOpacity: 1, animates: "scale" }, reduced);
 }, { catalog: new BoxSetCatalog() });
 
 browseTest("Box set Play stays on the first screen with and without a backdrop", async (tv, catalog) => {
@@ -1745,7 +1756,7 @@ browseTest("Search waits 300 ms and keeps titles, People, Requests and the count
     filtered.release();
     await tv.eventually(async () => browseReads(tv, "/catalog/people").length >= people + 2, "People reads for the new query and filter");
     await tv.page.fill("#browse-search", "");
-    await shows(tv, "Search Silo");
+    await shows(tv, "Search Auger");
     assert.equal(await tv.page.locator('.browse-grid .browse-card, [data-focus="person:7"], .search-request-rail').count(), 0, "an emptied field resets at once");
     assert.equal(await tv.page.locator(".search-filters").count(), 0);
 }, { catalog: keptSearch });
@@ -1756,7 +1767,7 @@ browseTest("Emptying the field after a failed search returns to the Search promp
     await tv.page.fill("#browse-search", "Movie"); await tv.remote(IME_DONE);
     await tv.page.locator(".search-failure").waitFor();
     await tv.page.fill("#browse-search", "");
-    await shows(tv, "Search Silo");
+    await shows(tv, "Search Auger");
     assert.equal(await tv.page.locator(".search-failure").count(), 0, "SearchViewModel.resetState clears the error");
     assert.equal(await tv.focused(), "query");
 });
@@ -2500,11 +2511,35 @@ browseTest("Recommended shares Skyline rows and expands through a tile", async t
     assert.equal(await tv.focused(), "expand:library-picks");
 });
 
+// Apple SectionRow.showsWholeSection: a Continue Watching row shorter than its limit whose total is no more than it shows has no Explore all.
+for (const [label, totalCount, expands] of [["a complete", undefined, false], ["a partial", 5, true]] as const) {
+    const resumeCatalog = new FakeCatalog();
+    const household = resumeCatalog.households.get("p-owner");
+    assert.ok(household);
+    const resume = { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"], ...(totalCount === undefined ? {} : { totalCount }) };
+    const recent = { id: "recently_added", sectionType: "recently_added", title: "Recently Added", items: ["movie:m0002", "movie:m0004"] };
+    household.sections = [resume, recent];
+    household.librarySections = [resume, recent];
+    browseTest(`${label} Continue Watching row on Home and Movies ${expands ? "keeps" : "has no"} Explore all`, async tv => {
+        for (const page of ["home", "movies"]) {
+            if (page === "movies") {
+                await tv.page.locator('[data-focus="movies"]').click();
+                await showing(tv, "library:12");
+            }
+            const row = tv.page.locator('[data-section="continue_watching"]');
+            await row.locator('[data-focus="episode:s1e12"]').waitFor();
+            assert.equal(await row.locator('[data-focus="expand:continue_watching"]').count(), expands ? 1 : 0, `${page} Continue Watching`);
+            assert.equal(await tv.page.locator('[data-section="recently_added"] [data-focus="expand:recently_added"]').count(), 1, `${page} Recently Added keeps its card`);
+        }
+    }, { catalog: resumeCatalog });
+}
+
 browseTest("Movies Continue Watching and other library headings open without a catalog overlay", async (tv, catalog) => {
     const household = catalog.households.get("p-owner");
     assert.ok(household);
     household.librarySections = [
-        { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"] },
+        // A partial row, so Continue Watching has an Explore all card to open.
+        { id: "continue_watching", sectionType: "continue_watching", title: "Continue Watching", items: ["movie:m0001", "episode:s1e12"], totalCount: 5 },
         { id: "recently_added", sectionType: "recently_added", title: "Recently Added", items: ["movie:m0002", "movie:m0004"] },
     ];
     await tv.page.locator('[data-focus="movies"]').click();
@@ -4208,7 +4243,7 @@ browseTest("Search removes root chrome and new visits clear its query while root
     assert.equal(tv.fake.requests.length, reads);
     await tv.page.locator('[data-focus="search"]').click();
     assert.equal(await tv.page.inputValue("#browse-search"), "");
-    await tv.page.getByText("Search Silo", { exact: true }).waitFor();
+    await tv.page.getByText("Search Auger", { exact: true }).waitFor();
 });
 
 browseTest("sideways menu dismissal removes its hidden focus zone", async (tv) => {
@@ -4948,9 +4983,15 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
     assert.equal(await tv.page.locator(".search-people-rail .browse-card").count(), 0, "series results have no People row");
     assert.equal(await tv.page.locator(".browse-grid .browse-card").count(), 4);
     assert.equal(await tv.focused(), "search-filter:series");
+    // A late answer repaints the grid and drops the key's target; press once the answers have landed and painted.
+    await settled(tv);
+    const leftOf = async (key: string): Promise<number> => (await readLive(tv, (id: string) => {
+        const node = document.querySelector(`[data-focus="${id}"]`);
+        return node === null || !node.isConnected ? null : { left: node.getBoundingClientRect().left, width: node.getBoundingClientRect().width };
+    }, key, value => value.width > 0, `${key} laid out`)).left;
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "series:p4", "Series Down lands on the fourth card");
-    const left = await tv.page.locator('[data-focus="series:p4"]').evaluate(node => node.getBoundingClientRect().left);
+    const left = await leftOf("series:p4");
     // Compact 189.2px posters 40 apart from x 238 (TVCatalogGrid.columnSpacing): 238 + 3 × 229.2.
     assert.ok(Math.abs(left - 925.6) < 1, `the fourth series card sits near x 925.6, got ${left}`);
     await tv.page.locator('[data-focus="series:p2"]').focus();
@@ -4960,7 +5001,7 @@ browseTest("Series pill Down lands on the card under the pill", async tv => {
     await tv.page.locator('[data-focus="series:p4"]').focus();
     await press(tv, "ArrowDown");
     assert.equal(await tv.focused(), "movie:4", "the fourth series card meets PRIM/GATE");
-    const gate = await tv.page.locator('[data-focus="movie:4"]').evaluate(node => node.getBoundingClientRect().left);
+    const gate = await leftOf("movie:4");
     assert.ok(Math.abs(gate - 901.6) < 1, `PRIM/GATE stays near x 902, got ${gate}`);
 }, { catalog: new PrimSearchCatalog(), beforeConnect: tv => {
     new FakeSettings(tv.fake).profile().set(CARD_PRESENTATION_KEY, { poster_size: "compact", caption: "title_metadata" });

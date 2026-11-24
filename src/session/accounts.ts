@@ -1,5 +1,6 @@
 import { CredentialVault, type StoredCredential, type VaultLoad, type VaultSave, type VaultClear } from "./credentialVault.ts";
 import type { PublicStorage, RandomBytes } from "./deviceIdentity.ts";
+import { translate } from "../i18n/translate.ts";
 import type { SecretStore } from "./secretStore.ts";
 
 export interface SavedAccount {
@@ -83,7 +84,7 @@ export function serversByRecentUse(rows: readonly SavedAccount[], activeBaseUrl:
 
 /** ChangeAccountList.profileCount: nothing before a list was cached. */
 export function profileCountLabel(count: number): string | undefined {
-    return count > 0 ? `${count} ${count === 1 ? "profile" : "profiles"}` : undefined;
+    return count > 0 ? translate("account.profiles.count", { count }) : undefined;
 }
 
 function decodeDirectory(raw: string): Directory {

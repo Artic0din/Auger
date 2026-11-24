@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
@@ -6,9 +7,14 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
 import { selectLibraryMode } from "./support/library.ts";
-import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { leavePlayer } from "./support/leavePlayer.ts";
+import { afterPaint, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -106,10 +112,9 @@ for (const offline of [false, true]) {
             assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0, "remembered launch skips the picker");
             if (offline) {
                 const blocked = tv.blocked;
-                await tv.jump(35000);
-                assert.ok(tv.blocked > blocked, "reconciliation tried while offline");
+                await jumpUntil(tv, 15000, async () => tv.blocked > blocked, "reconciliation tried while offline");
                 tv.offline = false;
-                await tv.jump(50000);
+                await jumpUntil(tv, 15000, async () => tv.fake.requests.filter(request => request.path === "/profiles").length > reads, "reconciliation reads the profile collection");
             }
             await tv.eventually(async () => tv.fake.requests.filter(request => request.path === "/profiles").length > reads, "reconciliation reads the profile collection");
             hold.release();
@@ -713,6 +718,7 @@ appTest("an expired only account signs in again even when its sign-in flag canno
     await tv.page.locator('[data-screen="code"], [data-view="change-account"]').first().waitFor({ timeout: 5000 });
     assert.equal(await tv.page.locator('[data-view="change-account"]').count(), 0, "the expired account is no other account to choose");
     assert.equal(await tv.page.locator('[data-screen="code"]').count(), 1);
+    assert.match(await tv.page.locator("[data-server-headline]").innerText(), /^Sign in to /, "renewing an account keeps Sign in to");
     await tv.page.getByRole("button", { name: "Sign in with a password", exact: true }).click();
     assert.equal(await tv.page.locator("#signin-username").inputValue(), "laura", "the expired account is the one renewed");
 });
@@ -928,6 +934,56 @@ appTest("unreadable account storage shows recovery and preserves the saved bytes
     await tv.page.getByRole("button", { name: "Continue without saved accounts", exact: true }).click();
     await tv.page.locator('[data-screen="entry"]').waitFor();
     await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; });
+});
+
+for (const language of ["de", "ar"]) appTest(`the saved-accounts recovery screen is drawn again in ${language} when the language file lands after it drew, keeping the focused control`, async tv => {
+    const catalog = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${language}.json`, import.meta.url), "utf8")) as Record<string, string>;
+    // The shown language is set but its file has not arrived, as on a cold launch: the screen draws in English.
+    await tv.page.evaluate(tag => { window.appHarness.destroy(); window.appHarness.showLanguage(tag); window.appHarness.storage.failGet = true; window.appHarness.mount(); }, language);
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Retry");
+    await tv.page.locator('[data-focus="continue"]').focus();
+    await tv.page.evaluate(([tag, file]) => window.appHarness.landLanguage(tag, file), [language, catalog] as const);
+    await tv.eventually(async () => (await tv.page.locator('[data-focus="retry"]').innerText()) === translate("common.retry", undefined, language), "the Retry button reads the catalog");
+    assert.equal(await tv.focused(), "continue", "the control the viewer moved to keeps focus");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
+});
+
+appTest("a language file landing under the open exit dialog waits for it to close, and Cancel returns to the control it was opened from", async tv => {
+    const catalog = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>;
+    await tv.page.evaluate(() => { window.appHarness.destroy(); window.appHarness.showLanguage("de"); window.appHarness.storage.failGet = true; window.appHarness.mount(); });
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    await tv.page.locator('[data-focus="continue"]').focus();
+    await tv.remote(10009);
+    await tv.page.getByRole("dialog").waitFor();
+    await tv.page.evaluate(file => window.appHarness.landLanguage("de", file), catalog);
+    await tv.page.evaluate(() => new Promise(resolve => window.setTimeout(resolve, 50)));
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Retry", "not redrawn under the open dialog");
+    await tv.page.keyboard.press("Enter");
+    await tv.page.getByRole("dialog").waitFor({ state: "detached" });
+    assert.equal(await tv.focused(), "continue", "Cancel returns to the control the dialog was opened from");
+    await tv.eventually(async () => (await tv.page.locator('[data-focus="retry"]').innerText()) === translate("common.retry", undefined, "de"), "the screen is drawn again once the dialog closed");
+    assert.equal(await tv.focused(), "continue", "and keeps that control");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; window.appHarness.showLanguage(null); });
+});
+
+appTest("a language file landing while Select is held on Retry waits for the release, and the press still runs Retry", async tv => {
+    const catalog = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/de.json", import.meta.url), "utf8")) as Record<string, string>;
+    await tv.page.evaluate(() => { window.appHarness.destroy(); window.appHarness.showLanguage("de"); window.appHarness.storage.failGet = true; window.appHarness.mount(); });
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor();
+    const retry = tv.page.locator('[data-focus="retry"]');
+    await retry.focus();
+    await tv.page.keyboard.down("Enter");
+    await tv.page.evaluate(file => window.appHarness.landLanguage("de", file), catalog);
+    // The catalog is in, but the held press keeps its own button: no redraw until the release.
+    await tv.page.evaluate(() => new Promise(resolve => window.setTimeout(resolve, 50)));
+    assert.equal(await retry.innerText(), "Retry", "not redrawn while Select is held");
+    assert.equal(await retry.getAttribute("data-pressed"), "", "the press is still drawn on the button it started on");
+    await tv.page.evaluate(() => { window.appHarness.storage.failGet = false; });
+    await tv.page.keyboard.up("Enter");
+    // Retry ran on release: the saved accounts read now succeeds, so the recovery screen is gone.
+    await tv.page.locator('[data-screen="accounts-storage-error"]').waitFor({ state: "detached" });
+    await tv.page.evaluate(() => window.appHarness.showLanguage(null));
 });
 
 appTest("failed live account selection returns to profiles without another directory write", async tv => {
@@ -1412,6 +1468,69 @@ async function startMovie(tv: Tv, id = "movie:m0001"): Promise<void> {
     await prepare(tv);
 }
 
+// #27: one remote journey that keeps focus and context through paging, loading, a failure, playback and Back, on the real player.
+appTest("remote navigation keeps focus and context through Browse paging, a failed Details load, playback and Back (#27)", async (tv, playback, catalog) => {
+    // A second Browse page needs more than 100 films.
+    for (let i = 61; i <= 260; i++) catalog.add({ id: `movie:m${String(i).padStart(4, "0")}`, type: "movie", title: `Movie ${String(i).padStart(4, "0")}`, libraryId: "12", year: 1990 + (i % 30) });
+    const card = "movie:m0106";
+    // Its own file, so the play request names this title rather than the default one.
+    catalog.fileIds.set(card, "43");
+    playback.items.set(card, ["43"]);
+    await signIn(tv);
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator('[data-view="library:12"] [data-focus="movie:m0001"]').first().waitFor();
+    await selectLibraryMode(tv, "Browse");
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 100, "first Browse page");
+    // Paging: the last row asks for the next page, and Down then lands on it.
+    const pageTwo = tv.fake.hold("/catalog/query", true);
+    const readsBefore = tv.fake.requests.length;
+    const edge = await tv.page.locator('.catalog-grid .browse-card').last().getAttribute("data-focus");
+    await tv.page.locator('.catalog-grid .browse-card').last().focus();
+    await tv.remote(37);
+    await tv.remote(39);
+    await tv.jump(300);
+    await tv.eventually(async () => tv.fake.requests.slice(readsBefore).some(request => request.path.startsWith("/catalog/query") && request.body?.cursor !== undefined), "the second page is asked for");
+    assert.equal(await tv.focused(), edge, "the edge card keeps focus while the next page is out");
+    assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 100);
+    pageTwo.release();
+    await tv.eventually(async () => await tv.page.locator('.catalog-grid .browse-card').count() === 200, "second Browse page");
+    assert.equal(await tv.focused(), edge, "the edge card keeps focus when the page lands");
+    await tv.remote(40);
+    assert.equal(await tv.focused(), card, "focus is on the second page");
+    // Loading: the title's Details read is refused, but its answer is held, so the loading page holds focus.
+    const details = `/catalog/items/${encodeURIComponent(card)}`;
+    catalog.failNext(details, problem(400, "validation_failed", "Unavailable"));
+    const held = tv.fake.hold(details, true);
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await tv.focused() === "loading", "the loading page takes focus");
+    await tv.jump(5000);
+    assert.equal(await tv.focused(), "loading", "the loading page keeps focus while the read is out");
+    assert.equal(await tv.page.locator(".details-failure").count(), 0);
+    // Failure: the refusal arrives, and the failure page takes focus on Try Again.
+    // The refusal shows the failure page by itself. Jumping the clock here raced the reply: on a busy runner the load's timeout fired first.
+    held.release();
+    await tv.page.locator(".details-failure").waitFor();
+    assert.equal(await tv.focused(), "retry", "the failure page takes focus on its retry");
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await tv.focused() === "play", "Details loads with Play focused");
+    // Playback through the real player, for the chosen title.
+    await tv.page.keyboard.press("Enter");
+    await prepare(tv);
+    const starts = tv.fake.requests.filter(request => request.path === "/playback/start");
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0]?.body?.file_id, "43", "the play request is for the chosen card's file");
+    // Back from the player returns to Details on Play.
+    await leavePlayer(tv);
+    await tv.page.locator(`[data-view="item:${card}"]`).waitFor();
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+    await tv.eventually(async () => await tv.focused() === "play", "returning from playback restores Play");
+    // Back returns to Browse with both pages and the same card focused.
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="library:12"]').waitFor();
+    await tv.eventually(async () => await tv.focused() === card, "Back restores the second-page card");
+    assert.equal(await tv.page.locator('.catalog-grid .browse-card').count(), 200, "both pages are kept");
+});
+
 async function prepare(tv: Tv): Promise<void> {
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.pendingPrepares > 0), "AVPlay preparation");
     await tv.page.evaluate(() => {
@@ -1456,8 +1575,6 @@ for (const reduced of [false, true]) {
         await startMovie(tv);
         await tv.page.evaluate(() => window.appHarness.avplay.tick(32000));
         await tv.remote(19);
-        // The start's own reads (markers, versions) are still answering on a slow runner.
-        await tv.eventually(async () => tv.pendingReplies === 0, "playback start reads answered");
         await visibility(tv, true);
         await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.includes("suspend")), "AVPlay suspended on hide");
         const gate = tv.fake.hold("/playback/capabilities");
@@ -1505,7 +1622,7 @@ for (const reduced of [false, true]) {
         assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
         assert.equal(playback.session(id).receipt, undefined);
         assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.positionMs), 32000);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
         await tv.eventually(async () => playback.session(id).receipt !== undefined, "recovered session stopped on Back");
     }, true);
@@ -1523,13 +1640,29 @@ appTest("natural episode EOF offers manual Play Now and Stop returns to origin",
     await prepare(tv);
     await tv.page.evaluate(() => { window.appHarness.avplay.tick(5399000); window.appHarness.avplay.listener?.onstreamcompleted(); });
     await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
-    assert.equal(await tv.page.getByRole("heading", { name: "Harbor Lights chapter 1.3", exact: true }).count(), 1);
+    // The heading names the episode as Apple's card does: its code, then its title (#697).
+    assert.equal(await tv.page.getByRole("heading", { name: "S1:E3 Harbor Lights chapter 1.3", exact: true }).count(), 1);
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
     assert.equal(tv.fake.requests.filter(r => r.method === "DELETE").length, 1);
     await tv.remote(413);
     await tv.page.locator('[data-view="home"]').waitFor();
     assert.equal(await tv.focused(), "episode:s1e12");
 }, true);
+
+/**
+ * Up Next's lookup starts at the first frame, as Apple's does (#698). It is a chain of reads, and between two of them none is pending, so
+ * wait until none is pending and none has followed for 25 polls before a test counts the reads the end of playback makes.
+ */
+async function settleUpNextLookup(tv: Tv): Promise<void> {
+    let seen = -1;
+    let quiet = 0;
+    await tv.eventually(async () => {
+        const count = tv.fake.requests.length;
+        quiet = tv.pendingReplies === 0 && count === seen ? quiet + 1 : 0;
+        seen = count;
+        return quiet >= 25 && tv.fake.requests.some(r => r.path.startsWith("/home/sections"));
+    }, "Up Next lookup at the first frame");
+}
 
 async function startEpisode(tv: Tv, playback: FakePlayback, catalog: FakeCatalog, id = "episode:s1e12"): Promise<void> {
     catalog.fileIds.set(id, "42");
@@ -1543,6 +1676,7 @@ async function startEpisode(tv: Tv, playback: FakePlayback, catalog: FakeCatalog
     await tv.page.locator(`.skyline-continue[data-focus="${id}"]`).first().focus();
     await tv.remote(415);
     await prepare(tv);
+    await settleUpNextLookup(tv);
 }
 
 for (const reduced of [false, true]) {
@@ -1557,7 +1691,7 @@ for (const reduced of [false, true]) {
         const deck = tv.fake.hold("/home/sections");
         const deckReads = tv.fake.requests.filter(r => r.path.startsWith("/home/sections")).length;
         await tv.page.evaluate(() => { window.appHarness.avplay.tick(5399000); window.appHarness.avplay.listener?.onstreamcompleted(); });
-        await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+        await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
         assert.equal(await tv.focused(), "back");
         assert.equal(tv.fake.requests.filter(r => r.path.startsWith("/watch/")).length, watchReads, "EOF must wait for STOP before reading the next episode");
         stop.release();
@@ -1580,7 +1714,7 @@ for (const reduced of [false, true]) {
         assert.equal(starts.length, 2);
         assert.equal(starts[1]?.body?.file_id, "43");
         assert.equal(starts[1]?.body?.start_position, 0);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-view="home"]').waitFor();
         assert.equal(await tv.focused(), "episode:s1e12");
         assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 2);
@@ -1594,7 +1728,7 @@ appTest("Back during EOF STOP restores Browse and late answers cannot show conti
     assert.ok(id !== undefined);
     const stop = tv.fake.hold(`/playback/${id}`, true);
     await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-    await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+    await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
     stop.release();
@@ -1614,9 +1748,9 @@ for (const reduced of [false, true]) {
         playback.sessions.delete(id);
         await tv.jump(10000);
         await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-        await tv.page.getByText("Ending playback…", { exact: true }).waitFor();
+        await tv.page.getByText("Finding the next episode", { exact: true }).waitFor();
         progress.release();
-        await tv.page.getByText("Could not confirm playback or load the next episode.", { exact: true }).waitFor();
+        await tv.page.getByText("Playback progress could not be recorded.", { exact: true }).waitFor();
         assert.equal(await tv.page.getByRole("button", { name: "Retry", exact: true }).count(), 0);
         assert.equal(await tv.page.getByRole("button", { name: "Play Now", exact: true }).count(), 0);
         assert.equal(await tv.focused(), "back");
@@ -1636,7 +1770,7 @@ for (const reduced of [false, true]) {
         assert.ok(id !== undefined);
         playback.sessions.delete(id);
         await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
-        await tv.page.getByText("Could not confirm playback or load the next episode.", { exact: true }).waitFor();
+        await tv.page.getByText("Playback progress could not be recorded.", { exact: true }).waitFor();
         assert.equal(await tv.page.getByRole("button", { name: "Retry", exact: true }).count(), 0);
         assert.equal(await tv.page.getByRole("button", { name: "Play Now", exact: true }).count(), 0);
         assert.equal(await tv.focused(), "back");
@@ -1754,7 +1888,7 @@ appTest("saved server profile 15/45 reaches the composed controller and every re
     await tv.remote(417);
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.slice(-1)[0]), "seekTo 145000");
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="home"]').waitFor();
     assert.equal(await tv.focused(), "movie:m0001");
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
@@ -1794,7 +1928,7 @@ appTest("Home Continue uses the existing app player owner once and returns witho
     assert.equal(starts[0]?.body?.file_id, "42");
     assert.equal(starts[0]?.body?.start_position, 1200);
     assert.equal(starts[0]?.headers["x-profile-id"], "p-owner");
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().waitFor();
     assert.equal(await tv.focused(), "movie:m0001");
     assert.equal(tv.fake.requests.filter(request => request.path === "/playback/start").length, 1);
@@ -2093,6 +2227,7 @@ for (const [command, state] of [[415, "PLAYING"], [19, "PAUSED"], [10252, "PAUSE
 appTest("the composed remote seeks and changes audio through the real playback owner", async (tv, playback) => {
     await signIn(tv);
     await startMovie(tv);
+    await settleUpNextLookup(tv);
     await pauseTvClock(tv);
     await tv.page.evaluate(() => window.appHarness.avplay.tick(90000));
     await tv.page.keyboard.press("ArrowLeft");
@@ -2100,10 +2235,13 @@ appTest("the composed remote seeks and changes audio through the real playback o
     await tv.page.keyboard.press("Enter");
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.positionMs), 80000);
-    // Old Down opened the panel on Audio. Down focuses Play/Pause; Options opens Info, and Audio is the next tab.
+    // Old Down opened the panel on Audio. Down focuses Play/Pause; Options opens Info, and Audio is the next tab. With On Deck items a movie
+    // also shows Show Up Next before Options, as Apple's transport does (#698), so Options is one press further.
     await tv.page.keyboard.press("ArrowDown");
     await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("ArrowRight");
+    await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "tracks");
     await tv.page.keyboard.press("Enter");
     for (let index = 0; index < 3; index++) await tv.page.keyboard.press("ArrowRight");
     const id = [...playback.sessions.keys()][0];
@@ -2119,10 +2257,13 @@ appTest("the composed remote seeks and changes audio through the real playback o
     const change = tv.fake.requests.filter((request) => request.path.endsWith("/replan")).pop();
     assert.equal(change?.body?.operation, "track_change");
     assert.equal(change?.body?.position_seconds, 80);
-    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info.
+    // Old second Down reopened the panel. A track change closes it while the new route loads, and Options opens Info. Show Up Next still
+    // sits before Options (#698), so Options is a third press.
     await tv.page.keyboard.press("ArrowDown");
     await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("ArrowRight");
+    await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "tracks");
     await tv.page.keyboard.press("Enter");
     await tv.page.keyboard.press("ArrowRight");
     assert.equal(await tv.page.locator('.player-menu [data-focus="file:42:audio:1"]').getAttribute("aria-pressed"), "true");
@@ -2146,8 +2287,15 @@ appTest("destroy during preparation is idempotent and late callbacks cannot repl
 
 appTest("native posters keep their shape and the exit modal covers the viewport", async (tv) => {
     await signIn(tv);
-    const poster = await tv.page.locator('.browse-card:not(.skyline-continue) .browse-art').first().boundingBox();
-    assert.ok(poster !== null);
+    // A late Home answer repaints the cards and detaches the poster a bounding box was just asked for; read it live once the answers have painted.
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "Home answers delivered");
+    await afterPaint(tv);
+    const poster = await readLive(tv, () => {
+        const art = document.querySelector('.browse-card:not(.skyline-continue) .browse-art');
+        if (art === null || !art.isConnected) return null;
+        const box = art.getBoundingClientRect();
+        return box.width > 0 ? { width: box.width, height: box.height } : null;
+    }, null, () => true, "a laid-out poster");
     assert.ok(Math.abs(poster.height / poster.width - 1.5) < 0.001);
     await tv.remote(10009);
     assert.equal(await tv.focused(), "home");

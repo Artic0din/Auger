@@ -24,7 +24,7 @@ import { durationText } from "../i18n/duration.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
+import { detailDate, episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { spinner } from "./marquee.ts";
 import { defaultArtwork } from "./defaultArtwork.ts";
@@ -56,7 +56,7 @@ function factTokens(detail: ItemDetail, state: DetailsState | undefined, episode
     if (detail.type === "episode") {
         const aired = episodeAirDate(detail.airDate);
         if (aired !== undefined) tokens.push(aired);
-    } else if (detail.year !== undefined && detail.year > 0) tokens.push(String(detail.year));
+    } else if (detail.year !== undefined && detail.year > 0) tokens.push(integerText(detail.year));
     if (detail.type !== "series" && detail.runtimeMinutes !== undefined && detail.runtimeMinutes > 0) {
         const file = detail.versions.find(version => version.fileId === playChoices(detail, state?.selectedFileId, state?.preferredQuality)?.fromStart.fileId);
         const minutes = file?.durationSeconds ? Math.round(file.durationSeconds / 60) : detail.runtimeMinutes;
@@ -421,7 +421,9 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     if (state !== undefined) {
         const ordinal = audio.findIndex((_track, index) => selectedAudio === `file:${file?.fileId}:audio:${index}`);
         const version = actionButton("version", `${translate("detail.version")}: ${versionValue}`, () => state.showPanel("version"));
-        version.element.setAttribute("aria-disabled", String(playbackChoices === undefined || playbackDetail.versions.length === 0));
+        // TVPlaybackSelectorRow.isVersionDisabled: Versions opens only with more than one version to choose. Tizen shows no Edition
+        // selector, so every version is in the choice (Apple's DetailPlaybackFormatting.versionSelectorVersions without editions).
+        version.element.setAttribute("aria-disabled", String(playbackChoices === undefined || playbackDetail.versions.length < 2));
         version.element.setAttribute("aria-haspopup", "dialog");
         actions.push(version);
         const trigger = actionButton("audio", `${translate("detail.audio")}: ${ordinal === -1 ? autoLabel : audioLabel(ordinal)}`, () => state.showPanel("audio"));
@@ -542,7 +544,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     if (directors !== undefined) facts.push({ label: translate("detail.director"), value: directors });
     const writers = creditLine(crew, ["writer", "screenplay", "story"]);
     if (writers !== undefined) facts.push({ label: writerFactLabel(crew), value: writers });
-    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: fact.value })));
+    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: "date" in fact ? detailDate(fact.date) : fact.value })));
     // TVDetailFactsSection: the "Details" header always shows; only the facts grid hides when empty.
     const factsPanel = el("div", "details-facts");
     factsPanel.setAttribute("aria-label", translate("detail.details"));
@@ -672,13 +674,20 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         }
         if (detail.type === "movie" || detail.type === "series") items.push(actionButton("find-trailers", translate("detail.more.findTrailers"), () => { state.trailers.start(state.detail); state.closePanel(); }));
         if (state.descriptions?.offers() === true) items.push(actionButton("translate-description", translate("detail.more.translate"), () => { state.descriptions?.translate(); state.closePanel(); }));
+        // TVMovieDetailView / TVSeriesDetailView: after the translation row, before Watch Party.
+        const notInterested = state.notInterested;
+        if (notInterested !== undefined) {
+            const item = actionButton("not-interested", translate(notInterested ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), () => { state.closePanel(); state.toggleNotInterested(); });
+            item.element.setAttribute("aria-disabled", String(state.notInterestedPending));
+            items.push(item);
+        }
         // WatchPartyEntry.isAvailable: last, and only while the experimental switch is on and the server can host a party.
         // A series offers the episode its hero shows.
         const partyTitle = detail.type === "series" ? state.nextEpisode : detail.type === "movie" || detail.type === "episode" ? state.detail : undefined;
         if (context.watchParty?.offered() === true && partyTitle !== undefined) {
             items.push(actionButton("watch-party", translate("watchParty.menu.open"), () => { state.closePanel(); context.watchParty?.open(choiceFromDetail(partyTitle)); }));
         }
-        return detailPanel(view, state, translate("detail.more"), items.length ? items : [actionButton("close-more", "Close", () => state.closePanel())], menuNotes);
+        return detailPanel(view, state, translate("detail.more"), items.length ? items : [actionButton("close-more", translate("rowPage.close"), () => state.closePanel())], menuNotes);
     }
     return view;
 }
@@ -870,7 +879,7 @@ export function personHero(person: Person, baseUrl: string, metadataLoading = fa
         const row = el("div", "person-facts");
         for (const fact of facts) row.appendChild(el("span", "person-fact", fact));
         if (metadataLoading) {
-            const loading = el("span", "person-fact person-metadata-loading", "Loading metadata");
+            const loading = el("span", "person-fact person-metadata-loading", translate("person.loadingMetadata"));
             loading.setAttribute("role", "status");
             row.appendChild(loading);
         }

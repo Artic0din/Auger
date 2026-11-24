@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
+import { assertPressedLook } from "./support/pressed.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
@@ -50,8 +51,9 @@ async function openMovie(setup: (catalog: FakeDetails) => void, body: (tv: Tv) =
 test("a movie with no progress shows Apple's six controls, focuses Play and keeps Watchlist's label", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
     assert.deepEqual((await row(tv)).map(({ key, label, disabled }) => ({ key, label, disabled })), [
         { key: "play", label: "Play", disabled: false },
-        { key: "version", label: "Versions", disabled: false },
-        { key: "audio", label: "Audio Tracks", disabled: false },
+        // TVPlaybackSelectorRow's detail.version and detail.audio (silo-apple 71a3beb9, :112, :147).
+        { key: "version", label: "Version", disabled: false },
+        { key: "audio", label: "Audio", disabled: false },
         { key: "subtitles", label: "Subtitles", disabled: false },
         { key: "watchlist", label: "Watchlist", disabled: false },
         { key: "more", label: "More", disabled: false },
@@ -105,6 +107,39 @@ test("a movie with no playable file keeps Play and the selectors in place, disab
     await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, versions: [] } }));
 }));
 
+// TVPlaybackSelectorRow.isVersionDisabled (TVPlaybackSelectorRow.swift:64-67, silo-apple main 71a3beb9) is
+// DetailPlaybackFormatting.shouldEnableVersionSelector (DetailPlaybackFormatting.swift:99-104): more than one version to choose.
+// A disabled Version is in disabledActions (:76), so focus passes over it.
+test("a movie with one version draws Versions disabled and Right from Play skips to Audio, as Apple TV does", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
+    await tv.eventually(async () => await tv.page.locator('[data-focus="audio"]').getAttribute("aria-disabled") === "false", "playback detail arrived");
+    const controls = await row(tv);
+    assert.deepEqual(controls.filter(control => ["play", "version", "audio"].includes(control.key)).map(({ key, disabled }) => ({ key, disabled })), [
+        { key: "play", disabled: false },
+        { key: "version", disabled: true },
+        { key: "audio", disabled: false },
+    ]);
+    assert.equal(await tv.focused(), "play");
+    await tv.remote(RIGHT);
+    assert.equal(await tv.focused(), "audio", "Right passes over the disabled Versions");
+    await tv.remote(LEFT);
+    assert.equal(await tv.focused(), "play");
+    await tv.page.locator('[data-focus="version"]').focus();
+    await tv.page.keyboard.press("Enter");
+    assert.equal(await tv.page.getByRole("dialog").count(), 0, "a disabled Versions opens no picker");
+}, async tv => {
+    const catalog = tv.fake.catalog;
+    assert.ok(catalog instanceof FakeDetails);
+    const body = catalog.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body as Record<string, unknown>;
+    const versions = Array.isArray(body.versions) ? body.versions.slice(0, 1) : [];
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, versions } }));
+}));
+
+test("a movie with two versions keeps Versions enabled and reachable from Play", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
+    await tv.eventually(async () => await tv.page.locator('[data-focus="version"]').getAttribute("aria-disabled") === "false", "playback detail arrived");
+    await tv.remote(RIGHT);
+    assert.equal(await tv.focused(), "version");
+}));
+
 test("focused controls cast Apple's black shadows, never a halo", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
     // Read from the live node: a repaint can replace the button between lookup and style read.
     const shadow = async (key: string): Promise<string> => {
@@ -118,9 +153,19 @@ test("focused controls cast Apple's black shadows, never a halo", () => openMovi
     assert.equal(await tv.focused(), "version");
     assert.equal(await shadow("play"), "rgba(0, 0, 0, 0.14) 0px 2px 4px 0px");
     assert.equal(await shadow("version"), "rgba(0, 0, 0, 0.34) 0px 6px 16px 0px");
-    const play = await tv.page.locator('[data-focus="play"]').evaluate(node => ({ width: node.getBoundingClientRect().width, border: getComputedStyle(node).borderTopWidth }));
+    // Layout width: the rect would include the 1.025 focus scale while it eases back.
+    const play = await tv.page.locator('[data-focus="play"]').evaluate(node => ({ width: node instanceof HTMLElement ? node.offsetWidth : 0, border: getComputedStyle(node).borderTopWidth }));
     assert.deepEqual(play, { width: 340, border: "0px" });
 }));
+
+// TVPrimaryPillButton is TVPillButtonStyle(kind: .primary, focusTreatment: .compact) (TVDetailActions.swift:32-37, silo-apple main
+// 71a3beb9): focused it scales to 1.025 (:774-777), and held to that focus scale times 0.98 (:769-772), easeOut(fastDuration) (:745).
+for (const reduced of [false, true]) {
+    test(`Details Play presses to 0.98 of its 1.025 focus scale, as Apple's pill does (reduced motion: ${reduced})`, () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
+        await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await assertPressedLook(tv, tv.page.locator('[data-focus="play"]'), { focusScale: 1.025, heldScale: 1.025 * 0.98, heldOpacity: 1, animates: "scale" }, reduced);
+    }));
+}
 
 test("Back from the action row leaves Details for the card that opened it", () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
     assert.equal(await tv.focused(), "play");
