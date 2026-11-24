@@ -3,10 +3,10 @@ name: Release
 # Releases main after Tizen Builds passes on it. scripts/release-version.py
 # picks vX.Y.Z from the Conventional Commits since the latest published release
 # (or skips the release when none needs one), and this workflow signs Auger.wgt
-# with the maintainer's Samsung certificate, reserves the tag, publishes it on a
-# GitHub Release with notes from scripts/generate-changelog.py, and opens a
-# pull request to record the notes in CHANGELOG.md. Run it by hand to force a
-# bump or a version. See docs/releasing.md.
+# with the Tizen SDK public distributor certificate (no personal TV DUIDs),
+# reserves the tag, publishes it on a GitHub Release with notes from
+# scripts/generate-changelog.py, and opens a pull request to record the notes
+# in CHANGELOG.md. Run it by hand to force a bump or a version. See docs/releasing.md.
 
 on:
   workflow_run:
@@ -159,16 +159,11 @@ jobs:
       - name: Create the signing profile
         id: signing
         run: scripts/ci/create-signing-profile.sh
-        env:
-          TIZEN_AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_P12_B64 }}
-          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-          TIZEN_DISTRIBUTOR_P12_B64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_B64 }}
-          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
 
-      - name: Require the Samsung certificate
-        if: steps.signing.outputs.signing != 'samsung'
+      - name: Require the public Tizen certificate
+        if: steps.signing.outputs.signing != 'public'
         run: |
-          echo "::error::The TIZEN_* signing secrets are missing, so this build would not install on a TV."
+          echo "::error::Public Tizen signing profile was not created; refusing to publish."
           exit 1
 
       - name: Set the version
@@ -261,8 +256,8 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "- **Apps2Samsung:** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it."
-            echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
+            echo "- **Apps2Samsung (recommended):** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it. Apps2Samsung re-signs \`Auger.wgt\` with your own Samsung certificate."
+            echo "- **Sideload with Tizen Studio:** public releases use the Tizen SDK public certificate (no personal TV DUIDs), so direct \`tizen install\` requires building and signing locally with your own Samsung certificate (\`./scripts/build-wgt.sh\`)."
             if [[ "${PREVIOUS_TAG}" == *-beta.* ]]; then
               echo "- **Upgrading from \`0.1.0-beta.*\`:** uninstall the older build first, because the Tizen package ID changed to \`AugerTv001.Auger\`. Uninstalling clears saved sign-in data, so you sign in again once; subsequent \`AugerTv001.Auger\` releases update in place within the same install method."
             fi

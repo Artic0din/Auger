@@ -1,9 +1,8 @@
 name: Tizen Builds
 
 # CI gate: tests and a packaged .wgt on main pushes and pull requests.
-# With the signing secrets (main and same-repository pull requests), the .wgt is
-# signed with the maintainer's Samsung certificate and uploaded. Fork pull
-# requests sign with a throwaway certificate to check packaging only.
+# Packages Auger.wgt with the Tizen SDK public distributor certificate (no
+# personal Samsung TV certificates or DUIDs) and uploads the auger-wgt artifact.
 # release.yml runs automatically after this workflow succeeds on main.
 
 on:
@@ -98,16 +97,11 @@ jobs:
       - name: Create the signing profile
         id: signing
         run: scripts/ci/create-signing-profile.sh
-        env:
-          TIZEN_AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_P12_B64 }}
-          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-          TIZEN_DISTRIBUTOR_P12_B64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_B64 }}
-          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
 
-      - name: Require the Samsung certificate outside pull requests
-        if: github.event_name != 'pull_request' && steps.signing.outputs.signing != 'samsung'
+      - name: Require the public Tizen certificate
+        if: steps.signing.outputs.signing != 'public'
         run: |
-          echo "::error::The TIZEN_* signing secrets are missing, so main cannot produce a TV-installable .wgt."
+          echo "::error::Public Tizen signing profile was not created."
           exit 1
 
       - name: Package and sign
@@ -119,8 +113,8 @@ jobs:
         if: failure()
         run: find "${HOME}" -path '*cli/logs/cli.log' -exec tail -n 60 {} \;
 
-      - name: Upload the signed .wgt
-        if: steps.signing.outputs.signing == 'samsung'
+      - name: Upload the packaged .wgt
+        if: steps.signing.outputs.signing == 'public'
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: auger-wgt

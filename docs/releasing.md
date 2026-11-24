@@ -16,7 +16,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 | only `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` or merge commits | no release |
 
 The largest bump wins.
-When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the maintainer's Samsung certificate.
+When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the Tizen SDK public distributor certificate (no personal Samsung TV certificates or DUIDs).
 It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and opens a pull request to record the release notes in `CHANGELOG.md`.
 A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
 
@@ -86,7 +86,7 @@ Preview notes locally with `python3 scripts/generate-changelog.py release --vers
 
 1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger-Tizen`, or use **Settings > Installing > Your sources** in the app.
 2. Install Auger from that source.
-   Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so your TV needs no listing in the maintainer's certificate.
+   Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so it installs straight onto your TV.
 3. Update with one click.
    Every release raises `X.Y.Z` in `app/config.xml`, so Apps2Samsung's updater sees every release.
 
@@ -100,14 +100,15 @@ It is ready to submit to that repository's `packages/` folder once it is reviewe
 
 ## Sideloading a build
 
-The maintainer's certificate lists the TV DUIDs it allows, so a sideloaded build installs only on those TVs.
+Public GitHub Releases use the Tizen SDK public distributor certificate so no personal TV DUID is embedded in public artifacts.
+To sideload directly onto a Samsung TV in Developer Mode, sign with your own local Samsung certificate profile:
 
-1. Download `Auger.wgt` and `Auger.wgt.sha256` from [GitHub Releases](https://github.com/Artic0din/Auger-Tizen/releases).
-2. Check the file with `sha256sum --check Auger.wgt.sha256`.
-3. On a listed TV in Developer Mode, install it through Tizen Studio Device Manager or run `tizen install -n Auger.wgt -t <device>`.
+1. Create a Samsung author and distributor certificate profile in Tizen Studio Certificate Manager for your TV's DUID.
+2. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
+3. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>`.
 
 ## Switching between Apps2Samsung and a sideloaded build
 
-Apps2Samsung and the maintainer sign with different certificates.
+Apps2Samsung and a local Tizen Studio profile sign with different certificates.
 Uninstall Auger before switching in either direction.
 Uninstalling clears the app's data, so you sign in again afterwards.

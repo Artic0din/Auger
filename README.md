@@ -26,11 +26,9 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 Auger ships through Apps2Samsung and GitHub Releases.
 Install it in one of two ways:
 
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung):** add this repository as a source (`github.com/Artic0din/Auger-Tizen`), then install from it.
-  Apps2Samsung signs the app with your own Samsung certificate, so it installs on your TV without being listed in ours.
-  It updates in one click when the app's version changes.
-- **Sideload:** download `Auger.wgt` and its `Auger.wgt.sha256` checksum from [Releases](https://github.com/Artic0din/Auger-Tizen/releases).
-  It is signed with the maintainer's certificate, so it installs only on TVs listed in it; see [Releasing](docs/releasing.md#sideloading-a-build).
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (recommended):** add this repository as a source (`github.com/Artic0din/Auger-Tizen`), then install from it.
+  Apps2Samsung signs `Auger.wgt` with your own Samsung certificate and updates it in one click when a new release ships.
+- **Sideload from source:** public releases are signed with the Tizen SDK public certificate (no personal TV DUIDs), so direct `tizen install` requires building and signing locally with your own Samsung TV certificate profile; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
 Upgrading from a `0.1.0-beta.*` build also requires uninstalling first because the Tizen package ID changed to `AugerTv001.Auger`; subsequent builds with `AugerTv001.Auger` update in place within the same install method.
@@ -77,8 +75,8 @@ export TIZEN_SECURITY_PROFILE="YourProfileName"
 The script builds the package staging directory and writes `dist/Auger.wgt`.
 
 CI builds the same package on every pull request and push to main (`.github/workflows/tizen-build.yml`).
-On main and same-repository pull requests it signs with the maintainer's Samsung certificate from repository secrets and uploads `Auger.wgt` with its SHA-256 as the `auger-wgt` artifact.
-That certificate lists the TVs it may install on, so a CI-signed package installs only on those TVs.
+It signs with the Tizen SDK public distributor certificate (never embedding personal Samsung TV certificates or DUIDs) and uploads `Auger.wgt` with its SHA-256 as the `auger-wgt` artifact.
+Apps2Samsung re-signs the release `.wgt` with each user's own Samsung certificate; direct TV sideloading signs locally with your own Certificate Manager profile.
 
 ### Release
 
