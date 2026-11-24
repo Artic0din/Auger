@@ -41,5 +41,5 @@ remove this additional permission from their copy.
 Ryan Foyle grants it for the code they hold copyright in.
 Contributors grant it for their contributions by agreeing to the
 licensing terms in [CONTRIBUTING.md](CONTRIBUTING.md).
-Code ported from Silo's repositories, and any contribution another author made
-before this file was added, is covered once its author agrees to it.
+A contribution another author made before this file was added is covered once
+that author agrees to it.
