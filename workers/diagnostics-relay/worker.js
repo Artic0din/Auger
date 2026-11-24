@@ -18,6 +18,29 @@ const CATEGORY_LABELS = {
   app_ui: "App / Navigation",
 };
 
+const ALLOWED_APP_ERRORS = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+  "DOMException",
+  "AbortError",
+  "NotAllowedError",
+  "NotSupportedError",
+  "QuotaExceededError",
+  "SecurityError",
+  "NetworkError",
+  "TimeoutError",
+  "DataCloneError",
+  "InvalidStateError",
+  "UncaughtError",
+  "UnhandledRejection",
+]);
+
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
 const QUERY_PATTERN = /\?[^\s"'<>]+/g;
 const SECRET_ASSIGN_PATTERN = /\b(?:bearer|token|api[_-]?key|password|passwd|secret|authorization|cookie)\s*[:=]\s*\S+/gi;
@@ -130,7 +153,7 @@ export function validatePayload(raw) {
     : [];
 
   const cat = typeof raw.cat === "string" && Object.hasOwn(CATEGORY_LABELS, raw.cat) ? raw.cat : undefined;
-  const err = typeof raw.err === "string" && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(raw.err) ? raw.err : undefined;
+  const err = typeof raw.err === "string" && ALLOWED_APP_ERRORS.has(raw.err) ? raw.err : undefined;
 
   return {
     v: 1,

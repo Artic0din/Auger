@@ -242,6 +242,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     const issueComments = new Map<number, { body: string }[]>();
     let nextIssueNumber = 888;
     let failLookupOnce = false;
+    let invalidLookupJsonOnce = false;
     let paginatePageTwo = false;
     const fakeFetch = async (url: string, init?: RequestInit): Promise<Response> => {
         const method = (init?.method ?? "GET").toUpperCase();
@@ -249,6 +250,10 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
             if (failLookupOnce) {
                 failLookupOnce = false;
                 return new Response("upstream error", { status: 503 });
+            }
+            if (invalidLookupJsonOnce) {
+                invalidLookupJsonOnce = false;
+                return new Response("not-json{", { status: 200 });
             }
             if (paginatePageTwo && !url.includes("page=2")) {
                 return new Response(JSON.stringify([{ number: 700, body: "unrelated", comments: 0 }]), {
@@ -442,9 +447,35 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         { fetch: fakeFetch },
     );
     assert.equal(lookupFailed.status, 502);
-    assert.equal(posted.length, 2, "failed GitHub issue lookup must return retryable 502 without creating a duplicate issue");
+    invalidLookupJsonOnce = true;
+    const malformedLookup = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.16" },
+            body: JSON.stringify(payload),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(malformedLookup.status, 502);
+    assert.equal(posted.length, 2, "failed or malformed GitHub issue lookup must return retryable 502 without creating a duplicate issue");
 
-    // 3d. Concurrent first reports for the same new fingerprint serialize cleanly into 1 created + 1 duplicate.
+    // 3d. Allowlisted err passes through; unrecognized token-like or Markdown err values are dropped at the Worker boundary.
+    const unsafeErr = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.17" },
+            body: JSON.stringify({ v: 1, app: "0.3.0", tv: "QE65S95C", err: "SecretToken12345678901234567890" }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(unsafeErr.status, 201);
+    const unsafeBody = String(posted[posted.length - 1]?.body.body ?? "");
+    assert.ok(!unsafeBody.includes("SecretToken12345678901234567890"), "unrecognized token-like err must be dropped");
+    assert.ok(!unsafeBody.includes("| App error |"), "dropped err must not render an App error row");
+
+    // 3e. Concurrent first reports for the same new fingerprint serialize cleanly into 1 created + 1 duplicate.
     const burstPayload = { v: 1, app: "0.3.0", tv: "QE65S95C", err: "RangeError", auto: true };
     const [burstA, burstB] = await Promise.all([
         handleRequest(new Request("https://auger-diagnostics.plaintextlab.com/report", { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.20" }, body: JSON.stringify(burstPayload) }), env, { fetch: fakeFetch }),
