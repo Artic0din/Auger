@@ -94,7 +94,7 @@ Keep the `main` ruleset (`Settings > Rules > Rulesets > main`) aligned with thes
 
 When renaming a required check, the pull request that renames it emits only the new context, so GitHub will keep waiting on the old required context unless handled in one of two ways:
 
-- **Direct switch (requires ruleset bypass).** Let an admin merge the rename pull request with a bypass and immediately replace the old required contexts in the `main` ruleset with the new ones. Do not switch the ruleset before merge, or open pull requests running the previous workflow names will be blocked.
+- **Direct switch (requires ruleset bypass).** Merge the rename pull request with an admin bypass, then immediately replace the old required contexts in the `main` ruleset with the new ones. Do not switch the ruleset before merge, or open pull requests running the previous workflow names will be blocked. After switching, update open pull request branches from `main` so CI runs with the new check names before merging them.
 - **Staged switch (no bypass).** Merge a first pull request that reports both old and new contexts, update open pull requests and switch the `main` ruleset and `scripts/pr-gate.py` to the new contexts, then merge a follow-up pull request that drops the old contexts.
 
 `scripts/pr-gate.py <PR>` checks the required check runs (including `Kody Code Review` and all three Playwright UI shards) plus mergeability and unresolved review threads before merging.
