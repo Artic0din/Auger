@@ -22,9 +22,9 @@ The EOF screen retains the first twelve distinct On Deck candidates in server or
 On Deck also appears after movies, and its titles require explicit selection.
 
 Natural AVPlay completion enters the final-stop path.
-Pending progress and the final stop receipt settle before a fresh authorized next-episode resolution.
-Autoplay is re-read after the final stop, with failures leaving continuation manual.
-The countdown starts only with a playable successor and confirmed stop, including across season boundaries.
+Pending progress settles and `STOP` is sent once before fresh authorized next-episode resolution; a transient `STOP` failure retries in the background so a slow server does not block episode advance, while a refusal or expired session ends continuation ([manual episode completion](playback-quality.md#manual-episode-completion)).
+Autoplay is re-read after the stop handoff, with failures leaving continuation manual.
+The countdown starts once a playable successor resolves and the stop handoff succeeded or moved to background retry, including across season boundaries.
 When the pre-end panel was already visible, an enabled successor starts after the final stop without a second countdown.
 No successor means no countdown; resolution or stop failures retain the existing retry and Back behavior.
 Cancel stops the timer but preserves Play Now.

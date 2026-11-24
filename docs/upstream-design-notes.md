@@ -2,7 +2,7 @@
 
 Read the matching upstream spec in `silo-apple` or `silo-android` (`docs/superpowers/`) before porting a TV feature. Each spec records what the Apple TV or Android TV client does, why, and the edge cases caught in review. Port the behavior, not the Swift or Kotlin structure.
 
-Most specs have a companion implementation plan under `docs/superpowers/plans/` with the same name. Phone, reader, audiobook, download, and admin specs are excluded here.
+Most specs have a companion implementation plan under `docs/superpowers/plans/` with the same name. Phone, reader, download, and admin specs are excluded here. Links target upstream `main` for discovery; record the exact upstream commit SHA you read when porting (`AGENTS.md`).
 
 ## Parity audits
 

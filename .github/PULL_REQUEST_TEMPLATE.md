@@ -1,14 +1,13 @@
-<!-- Follow CONTRIBUTING.md: plain summary first, no restated diff, no working history. -->
+<!-- Follow CONTRIBUTING.md: lead with a plain-language summary focused on the shipped behavior. -->
 
 ## Problem
 
 Closes #NNN
-<!-- One "Closes #NNN" line per issue this change fully resolves, so GitHub closes it
-when the PR merges into main. Delete the line when the PR only partly addresses an
-issue. -->
+<!-- Keep one "Closes #NNN" line per issue this change fully resolves, so GitHub closes it
+when the PR merges into main. Remove this line when the PR only partly addresses an issue. -->
 Related issue: #NNN
-<!-- An epic, sub-issue, or partly addressed issue this work serves and that should
-stay open, or "N/A". An open issue is not required — the Problem section below must
+<!-- Name the accompanying issue that stays open (epic, sub-issue, or partly addressed issue),
+or write "N/A" when Closes #NNN above already links it. Always make the Problem summary below
 stand on its own. -->
 
 A short plain-language summary: what goes wrong, who it affects, and what this
@@ -16,23 +15,23 @@ change does about it. Details come after.
 
 ## Approach
 
-What changed and why this way, and which surfaces and repositories it affects.
-Mention an alternative only if a reviewer would ask about it. Do not walk through
-the diff.
+Summarize the architectural or behavioral change, why this approach was chosen,
+and which surfaces and repositories it affects. Mention an alternative only when
+a reviewer would ask about it.
 
 ## Validation
 
-One line per kind of check and its result; do not list tests by name. Name required
-checks that were not run or did not pass. Include a short output excerpt only when it
-explains a failure.
-<!-- Record each proof separately: automated tests, signed WGT, simulator or emulator,
-Apple TV comparison, and real TV. Do not include private domains, hostnames, IPs,
-local paths, credentials, personal data, or private media details. -->
+Give one summary line per check category and its outcome (for example: automated
+tests, signed `.wgt`, simulator, Apple TV comparison, real TV). Name any
+required check that was skipped or failed, and include a short output excerpt
+only when it explains a failure.
+<!-- Keep private domains, hostnames, IPs, local paths, credentials, personal data,
+and private media details out of the body and attachments. -->
 
 ## Risks
 
-Migration, compatibility, security, operational, or release impact, or "None
-identified".
+State migration, compatibility, security, operational, or release impact, or
+write "None identified".
 
 ## Checklist
 

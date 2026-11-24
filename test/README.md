@@ -20,7 +20,7 @@ Runs the real API, session, catalog, and playback controllers against fake Silo,
 
 ## UI suite (`npm run test:ui`)
 
-Bundles the real TypeScript screens targeting Chrome 108 and runs two test files concurrently in desktop Chromium (limiting concurrency avoids timer/reply starvation on shared machines). Playwright routes `/api/v2` calls to the fake Silo server and serves synthetic SVG artwork.
+Bundles the real TypeScript screens targeting Chrome 108 and runs two test files concurrently in desktop Chromium (limiting concurrency avoids timer/reply starvation on shared machines). `scripts/run-ui-tests.ts` serializes runs across worktrees via `/tmp/auger-ui-suite.lock` so only one UI suite runs per machine at a time. Playwright routes `/api/v2` calls to the fake Silo server and serves synthetic SVG artwork.
 
 ### Clock control and flake hunting
 

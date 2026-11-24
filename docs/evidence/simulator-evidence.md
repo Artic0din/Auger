@@ -6,7 +6,7 @@ Serialize simulator runs on a machine and confirm ownership before replacing an 
 
 ## Build and hash the candidate
 
-Run on the branch under review with dependencies installed ([README](../../README.md#build)). Keep certificates and security profiles outside the repository.
+Run on the branch under review with dependencies installed ([README](../../README.md#build-from-source)). Keep certificates and security profiles outside the repository.
 
 ```bash
 npm ci

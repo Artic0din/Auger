@@ -41,7 +41,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
   - `Authorization: Bearer <token>` when the spec carries a bearer.
   - `X-Profile-Id`, and `X-Profile-Token` when a PIN proof exists, for profile-scoped specs.
   - `X-Room-Token` when the spec carries a Watch Together room token (`src/api/watchTogetherOperations.ts`).
-  - `X-Silo-Client-Family: tv`, set only on the two `effectiveSettings` reads for the primary menu and card presentation (`src/ui/navigationSettings.ts`, `src/ui/presentationSettings.ts`).
+  - `X-Silo-Client-Family: tv`, set only on the `effectiveSettings` reads for card presentation (`src/ui/presentationSettings.ts`) and legacy primary menu settings (`src/ui/navigationSettings.ts`; `navigationRoots` currently uses Apple's fixed `visibleRoots` order).
 - **Success.** A 2xx with status 204 or an empty body decodes `undefined`. Any other 2xx body must have media type `application/json`, otherwise the result is `invalid_response` at `content-type`.
 
 ### Retry policy
@@ -107,7 +107,7 @@ The code states it never falls back to `localStorage`.
 The same protected storage keeps the signed artwork URLs of the Home and For You snapshots ([cached browse content](offline-browse.md)).
 `NativeSession.persistence` reports `persistent` or `session_only`, and the sign-in result passes that to the screens.
 
-`CredentialVault` (`src/session/credentialVault.ts`) stores one record per server, keyed by a hash of `baseUrl`, in two alternating slots.
+`CredentialVault` (`src/session/credentialVault.ts`, managed per saved account by `AccountVault` in `src/session/accounts.ts`) stores one record per saved account per server, keyed by a hash of `JSON.stringify([baseUrl, accountId])` (or `baseUrl` alone for legacy single-account vaults), in two alternating slots.
 A refresh writes the other slot before removing the old one.
 Public storage holds only a "cleared generation" number, so a failed delete cannot bring a signed-out session back.
 The record holds `baseUrl`, `serverId`, `accountId`, `username`, the access and refresh tokens, and the access expiry.
@@ -295,7 +295,7 @@ Notes:
 - `limit` is bounded client-side (1 to 200 for collection items, 1 to 100 for `catalog/query`), and out-of-range values throw `RangeError` before any request.
 - The two POST queries are marked `safe` in code ("natural_idempotent"), so the transport retry applies to them.
 - `queryCatalogItems` also serves the watchlist, favorites and history lists (`src/ui/personalLists.ts`).
-- Person works use that same POST through `personQuery`: `source: "person"`, `person_id`, `type` (`video`, `movie` or `series`), `sort: "year"`, `order: "desc"`, `limit: 24` and an optional opaque `cursor`. `detailOperations.filmography` (`GET /catalog?source=person...`) is not called.
+- Person works use that same POST through `personQuery`: `source: "person"`, `person_id`, `type` (`video`, `movie` or `series`), `sort: "year"`, `order: "desc"`, `limit: 60` (`PERSON_PAGE_SIZE`) and an optional opaque `cursor`. `detailOperations.filmography` (`GET /catalog?source=person...`) is not called.
 - The detail view reads the same `GET /catalog/items/{id}` for Home marquee fields (`marqueeDetail`).
 - Item detail carries `themes`: `owner_id` and ordered `items` (`id`, `title`, `duration_seconds`). A season or episode answers with the set it inherits. A malformed set reads as none, because the server treats the theme lookup as optional.
 - Text Search probes `GET /catalog/search/capabilities` and sends the episode-inclusive request only after an allowed, available `video_with_episodes_scope: true` answer (`src/contracts/v2/README.md`, Text Search).
@@ -343,39 +343,11 @@ The request throws `RangeError` before sending if:
 - the timezone is empty or not a valid IANA zone.
 
 The decoder rejects any day outside the requested window.
-The Calendar view preserves these server day groups and event order without capping events.
-An `air_at` instant displays in the accepted query timezone with an explicit 12-hour clock.
-Without an instant, `air_time` is interpreted as a device-local wall clock and formatted with the same 12-hour clock, as Apple's `DateFormatters.localShortTime(fromWallClock:)` does.
-Both air-time paths use the app's English locale (`en`), so AM and PM stay uppercase regardless of the TV's region.
+The Calendar view preserves server day groups and event order without capping events.
+Air times (`air_at` in the accepted query timezone, or `air_time` as device-local wall clock) format using the shown app language (`shownLanguage()`) and the TV's 12/24-hour clock from `tizen.time.getTimeFormat()`, falling back to the device region or English 12-hour clock (`src/ui/calendarState.ts`; see [translation.md](translation.md)).
 Date-only releases have no time pill.
-
-Following, Trending and All sit above one week strip: previous, seven stacked weekday/day cells, next, conditional Today, and month/year anchored on Thursday.
-Dots mean that the loaded response contains events for that date; pending days carry no confirmed event state.
-The strip has one focus zone, preserves control keys, and enters on the selected day.
-Artwork keeps the existing URL validation and missing/failed-image fallback, with release badges at top left, a watched check at top right and time at bottom right.
-Captions retain title, episode identity and unavailable-destination information, and the accessible card name includes the overlays.
-
-Presentation references are Apple `Screens/Calendar/CalendarView.swift`, `CalendarFilterBar.swift`, `CalendarWeekStrip.swift`, `CalendarDayShelf.swift`, `CalendarEventCard.swift`, `CalendarModels.swift` and `CalendarWeek.swift` at `9723df007baa8e933f5615cc14b13e99a6ee1ea1`.
-These shared Swift screens contain the tvOS implementations; the shell and focus style live under `tvOS/`.
-The issue's `1a7cceea` reference differs only in the Calendar card's shared focus style, now `TVCardOutlineButtonStyle`.
-The 84×96 day cells, 26 bold day number, 8 dot, 64×64 chevrons, 18 strip gap and 10 day gap come directly from that source.
-The week arrows use original SVG drawings of `chevron.backward` and `chevron.forward`, requested at 24 pt semibold in Apple `Screens/Calendar/CalendarWeekStrip.swift:85,102,150-161,193-195` at `8655b06` (unchanged at upstream `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`).
-A local Apple symbol render at that size and weight measured a 19×26 layout box, about 12×21 of visible ink and a 3.2-point stroke; these measurements size the drawings without relying on the TV font.
-Same-state Samsung TV and Apple TV captures remain required to accept the visual match.
-The CSS compensates the 18 strip gap by -8 between adjacent days to retain the source's 10 day gap without another focus owner or wrapper.
-Calendar enters on the active filter and the strip enters on the selected day without changing that selection when cards gain focus.
-Shelf zones use the shared spatial focus owner and retained horizontal axis, so vertical return chooses the nearest card and retains the row's scroll.
-The shared scroll owner supports declarative top and bottom alignment: strip entry restores the page top, while shelf entry keeps its heading and cards visible.
-The signed comparison's strip position is 281 pixels; the web filter's inherited action-row margin is removed and its strip gap accounts for the measured 66-pixel filter height.
-Card titles use Apple's `siloCardTitle` alias (28 semibold), and 22-pixel metadata is restricted to one line with an ellipsis.
-Empty weeks show the filter-specific Apple copy and links to the other two filters.
-The existing shell, focus host, artwork fallback, session invalidation and remote Back chain retain ownership.
-Loading has a blank focusable 320-pixel placeholder; empty weeks have a calendar icon and light primary filter links, without an extra Back button.
-Errors without retained data use the shared error mapping and placeholder builder: triangle, headline, message and a 200-pixel Try Again button.
-As in Apple, a quiet refresh retains cached events rather than replacing them with a loading page, and a refresh that fails over a week with events shows nothing more (`CalendarViewModel.load` sets its error only while `days.isEmpty`); the next Calendar visit reads the week again. A failure over an empty week shows the error page, with Sign In Again first after a 401.
-Today updates the week and selected date without requesting filter focus; Tizen keeps a valid focus target on the selected strip day when Today disappears.
-The bundled Inter font and SVG symbol substitutes still require native comparison against SF Pro and SF Symbols.
-Desktop UI checks cover remote behavior and both motion settings; see [docs/evidence/simulator-evidence.md](evidence/simulator-evidence.md) for signed `.wgt`, Apple TV comparison, and hardware acceptance gates.
+A quiet refresh retains cached events on failure; an empty-week failure shows Apple's ErrorView (Sign In Again first after a 401).
+For Calendar week-strip layout, focus rules, empty states, and simulator verification gates, see [Calendar](features/calendar.md) and [simulator-evidence.md](evidence/simulator-evidence.md).
 
 ### Requests
 

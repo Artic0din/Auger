@@ -15,23 +15,17 @@ The passive hero previews the focused request using already loaded data; focus p
 Its copy stays anchored above the row band as title and synopsis heights change.
 A wrapped title reduces the synopsis to two lines; available provider ratings stay on the metadata line.
 Two-line titles fill the first line as Apple TV does, never leave one word alone on the second, and keep the server's title text unchanged.
-Requests is pushed from the profile menu and has no Search button or top bar; global Search (opened from the root top bar) carries an independent Available to request rail.
-Back from a request detail opened from Search retains the query and restores its result after an invalidated supplement refresh, unless the viewer moved focus or edited the query.
-Search uses the existing state renderer for accessible progress, no-results copy and a centered catalog error with Try Again.
-A failed People lookup leaves usable title results without another error panel or retry control; a new query tries People again.
-A pending People lookup prevents premature No results but leaves catalog errors and Try Again visible.
-Search title grids use five columns for large posters and six for standard or compact posters, including remote row navigation.
+Requests opens from the profile menu as a root page under the Skyline top bar (`isHubRoot` in `src/ui/browse.ts`), keeping the underlying root tab selected; global Search (from the top bar) carries an independent Available to request rail (see [Text Search](skyline-browse-shell.md#text-search)).
 Your requests contains the complete bounded list; the ready hub has no separate Search requests, My Requests, Refresh or Back controls.
 Discovery rows show only the first page the discover read returns, with no See all tile and no further read, because Apple TV's rails have neither.
 Rows are view-aligned to the band's top at y=596: a plain row's heading is at 596 with art at 662, and the row with the Discover eyebrow has the eyebrow at 596, heading at 621 and art at 687.
 Up and Down between rows land on the card nearest the focused card's centre, as Apple's focus engine does.
 Each hub read goes out once; Try Again is the retry.
-Selecting Requests in the profile menu pushes a fresh page: loading, a fresh read, then focus on the first card.
-The pushed hub has no top bar; Back returns to the originating screen with its profile menu open and Requests focused.
+Selecting Requests in the profile menu opens a fresh hub page under the top bar: loading, a fresh read, then focus on the first card.
+Up from the first row (or loading, error, and empty states) reaches the top bar; Back moves focus to the top bar, then returns to the originating root tab with the profile menu closed.
 A hub with no rows shows one of Apple's three full pages: the loading skeleton, ErrorView with status-aware copy and Try Again (Sign In Again first for a 401), or Nothing here yet.
 The loading and empty pages hold focus with no highlight, and Try Again takes focus on entry and returns to the loading page.
-Up from the first row preserves its focused card; Up from loading, error and empty states stays on that state.
-There is no shown Requests tab to select; reopening the profile menu entry starts a fresh visit.
+There is no dedicated Requests tab in the top bar; reopening the profile menu entry starts a fresh visit.
 Unknown discovery row types are skipped.
 Media detail uses server requestability, status and follow decisions.
 Request detail shows the server state and offers cancellation for the active profile's pending request.

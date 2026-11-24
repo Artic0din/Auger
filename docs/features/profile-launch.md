@@ -72,6 +72,4 @@ The preset seed generation and picker tint/geometry were ported from the same AG
 Preset images are requested from DiceBear, as in the Apple client.
 Their artwork attribution and terms are available in Server > Acknowledgements and the packaged third-party notices.
 Automated contract and UI checks use a fake server; they do not establish real-server creation authorization or physical-TV behavior.
-The picker retains its existing Sign out action; the separate picker-confirmation case remains tracked under #107 NAV-07.
-
-[Picker calibration and signed simulator reference captures](../evidence/screenshots/96-profiles/README.md) record the source dimensions, substitutions and package identities for later parity work.
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt` verification and Apple TV comparison gates.
