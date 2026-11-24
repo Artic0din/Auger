@@ -57,7 +57,7 @@ export class SubtitleDisplay {
     private appearance: SubtitleAppearance = DEFAULT_APPEARANCE;
     private delayMs = 0;
     private deviceOverride = false;
-    private busy = false;
+    private pendingWrite: "appearance" | "delay" | "both" | undefined;
     private message = "";
     private loaded = false;
     private styleEdited = false;
@@ -78,7 +78,7 @@ export class SubtitleDisplay {
         if (!this.loaded) return undefined;
         return {
             delay: this.support.delay, styling: this.support.styling, deviceScope: this.support.deviceScope, textOpacity: this.support.textOpacity,
-            delayMs: this.delayMs, appearance: this.appearance, deviceOverride: this.deviceOverride, busy: this.busy, message: this.message,
+            delayMs: this.delayMs, appearance: this.appearance, deviceOverride: this.deviceOverride, busy: this.pendingWrite !== undefined, message: this.message,
         };
     }
 
@@ -131,10 +131,12 @@ export class SubtitleDisplay {
     }
 
     adopt(appearance: SubtitleAppearance, sync: number): void {
-        if (this.busy || this.abort.signal.aborted) return;
+        if (this.abort.signal.aborted) return;
+        const writingStyle = this.pendingWrite === "appearance" || this.pendingWrite === "both";
+        const writingDelay = this.pendingWrite === "delay" || this.pendingWrite === "both";
         let updated = false;
-        if (!this.styleEdited) { this.appearance = appearance; updated = true; }
-        if (!this.delayEdited) { this.delayMs = sync; updated = true; }
+        if (!this.styleEdited && !writingStyle) { this.appearance = appearance; updated = true; }
+        if (!this.delayEdited && !writingDelay) { this.delayMs = sync; updated = true; }
         if (updated && this.loaded) this.changed();
     }
 
@@ -164,7 +166,7 @@ export class SubtitleDisplay {
     }
 
     async setDeviceOverride(enabled: boolean): Promise<void> {
-        if (!this.support.deviceScope || this.busy) return;
+        if (!this.support.deviceScope || this.pendingWrite !== undefined) return;
         if (enabled) {
             await this.commit(() => this.call(operations.put(APPEARANCE_KEY, appearanceJson(this.appearance, this.support.textOpacity), "profile_device")), () => { this.deviceOverride = true; }, "appearance");
             return;
@@ -175,11 +177,11 @@ export class SubtitleDisplay {
             this.deviceOverride = false;
             try {
                 const [appearance, delay] = await Promise.all([
-                    this.support.styling ? this.call(subtitleOperations.subtitleAppearance(this.profileId)) : this.appearance,
-                    this.support.delay ? this.call(subtitleOperations.subtitleSync()) : this.delayMs,
+                    this.support.styling ? this.call(subtitleOperations.subtitleAppearance(this.profileId)) : undefined,
+                    this.support.delay ? this.call(subtitleOperations.subtitleSync()) : undefined,
                 ]);
-                this.appearance = appearance;
-                this.delayMs = delay;
+                if (appearance !== undefined) this.appearance = appearance;
+                if (delay !== undefined) this.delayMs = delay;
             } catch (error) {
                 this.support = { ...this.support, styling: false, delay: false, deviceScope: false };
                 throw error;
@@ -194,9 +196,9 @@ export class SubtitleDisplay {
     }
 
     private async commit(send: () => Promise<void>, apply: () => void, target: "appearance" | "delay" | "both"): Promise<void> {
-        if (this.busy || this.abort.signal.aborted) return;
+        if (this.pendingWrite !== undefined || this.abort.signal.aborted) return;
         const touchesSync = target === "delay" || target === "both";
-        this.busy = true;
+        this.pendingWrite = target;
         this.message = "";
         this.changed();
         if (touchesSync) this.beginUnsettledSync();
@@ -212,7 +214,7 @@ export class SubtitleDisplay {
             this.message = FAILED;
         } finally {
             if (touchesSync) await this.endUnsettledSync();
-            this.busy = false;
+            this.pendingWrite = undefined;
             if (!this.abort.signal.aborted) this.changed();
         }
     }

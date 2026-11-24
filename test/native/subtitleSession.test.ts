@@ -467,7 +467,7 @@ test("partial modern contract fetches only the missing setting and preserves edi
         } finally { session.destroy(); }
     }
 
-    // 2. Delay-only modern contract: sync read once via SubtitleDisplay, appearance read lazily on artifact load.
+    // 2. Delay-only modern contract: sync read once via SubtitleDisplay, appearance read lazily; an in-flight delay save must not drop the arriving appearance.
     {
         const storage = new MemoryStorage();
         const { h, clock, host, session, profileId } = await rig(storage);
@@ -485,7 +485,10 @@ test("partial modern contract fetches only the missing setting and preserves edi
                 body: { revision: 19, items: [{ key: "player.subtitle_sync_ms", scope: "profile_device", profile_id: "p-owner", device_id: h.core.session.http.deviceId, is_set: false }] },
             });
             h.fake.script("/settings/values/effective?keys=player.subtitle_sync_ms", { status: 200, body: { items: [{ key: "player.subtitle_sync_ms", value: 1000 }] } });
+            const appearanceHold = h.fake.hold("/settings/subtitle-appearance/effective");
             h.fake.script("/settings/subtitle-appearance/effective", { status: 200, body: { profile_id: "p-owner", effective_value: JSON.stringify({ ...DEFAULT_APPEARANCE, fontSize: "xxlarge" }) } });
+            const delayPutHold = h.fake.hold("/settings/values/player.subtitle_sync_ms?scope=profile");
+            h.fake.script("/settings/values/player.subtitle_sync_ms?scope=profile", { status: 200, body: { revision: 20, key: "player.subtitle_sync_ms", scope: "profile", value: 250 } });
             h.fake.script("/captions/en.vtt?token=synthetic", { status: 200, text: "WEBVTT\n\n00:11.000 --> 00:14.000\nTimed" });
 
             const plan = makePlan(h.fake.origin);
@@ -496,9 +499,17 @@ test("partial modern contract fetches only the missing setting and preserves edi
             assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.styling, false);
             assert.equal(session.trackViewSlice(plan).subtitleTools?.display?.delay, true);
 
+            // Start a delay save while legacy appearance is in flight, then let appearance arrive before the save completes.
+            session.applyTool({ kind: "delay", milliseconds: 250 });
+            await flush(clock);
+            appearanceHold.release();
+            await flush(clock);
+            delayPutHold.release();
+            await flush(clock);
+
             const captions = session.captionsView(plan, false);
-            assert.equal(captions?.appearance.fontSize, "xxlarge", "missing appearance is fetched and applied");
-            assert.equal(captions?.instant, 12.5, "supported delay is kept");
+            assert.equal(captions?.appearance.fontSize, "xxlarge", "arriving appearance survives an in-flight delay save");
+            assert.equal(captions?.instant, 13.25, "saved delay remains applied after appearance arrives");
             assert.equal(h.fake.requests.filter(req => req.path === "/settings/values/effective?keys=player.subtitle_sync_ms").length, 1, "supported delay is not re-read");
             assert.equal(h.fake.requests.filter(req => req.path.startsWith("/settings/subtitle-appearance/effective")).length, 1, "missing appearance is fetched once");
         } finally { session.destroy(); }
