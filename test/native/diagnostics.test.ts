@@ -238,7 +238,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     const bad = await handleRequest(new Request("https://auger-diagnostics.plaintextlab.com/report", { method: "POST", body: "{}" }), env, { fetch: fakeFetch });
     assert.equal(bad.status, 400);
 
-    // Oversized streaming request cancels early and returns 413 without buffering the full stream.
+    // Oversized streaming request cancels early and still returns JSON 413 even if stream cancellation throws.
     let chunksPulled = 0;
     let cancelled = false;
     const hugeStream = new ReadableStream<Uint8Array>({
@@ -248,6 +248,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         },
         cancel() {
             cancelled = true;
+            throw new Error("socket closed");
         },
     }, { highWaterMark: 0 });
     const oversized = await handleRequest(
@@ -262,6 +263,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         { fetch: fakeFetch },
     );
     assert.equal(oversized.status, 413);
+    assert.deepEqual(await oversized.json(), { ok: false, error: "payload_too_large" });
     assert.equal(cancelled, true, "oversized stream must be cancelled as soon as it exceeds 8 KiB");
     assert.equal(chunksPulled, 3, "only the 3 chunks needed to cross 8 KiB should be pulled before cancellation");
 
@@ -276,7 +278,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
         log: ["01:02:03 [playback] error 192.168.1.10"],
     };
 
-    // Concurrent requests against the same IP respect the atomic 5-request quota.
+    // Concurrent requests against the same IP respect the atomic quota and advertise the 60 s binding Retry-After.
     const responses = await Promise.all(Array.from({ length: 7 }, () => handleRequest(
         new Request("https://auger-diagnostics.plaintextlab.com/report", {
             method: "POST",
@@ -288,6 +290,9 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     )));
     const statuses = responses.map(res => res.status).sort((a, b) => a - b);
     assert.deepEqual(statuses, [201, 201, 201, 201, 201, 429, 429]);
+    for (const denied of responses.filter(res => res.status === 429)) {
+        assert.equal(denied.headers.get("Retry-After"), "60");
+    }
     assert.equal(posted.length, 5);
     assert.equal(posted[0]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues");
     assert.deepEqual(posted[0]?.body.labels, ["bug", "needs-triage"]);

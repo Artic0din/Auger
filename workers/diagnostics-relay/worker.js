@@ -3,8 +3,10 @@
 // Secrets live strictly in Cloudflare Worker Secrets (`GITHUB_TOKEN`), never in Auger or Git.
 
 const MAX_BODY_BYTES = 8192;
-const RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
-const RATE_LIMIT_MAX_REQUESTS = 5;
+// Cloudflare [[ratelimits]] only supports period = 10 or 60; keep Retry-After aligned with wrangler.toml.
+const BINDING_RATE_LIMIT_WINDOW_SECONDS = 60;
+const FALLBACK_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
+const FALLBACK_RATE_LIMIT_MAX_REQUESTS = 5;
 const DEFAULT_REPO = "Artic0din/Auger-Tizen";
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -147,6 +149,7 @@ export function formatGitHubIssue(payload) {
   return { title, body: lines.join("\n") };
 }
 
+let isolateBucketWindow = -1;
 const isolateBuckets = new Map();
 
 async function checkRateLimit(request, env, limiter) {
@@ -154,21 +157,19 @@ async function checkRateLimit(request, env, limiter) {
   const binding = limiter ?? env?.DIAGNOSTICS_RATE_LIMITER;
   if (binding && typeof binding.limit === "function") {
     const result = await binding.limit({ key: ip });
-    return result?.success === true ? { allowed: true } : { allowed: false, retryAfter: RATE_LIMIT_WINDOW_SECONDS };
+    return result?.success === true ? { allowed: true } : { allowed: false, retryAfter: BINDING_RATE_LIMIT_WINDOW_SECONDS };
   }
   // Synchronous in-isolate atomic counter fallback when no Cloudflare Rate Limit binding is attached.
-  const bucket = Math.floor(Date.now() / (RATE_LIMIT_WINDOW_SECONDS * 1000));
-  const key = `${ip}:${bucket}`;
-  const count = isolateBuckets.get(key) ?? 0;
-  if (count >= RATE_LIMIT_MAX_REQUESTS) {
-    return { allowed: false, retryAfter: RATE_LIMIT_WINDOW_SECONDS };
+  const bucket = Math.floor(Date.now() / (FALLBACK_RATE_LIMIT_WINDOW_SECONDS * 1000));
+  if (bucket !== isolateBucketWindow) {
+    isolateBuckets.clear();
+    isolateBucketWindow = bucket;
   }
-  isolateBuckets.set(key, count + 1);
-  if (isolateBuckets.size > 1000) {
-    for (const existingKey of isolateBuckets.keys()) {
-      if (!existingKey.endsWith(`:${bucket}`)) isolateBuckets.delete(existingKey);
-    }
+  const count = isolateBuckets.get(ip) ?? 0;
+  if (count >= FALLBACK_RATE_LIMIT_MAX_REQUESTS) {
+    return { allowed: false, retryAfter: FALLBACK_RATE_LIMIT_WINDOW_SECONDS };
   }
+  isolateBuckets.set(ip, count + 1);
   return { allowed: true };
 }
 
@@ -189,7 +190,7 @@ async function readBoundedBody(request, maxBytes) {
       if (value) {
         total += value.byteLength;
         if (total > maxBytes) {
-          await reader.cancel();
+          try { await reader.cancel(); } catch { /* ignore cancel errors */ }
           return { tooLarge: true, text: "" };
         }
         chunks.push(value);

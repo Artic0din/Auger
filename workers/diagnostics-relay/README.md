@@ -1,6 +1,6 @@
 # Auger Diagnostics Relay (Cloudflare Worker)
 
-Stateless Cloudflare Worker that accepts redacted v1 diagnostic reports from Auger (`Settings > Diagnostics > Send Diagnostics Report`) at `https://auger-diagnostics.plaintextlab.com/report`, validates and re-redacts every field, enforces a bounded 8 KiB streaming body limit and an atomic per-IP Cloudflare Workers Rate Limiting binding (`DIAGNOSTICS_RATE_LIMITER`, 5 reports per 60 seconds), and opens a GitHub issue on `Artic0din/Auger-Tizen` labelled `bug` and `needs-triage`.
+Stateless Cloudflare Worker that accepts redacted v1 diagnostic reports from Auger (`Settings > Diagnostics > Send Diagnostics Report`) at `https://auger-diagnostics.plaintextlab.com/report`, validates and re-redacts every field, enforces a bounded 8 KiB streaming body limit and an atomic per-IP Cloudflare Workers Rate Limiting binding (`DIAGNOSTICS_RATE_LIMITER`, 1 report per 60 seconds), and opens a GitHub issue on `Artic0din/Auger-Tizen` labelled `bug` and `needs-triage`.
 
 No secrets are ever shipped inside Auger or committed to this repository.
 
