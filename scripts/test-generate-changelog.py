@@ -509,10 +509,12 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             dist_p12 = dist_dir / "tizen-distributor-signer.p12"
             dist_p12.write_text("public-distributor", encoding="utf-8")
 
+            tizen_log = root / "tizen.log"
             tizen_stub = cli_dir / "tizen"
             tizen_stub.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
+                'printf "%s\\n" "$*" >> "${TIZEN_LOG}"\n'
                 'if [[ "${1:-}" == "certificate" ]]; then\n'
                 '  out_dir="${!#}"\n'
                 '  printf "author" > "${out_dir}/auger-public.p12"\n'
@@ -536,6 +538,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 "RUNNER_TEMP": str(runner_temp),
                 "GITHUB_ENV": str(github_env),
                 "GITHUB_OUTPUT": str(github_output),
+                "TIZEN_LOG": str(tizen_log),
                 "TIZEN_AUTHOR_P12_B64": "should-be-ignored",
                 "TIZEN_DISTRIBUTOR_P12_B64": "should-be-ignored",
             }
@@ -548,9 +551,11 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             self.assertEqual(0, profile_run.returncode, profile_run.stderr)
             self.assertEqual("signing=public\n", github_output.read_text(encoding="utf-8"))
             self.assertEqual("TIZEN_SECURITY_PROFILE=auger-public\n", github_env.read_text(encoding="utf-8"))
-            profiles_xml = (runner_temp / "tizen-signing/profiles.xml").read_text(encoding="utf-8")
+            profiles_path = runner_temp / "tizen-signing/profiles.xml"
+            profiles_xml = profiles_path.read_text(encoding="utf-8")
             self.assertIn(f'distributor="1" key="{dist_p12}"', profiles_xml)
             self.assertNotIn("should-be-ignored", profiles_xml)
+            self.assertIn(f"cli-config profiles.path={profiles_path}", tizen_log.read_text(encoding="utf-8").splitlines())
 
 
 if __name__ == "__main__":

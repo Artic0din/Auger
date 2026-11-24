@@ -104,9 +104,9 @@ Public GitHub Releases use the Tizen SDK public distributor certificate so no pe
 To sideload directly onto a Samsung TV in Developer Mode, build and sign locally with your own Samsung certificate profile:
 
 1. Create a Samsung author and distributor certificate profile in Tizen Studio Certificate Manager for your TV's DUID.
-2. Check out the release tag you want to install (`git checkout vX.Y.Z`) and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z`.
+2. Check out the release tag in a clean worktree (`git worktree add --detach ../auger-release vX.Y.Z && cd ../auger-release`), install dependencies (`npm ci`), and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z`.
 3. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
-4. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>` (then `git checkout -- app/config.xml` if you want a clean working tree).
+4. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>`, then remove the temporary worktree when done.
 
 ## Switching between Apps2Samsung and a sideloaded build
 
