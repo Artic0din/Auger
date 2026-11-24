@@ -4,693 +4,320 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Added
+<!-- changelog:releases -->
 
-- Added a tvOS source check: a pull request that changes the TV interface must cite the silo-apple tvOS source it ports, file and line range, under a "tvOS source" heading.
-- Added a screen test that follows one remote journey through Browse paging, a failed Details load and its retry, playback and the return from it, and Back to the same second-page card (#27).
-- Added a screen test that every text size on Home and the Movies, Series and For You tabs is Apple TV's point size times the SF Pro cap-height scale, as Details and Person already check (#749).
-- The Up Next card now looks like Apple TV's: the series name heads it, the episode's code (`S1:E13`, `S2:F1` in German) comes before its title, the countdown is a ring beside Play Now showing the seconds left, and the next episode's still shows blurred and dimmed behind the page, leaving the video preview clear (#697).
-- The player now mirrors in Arabic, as on Apple TV: the options panel's tabs, panes and chevrons, Up Next with its video preview, the buffering card and its two buttons, the skip pill and the error page read from the right, and Left and Right on the remote follow that layout. The transport, the scrubber and its time row stay left to right and keep the remote's own Left and Right, Subtitle cues keep their own direction, so English dialogue under Arabic keeps its punctuation. A lost connection now ends on Apple TV's message in the language you pick (English: "Connection lost" over "Silo couldn't reconnect to the server. Check your connection, then try again to continue where you left off.", where it read "Can't reach the server. Check the TV's connection, then try again."); the other player error messages stay English and keep their own direction in Arabic. Other English reads exactly as before (#571, #628).
-- The player now shows in the language you pick under App Language, with Apple TV's strings: the transport's button and scrubber labels, the Info, Stats, Video, Audio, Subtitles and Chapters tabs with their headings, rows and pickers (including the play method, such as Direct play, and the quality picker's Auto), Up Next with On Deck, Keep Watching, its Close button (it read Back) and its countdown (English now reads "Playing next in 13 seconds" where it read "Playing in 13s"), Sync to Audio, Reset Timing and every subtitle sync status, note and error, the AI Subtitles menu (its title, explainer, Back, headings, language hints, transcription quota, job and failure lines and buttons), the skip pill, the buffering prompt, a track's Forced, SDH, External, Default, Mono, Stereo and channel count. Titles, overviews, chapter and track names stay as the server sent them and take their own direction in Arabic. Error messages, Restoring and the rows Apple TV does not have stay English, and English reads exactly as before (#571).
-- The skip-interval pickers in Settings › Playback now list only the seven choices, as on Apple TV, without the extra Use inherited default row. A stored interval is replaced by choosing another, not cleared from the picker.
-- A skip interval that cannot be saved because the connection failed, or because the server cannot store it, now says so with Apple TV's message for that interval (rewind or fast-forward, video or audiobook), in the language you pick. Its English now reads "Couldn't save the video rewind interval. Check the connection and try again." where it said "Could not confirm settings with the server." Other failures, such as a refused value or too many requests, keep their wording.
-- The video skip pickers in Settings › Playback now open as "Video Skip Back" and "Video Skip Forward", as on Apple TV, and read in the language you pick.
-- A movie or series page now offers Not Interested in More, as on Apple TV, reading Show in Recommendations once the title is marked. A new mark takes the title out of Home's recommendation rows and every For You row, and Back lands on the card that took its place.
-- A shared collection in a Home or library row of collections now reads `by Name` in the hero beside its item count, as on Apple TV, in the language you pick. The hero's line for any collection is now Apple's item count, not a synopsis.
-- Home's, For You's and the library pages' colour wash now blends into the next one over 0.7 s, as Apple TV does, so page colours drift between items while the art still swaps in 0.24 s.
-- Movie and series cards now offer Not Interested in their long-press menu, as on Apple TV: a title you mark leaves Home's recommendation and discovery rows and every For You row at once, and Show in Recommendations clears the mark. Rows of what is new, in progress or saved keep the title. The entry shows only when the server sends the mark.
-- Home's, For You's and the library pages' backdrop wash now takes a colour for each screen corner from the same quarter of the art, kept dark, with the four glows overlapping, as Apple TV does. Item details keep their wash.
-- Rows of collections now show on Home and on a library's Recommended page, as on Apple TV: a row the server builds from collections draws their posters, opens a server collection in its library and a personal collection on its own page, has no Explore all card, and previews the focused collection in the hero. Before, such a row arrived with no titles and was left out.
-- The pull request `Evidence` check that CONTRIBUTING.md describes now runs: a pull request that changes `app/` or `src/` fails until captures are attached under its Evidence heading, unless a maintainer adds the `evidence-not-needed` label.
-- The buttons Retry, Back, Try again and Cancel on the startup, playback-unavailable, exit and Box Set screens, Close on the Details More panel, Sign in again after a sign-out, Back to profiles and the Home page's Profiles button now show in the language you pick under App Language, with Apple TV's words. The lines around them that Apple TV has no words for stay English; English reads exactly as before (#571).
-- Added the shared DevKit pull request check, which rejects non-conventional titles and commit messages, agent attribution and forbidden paths such as `node_modules`.
-- Settings › Playback now has Apple TV's Audiobooks group under Video, with Skip Back and Skip Forward rows for the audiobook skip buttons. They are saved to your profile apart from the video intervals, and a server that cannot store them hides the group. The intervals read as on Apple TV in the language you pick ("10 Sekunden", with that language's plural and digits), and the Video and Audiobooks help lines read in that language too (the Video line speaks of the remote's left and right presses, as there is no Siri Remote on a Samsung TV).
-- The player's Stats tab now shows its playback status (Playing, Paused, Rebuffering), its delivery (such as Original HTTP or Server Transcode HLS) and its Diagnostics label in the language you pick under App Language, as on Apple TV, and the subtitle search's "Not set up on this server" and "Adding subtitle…" lines do too. English reads exactly as before (#571).
-- A few lines Apple TV words from its catalog now show in the language you pick under App Language: the password-reset line on the profile picker, the Box Set page's Movies heading, and the Multi-Audio and subtitles badges on a card. English reads exactly as before (#571).
-- The audiobook page and its chapter list now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: the eyebrow, series line, "by … · read by …" credits, progress lines, Resume, Chapters and Start Over, the About, Narrations, Series, More by Author and Related headings, a book's number on a rail card, and the chapter list's subline and NOW badge. Runtimes and times use the language's units and digits, and a page already open when the language's text arrives is drawn again in it. The "Written by … · Narrated by …" line has no Apple words and stays English; English reads exactly as before (#571).
-- The profile picker and the launch choice now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: Who's watching?, Signed in as, each tile's Kids, PIN protected and TV user labels, Add, Change account, Sign out and its confirmation, and the Open this profile automatically? alert with Ask Every Time and Remember. A screen already on display when the language's text arrives is drawn again in it. The notes Apple TV has no words for stay English; English reads exactly as before (#571).
-- The error pages and the Explore all and empty-row pages now show in the language you pick under App Language, with Apple TV's strings and its recovery buttons (Try Again, Go Back, Sign In Again, Manage Servers). A page that was already on screen when the language's text arrived is drawn again in it. A reason the server sent stays as it sent it, and the notes Apple TV has no words for stay English; English reads exactly as before (#571).
-- The Person page now shows in the language you pick under App Language, with Apple TV's strings, and mirrors in Arabic as on Apple TV: the portrait and the filmography grid read from the right, and Left and Right on the remote step through it that way. Born, Died and a living age (with the language's plural and digits), the All, Movies and Series filters, Filmography and its title count, the empty state and the metadata refresh status follow the language. A one-year-old now reads `1 year old` rather than `1 years old`, and a birth or death date outside English reads day first without leading zeros in the language's digits (`17/8/1943`, `١٧/٨/١٩٤٣`), as on Apple TV (#571).
-- The sign-in screens now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: the server address screen and its Advanced options, the plain-HTTP question, the not-ready screen, the TV code screen and the password screen, with every refusal and status line Apple words. The server's name, address and your account inside a sentence keep their own direction, "this Apple TV" reads "this TV", and English reads exactly as before. Text Apple has no key for stays English (#571).
-- A card's show-status ribbon (Returning, Ended, Cancelled, Upcoming) now reads in the language you pick, as on Apple TV, in every grid and rail that shows card badges. Uploaded per-status badge images still match in every language (#571).
-- The Watchlist, Favorites and History pages now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: the grid reads from the right and Left and Right on the remote step through it that way. Titles, Favorites' Movies and TV Shows filters, the empty and loading states and History's item count follow the language, with its plural and digits. English reads exactly as before, and the error page keeps its English text until the error screens move (#571).
-- Watch Party now shows in the language you pick under App Language, with Apple TV's strings, and mirrors in Arabic as on Apple TV: the hub, lobby, Ready, ballot, options, invitation and its QR text, picker shelves, confirmation page and episode list. Member and host names stay as the server sent them. A vote card's accessibility label now reads Apple's `Vote for Heat`.
-- An audiobook now opens on Apple TV's loading frame instead of a bare "Loading" page: the card's cover, title and year show in the book page's layout, with quiet placeholders for the rest, until the book is read. Back leaves it.
-- Requests, Calendar, Change Account, Settings › Accounts, the PIN screen and Add Profile now show in the language you pick under App Language, with Apple TV's strings, and mirror in Arabic as on Apple TV: art, text, rails, badges and the week strip read from the right, and Left and Right on the remote step through them that way. Dates and air times print in that language, and English reads exactly as before.
-- Library Browse's Sort panel now lists Apple TV's full set of sorts for the library: Content Rating, TMDB Rating, Bitrate, Progress, Date Viewed and Plays (reading Fewest and Most) for every video library, Latest Episode Air Date and Latest Episode Added for a series library, and RT Critic and RT Audience Rating while the server shows those sources. A long list scrolls inside a panel 720 tall, and a saved sort stays listed. Movies and series offered seven sorts and audiobooks six before; audiobook libraries now list Apple's twelve.
-- Years now show in the language you pick, as on Apple TV: in Arabic, Details' facts line, a card's year badge, audiobook narrations, Requests and Watch Party read 2023 as ٢٠٢٣. English reads exactly as before.
-- Search now mirrors in Arabic, as on Apple TV: the field sits on the right, People, box sets, requests and results read from the right, and Left and Right on the remote step through them in that order.
-- Arabic now shows right to left, as on Apple TV: the top bar and its menus, Home and Settings mirror, Left and Right on the remote follow the mirrored layout, and the player keeps its left-to-right transport. Details, Search, library grids, Requests, Calendar and Watch Party are not mirrored yet.
-- Details and Search now show in the chosen App Language, with Apple TV's strings: action labels, More menus, track lists, facts, empty and error text, the search field, filters and result count. English reads exactly as before, and text a language lacks shows English. The Search result count is now written without a thousands separator (`1200 results`), as on Apple TV. Runtimes (`2h 8min` in German) and a track's language (`Portugiesisch`) are written as Apple TV writes them.
-- Loaded the shown language's text on demand: English stays in the app's script and each other language is its own packaged file, read when that language is shown, so more languages no longer slow the TV's start. Until the file arrives the screen reads English and then draws again in the language.
-- Matched Apple TV's held-Select look on Request detail and Watch Party buttons, Series season pills, anchored episode cards and Details popover rows; Request detail's Follow and Cancel now grow on focus like its main action.
-- The player's Subtitles tab now has Sync to Audio and Reset Timing under Timing, as on Apple TV, when the server offers subtitle sync: a running sync shows its progress and phase and the row reads Syncing…, a note under the rows says what Sync to Audio does or how the last one went, and each track shows its sync status (Syncing… 40%, Synced −3.0 s) after its details. A subtitle on screen, including the Secondary line, reloads its lines when its timing changes.
-- Sent the language the app shows in `Accept-Language` on every Silo request, as Apple TV does, and added the English string catalog and the lookup that screens will use to show text in that language. Nothing on screen changes yet: English is the only language this build ships.
-- Settings now shows in the language you pick under App Language, in Apple TV's 22 languages. The picker lists them by their own names, sorted by name as Apple TV's is, and Match Device follows the TV. Other screens stay English until they move over (#571).
-- The top bar and its For You, library and profile menus, the sign-out confirmation, and Home's empty and loading states and `Explore all` card now show in the language you pick under App Language, and Home's row titles follow it when the server names them with a translation key (#571). Home's card captions and menus, library and search stay English until their pull requests. A card's time left, season and episode, episode code and lengths follow it too (`Noch 3h 18min`, `S01F25` in German).
-- Home card captions and the marquee line (season and episode, time left, years, lengths), the Aired line, the card menu's Remove rows and update-failed alert, For You's loading and empty text, For You's row titles (through the key the server sends), and the library tabs (Recommended, Collections, and Browse with its Sort and Filter panels and A–Z rail) now show in the language you pick under App Language (#571). The library's IMDb rating and runtime sorts are now named `IMDb Rating` and `Duration`, and Author, Narrator and Series sort A–Z, as on Apple TV.
-- The top bar and its For You, library and profile menus, the sign-out confirmation, and Home's empty and loading states and `Explore all` card now show in the language you pick under App Language, and Home's row titles follow it when the server names them with a translation key (#571). Home's card captions and menus, library and search stay English until their pull requests.
-- The player's Subtitles tab now has Apple TV's Secondary list under the tracks: Off and the other text tracks, the shown one dimmed, drawn as a second line under the primary subtitle in the same style. It appears while the app draws the subtitle itself; a track the TV's player draws has no Secondary. Up and Down skip the shown subtitle's own dimmed row, as Apple TV's disabled row is skipped. A secondary subtitle download that ends early is fetched again like the primary's, and the cues that arrived show meanwhile.
-- Added Apple TV's App Language row: Settings › General has a Language group with an App Language picker (Match Device or English), stored on the profile like Apple TV's. English is the only language this build shows, so picking it changes no on-screen text yet; translation is tracked in #571.
-- Added `SILO_REPLY_JITTER_MS` to the UI test server: it delays each answer by a random time up to that many milliseconds, so a test that acts before a read has landed fails far more often and a timing flake can be reproduced.
-- Added theme music, as on Apple TV: Settings › General has Play Theme Music and Loop Theme Music, and a movie, series, season or episode page plays the title's theme quietly while it is open, stopping before playback starts.
-- The Watch Party lobby now votes and readies up as on Apple TV: in a room where everyone votes, each suggestion shows its live vote count with the leader outlined and a tick on yours, Select votes or takes the vote back, Suggest a title adds one from the picker, and the host starts the winner. Guests can mark I'm ready, and everyone sees it on their seat.
-- The Watch Party lobby now updates live over the room socket: people joining or stepping away, readiness, the host's pick and controls, and the party ending reach every TV in the room as they happen, with Apple's Connecting and Reconnecting states. Leave party and Back as the host now leave this TV only, as on Apple TV; End party is what ends it for everyone.
-- Added the Watch Party lobby: the code with an invitation page and QR, who is here, and, for the host, choosing a title from the group's picks and watchlists, Start for everyone, Who chooses, Playback controls, Return everyone to lobby and End party. Starting opens the player on the party's file without playback sync, and the lobby shows the room as it was when this TV last heard from it.
-- Added a Watch Party hub, off by default: turn it on under Settings › Server › Extra Features and, when the server supports synchronized parties, Watch Party appears in the profile menu with Start a party, Join party and a lobby that shows the code and who is here; going Back as the host ends the party. Playback together is not built yet.
-- Playback lowers the quality when it keeps buffering, as Apple TV does: it asks first, or lowers Auto at once and offers Restore quality, depending on `playback.buffering_quality_mode` (Automatically by default), with the same prompt, undo pill and notices.
-- Added HDR on Playback. A TV that reports HDR, with the HDR setting on, claims HDR10 for direct play. HDR10+ and HLG stay unclaimed: the probe is one boolean, and Samsung does not document those formats for every Tizen 8.0 TV. Dolby Vision is not a Playback row: Samsung exposes no Dolby Vision support check, and this client claims no Dolby Vision profile.
-- Added subtitle search and download, plus in-player delay, size, position and appearance controls, during playback.
-- Added player chapters, playback stats, richer title information, supported speed and aspect controls, and an in-player Auto-play next toggle.
-- Added Show Next Up to Playback Settings with five prompt timings and profile inheritance.
-- Showed Up Next before playback ended with Play Now, Keep Watching and an On Deck row, and refreshed autoplay at episode completion.
-- Playback settings show Connection speed and Test speed when the server advertises `connection_speed_v1`.
-- Added Lower quality when buffering (Never, Ask first, Automatically) and, when the server has learned a limit for this connection, "Limited to 44 Mbps after buffering on Oct 17" with Reset to Playback settings, as on Apple TV.
-- Sent the last measured connection speed when playback starts, while it is still current, so Auto can plan the first stream with it.
-- Added Paired Silo Profile on General, showing the profile this TV reopens and opening the profile picker to change it.
-- Added Remove Request for a failed request of yours, including the confirmation, the notice, and focus on the card that takes its place.
-- Hid unwatched episode stills and descriptions from Playback when the server supports the profile spoiler settings.
-- Loaded Person filmography in 60-title batches while scrolling and refreshed incomplete person metadata automatically.
-- Show Trailers & More on movie and series Details for local extras and YouTube listings, using Apple's card size and the 76px gap to the next heading. Local extras still play from the start. YouTube listings stay on their card because this TV cannot play them.
-- Added description translation on Details and the featured marquee, matching Apple TV's Translate Description action, Translating… status and Translated by AI label.
-- Added Change Account with several saved accounts per server and account management.
-- The caption layer in the player now reports its state: `data-state`, `data-cues` and `data-at` on `.player-captions` show whether a sidecar is loading, failed or ready, how many cues it holds and the clock reading used to pick a cue.
-- Added the audiobook contract decoders and API operations that the Audiobooks screens will build on. Nothing visible changes yet.
-- Added the Audiobooks tab (Settings, General, Show Audiobooks) with square covers and the audiobook detail: cover, author and narrator, progress, Chapters, About, narrations and related rails. Home, For You and Search open audiobook cards on that detail, and Search can filter to Audiobooks. Play stays off until audiobook playback lands.
-- Added UI tests that the Audiobooks tab needs both Show Audiobooks and an audiobook library the profile can see, and that focus stays on Home when the tab appears or goes. Nothing visible changes.
+## [0.2.0] - 2026-11-24
 
-### Changed
+### ✨ New Features
 
-- The README and release docs now describe installing by sideloading or through Apps2Samsung. The Samsung TV store path is dropped: the app will not be submitted to it (#732).
-- The TV app is now called Auger, with a new app icon and wordmark: the TV's app list, the sign-in, accounts and top-bar logos, the exit dialog and the app's own messages say Auger, in every language. The server it connects to is still Silo, so server names, addresses and sign-in options keep that name (#730).
-- Fixed an intermittent failure of the Calendar "root opens a weekly catalog journey by remote" test (`one weekly read`, 0 !== 1): it counted the weekly read as soon as the Calendar view appeared, before the request had been recorded, so on a busy machine it saw none.
-- Split the CI UI tests across three parallel shards (`node --test --test-shard`), with the build and native tests in their own job, so the run no longer grows toward its time limit as tests are added; passing runs took 15 to 26 minutes in one job against a 30-minute limit. The `test` check now passes when every part passes (#646).
-- Raised the CI test job's time limit from 20 to 30 minutes: the full UI suite now takes 15 to 20 minutes on a busy runner, and runs on main, #645 and #636 were cancelled at the limit.
-- Right-to-left focus geometry that asks which item is past another now reads start and end from the layout direction (Search's People-to-grid landing and Person filmography's filters), through one helper; nothing changes on screen today because those views read left to right.
-- The player's Subtitles tab now has Apple TV's single AI Subtitles… row in place of Translate current subtitles and Transcribe current audio. It opens a menu where you pick a language and Silo translates an existing subtitle or transcribes the audio, with Suggested languages, the transcription quota, the job's progress with Cancel, and Dismiss or Discard held request after a failure.
-- Added the profile menu's Switch Profile and Add Profile row to the feature list, with the missing profile-limit check recorded against #465.
-- A library menu with more than six libraries now shows six rows at a time and scrolls the rest under its title, keeping the focused library in the middle, as on Apple TV. It showed about thirteen rows before it scrolled.
-- Corrected `FEATURES.md`: the Up Next panel, the Auto-Play Next Episode, Show Next Up, Skip Intros and Skip Credits switches, and Poster Size and Show Advisory Age are marked as built, as they are on main; the Android advisory-age gap stays recorded.
-- The player's Video, Info and Stats tabs now follow Apple TV's regrouped layout. Video has Picture (Quality, Aspect) beside Playback (Speed, Auto-play next); Subtitle delay is set in the Subtitles tab only. Info has Title beside Now playing, a row each for Video (such as 4K · HDR10), Audio, Subtitles, Playback (Direct play, Remuxed or Transcoded by the server) and Chapter. Stats lists each fact once in Playback, Stream and Engine sections, and scrolls as one pane like Info.
-- Recorded the S95C check of theme music in `FEATURES.md` and `docs/settings.md`: it plays, loops, fades out and stops before AVPlay opens; sound and formats other than mp3 were not checked.
-- The Details Subtitles list now uses the same order as the player's: one language at a time (regional variants such as Brazilian and European Portuguese together), then by format, then full, forced and SDH, with a default-flagged track ahead of an otherwise equal one. Tracks of one language no longer split by region.
-- The player's Subtitles tab now follows Apple TV's regrouped options: Options (AI actions, Search Subtitles…), Timing (Delay) and Style (Appearance, with its Large · Box · Bottom summary under the label, then Only on this TV). A group with nothing in it no longer shows an empty heading, and Size and Position are in Appearance.
-- Subtitles in the player are listed as on Apple TV: the profile's subtitle language first when the server names one, otherwise all languages A to Z, each language by format. A title with English, Chinese, Danish and German tracks and no subtitle language now lists Chinese before Danish.
-- Playback started without a subtitle choice, such as from Home, the next episode or Up Next, now follows the profile's subtitle settings as on Apple TV. With no subtitle language set, playback and the Details Auto summary start on the title's default subtitle, else a forced one, as on Apple TV: Aladdin starts with Portuguese Brazilian (Forced) instead of Off.
-- With a film's embedded subtitle selected, such as Aladdin's Portuguese Brazilian (Forced), the Subtitles tab again shows Delay, Appearance and Only on this TV, as on Apple TV. The TV draws that subtitle itself, so both settings apply to it.
-- Documented why Seek Cache, Buffer Ahead, Lossless Multichannel Audio, TrueHD Atmos and DTS:X, Deinterlacing and Deinterlacing Field Rate stay hidden on Samsung TVs, with the AVPlay limit for each.
-- Corrected the Watch Party page again: it now lists what is built, including the Details action, and what is still missing and waits on #13, and it no longer says Apple's Back leaves the party, that a vote is a socket frame, or that Return everyone to lobby is a primary button. The feature list no longer says the Samsung app has no Watch Party.
-- Corrected the docs: the Watch Party page now describes the room socket, readiness and voting, the Settings page no longer lists Paired Silo Profile and Show Next Up as rows without a control, and the bug-report example names the S95C's Tizen 9.0.
-- Corrected the feature list: the Samsung app shows trailers, and the player has Chapters, Info and Stats tabs, an Aspect row, and a Speed row of 1× and 2× on direct-file plans. It no longer says the app has no audiobooks or player extras.
-- Matched Apple TV's held-Select look on Change Account rows and cards, profile tiles and footer actions, and Create Profile buttons.
-- Settings rows, server management, Acknowledgements Done and Watch Party options gained Apple TV's gentle focus growth and snapped pressed look while Select was held.
-- Holding Select on a Home card now opens a compact menu beside the card, as on Apple TV: Play or Resume on Continue Watching, Mark as Watched, Add to Favorites and Add to Watchlist, then Remove from Continue Watching or Remove from Next Up. It opens at once, with no title or loading lines, and a failed change shows the Couldn't Update Item alert.
-- An empty Home now shows Apple TV's Nothing to watch yet page, and a Home refresh no longer adds a status line or Try again under the rows.
-- Buttons, cards and menu rows now act when Select is released, as on Apple TV. Cards, For You and profile menu rows, library letters, Details actions and PIN keys stay drawn pressed while it is held. Holding Select no longer repeats a button, and moving off a held button cancels it.
-- Details now uses the same remembered title-art answer as Home, as on Apple TV: the loading frame shows the card's logo when it opens from a Home or recommendation row, and the page no longer starts on its text title and swaps to the logo once a settings read answers.
-- Documented where the Details hero, meta lines and loading states still differ from Apple TV on purpose, and why: the movie hero grows instead of clipping its action row, a series readout hides without values, and scrolling back to the hero skips Apple's focus-engine corrections.
-- The player's Subtitles tab now matches Apple TV: TRACKS and OPTIONS sit in two columns, option values line up on the right with chevrons, Appearance shows its Aa glyph, and pickers are titled in sentence case. Pickers float over the dimmed pane and close with Back, selected tracks show a checkmark without a highlight, and Search and AI rows show Apple's symbols. Video's Quality, Speed and Aspect rows each open a picker. Up and Down stay in a column, Left and Right cross between columns, and tabs change only on the tab bar, as on Apple TV. The panel and pickers use translucent glass, selected tracks show Apple's full-size checkmark, the columns fill the panel, and long option values truncate as on Apple TV.
-- Person page text now matches Apple TV's size and width: the name, facts, biography, Filmography heading, title count, filter chips, poster captions, initials and the Loading metadata capsule use Apple's point sizes corrected for Inter's taller capitals, with letter spacing fitted to Apple's SF Pro. The Loading metadata capsule uses Apple's dimmer text and background, and the filter chips are Apple's 46px tall, so the filmography grid starts where Apple's does.
-- Details text now matches Apple TV's size and width: the title, rating chip, cast, facts, rails, box set page and error pages use Apple's point sizes corrected for Inter's taller capitals, and each line's letter spacing makes it run as wide as Apple's SF Pro.
-- Details popovers now match Apple TV: Version, Audio and Subtitles share More's glass panel, reopen on the selected track, close with Left or Right, scroll long lists, dim subtitles that can't be delivered, and a failed change, season watched or shuffle shows Apple's alert. More adds Shuffle Season and, with Watch Party on, Watch Party.
-- Holding Select on a card now opens a menu that looks and reads like Apple TV's: it appears beside the card at once, with a symbol on each row, Apple's labels, and Remove from Continue Watching or Remove from Next Up on those Home rows. A change that fails shows "Couldn’t Update Item". An empty Home now says "Nothing to watch yet", and Home no longer shows refresh messages under its rows.
-- The player's subtitle options now use Apple TV's wording: Search Subtitles…, and pickers titled Subtitle Delay, Subtitle Size, Subtitle Position, Subtitle Style, Subtitle Font, Text Color, Text Opacity, Outline Color, Background Color and Background Opacity. As on Apple TV, a picker's title stays in view while its options scroll.
-- Secondary text, such as counts, settings descriptions and metadata lines, now uses Apple TV's colour: the primary text colour at 60%, instead of a lighter flat grey. Watch Party captions, hints, presence and suggestion lines use the same colour at Apple's lower strengths.
-- Details starts the highest-resolution version, honouring the Resolution cap in Playback settings, and lists versions as resolution, video codec, DV or HDR, and audio codec, as Apple TV does. It no longer starts the first version the server lists, and no longer prints the edition in the Version list.
-- The next episode, On Deck and shuffle picks start the file that fits the Resolution cap, as Apple TV does, instead of the last-played or first-listed file.
-- Change Account and Settings › Accounts now list the open server first, then servers and accounts by last use, as Apple TV does. Settings no longer shows "0 profiles", a card spins while its account opens, and SIGN IN AGAIN uses the warning colour with an open lock and a dimmed tile.
-- Change Account fades the edge of the server and account columns that has rows hidden past it and shows a chevron under the column pointing that way, as Apple TV does.
-- The profile PIN prompt now matches Apple TV: the profile's avatar and name, four dots, a number pad with Cancel below it, and the PIN sends itself on the fourth digit. A wrong PIN turns the dots red and shakes them, and the entry clears. Back deletes a digit or leaves when none is left. Holding OK on a key enters one digit, and a lockout with no wait given says to try again later.
-- Pinned the paused seek preview to Apple TV's footer layout with a regression test. Pausing alone shows no preview card. A timeline scrub shows it with its bottom edge 8px over the series line, which draws above the card, and the title stays clear. Nothing on screen changes.
+- **Profiles**: Match the TV picker and add profile creation
+- **Browse**: Share Skyline presentation on Recommended
+- **Details**: Consolidate actions and inline season episodes
+- **Details**: Play episodes directly with fresh resume
+- **Requests**: Match the Apple TV Requests screens
+- **Search**: Match the Apple TV Search experience
+- **Person**: Show inline filmography and Apple TV filters
+- **Lists**: Align Watchlist Favorites and History with Apple TV
+- **Collections**: Align Apple TV collection browsing
+- **Calendar**: Align the week agenda and event presentation with Apple TV
+- **Accounts**: Add Change Account and several accounts per server
+- **Details**: Align series navigation and playback controls
+- **Sign-In**: Match Apple TV's current sign-in screens
+- **Details**: Add description translation
+- **Details**: Show the Trailers & More rail
+- **Settings**: Align supported Apple TV menus
+- **Settings**: Hide unwatched episode stills and descriptions
+- **Box Sets**: Browse, search, and show movie box sets
+- **Sign-In**: Show when a server still needs setup
+- **Browse**: Show cached content when the server is unreachable
+- **Requests**: Remove your own failed requests
+- **Session**: Paint saved route before reconciliation
+- **Settings**: Add the remaining Apple TV settings rows
+- **Settings**: Show connection speed and test it from Playback settings
+- **Playback**: Match the Apple TV player panel and scrubber
+- **Playback**: Play embedded subtitles from the stream and switch in place
+- **Playback**: Show Up Next before playback ends
+- **Playback**: Add chapters, stats and video controls
+- **Playback**: Add subtitle search and in-player controls
+- **Playback**: Claim HDR10 when this TV reports HDR
+- **Accounts**: Match Apple TV account order, counts and badges
+- **Accounts**: Show overflow fade and chevrons on Change Account columns
+- **Person**: Match Apple TV load-more paging and metadata refresh
+- **Playback**: Port the buffering-quality decision logic
+- **Playback**: Send the fresh bandwidth estimate on playback start
+- **Playback**: Lower quality when buffering like Apple TV
+- **Playback**: Play every part of a multi-part shuffle pick like Apple TV
+- **Watch Together**: Add the Watch Party contracts and API
+- **Settings**: Add Apple's buffering quality rows
+- **Audiobooks**: Add audiobook contracts and API operations
+- **Watch Together**: Add the Watch Party entry and hub
+- **Watch Together**: Add Apple's Watch Party lobby over HTTP
+- **Watch Together**: Keep the Watch Party lobby live over the room socket
+- **Audiobooks**: Add the Audiobooks library cascade and detail
+- **Watch Together**: Add the Watch Party ballot and lobby Ready
+- **Settings**: Play theme music on Details like Apple TV
+- **Settings**: Add Apple TV's App Language row to General
+- **Focus**: Draw Apple TV's pressed look on pill buttons and Details extras
+- **Languages**: Add the string catalog, lookup and Accept-Language
+- **Languages**: Show Settings in the chosen language and list Apple's languages
+- **Languages**: Show Details and Search text from the string catalog
+- **Languages**: Show the top bar, its menus and Home's states in the chosen language
+- **Languages**: Show card captions, For You and the library tabs in the chosen language
+- **Languages**: Show Arabic right to left and mirror the remote's Left and Right
+- **Languages**: Mirror Search in Arabic, as Apple TV does
+- **Browse**: Offer Apple's full list of Browse sorts
+- **Languages**: Move Requests, Calendar and Accounts onto the catalog and mirror them in Arabic
+- **Languages**: Move Watch Party onto the catalog and mirror it in Arabic
+- **Audiobooks**: Open a book on Apple TV's loading frame
+- **Languages**: Move the Watchlist, Favorites and History pages onto the catalog and mirror them in Arabic
+- **Languages**: Move the sign-in screens onto the catalog and mirror them in Arabic
+- **Languages**: Move the Person page onto the catalog and mirror it in Arabic
+- **Languages**: Move the error pages and empty rows onto the catalog
+- **Languages**: Move the profile picker and launch choice onto the catalog
+- **Languages**: Move the audiobook page and chapter list onto the catalog
+- **Languages**: Move the audit's leftover Apple-keyed lines onto the catalog
+- **Languages**: Translate the generic-word buttons on Tizen-only screens
+- **Home**: Show rows of collections on Home and library pages
+- **Recommendations**: Add Not interested to the card menu
+- **Home**: Give each corner of the backdrop wash its own colour
+- **Settings**: List audiobook skip intervals under Playback
+- **Home**: Name the owner of a shared collection in the hero
+- **Home**: Crossfade the backdrop colour wash over 0.7 s
+- **Details**: Add Not interested to a movie or series page
+- **Languages**: Move the skip-interval connection and unsupported save errors onto Apple's keys
+- **Playback**: Add Secondary subtitles to the Subtitles tab
+- **Playback**: Add Sync to Audio and Reset Timing to the Subtitles tab
+- **Playback**: Replace the two AI rows with AI Subtitles… and its language menu
+- **Languages**: Move the player onto the catalog
+- **Playback**: Mirror the options panel, Up Next, buffering card and error page in Arabic
+- **Languages**: Show Stats' status, delivery and subtitle search lines in the chosen language
+- **Playback**: Draw the Up Next card as Apple TV does
+- **Branding**: Rename the TV app from Silo to Auger
+- **Playback**: Give Info and Stats Apple's focus ring and section paging
+- **Playback**: Load an embedded subtitle's file when switching mid-video
+- **Playback**: Show the next episode's air date and runtime in Up Next
+- **Playback**: Add Up Next's Auto-play toggle and save it for this TV
 
-### Removed
+### 🔧 Improvements
 
-- Removed the hidden Genres, A–Z and Recently Added library modes, which the remote could not reach. As on Apple TV, the Movies and Series tabs offer Recommended, Collections and Browse, and Browse's filters, letter rail and Date Added sort cover the same ground.
-- Removed the custom kbps field and Save action from the Maximum Bitrate picker. A stored cap outside the preset list still appears in that list.
-- Removed the Settings Hidden Libraries editor and duplicate Manage Servers navigation; existing hidden libraries can still be restored.
-- Removed Details Read synopsis, its expanded view, #66's personal star rating control, and Season details to match the controls reachable on Apple TV.
+- **Home**: Read item detail after the marquee rests
+- **Details**: Send the episode read before the dwell repaint
+- **Details**: Repaint once per frame for async Details answers
+- **Languages**: Load the shown language's text on demand
+- **Browse**: Keep one tint wash as a bitmap under Home's backdrops
+- **Browse**: Draw Home's hero once per swap, with one masked layer fewer
 
-### Fixed
+### 🐛 Fixes
 
-- On a video the TV can only seek within a window, a seek made while a subtitle change is waiting for the server now lands where you asked: a newer seek replaces it, skips add to it, and it survives the change bringing a new stream (#756).
-- Settings' text now uses Apple TV's sizes and weights, scaled to SF Pro's cap height like the rest of the app, across the sidebar and the General, Playback, Subtitles and Server panes (#749).
-- Calendar's text now uses Apple TV's sizes, scaled to SF Pro's cap height like the rest of the app, across the week strip, filters, cards, the empty week and the failure page. The failure page's second button is now regular weight, as on Apple TV (#749).
-- The profile name at the top of the profile menu is now drawn at Apple TV's size, scaled to SF Pro's cap height like the rest of the app (#749).
-- Search's All, Movies and TV Shows filter pills now use Apple TV's text size, scaled to SF Pro's cap height like the rest of the app (#749).
-- If the TV's player hits an error while a subtitle change is still waiting for the server's answer, playback now recovers instead of stopping with an error. Silo gets the server's answer first, so it recovers with the server's current playback plan (#750).
-- When an episode has no next episode and its On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode. Pick something from On Deck, or go back." under an On Deck row that wasn't there (#744).
-- Adding an account from Change Account now titles the code screen "Add an account on {server}", as on Apple TV, in the language you pick. A first sign-in and renewing a saved account keep "Sign in to {server}" (#754).
-- Switching to another embedded subtitle during a video on direct play now loads that subtitle's file, so Delay, Appearance and Only on this TV stay, as on Apple TV, without restarting the video. If the server refuses the switch, or its answer is slow to arrive, the TV's player shows the subtitle meanwhile. Pause, play and seeking keep working while the switch is answered (#738).
-- The Details pills for the version and audio choices now read Version and Audio in the language you pick, as on Apple TV, instead of Versions and Audio Tracks in English (#728).
-- When a film's On Deck list can't load, Show Up Next now reads "No next episode is available.", as on Apple TV, instead of "Couldn't load the next episode". An episode whose next episode can't be found keeps that line (#741).
-- Choosing a subtitle that the TV draws itself, after subtitles were turned off or an app-drawn subtitle was showing, now shows it again. It used to stay selected but invisible (#735).
-- The Up Next card now treats an empty episode still link from the server as no still, and shows the episode's backdrop instead of blank art (#731).
-- On a film, Show Up Next now disappears when What's On Deck can't be loaded even after a second try, as on Apple TV, instead of staying for the whole film and opening an empty panel (#736).
-- The player's Info and Stats panes now show Apple TV's focus ring and grow slightly when focused, and Down and Up page through them as on Apple TV: Info from its top to its end, Stats from its top to its Engine section to its end, instead of scrolling part of a page at a time (#556).
-- Subtitle Delay, Appearance and Only on this TV now stay in the player's Subtitles tab for an embedded text subtitle chosen when a video starts on direct play, as on Apple TV. The TV asks the server for those subtitles as files it draws itself, instead of letting the video player draw them where they could not be shifted or restyled. If that file can't load, the video player draws the subtitle and these rows hide. Switching embedded subtitles mid-video still hides them (#538).
-- The Released, Aired, First Aired and Last Aired dates on a Details page now use the language you pick, as on Apple TV, instead of the TV's own language: with German chosen on an English TV, a film reads `2. Januar 2024` (#592).
-- A film now offers Show Up Next in the transport bar while it plays when there is something On Deck, as on Apple TV. The next episode and On Deck are looked up when playback starts, not only near the end (#698).
-- Rewind or Fast Forward pressed while a skip is still under way now adds to where that skip is going, as on Apple TV, instead of jumping from where playback was before it. Fast Forward then a quick Rewind now lands 20 seconds after where you started, where Rewind could take you back past that point or to the start (#724).
-- On a Details page for a title with only one version, the Versions button is now greyed out and Right from Play skips over it, as on Apple TV, instead of opening a picker with nothing to choose (#720).
-- Holding Select on a row of the player's options panel now shrinks it slightly until release, as on Apple TV. Details' Play button now grows slightly when focused and presses to 0.98 of that size, as Apple TV's does, instead of shrinking from its unfocused size (#477).
-- When an episode ends while the server is slow to close it, the next episode now starts after the countdown, as on Apple TV, instead of waiting out three stop requests and showing "Couldn't load the next episode". The old episode's session is still closed in the background, or the server times it out (#709).
-- When a Calendar refresh fails while the week's cards are on screen, the Calendar now keeps showing the week with no error line or Try Again under it, as on Apple TV, and reads the week again on the next visit. A week with nothing loaded, or with no events, still shows the full error page (#651).
-- The player's transport bar no longer draws an empty circle where Show Up Next would be when there is nothing to show next, as on Apple TV (#698).
-- Added native tests that a subtitle retimed while hidden is read again from the server when chosen, past a stored copy of its old cues (the test server now keeps a browser-style HTTP cache, off by default), and that a failed AI Subtitles job keeps its panel and Dismiss while Audio Retry reloads the audio list. Nothing visible changes (#706).
-- The card at the end of a video now uses Apple TV's words, in the language you pick: Finding the next episode while it works out what comes next, End of playback with No next episode is available. when nothing follows, and Apple's message when the next episode cannot be loaded. The separate Ending playback… step is gone, as on Apple TV.
-- In the player's Subtitles tab, the Delay value and its picker now use the digits of the language you pick (`٠ ms` in Arabic), and subtitle languages sort the way that language orders its words, as on Apple TV. In Arabic, Spanish now comes before German. The Details page's subtitle list follows the same order. English reads and sorts exactly as before (#695).
-- In AI Subtitles…, Dismiss now closes the menu, as on Apple TV. A request whose outcome is unknown keeps its warning until you discard it, instead of leaving a panel that said only "Subtitle translation failed." and could not be closed.
-- AI Subtitles… now stays usable when the TV cannot read the audio track names, transcribing the selected audio. The quota line no longer reads "0 of 5 used" when the server sends no used count, and an older quota check that answers late no longer overwrites a newer one.
-- With translation off, AI Subtitles… now offers the spoken language even when the server's language list leaves it out.
-- Sync to Audio keeps following a new sync when an older check answers late with "not found".
-- A Continue Watching row on Home or a library's Recommended page that already shows everything you are watching no longer ends with an Explore all card, as on Apple TV. A row with more titles than it shows keeps the card (#691).
-
-- A video whose HLS playlist uses variables the TV cannot read (the long transcoded streams, #314) no longer freezes Silo until the TV closes it. Silo reads the start of the playlist, and of the first video stream it lists, before handing it over and, when it finds one, shows the playback error page straight away.
-- A video the TV is slow to open no longer leaves Silo waiting for a minute. If AVPlay has not prepared a stream after 15 seconds, the route counts as failed, is replanned, and after the third failed route the playback error page shows with its Try Again button.
-- The profile picker's Sign out button now draws Apple TV's icon, a closed rounded box with a gap for its arrow, instead of an open bracket; the arrow leaves to the right, and to the left in Arabic (#656).
-- The Calendar's error page now offers Sign In Again first when the session has expired, with Try Again second and no Go Back, as Apple TV's error page does on a root tab, and the first button on every error page now wraps its label instead of cutting it off in longer languages such as German (#648).
-- Home's backdrop now keeps its layers from the moment it swaps in and draws the frame's dark backing and its ThumbHash as one bitmap, so the TV draws the hero once per change instead of two to four times, and one masked layer fewer. Nothing changes on screen (about 99.95% of colour values within 2 of 255, the largest gap 4); whether Home's Down press is quicker waits on an S95C trace (#310).
-- Home's, For You's and the library pages' backdrop now keeps one tint wash and draws it as a small bitmap that fades into the next one, as Apple TV does, instead of building and painting a new full-screen layer of gradients for every backdrop change; the artwork's layer is only its own box and the top scrim is shared. Nothing changes on screen (pixel difference under 7 of 255, on average 0.3); whether the TV scrolls faster waits on an S95C trace (#515).
-- A multi-part audiobook with no chapters now lists its parts in the Chapters picker by their file names, as on Apple TV, and falls back to Part 1, Part 2 only when a file has no name.
-- The Watch Party hub now opens full screen with no top bar, as on Apple TV, 52 px further in at each edge, and its join field takes Apple TV's text field look: no box at rest, the hint at the start (also in Arabic), and a light grey capsule when focused. Back returns to the tab it opened over. Typing still uses the Samsung TV keyboard.
-- An audiobook library the server types `audiobook` (singular) now shows the Audiobooks tab and opens, as on Apple TV. Only the plural `audiobooks` did before.
-- Home's hero now shows its runtime and other details in the new language as soon as you return from Settings, instead of keeping the old language while the same title stays selected.
-- Made the held-Select Settings language test wait for Settings' own reads to be answered before it presses, so it passes when the connection read lands under the press (it failed about half the runs on a busy machine); another test now pins that a press survives such a repaint and still runs on release. No app change.
-- Settings no longer loses a Select you are holding when a language's text arrives: the screen waits for the release, runs the row you pressed, then shows the new language.
-- A library's menu now lists Recommended, Browse, Collections, as Apple TV does; Collections was listed before Browse.
-- Settings now keeps Down on Sign Out, the last item of the left rail, as Apple TV does: it no longer jumps into the Server pane's Accounts row. Up still moves up the rail.
-- Settings now keeps Up on the first row of a pane and Down on the last, as Apple TV does: Up from Paired Silo Profile stays on it instead of jumping to the General rail item, and Left still reaches the rail.
-- Settings now skips a disabled row when you press Up or Down, as Apple TV does: with Play Theme Music off, Down from it lands on Show Advisory Age instead of the disabled Loop Theme Music row.
-- A season page now reads its title at the same artwork sizes as a movie or series page, as on Apple TV, and keeps those sizes when Mark Season Watched re-reads it, instead of asking the server for a larger image.
-- After Mark Season Watched or Unwatched, More on the season page now offers the opposite action, and the episode rows keep their new state, even when a slower season read sent before the change answers last. Before, that older answer could put the season back to its old state on screen.
-- After Mark Series Watched, More on the series page now offers Mark Series Unwatched even when a slower series read sent before the change answers last, as on Apple TV. Before, that older answer could put the series back to unwatched on screen.
-- The episode rail on a series' Details page now asks for stills at Apple TV's 360 px card width, so they are no longer stretched from the server's 300 px still.
-- Back from a season page to its series now always puts focus on the series' Play or Resume, as on Apple TV, however slowly the series page reloads. Before, focus could stay on the season card you came from when the season's episodes were still loading.
-- Fixed Back from a Search request result: the card keeps focus when the title or People answers that the card interrupted land after the Search page returns, as it does on Apple TV.
-- Returning to a paused or playing video now keeps the Restoring message up until the video is back, even when the server answers an earlier request late.
-- A movie, series or episode page now keeps its hero backdrop when it re-reads the title, after Find Trailers, a track change, a description translation or Mark Watched, instead of asking the server for a larger, differently sized image.
-- A subtitle download that ends early now keeps the cues that arrived and is fetched again after 2, 5, 10, 10 and 10 seconds, as on Apple TV, instead of showing "Subtitle data couldn’t be loaded". The largest partial stays if every refetch ends early.
-- Disabled Settings rows now look as bright as the other rows, as on Apple TV, instead of dimmed: Play and Loop Theme Music, Poster Size, Connection speed, and every row while a change is saving.
-- A long Details track list (Subtitles, Audio, Versions) now keeps the focused row in the middle of its window as you move through it, as on Apple TV, instead of letting it rest at the bottom edge.
-- Opening a series from a Calendar episode that the season does not list now shows the suggested episode in the header (season and episode, air date and runtime, ratings, title and synopsis), as on Apple TV, instead of describing the series.
-- Loop Theme Music, when it is turned off because Play Theme Music is off, now looks as bright as the other Settings rows, as on Apple TV, instead of dimmed.
-- Auto subtitles for a title that lacks your subtitle language now start on its first forced track when Show Forced Subtitles is on, else on the file's default track, and Details names that track in its Auto line, as on Apple TV, also when your profile sets only a subtitle language. The Details Subtitles line now reads as Apple TV's, for example "Portuguese (Forced) · SRT". Before, they started with subtitles off and Details said None.
-- Made two player tests stricter: the Up Next caption test now checks the line is drawn with a real size inside the video preview, in English and Arabic, and the Arabic subtitle order test now checks the exact track order. Nothing visible changes (#705).
-- Made the signIn and browse UI tests wait for the answers, repaints, retries and request counts they depend on, so they pass when the test server answers up to 150 ms late, except for two real timing differences tracked in #552 and #554.
-- Made four more UI tests pass when the test server answers up to 150 ms late and the machine is busy: the Home marquee title-art-off test waits for the text title, the Arabic year test waits for the Arabic digits, the Details lower-rail radius test reads until the style is not empty, and the personal journey test presses once the answers have landed and painted.
-- Made three more UI tests pass when the test server answers up to 150 ms late: the video skip picker title tests open the profile menu once the top bar shows the profile's language, the Browse loading-more indicator test reads the live indicator until it animates, and the empty-library Browse test reads the empty state's box until the node is there.
-- Made the Details "focused episode's read leaves before the dwell repaints" UI test pass when the test server answers up to 150 ms late: it waits for the focused episode's answer and for the reads started by the paused clock's margin before it marks the screen, because a late answer repaints Details and drops the marker.
-- Made three more UI tests pass when the test server answers up to 150 ms late: the skip-interval language tests open the profile menu once the top bar shows the profile's language, the long authored menu test presses Right once all five tabs are drawn (Movies and Series come from the libraries read), and the series Sort panel test opens the panel once Browse's answers have landed and painted.
-- Made the Not Interested UI test for a server that predates the mark pass when the test server answers up to 150 ms late: it opens More once the page's reads have been answered, because the offer is removed by the page's late details answer.
-- Made three more UI test files pass when the test server answers up to 150 ms late: the skip-interval save-error tests open the profile menu once the top bar shows the profile's language, the Sort and Filter panel test presses once Browse's answers have landed (a late answer replaces the open panel's nodes), and the Not Interested test that finishes a write under a covering page waits for the write's answer and the page's re-read before it opens the menu.
-- Made two more UI tests pass when the test server answers up to 150 ms late: the shared-collection owner test releases the held profile list only once the read is held (Home reads it when its enrichment lands, which can be after the card is focused), and the top-bar avatar test reads the avatar once Home's answers have landed and painted.
-- Made two more UI tests pass when the test server answers up to 150 ms late: the sign-in test for a server that turned password sign-in off waits for discovery's answer to land and paint before it checks the button, and the Watch Party menu tests list the profile menu once Requests has arrived and the capability answers have landed.
-- Made two more UI tests pass when the test server answers up to 150 ms late: the Settings "quality controls remain absent" test counts settings reads from after Home's spoiler and theme-music reads have landed, and the Home language tests wait for the library tabs before they compare the top bar.
-- Made three more UI tests pass when the test server answers up to 150 ms late and the machine is busy: the Switch Profile outage test takes its stored Home snapshot once Home's answers have landed, the native posters test reads the poster's size from the live node, and the top-bar language-focus test gives the language read its own hold so another launch read cannot use it up.
-- Fixed an intermittent failure of the person page "Up from a filmography card follows that card against the chips" test (seen in CI): the chip that had just lost focus was still scaling back, so mid-transition it reached the card's left edge by 0.3 px and Up landed on it. The test now waits for the chip's transition to end before it presses Up.
-- Made three more UI tests pass when the test server answers up to 150 ms late and the machine is busy: the Details "Cast and Related always enter on their first card" test waits for the rails to settle before it presses, the Arabic Home shelf test holds only the language read (holding the first eight settings reads could let the language answer through), and the fifty-libraries menu test takes its request count once a settled turn sends nothing more.
-- Made three more UI tests pass when the test server answers up to 150 ms late: the Search German test waits for the German field prompt, the English Right-press test waits for the library tabs (without them Right from Home reaches For You), and the profiles-menu handoff test starts once Home's answers have landed and painted.
-- Made the personLanguage UI tests wait for the person's facts and the answers behind them before they read the page, so "the Person page keeps its English text and left-to-right layout in English" no longer reads an empty facts row when the test server answers up to 150 ms late.
-- Made three more UI tests pass when the test server answers up to 150 ms late and the machine is busy: the Search "later request stays visible when People arrives" test waits a painted frame between its quiet-read checks (a late search-capabilities answer restarts the search), the Series pill Down test settles before it presses and reads card positions from the live node, and the library Filter text test takes the Genre row itself, because the genre rows draw above Decade once their facets answer.
-- Made the appLanguage and marqueeLanguage UI tests pass when the test server answers up to 150 ms late: the Settings General test waits for the cards header (drawn once its settings answer lands), the German catalog-key test opens the profile menu only once the top bar is German and waits for the Playback rows before it skips any, and the marquee test holds only the language read instead of the first eight settings reads.
-- Fixed an intermittent failure of the Search "Done leaves the field for the selected filter" test: it checked the last catalog read before the new query's request had been recorded, because a request leaves the page before the fake records it. The test now waits for the new query's read first.
-- Fixed an intermittent failure of the Home "card artwork fades in over 0.12 s once it loads, and decoded artwork paints at once" test: after the remount it read the cached poster's opacity from a node a late Home answer could already have replaced, which reports an empty value. The test now reads the live poster after the answers have landed and painted.
-- Fixed an intermittent failure of the detailsFocus "empty episode response keeps series entry passive" test: Home's late prefetch answers repaint a Home section and Home restores focus to the card, which the test's focus recorder counted as an extra `series:s1`. The test now lets those answers land and paint before it starts recording.
-- Made the cardActions "lift ends on every close" test and the homeLanguage tests wait for the answers and the top bar they read first, so they pass when the test server answers up to 150 ms late.
-- Made the personHero UI tests wait for the person answers to land and paint before they read the portrait, so they pass when the test server answers up to 150 ms late.
-- Made two more detailsHeroStates tests (the Cast move and the hero return) and the navigationMotion library dropdown test wait for the Details or Home answers they depend on, and the Cast-move test step the paused page clock until Related paints, so they pass when the test server answers up to 150 ms late and the machine is busy.
-- Made the detailsHeroStates, detailsFocus and titleArt UI tests wait for the answers they depend on (Home painted before a card click, season 24 re-read before Left, the title-art setting answered before Details opens), so they pass when the test server answers up to 150 ms late.
-- Made the home, detailsLayout and app UI tests wait for the answers, repaints and clock steps they depend on, so they pass when the test server answers up to 150 ms late.
-- Details now asks for cast photos and posters at the sizes Apple TV uses, and Home and Details show backdrops, card art and title logos once they have decoded, as Apple TV does.
-- Made the cardActions, homeCardMenu, descriptionTranslation and personFilmography UI tests wait for the answers, repaints and clock steps they depend on, and made `jumpUntil` hold the page clock while a reply is still on its way, so they pass when the test server answers up to 150 ms late. A clock that ran ahead of a slow reply made the page report a change as not confirmed.
-- Made the series Hero colours UI test move to a control with the Right key, as a viewer does, instead of a script focus call. The page keeps handing focus back to Play until the viewer presses a direction key, so the script call sometimes lost to a late repaint and the test timed out waiting for an unfocused Play button. The Start Over fallback test now presses Right before it moves focus by script, for the same reason.
-- Made the watchParty, topBar, requests and preplay UI tests wait for the reads, sockets and menu rows they depend on instead of acting while an answer is still on its way, so they pass when the test server answers up to 150 ms late.
-- Search now keeps its results in view while you type: with the Samsung keyboard up, the filters become a row of chips right under the field, as in the Android TV app, and the first results row shows above the keyboard. Done moves focus to the selected filter as on Apple TV.
-- Error text now uses Apple TV's two reds instead of one pink: the dark red `#B00020` for warnings in Settings and the lighter `#FF6961` for sign-in, profile, PIN and other error messages.
-- Embedded subtitles on long films now load: the TV keeps waiting while the server is still extracting them and gives up only after a minute with no data, as on Apple TV. If they still cannot load, the player now says "Subtitle data couldn’t be loaded. Turn subtitles off and on to retry." over the video instead of showing nothing.
-- Opening a series from a Calendar episode whose season number is missing now keeps focus on the play button when the series finishes loading, instead of moving it to the season tab.
-- Made the offline Details recovery test step the clock until similar titles are read again, instead of one 35 s jump. Since Details repaints on the next frame, the 15 s retry can be scheduled after that jump, and the test failed in CI.
-- Opening a movie, series or season page now redraws it once for answers that arrive together instead of once for each, so the first presses after opening respond sooner.
-- Choosing another audio track on a film played as the original file no longer closes Silo on the S95C. The TV now switches to that track on the original file, as Apple TV does, instead of opening a server conversion.
-- Made the Search test for a rejected later-page cursor scroll until the error shows, and wait for both rejections to be reported, instead of scrolling a fixed 12 times. On a slow runner the page replies had not all landed, so it timed out waiting for Try Again.
-- Made the series Details test wait for the Details reads to be answered before it moves Down from the next-episode button. A late subtitle-preference answer repainted the page and handed focus back to Subtitles, so the test failed now and then.
-- Limited the UI tests to two files at a time. Node ran up to one fewer files than the machine has cores, each with its own Chromium, which starved shared and slow runners and made timing-sensitive tests fail now and then.
-- Resting on an episode in a series rail now sends its detail read as soon as the 120 ms wait ends, instead of after the page finished redrawing.
-- Poster badges now show the images an administrator uploaded for them, beside the label or in place of the whole badge, as Apple TV does.
-- Aligned Settings Sign Out with the category icons, matched its spacing below Server, and restored the profile placeholder's dark circle to match Apple TV.
-- Matched Apple TV's Settings rail symbol sizes and weights, General gear, muted focused subtitles, larger chevrons, and Sign Out spacing, text size and muted red colour.
-- Returned to the previous page and library scope when Add Profile was closed without a change, focusing Sort in Browse and the avatar on Home as on Apple TV.
-- Kept Plate rating scores inside poster edges by truncating long source chips when the rail ran out of room, including at larger badge sizes.
-- Poster badges now draw the Plate and Edge band styles and the badge style settings (size, shape, colours, border, weight, capitals and shadow) as Apple TV does, instead of falling back to Classic.
-- The Discord commit feed workflow now skips cleanly, instead of failing on every push to main, when its webhook secret or thread ID is not set.
-- Aligned History, Watchlist and Favorites card titles and subtitles with the poster's leading edge, as on Apple TV.
-- Drew Calendar's week arrows at Apple TV's symbol size and semibold weight inside the existing round buttons.
-- Kept series Details entry on the passive hero until Play was ready, including before episode loading started and after empty episode responses, preventing accidental Watchlist changes from Select.
-- Formatted Calendar air times in the app's English language with uppercase AM and PM, regardless of the TV's region.
-- Enlarged resolution and audio badge symbols to Apple TV's measured semibold sizes and moved their labels to match.
-- Added the missing resolution, audio and metadata symbols to poster badges when badge icons were enabled, following Apple TV.
-- Cancelled a held Select when a player menu repaint replaced its row with a disabled copy, even if it became enabled before release.
-- Poster badge icons now match Apple TV: HDR, HDR10, ATMOS and AV1 marks use Apple's sizes and heavier weight, Dolby Vision is its ring mark beside the full label, Resolution + HDR shows HDR10+, and the Resolution + HDR + Audio badge is drawn instead of being dropped.
-- Posters now show Apple TV's watch status in the top-right corner: a small green check on a watched title, or the number of episodes left on a series or season you have started, sized with the poster on Home, library, Search and every other poster grid.
-- The profile menu's Sign Out and Watch Party icons now match Apple TV's symbols in shape and size: Sign Out is the door with an arrow leaving it, and Watch Party is three people, wider than the other icons as on Apple TV.
-- Series cards on Home, library pages, collections, Explore all, a person's filmography, History and the Watch Party picker now show the years the series ran, as on Apple TV: "2024 – Present" while it is returning and "2019 – 2023" once it has ended.
-- Browse's Sort and Filter panels now use Apple TV's top-bar panel look and fade in and out, their eyebrows, section headers and filter count are monospaced, long labels shrink before they truncate, and the current sort's direction stays grey on the focused row. The control pills, panel rows and letter rail animate focus as on Apple TV, the open rail keeps unfocused letters grey with Apple's spacing and scrolls to the focused letter, and Browse text uses Apple's sizes.
-- The profile menu now matches Apple TV: History, Requests and Watch Party sit above the divider and Settings, Switch Profile, Change Account and Sign Out below it, an account with one profile offers Add Profile instead of Switch Profile, and the rows and the server name under your profile name are spaced as on Apple TV.
-- Adding a profile now asks for the primary profile's PIN whenever it has one, as on Apple TV, also when that profile is the one already open, so a profile opened before its PIN was set can no longer add profiles without it.
-- Browse now starts at Apple TV's 55px inset and slides left as the letter rail opens, so the open rail no longer draws over the last column and shows letters down to X. The rail's letters, the Sort panel's heading and the filter count draw in a packaged monospaced face on the TV. The Sort, Filter and Shuffle pills use Apple TV's symbol sizes, padding and spacing, and the Sort panel uses Apple's row spacing.
-- Browse on the Movies and Series tabs now uses Apple TV's loading, empty, no-matches and error pages: twelve still poster placeholders in the loaded grid's columns while loading, Apple's empty states with their icons, a Clear filters pill like Sort and Filter that Left from the letter rail reaches, and Apple's error page. A failed next page keeps the grid without an error and loads again as you scroll on to more titles, and the loading-more indicator now spins.
-- A long collection or Browse title is now shortened and centred under its card, as on Apple TV, instead of starting at the card's left edge.
-- A mixed library's Movies and Series tabs now show only movies or only series on Recommended, as on Apple TV, and say so when a shelf could not be fully loaded. Recommended and Collections now use Apple TV's loading, empty and error pages, a failed Collections read shows no collections, and collection cards and group headers match Apple TV's.
-- Poster badges now sit where Apple TV puts them: a series status badge such as Returning, and any badge set to the top-right corner, is a tab halfway down the poster's right edge, ratings sit on the left edge, the two bottom corners share one row, and the badges use Apple TV's sizes, letter spacing and colours on Home, library, Search and every other poster grid.
-- Search now matches Apple TV: results update in place while you type or change the filter, searches start 300 ms after typing stops, titles load as one continuous grid instead of 60-title pages, a failed search shows the right headline with Sign In Again or Go Back, no Search title appears after Back, and spacing, corners and text sizes follow Apple's.
-- For You now matches Apple TV: its rows end at their last card with no Explore all page, each visit reads it again while the last rows stay on screen, a refused read keeps the rows, loading is a blank page, the empty state is Apple's centred one with no Home button, and an expired session offers Sign In Again. The For You menu is 460 wide under its tab, with filled icons, Apple's text sizes, a pressed state and Apple's spoken name and hint.
-- The Person page's Filmography posters are now spaced as on Apple TV: 40px apart, with the first poster lined up under the filter chips instead of 13px apart and slightly to their left.
-- On a movie's page, moving down to Cast & Crew now always scrolls the page there. An answer that redrew the page during that scroll could stop it, leaving the row low on the screen.
-- Home now keeps its posters, backdrop and title art when it opens from the saved snapshot and the first live read fails, as on Apple TV. The signed artwork links are kept in the TV's protected key store, never in ordinary app storage.
-- The Person page's empty and error states now match Apple TV: an empty Filmography shows the film icon, "No titles found" and its explanation; a Filmography that failed to load shows Apple's error panel with Try Again under the filters; and a person who could not be loaded gets Apple's full-page error, with Go Back first when the person no longer exists.
-- The top bar and its menus now match Apple TV: tab labels are white and Apple's size, long tab names get Apple's full width, tabs and the avatar animate into focus, the avatar keeps its disc when focused and grows slightly, nameless profiles show a person glyph, the menus have Apple's lit surface and filled icons and grow from and fade back toward their tab, and Back on Home returns to the Home tab before offering to exit.
-- Title pages no longer show "Loading personal actions." under the actions or in More while your watched, favorite and watchlist state loads; as on Apple TV, the actions simply appear, and More lists Add to Favorites right away.
-- A series page now picks its season again, as Apple TV does, after you mark that series watched from a card, including when you go Back to a page that was already open, or once 20 other title pages have opened since; a favorite or watchlist change keeps the season you were viewing, and so does a series page that a related title replaced.
-- Made the fast season-walk test on a series page wait for each season read to reach the test server before the next season, so a slow runner can no longer drop one from its count.
-- The Home preview now keeps pace with focus as on Apple TV: the title, details and description change the moment a card is focused, with no fade or overlap, and only the backdrop waits until focus rests (after a row change, until the moment Apple TV swaps it) and fades in with Apple's curve over its blurred preview. Moving to another row reads the new title's details at once. Home cards show that blurred preview while their artwork loads, fade their artwork in as it arrives, and keep the preview if the artwork fails, a season on Next Up is titled by its series, Explore all loses the extra shadows and heavy outline, its label shrinks to fit, Select presses the card in, and the hero and card text and badges match Apple's sizes.
-- With Standard or Large posters, moving down to Related on a title page now stops where Apple TV does, instead of up to 112 px lower.
-- Moving to the box set row on a movie page now centres it where Apple TV does, at every Poster Size, instead of stopping wherever the row first fits; that scroll and the one to Related now take Apple's 0.45 s ease-in-out.
-- Made the Versions chip focus test wait for the pill to finish widening and count the title's spacing, so it no longer passes only when it measures the first moments of the animation.
-- Made the fast season walk test wait for the last season's episodes to load before selecting it, so on a slow runner the walk no longer skips the season read the test counts.
-- In a Watch Party vote, when suggestions before the focused one are removed, the ballot now scrolls back to the focused suggestion instead of leaving it off the left edge.
-- Made the Sort and Filter panel test hold the page's animations while it reads the fading panel, so on a slow runner it no longer reads the panel after it has gone.
-- Made the profile-menu Back tests hold the TV clock between their two Back presses, so on a slow runner the Movies tab's menu no longer opens in between and takes the second Back.
-- Made the box set row card size test find and measure the cards in one step, so a Details repaint in between can no longer make it measure replaced cards as 0 px wide.
-- Made the empty Home test hold the TV clock while Home remounts, so on a slow runner the remembered card's preview can no longer read that card before the empty answer arrives.
-- The seasons, episodes and lower rails on a title page now match Apple TV: season pills are Apple's size and spacing, sort by number with Specials last, and hold Select to Mark Season Watched or Unwatched; a loading season shows skeleton cards and an empty one reads No episodes available; watched episodes dim, the date line uses Apple's size and spacing, and a movie page lists Cast, Trailers & More, the box set, Related and Details in Apple's order. Related shows up to 12 titles behind four placeholders, and picking a related title from a related title replaces that page, so Back returns to where you started.
-- A title page now opens like Apple TV's: a quiet skeleton of the hero, filled with what the card already knew, replaces the "Loading" page and its Back button. The hero leaves the poster out when a title has no backdrop, shows the backdrop's preview while it loads and a film mark if it fails, fades the logo in, and splits "Title - Subtitle" titles. The Version, Audio and Subtitles readout keeps its labels while values load, long values shrink to fit, ratings that do not fit drop whole, the meta line and synopsis take Apple's type size and line spacing, and the translation note carries its symbol. Returning to the hero scrolls at Apple's pace, a season 0 no longer counts toward "N Seasons", and a focused episode shows only its own ratings once its details load.
-- Made the Watch Party ballot, Watch Party from More, Filmography card menu and episode Search tests wait for the server answers they depend on instead of racing them, which removes their intermittent CI failures.
-- Who's watching now matches Apple TV: the tile says Add, the remembered profile reads TV user, a focused name no longer shifts the picker, the lock badge draws its padlock, the focus ring sits behind the KIDS and lock badges, and Change account shows Apple's two-person icon instead of a server stack. Sign out on Who's watching, in Settings and in Settings › Accounts now asks in Apple TV's centred confirmation over the screen, with Cancel focused, instead of a full page. The remember prompt is now a centred alert over Who's watching that asks "Open <name> automatically?" with Ask Every Time or Remember, and an emoji avatar now shows in the top bar and Settings instead of the initial.
-- Title, season, box set, audiobook and Explore all pages that fail to load now show Apple TV's error screen: a warning icon, the headline and message, and Try Again. A missing or blocked title offers Go Back first with Try Again below it, and the remote's Back still leaves, so the extra Back button and the title above a failed Explore all page are gone.
-- The Home row headings, such as Continue Watching, now match Apple TV's text size, letter spacing and play icon size and spacing.
-- The Home hero's meta line, synopsis, air date and cast line, and badges now match Apple TV's text size, spacing and line width: the synopsis has Apple's taller line spacing and wraps at the same word, and the badges are Apple's size.
-- Played every part of a multi-part Shuffle pick in order before the Shuffle moves on, as on Apple TV. Each part starts from its beginning, prefers the resolution of the part before it and otherwise takes the first candidate, and a missing part moves the Shuffle on. Between parts the screen shows the loading spinner instead of the Playback ended screen.
-- Made Watch Intro count down like Skip Intro in the player: five seconds, starting when the automatic skip is issued and frozen while paused. The Skip Intro, Skip Recap, Skip Credits and Watch Intro pills now stay on screen and usable while the options panel is open or a seek preview is showing, and are disabled only during a timeline scrub, as on Apple TV. A reconnect or replan also pauses both countdowns, and a short loading screen no longer restarts the pill's fill.
-- Started every Shuffle pick from the beginning at its first part, with no resume, as Apple TV does, for Shuffle from a library, collection or series and for the next pick in the player.
-- Drew Apple TV's default artwork for posters, thumbnails, Search box sets and episode stills with no artwork or a failed load: dark base, three faint brand glows and a film, tv, headphones or book mark by type, in place of the title text. Artwork that is still loading shows Apple's darker placeholder instead.
-- Changed the Series Details episode rail error to Apple TV's text-only "Couldn't load more episodes. Move away and back to retry." and removed the Retry more episodes button. The error now uses Apple TV's 18-point secondary text. Choosing another season or reopening Details, including going Back to it, now clears the error and reads each missing neighbouring season at once, as Apple TV does, instead of waiting for focus to reach the rail edge.
-- Hid the Series Details rail edge error while its retry runs and showed it again if it fails, as Apple TV does. Focus stays on the edge card.
-- Matched Apple TV's skip pills in the player. Skip Intro shows for five seconds with a filling bar, Back takes it down, and Skip Recap and Skip Credits stay up for the whole recap or credits. After an automatic intro skip the pill reads Intro skipped over Watch Intro, with the same filling bar. The Skip Recap and Skip Credits pill is 260 px wide and widens to 360 px with focus, and Back on it works as it does anywhere else in the player. Credits skips no longer offer an undo, and Skip automatically never offers Skip Intro.
-- Hid "Could not load more episodes." and Retry more episodes on Series Details while the retry runs, and showed them again if it fails, as Apple TV does. Focus stays on the edge card.
-- Kept the top bar on Requests opened from the profile menu, so Up from the first row reaches it and Back returns to the tab underneath. Requests closes back to that tab when the server turns requests off. Watchlist, Favorites and Requests now replace each other, so Back from the bar returns to the tab, and a page opened above Requests stays open until you leave it.
-- Retried a season that failed to load beside the Series Details episode rail when focus reaches the rail edge, and re-read a season whose load was cancelled when its chip is focused again, as Apple TV does.
-- Said a finished AI subtitle was saved but not turned on when the refreshed plan marks it unplayable, as a downloaded one already does, instead of doing nothing after Select.
-- Made the Home offline-recovery, For You offline, Browse Recommended reselect and Player hold tests wait for the page's own retry timers, Details read and clock set-up instead of assuming a fast runner, which removes their intermittent hosted CI failures.
-- Restored the Continue Watching progress bar with Apple TV's look: a 3px bar flush with the card's bottom edge, a faint full-width track, and a light fill for the watched share. Box set search results use the same bar.
-- Listed a subtitle the server marks unplayable as dimmed with Unsupported format and made Select on it do nothing, so picking it no longer ends playback. Automatic picks skip it, a saved subtitle preference naming one falls back to the next playable pick, and a Details choice of one starts with subtitles off. A downloaded or AI subtitle that is unplayable says it was saved but not turned on, or shows Unsupported format.
-- Showed Who's watching after signing in even when the TV could not save that the remembered profile was cleared.
-- Kept Who's watching after a sign-in across a restart even when the TV refused to clear the remembered profile, by tying each remembered profile to a sign-in epoch stored with the account, as Apple TV does. A profile remembered before this update is asked about once more.
-- Kept retrying the removal of a replaced profile unlock when the TV refused to delete it, so choosing a new remembered profile no longer leaves the old unlock stored for good.
-- Moved the Series Details episode rail 40px left when its loaded window includes the series' first season. A later season whose earlier pages are not loaded keeps the previous position, and reopening Details starts from that season's neighbor window.
-- Asked before signing out from Who's watching, while profiles load, and when profiles fail to load. Cancel stays focused, and Cancel or Back returns to Sign out.
-- Choosing another account opens its only profile when that profile has no PIN. An expired sign-in shows "You were signed out of {server}. Sign in again." with the username filled in, or Change Account when another account is still signed in.
-- Drew sans-serif subtitle captions in the bundled Inter face at weight 600, in the Settings preview and during playback.
-- Loaded in-player subtitle delay and appearance when the settings contract tags a scope with the revision that added it.
-- Cleared a leftover device subtitle delay once per profile, after an owed delay write settles, and retried a failed clear instead of sending it on every open.
-- Kept the playback clock on Inter's 34px line so the scrubber stays put while the face loads, and a scrub thumbnail placed before that swap does not sit 1px too low.
-- Matched the person biography to Apple's 26px regular body, a 30.62109375px line, and a seven-line clamp.
-- Matched the person page name to Apple's 85px line box, so the name starts 10px below the portrait and the facts start at 117px.
-- Kept direct play running when a subtitle choice stays on the same stream, and showed that sidecar's cue at the picture's time after a seek.
-- Matched the subtitle preview caption's height to Apple TV.
-- The collapsed A–Z circle is plain.
-- Hid the TV's native scrollbars, drew the History returning mark as an outlined television, drew the collapsed A–Z index as Apple's 10px circle plus the faint letter marks, and centred Related captions on the poster.
-- Removed the Continue Watching playback bar, kept Search posters 247px apart, restored biography paragraphs, and matched Related captions and the Written by order to Apple TV.
-- Show the series name and episode tag while playing when Resume or Start Over starts from the series page and the episode item omits them.
-- Show that same series line when the episode starts from the episode list or Continue Watching and the episode item omits it.
-- Send a known subtitle track with playback start, and correct it before the picture opens when the plan chooses another track.
-- Auto start no longer asks for a full subtitle when the audio that will play already matches that language.
-- Move the scrub thumbnail with the playhead, 101.0234375px above the handle, in a 236.265625px card.
-- Open the hidden player panel on Video, and the options button on the last tab, which starts on Info.
-- Kept the page transparent over AVPlay. The black opening is a loading backdrop only, and a previous screen in the same root is not painted while the player is up. Once a frame has shown, that backdrop stays off through a later load, reconnect and restore.
-- Kept the other series' title and the fresh season and episode on an On Deck play, so the player can show them.
-- Blurred an unwatched On Deck episode still when image spoilers are on, and left series art sharp.
-- Waited for a pending Auto-play save before an ended episode decided whether to continue.
-- Matched Apple TV playback opening, hidden Up, the title lines, and the panel: a spinner on black, Up reveals the scrubber, pause shows no status line, and the open panel hides the transport until Back.
-- Stopped Home from asking for every title's details as soon as it appears. The card you rest on is read after a short pause, Continue Watching reads the file you were playing four titles at a time, and For You warms only the first few cards that are missing a rating.
-- Kept focus on a season you select right after a series opens, instead of moving it to Play or Resume.
-- Matched Settings row fill and the On and Off value brightness to Apple TV.
-- Matched Profile Selection's caption to each launch choice. Settings footers use a 23px line so section labels sit at Apple's measured rows, the subtitle preview stays 958 by 150, and pane rows use a regular label with a 1px white stroke at 9%.
-- Tightened Inter tracking so titles match Apple TV's text width, kept a Calendar title on one line, and left a compact home title of about 152px whole in the artwork frame.
-- Matched the Playback quality footer and Maximum Bitrate labels to Apple TV.
-
-- Showed Calendar noon as 12:00 pm on an en-GB TV, and kept the first Search person visible.
-- Kept a decoded Details title logo in place across later repaints, so the metadata row no longer jumps back to the text title during that visit.
-- Matched the Details metadata row to Apple TV: the content rating and advisory age sit in outlined chips sized to the 18pt line height so the stroke stays inside the row, and the year, runtime and genres are separate text facts on that same row.
-- Removed the extra focus outline on Accounts rows and Cancel. Change Account keeps the backdrop stage the previous screen left, warm after Who's watching and blue after sign-in, and an unfocused selected server is white at 14%.
-- Down from a Search person lands on the first title column at or past that person's centre, and a filter pill lands on the title card under it. A short title row keeps the column that entered it, so the next request is the one that lines up with that column. Up from Requests enters the last title row even when no card lines up, and stays put when the first person does not line up with the request. Search loads 60 titles per page, so 25 results have no pager.
-- Back from Settings now returns to Home, including when Settings was opened from another tab.
-- Down from the profile avatar enters Switch Profile, including before the menu's dwell finishes. After Back closes it, Down reaches the first Continue Watching card.
-- Matched the library Browse grid to Apple TV: the mode pills are gone, and Up from Sort returns to the top bar. Episode rows now crop the previous card at the 100px inset, the focused still lifts by 5%, and Cast, trailer and related rows start at that inset and paint to the screen edge.
-- Kept Play focused when a movie's Details opened, even if the first focus claim did not stick, and kept that claim from leaving a card-actions dialog or ignoring a Play button that appears after the page opens.
-- Reloaded the subtitle language catalog when Try Again or Choose another language follows a catalog failure, instead of searching the previously chosen language.
-- Returned subtitle pickers to their originating pane and row after selection or Back, while preserving focus in another active tab.
-- Kept unavailable subtitle display capabilities quiet while reporting failures to load advertised preferences.
-- Preserved saved subtitle appearance when editing from Off, restored inherited values after clearing TV overrides, and hid unsupported native subtitle controls.
-- Kept Info Retry visible during remote navigation and restored selected video settings after hidden stream preparation.
-- Showed the effective autoplay setting after saving.
-- Kept a debounced skip when an earlier scrub seek landed on the same plan.
-- Disabled audio and quality choices while a subtitle report is still pending.
-- Kept a running skip hold when the earlier seek landed on the same plan.
-- Added the Show Up Next episodes icon. A seek during discovery finishes the open panel, and a failed On Deck read can be tried again in that playback.
-- Read a successor's catalog presentation once, so playback ticks do not request it again.
-- Scrolled a long Info overview upward before leaving it, and kept a saved Auto-play value ahead of an older discovery read.
-- Reported a failed subtitle-language catalog with a retry, and said when a downloaded subtitle was saved but could not be turned on.
-- Retried Up Next discovery after seeks, preserved fresh autoplay settings at EOF, and kept captions inside the video preview.
-
-- Updated composed EOF checks for Apple TV's Play Now, On Deck and tail replay behavior, and isolated focus checks from background reads.
-- Kept focus on the selected On Deck title when more candidates arrived.
-- Restored full-screen playback after a paused seek left the Up Next window and offered Play Now before later On Deck lookups finished.
-- Kept media keys working during the pre-end Up Next prompt, cancelled pending scrub timers when it opened, and resolved On Deck artwork against the connected server.
-- Preserved newer subtitle choices when an unanswered report required connection recovery.
-- Applied queued subtitle choices after a replacement stream finished preparing while hidden.
-- Restored sidecar captions and queued choices after refused subtitle reports, aligned subtitles after suspended preparation, and honoured published HLS rendition order.
-- Reported an HLS subtitle alignment failure instead of showing a track that the native player could not select.
-- Allowed pause during subtitle reports, queued choices needing a new stream, and replanned subtitle tracks that the native stream could not identify.
-- Cleared sidecar captions when selecting embedded subtitles and restored the last confirmed subtitle after a queued choice was refused.
-- Added Retry for retryable playback startup failures and exhausted route recovery.
-- Matched the measured player layout, showed episode context, hid idle controls from every transport focus, and held seek times until playback caught up.
-
-- Preserved repeated skip taps while seeking and disabled track-list scroll animation with reduced motion.
-
-- Followed playback after an external resume during scrubbing and preserved newer Play/Pause choices while a scrub seek landed.
-- Resumed committed scrubs after a server reanchor, kept Skip reachable with the remote, and let navigation cross Audio while its choices loaded.
-- Kept the latest Play/Pause choice when remote presses arrive during a seek.
-- Resumed playback after a timeline scrub once the seek finished, and let the remote move through an empty audio list.
-- Kept the Details hero pinned when action focus survived a repaint during its return scroll.
-- Opened a remembered profile and cached Home promptly on cold start while checking the saved session in the background, then refreshed the top-bar profile artwork from the reconciled summary.
-- Kept a detail Cancel's hub card visible while the shared gate still owns it, even when a refresh already sees the server's cancelled state, and left hub cards alone so a failed quiet refresh keeps its earlier rows.
-- Kept the unconfirmed Cancel copy on the detail action only, so the hub list banner does not duplicate it.
-- Captured the neighbor before an uncertain list Cancel or Remove readback, so focus lands on that card when the row is already gone.
-- Settled an unconfirmed detail Cancel hold after a successful request readback, and kept cancel/remove focus on the captured neighbor when moved focus was the removed card.
-- Kept an unconfirmed detail Cancel in the shared Requests hold so the hub cannot offer Cancel Request again before a read settles it.
-- Kept a held Select on Remove Request from dismissing the confirmation when focus moves to Keep request.
-- Shared one Requests mutation gate between list and detail Cancel so navigating between them cannot post a second cancellation.
-- Kept a cancelled Requests card off the hub when an ordinary route load that started before Cancel finished still answered with the pending row.
-- Kept duplicate Cast credits focused after trailer refreshes reordered them and resumed interrupted trailer discovery after returning from playback or watched-state navigation.
-- Added Find Trailers to movie and series Details and matched cast entries and overflow, episode captions and metadata order, season pills, synopsis brightness, and More menu glass styling to Apple TV.
-- Showed the full runtime and version, audio and subtitle details for each focused episode after focus settled.
-- Cancelled episode detail dwell on leaving a card, preserved explicit selector requests, and released older settled episode playback owners.
-- Kept explicit season selections on the first episode through cached Calendar revalidation and restored shuffle and advisory preferences after offline Details recovery.
-- Revalidated the saved server identity after an offline start before sending restored sign-in credentials, preventing credentials from reaching a replacement deployment.
-- Recovered offline season episode controls automatically, preserved episode refusals across cached revisits, and reused visited Details for offline card actions.
-- Retained cached next-episode controls and remaining artwork during outages, restored personal-action retries in card menus, and kept unsent writes retryable when session refresh failed.
-- Restored saved sessions and remembered profiles during unreachable cold starts, retained cached Series Play offline, and matched uncached Home and For You errors to Apple TV.
-- Retained signed Details artwork in session memory, matched offline Details errors and episode Retry to Apple TV, and restored the hero when recovery removed Retry.
-- Cleared only the signed-out account's cached browse content, including offline saved-account removal.
-- Preserved cached Details artwork and supporting content offline, protected visited titles from Home enrichment eviction, and retained the selected season during recovery.
-- Restored the last available Details hero action on Up, falling back to Play or Watchlist when Start Over disappeared or a selector was disabled.
-- Refreshed episode spoiler protection after Settings changes and preserved saved switches during overlapping requests and failures.
-- Aligned Details supporting-section headings when moving Up and Down, restored visible Movie Cast to the page top, and removed duplicated space below the Details table.
-- Opened fresh Details presentations at the hero and preserved each earlier presentation's focus and scroll when the same title appeared again in the route stack, including entry from Search.
-- Episode cards opened their series on the selected episode, while remote Play resumed directly and Continue Watching offered Play or Resume in Card actions.
-- Kept cancelled season reads quiet, retained failed Retry focus and revisit state, restored the selected season when reopening a series, and removed unresolved hero bars and the incorrect loaded-predecessor rail offset.
-- Kept season heroes and Play labels on the latest selection, showed loaded episode summaries immediately, restored Series on Play with its overview, and limited season recovery to one requested read.
-- Selected seasons on resting pill focus without rereading cached episodes, bounded missing-season reads during remote sweeps, and centered the selected season pill like Apple TV.
-- Search Select on an episode or season opens that series' Details. Enter on a result no longer starts playback or writes watch history.
-- Restored VIDEO skip intervals and corrected Settings pane margins, Sign Out, subtitle appearance cards, picker indicators and server credits after the full Apple TV comparison.
-- Matched Settings rail icons, row spacing, pane headers, subtitle appearance order and picker hints; pinned the rail and preserved the pane behind modals.
-- Stopped featured descriptions from starting an automatic translation after focus moved to another card.
-- Corrected subtitle profile edits under device overrides, preserved focus after dismissed launch saves, and reset sign-out confirmation to Cancel on each opening.
-- Matched Remove Server to Apple TV's confirmation and returned Cancel and Back to the first account.
-- Corrected Details More dots and compact action rows, added capability-gated Shuffle Series using existing shuffle playback, and made unfocused Play adapt to the backdrop like the round actions.
-
-- Preserved Settings row fixtures across contract refreshes, offered automatic-skip undo after successful seeking, and refreshed catalog metadata for changes already saved on another device.
-
-- Restored supported subtitle rows, centred Settings pickers and privacy handoff, and aligned pane order; deferred the Show Next Up editor until its playback reader lands.
-
-- Added supported Apple TV settings for poster size, advisory age, profile timing, episode playback, metadata and subtitle appearance, and kept profile subtitle edits independent of narrower overrides.
-
-- Corrected Playback Settings to edit this TV's supported overrides and restore profile inheritance without changing profile defaults (Apple/Samsung native parity pending).
-- Aligned supported Settings rows with Apple TV's resolution choices, bitrate presets, value columns, profile selection and sign-out navigation.
-- Added the Subtitles profile language, behavior and forced-subtitles rows, the profile account line, and Apple's sign-out confirmation.
-- Kept loaded-season episode focus free of reads, limited outer-edge loading to one debounced season request, required Retry for failed neighbours, and preserved the window during translation polls.
-- Kept Series episodes in Apple's continuous loaded-season window, clamped entry and remote focus at the final episode group, restored resume bars and edge peeks, and corrected the row's leading inset; the later corrections await signed comparison.
-- Made application sign-in tests wait for approval and the storage notice before continuing to profiles.
-- Matched Details More popovers and Start Over controls to Apple TV, and selected series playback from the current season's next-up suggestion.
-- Stopped a device-code poll from going out when its wait ended as the screen hid. A poll already sent still finishes, and coming back polls at once.
-- Kept Search's navigation column when a square People portrait animates on focus.
-- Restored Cast focus clearance and corrected Details episode spacing, picker selection, Related badges and action glyphs against Apple TV measurements.
-- Corrected Details caption gaps, resting Cast spacing, series colours and genres, and intrinsic Versions sizing.
-- Activated Series seasons on resting focus, preserved complete episode scroll steps, and corrected Details spacing, hero contrast, Versions and SDH subtitle presentation.
-- Corrected the Home title-art regression test to preserve Details' bottom-aligned logo slot, with separate Home, Series and Movie geometry checks.
-- Corrected Details season entry, cast scrolling, rail spacing, hero text and playback picker sizing, labels and selection checks against Apple TV.
-- Kept season selection on its pill, restored the Details hero on Up, and aligned title art, episode spacing, recommendations and playback popovers with Apple TV.
-- Kept Episode and Season playback controls visible when their titles and synopses wrap.
-- Kept long Movie playback controls visible, placed Season headers before episodes, refreshed shared preferences from uncached episodes, and resolved Auto subtitle previews using the selected audio language.
-- Preserved unresolved episode track choices across repeated Series refreshes until readback confirms them, without replaying uncertain saves.
-- Restored painted Details text and season labels, Play entry focus, selected-season navigation, facts tables, compact track readouts and anchored track pickers.
-- Hid unavailable or empty Related rails after loading, removing their extra error and Retry focus stop.
-- Kept Details artwork inside Home's shared top-right frame, displayed content-rating badges, and focused the current episode when opening a Series without overriding remote input.
-- Preserved Calendar's explicit season entry focus when its episode rail finished loading.
-- Opened Series Details on the current season and episode, positioned its episode rail, respected thumbnail sizing, and centred Cast & Crew when navigating down.
-- Refreshed episode preferences when returning to Series Details and kept ordinary Play from overriding effective audio defaults.
-- Remembered Details audio and subtitle choices, including Off and Auto, with confirmation before playback and recovery after uncertain saves; native Apple/Samsung parity remains pending.
-- Kept Home rows when a return to Home joined a row-cap read that the previous visit had cancelled.
-- Preserved saved logins when entering another server and kept overflowing Accounts actions visible on screen.
-- Placed Accounts below the Server heading, matched its section labels and chevrons to Apple TV, and reused the saved account's session when restoring through server entry.
-- Matched Accounts spacing, footnote size, chevron symbols and return focus to Apple TV, and kept the profile picker until Remember is chosen even with one unprotected profile.
-- Blocked account navigation during removal, guarded legacy sign-ins and released account chooser focus before session recovery.
-
-- Matched Accounts pane rows and Change Account layout, and returned Back from account management to Settings.
-- Restored saved-server pane focus, Back from Add server, and pending-removal focus on Samsung TV.
-- Preserved the selected account when retiring another session and kept guarded session-only sign-ins usable until restart.
-- Kept Change Account reachable when a saved server is offline, prevented removed accounts from being restored by late refreshes, and scrolled account lists to keep remote focus visible.
-- Prevented failed replacement sign-ins from restoring old credentials and kept saved-sign-in removal scoped to the selected account.
-- Prevented replaced account sessions from overwriting a new sign-in and required fresh PIN proof after committing an account switch.
-- Corrected Calendar wall-clock times, spatial shelf return and top restoration, clipped captions, strip placement, and Apple-style loading, empty and error states after native comparison.
-- Kept the focus a viewer moved during Calendar's Today request, revealed a day shelf that starts below the page, and spaced day headings at Apple's 595px pitch.
-- Down from the Calendar tab opens the selected filter, shelf-to-shelf moves keep the first card's column and bottom-align the day shelf, and scrolled Calendar passes under the top bar.
-- Kept collection titles in the server's order, matching Apple TV instead of sorting them alphabetically.
-- Lowered the collection Shuffle row, dimmed its heading and count, matched caption spacing, and restored watched badges through profile-aware catalog reads.
-- Dimmed collection titles, showed profile poster overlays, kept collection focus rings on artwork, and closed section menus during content loading.
-- Matched collection page spacing, Shuffle controls, and truncated poster captions to Apple TV.
-- Opened collection pages without requiring catalog totals, showed their item count and Shuffle action, and aligned the Collections grid with Apple TV.
-
-- Displayed Collections as portrait posters with visible missing-artwork placeholders and moved library mode selection into the navigation menu.
-- Kept History's focused artwork and captions on screen at every poster size and repainted personal lists when presentation preferences arrived.
-- Preserved History's outer posters and focus outlines inside the scroll viewport's horizontal padding.
-- Offered an explicit retry when a Favorites continuation failed and the observed end cards could not scroll out of view.
-- Resumed personal-list pagination after dismissing card actions that cancelled a pending continuation.
-- Restored the For You menu on Down from the retained tab over Watchlist and Favorites, focusing Watchlist as on Apple TV.
-- Matched History's Apple TV title position and focused poster scroll clearance.
-- Matched Apple TV personal-list loading, root selection, Back navigation, grid spacing, and saved-list ordering.
-- Kept saved-list requests and response validation in the shared API adapter and contract modules.
-- Kept a Person filter the viewer already chose when a slower availability probe would have removed its chip.
-- Moved Up from a Person filmography card to the chip closest to that card's left edge, leaving the card in place when no chip meets it, and scrolled the first row to the page's 72 px bottom padding plus the tvOS safe area.
-
-- Reset fresh Person visits from Search and applied delayed poster and badge preferences on Person.
-
-- Corrected Person safe-area insets, title-count spacing, biography weight, server-driven filters, fresh-visit focus and independent metadata loading, restored catalog status badges, and returned the full hero when focus moved back to its chips.
-- Drew the series status TV glyph as Apple's flat `tv` symbol, at that symbol's layout size, and stopped Search from pinning an upward move over the field and filters.
-- Drew the TV icon on Returning, Cancelled and Ended badges and raised Home headings by using Skyline's 14px card padding.
-- Raised the focused Search poster, darkened the Continue Watching focus shadow, showed the Returning badge on Search cards, and hid the watched tick on Related titles.
-- Showed Home rows as soon as they arrived, without waiting on library tabs or an uncapped sections read, and stopped the Home page from saying the server was still waiting. While those rows are still out, Home is an empty page labelled "Loading home" and the library tabs fill in on their own.
-- Stopped a delayed Home libraries read from putting a library back after it was hidden in Settings.
-- Kept remote navigation when those library tabs arrived on another page, and read them again after the app returned if that read had failed.
-- Kept a profile's Movies and Series tabs when a libraries read failed after returning to that profile. A switch to another profile still drops the previous profile's libraries.
-- Moved the Home logo slot up to Apple's marquee stack and landed Down from a landscape card on the poster nearest that card.
-- Kept the column when moving down between Home rows, and fitted hero title art in Apple's 200px logo slot.
-- Down from the top bar lands on the leftmost card instead of the card remembered in the row.
-- Matched Apple TV library shelf order and the Recommended, Collections and Browse section menu, keeping Collections in its own destination.
-- Restored each page's hero after returning from the profile menu and painted the avatar's white focus ring above its image.
-- Renamed the profile menu's Switch Server row to Change Account, after Settings and before Sign Out.
-
-- Matched Apple TV’s fixed top menu and moved Requests into the profile menu.
-- Returned focus to the selected tab after leaving profile menu destinations and made the avatar's white focus ring visible over artwork.
-- Kept focus on the same top-bar tab when Home rebuilt its library tabs, so hiding a library leaves Profiles focused.
-- Matched Apple TV card focus lift, outlines, caption spacing and colours across Search, cast, related titles, Requests and Calendar.
-- Kept Search posters at their intended top clearance after the focus lift finished.
-- Drew Home TV episode rows as landscape stills and top-aligned the focused Home row with Apple TV.
-- Opening a Movies or Series library section, including Continue Watching, no longer sends type, sort and order on the section catalog query, which the server rejected.
-- Kept Home hero and detail backdrops sharp using Apple TV artwork sizes instead of small first-pass images.
-- Prevented large Search posters from overlapping and kept catalog errors and Try Again visible while People results were pending.
-- Restored related titles on Details when the server returned cards without catalog pagination totals.
-- Made Enter on the player's default focus skip the intro, recap or credits while the Skip control shows, instead of pausing.
-- Kept scrolled personal-list cards visible when pages appended or reads failed.
-- Opened History without the top menu, with a centered title, exact counts and Apple's unfiltered 60-item pages.
-- Kept personal-list focus and cached cards after failed reads and fitted large History posters to five columns.
-- Stopped a Watch Party selection of the title that is already playing from counting as applied when its answer was lost and the server never received it; it now counts only when the room's selection revision rose.
-
-### Changed
-
-- Updated FEATURES.md for Apple TV's Change Account and Accounts settings screens: Switch Server and Sign Out & Remove Server are now marked done, and Change Account and Settings › Accounts have their own rows.
-- Replaced the README screenshot with For You from a current main build.
-- Updated the Series hero and playback target as episode focus moved, added episode air dates and runtimes, restored Apple's fixed detail frames, and resolved local extras whose embedded file ID was absent.
-
-- Updated Movie and Series detail heroes and playback readouts, added Series track selectors and local extras, and aligned episode captions with Apple TV.
-- Showed Watchlist, Favorites and History as continuous scrolling grids with Apple TV layouts and empty states.
-
-- Showed the title count, All/Movies/Series filters and paged filmography beneath the Person hero, with one Back returning to the originating credit.
-- Matched Apple TV's outlined card focus with a smaller lift, softer captions and a persistent outline on the Series row's current episode.
-- Started the horizontal navigation column after leaving a text field, and reset it at the top bar or a page's first card.
-
-- Kept Search's horizontal navigation column through default entries, showed its faded title only on return, and gave posters the native clearance when moving up from Requests.
-
-- Applied Search filters on focus, followed nearby cards on vertical moves, restored native scroll and field presentation, and captioned episodes with their series and episode code.
-
-- Kept focused Search requests visible when People arrived later and retried interrupted Requests refreshes after returning from details.
-
-- Required demonstrated Apple TV parity before merging parity changes, preserved regression checks, and clarified component reuse and simulator ownership for coding agents.
-- Added People results, All/Movies/Series filters, result counts, an idle prompt and an independent Available to request rail to Search, and opened Search above its originating page without the root navigation, starting empty on each visit.
-- Preset profile avatars showed the flat image Apple TV shows when the server supplied an SVG avatar address.
-- Rebuilt Requests to match Apple TV: the hub showed Your requests first with focused title previews, horizontal shelves and Apple's loading, error and empty pages, and no longer had its own Search requests, My Requests, Refresh or Back buttons; details gained posters, backdrops, title metadata, a status tracker and related recommendations, with title fallbacks for missing artwork; and the top bar's tab positions and Search icon used Apple's values. A request or cancellation kept focus on its action while it ran, a refused or unconfirmed one explained itself beside the action, a failed title read showed the full error page, hub rows no longer ended in a See all tile, and a focused poster gained Apple's sheen.
-- Combined Calendar week navigation into a compact day strip with release dots and a month label, moved time and status badges onto artwork, and showed instant-backed times in local 12-hour format.
-- Played episodes directly from cards and season lists with fresh resume progress, added numbered Play/Resume series actions, and kept episode information available in Card actions.
-- Consolidated Details actions into one row, added version and subtitle dialogs, kept rating and personal actions in More, and showed season chips with an inline episode rail and clearer cast and synopsis layouts.
-- Settled every unknown Android TV cell in FEATURES.md and added nine parity rows found in the upstream TV parity audits.
-- Retried a failed AI subtitle job check up to three times before giving up, and kept the duplicate-job block for a file when switching versions and back.
-- Shared Home's Skyline presentation with Library Recommended, replaced heading controls with Explore All tiles, retained usable shelves when collections failed, kept lifted artwork visible when returning between rows, and preserved the current card at grid edges.
-- Lifted Library Recommended artwork independently of its captions, with dimmed unfocused labels and a reduced-motion focus ring.
-- Started the preceding cast-image fixture explicitly before checking blank Person portraits, avoiding a wait on deferred image loading.
-- Rebuilt the profile picker with circular avatars, the signed-in account, Change server and TV profile creation with primary-profile verification, optional PIN and child restrictions.
-- Aligned type checks, docs and tests with the Tizen 8.0 minimum (Chromium 108), and named original languages in English with the browser's built-in language names.
-- Aligned the top navigation with Apple TV: saved TV menu order, centered Search and roots, anchored menus, profile images, For You shelves, server switching and sign-out confirmation.
-- Kept loaded expanded-row cards available when a later page reported the row missing.
-- Replaced expanded Home and library row paging with a scrolling catalog that retained loaded cards and focus, followed poster-size preferences, and refreshed changed personal state.
-- Aligned Home's backdrop, row and marquee placement, poster-size preferences, artwork resolution, wordmark and control dimensions with the Apple TV source.
-- Kept Home available while the optional artwork-capability probe was pending, using small artwork until sizing was known.
-- Required Tizen 8.0 or later and targeted its Chromium 108 web engine; TVs on earlier OS versions must upgrade before installing new releases.
-- Documented signed-package simulator evidence and Apple TV comparisons.
-- Redrew the sign-in screens in the Apple TV layout: Silo wordmark, a drifting brand-light backdrop with grain and the server's accent, glass cards, a server card with its mark and a Secure or HTTP badge, the QR code and code in a card beside the instructions, and the Apple TV wording for every code state; Back now waits while a server connects.
-- Sign-in codes now behave as on the Apple TV app: an expired, withdrawn or lost code renews itself for an hour and then pauses until asked, a failing start retries on its own, "Can't reach" and "Too many sign-in attempts" appear only after 10, 30 or 60 seconds of failures, and an approval shows "Signed in as …" for a second before moving on.
-- The TV now stops polling a sign-in code while the app is hidden and checks it at once on return (after any wait the server asked for), remembers each server's name, mark and accent between launches, and keeps showing a code through unreadable or unknown poll answers instead of ending sign-in.
-- Replaced per-library navigation with Skyline type tabs, anchored library and profile menus, a focus-driven preview and smooth remote scrolling.
-- Applied Skyline's OLED palette, typography, focus states and reduced-motion transitions to sign-in, profiles, dialogs and playback, and replaced the blank launcher with Silo artwork.
-- Connected native sign-in, profiles, browsing and playback in the packaged app.
-- Removed redundant sign-in instructions and movie taglines from the native screens.
-
-### Added
-
-- Kept cached Home, For You and Details content visible without an unreachable notice, matching Apple TV, with private per-profile snapshots and automatic recovery.
-
-- Showed Apple TV's "This server isn't ready" screen when a server still needs setup, with Check again and Change server.
-- Added a page linking the silo-apple and silo-android design specs that apply to a TV client, for reading before porting a feature.
-- Added the Macroscope visible-change evidence check that silo-apple and silo-android run, tailored to the Samsung TV and its Apple TV comparison.
-- Added a CI check that fails when the app or its tests mention an `/api/v1` path, as silo-apple's does.
-- Added FEATURES.md, a feature inventory that tracks parity with the Apple TV and Android TV apps, as silo-android's does.
-- Added `scripts/sync-apiv2-fixtures.sh`, which re-vendors the API v2 contract fixtures and Settings subset from a silo-server commit, with a test in the CI scripts job.
-- Added a weekly Parity drift workflow that opens an issue when the Apple TV or Android TV apps change features since FEATURES.md was last reviewed.
-- Added a docs index, a native API v2 reference and a TV focus guide, and grouped the feature, playback and evidence notes into folders as the Apple and Android repositories do.
-- Added the top-level files the Silo Apple and Android repositories carry: contributing guide, Samsung store and platform licence exceptions, trademark policy, third-party notices, CLAUDE.md and t3.json, and rewrote the README and agent guide in their layout.
-- Added a Promote workflow that turns a tester build into a draft store release with the same `.wgt` and store notes, with a fixed `silo-tizen-latest.wgt` that the `releases/latest` link serves once the store release is published.
-- Added a Release workflow that tags a numbered tester build, signs its `.wgt` and publishes it on a GitHub prerelease, plus a fixed "latest tester build" link.
-- Added a Tizen Builds CI job that packages the `.wgt` on every pull request and signs it with the maintainer's Samsung certificate on main and same-repository pull requests.
-- Added Silo issue forms, contact links, a pull request template, evidence paths, release-note categories and the Discord commit feed, matching the Apple and Android apps.
-- Added a separate library Browse grid with continuous loading, sort and filter panels, an A–Z prefix rail, remembered preferences and server-owned Shuffle, while keeping Recommended and the existing library destinations.
-- Connected to plain-HTTP Silo servers like the Apple TV app: a typed `http://` address connects directly, and an address without a scheme tries HTTPS first, then asks "Connect without encryption?" before sending anything unencrypted.
-- Added "Sign in with a password" beside the sign-in code, as on the Apple TV app; servers without code sign-in open on the password screen, and servers that turned passwords off hide it.
-- Added Advanced options to server entry, as on the Apple TV app: choose Auto, HTTPS or HTTP and a port; HTTP connects without asking and HTTPS never falls back to plain HTTP.
-- Added capability-gated subtitle translation and audio transcription with quota status, job failures and selectable AI-labeled results.
-- Continued series episodes automatically with a cancellable countdown when the server-synced autoplay preference was enabled.
-- Added the server-enabled Requests hub, discovery and search, title requests, My Requests, cancellation and follow controls with safe profile changes and return focus.
-- Applied profile subtitle appearance and timing to text subtitles and added persistent series subtitle choices, including Off.
-- Added a Server pane to Settings with Acknowledgements, crediting TMDB and the other rating sources and listing the open source code in the app.
-- Added a timed Skip control for intro, recap and credits during video playback.
-- Added a first-selection Remember this profile choice and a device-local launch preference in General Settings, with protected proof restoration and PIN checks for other profiles.
-- Added per-profile movie and series star ratings with remote controls, server-confirmed saves and explicit retries.
-- Added a person hero that shows a living person's age, initials when there is no photo, and a thumbhash preview while the photo loads.
-- Added manual Play next after natural episode completion, with confirmed session teardown, authorized episode resolution, Retry and Back.
-- Added Select-hold card actions for watched, favorites and watchlist, with confirmed state, safe explicit retries and restored page focus.
-- Added attempt-only preplay audio selection with explicit version binding, fresh Resume and reliable Play from start.
-- Added full person filmography with server-filtered All, Movies and Series pages, explicit paging, and restored Details and person focus.
-- Added a weekly catalog Calendar with Following, Trending and All filters, release and episode shelves, and context-preserving Details navigation.
-- Added Show Title Art and Apply to All Devices in General Settings, with server-confirmed title and season artwork choices and text retained during settings recovery.
-- Added episode-aware text Search when the server confirms support, with video-only fallback for older servers and retryable capability failures.
-- Added direct single-library menus and fluid library transitions while preserving immediate remote focus and reduced-motion navigation.
-- Added separate profile-saved video rewind and fast-forward intervals across player buttons, seek previews and dedicated remote keys.
-- Added Home row expansion with bounded pages and direct Continue Watching resume, while omitting featured rows and folding existing recommendations after Continue Watching.
-- Added server-provided JPEG thumbnails during seek previews, with timestamp seeking retained when previews are unavailable.
-- Added saved profile quality and maximum bitrate controls in Playback Settings, with server-confirmed values and device override visibility.
-- Added profile Settings with Hidden libraries and Preferred audio controls.
-- Added in-player quality selection from the server's available alternatives, preserving saved quality and bandwidth preferences throughout playback.
-- Added visible player transport controls, cancellable seek previews and support for dedicated Samsung media buttons.
-- Added profile-scoped Watchlist, Favorites and History pages with bounded pagination, server-side media filters including History episodes, and page and item focus retained on return from Details even after an interrupted page turn.
-- Added richer title and season details with artwork, ratings, facts, cast and crew, person pages, related titles, file version selection and server-confirmed personal actions.
-- Added Movies and Series library sections, collections, genres, A–Z letter navigation and recently added titles.
-- Added strict TypeScript checks and a bundled build.
-- Added a native Silo `/api/v2` session core with device-code sign-in, household profiles and PIN checks, and credential storage in Tizen KeyManager.
-- Added native sign-in screens for server address entry and device-code sign-in with a QR code, remote-key focus and recovery for each failure.
-- Added native household profile screens for choosing and switching profiles, PIN entry with lockout handling, and sign-out.
-- Added a native player that plays one file through the server's playback plan with AVPlay, with resume, pause, seeking, progress reporting and a final stop, and recovers from a failed route by asking the server for another one. Full TV playback acceptance remains open.
-- Added an audio and subtitles menu to the native player: the server switches the audio track, burns in embedded subtitles or turns them off at the current position, and says plainly when a choice isn't available on this TV. Audible audio changes and visible subtitles are not yet proven on a TV.
-- Added native Movies and Series browsing for the selected profile: Home rows, visible libraries in pages, search with the TV keyboard, and movie, series, season and episode pages that hand the chosen file and resume point to the player.
-- Added a CI workflow that runs the type checks, the build and all tests.
-
-### Fixed
-
-- Matched Apple TV’s fixed top menu and moved Requests into the profile menu with Back restoring its row.
-
-- Kept a rating write running when the details page restarted, and read the rating only after it settled, so the page shows the stored rating instead of the old one.
-- Measured current Continue Watching artwork in geometry regressions without retaining nodes across Home redraws.
-- Upgraded cold or incomplete Home artwork after image sizing became available while preserving the selected title, hidden libraries, pending metadata and watched changes from Card actions, including when the optional artwork read failed.
-- Preserved mixed-library shortcut scope, open dropdown focus during late menu updates, and unfinished Home metadata reads after visiting For You.
-- Made the Browse recovery regression verify every retained title without rejecting valid post-retry prefetch.
-- Made the Browse append-failure regression use remote scrolling so a pending focus animation could not undo its setup, and report recovery state if it failed.
-- Made the rate-limit sign-in regression await completed server replies before advancing its simulated retry deadlines.
-- Kept the blank-portrait regression focused on its own image requests after the preceding cast photo finished loading.
-- Allowed sign-in grain artwork and the native AVPlay surface under the TV's content policy while keeping scripts, styles and player objects restricted to the app.
-- Made phone/password handoff tests await the approval response before advancing the handoff clock on slower runners.
-- Kept Home artwork visible when palette sampling was refused, filled missing marquee metadata from detail, followed regional air dates, and capped shelves at 20 titles with an Explore all tile.
-- Kept active password fields and TV keyboards intact when device sign-in became unavailable, updating the phone controls without redrawing the form.
-- Preserved the original handoff pause when returning to code sign-in after phone approval instead of starting another code.
-- Kept completed phone sign-ins intact when password replies arrived late, and removed saved sign-ins from the protocol and port selected in Advanced options.
-- Preserved active password fields and completed sign-in handoffs when provider discovery arrived late, and renewed expired codes after repeated unknown poll responses.
-- Made the HTTP badge visibly unlocked, calibrated the cleartext alert's measured frame and translucent surface, and aligned sign-in instruction wrapping and spacing with Apple TV.
-- Kept Home metadata current after playback and Home usable when the TV could not save optional presentation caches.
-- Home kept the server's profile row order and showed featured rows as ordinary rows, matching Apple TV, instead of moving Continue Watching and recommendations first and hiding featured rows.
-- Home's marquee and rows matched Apple TV more closely: series-first episode headlines, rating and file chips, Apple-sized posters and stills, series captions, dimmed captions with an artwork-only focus lift, and watched checks on cards.
-- Home showed title logos unless the profile turned title art off, an IMDb or TMDB score in the marquee with TMDB's logo, and the profile's poster badges from its badge settings.
-- Home's marquee showed the aired date and billed cast, and Continue Watching showed the file the viewer last played, from detail read once when Home loads.
-- Home asked for sharper title logos on servers that take per-slot image widths.
-- Restored interrupted playback after connection loss and app return while preserving position, track choices, pause intent and profile authority.
-- Kept each library mode's scroll and focus through Details, playback, Settings and interrupted loads, revealed clipped shelf cards on return, and stopped focused cards from growing with reduced motion.
-- Preserved episode completion after refused player changes and removed an unusable Retry action when the session expired before completion.
-- Removed an unusable Retry action when an episode's playback session expired during final progress reporting, while keeping Back available.
-- Synchronized Calendar formatting-recovery tests with the pending weekly response before retrying.
-- Refreshed confirmed card-menu values after reopening an unresolved action and preserved Select presses during Details updates.
-- Kept preplay audio focus visible, reset changed track selections and rejected incomplete resume responses.
-- Corrected the profile PIN regression test to distinguish an unchanged public device ID from retained PIN material while continuing to check all stored values for profile proofs.
-- Kept the opening Select hold from activating card actions, prevented concurrent personal updates across Details and card menus, and retained related-card focus during refresh.
-- Updated Calendar's Today state at local midnight and refreshed retained weeks after watched, favorites, watchlist and playback changes.
-- Preserved the expanded Home row's page and card after playback interrupted a pending page turn.
-- Restored playback focus after a media button cancelled a seek preview so the controls could hide again.
-- Preserved navigation during slow personal-list loads and refreshed covered personal lists after membership changes in another list.
-- Refreshed Home progress after watched changes and made interrupted personal actions retryable when returning to Details.
-- Kept synopsis dialogs open during Details updates, refreshed visible and cached episode watched controls after aggregate changes, and enabled watched actions for titles without playback progress.
-- Preserved remote focus when library reads finished and kept inline collection cards at their intended width.
-- Returned directly between the A–Z grid and its navigation pills while keeping the alphabet rail reachable from the side.
-- Cleared invalid pagination cursors so reopening a cached list starts from its first page.
-- Kept focus in explicitly opened library menus and revealed the first card when Browse was activated from a scrolled library.
-- Restored interrupted library reads, preserved discovery chrome and personal groups, and matched collection cards and grid destinations to Skyline.
-- Used the server's section type to keep Continue Watching cards landscape when its section ID is opaque.
-- Removed blocking style copies from page transitions and kept menu dismissal from redirecting Search or trapping remote focus.
-- Kept dismissed menus closed until reopened deliberately, remembered library scope across launches, and made complete synopses reachable.
-- Kept full profile names visible, made empty server fields distinguishable, and supported the Samsung Play/Pause button.
-- Kept the exit dialog visible and focused while a screen finished loading.
-- Made track-choice buttons activate the same selection as remote Enter.
-- Kept playback progress current during track changes and stopped safely when a change's outcome could not be confirmed.
-- Kept long audio and subtitle lists inside the player's menu with the focused choice and track status visible.
-- Removed the browser placeholder icon from native TV playback.
-- Kept the details poster at 2:3 when the description is taller than the poster, instead of stretching it.
-- Prevented an old stream from ending playback while a backward seek waited for a replacement plan in the native player.
-- Stopped the native player when Silo was backgrounded and preserved codec failures received during a seek.
-- Kept playback teardown safe during pending seeks, preserved pause after server re-anchoring, and honored server retry delays in the native player.
-- Reloaded an edited search when returning from a result opened before the search delay elapsed.
-- Preserved remote focus when a PIN check finished unsuccessfully.
-- Kept focus during native profile sign-out and waited for credential cleanup before returning to sign-in.
-- Kept manual device-code sign-in available when its link could not be encoded as a QR code.
-- Replaced an indefinite connection wait with a retry message while earlier sign-in storage cleanup remained pending.
-- Dropped obsolete search responses as soon as the search text changed.
-
-### Security
-
-- Rejected insecure native media URLs and canceled native requests and media-token reads when their account or profile authority changed.
-- Revoked native sign-ins abandoned before the sign-in screens handed the account to the app.
-- Revoked native refresh credentials received after logout or another sign-in replaced their session.
-- Updated the Playwright development dependency from 1.49.0 to 1.64.1 to include the fix for [GHSA-7mvr-c777-76hp](https://github.com/advisories/GHSA-7mvr-c777-76hp), where Playwright's macOS Chrome and Edge install scripts did not verify TLS certificates.
-  Playwright runs only the desktop browser checks and is not part of the packaged TV app.
+- Lift Library Recommended artwork without scaling captions
+- Make Enter skip while a skip marker shows
+- Read the rating only after an in-flight write settles
+- Retry AI subtitle polling and keep duplicate-job blocks
+- Load related titles from the server collection
+- Request sharp Home and detail backdrops
+- Omit overlay fields from library section queries
+- Match Apple TV Home row cards and scroll
+- Align card focus with Apple TV source
+- Stop the marquee and hidden-library focus races
+- Align profile menu and Requests navigation
+- Match Apple TV shelves and section menu
+- Keep the column on Down and pin hero title art
+- Paint Home rows without the long waiting state
+- Match Search reveal, shadow and card badges
+- Retry a row-cap read cancelled by leaving Home
+- Stabilize portrait cancellation and Search navigation
+- Port Apple episode rail window and anchors
+- Align More and rewatch actions with Apple TV
+- Complete saved-server selection navigation
+- Preserve device playback scope and align supported controls
+- Cancel featured translation dwell when focus moves
+- Open the series from episode and season results
+- Open episode context on card Select
+- Preserve visits and reveal section headings
+- Select seasons on resting pill focus
+- Restore the last hero action on Up
+- Show the full hero on every focused episode
+- Preserve episode request ownership and bound retained owners
+- Refresh the visible hub after list cancel settles
+- Settle visible detail and keep removal focus
+- Add Find Trailers and match the remaining hero differences
+- Blur More glass and preserve Apple cast entries
+- Preserve cast focus and interrupted trailer discovery
+- Match cast inset and More styling to Apple TV
+- Keep cast focus keys stable when roles appear
+- Keep a settled cancel on the Requests page that is open
+- Keep cast selectors and trailers through watched reload
+- Tombstone cancelled rows against in-flight hub loads
+- Share one cancel gate across list and detail
+- Keep Enter latched across remove confirmation
+- Hold unconfirmed detail cancels in the shared gate
+- Settle detail cancel holds and keep neighbor focus
+- Keep hub card while detail cancel owns the gate
+- Keep detail cancel hub rows without duplicate notices
+- Capture neighbor focus before uncertain readback
+- Refresh profile chrome after cold reconcile
+- Gate offline restore against deployment reuse
+- Keep the hero anchor across visits and repaints
+- Snap the hero anchor after a Details repaint
+- Offer Retry after playback startup and recovery failures
+- Keep focus on Play when a movie opens
+- Match Browse pills and row edges
+- Match where Back from Settings lands
+- Match where Down from the People row lands
+- Match focus outlines and the Change Account backdrop
+- Match the supporting headings and badge row
+- Keep the decoded title logo across repaints
+- Show noon and the first Search person on the TV
+- Match Apple TV quality labels
+- Match Apple TV text width
+- Match row fill and switch value brightness
+- Keep a selected season focused while Play claims focus
+- Match the TV sweep's layout differences
+- Match the subtitle preview caption height
+- Place the person name on Apple's 85px line
+- Match the person biography line to Apple's font
+- Keep the scrub thumbnail on the loaded clock line
+- Draw sans-serif captions semibold on the TV
+- Ask before signing out from Who's watching
+- Shift the episode rail when its window includes the first season
+- Open a lone PIN-less profile and route an expired sign-in
+- Forget a remembered profile when storage refuses the clear
+- Retry an aborted previous season at the rail edge
+- Keep the series line and send known subtitles on start
+- List subtitles the plan flags unplayable as unavailable
+- Draw Apple's progress bar on Continue Watching
+- Bind the remembered profile to a sign-in epoch
+- Retry removing a replaced PIN proof the key store refused
+- Finish the unplayable subtitle edge cases
+- Retry failed and cancelled seasons at the rail edge
+- Keep the top bar on the Requests page
+- Hide the rail edge error while its retry runs
+- Match Apple TV's PIN keypad
+- Match Apple TV's skip intro, recap and credits pills
+- Match Apple's rail edge failure copy and reset
+- Rank versions and label them like Apple TV
+- Draw Apple's default artwork for missing or failed images
+- Start shuffle picks from the beginning like Apple TV
+- Finish skip pill timing and visibility parity
+- Rank and cap versions for next-episode and shuffle picks
+- Use Apple TV's secondary text colour
+- Use Apple TV wording for the subtitle options
+- Match Apple TV's hero text size, spacing and measure
+- Match Apple TV's row heading size and icon spacing
+- Show Apple's error screen on every failed page
+- Match Apple TV's Who's watching, remember offer and avatar
+- Match Apple TV's action row
+- Match Apple TV's hero, meta lines and screen states
+- Match Apple TV's seasons, episodes and lower rails
+- Match Apple TV's card menu and Home page states
+- Match Apple TV's Details popovers, menus and failure alerts
+- Scale the Related reveal with Poster Size
+- Match Apple TV text size and tracking on Details
+- Match Apple TV's hero timing and card presentation
+- Match Apple TV text size and tracking on Person
+- Drop a series' remembered season with its cached page
+- Remove the loading lines Apple TV doesn't show
+- Match Apple TV's top bar, avatar and top-bar panels
+- Use Apple TV's empty and error views on Person
+- Keep snapshot artwork through a failed first read
+- Keep a focus scroll going through a Details repaint
+- Space the Filmography row like Apple TV
+- Lay out the Subtitles tab in Apple TV's two columns
+- Match Apple TV's For You menu and Recommendations
+- Match Apple TV's Search screen
+- Lay out card badges as Apple TV's CardOverlays does
+- Match Apple TV's Recommended and Collections pages
+- Match Apple TV's Browse grid states
+- Match Apple TV's Sort, Filter and letter rail
+- Show Apple's year range on Home and catalog series cards
+- Draw profile menu Sign Out and Watch Party at Apple's size
+- Match Apple TV's profile menu rows, order and focus
+- Centre the movie box set row on focus like Apple TV
+- Draw Apple TV's watch status corner on posters
+- Use the remembered title-art answer on Details
+- Draw Apple TV's badge marks and combined badges
+- Activate buttons and cards on Select release like Apple TV
+- Report caption load state and clock on the caption layer
+- Draw Apple TV's symbols on generic poster badges
+- Format air times in the app language
+- Keep focus off Watchlist while episodes load
+- Match Apple TV's row focus and pressed motion
+- Draw Apple TV's week chevrons
+- Match account and profile pressed looks
+- Align card captions to the leading edge
+- Draw Apple TV's Plate and Edge band presets and style overrides
+- Return to the originating page when Add Profile closes
+- Match Apple TV's rail icons, chevrons and Sign Out placement
+- Draw the administrator's uploaded badge images
+- Require a higher selection revision for a lost repeat selection
+- Keep a second audio track on direct play
+- Keep Play focused when a Calendar episode's series loads
+- Wait for long embedded subtitle extracts
+- Use Apple TV's error reds instead of one pink
+- Group the Subtitles options and order tracks as Apple TV does
+- Keep results above the Samsung keyboard
+- Size Details art as Apple TV and reveal art once decoded
+- Fall back as Apple TV does when Auto's subtitle language is missing
+- Draw the disabled Loop Theme Music row at full brightness
+- Show the suggested episode in the header for a Calendar episode the season does not list
+- Keep the focused Details track row centred while scrolling
+- Draw disabled Settings rows at full brightness
+- Keep the hero's artwork size on Details re-reads
+- Keep the request result focus when Back rereads Search
+- Request episode-rail stills at Apple TV's still width
+- Focus Play after Back to a series whatever answers first
+- Size the season page's artwork reads as Apple TV does
+- Keep the refreshed series watched state over a late read
+- Skip disabled rows when moving focus, as Apple TV does
+- Keep the refreshed season watched state over a late read
+- Keep Up inside the pane at the first Settings row
+- Cap the library menu at Apple TV's six rows
+- Keep Down on Sign Out at the end of the rail
+- Wait for the Select release before repainting for a loaded language
+- Order the library menu as Apple TV does
+- Repaint the Home marquee after a language change from Settings
+- Show years in the shown language's digits, as Apple TV does
+- Read the audiobook library type as Apple TV does
+- Name chapterless parts by their file, as Apple TV does
+- Present the hub full screen with Apple's join field
+- Keep the Restoring overlay until the restore finishes
+- Match Apple TV's regrouped Video, Info and Stats tabs
+- Refetch a subtitle download that ends early
+- Offer Sign In Again when the Calendar read fails with a 401
+- Draw the sign-out icon as Apple TV's closed box
+- Title the video skip pickers as Apple TV does
+- Drop the reset row from the skip-interval pickers
+- Refuse HLS playlists AVPlay cannot read and bound a hung prepare
+- Hide Explore all on a complete Continue Watching row
+- Close the AI subtitle and Sync to Audio edge cases
+- Use the shown language's digits and collation in Subtitles
+- Word the end-of-playback card as Apple TV does
+- Stop drawing a hidden Show Up Next as an empty ring
+- Keep the shown week quiet when a refresh fails
+- Start the next episode when the stop request is slow
+- Press the player's panel rows and Details Play as Apple TV does
+- Disable Versions when a title has only one version
+- Add a skip pressed during a seek to that seek's target
+- Offer Show Up Next for a film with On Deck items
+- Show Details dates in the chosen language
+- Ask for every embedded text subtitle as an artifact on direct play
+- Hide Show Up Next on a film once On Deck fails twice
+- Treat an empty Up Next still as none, and test the backdrop fallback
+- Show AVPlay's subtitles when a switch hands it the track
+- Treat a film's failed On Deck read as nothing next, as Apple does
+- Label the Version and Audio pills as Apple does, from the catalog
+- Title an added account's code screen as Apple TV does
+- Treat an episode's failed On Deck read as nothing next, as Apple does
+- Resolve an unresolved subtitle switch before recovering
+- Size the filter pills as Apple's segmented control does
+- Size the profile menu's name as Apple does
+- Size Calendar's text as Apple does
+- Size Settings' text as Apple does
+- Keep the queued out-of-window seek right during a subtitle switch
+- Show the scrub preview while a subtitle switch is out
+- Handle three lost-answer subtitle switch edge cases
+- Show the server's reason when playback cannot start
+- Keep the Auger name when translations are synced
+- Draw captions at Apple TV's tvOS sizes
+- Back while playing hides the controls first
+- Match Apple's Server rows, Metadata footer, picker header and version line

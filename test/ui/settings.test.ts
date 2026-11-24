@@ -43,6 +43,19 @@ async function openSettings(tv: Tv): Promise<void> {
     await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
 }
 
+// TVSettingsView.swift:514-517 (silo-apple 449ba47): a server with a name of its own shows its address on a second row (#773).
+test("the Server pane adds Address under a server's own name (#773)", async () => {
+    const { tv } = await setup();
+    try {
+        await tv.page.evaluate(() => window.browseHarness.seedServerName("Living room library"));
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="server"]').click();
+        await tv.page.locator(".settings-info-row").first().waitFor();
+        const rows = await tv.page.locator(".settings-info-row").evaluateAll(nodes => nodes.map(row => [row.firstElementChild?.textContent, row.querySelector(".settings-row-value")?.textContent]));
+        assert.deepEqual(rows.slice(0, 2), [["Server", "Living room library"], ["Address", "https://silo.example.test"]]);
+    } finally { await tv.page.context().close(); }
+});
+
 test("Settings rail symbols match Apple's per-symbol ink boxes and medium strokes", async () => {
     const { tv } = await setup();
     try {
@@ -289,6 +302,26 @@ test("Settings pins its rail, resets pane scroll and keeps modal background geom
         assert.deepEqual(await tv.page.getByRole("radio").allTextContents(), ["Bottom", "Lower Third", "Top"]);
         assert.equal(await tv.page.getByText("Choose an option", { exact: true }).count(), 1);
         assert.equal(await tv.page.getByText("Menu to close", { exact: true }).count(), 1);
+        // TVSettingsComponents.swift:713-724, 748-750 (#773): title and "Choose an option" 6 pt apart, 42 bold and 19 regular, the hint 17
+        // medium, then a 1 pt siloChromeRestingBorder divider above the options, all times the cap scale.
+        const header = await tv.page.evaluate(() => {
+            const card = document.querySelector<HTMLElement>(".settings-modal[role=dialog]")!;
+            const title = card.querySelector<HTMLElement>(".browse-title")!;
+            const subtitle = card.querySelector<HTMLElement>(".settings-picker-subtitle")!;
+            const hint = card.querySelector<HTMLElement>(".settings-picker-hint")!;
+            const divider = card.querySelector<HTMLElement>(".settings-picker-divider")!;
+            const options = card.querySelector<HTMLElement>(".settings-modal-options")!;
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const css = (node: HTMLElement): CSSStyleDeclaration => getComputedStyle(node);
+            return {
+                follows: title.nextElementSibling === subtitle,
+                gap: Math.round(subtitle.getBoundingClientRect().top - title.getBoundingClientRect().bottom),
+                sizes: [title, subtitle, hint].map(node => Math.round(parseFloat(css(node).fontSize) / cap * 100) / 100),
+                weights: [css(title).fontWeight, css(subtitle).fontWeight, css(hint).fontWeight],
+                divider: { height: divider.getBoundingClientRect().height, color: css(divider).backgroundColor, beforeOptions: divider.nextElementSibling === options },
+            };
+        });
+        assert.deepEqual(header, { follows: true, gap: 6, sizes: [42, 19, 17], weights: ["700", "400", "500"], divider: { height: 1, color: "rgba(255, 255, 255, 0.09)", beforeOptions: true } });
         const during = await tv.page.evaluate(() => ({ rail: document.querySelector('.settings-categories')!.getBoundingClientRect().top, header: document.querySelector('.settings-pane-header')!.getBoundingClientRect().top }));
         assert.equal(during.rail, before.rail, JSON.stringify(await tv.page.evaluate(() => [...document.querySelectorAll(".settings, .settings-panes, .settings-pane, .settings-categories")].map(n => ({name: n.className, height: n.clientHeight, scroll: n.scrollTop, rect: n.getBoundingClientRect().toJSON(), style: getComputedStyle(n).overflowY})))));
         assert.equal(during.header, before.header);
@@ -387,7 +420,8 @@ test("remaining settings expose only honoured rows and save profile appearance",
             const element = node as HTMLElement;
             return { fontSize: element.style.fontSize, align: getComputedStyle(element).textAlign, weight: getComputedStyle(element).fontWeight };
         });
-        assert.deepEqual(caption, { fontSize: "21.5px", align: "center", weight: "600" });
+        // Small's 43 pt at the preview's half size, times the cap scale for the bundled sans-serif (#789).
+        assert.deepEqual(caption, { fontSize: "calc(21.5px * var(--silo-sf-cap-scale))", align: "center", weight: "600" });
         const previewLook = () => tv.page.locator(".settings-subtitle-preview").evaluate(node => {
             const box = node.getBoundingClientRect();
             const text = node.querySelector("span") as HTMLElement;
@@ -415,7 +449,7 @@ test("remaining settings expose only honoured rows and save profile appearance",
             hugsText: true,
             bottomGap: 12,
         });
-        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "25.8px", "the line scales with the Small preview size");
+        assert.equal(await tv.page.locator(".settings-subtitle-preview span").evaluate(node => getComputedStyle(node).lineHeight), "24.9873px", "the line scales with the Small preview size (25.8 px times the cap scale)");
         await tv.page.getByRole("button", { name: /Position/ }).click();
         await tv.page.getByRole("radio", { name: "Lower Third", exact: true }).click();
         await tv.page.locator('[data-focus="appearance-position"]').waitFor();
@@ -453,8 +487,12 @@ test("remaining settings expose only honoured rows and save profile appearance",
         await tv.page.getByRole("radio", { name: "fr", exact: true }).click();
         await tv.eventually(async () => settings.profile().get("catalog.metadata_language") === "fr", "metadata profile write");
         await tv.page.locator('[data-focus="metadata-language"]').waitFor();
+        // TVSubtitleSettingsView.swift:101: the Metadata Language row's footer (#773).
+        assert.equal(await tv.page.locator('[data-focus="metadata-language"] + .settings-value').textContent(), "Translates descriptions and taglines into your preferred language when available. Titles are never translated.");
         await tv.page.locator('[data-focus="server"]').click();
-        await tv.page.getByText("Address", { exact: true }).waitFor();
+        // TVSettingsView.swift:514-517: Address shows only when the server's name is not its URL (#773).
+        await tv.page.locator(".settings-info-row").first().waitFor();
+        assert.equal(await tv.page.getByText("Address", { exact: true }).count(), 0, "with no server name the Server row already shows the URL");
         await tv.page.getByRole("button", { name: "Privacy Policy", exact: true }).click();
         assert.equal(await tv.page.getByRole("img", { name: "Privacy Policy QR code" }).count(), 1);
         assert.equal(await tv.page.getByRole("button", { name: /HDR|Dolby Vision|Lossless|Seek Cache/ }).count(), 0);
@@ -897,9 +935,9 @@ test("Subtitles, the profile account line and sign-out confirmation follow Apple
         assert.equal(await tv.page.locator(".settings-version").textContent(), "Auger 0.0.1");
         assert.equal(await tv.page.getByRole("button", { name: /Diagnostics/ }).count(), 0);
         assert.equal(await tv.page.locator('[data-focus="subtitles"] .settings-category-detail').textContent(), "Language and appearance");
-        // The version uses siloSecondaryText; category subtitles dim the row foreground instead.
+        // The version uses siloSecondaryText at 0.7 (TVSettingsView.swift:201-203, #773); category subtitles dim the row foreground instead.
         const secondary = await tv.page.locator('[data-focus="subtitles"] .settings-category-detail, .settings-version').evaluateAll(nodes => nodes.map(node => ({ color: getComputedStyle(node).color, opacity: getComputedStyle(node).opacity })));
-        assert.deepEqual(secondary, [{ color: "rgb(237, 237, 237)", opacity: "0.62" }, { color: "rgba(237, 237, 237, 0.6)", opacity: "1" }]);
+        assert.deepEqual(secondary, [{ color: "rgb(237, 237, 237)", opacity: "0.62" }, { color: "rgba(237, 237, 237, 0.6)", opacity: "0.7" }]);
         await tv.page.locator('[data-focus="subtitles"]').click();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Language, behavior, and on-screen appearance.");
         assert.equal(await tv.page.locator('[data-focus="subtitle-language"] .settings-row-value').textContent(), "None");

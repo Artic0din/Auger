@@ -50,8 +50,7 @@ Inter, a CSS ring/shadow and a drawn lock stand in for Apple's fonts, focus rend
 Sign out asks in Apple TV's `TVSettingsConfirmationOverlay` (`AccountRemovalConfirmation` on tvOS): a centred dialog over the picker with Cancel, then a red Sign Out, and Cancel focused; Back cancels and returns to Sign out.
 Settings and Settings › Accounts show the same dialog through `src/ui/confirmationDialog.ts`.
 
-Change server belongs to the application owner and preserves saved credentials.
-It currently opens manual server entry; the saved-server-list destination remains tracked in #127 and is not a platform limitation.
+Change account (focus key `change-server`) belongs to the application owner and preserves saved credentials, opening the saved-server rail in [Change Account](change-account.md).
 
 Add uses the server's explicit `POST /profiles` operation without automatic retry.
 For a nonempty household it temporarily selects the primary profile, verifies its PIN when required and restores management ownership without changing the remembered launch choice.

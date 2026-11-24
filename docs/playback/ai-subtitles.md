@@ -1,7 +1,6 @@
 # AI subtitles
 
-Issue [#65](https://github.com/Artic0din/silo-tizen/issues/65) stacks on `feat/64-subtitle-appearance` at `5dbb374720f9b1ceb6e9747b8377514f2c25fc0b`, as approved, because completed text tracks require that renderer.
-No server changes are required.
+In-player AI subtitle translation and transcription ([#65](https://github.com/Artic0din/Auger-Tizen/issues/65), [#522](https://github.com/Artic0din/Auger-Tizen/issues/522)). Completed text tracks render through the app subtitle overlay ([Profile subtitles](subtitle-appearance.md)).
 
 The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes these profile-scoped operations:
 
@@ -12,7 +11,7 @@ The native OpenAPI pinned at `cc8514943289045e7b9f7ac8d36d4968bfe93926` exposes 
 | `createSubtitleAIJob` | `POST /subtitles/ai/translate` | Send once with file, kind, source index/language, target language and source position. |
 | `getSubtitleAIJob` | `GET /subtitles/ai/jobs/{job_id}` | Poll pending/running jobs every two seconds; verify job, file, kind, source index and language identity. |
 
-The Subtitles tab has one OPTIONS row, AI Subtitles…, that opens a language menu ([#522](https://github.com/Artic0din/silo-tizen/issues/522), `SubtitleTranslateMenu` in silo-apple `main`).
+The Subtitles tab has one OPTIONS row, AI Subtitles…, that opens a language menu ([#522](https://github.com/Artic0din/Auger-Tizen/issues/522), `SubtitleTranslateMenu` in silo-apple `main`).
 The viewer picks a language and the player picks the method, as Apple's `route(to:)` does:
 
 1. **Translate** an existing text subtitle in another language (or with none known): an English one first, then the shown, then the first. The track's server index (`combined_index`) is `source_index`.
@@ -26,7 +25,15 @@ The audio comes from the catalog's versions read. Once that read has failed, or 
 A language the server cannot serve now (no quota, or translation off for a language that is not the spoken one) is dimmed and does nothing.
 The quota line shows only while some language relies on transcription, as Apple's does. It reads "used of limit" only when the server sends both numbers, else the remaining count. Quota reads can overlap (a job's end, the menu opening), and only the latest read's answer or failure applies. When the balance cannot be read, SubtitleAI sends no transcription, so those rows are dimmed and the line reads Transcription quota unavailable.
 The menu shows when at least one row is left: a catalog that is empty or failed to load leaves the Spoken language row (translation off, spoken language unknown), else no AI Subtitles… row.
-A running job replaces the languages with its title, progress, the server's message and Cancel (`cancelSubtitleAIJob`, best effort). Each start and cancel opens a new generation, and an answer from an earlier one (a poll or a create that was in flight) is dropped; a cancel pressed before the server names the job stops it by the id the server then gives, and until that create answers the file is held (the panel shows the held state with Discard held request) so a second billable request cannot go out, as Apple's `SiloAI` holds an unresolved creation; an answer or a definite refusal lifts the hold, an unknown outcome keeps it, and a Discard forfeits it, so that create's late answer cannot take the hold back from a newer request. Unlike Apple, which holds only an identical request, the hold covers every request for the file. A failure shows its message with Dismiss, and a held request adds Discard held request. Dismiss closes the menu, as Apple's `onDismiss` does; a held request's failure and message stay (Apple's `acknowledgeFailure` keeps them while a request is held), so the menu reopens on them until Discard. Cancel, Dismiss and Discard keep working while a track change is pending, because they act on the job and Apple does not disable them. A finished job returns to the tracks. A job the server reports completed with no subtitle result shows "AI job completed without a subtitle result." with Dismiss instead; Apple closes the menu with no message there, which would leave the viewer with neither a subtitle nor a reason.
+
+**Running jobs, cancellation, and holds:**
+
+- A running job replaces the language list with its title, progress, Server message, and **Cancel** (`cancelSubtitleAIJob`, best effort).
+- Each start and cancel increments a generation; answers from earlier generations are dropped.
+- Pressing Cancel before the Server returns a job ID cancels that ID once it arrives. Until creation answers, the file is held (**Discard held request**) so a second billable request cannot start (covering every request for that file, unlike Apple's identical-request hold). A definite answer or refusal lifts the hold; an unknown outcome keeps it until Discard.
+- Failures show their message with **Dismiss** (plus **Discard held request** when held). Dismiss closes the menu while preserving a held request's failure notice until Discard. Cancel, Dismiss, and Discard stay active while a track change is pending.
+- A finished job returns to the track list; a completed job with no subtitle result shows "AI job completed without a subtitle result." with Dismiss.
+
 Text translation does not spend the ASR quota; transcription requires a known balance.
 No live delivery is requested: a completed stored track becomes selectable when ready.
 An unknown create outcome is not resent, including on repeated presses in the same playback attempt.

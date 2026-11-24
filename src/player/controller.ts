@@ -69,6 +69,9 @@ import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playe
 /** What browse hands over: one file of one catalog item. */
 export interface PlayRequest {
     readonly overview?: string | undefined;
+    /** Up Next's metadata line: the season row's air date and runtime in minutes (PlayerView.episodeMetadataLine). */
+    readonly airDate?: string | undefined;
+    readonly runtimeMinutes?: number | undefined;
     readonly backdropUrl?: string | undefined;
     /** False for series key art. Absent or true is an episode still. */
     readonly backdropIsEpisodeStill?: boolean | undefined;
@@ -106,13 +109,22 @@ export type PlaybackError =
     /** Every route the server offered failed on this TV. */
     | { readonly kind: "playback_failed" }
     /** Media or API unreachable. Reconnecting belongs to recovery (#13). */
-    | { readonly kind: "network" }
+    | { readonly kind: "network"; readonly noResponse?: true }
     /** The server no longer knows the session (expired or restarted). Recovery belongs to #13. */
     | { readonly kind: "session_expired" }
     | { readonly kind: "installation_changed" }
     | { readonly kind: "revoked" }
     | { readonly kind: "backgrounded" }
-    | { readonly kind: "server" };
+    | { readonly kind: "server"; readonly reason?: ServerReason };
+
+/**
+ * Why the server refused, kept as data so the error page words it in the shown language (APIv2Client.errorDescription):
+ * a problem's detail, else its title; a bare HTTP status; or the update prompt for client_upgrade_required.
+ */
+export type ServerReason =
+    | { readonly text: string; readonly problemId?: string; readonly fieldCode?: string }
+    | { readonly status: number }
+    | { readonly update: true };
 
 export interface PlaybackExits {
     onBack(): void;
@@ -289,7 +301,7 @@ export type PlaybackView =
      * `status` is the card's status line (Apple's statusLabel) as a catalog key, so a language change redraws it; `shuffle` words the card
      * for a Shuffle, as Apple's does; `failure: "session"` marks a failed state that came from ending the session, before any lookup.
      */
-    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session" }
+    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session"; readonly autoNext?: boolean }
     | ({ readonly phase: "loading"; readonly title: string; readonly detail?: "reconnecting" | "restoring"; /** A different file of a Shuffle pick follows: the screen forgets the last file's skip decisions. */ readonly nextPart?: true } & BufferingOverlay)
     | ({
           readonly phase: "playing" | "paused";
@@ -513,6 +525,8 @@ interface Attempt {
     captionFallback: string | undefined;
     /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
     switchLocal: boolean;
+    /** A local fallback AVPlay refused, kept to try again once the player can (on restore, or the next lost answer). */
+    redrawSwitch: (() => void) | undefined;
     /** Ends an unresolved switch's wait between replays, so a route failure resolves it at once (#750). */
     wakeSwitch: (() => void) | undefined;
     /** When a route failure began waiting for an unresolved switch's answer; the wait ends at SWITCH_FAILURE_DEADLINE_MS. */
@@ -662,7 +676,8 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.active();
         if (attempt !== undefined) this.syncBuffering(attempt);
     };
-    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean } | undefined;
+    /** `autoplays`: the card's pick is one Apple counts down to (the next episode or a Shuffle pick), not an On Deck title. */
+    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
 
@@ -721,7 +736,7 @@ export class PlaybackController implements PlayerControls {
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
-            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
+            appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, redrawSwitch: undefined, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
             request,
             playbackAttemptId: this.newId(),
             signal: this.deps.session.authoritySignal,
@@ -827,22 +842,48 @@ export class PlaybackController implements PlayerControls {
     }
 
     toggleAutoNext(): void {
-        const attempt = this.active();
+        // The finished card's toggle (PlayerView.autoPlayToggle) acts on the ended attempt.
+        const completion = this.completion;
+        const attempt = this.active() ?? (completion !== undefined && completion.attempt === this.attempt && completion.attempt.ended ? completion.attempt : undefined);
         if (attempt === undefined || !attempt.autoNextSupported || attempt.hud.autoBusy) return;
         attempt.hud.autoBusy = true;
         attempt.hud.message = "Saving Auto-play next";
-        this.showPlayback(attempt);
-        const enabled = !attempt.autoNext;
+        // PlayerViewModel.setNextUpAutoPlayEnabled: the local value changes, and the countdown stops or starts, before the write goes out.
+        // The new epoch also keeps an older settings read from overwriting it.
+        const previous = attempt.autoNext;
+        const enabled = !previous;
+        attempt.settingsEpoch += 1;
         const epoch = attempt.settingsEpoch;
-        const deciding = (): boolean => attempt.live || this.completion?.attempt === attempt;
-        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled), profileScoped: true, signal: attempt.signal }).then(async () => {
-            const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
-            if (attempt.signal.aborted || epoch !== attempt.settingsEpoch || !deciding()) return;
-            attempt.settingsEpoch = epoch + 1;
-            attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-            if (attempt.live) attempt.hud.message = attempt.autoNext === enabled ? "" : "This TV's override keeps Auto-play next unchanged.";
-        }).catch(() => {
-            if (!attempt.signal.aborted && attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
+        attempt.autoNext = enabled;
+        this.showPlayback(attempt);
+        if (!attempt.live) this.completionAutoNextChanged(attempt);
+        const current = (at: number): boolean => !attempt.signal.aborted && at === attempt.settingsEpoch && (attempt.live || this.completion?.attempt === attempt);
+        // Apple writes this TV's value from every Auto-play control (PlayerSettings.setAutoPlayNextEpisode → enqueueDeviceValue).
+        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled, "profile_device"), profileScoped: true, signal: attempt.signal }).then(async () => {
+            if (!current(epoch)) return;
+            // The write is in: a settings read started before now may answer with the old value, so it is set aside too.
+            attempt.settingsEpoch += 1;
+            const written = attempt.settingsEpoch;
+            if (attempt.live) attempt.hud.message = "";
+            let saved: boolean;
+            try {
+                const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
+                saved = values.get(AUTO_NEXT_KEY)?.value === true;
+            } catch {
+                // The server took the write; a confirmation that cannot be read leaves the written value in place.
+                return;
+            }
+            if (!current(written) || saved === attempt.autoNext) return;
+            attempt.autoNext = saved;
+            if (!attempt.live) this.completionAutoNextChanged(attempt);
+        }, () => {
+            // A refused write. Apple's writer keeps the local value and retries, and a refusal shows only in Settings
+            // (SettingsViewModel.swift:443). Nothing here retries (#810), so the toggle goes back to the saved value and the card acts on it again.
+            if (!current(epoch)) return;
+            attempt.settingsEpoch += 1;
+            attempt.autoNext = previous;
+            if (attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
+            else this.completionAutoNextChanged(attempt);
         }).finally(() => {
             attempt.hud.autoBusy = false;
             if (attempt.live) this.showPlayback(attempt);
@@ -852,6 +893,11 @@ export class PlaybackController implements PlayerControls {
         void settled.finally(() => {
             if (attempt.autoNextSave === settled) attempt.autoNextSave = undefined;
         });
+    }
+
+    /** A settings read may apply Auto-play only if no press came after it started and no write is out: the write's own outcome decides. */
+    private readsAutoNext(attempt: Attempt, epoch: number): boolean {
+        return epoch === attempt.settingsEpoch && attempt.autoNextSave === undefined;
     }
 
     togglePause(): void {
@@ -916,9 +962,14 @@ export class PlaybackController implements PlayerControls {
     }
 
     async seekThumbnail(seconds: number, signal: AbortSignal, loadSheet: ThumbnailSheetLoader): Promise<SeekThumbnail | undefined> {
-        const attempt = this.changeable();
+        // Apple keeps a file's previews through a replan of that file (PlayerViewModel.swift:349-366), so a subtitle switch,
+        // which holds nothing, still previews (#757). A seek or quality change in flight is still a barrier.
+        const active = this.active();
+        const attempt = active !== undefined && active.started && !active.busy ? active : undefined;
         const fileId = attempt?.plan?.effectiveMediaFileId;
         if (attempt === undefined || fileId === undefined || !attempt.trickplayEnabled) return undefined;
+        // Keyed by file, as Apple's contentId#fileId cache: a provider for another file is never reused, whichever path adopted the plan.
+        if (attempt.thumbnails !== undefined && attempt.thumbnails.fileId !== fileId) this.clearThumbnails(attempt);
         const provider = attempt.thumbnails ?? new SeekThumbnails(this.deps.session, this.deps.clock, attempt.request.contentId, fileId);
         attempt.thumbnails = provider;
         const tile = await provider.load(seconds, signal, loadSheet);
@@ -951,12 +1002,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (attempt.undoSkip === target) attempt.undoSkip = undefined;
-        const timeline = plan.timeline;
-        const local =
-            timeline.canSeekAnywhere &&
-            target >= timeline.timelineOffsetSeconds &&
-            (timeline.seekWindowStartSeconds === undefined || target >= timeline.seekWindowStartSeconds) &&
-            (timeline.seekWindowEndSeconds === undefined || target <= timeline.seekWindowEndSeconds);
+        const local = seekableAt(plan, target);
         // A reanchor closes AVPlay and would race the switch's replan: it waits for the answer, as in-window seeks need not.
         if (!local && subtitleSwitchOut(attempt)) {
             attempt.queuedReanchorSeconds = target;
@@ -1039,7 +1085,7 @@ export class PlaybackController implements PlayerControls {
         };
         try {
             this.seekTo(
-                Math.round((target - timeline.timelineOffsetSeconds) * 1000),
+                Math.round((target - plan.timeline.timelineOffsetSeconds) * 1000),
                 () => settled(true),
                 () => settled(false),
             );
@@ -1434,7 +1480,7 @@ export class PlaybackController implements PlayerControls {
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await call(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                    if (attempt.live && epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                    if (attempt.live && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
                 } catch { /* Unavailable autoplay preferences leave Play next manual. */ }
             }
             if (definitions.some(def => def.key === HDR_KEY)) {
@@ -1849,6 +1895,25 @@ export class PlaybackController implements PlayerControls {
                 this.applyKeptSubtitle(attempt, decision.plan, decision.serverFeatures);
                 return;
             }
+            if (operation === "track_change" && subtitleSwitchOut(attempt)) {
+                // A subtitle switch leaves seeking free, so the playhead may have moved since it was asked (#751). A moved
+                // stream starts where the viewer is now, once any seek settles, not where the switch began. A seek AVPlay
+                // never answers is waited for no longer than startup is.
+                const giveUp = this.deps.clock.now() + STARTUP_TIMEOUT_MS;
+                for (let seek = this.pending.seek; seek !== undefined; seek = this.pending.seek) {
+                    const left = giveUp - this.deps.clock.now();
+                    if (left <= 0) { this.pending.seek = undefined; break; }
+                    await Promise.race([seek.catch(() => undefined), sleep(this.deps.clock, left, attempt.signal, abortedError).catch(() => undefined)]);
+                    if (!current()) return;
+                }
+                // A reanchor queued behind the switch is the newest target; otherwise the playhead.
+                const target = attempt.queuedReanchorSeconds ?? attempt.sourceSeconds;
+                const start = startAt(decision.plan, target);
+                this.adopt(attempt, start ?? decision.plan, decision.serverFeatures);
+                // A target the new stream cannot open at runs once it plays, where seekAbsolute picks a local seek or a reanchor.
+                if (start === undefined && decision.plan.delivery === "original_http" && target !== decision.plan.timeline.sourceStartSeconds) attempt.queuedReanchorSeconds = target;
+                return;
+            }
             this.adopt(attempt, decision.plan, decision.serverFeatures, buffering !== undefined);
         } else {
             this.qualityUnsettled(attempt, buffering);
@@ -2029,6 +2094,8 @@ export class PlaybackController implements PlayerControls {
         attempt.subtitleRestore = undefined;
         attempt.subtitleOverride = restore;
         if (restore !== undefined && !this.applyStreamSubtitle(attempt, restore.id) && attempt.plan?.subtitle.artifact !== undefined) {
+            // The sidecar draws the rolled-back track, so AVPlay holds no override and a restore keeps its text hidden (#792).
+            attempt.subtitleOverride = undefined;
             try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* Sidecar captions remain independent of native rendering. */ }
             this.readCaptions(attempt, attempt.plan);
         }
@@ -2148,6 +2215,7 @@ export class PlaybackController implements PlayerControls {
         }
         if (!subtitleSwitchOut(attempt) || this.pending.seek === undefined) attempt.busy = false;
         attempt.switchLocal = false;
+        attempt.redrawSwitch = undefined;
         attempt.switchFailedAt = undefined;
         attempt.switchWakeUsed = false;
         attempt.change = change;
@@ -2236,6 +2304,7 @@ export class PlaybackController implements PlayerControls {
         attempt.recoveryRetryAt = 0;
         attempt.change = { state: "idle" };
         attempt.switchLocal = false;
+        attempt.redrawSwitch = undefined;
         // A new transport ends any route failure's wait, so its deadline cannot reach a later switch.
         attempt.switchFailedAt = undefined;
         attempt.switchWakeUsed = false;
@@ -2532,10 +2601,19 @@ export class PlaybackController implements PlayerControls {
     /** While a switch's answer is unknown: AVPlay draws the chosen track when it has it. */
     private drawSwitchLocally(attempt: Attempt, plan: PlaybackPlan, selected: SelectedTracks): void {
         const id = selected.subtitle?.id;
-        if (id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id)) {
-            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
-            attempt.subtitleOverride = { id };
+        let drawn = id !== undefined && attempt.plan === plan && loadsEmbeddedFile(plan, id) && this.applyStreamSubtitle(attempt, id);
+        // The track only shows once AVPlay unhides its text; a refused unhide is not drawn (#792).
+        if (drawn) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { drawn = false; }
         }
+        // AVPlay can refuse, for example while a seek is out (#751): the replaced captions stay hidden, and the next lost
+        // answer tries again.
+        if (!drawn || id === undefined) {
+            attempt.redrawSwitch = id === undefined ? undefined : () => this.drawSwitchLocally(attempt, plan, selected);
+            return;
+        }
+        attempt.redrawSwitch = undefined;
+        attempt.subtitleOverride = { id };
         attempt.switchLocal = true;
         // A failed transport waiting for this switch's answer keeps its loading screen.
         if (attempt.switchFailedAt !== undefined) return;
@@ -2548,7 +2626,12 @@ export class PlaybackController implements PlayerControls {
     }
 
     /** While the app draws the shown subtitle's file, AVPlay's own subtitles stay hidden. */
-    private hideNativeUnderOverlay(attempt: Attempt): void {
+    /** AVPlay's own text shows when it draws the chosen track (a native override), and hides under the overlay otherwise. */
+    private restoreNativeVisibility(attempt: Attempt): void {
+        if (attempt.subtitleOverride?.id !== undefined) {
+            try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* The next switch or reopen applies it again. */ }
+            return;
+        }
         if (attempt.captionKey === undefined || attempt.subtitleOverride !== undefined) return;
         try { this.deps.avplay.setSilentSubtitle?.(true); } catch { /* The next switch or reopen hides them again. */ }
     }
@@ -2844,7 +2927,7 @@ export class PlaybackController implements PlayerControls {
         attempt.endedDuringChange = false;
         this.leave(attempt, "abandon");
         this.nextStart = undefined;
-        this.completion = { attempt, abort: new AbortController(), pending: false };
+        this.completion = { attempt, abort: new AbortController(), pending: false, autoplays: false };
         this.retryCompletion();
     }
 
@@ -3095,6 +3178,24 @@ export class PlaybackController implements PlayerControls {
         } else this.back();
     }
 
+    /** PlayerViewModel.setNextUpAutoPlayEnabled: Off cancels the finished card's countdown, On starts it again for a pick that counts down. */
+    private completionAutoNextChanged(attempt: Attempt): void {
+        const completion = this.completion;
+        const view = this.current;
+        if (completion?.attempt !== attempt || view.phase !== "completion") return;
+        if (!attempt.autoNext) {
+            this.cancelAutoplayTimer?.();
+            this.cancelAutoplayTimer = undefined;
+            this.show({ ...view, autoNext: false, countdown: undefined });
+            return;
+        }
+        this.show({ ...view, autoNext: true });
+        if (completion.autoplays && view.state === "ready" && view.next !== undefined && this.cancelAutoplayTimer === undefined) {
+            attempt.promptDismissed = false;
+            this.startAutoplay(completion);
+        }
+    }
+
     private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
         const tick = (): void => {
@@ -3117,9 +3218,10 @@ export class PlaybackController implements PlayerControls {
         const working: MessageKey = shuffle ? "upNext.headingShuffle" : "upNext.headingEnded";
         // A failure while the session ends (the final progress or STOP) is not a failed lookup: nothing was looked up yet.
         let stage: "session" | "lookup" = "session";
+        const autoNext = (): { autoNext?: boolean } => attempt.autoNextSupported ? { autoNext: attempt.autoNext } : {};
         const refused = (error: unknown): boolean => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed");
         const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
-            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}) });
+            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}), ...autoNext() });
         };
         // Apple's playShufflePart loads the next part with a plain loading state, not the end screen.
         if (attempt.request.shuffleId === undefined) show("finalizing");
@@ -3186,8 +3288,8 @@ export class PlaybackController implements PlayerControls {
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: abort.signal });
-                    if (epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { if (current() && epoch === attempt.settingsEpoch) attempt.autoNext = false; }
+                    if (this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                } catch { if (current() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
                 if (!current()) return;
             }
             show("resolving");
@@ -3198,6 +3300,7 @@ export class PlaybackController implements PlayerControls {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
                 }, attempt.request.shuffleId, attempt.request.contentId, quality);
+                completion.autoplays = next !== undefined;
                 show("ready", next, false, next === undefined ? "upNext.headingFinished" : "upNext.headingShuffle");
                 if (current() && next !== undefined && attempt.autoNext) this.startAutoplay(completion);
                 return;
@@ -3209,6 +3312,7 @@ export class PlaybackController implements PlayerControls {
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
             }, attempt.request.contentId, fileId, attempt.request.seriesTitle, quality) : undefined;
             if (next !== undefined) {
+                completion.autoplays = true;
                 show("ready", next, false, "upNext.headingEnded");
                 this.loadPresentation(next, abort.signal, enriched => {
                     if (current() && this.current.phase === "completion" && this.current.next === next) this.show({ ...this.current, next: enriched });
@@ -3232,7 +3336,7 @@ export class PlaybackController implements PlayerControls {
                 show("ready", items[0], false, "upNext.heading", items);
             }, quality);
             if (!current()) return;
-            this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false });
+            this.show({ phase: "completion", status: deck.length === 0 ? "upNext.headingFinished" : "upNext.heading", state: "ready", next: deck[0], deck, retryable: false, ...autoNext() });
         } catch (error) {
             // Only the session's own end can find the session missing; a 404 after that is a lookup that Retry may yet answer.
             const missingSession = error instanceof ApiError && error.status === 404 && stage === "session";
@@ -3753,8 +3857,12 @@ export class PlaybackController implements PlayerControls {
                 return;
             }
             if (restored) {
-                // A kept subtitle adopted while the player was suspended may not have hidden AVPlay's own text (#738).
-                this.hideNativeUnderOverlay(attempt);
+                // AVPlay refuses visibility changes while suspended, so a kept subtitle (#738) or a local fallback (#751)
+                // reached then is applied now; a fallback AVPlay refused outright is tried again.
+                const redraw = attempt.redrawSwitch;
+                attempt.redrawSwitch = undefined;
+                if (redraw !== undefined && subtitleSwitchOut(attempt) && !attempt.switchLocal) redraw();
+                this.restoreNativeVisibility(attempt);
                 this.restartProgress(attempt);
                 return;
             }
@@ -4135,8 +4243,8 @@ export class PlaybackController implements PlayerControls {
                     const epoch = attempt.settingsEpoch;
                     try {
                         const values = await read(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                        if (live() && epoch === attempt.settingsEpoch) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                    } catch { if (live() && epoch === attempt.settingsEpoch) attempt.autoNext = false; }
+                        if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
+                    } catch { if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
                 }
                 if (attempt.request.episode === true) {
                     const fileId = attempt.plan?.effectiveMediaFileId;
@@ -4565,6 +4673,28 @@ function streamRenditionAnswer(plan: PlaybackPlan, id: string | undefined): bool
  * this picture. A sidecar or Off draws here. An audio change, a burn-in, a native row with no
  * artifact, or a different native embedded selection does not.
  */
+/** Whether the plan's timeline lets AVPlay seek to `seconds` locally, without the server reanchoring. */
+function seekableAt(plan: PlaybackPlan, seconds: number): boolean {
+    const timeline = plan.timeline;
+    return timeline.canSeekAnywhere &&
+        seconds >= timeline.timelineOffsetSeconds &&
+        (timeline.seekWindowStartSeconds === undefined || seconds >= timeline.seekWindowStartSeconds) &&
+        (timeline.seekWindowEndSeconds === undefined || seconds <= timeline.seekWindowEndSeconds);
+}
+
+/**
+ * A direct-play plan opened at source `seconds` instead of where it was asked, when its timeline can start there; the player
+ * position is the source position less the timeline offset (#792). Undefined when it cannot.
+ */
+function startAt(plan: PlaybackPlan, seconds: number): PlaybackPlan | undefined {
+    const timeline = plan.timeline;
+    const duration = plan.durationSeconds;
+    if (plan.delivery !== "original_http" || seconds < 0 || (duration !== undefined && seconds > duration) || !seekableAt(plan, seconds)) return undefined;
+    const playerStartSeconds = Math.max(0, seconds - timeline.timelineOffsetSeconds);
+    if (seconds === timeline.sourceStartSeconds && playerStartSeconds === timeline.playerStartSeconds) return plan;
+    return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds } };
+}
+
 function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requested?: SelectedTracks): boolean {
     if (!sameDirectStreamUrl(current.streamUrl, next.streamUrl) || current.delivery !== "original_http" || next.delivery !== "original_http") return false;
     if (current.effectiveMediaFileId !== next.effectiveMediaFileId || current.streamProtocol !== next.streamProtocol) return false;
@@ -4693,12 +4823,24 @@ function decisionFailure(decision: PlaybackDecision): PlaybackError {
 
 function startFailure(error: unknown): PlaybackError {
     if (error instanceof ApiError) {
-        const kind = error.failure.kind;
-        if (kind === "network" || kind === "timeout") {
+        const failure = error.failure;
+        // PlayerViewModel's startSessionTimeout reads player.error.serverNoResponse.
+        if (failure.kind === "timeout") return { kind: "network", noResponse: true };
+        if (failure.kind === "network") {
             return { kind: "network" };
         }
         if (error.problemId === "installation_changed") {
             return { kind: "installation_changed" };
+        }
+        // PlayerViewModel shows a start failure's own description, as APIv2Client words it.
+        if (failure.kind === "http") return { kind: "server", reason: { status: failure.status } };
+        if (failure.kind === "problem") {
+            const { status, id, title, detail, errors } = failure.problem;
+            if (status === 410 && id === "client_upgrade_required") return { kind: "server", reason: { update: true } };
+            const text = detail?.trim() ? detail : title;
+            const fieldCode = errors[0]?.code;
+            if (text.trim() !== "") return { kind: "server", reason: fieldCode === undefined ? { text, problemId: id } : { text, problemId: id, fieldCode } };
+            return { kind: "server", reason: { status } };
         }
     }
     return { kind: "server" };

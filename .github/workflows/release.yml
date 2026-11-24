@@ -1,31 +1,42 @@
 name: Release
 
-# Makes a tester build: tags the commit vX.Y.Z-beta.B, signs the .wgt with the
-# maintainer's Samsung certificate, and publishes it on a GitHub prerelease
-# with notes on what changed since the last build. promote.yml turns a tester
-# build into a store release. See docs/releasing.md.
+# Releases main after Tizen Builds passes on it. scripts/release-version.py
+# picks vX.Y.Z from the Conventional Commits since the latest published release
+# (or skips the release when none needs one), and this workflow signs Auger.wgt
+# with the Tizen SDK public distributor certificate (no personal TV DUIDs),
+# reserves the tag, publishes it on a GitHub Release with notes from
+# scripts/generate-changelog.py, and opens a pull request to record the notes
+# in CHANGELOG.md. Run it by hand to force a bump or a version. See docs/releasing.md.
 
 on:
+  workflow_run:
+    workflows: ["Tizen Builds"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
-        description: "build = another build of the unreleased version. minor or patch = start the next version once the current one is promoted."
+        description: "auto = from Conventional Commits since the latest tag. patch, minor or major = force that bump."
         required: true
         type: choice
-        default: build
+        default: auto
         options:
-          - build
-          - minor
+          - auto
           - patch
+          - minor
+          - major
       version:
-        description: "Optional: use this version (for example 1.2.0) instead of bump."
+        description: "Optional explicit X.Y.Z version override (for example 1.0.0)"
         required: false
         type: string
 
-# One release at a time: each run takes the next build number.
+# One release at a time, so each run sees the tag the previous one created.
+# Non-qualifying workflow_run completions (such as failed builds) use their own
+# group so they never displace a queued green release.
 concurrency:
-  group: release
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) && 'release' || format('release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -36,97 +47,104 @@ defaults:
 
 jobs:
   prepare:
-    name: Choose version and build
+    name: Choose the version
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write # create the tag; list draft releases
-      actions: read # check CI on the commit
+      contents: read
+      actions: read # check Tizen Builds on the commit
     outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
       version: ${{ steps.version.outputs.version }}
-      build: ${{ steps.version.outputs.build }}
       tag: ${{ steps.version.outputs.tag }}
       previous_tag: ${{ steps.version.outputs.previous_tag }}
+      bump: ${{ steps.version.outputs.bump }}
+      target_sha: ${{ steps.target.outputs.target_sha }}
     steps:
-      - name: Require main
-        if: github.ref != 'refs/heads/main'
+      - name: Resolve the commit to release
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          echo "::error::Releases are made from main."
-          exit 1
+          if [[ "${EVENT}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "::error::Releases are made from main."
+              exit 1
+            fi
+            echo "target_sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "target_sha=${RUN_SHA}" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Check out sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # all tags
+          ref: ${{ steps.target.outputs.target_sha }}
+          fetch-depth: 0 # all tags and the commits since the latest one
           persist-credentials: false
 
-      - name: Require CI to have passed on this commit
+      - name: Require Tizen Builds to have passed on this commit
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
           conclusion="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow tizen-build.yml \
-            --commit "${GITHUB_SHA}" --event push --limit 1 --json conclusion --jq '.[0].conclusion // ""')"
+            --branch main --commit "${TARGET_SHA}" --limit 1 --json conclusion --jq '.[0].conclusion // ""')"
           if [[ "${conclusion}" != "success" ]]; then
-            echo "::error::Tizen Builds has not passed on ${GITHUB_SHA::9} (${conclusion:-still running or missing}). Release once it is green."
+            echo "::error::Tizen Builds has not passed on ${TARGET_SHA::9} (${conclusion:-still running or missing}). Release once it is green."
             exit 1
           fi
 
-      # A promoted version waiting for store review (a draft vX.Y.Z release)
-      # counts as released. Listing drafts needs contents: write.
-      - name: Choose version and build
+      - name: Choose the version
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMP: ${{ inputs.bump }}
+          BUMP: ${{ inputs.bump || 'auto' }}
           VERSION: ${{ inputs.version }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
-          # Read every page: a draft can be older than the newest 100 releases.
-          draft_tags="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
-            --jq '.[] | select(.draft) | .tag_name')"
-          drafts=()
-          for draft in ${draft_tags}; do
-            drafts+=(--draft "${draft}")
-          done
-          python3 scripts/release-version.py next --bump "${BUMP}" --version "${VERSION}" "${drafts[@]}" |
-            tee -a "${GITHUB_OUTPUT}"
+          # A tag without a published release was left by an unfinished run, so
+          # only published releases count as released.
+          gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | select(.draft == false) | .tag_name' > "${RUNNER_TEMP}/published-tags.txt"
+          python3 scripts/release-version.py next --bump "${BUMP}" --version "${VERSION}" --target "${TARGET_SHA}" \
+            --published-tags-file "${RUNNER_TEMP}/published-tags.txt" | tee -a "${GITHUB_OUTPUT}"
 
-      # A tag without a release comes from a run that failed before publishing.
-      # Starting this build's notes there would leave out changes no tester got.
-      - name: Require the previous build to have shipped
+      - name: Summarize
         env:
-          GH_TOKEN: ${{ github.token }}
-          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
-        run: |
-          if [[ -z "${PREVIOUS_TAG}" ]]; then
-            exit 0
-          fi
-          # A failed upload leaves the release as a draft, which testers never got.
-          is_draft="$(gh release view "${PREVIOUS_TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [[ "${is_draft}" != "false" ]]; then
-            echo "::error::${PREVIOUS_TAG} has no published release, so its run failed. Re-run that run's failed jobs, or delete the tag if it never published."
-            exit 1
-          fi
-
-      # Tagging last in this job reserves the build number once everything
-      # above succeeded. A later failure keeps the tag: re-run the run's failed
-      # jobs (see docs/releasing.md).
-      - name: Tag the commit
-        env:
-          GH_TOKEN: ${{ github.token }}
+          SHOULD_RELEASE: ${{ steps.version.outputs.should_release }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}" --silent
+          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+          BUMP: ${{ steps.version.outputs.bump }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          if [[ "${SHOULD_RELEASE}" == "true" ]]; then
+            echo "Releasing **${TAG}** (${BUMP} bump since ${PREVIOUS_TAG:-the first commit}) from ${TARGET_SHA::9}." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "No release for ${TARGET_SHA::9}: it is already released, or no commit since ${PREVIOUS_TAG:-the first commit} is a feat, fix, perf, revert or breaking change." >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
   wgt:
     name: Build the signed .wgt
     needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      BUILD: ${{ needs.prepare.outputs.build }}
     steps:
       - name: Check out sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.prepare.outputs.target_sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -141,16 +159,11 @@ jobs:
       - name: Create the signing profile
         id: signing
         run: scripts/ci/create-signing-profile.sh
-        env:
-          TIZEN_AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_P12_B64 }}
-          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-          TIZEN_DISTRIBUTOR_P12_B64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_B64 }}
-          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
 
-      - name: Require the Samsung certificate
-        if: steps.signing.outputs.signing != 'samsung'
+      - name: Require the public Tizen certificate
+        if: steps.signing.outputs.signing != 'public'
         run: |
-          echo "::error::The TIZEN_* signing secrets are missing, so this build would not install on a TV."
+          echo "::error::Public Tizen signing profile was not created; refusing to publish."
           exit 1
 
       - name: Set the version
@@ -160,19 +173,21 @@ jobs:
         run: |
           scripts/build-wgt.sh
           mkdir wgt
-          name="silo-tizen-${VERSION}-${BUILD}.wgt"
-          cp dist/Auger.wgt "wgt/${name}"
-          (cd wgt && sha256sum "${name}" > "${name}.sha256" && cat "${name}.sha256")
+          cp dist/Auger.wgt wgt/Auger.wgt
+          (cd wgt && sha256sum Auger.wgt > Auger.wgt.sha256 && cat Auger.wgt.sha256)
 
       - name: Show the Tizen CLI log
         if: failure()
         run: find "${HOME}" -path '*cli/logs/cli.log' -exec tail -n 60 {} \;
 
       - name: Upload the .wgt
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: wgt
-          path: wgt/*
+          name: auger-release-wgt
+          retention-days: 1
+          path: |
+            wgt/Auger.wgt
+            wgt/Auger.wgt.sha256
           if-no-files-found: error
 
       - name: Remove the signing certificates
@@ -180,130 +195,217 @@ jobs:
         run: rm -rf "${RUNNER_TEMP}/tizen-signing" "${HOME}"/tizen-*data/profile "${HOME}"/tizen-*data/keystore
 
   publish:
-    name: Publish the GitHub prerelease
+    name: Publish the GitHub Release
     needs: [prepare, wgt]
+    if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write # create the tag and release
+    outputs:
+      release_date: ${{ steps.notes.outputs.release_date }}
+      previous_sha: ${{ steps.notes.outputs.previous_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.prepare.outputs.version }}
-      BUILD: ${{ needs.prepare.outputs.build }}
       TAG: ${{ needs.prepare.outputs.tag }}
       PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
-      BETA_LATEST: beta-latest
+      TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
     steps:
-      - name: Download the .wgt
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: wgt
-          path: wgt
+          ref: ${{ needs.prepare.outputs.target_sha }}
+          fetch-depth: 0 # the commits since the previous tag, for the notes
+          persist-credentials: false
 
-      - name: Publish the prerelease
+      - name: Download the .wgt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auger-release-wgt
+          path: ${{ runner.temp }}/wgt
+
+      - name: Verify the checksum
+        run: (cd "${RUNNER_TEMP}/wgt" && sha256sum --check Auger.wgt.sha256)
+
+      - name: Write the release notes
+        id: notes
         run: |
-          # "Re-run failed jobs" re-runs this whole job. When this run already
-          # created the prerelease, upload only the files it lacks (--clobber
-          # would delete a good copy first), then publish it: gh release create
-          # leaves a draft when an upload fails.
+          release_date="$(date -u +%Y-%m-%d)"
           if gh release view "${TAG}" > /dev/null 2>&1; then
-            uploaded="$(gh release view "${TAG}" --json assets --jq '.assets[] | select(.state == "uploaded") | .name')"
-            for file in wgt/*; do
-              if ! grep -qxF "$(basename "${file}")" <<< "${uploaded}"; then
-                # A failed upload can leave a broken asset under this name.
-                gh release upload "${TAG}" --clobber "${file}"
+            body_date="$(gh release view "${TAG}" --json isDraft,body \
+              --jq 'if .isDraft then "" else ((.body // "") | capture("^# Updates - Auger v[^ ]+ \\((?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})\\)")? .d // "") end')"
+            if [[ "${body_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              release_date="${body_date}"
+            else
+              published_at="$(gh release view "${TAG}" --json isDraft,publishedAt --jq 'if .isDraft then "" else (.publishedAt // "") end')"
+              if [[ "${published_at}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+                release_date="${BASH_REMATCH[0]}"
               fi
-            done
-            gh release edit "${TAG}" --draft=false --prerelease
+            fi
+          fi
+          echo "release_date=${release_date}" >> "${GITHUB_OUTPUT}"
+          previous_sha=""
+          if [[ -n "${PREVIOUS_TAG}" ]]; then
+            previous_sha="$(git rev-parse --verify "${PREVIOUS_TAG}^{commit}")"
+          fi
+          echo "previous_sha=${previous_sha}" >> "${GITHUB_OUTPUT}"
+          {
+            python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
+              ${previous_sha:+--from "${previous_sha}"} --to "${TARGET_SHA}"
+            echo
+            echo "## Install"
+            echo
+            echo "- **Apps2Samsung (recommended):** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it. Apps2Samsung re-signs \`Auger.wgt\` with your own Samsung certificate."
+            echo "- **Sideload with Tizen Studio:** public releases use the Tizen SDK public certificate (no personal TV DUIDs), so direct \`tizen install\` requires building and signing locally with your own Samsung certificate (\`./scripts/build-wgt.sh\`)."
+            if [[ "${PREVIOUS_TAG}" == *-beta.* ]]; then
+              echo "- **Upgrading from \`0.1.0-beta.*\`:** uninstall the older build first, because the Tizen package ID changed to \`AugerTv001.Auger\`. Uninstalling clears saved sign-in data, so you sign in again once; subsequent \`AugerTv001.Auger\` releases update in place within the same install method."
+            fi
+          } > "${RUNNER_TEMP}/notes.md"
+          cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Publish the release
+        env:
+          WGT: ${{ runner.temp }}/wgt
+          NOTES: ${{ runner.temp }}/notes.md
+        run: |
+          # Check an existing release first so an already-published retry does
+          # not fail on extra API calls.
+          release_state="missing"
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
+            if [[ "${is_draft}" == "false" ]]; then
+              tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
+              if [[ "${tag_sha}" == "${TARGET_SHA}" ]]; then
+                echo "${TAG} is already published for ${TARGET_SHA::9}."
+                exit 0
+              fi
+              echo "::error::${TAG} is already published for ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
+              exit 1
+            fi
+            release_state="draft"
+          fi
+
+          # Reserve the tag on TARGET_SHA before any release exists. Creating
+          # the ref is atomic, so two runs can never publish one tag for two
+          # commits. A 422 means the ref exists, which is fine only when it
+          # already points at TARGET_SHA (a retry, or a run that stopped after
+          # reserving it; release-version.py plans that as bump=recover).
+          ref_status=0
+          ref_resp="$(gh api -i "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${TARGET_SHA}" 2>&1)" || ref_status=$?
+          ref_http="$(printf '%s\n' "${ref_resp}" | sed -n 's/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -n 1)"
+          if [[ "${ref_status}" -eq 0 ]]; then
+            echo "Reserved ${TAG} on ${TARGET_SHA::9}."
+          elif [[ "${ref_http}" != "422" ]]; then
+            echo "::error::Could not reserve tag ${TAG} (HTTP ${ref_http:-unknown}). Re-run failed jobs."
+            exit 1
+          fi
+          tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
+          if [[ "${tag_sha}" != "${TARGET_SHA}" ]]; then
+            echo "::error::Tag ${TAG} points to ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
+            exit 1
+          fi
+
+          # Never roll Latest backward if a newer stable release published
+          # before a retry of this job ran.
+          published_tags="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
+          latest_flag="$(python3 - "${TAG}" "${published_tags}" <<'PY'
+          import re, sys
+
+          def parse(tag: str):
+              match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+              return tuple(int(part) for part in match.groups()) if match else None
+
+          current = parse(sys.argv[1])
+          has_newer = current is not None and any(
+              version > current
+              for line in sys.argv[2].splitlines()
+              if (version := parse(line.strip())) is not None
+          )
+          print("--latest=false" if has_newer else "--latest")
+          PY
+          )"
+
+          # "Re-run failed jobs" re-runs this whole job. For a leftover draft,
+          # replace both assets from this run's verified bundle and update
+          # notes so a retry never mixes artifacts across commits.
+          if [[ "${release_state}" == "draft" ]]; then
+            gh release upload "${TAG}" --clobber "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+            gh release edit "${TAG}" --title "Auger ${VERSION}" \
+              --notes-file "${NOTES}" --draft=false --prerelease=false "${latest_flag}"
             echo "${TAG} is published with its .wgt."
             exit 0
           fi
-          {
-            echo "Tester build ${VERSION} (${BUILD})."
-            echo
-            gh api "repos/${GH_REPO}/releases/generate-notes" \
-              -f tag_name="${TAG}" ${PREVIOUS_TAG:+-f previous_tag_name="${PREVIOUS_TAG}"} --jq .body
-            echo
-            echo "### Install"
-            echo
-            echo "Samsung TVs: \`silo-tizen-${VERSION}-${BUILD}.wgt\`, checked with its \`.sha256\` file."
-            echo "Install it with Tizen Studio's Device Manager, or \`tizen install -n silo-tizen-${VERSION}-${BUILD}.wgt\`, on a TV in Developer Mode."
-            echo "It installs only on TVs listed in the signing certificate."
-          } > notes.md
-          # A prerelease never becomes Latest, so the releases/latest links keep
-          # pointing at the store release.
-          gh release create "${TAG}" --verify-tag --prerelease \
-            --title "Auger for Tizen ${VERSION} (${BUILD})" --notes-file notes.md wgt/*
 
-      # One prerelease, tag beta-latest, always holds the newest tester build
-      # under a fixed name, so links can point at
-      # releases/download/beta-latest/silo-tizen-latest-beta.wgt. GitHub's
-      # releases/latest links skip prereleases, so they can't do this. Version
-      # tags start with v, so the version script and Promote never see this one.
-      - name: Update the latest tester build
+          # --verify-tag publishes on the reserved tag and never creates or moves one.
+          gh release create "${TAG}" --verify-tag "${latest_flag}" \
+            --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+
+  changelog:
+    name: Open CHANGELOG.md pull request
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the changelog branch
+      pull-requests: write # open the CHANGELOG.md pull request
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PREVIOUS_SHA: ${{ needs.publish.outputs.previous_sha }}
+      TARGET_SHA: ${{ needs.prepare.outputs.target_sha }}
+      RELEASE_DATE: ${{ needs.publish.outputs.release_date }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.target_sha }}
+          fetch-depth: 0 # commit history for generate-changelog.py
+          persist-credentials: false
+
+      - name: Open a pull request to record the release in CHANGELOG.md
         run: |
-          # A re-run of an older build must not replace a newer one.
-          newest="$(gh release list --limit 100 --json tagName,isPrerelease \
-            --jq '[.[] | select(.isPrerelease and (.tagName | test("-beta[.][0-9]+$")))][0].tagName')"
-          if [[ "${newest}" != "${TAG}" ]]; then
-            echo "${newest} is newer than ${TAG}; leaving ${BETA_LATEST} alone."
+          # Separate job so a transient PR failure can be retried with "Re-run failed jobs"
+          # after the GitHub Release is already live.
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
+          git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
+          branch="docs/changelog-v${VERSION}"
+          generator="${RUNNER_TEMP}/changelog-generator"
+          mkdir -p "${generator}"
+          cp scripts/generate-changelog.py scripts/release-version.py "${generator}/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          existing="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --state open --json number --jq '.[0].number // ""')"
+          if [[ -n "${existing}" ]]; then
+            echo "Changelog PR #${existing} is already open for ${TAG}; leaving it untouched."
             exit 0
           fi
-
-          # The first run creates the tag and the release.
-          if ! gh api "repos/${GH_REPO}/git/ref/tags/${BETA_LATEST}" > /dev/null 2>&1; then
-            gh api "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${BETA_LATEST}" -f sha="${GITHUB_SHA}" --silent
+          git_auth fetch --quiet origin main
+          if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
+            echo "CHANGELOG.md on main already records ${VERSION}."
+            exit 0
           fi
-          if ! gh release view "${BETA_LATEST}" > /dev/null 2>&1; then
-            gh release create "${BETA_LATEST}" --verify-tag --prerelease --title "Latest tester build" --notes "Being updated."
+          if git_auth fetch --quiet origin "${branch}" 2>/dev/null; then
+            git checkout --quiet -B "${branch}" "origin/${branch}"
+          else
+            git checkout --quiet -B "${branch}" origin/main
           fi
-
-          # Upload the file under a staging name, then swap it in, so a failed
-          # upload never leaves the link without a file. The old file steps
-          # aside as previous-<name> and comes back if the swap fails. Every
-          # step is safe to repeat on a re-run.
-          release_id="$(gh release view "${BETA_LATEST}" --json databaseId --jq .databaseId)"
-          asset_id() {
-            gh api "repos/${GH_REPO}/releases/${release_id}/assets" --paginate \
-              --jq ".[] | select(.name == \"$1\") | .id"
-          }
-          rename_asset() {
-            gh api -X PATCH "repos/${GH_REPO}/releases/assets/$1" -f name="$2" --silent
-          }
-          delete_asset() {
-            gh api -X DELETE "repos/${GH_REPO}/releases/assets/$1" --silent
-          }
-          name="silo-tizen-latest-beta.wgt"
-          staged="next-${name}"
-          previous="previous-${name}"
-          cp "wgt/silo-tizen-${VERSION}-${BUILD}.wgt" "wgt/${staged}"
-          gh release upload "${BETA_LATEST}" --clobber "wgt/${staged}"
-          staged_id="$(asset_id "${staged}")"
-          current_id="$(asset_id "${name}")"
-          if [[ -n "${current_id}" ]]; then
-            # The live file is safe, so a copy left by an interrupted run can go.
-            stale_id="$(asset_id "${previous}")"
-            if [[ -n "${stale_id}" ]]; then
-              delete_asset "${stale_id}"
-            fi
-            rename_asset "${current_id}" "${previous}"
+          python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
+            --date "${RELEASE_DATE}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
+          if ! git diff --quiet CHANGELOG.md; then
+            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md
+            git_auth push origin "HEAD:${branch}"
+          elif git merge-base --is-ancestor "${branch}" origin/main; then
+            echo "CHANGELOG.md on main already records ${VERSION}."
+            exit 0
           fi
-          if ! rename_asset "${staged_id}" "${name}"; then
-            # Put the old file back, whether this run or an interrupted one
-            # moved it aside.
-            restore_id="$(asset_id "${previous}")"
-            if [[ -n "${restore_id}" ]]; then
-              rename_asset "${restore_id}" "${name}"
-            fi
-            echo "::error::Couldn't swap in ${name}; the previous file is still served. Re-run failed jobs."
-            exit 1
-          fi
-          for old_id in $(asset_id "${previous}"); do
-            delete_asset "${old_id}"
-          done
-
-          # Point the tag and title at this build only once its file is live.
-          gh api -X PATCH "repos/${GH_REPO}/git/refs/tags/${BETA_LATEST}" -f sha="${GITHUB_SHA}" -F force=true --silent
-          gh release edit "${BETA_LATEST}" --prerelease \
-            --title "Latest tester build: ${VERSION} (${BUILD})" \
-            --notes "The newest tester build, ${TAG}, under a fixed file name. Release notes, the versioned .wgt and its checksum are on [${TAG}](https://github.com/${GH_REPO}/releases/tag/${TAG})."
+          pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
+          gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
+            --title "docs(changelog): record v${VERSION} release notes" \
+            --body "${pr_body}"

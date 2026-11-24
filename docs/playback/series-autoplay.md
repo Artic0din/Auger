@@ -1,11 +1,11 @@
 # Series autoplay
 
-Issue [#12](https://github.com/Artic0din/silo-tizen/issues/12) extends manual next-episode continuation with a ten-second countdown and Cancel autoplay control.
-This work originally stacked on `origin/feat/markers-skip-intro` at `f64c773cea25f88844959b10224c8003f133903f` and was rebased onto `origin/main` after PR #63 squash-merged as `5fceaad`.
+Extends manual next-episode continuation with a 10-second countdown, Cancel autoplay, pre-end Up Next prompts, and On Deck offers ([#12](https://github.com/Artic0din/Auger-Tizen/issues/12)).
 
 The pinned server settings manifest at `cc8514943289045e7b9f7ac8d36d4968bfe93926` defines `playback.auto_play_next` as a remote boolean, introduced in revision 1, default true.
 Its resolution order is `profile_device`, `profile`, `default`.
-The player discovers the definition and reads its effective value through the existing profile-scoped adapter; it never writes the setting.
+The player discovers the definition and reads its effective value through the existing profile-scoped adapter.
+Its Auto-play toggles, in the player's Video pane and on the Up Next card, write this TV's value (`profile_device`), as Apple's do.
 Absent, incompatible, unreadable or false preferences leave continuation manual.
 
 The pre-end panel uses `playback.next_up_prompt_seconds`, with Apple's default of 30 seconds.
@@ -40,5 +40,5 @@ Apple source reference: `Silo-Server/silo-apple` commit `2c03722c3eecee64c742722
 `PlayerView.swift:1408-1530` defines tvOS actions, `1595-1602` the eyebrow, and `1159-1175` the On Deck row.
 `TVSettingsComponents.swift:72-78` defines timing choices; `PlayerSettings.swift:790-792,1659-1660` sets the default.
 `PlayerNextUpCompletionPolicy.swift:18-80` defines the completion window and reported position.
-`PlayerViewModel.swift:3591-3596,3702-3729,4050-4087` covers movies, the twelve-candidate cap and Back.
-Same-state Apple/Samsung comparison is pending; the PR must remain unmerged until it passes.
+`PlayerViewModel.swift:3591-3596,3702-3729,4050-4087` covers movies, the twelve-candidate cap, and Back.
+See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed-package and Apple TV comparison gates.

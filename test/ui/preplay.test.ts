@@ -4,6 +4,7 @@ import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { afterPaint, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { leavePlayer } from "./support/leavePlayer.ts";
 import { object } from "../../src/contracts/v2/wire.ts";
 
 class AudioPreferenceDetails extends FakeDetails {
@@ -247,7 +248,7 @@ for (const destination of ["series", "season"]) preplay(`${destination} keeps an
     await tv.page.locator('[data-focus="version:42"]').click();
     await tv.page.locator('[data-focus="next-episode"]').click();
     await prepare(tv);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="version"]').click();
     assert.equal(await tv.page.locator('[data-focus="version:42"]').getAttribute("aria-checked"), "true");
 });
@@ -259,7 +260,7 @@ for (const embeddedFile of [true, false]) preplay(`local extras ${embeddedFile ?
     assert.ok(tv.fake.requests.some(request => request.path.includes("extra%3A1")), "player resolves the extra watch target");
     assert.equal(starts(tv)[0]?.body?.file_id, "42");
     assert.equal(starts(tv)[0]?.body?.start_position, 0);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('.details-extras').waitFor();
     assert.equal(await tv.focused(), "extra:extra:1");
 }, true, false, catalog => { catalog.extras = [{ content_id: "extra:1", ...(embeddedFile ? { file_id: 42 } : {}), kind: "trailer", title: "Trailer", duration_seconds: 90 }]; });
@@ -326,7 +327,7 @@ preplay("direct episode activation refreshes cached-zero progress and returns to
     assert.equal(starts(tv)[0]?.body?.start_position, 420);
     assert.equal(starts(tv)[0]?.body?.audio_track_id, undefined);
     assert.equal(starts(tv)[0]?.body?.subtitle_track_id, undefined);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();
     await tv.eventually(async () => await tv.focused() === id, "originating episode focus");
     assert.equal(await tv.page.locator('[data-focus="season:1"]').getAttribute("aria-pressed"), "true");
@@ -442,7 +443,7 @@ preplay("series Resume and Start Over keep the series line when the episode item
     assert.equal(await tv.page.locator(".player-series").textContent(), "Harbor Lights");
     assert.equal(await tv.page.locator(".player-title").first().textContent(), "Harbor Lights chapter 1.1");
     assert.equal(await tv.page.locator(".player-episode").textContent(), "S1 · E1");
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();
     await tv.page.locator('[data-focus="start-over-episode"]').click();
     await prepare(tv);
@@ -614,7 +615,7 @@ for (const reduced of [false, true]) {
         assert.equal(body?.audio_track_id, "file:42:audio:1");
         assert.equal(body?.start_position, 2400.25);
         assert.equal(body?.allow_alternate_versions, undefined);
-        await tv.remote(10009);
+        await leavePlayer(tv);
         await tv.page.locator('[data-focus="play"]').waitFor();
         assert.equal(await tv.focused(), "play", "the initiating Resume disappeared on the newly selected short version");
         assert.equal(starts(tv).length, 1);
@@ -671,7 +672,7 @@ preplay("Details subtitles resolve a catalog stream choice through the server in
     // External English occupies combined ordinal 0. Signs is the first embedded row, so it is 1.
     assert.equal(starts(tv)[0]?.body?.subtitle_track_id, "file:42:subtitle:1");
     assert.equal(tv.fake.requests.some(request => request.path.endsWith("/replan")), false);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="subtitles"]').click();
     assert.equal(await tv.page.locator('[data-focus="subtitle:0"]').getAttribute("aria-checked"), "true");
     await tv.remote(10009);
@@ -699,7 +700,7 @@ preplay("Resume remains usable while the playback-return Details refresh is pend
     await tv.page.locator('[data-focus="play"]').click();
     await prepare(tv);
     const held = tv.fake.hold("/catalog/items/movie%3Am0001", true);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     const fresh = tv.fake.hold(WATCH, true);
     await tv.page.locator('[data-focus="resume"]').click();
     try {
@@ -729,7 +730,7 @@ preplay("episode Details uses its file audio and restores the initiating Resume 
     assert.equal(starts(tv)[0]?.body?.file_id, "42");
     assert.equal(starts(tv)[0]?.body?.audio_track_id, "file:42:audio:1");
     assert.equal(starts(tv)[0]?.body?.start_position, 420);
-    await tv.remote(10009);
+    await leavePlayer(tv);
     await tv.page.locator('[data-focus="resume"]').waitFor();
     assert.equal(await tv.focused(), "resume");
 });
@@ -857,11 +858,17 @@ for (const late of ["/watchlist/movie%3Am0001/membership", "/favorites/movie%3Am
     try {
         const held = tv.fake.hold(late, true);
         await details(tv);
-        await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith(late)), `${late} sent`);
-        await tv.page.locator('[data-focus="audio"]').focus();
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith(late)) && tv.pendingReplies === tv.fake.heldReplies, `${late} held as the only pending read`);
+        await afterPaint(tv);
+        const audio = tv.page.locator('[data-focus="audio"]');
+        await audio.focus();
+        const audioBefore = await audio.elementHandle();
+        assert.ok(audioBefore);
         await tv.page.keyboard.down("Enter");
         held.release();
-        await tv.jump(0);
+        await tv.eventually(async () => tv.pendingReplies === 0 && await audioBefore.evaluate(node => !node.isConnected), `${late} repainted Details while Enter was held`);
+        await audioBefore.dispose();
+        await afterPaint(tv);
         await tv.page.keyboard.up("Enter");
         await afterPaint(tv);
         assert.equal(await tv.focused(), "audio:auto");

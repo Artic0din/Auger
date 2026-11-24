@@ -457,6 +457,113 @@ test("transport focus re-arms five seconds then hides and hidden Up reveals the 
     } finally { await page.close(); }
 });
 
+// PlayerView.onExitCommand (silo-apple main 449ba476, PlayerView.swift:434-473): while playing, Back with the controls up
+// dismisses them (PlayerViewModel.dismissControls, PlayerViewModel.swift:9697-9703), even from a transport button or while
+// buffering; Back with them down, or while paused, leaves the player (#777).
+test("Back while playing hides the controls first, from the scrubber or a transport button, and the next Back leaves", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(TRACKS));
+        await remote(page, UP);
+        assert.equal(await focused(page), "position");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "the scrubber's Back hides the controls");
+        assert.deepEqual(await commands(page), []);
+        await remote(page, UP);
+        await remote(page, DOWN);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0);
+        assert.equal(await focused(page), "pause");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "a transport button's Back hides the controls");
+        assert.deepEqual(await commands(page), []);
+        await page.clock.runFor(10000);
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+// onExitCommand runs once per Menu press (PlayerView.swift:440); a held Back's auto-repeat is not a second press (#805).
+test("a held Back hides the controls once and its repeats never leave the player", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(TRACKS));
+        await remote(page, UP);
+        await page.evaluate((code) => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: code, bubbles: true, cancelable: true }));
+            for (let n = 0; n < 3; n++) target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: code, repeat: true, bubbles: true, cancelable: true }));
+            target.dispatchEvent(new KeyboardEvent("keyup", { keyCode: code, bubbles: true, cancelable: true }));
+        }, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        assert.deepEqual(await commands(page), [], "the repeats are not presses");
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+// dismissControls cancels a hold seek before it hides the controls (PlayerViewModel.swift:9697-9703) (#805).
+test("Back that hides the controls disarms a pending skip or hold seek", async () => {
+    const { page } = await open();
+    try {
+        await show(page, playing(TRACKS));
+        await remote(page, UP);
+        await holdKey(page, RIGHT);
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await page.clock.runFor(1000);
+        await page.evaluate((code) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", { keyCode: code, bubbles: true, cancelable: true })), RIGHT);
+        await page.clock.runFor(1000);
+        assert.deepEqual(await commands(page), [], "neither the hold nor the tap seeks");
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "nothing brings the controls back");
+    } finally { await page.close(); }
+});
+
+test("Back while paused leaves the player at once", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), phase: "paused" });
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+test("Back while buffering hides the controls the buffering keeps up, and any other key brings them back", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), buffering: true });
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0, "buffering keeps the controls up");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        assert.deepEqual(await commands(page), []);
+        await show(page, { ...playing(TRACKS), buffering: true, positionSeconds: 755 });
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "a repaint while still buffering keeps them down");
+        await remote(page, UP);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0);
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["back"]);
+    } finally { await page.close(); }
+});
+
+test("a dismiss lasts only for its own stall, and a key that reveals during a stall keeps the controls up past the hide timer", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), buffering: true });
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await show(page, { ...playing(TRACKS), positionSeconds: 756 });
+        await show(page, { ...playing(TRACKS), buffering: true, positionSeconds: 757 });
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0, "a new stall with no key pressed brings the controls back");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await remote(page, UP);
+        await page.clock.runFor(6000);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0, "the stall holds them up once the hide timer has run");
+        assert.deepEqual(await commands(page), []);
+    } finally { await page.close(); }
+});
+
 test("a Select held while the window loses focus runs nothing on release", async () => {
     const { page } = await open();
     try {
@@ -889,6 +996,38 @@ test("Up Next names the series and the episode code, shows the synopsis and coun
     } finally { await page.close(); }
 });
 
+// PlayerView.metadata(for:) and episodeMetadataLine (silo-apple 449ba47 PlayerView.swift:1374-1379, 1695-1709): the air date (abbreviated,
+// in the app language) and the runtime joined by " · ", 19 pt medium at 0.46 opacity, between the title and the synopsis; nothing when
+// both are missing (#759).
+test("Up Next shows the next episode's air date and runtime between its title and the synopsis (#759)", async () => {
+    const { page } = await open();
+    try {
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor." };
+        const line = (): Promise<{ text: string; hidden: boolean; afterTitle: boolean; beforeSynopsis: boolean; size: string; weight: string; opacity: string }> => page.evaluate(() => {
+            const node = document.querySelector<HTMLElement>(".player-next-up .player-next-meta")!;
+            const all = [...node.parentElement!.children];
+            const at = (selector: string): number => all.indexOf(node.parentElement!.querySelector(selector)!);
+            const css = getComputedStyle(node);
+            return { text: node.textContent ?? "", hidden: node.hidden === true, afterTitle: all.indexOf(node) > at(".player-title"), beforeSynopsis: all.indexOf(node) < at(".player-next-synopsis"), size: css.fontSize, weight: css.fontWeight, opacity: css.opacity };
+        });
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, airDate: "2022-02-18", runtimeMinutes: 57 }, deck: [], countdown: undefined, status: "Up Next" } });
+        const shown = await line();
+        assert.deepEqual({ ...shown, size: undefined }, { text: "Feb 18, 2022 · 57m", hidden: false, afterTitle: true, beforeSynopsis: true, size: undefined, weight: "500", opacity: "0.46" });
+        assert.ok(Math.abs(parseFloat(shown.size) - 19 * cap) < 0.01, `19 pt times the cap scale: ${shown.size}`);
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, runtimeMinutes: 57 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).text, "57m", "the runtime alone");
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, airDate: "2022-02-18" }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).text, "Feb 18, 2022", "the date alone");
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, runtimeMinutes: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        assert.equal((await line()).hidden, true, "no date and no positive runtime, no line");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { ...episode, airDate: "2022-02-18", runtimeMinutes: 57 }, countdown: 9 });
+        assert.equal((await line()).text, "Feb 18, 2022 · 57m", "after the end too");
+        await show(page, playing(TRACKS));
+        assert.equal(await page.locator(".player-next-meta").isHidden(), true, "and gone with the panel");
+    } finally { await page.close(); }
+});
+
 // PlayerView.metadata(for:): Apple heads every episode with its series; its numbers are never missing there (PlayerNextUpEpisode's
 // seasonNumber and episodeNumber are Int), so an episode the TV knows without them keeps the series line and drops only the code.
 test("an episode without season or episode numbers keeps its series line and drops only the code", async () => {
@@ -935,6 +1074,64 @@ test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on 
         assert.deepEqual(layout.labels, ["Play Now", "Keep Watching", "Close"], "the symbols add no text");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
         assert.equal(await page.locator('[data-focus="back"] svg').count(), 0, "the error page's Go Back has no symbol");
+    } finally { await page.close(); }
+});
+
+// PlayerView.autoPlayFooter and autoPlayToggle (silo-apple 449ba47 PlayerView.swift:1263-1270, 1293-1300, 1544-1556, 1640-1652,
+// 1755-1772): below the actions, "Auto-play is On/Off" at 19 pt semibold, white 0.54 (0.92 focused, with a 1.5 pt capsule at 0.55 and
+// a 1.04 scale). Down from the actions reaches it, Up returns to the preferred action, and Up from On Deck comes back to it (#759).
+test("Up Next's Auto-play toggle sits below the actions, names the setting and flips it from the remote (#759)", async () => {
+    const { page } = await open();
+    try {
+        const hud = { chapters: [], chapterState: "failed" as const, stats: NO_STATS, speeds: [], aspects: [], speed: 1, aspect: "Fit" as const, busy: false };
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13 };
+        const card = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0 };
+        const prompt = (autoNext: boolean): PlaybackView => ({ ...playing(TRACKS), hud: { ...hud, autoNext }, upNext: { next, deck: [card], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        await show(page, prompt(true));
+        const toggle = page.locator('[data-focus="auto-play"]');
+        assert.equal(await toggle.innerText(), "Auto-play is On");
+        const tops = await page.evaluate(() => ['[data-focus="keep-watching"]', '[data-focus="auto-play"]', '[data-focus="deck:movie:other"]'].map(selector => document.querySelector(selector)!.getBoundingClientRect().top));
+        assert.ok(tops[0]! < tops[1]! && tops[1]! < tops[2]!, `below the actions and above On Deck: ${tops.join(", ")}`);
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const style = (): Promise<{ size: string; weight: string; color: string; ring: string; scale: string; padding: string }> => toggle.evaluate(async node => {
+            // Read after the focus transition settles.
+            await Promise.all(node.getAnimations().map(animation => animation.finished));
+            const css = getComputedStyle(node);
+            return { size: css.fontSize, weight: css.fontWeight, color: css.color, ring: css.boxShadow, scale: css.scale, padding: css.padding };
+        });
+        const resting = await style();
+        assert.ok(Math.abs(parseFloat(resting.size) - 19 * cap) < 0.01, `19 pt times the cap scale: ${resting.size}`);
+        assert.deepEqual([resting.weight, resting.color, resting.padding, resting.scale], ["600", "rgba(255, 255, 255, 0.54)", "10px 22px", "none"]);
+        assert.equal(await focused(page), "play-next");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "keep-watching");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play", "Down from the actions");
+        const lit = await style();
+        assert.equal(lit.color, "rgba(255, 255, 255, 0.92)");
+        assert.ok(lit.ring.includes("rgba(255, 255, 255, 0.55)") && lit.ring.includes("1.5px"), `the capsule ring: ${lit.ring}`);
+        assert.equal(lit.scale, "1.04");
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next", "Up returns to the preferred action, not the row above");
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:movie:other");
+        await remote(page, UP);
+        assert.equal(await focused(page), "auto-play", "Up from On Deck");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["toggleAutoNext"]);
+        await show(page, prompt(false));
+        assert.equal(await toggle.innerText(), "Auto-play is Off");
+        assert.equal(await focused(page), "auto-play", "focus stays on the toggle");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 9 });
+        assert.equal(await toggle.innerText(), "Auto-play is On", "the finished card has it too");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 9 });
+        assert.equal(await toggle.isHidden(), true, "not without the setting");
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, autoNext: true });
+        assert.equal(await toggle.isHidden(), true, "nor without a next item");
+        await show(page, { ...playing(TRACKS), hud: { ...hud, autoNext: true }, upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
+        assert.equal(await toggle.isHidden(), true, "nor while the next item is looked up");
     } finally { await page.close(); }
 });
 
@@ -1165,6 +1362,25 @@ test("sans-serif captions use the bundled semibold face and leave other families
     } finally { await page.close(); }
 });
 
+// #789: Apple draws cues at its tvOS 1080-line ladder (SubtitleAppearance.swift:38-45), SF semibold for the generic families
+// (AetherSubtitleOverlay.swift:571-590). The bundled Inter stands in for SF, so sans-serif takes the cap scale; Samsung's serif and
+// monospace faces and a named family draw at raw points.
+test("caption sizes follow Apple's tvOS ladder, with the cap scale only for the bundled sans-serif (#789)", async () => {
+    const { page } = await open();
+    try {
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const ladder = { small: 43, medium: 51, large: 58, xlarge: 74, xxlarge: 88 } as const;
+        for (const family of ["sans-serif", "serif", "monospace", "Avenir Next"]) {
+            for (const [size, points] of Object.entries(ladder) as [keyof typeof ladder, number][]) {
+                await show(page, { ...playing(TRACKS), captions: { text: "Size", appearance: { ...DEFAULT_APPEARANCE, fontSize: size, fontFamily: family } } });
+                const drawn = await page.locator(".player-captions span").first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+                const expected = family === "sans-serif" ? points * cap : points;
+                assert.ok(Math.abs(drawn - expected) < 0.01, `${family} ${size}: ${drawn} px, not ${expected}`);
+            }
+        }
+    } finally { await page.close(); }
+});
+
 test("captions apply profile styles, stay safe text and clear during recovery", async () => {
     const { page } = await open();
     try {
@@ -1172,7 +1388,8 @@ test("captions apply profile styles, stay safe text and clear during recovery", 
         const layer = page.locator(".player-captions");
         assert.equal(await layer.innerText(), '<img src=x onerror="alert(1)">');
         assert.equal(await layer.locator("img").count(), 0);
-        assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).fontSize), "64px");
+        // Apple's XX-Large, 88 pt, times the cap scale for the bundled sans-serif (#789).
+        assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).fontSize), "85.228px");
         assert.equal(await layer.locator("span").evaluate(element => getComputedStyle(element).color), "rgb(0, 255, 0)");
         await show(page, { phase: "loading", title: "Movie", detail: "reconnecting" });
         assert.equal(await layer.isVisible(), false);
@@ -1599,6 +1816,10 @@ test("Back takes the Skip Intro pill down without moving playback, and the next 
         await show(page, inMarker(INTRO, 26));
         assert.equal(await pill(page), null, "Back decided the intro");
         assert.equal(await focused(page), "position");
+        // The controls are up while playing, so the next Back takes them down (silo-apple 449ba476, PlayerView.swift:469-470) and the one after leaves.
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), []);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
         await remote(page, BACK);
         assert.deepEqual(await commands(page), ["back"]);
     } finally { await page.close(); }
@@ -1938,6 +2159,10 @@ test("Back on Skip Recap and Skip Credits is the player's normal Back, as on App
             await show(page, inMarker(marker, position));
             await remote(page, UP);
             assert.equal(await focused(page), "skip");
+            // The player's normal Back: with the controls up while playing it takes them down, and the next Back leaves.
+            await remote(page, BACK);
+            assert.deepEqual(await commands(page), []);
+            assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
             await remote(page, BACK);
             assert.deepEqual(await commands(page), ["back"]);
             await show(page, playing(TRACKS));
@@ -2424,6 +2649,9 @@ test("seeking previews source time without commands until commit and Back cancel
         assert.deepEqual(await commands(page), ["seekToSeconds 774"], "cancelling does not seek or leave playback");
         assert.equal(await page.getByRole("slider").getAttribute("aria-valuenow"), "774", "cancelling a newer preview retains the seek already sent");
         await remote(page, BACK);
+        assert.deepEqual(await commands(page), ["seekToSeconds 774"], "with the controls up while playing, Back takes them down");
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        await remote(page, BACK);
         assert.deepEqual(await commands(page), ["seekToSeconds 774", "back"]);
         assert.deepEqual(logs, []);
     } finally { await page.close(); }
@@ -2644,6 +2872,41 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
         assert.deepEqual(await commands(page), ["dismissError", "dismissError"]);
         assert.equal(await focused(page), "back");
         assert.deepEqual(logs, []);
+    } finally {
+        await page.close();
+    }
+});
+
+// Apple shows the start failure's own description (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877, APIv2Client.swift:66-70) (#760).
+test("a start failure shows the server's reason, or Apple's HTTP status line, in place of a fixed sentence", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "The file is offline." } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The file is offline.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 503 } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 503.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "Update Auger to keep using this server.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server didn't respond in time.");
+    } finally {
+        await page.close();
+    }
+});
+
+// Apple's wall (PlayerView.swift:998-1024) is a fixed-height VStack, so a long message gives way and Retry and Go Back stay on screen (#760).
+test("a long server message keeps Retry and Back on screen", async () => {
+    const { page } = await open();
+    try {
+        const detail = "The server could not prepare this file because its source is unavailable. ".repeat(80).trim();
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: detail } }, retryable: true });
+        const box = (selector: string) => page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; });
+        const message = await box(".player-error-text");
+        for (const selector of ['[data-focus="settings-retry"]', '[data-focus="back"]']) {
+            const button = await box(selector);
+            assert.ok(button.top >= message.bottom && button.bottom <= 1080, `${selector} at ${button.top}-${button.bottom}, message ends at ${message.bottom}`);
+        }
+        assert.equal(await focused(page), "settings-retry");
     } finally {
         await page.close();
     }
@@ -2913,7 +3176,9 @@ test("Down opens audio and subtitles with focus on the current track; the menu k
         await remote(page, ENTER);
         await remote(page, BACK);
         await remote(page, BACK);
+        await remote(page, BACK);
         // Old commands were togglePause then one Back that left playback. Select now pauses into timeline scrub, so the first Back cancels that scrub.
+        // The harness view stays playing, so the second Back takes the controls down and the third leaves.
         assert.deepEqual((await commands(page)).slice(3), ["setPaused true", "back"], "closed again, the keys drive playback");
         assert.deepEqual(logs, []);
     } finally {
@@ -4198,7 +4463,7 @@ test("Up and Down skip the dimmed primary row in SECONDARY, as Apple's disabled 
     } finally { await page.close(); }
 });
 
-test("the second line draws under the primary at Apple's offsets for each position", async () => {
+test("the second line draws under the primary at Apple's offsets for each position (lower third #797)", async () => {
     const { page } = await open();
     try {
         const view = (position: "bottom" | "lower-third" | "top") => ({ ...playing(TRACKS), captions: { text: "Primary", secondaryText: "Secondary", appearance: { ...DEFAULT_APPEARANCE, position } } });
@@ -4209,7 +4474,14 @@ test("the second line draws under the primary at Apple's offsets for each positi
         await show(page, view("bottom"));
         assert.deepEqual(await offsets(), [["auto", "8%"], ["auto", "17%"]]);
         await show(page, view("lower-third"));
-        assert.deepEqual(await offsets(), [["auto", "25%"], ["auto", "36%"]]);
+        // AetherSubtitleOverlay.swift:414-423 (silo-apple 449ba47): the lower third's primary sits 27% up, not 25%.
+        assert.deepEqual(await offsets(), [["auto", "27%"], ["auto", "36%"]]);
+        // Rendered, not just styled: each caption's bottom edge sits that share of the caption viewport's height above its bottom.
+        const insets = await page.evaluate(() => {
+            const viewport = document.querySelector(".player-captions")!.parentElement!.getBoundingClientRect();
+            return [".player-captions", ".player-captions-secondary"].map(selector => (viewport.bottom - document.querySelector(selector)!.getBoundingClientRect().bottom) / viewport.height);
+        });
+        assert.ok(Math.abs((insets[0] ?? 0) - 0.27) < 0.001 && Math.abs((insets[1] ?? 0) - 0.36) < 0.001, `rendered 27% and 36% up: ${insets.join(", ")}`);
         await show(page, view("top"));
         assert.deepEqual(await offsets(), [["8%", "auto"], ["17%", "auto"]]);
         assert.equal(await text(page, ".player-captions-secondary"), "Secondary");

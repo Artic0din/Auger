@@ -20,6 +20,7 @@ tizen-studio/
 
 # Node (local test runs only)
 node_modules
+test-results/
 
 # Agent / CI proof artifacts (referenced from PR bodies, not tracked)
 artifacts/

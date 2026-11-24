@@ -277,13 +277,22 @@ for (const language of ["de", "ar"]) {
         } finally { await page.close(); }
     });
 
-    test(`the error wall reads a lost connection in ${language}, as Apple's give-up does; a message Apple has no key for stays English`, async () => {
+    test(`the error wall reads a lost connection, no response and a server's problem in ${language}, as Apple's player does; a message Apple has no key for stays English`, async () => {
         const page = await open(language);
         try {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
+            // problem.localized (APIv2Models.swift:357-365): the field code's line, else the problem type's, else the server's own text.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "validation_failed" } }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.validation_failed"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "validation_failed", fieldCode: "required" } }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.field.required"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "not_a_problem_we_know" } }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), "Rejected");
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.serverNoResponse", language));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("player.goBack", language));
             assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.retry", language));
         } finally { await page.close(); }
@@ -440,9 +449,12 @@ for (const language of [undefined, "ar"]) {
             assert.equal(await focusedId(page), "play-next", "Up from Close goes to the first row, not back along the second");
             await remote(page, DOWN);
             await remote(page, DOWN);
-            assert.equal(await focusedId(page), "deck:next", "Down from the second row goes to On Deck");
+            // PlayerView.focusBelowActions and focusAboveOnDeck (silo-apple 449ba47 PlayerView.swift:1640-1652): the Auto-play toggle sits between (#759).
+            assert.equal(await focusedId(page), "auto-play", "Down from the second row goes to the Auto-play toggle");
+            await remote(page, DOWN);
+            assert.equal(await focusedId(page), "deck:next", "then On Deck");
             await remote(page, UP);
-            assert.equal(await focusedId(page), "keep-watching", "and Up comes back");
+            assert.equal(await focusedId(page), "auto-play", "and Up comes back to the toggle");
         } finally { await page.close(); }
     });
 

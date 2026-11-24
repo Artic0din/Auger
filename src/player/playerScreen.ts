@@ -13,7 +13,7 @@ import type { Clock } from "../api/clock.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
-import { onCatalogLoaded, type MessageKey, translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, type MessageKey, serverText, translate } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
@@ -22,6 +22,7 @@ import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
+import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
@@ -59,7 +60,7 @@ export function errorText(error: PlaybackError): string {
             return "This video can't play on this TV.";
         case "network":
             // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
-            return translate("player.error.connectionLost");
+            return error.noResponse === true ? translate("player.error.serverNoResponse") : translate("player.error.connectionLost");
         case "session_expired":
             return "The server ended playback. Try again.";
         case "installation_changed":
@@ -68,8 +69,18 @@ export function errorText(error: PlaybackError): string {
             return "This profile no longer has access. Sign in again.";
         case "backgrounded":
             return "Playback stopped when you left Auger. Go back and select the title to play again.";
-        case "server":
-            return "The server couldn't start playback. Try again.";
+        case "server": {
+            // APIv2Client.errorDescription, as Apple's player shows it; a failure the server did not word keeps the TV's own line.
+            const reason = error.reason;
+            if (reason === undefined) return "The server couldn't start playback. Try again.";
+            if ("text" in reason) {
+                // problem.localized: the field code's line, else the problem type's, else the server's own text.
+                const byType = reason.problemId === undefined ? reason.text : serverText(reason.text, `error.${reason.problemId}`);
+                return serverText(byType, reason.fieldCode === undefined ? undefined : `error.field.${reason.fieldCode}`);
+            }
+            if ("update" in reason) return translate("update.appRequired");
+            return translate("errors.apple.v2.httpStatus", { status: String(reason.status) });
+        }
     }
 }
 
@@ -539,6 +550,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const synopsis = el("p", "player-next-synopsis");
     const nextSeries = el("p", "player-next-series");
     nextSeries.hidden = true;
+    const nextMeta = el("p", "player-next-meta");
+    nextMeta.hidden = true;
     // PlayerView.backgroundImage: the next still behind the whole page, blurred and dimmed.
     const nextBackdrop = el("div", "player-next-backdrop");
     const nextBackdropArt = el("div", "player-next-backdrop-art");
@@ -559,6 +572,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         else if (code === undefined) failureTitle.textContent = candidate.title;
         // A real space keeps the spoken name "S1:E13 Title"; the margin tops it up to Apple's 10 pt gap.
         else failureTitle.replaceChildren(el("span", "player-next-code", code), document.createTextNode(" "), document.createTextNode(candidate.title));
+        // PlayerView.episodeMetadataLine: the air date and runtime, whichever are known.
+        nextMeta.textContent = [episodeAirDate(candidate?.airDate), (candidate?.runtimeMinutes === undefined ? undefined : episodeRuntime(candidate.runtimeMinutes))].filter(part => part !== undefined).join(" · ");
+        nextMeta.hidden = nextMeta.textContent === "";
     };
     const deck = el("div", "player-next-deck");
     const keep = el("button", "player-button");
@@ -585,6 +601,16 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     cancelAutoplay.type = "button";
     cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
     cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
+    // PlayerView.autoPlayToggle: below the actions while there is a next item, it flips Auto-play next for this TV.
+    const autoPlay = el("button", "player-autoplay-toggle");
+    autoPlay.type = "button";
+    autoPlay.setAttribute("data-focus", "auto-play");
+    autoPlay.hidden = true;
+    autoPlay.addEventListener("click", () => controls.toggleAutoNext());
+    const showAutoPlay = (autoNext: boolean | undefined): void => {
+        autoPlay.hidden = autoNext === undefined;
+        autoPlay.textContent = translate(autoNext === true ? "upNext.autoPlayOn" : "upNext.autoPlayOff");
+    };
     // PlayerView.actionRow: Play Now and the ring, then Keep Watching and Close. The rows are only boxes on the Up Next card; the error page
     // lays its buttons out as before.
     const primaryRow = el("div", "player-actions-row player-actions-primary");
@@ -592,7 +618,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
     secondaryRow.append(keep, cancelAutoplay, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, mark, failureText, synopsis, actions, deck);
+    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlay, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -613,6 +639,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** A playing or paused view means AVPlay can show a frame. Later loads must not cover it. */
     let pictureShown = false;
     let cancelHide: (() => void) | undefined;
+    /** Back took the controls down over a buffering stall, which otherwise keeps them up (dismissControls); a key or the stall's end clears it. */
+    let dismissed = false;
     let menuOpen = false;
     /** Where a fresh Select press was made, waiting for its release; another key or a focus change ends it, and so does its control becoming disabled. */
     let selectHeld: { readonly element: Element | null; readonly key: string | null; readonly context: string } | undefined;
@@ -949,6 +977,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (skipKind === "intro" || skipKind === "undo") skipPrompt.resolve();
     };
 
+    const controlsHidden = (): boolean => view.phase === "playing" && (!view.buffering || dismissed) && cancelHide === undefined && !menuOpen && seekPreview === undefined;
+
     const render = (): void => {
         draw();
         // A redraw that disables the held control ends the press, even if a later redraw enables it again.
@@ -985,6 +1015,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         hud.hidden = !menuOpen;
         tracksButton.setAttribute("aria-expanded", String(menuOpen));
         next.hidden = true;
+        // Up Next sets the toggle below; hiding it here first would drop its focus on every redraw.
+        if (view.phase !== "completion" && prompt === undefined) autoPlay.hidden = true;
         keep.hidden = prompt === undefined;
         eyebrow.hidden = view.phase !== "completion" && prompt === undefined;
         synopsis.hidden = eyebrow.hidden;
@@ -993,6 +1025,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         nextSeries.hidden = true;
+        nextMeta.hidden = true;
         nextBackdrop.hidden = true;
         failureTitle.classList.remove("player-next-episode-title");
         ring.set(undefined, undefined);
@@ -1065,6 +1098,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
                 retry.hidden = true;
                 cancelAutoplay.hidden = true;
+                showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext);
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
                 ring.set(loading || failed || candidate === undefined ? undefined : seconds, prompt?.countdownTotal);
@@ -1076,6 +1110,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             next.hidden = view.state !== "ready" || view.next === undefined;
             labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
             retry.hidden = view.state !== "failed" || !view.retryable;
+            showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
@@ -1168,7 +1203,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
         }
-        const hidden = view.phase === "playing" && !view.buffering && cancelHide === undefined && !menuOpen && seekPreview === undefined;
+        const hidden = controlsHidden();
         overlay.className = ["player-overlay", hidden ? "player-overlay-hidden" : "", conceal ? "player-overlay-clear" : ""].filter(Boolean).join(" ");
         skip.className = ["player-button", "player-skip", skipKind === "recap" || skipKind === "credits" ? "player-skip-segment" : "player-skip-intro", hidden ? "player-skip-lit" : "", menuOpen ? "player-skip-hud" : ""].filter(Boolean).join(" ");
         // The controls hiding takes the pill out of the focus graph, as on tvOS: Select then acts on the button that held focus.
@@ -1598,6 +1633,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     });
 
     const reveal = (): void => {
+        dismissed = false;
         cancelHide?.();
         cancelHide = clock.schedule(() => {
             cancelHide = undefined;
@@ -1632,6 +1668,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (key === undefined || view.phase === "closed") {
             return;
         }
+        // onExitCommand runs once per Menu press: a held Back's repeats are not presses, so one that hid the controls cannot also leave.
+        if (key === "back" && event.repeat) {
+            event.preventDefault();
+            return;
+        }
         // The transport, the scrubber and a held seek read `key`, the remote's own Left and Right; Up Next, the buffering card and the panel read `layout`, which follows the screen's mirrored layout.
         const layout = remoteKey(event, section) ?? key;
         event.preventDefault();
@@ -1653,7 +1694,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
             // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
-            const rows = [[next, retry], [keep, cancelAutoplay, back], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+            const rows = [[next, retry], [keep, cancelAutoplay, back], [autoPlay], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
             const current = rows[row];
@@ -1662,6 +1703,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else if (key === "back") controls.keepWatching();
             else if (key === "enter") (current?.[column] ?? rows[0]?.[0])?.click();
             else if (current === undefined) rows[0]?.[0]?.focus();
+            // PlayerView.autoPlayToggle's onMoveCommand: Up returns to the preferred action, not the row above.
+            else if (layout === "up" && document.activeElement === autoPlay) rows[0]?.[0]?.focus();
             else if (layout === "left" || layout === "right") current[Math.max(0, Math.min(current.length - 1, column + (layout === "left" ? -1 : 1)))]?.focus();
             // With no row that way, focus stays where it is; a row change lands on that row's first button.
             else if (layout === "up" || layout === "down") rows[row + (layout === "up" ? -1 : 1)]?.[0]?.focus();
@@ -1747,6 +1790,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (key === "down") { openMenu("video"); return; }
             if (key === "left" || key === "right") bar.focus();
         }
+        // While playing, Back with the controls up only takes them down (PlayerView.onExitCommand, then dismissControls).
+        if (key === "back" && view.phase === "playing" && !controlsHidden() && !timeline && seekPreview === undefined && autoRate === 0) {
+            // dismissControls cancels a hold seek: a skip or hold armed by a Left or Right still down must not fire behind hidden controls.
+            cancelHold?.();
+            cancelHold = undefined;
+            pendingTap = undefined;
+            cancelHide?.();
+            cancelHide = undefined;
+            dismissed = true;
+            render();
+            return;
+        }
         reveal();
         if ((key === "left" || key === "right") && scrubberOwnsArrows()) {
             if (!event.repeat) armHold(key);
@@ -1768,11 +1823,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (transport.contains(document.activeElement)) bar.focus();
             else if (skipUsable()) skip.focus();
             else if (pillButtons.length > 0) pillButtons[0]?.focus();
-            render();
-            return;
-        }
-        if (key === "back" && at >= 0) {
-            bar.focus();
             render();
             return;
         }
@@ -1882,6 +1932,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             cancelScrub();
         }
         view = next;
+        if (next.phase !== "playing" || !next.buffering) dismissed = false;
         if (next.phase !== "playing" && next.phase !== "paused") readyPreviewKey = undefined;
         else if (next.previewKey !== undefined) readyPreviewKey = next.previewKey;
         if (document.hidden && next.phase !== "closed" && next.phase !== "error") {
