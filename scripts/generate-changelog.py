@@ -285,11 +285,23 @@ SUBHEADINGS: dict[str, Optional[UserSection]] = {
 NO_USER_CHANGE = {
     "none", "n/a", "no user-visible change", "no user-visible changes", "no user-facing change", "no user-facing changes",
 }
-HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t#]*$", re.MULTILINE)
 BULLET = re.compile(r"^\s*[-*][ \t]+(.*)$")
 LEGACY_NOTE = re.compile(r"^Release note:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
-PR_NUMBER = re.compile(r"\(#(\d+)\)")
+TRAILING_PR_NUMBER = re.compile(r"\(#(\d+)\)\s*$")
+FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
+
+def format_highlights(items: Iterable[str]) -> str:
+    parts: list[str] = []
+    previous_was_bullet = False
+    for item in items:
+        is_bullet = item.startswith("- ")
+        if parts:
+            parts.append("\n" if (is_bullet and previous_was_bullet) else "\n\n")
+        parts.append(item)
+        previous_was_bullet = is_bullet
+    return "".join(parts)
 
 
 @dataclass(frozen=True)
@@ -318,7 +330,7 @@ class UserReleaseNotes:
         if items.get(UserSection.BREAKING):
             add(UserSection.BREAKING.value, items[UserSection.BREAKING])
         if self.highlights:
-            blocks.append("## Highlights\n\n" + "\n\n".join(self.highlights))
+            blocks.append("## Highlights\n\n" + format_highlights(self.highlights))
         for section in (UserSection.NEW, UserSection.IMPROVED, UserSection.SECURITY, UserSection.FIXED):
             if items.get(section):
                 add(section.value, items[section])
@@ -333,37 +345,17 @@ def heading_key(title: str) -> str:
 
 
 def is_no_change(text: str) -> bool:
-    return text.strip().strip("*_`").strip().rstrip(".").strip().lower() in NO_USER_CHANGE
+    cleaned = text.strip()
+    if cleaned.startswith("- "):
+        cleaned = cleaned[2:].strip()
+    return cleaned.strip("*_`").strip().rstrip(".").strip().lower() in NO_USER_CHANGE
 
 
-def markdown_items(block: str) -> list[str]:
-    """Each bullet (with its continuation lines) or paragraph, joined onto one line."""
-    items: list[list[str]] = []
-    current: Optional[list[str]] = None
-    for line in block.splitlines():
-        bullet = BULLET.match(line)
-        if not line.strip():
-            current = None
-        elif bullet:
-            current = [bullet.group(1).strip()]
-            items.append(current)
-        elif current is None:
-            current = [line.strip()]
-            items.append(current)
-        else:
-            current.append(line.strip())
-    return [" ".join(item) for item in items]
-
-
-FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
-
-
-def iter_headings(text: str) -> list[tuple[int, str, int, int]]:
-    """Return (level, title, start, end) for Markdown headings outside fenced code blocks."""
-    headings: list[tuple[int, str, int, int]] = []
+def strip_fenced_blocks(text: str) -> str:
+    """Remove Markdown fenced code blocks in linear time so examples never become notes."""
+    kept: list[str] = []
     fence_char = ""
     fence_len = 0
-    offset = 0
     for line in text.splitlines(keepends=True):
         stripped = line.rstrip("\r\n")
         fence = FENCE.match(stripped)
@@ -371,28 +363,64 @@ def iter_headings(text: str) -> list[tuple[int, str, int, int]]:
             marker = fence.group(1)
             if not fence_char:
                 fence_char, fence_len = marker[0], len(marker)
-            elif marker[0] == fence_char and len(marker) >= fence_len and not stripped[fence.end():].strip():
+                continue
+            if marker[0] == fence_char and len(marker) >= fence_len and not stripped[fence.end():].strip():
                 fence_char, fence_len = "", 0
-        elif not fence_char:
-            match = HEADING.match(stripped)
-            if match:
-                headings.append((len(match.group(1)), match.group(2), offset, offset + len(stripped)))
-        offset += len(line)
-    return headings
+                continue
+        if not fence_char:
+            kept.append(line)
+    return "".join(kept)
+
+
+def strip_html_comments(text: str) -> str:
+    """Remove complete `<!-- ... -->` comments in linear time without regex backtracking."""
+    out: list[str] = []
+    pos = 0
+    while True:
+        start = text.find("<!--", pos)
+        if start == -1:
+            out.append(text[pos:])
+            return "".join(out)
+        end = text.find("-->", start + 4)
+        if end == -1:
+            out.append(text[pos:])
+            return "".join(out)
+        out.append(text[pos:start])
+        pos = end + 3
+
+
+def markdown_items(block: str, keep_bullets: bool = False) -> list[str]:
+    """Each bullet (with its continuation lines) or paragraph, joined onto one line."""
+    items: list[tuple[bool, list[str]]] = []
+    current: Optional[list[str]] = None
+    for line in block.splitlines():
+        bullet = BULLET.match(line)
+        if not line.strip():
+            current = None
+        elif bullet:
+            current = [bullet.group(1).strip()]
+            items.append((True, current))
+        elif current is None:
+            current = [line.strip()]
+            items.append((False, current))
+        else:
+            current.append(line.strip())
+    return [f"- {' '.join(parts)}" if (keep_bullets and is_bullet) else " ".join(parts) for is_bullet, parts in items]
 
 
 def release_notes_section(body: str) -> Optional[str]:
-    headings = iter_headings(body)
-    for index, (level, title, _, end_of_heading) in enumerate(headings):
-        if level in (2, 3) and heading_key(title) == "release notes":
-            end = next((start for next_level, _, start, _ in headings[index + 1:] if next_level <= level), len(body))
-            return body[end_of_heading:end]
+    headings = list(HEADING.finditer(body))
+    for index, heading in enumerate(headings):
+        level = len(heading.group(1))
+        if level in (2, 3) and heading_key(heading.group(2)) == "release notes":
+            end = next((h.start() for h in headings[index + 1:] if len(h.group(1)) <= level), len(body))
+            return body[heading.end():end]
     return None
 
 
 def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
     """A PR body's user-facing notes, or None when it has none to offer."""
-    body = HTML_COMMENT.sub("", body)
+    body = strip_html_comments(strip_fenced_blocks(body))
     section = release_notes_section(body)
     if section is not None and section.strip():
         if is_no_change(section):
@@ -400,21 +428,35 @@ def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
         highlights: list[str] = []
         sectioned: dict[UserSection, list[str]] = {}
         unsectioned: list[str] = []
-        subheadings = iter_headings(section)
-        unsectioned += markdown_items(section[: subheadings[0][2]] if subheadings else section)
-        for index, (_, title, _, end_of_heading) in enumerate(subheadings):
-            end = subheadings[index + 1][2] if index + 1 < len(subheadings) else len(section)
-            items = markdown_items(section[end_of_heading:end])
-            key = heading_key(title)
+        saw_no_change = False
+
+        def keep(items: Iterable[str]) -> list[str]:
+            nonlocal saw_no_change
+            kept: list[str] = []
+            for item in items:
+                if is_no_change(item):
+                    saw_no_change = True
+                else:
+                    kept.append(item)
+            return kept
+
+        subheadings = list(HEADING.finditer(section))
+        unsectioned += keep(markdown_items(section[: subheadings[0].start()] if subheadings else section))
+        for index, heading in enumerate(subheadings):
+            end = subheadings[index + 1].start() if index + 1 < len(subheadings) else len(section)
+            block = section[heading.end():end]
+            key = heading_key(heading.group(2))
             if key == "highlights":
-                highlights += items
+                highlights += keep(markdown_items(block, keep_bullets=True))
             elif key in SUBHEADINGS:
-                sectioned.setdefault(SUBHEADINGS[key], []).extend(items)
+                sectioned.setdefault(SUBHEADINGS[key], []).extend(keep(markdown_items(block)))
             else:
-                unsectioned += items
+                unsectioned += keep(markdown_items(block))
         sectioned_tuple = tuple((section_name, tuple(items)) for section_name, items in sectioned.items() if items)
         if highlights or sectioned_tuple or unsectioned:
             return ParsedPrNotes(False, tuple(highlights), sectioned_tuple, tuple(unsectioned))
+        if saw_no_change:
+            return ParsedPrNotes(True, (), (), ())
     legacy = [note.strip() for note in LEGACY_NOTE.findall(body)]
     if legacy:
         if all(is_no_change(note) for note in legacy):
@@ -424,11 +466,11 @@ def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
 
 
 def notes_for_commit(commit: CommitMessage, pr_bodies: Mapping[int, str]) -> Optional[ParsedPrNotes]:
-    # Only the last `(#N)` is the merged pull request; never fall back to an earlier reverted PR number.
-    numbers = PR_NUMBER.findall(commit.subject)
-    if not numbers:
+    # Only a trailing `(#N)` identifies the merged pull request for this commit.
+    match = TRAILING_PR_NUMBER.search(commit.subject)
+    if not match:
         return None
-    pr_number = int(numbers[-1])
+    pr_number = int(match.group(1))
     return parse_pr_notes(pr_bodies[pr_number]) if pr_number in pr_bodies else None
 
 
@@ -452,11 +494,18 @@ def build_user_notes(
             continue
         written = {section for section, items in notes.sectioned if items}
         if notes.unsectioned:
-            # An internal commit (no entries) with written notes still changed something people see.
-            default = USER_SECTION_BY_CATEGORY[entries[0].category] if entries else UserSection.IMPROVED
-            written.add(default)
+            non_breaking = [entry for entry in entries if entry.category != Category.BREAKING]
+            if non_breaking:
+                default = USER_SECTION_BY_CATEGORY[non_breaking[0].category]
+            elif breaking:
+                default = UserSection.BREAKING
+            else:
+                # An internal commit (no entries) with written notes still changed something people see.
+                default = UserSection.IMPROVED
             for text in notes.unsectioned:
                 add(default, text)
+            if default == UserSection.BREAKING and not breaking_text(commit.body):
+                written.add(UserSection.BREAKING)
         for section, items in notes.sectioned:
             for text in items:
                 add(section, text)

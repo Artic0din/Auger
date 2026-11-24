@@ -237,20 +237,37 @@ class UserReleaseNotesTest(unittest.TestCase):
         for note in ("None", "N/A", "No user-visible changes", "*No user-facing change.*", "`none`"):
             with self.subTest(note):
                 bodies = {1: pr_body(f"## Release Notes\n\n{note}")}
-                self.assertEqual({}, user_sections("feat: hidden (#1)", bodies=bodies))
+                suppressed = user_notes("feat: hidden (#1)", bodies=bodies)
+                self.assertEqual((), suppressed.highlights)
+                self.assertEqual((), suppressed.sections)
+                self.assertEqual(
+                    "Released: 2026-01-31\n\n## Improved\n\n- General maintenance and stability improvements.\n",
+                    suppressed.render(),
+                )
                 self.assertEqual(
                     {UserSection.BREAKING: ["Drop Tizen 7"]}, user_sections("feat!: drop Tizen 7 (#1)", bodies=bodies)
                 )
-        self.assertEqual(
-            "Released: 2026-01-31\n\n## Improved\n\n- General maintenance and stability improvements.\n",
-            user_notes("feat: hidden (#1)", bodies={1: pr_body("## Release Notes\n\nNone")}).render(),
-        )
 
     def test_breaking_commit_keeps_its_warning_when_the_notes_skip_it(self):
         body = pr_body("## Release Notes\n\n### New\n\n- Settings sync")
         self.assertEqual(
             {UserSection.BREAKING: ["**Settings**: Settings reset once"], UserSection.NEW: ["Settings sync"]},
             user_sections(Commit("feat(settings): sync (#1)", "BREAKING CHANGE: settings reset once"), bodies={1: body}),
+        )
+        unsectioned = pr_body("## Release Notes\n\nSettings now sync between your TVs.")
+        self.assertEqual(
+            {
+                UserSection.BREAKING: ["**Settings**: Settings reset once"],
+                UserSection.NEW: ["Settings now sync between your TVs."],
+            },
+            user_sections(Commit("feat(settings): sync (#1)", "BREAKING CHANGE: settings reset once"), bodies={1: unsectioned}),
+        )
+        chore_breaking = pr_body("## Release Notes\n\nSettings moved to a new format.")
+        self.assertEqual(
+            {
+                UserSection.BREAKING: ["Settings moved to a new format.", "**Settings**: Settings reset once"],
+            },
+            user_sections(Commit("chore(settings)!: rename keys (#1)", "BREAKING CHANGE: settings reset once"), bodies={1: chore_breaking}),
         )
 
     def test_comment_only_notes_fall_back(self):
@@ -276,15 +293,38 @@ class UserReleaseNotesTest(unittest.TestCase):
             user_sections("feat(player): add chapters (#5)", "fix: stop a crash", bodies={9: pr_body("## Release Notes\n\nX")}),
         )
 
-    def test_fenced_code_blocks_are_not_treated_as_headings(self):
+    def test_fenced_code_blocks_are_stripped_from_notes_and_legacy_fallback(self):
         body = (
             "## Approach\n\n```markdown\n## Release Notes\n\nFake example.\n```\n\n"
             "## Release Notes\n\n### New\n\n- Real feature.\n\n```sh\n# shell comment\n```\n\n- After code fence.\n\n"
             "## Validation\n\n- Passed.\n"
         )
         self.assertEqual(
-            {UserSection.NEW: ["Real feature.", "```sh # shell comment ```", "After code fence."]},
+            {UserSection.NEW: ["Real feature.", "After code fence."]},
             user_sections("feat: example (#1)", bodies={1: body}),
+        )
+        fenced_legacy = "## Approach\n\n```markdown\nRelease note: Do not publish this example.\n```\n"
+        self.assertEqual(
+            {UserSection.FIXED: ["Real commit fix"]},
+            user_sections("fix: real commit fix (#2)", bodies={2: fenced_legacy}),
+        )
+
+    def test_suppression_markers_under_subheadings_are_dropped(self):
+        body = pr_body("## Release Notes\n\n### Breaking Changes\n\nNone\n\n### New\n\n- Real feature.\n")
+        self.assertEqual(
+            {UserSection.BREAKING: ["Settings reset once"], UserSection.NEW: ["Real feature."]},
+            user_sections(Commit("feat: sync (#1)", "BREAKING CHANGE: settings reset once"), bodies={1: body}),
+        )
+        only_none = pr_body("## Release Notes\n\n### Highlights\n\nN/A\n\n### New\n\n- None\n")
+        suppressed = user_notes("feat: internal (#2)", bodies={2: only_none})
+        self.assertEqual((), suppressed.highlights)
+        self.assertEqual((), suppressed.sections)
+
+    def test_bulleted_highlights_preserve_list_formatting(self):
+        body = pr_body("## Release Notes\n\n### Highlights\n\n- First highlight.\n- Second highlight.\n")
+        self.assertEqual(
+            "Released: 2026-01-31\n\n## Highlights\n\n- First highlight.\n- Second highlight.\n",
+            user_notes("feat: two things (#1)", bodies={1: body}).render(),
         )
 
     def test_empty_subheadings_fall_back_to_commit(self):
@@ -294,14 +334,24 @@ class UserReleaseNotesTest(unittest.TestCase):
             user_sections("fix: stop a crash (#1)", bodies={1: body}),
         )
 
-    def test_revert_does_not_fall_back_to_reverted_pr_notes(self):
+    def test_non_trailing_pr_numbers_are_ignored(self):
+        bodies = {12: pr_body("## Release Notes\n\nAdded search.")}
         self.assertEqual(
             {UserSection.FIXED: ["Reverted: Add search"]},
-            user_sections(
-                'Revert "feat: add search (#12)" (#20)',
-                bodies={12: pr_body("## Release Notes\n\nAdded search.")},
-            ),
+            user_sections('Revert "feat: add search (#12)" (#20)', bodies=bodies),
         )
+        self.assertEqual(
+            {UserSection.FIXED: ["Reverted: Add search"]},
+            user_sections('Revert "feat: add search (#12)"', bodies=bodies),
+        )
+        self.assertEqual(
+            {UserSection.FIXED: ["Restore playback (#12) on older TVs"]},
+            user_sections("fix: restore playback (#12) on older TVs", bodies=bodies),
+        )
+
+    def test_unclosed_html_comments_finish_in_linear_time(self):
+        malformed = "<!-- " * 5000 + "\n## Release Notes\n\n- Still fast.\n"
+        self.assertEqual({UserSection.NEW: ["Still fast."]}, user_sections("feat: fast (#1)", bodies={1: malformed}))
 
 
 HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"

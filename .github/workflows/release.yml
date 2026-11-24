@@ -273,7 +273,7 @@ jobs:
           pr_notes="${RUNNER_TEMP}/pr-notes.json"
           echo '{}' > "${pr_notes}"
           pr_numbers="$(git log --format=%s "${previous_sha:+${previous_sha}..}${TARGET_SHA}" \
-            | sed -nE 's/.*\(#([0-9]+)\).*/\1/p' | sort -un)"
+            | sed -nE 's/.*\(#([0-9]+)\)[[:space:]]*$/\1/p' | sort -un)"
           for pr_number in ${pr_numbers}; do
             if pr_body="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" --jq '.body // ""')"; then
               jq --arg number "${pr_number}" --arg body "${pr_body}" '. + {($number): $body}' "${pr_notes}" > "${pr_notes}.next"
