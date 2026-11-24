@@ -359,15 +359,24 @@ jobs:
               return 0
             fi
             git_auth fetch --quiet origin main || return 1
-            git checkout --quiet -B "${branch}" origin/main || return 1
-            python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
-              --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}" || return 1
-            if git diff --quiet CHANGELOG.md; then
+            if git show origin/main:CHANGELOG.md 2>/dev/null | grep -qE "^## \[${VERSION//./\\.}\]"; then
               echo "CHANGELOG.md on main already records ${VERSION}."
               return 0
             fi
-            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
-            git_auth push origin "HEAD:${branch}" || return 1
+            if git_auth fetch --quiet origin "${branch}" 2>/dev/null; then
+              git checkout --quiet -B "${branch}" "origin/${branch}" || return 1
+            else
+              git checkout --quiet -B "${branch}" origin/main || return 1
+            fi
+            python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
+              --date "${RELEASE_DATE}" ${PREVIOUS_TAG:+--from "${PREVIOUS_TAG}"} --to "${TARGET_SHA}" || return 1
+            if ! git diff --quiet CHANGELOG.md; then
+              git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md || return 1
+              git_auth push origin "HEAD:${branch}" || return 1
+            elif git merge-base --is-ancestor "${branch}" origin/main; then
+              echo "CHANGELOG.md on main already records ${VERSION}."
+              return 0
+            fi
             pr_body="$(printf 'Adds the release notes for %s to CHANGELOG.md.\n\n## Evidence\n\nEvidence: none, no user-visible change\n\n## ELI5\n\nAdds the generated release notes for %s to the changelog file.\n' "${TAG}" "${TAG}")"
             gh pr create --repo "${GH_REPO}" --base main --head "${branch}" \
               --title "docs(changelog): record v${VERSION} release notes" \

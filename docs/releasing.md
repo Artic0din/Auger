@@ -71,7 +71,7 @@ A release with no user-facing commits reads `General maintenance and stability i
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
 After publishing, it pushes a `docs/changelog-vX.Y.Z` branch inserting `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and opens a pull request against `main` (never pushing bot commits directly to `main`, and leaving any already-open changelog PR untouched).
-Pull requests opened with `GITHUB_TOKEN` do not trigger pull-request CI checks automatically; close and reopen the pull request (or push a follow-up commit) when you want checks to run before merging.
+Pull requests opened with `GITHUB_TOKEN` require maintainer approval to start workflows; select **Approve workflows to run** on the pull request (or close and reopen it if checks did not queue) before merging.
 A changelog that already has the version stays unchanged.
 If GitHub Actions pull request creation is disabled in repository settings, the run warns and the release stays published; enable **Allow GitHub Actions to create and approve pull requests** or add the section locally with:
 
