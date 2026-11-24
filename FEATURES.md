@@ -60,7 +60,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Skyline top bar (saved TV menu order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Parity captures in `docs/evidence/screenshots/94-navigation`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
+| Skyline top bar (saved TV menu order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
 | Home rows in server order, Continue Watching resume, Explore all, 20-card cap | ✅ | ✅ | ✅ | Resume goes straight to the player. First-load wait tracked in #78. Android: `TvHomeScreen` |
 | Home marquee (logo, meta chips, scores, aired date, cast) | ✅ | ✅ | ✅ | Apple: `TVFocusMarquee`. Sharper backdrops open (#88). Android: `TvFocusMarquee` |
 | Poster badges, watched checks, poster size (Compact/Standard/Large) | ✅ | ✅ | ✅ | Size is set in Settings › General. Android: `TvMediaCard` overlays and watched badge, Poster Size setting |

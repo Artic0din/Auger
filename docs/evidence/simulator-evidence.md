@@ -1,8 +1,8 @@
-# Samsung simulator evidence
+# Samsung simulator validation
 
-Use the Samsung TV Web Simulator (an NW.js desktop app, not the Tizen software emulator or a physical TV) to capture packaged Silo screens and remote navigation against a real Server. See Samsung's [TV Simulator guide](https://developer.samsung.com/smarttv/develop/tools/additional-tools/vscode/tv-simulator.html) for general usage.
+Use the Samsung TV Web Simulator (an NW.js desktop app, not the Tizen software emulator or a physical TV) to test packaged Auger screens and remote navigation against a real Server. See Samsung's [TV Simulator guide](https://developer.samsung.com/smarttv/develop/tools/additional-tools/vscode/tv-simulator.html) for general usage.
 
-Serialize simulator work on the Mac that also runs Xcode, and confirm ownership before replacing an installed app or changing screens.
+Serialize simulator runs on a machine and confirm ownership before replacing an installed app or changing screens.
 
 ## Build and hash the candidate
 
@@ -23,7 +23,7 @@ Run from the simulator directory so relative resources resolve, using a fresh pr
 
 ```bash
 simulator_dir="${TIZEN_STUDIO_HOME:-$HOME/tizen-sdk}/tools/sec-tv-simulator"
-simulator_profile="$(mktemp -d "${TMPDIR:-/tmp}/silo-tv-simulator.XXXXXX")"
+simulator_profile="$(mktemp -d "${TMPDIR:-/tmp}/auger-tv-simulator.XXXXXX")"
 cd "$simulator_dir"
 ./nwjs.app/Contents/MacOS/nwjs \
   --user-data-dir="$simulator_profile" \
@@ -53,4 +53,4 @@ Complete every step before attaching simulator parity evidence to a pull request
 
 ## Pull request acceptance
 
-Record each proof layer separately: automated tests, signed `.wgt`, simulator, Apple TV comparison, and physical TV. List every unresolved difference under Risks. Documentation-only pull requests change no app behavior and write `Evidence: none, no user-visible change` per [.github/PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md).
+Record each proof layer separately: automated tests, signed `.wgt`, simulator, Apple TV comparison, and physical TV. List every unresolved difference under Risks.

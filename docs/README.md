@@ -50,7 +50,6 @@ Read the matching reference before changing its area.
 - [Requests](features/requests.md) for the Requests hub, My Requests, and follow actions.
 - [Watch Party](features/watch-party.md) for room creation, lobby, and ballot voting.
 
-## Evidence
+## Simulator validation
 
-- [Samsung simulator evidence](evidence/simulator-evidence.md) for simulator launch, signed `.wgt` asset verification, and Apple TV comparison steps.
-- `evidence/screenshots/` for captures referenced by pull requests, feature docs, and `README.md`.
+- [Samsung simulator guide](evidence/simulator-evidence.md) for simulator launch, signed `.wgt` asset verification, and Apple TV comparison steps.

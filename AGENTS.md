@@ -4,7 +4,7 @@
 
 Read the matching reference before editing a branch of the codebase.
 
-- **Domain terms and entity rules.** Read [GLOSSARY.md](GLOSSARY.md), [docs/domain-model.md](docs/domain-model.md), and [docs/agents/domain.md](docs/agents/domain.md), plus `docs/adr/` when present.
+- **Domain terms and entity rules.** Read [GLOSSARY.md](GLOSSARY.md) and [docs/domain-model.md](docs/domain-model.md), plus `docs/adr/` when present.
 - **Navigation, menus, grids, dialogs, or custom controls.** Read [docs/tv-focus.md](docs/tv-focus.md).
 - **API v2 operations, auth, retries, or error decoding.** Read [docs/native-api-v2.md](docs/native-api-v2.md) and [src/contracts/v2/README.md](src/contracts/v2/README.md).
 - **Porting a feature from Apple TV or Android TV.** Read [docs/upstream-design-notes.md](docs/upstream-design-notes.md).
@@ -14,7 +14,6 @@ Read the matching reference before editing a branch of the codebase.
 - **Tests, fake clocks, and flake hunting.** Read [test/README.md](test/README.md).
 - **Releases, sideloading, and Apps2Samsung.** Read [docs/releasing.md](docs/releasing.md).
 - **Pull request conventions and AI disclosure.** Read [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md).
-- **GitHub issues, triage labels, and Wayfinder.** Read [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md) and [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
 
 ## Workspace and module boundaries
 
@@ -48,11 +47,9 @@ Silo's own repositories are read-only upstream references.
 
 ### Runtime ownership and parallel work
 
-- Run native comparisons on the Pro and use Xcode Device Hub for Apple TV. Run at most one Apple simulator and one Samsung simulator concurrently, with one input owner per simulator.
+- Run at most one Apple TV simulator and one Samsung TV simulator concurrently, with one input owner per simulator.
 - Test the authorized SDK debugging interface before reporting a blocker. A locked desktop or missing generic device listing does not establish unavailability.
-- Spread independent implementation, research, and review across isolated agents and machines; serialize only shared-file integration and simulator input. Verify transferred patch bytes and hashes before applying them.
 - Keep physical-TV validation deferred until simulator parity completes.
-- Under `full-send`, continue the agreed backlog after each pull request and record verified progress and remaining gaps in GitHub issues.
 
 ## Commands and proof bar
 
@@ -76,5 +73,5 @@ The proof bar requires a built signed `.wgt` and passing simulator parity gates,
 
 - **Code.** Write strict TypeScript with no `any`, explicit `.ts` import extensions, and Skyline design tokens in `src/theme.css`. Keep changes MVP, YAGNI, and KISS, with focused regression tests for changed behavior and rendered checks for visual changes.
 - **Writing.** Run a readability pass on every human-facing issue, pull request, document, and status update. Lead with the outcome in concrete active English, cut filler and repetition, and keep exact quotations, commands, logs, identifiers, API names, and contractual language verbatim.
-- **Pull requests.** Work on a feature branch and open one non-draft pull request per concern with a Conventional Commit title. Put `Fixes #N` or `Closes #N` in the pull request body only, never in commit messages. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) for the required AI disclosure. Scrub private details including DUIDs from media and keep PR-only assets out of Git. When babysitting, check CI and comments posted after the last push, verify bot findings against source, fix real issues, dismiss false positives with a written reason, and stay quiet when nothing new appears. Before merging, run `python3 scripts/pr-gate.py <number>`; it prints `READY` or the first gate that fails (conflicts, a check's latest run, Codex on the head commit, or unresolved threads).
+- **Pull requests.** Work on a feature branch and open one non-draft pull request per concern with a Conventional Commit title. Put `Fixes #N` or `Closes #N` in the pull request body only, never in commit messages. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) for the required AI disclosure. Scrub private details including DUIDs from media and keep PR-only assets out of Git.
 - **Security.** Run `gitleaks git --staged --redact` before every commit and scan the outgoing commit range before every push. Keep certificates, `.p12` files, security profiles, passwords, server URLs, tokens, and DUIDs out of Git. CI signs public packages with the Tizen SDK public distributor certificate so no personal Samsung TV certificate or DUID appears in CI artifacts or GitHub Releases; local TV sideloading signs with your own local Tizen Studio profile. `npm ci` installs a pre-commit hook from `.githooks/` that runs the staged scan and the type check, and the Secrets workflow scans every pull request's commits.

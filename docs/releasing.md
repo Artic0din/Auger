@@ -95,8 +95,7 @@ Uninstalling removes saved sign-in data, so you sign in again once; subsequent b
 
 ### Community catalog
 
-[`docs/apps2samsung/Artic0din__Auger-Tizen.json`](apps2samsung/Artic0din__Auger-Tizen.json) is a manifest for the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages).
-It is ready to submit to that repository's `packages/` folder once it is reviewed and a first `vX.Y.Z` release is live.
+Auger is listed in the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages/blob/main/packages/Artic0din__Auger-Tizen.json), which automatically tracks each new `vX.Y.Z` GitHub Release.
 
 ## Sideloading a build
 

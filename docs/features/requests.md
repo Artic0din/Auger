@@ -100,17 +100,7 @@ The backdrop scrolls with the hero while the page tint stays.
 The design of the Series destination page belongs to #92.
 A status detail whose copy is tall enough to pass the hero edge hides the action, as on Apple TV (decision: match Apple).
 
-## Evidence and remaining gates
-
-Native Apple captures and hierarchy geometry from a Device Hub simulator were inspected read-only; no private hierarchy or media is included here.
-Later comparisons use original 1920×1080 Apple pixels exported read-only from the same simulator, without upscaling.
-The installed Apple source SHA is unproven.
-The pinned Apple source below is a historical behavioral reference, not provenance for the installed app.
-Part of the parent TVRequestsPage and the RequestProgress, RequestDisplayState, RequestMediaCard and RequestsHubViewModel source was unavailable during implementation and was not recovered.
-Exact visual parity is not accepted: the final package still needs signed Apple/Samsung comparison and keyboard verification.
-The paint corrections have bounded source and signed Samsung runtime proof, which does not establish whole-feature acceptance.
-The Apple Requests detail source deliberately uses split title text rather than a title logo.
-No live backend mutations were used for candidate proof.
+## Runtime and authority
 
 All operations pass through the native adapter and `session.call` with active profile authority.
 Create, cancel, remove, follow and unfollow never replay after a transport failure or session refresh.

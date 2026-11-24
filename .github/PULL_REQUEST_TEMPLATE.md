@@ -27,8 +27,7 @@ checks that were not run or did not pass. Include a short output excerpt only wh
 explains a failure.
 <!-- Record each proof separately: automated tests, signed WGT, simulator or emulator,
 Apple TV comparison, and real TV. Do not include private domains, hostnames, IPs,
-Tailscale or Report Shelf URLs, local paths, credentials, personal data, or private
-media details. -->
+local paths, credentials, personal data, or private media details. -->
 
 ## Risks
 
