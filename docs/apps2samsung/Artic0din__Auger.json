@@ -5,5 +5,10 @@
   "repo": "Artic0din/Auger",
   "source": "release",
   "branch": "main",
-  "output_name": "Auger.wgt"
+  "assets": [
+    {
+      "match": "^Auger[.]wgt$",
+      "output_name": "Auger.wgt"
+    }
+  ]
 }

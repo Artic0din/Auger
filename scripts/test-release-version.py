@@ -120,6 +120,10 @@ class ManualBumpTest(unittest.TestCase):
             plan(BETAS, "docs: a", mode="major"),
         )
 
+    def test_already_released_target_makes_no_release(self):
+        result = plan(["v0.2.1"], mode="patch", target_already_released=True)
+        self.assertEqual(release.ReleasePlan(False, "", "", "v0.2.1", "none"), result)
+
     def test_unknown_mode(self):
         with self.assertRaisesRegex(release.ReleaseError, "Unknown bump"):
             plan(BETAS, mode="build")

@@ -165,6 +165,8 @@ def plan_release(
         target = base.bump(level)
         bump = level.name.lower()
     elif mode in MANUAL_BUMPS:
+        if target_already_released:
+            return ReleasePlan(False, "", "", previous_tag, "none")
         target = base.bump(BumpLevel[mode.upper()])
         bump = mode
     else:

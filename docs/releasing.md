@@ -33,7 +33,7 @@ The commit must have passed **Tizen Builds**.
 - `version: X.Y.Z` releases exactly that version, which must be newer than the latest tag.
 
 If a run fails, use **Re-run failed jobs**.
-The publish step uploads only missing files and publishes a release that an earlier attempt left as a draft.
+The publish step refreshes both assets and release notes on any leftover draft, skips tags that are already published, and never demotes a newer Latest release.
 
 ## Release artifacts
 

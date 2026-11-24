@@ -30,8 +30,10 @@ on:
         type: string
 
 # One release at a time, so each run sees the tag the previous one created.
+# Non-qualifying workflow_run completions (such as failed builds) use their own
+# group so they never displace a queued green release.
 concurrency:
-  group: release
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) && 'release' || format('release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:
@@ -214,27 +216,27 @@ jobs:
 
       - name: Publish the release
         run: |
-          # "Re-run failed jobs" re-runs this whole job. When this run already
-          # created the release, upload only the files it lacks (--clobber
-          # would delete a good copy first), then publish it: gh release create
-          # leaves a draft when an upload fails.
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-            is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
-            if [[ "${is_draft}" == "false" ]]; then
-              echo "${TAG} is already published."
-              exit 0
-            fi
-            uploaded="$(gh release view "${TAG}" --json assets --jq '.assets[] | select(.state == "uploaded") | .name')"
-            for file in wgt/*; do
-              if ! grep -qxF "$(basename "${file}")" <<< "${uploaded}"; then
-                # A failed upload can leave a broken asset under this name.
-                gh release upload "${TAG}" --clobber "${file}"
-              fi
-            done
-            gh release edit "${TAG}" --target "${TARGET_SHA}" --draft=false --prerelease=false --latest
-            echo "${TAG} is published with its .wgt."
-            exit 0
-          fi
+          # Never roll Latest backward if a newer stable release published
+          # before a retry of this job ran.
+          published_tags="$(gh api "repos/${GH_REPO}/releases" --paginate \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
+          latest_flag="$(python3 - "${TAG}" "${published_tags}" <<'PY'
+          import re, sys
+
+          def parse(tag: str):
+              match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+              return tuple(int(part) for part in match.groups()) if match else None
+
+          current = parse(sys.argv[1])
+          has_newer = current is not None and any(
+              version > current
+              for line in sys.argv[2].splitlines()
+              if (version := parse(line.strip())) is not None
+          )
+          print("--latest=false" if has_newer else "--latest")
+          PY
+          )"
+
           {
             gh api "repos/${GH_REPO}/releases/generate-notes" \
               -f tag_name="${TAG}" -f target_commitish="${TARGET_SHA}" \
@@ -245,6 +247,24 @@ jobs:
             echo "- **Apps2Samsung:** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it."
             echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
           } > notes.md
+
+          # "Re-run failed jobs" re-runs this whole job. Leave an already
+          # published release untouched. For a leftover draft, replace both
+          # assets from this run's verified bundle and update target/notes so a
+          # retry never mixes artifacts across commits.
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
+            if [[ "${is_draft}" == "false" ]]; then
+              echo "${TAG} is already published."
+              exit 0
+            fi
+            gh release upload "${TAG}" --clobber wgt/Auger.wgt wgt/Auger.wgt.sha256
+            gh release edit "${TAG}" --target "${TARGET_SHA}" --title "Auger ${VERSION}" \
+              --notes-file notes.md --draft=false --prerelease=false "${latest_flag}"
+            echo "${TAG} is published with its .wgt."
+            exit 0
+          fi
+
           # The release creates the tag on the target commit, so a failed run never leaves a tag behind.
-          gh release create "${TAG}" --target "${TARGET_SHA}" --latest \
+          gh release create "${TAG}" --target "${TARGET_SHA}" "${latest_flag}" \
             --title "Auger ${VERSION}" --notes-file notes.md wgt/Auger.wgt wgt/Auger.wgt.sha256
