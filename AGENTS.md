@@ -27,7 +27,7 @@ This repository owns Auger, a third-party Samsung TV client for Silo, a plain Ti
 
 Silo's own repositories are read-only upstream references.
 
-- Treat `silo-server` as read-only upstream. Keep all code edits and GitHub issues inside `Artic0din/Auger`.
+- Treat `silo-server` as read-only upstream. Keep all code edits and GitHub issues inside `Artic0din/Auger-Tizen`.
 - Use `silo-apple` (tvOS) as the TV behavior and layout reference, and compare `silo-android` for shared TV behavior.
 - Port code only from `silo-apple` and `silo-android` (same AGPL license), keeping ports minimal and idiomatic for TypeScript on Tizen. Never copy from `jellyfin-web` or `jellyfin-tizen`.
 - Check compatibility with upstream `silo-server` when touching auth, API models, playback, browsing, or metadata. Server issues belong in upstream `silo-server`; keep server concerns out of this repository.

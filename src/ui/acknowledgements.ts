@@ -33,7 +33,7 @@ const credits = (): readonly Credit[] => [
 ];
 
 const OPEN_SOURCE: readonly string[] = [
-    "Auger for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/Auger",
+    "Auger for Samsung TV is free software under the GNU Affero General Public License, version 3 or later, and comes with no warranty. Source code: https://github.com/Artic0din/Auger-Tizen",
     "ThumbHash decoder by Evan Wallace — MIT License",
     "unicode-segmenter by Hyeseong Kim — MIT License",
     "uqr — MIT License",

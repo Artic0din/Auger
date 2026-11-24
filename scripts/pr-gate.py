@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 
-REPOSITORY = "Artic0din/Auger"
+REPOSITORY = "Artic0din/Auger-Tizen"
 REQUIRED_CHECKS = ("Evidence", "tvOS source", "Build and native tests",
                    "UI tests (1/3)", "UI tests (2/3)", "UI tests (3/3)", "Kody Code Review")
 PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}

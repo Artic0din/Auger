@@ -1,6 +1,6 @@
 # Subtitle sync
 
-Sync to Audio and Reset Timing on the player's Subtitles tab ([#522](https://github.com/Artic0din/Auger/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane`, `SubtitleSync.swift`, `APIv2SubtitleSyncModels.swift`).
+Sync to Audio and Reset Timing on the player's Subtitles tab ([#522](https://github.com/Artic0din/Auger-Tizen/issues/522)). Apple behavior follows `silo-apple` `main` (`TVPlayerInfoHUD.swift` `SubtitlesPane`, `SubtitleSync.swift`, `APIv2SubtitleSyncModels.swift`).
 
 The server aligns a subtitle to the file's audio and stores a timing correction (`offset_ms` and `scale`).
 It never changes the subtitle's bytes: the subtitle's URL serves the corrected timing.

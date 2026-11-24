@@ -19,7 +19,7 @@ well.
 
 ## Write a useful issue
 
-Open an [issue](https://github.com/Artic0din/Auger/issues) for problems
+Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) for problems
 in the Samsung TV app. Server and API problems belong in the upstream
 [`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose)
 repository. Search first; if an issue already covers the problem, add what's
@@ -53,7 +53,7 @@ pull request; we may use the code as a reference.
 
 ## Before you start
 
-Open an [issue](https://github.com/Artic0din/Auger/issues) before
+Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before
 implementing a feature, navigation or behavior change, large refactor, or work
 that changes the shared server contract. Documentation, narrow fixes, and
 well-scoped parity corrections can go straight to a pull request.

@@ -1,6 +1,6 @@
 # Direct episode playback evidence
 
-These captures verify the bounded behavior change in [#93](https://github.com/Artic0din/Auger/issues/93).
+These captures verify the bounded behavior change in [#93](https://github.com/Artic0din/Auger-Tizen/issues/93).
 They do not establish whole-Details visual parity or decoded playback.
 
 ## Runtime and identity
@@ -67,6 +67,6 @@ A current same-state Apple screenshot is missing: Xcode lists the Apple TV simul
 This is a tooling/evidence limit, not a proven Tizen platform limitation or an Apple pixel-parity PASS.
 
 The series comparison shows a small vertical-placement difference despite identical CSS; its cause was not established and no layout correction belongs to this behavior slice.
-Broader layout acceptance remains under [#92](https://github.com/Artic0din/Auger/issues/92) and [#97](https://github.com/Artic0din/Auger/issues/97).
-The pre-existing related-title failure was also visible; diagnosis remains under [#90](https://github.com/Artic0din/Auger/issues/90).
+Broader layout acceptance remains under [#92](https://github.com/Artic0din/Auger-Tizen/issues/92) and [#97](https://github.com/Artic0din/Auger-Tizen/issues/97).
+The pre-existing related-title failure was also visible; diagnosis remains under [#90](https://github.com/Artic0din/Auger-Tizen/issues/90).
 No physical TV was used, and the SDK's disabled web security does not establish packaged-origin CORS acceptance.

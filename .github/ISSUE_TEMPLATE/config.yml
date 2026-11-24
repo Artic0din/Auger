@@ -10,5 +10,5 @@ contact_links:
     url: https://github.com/Silo-Server/silo-android/issues/new/choose
     about: Report it in the upstream silo-android repository.
   - name: Report a security vulnerability
-    url: https://github.com/Artic0din/Auger/security/advisories/new
+    url: https://github.com/Artic0din/Auger-Tizen/security/advisories/new
     about: Report it privately. Do not open a public issue.

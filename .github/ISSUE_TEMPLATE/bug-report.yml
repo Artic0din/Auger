@@ -10,7 +10,7 @@ body:
 
         Problems that also happen in the web app usually come from the server and belong in the upstream [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose). Problems in Silo's Apple apps belong in [silo-apple](https://github.com/Silo-Server/silo-apple/issues/new/choose), and problems in Silo's Android apps belong in [silo-android](https://github.com/Silo-Server/silo-android/issues/new/choose).
 
-        Fabricated or AI-hallucinated reports are an immediate block. Read [CONTRIBUTING.md](https://github.com/Artic0din/Auger/blob/main/CONTRIBUTING.md) first.
+        Fabricated or AI-hallucinated reports are an immediate block. Read [CONTRIBUTING.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CONTRIBUTING.md) first.
   - type: textarea
     id: what-happened
     attributes:
