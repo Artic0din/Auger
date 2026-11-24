@@ -332,6 +332,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
         self.assertEqual("${{ needs.publish.outputs.previous_sha }}", changelog_env["PREVIOUS_SHA"])
         self.assertEqual("${{ needs.publish.outputs.release_date }}", changelog_env["RELEASE_DATE"])
         self.assertNotIn("PREVIOUS_TAG", changelog_env)
+        self.assertIn("\n    environment: changelog\n", changelog_block, "the deploy key is scoped to the main-only changelog environment")
 
         notes_script = extract_step_run(publish_block, "Write the release notes")
         changelog_script = extract_step_run(changelog_block, "Commit the release notes to CHANGELOG.md on main")
@@ -441,6 +442,9 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             git(work, "tag", "-f", "v0.1.0", older_sha)
             git(work, "push", "--quiet", "-f", "origin", "refs/tags/v0.1.0")
             git(work, "checkout", "--quiet", "--detach", target_sha)
+
+            # The job checks out without credentials, so a push to origin must fail here as it would in Release.
+            git(work, "remote", "set-url", "--push", "origin", str(root / "no-push-to-origin"))
 
             changelog_temp = root / "changelog-temp"
             changelog_temp.mkdir()
