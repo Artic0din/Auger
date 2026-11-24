@@ -353,6 +353,13 @@ class UserReleaseNotesTest(unittest.TestCase):
         malformed = "<!-- " * 5000 + "\n## Release Notes\n\n- Still fast.\n"
         self.assertEqual({UserSection.NEW: ["Still fast."]}, user_sections("feat: fast (#1)", bodies={1: malformed}))
 
+    def test_fence_inside_html_comment_and_crlf_headings_work(self):
+        body = (
+            "<!-- Example:\r\n```markdown\r\nnot closed\r\n-->\r\n"
+            "## Release Notes ##\r\n\r\n### New ###\r\n\r\n- Works on CRLF bodies.\r\n"
+        )
+        self.assertEqual({UserSection.NEW: ["Works on CRLF bodies."]}, user_sections("feat: crlf (#1)", bodies={1: body}))
+
 
 HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"
 
@@ -625,6 +632,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             git(work, "tag", "v0.1.0")
 
             git(work, "commit", "--quiet", "--allow-empty", "-m", "fix: stop a crash (#6)")
+            git(work, "commit", "--quiet", "--allow-empty", "-m", "docs: mention (#12) in passing")
             git(work, "commit", "--quiet", "--allow-empty", "-m", "feat(player): add chapters (#5)")
             target_sha = git(work, "rev-parse", "HEAD")
             git(work, "push", "--quiet", "-u", "origin", "main", "--tags")

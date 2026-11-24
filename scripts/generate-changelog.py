@@ -351,42 +351,47 @@ def is_no_change(text: str) -> bool:
     return cleaned.strip("*_`").strip().rstrip(".").strip().lower() in NO_USER_CHANGE
 
 
-def strip_fenced_blocks(text: str) -> str:
-    """Remove Markdown fenced code blocks in linear time so examples never become notes."""
-    kept: list[str] = []
+def strip_comments_and_fences(text: str) -> str:
+    """Remove HTML comments and fenced code blocks in one linear pass so neither can open inside the other."""
+    visible: list[str] = []
     fence_char = ""
     fence_len = 0
+    comment_end = 0
+    comments_can_close = True
+    offset = 0
     for line in text.splitlines(keepends=True):
-        stripped = line.rstrip("\r\n")
-        fence = FENCE.match(stripped)
-        if fence:
-            marker = fence.group(1)
-            if not fence_char:
-                fence_char, fence_len = marker[0], len(marker)
-                continue
-            if marker[0] == fence_char and len(marker) >= fence_len and not stripped[fence.end():].strip():
-                fence_char, fence_len = "", 0
-                continue
-        if not fence_char:
-            kept.append(line)
-    return "".join(kept)
-
-
-def strip_html_comments(text: str) -> str:
-    """Remove complete `<!-- ... -->` comments in linear time without regex backtracking."""
-    out: list[str] = []
-    pos = 0
-    while True:
-        start = text.find("<!--", pos)
-        if start == -1:
-            out.append(text[pos:])
-            return "".join(out)
-        end = text.find("-->", start + 4)
-        if end == -1:
-            out.append(text[pos:])
-            return "".join(out)
-        out.append(text[pos:start])
-        pos = end + 3
+        line_start = offset
+        offset += len(line)
+        pos = max(0, comment_end - line_start)
+        if pos >= len(line):
+            continue
+        if pos == 0:
+            stripped = line.rstrip("\n")
+            fence = FENCE.match(stripped)
+            if fence:
+                marker = fence.group(1)
+                if not fence_char:
+                    fence_char, fence_len = marker[0], len(marker)
+                    continue
+                if marker[0] == fence_char and len(marker) >= fence_len and not stripped[fence.end():].strip():
+                    fence_char, fence_len = "", 0
+                    continue
+        if fence_char:
+            continue
+        while pos < len(line):
+            start = line.find("<!--", pos) if comments_can_close else -1
+            if start == -1:
+                visible.append(line[pos:])
+                break
+            end = text.find("-->", line_start + start + 4)
+            if end == -1:
+                comments_can_close = False
+                visible.append(line[pos:])
+                break
+            visible.append(line[pos:start])
+            comment_end = end + 3
+            pos = comment_end - line_start
+    return "".join(visible)
 
 
 def markdown_items(block: str, keep_bullets: bool = False) -> list[str]:
@@ -420,7 +425,7 @@ def release_notes_section(body: str) -> Optional[str]:
 
 def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
     """A PR body's user-facing notes, or None when it has none to offer."""
-    body = strip_html_comments(strip_fenced_blocks(body))
+    body = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
     section = release_notes_section(body)
     if section is not None and section.strip():
         if is_no_change(section):
