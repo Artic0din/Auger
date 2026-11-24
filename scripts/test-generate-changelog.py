@@ -531,7 +531,7 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 '  while [[ $# -gt 0 ]]; do\n'
                 '    if [[ "$1" == "--commit" ]]; then commit="$2"; shift 2; else shift; fi\n'
                 "  done\n"
-                f'  if [[ "${{commit}}" == "{competing_sha}" ]]; then echo "success"; fi\n'
+                f'  if [[ "${{commit}}" == "{competing_sha}" ]]; then echo "success"; else echo "${{TIP_RUN_STATE:-missing}}"; fi\n'
                 "  exit 0\n"
                 "fi\n"
                 "exit 1\n",
@@ -545,6 +545,14 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(0, guard_ok.returncode, guard_ok.stderr)
+            guard_failed_tip = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", build_guard_script],
+                cwd=work,
+                env={**base_env, "GITHUB_REPOSITORY": "Artic0din/Auger-Tizen", "TARGET_SHA": tip_sha, "TIP_RUN_STATE": "failure"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, guard_failed_tip.returncode, "a failed run on a CHANGELOG.md tip must never fall back to a green parent")
 
     def test_release_signing_guard_requires_public_profile_without_personal_secrets(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
