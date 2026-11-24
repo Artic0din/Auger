@@ -96,7 +96,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
-          # Bot CHANGELOG.md commits pushed with GITHUB_TOKEN do not trigger Tizen Builds.
+          # Bot CHANGELOG.md commits are marked [skip ci], so they do not trigger Tizen Builds.
           # Walk back past any single-parent commits that modified only CHANGELOG.md so manual
           # dispatches validate the exact code tree that passed Tizen Builds.
           checked_sha="${TARGET_SHA}"
@@ -365,9 +365,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write # push the CHANGELOG.md commit to main
+      contents: read # the CHANGELOG.md push uses the deploy key, which bypasses the main ruleset
     env:
       GH_TOKEN: ${{ github.token }}
+      CHANGELOG_DEPLOY_KEY: ${{ secrets.CHANGELOG_DEPLOY_KEY }}
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
       PREVIOUS_SHA: ${{ needs.publish.outputs.previous_sha }}
@@ -384,8 +385,9 @@ jobs:
       - name: Commit the release notes to CHANGELOG.md on main
         run: |
           # Separate job so a transient push failure can be retried with "Re-run failed jobs"
-          # after the GitHub Release is already live. Pushes using GITHUB_TOKEN do not trigger
-          # downstream workflows, so this cannot cause a release loop.
+          # after the GitHub Release is already live. GITHUB_TOKEN cannot bypass the main ruleset,
+          # so the push uses a write deploy key. [skip ci] keeps the push from running Tizen
+          # Builds and, through it, this workflow again.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
           git_auth() { git -c "http.https://github.com/.extraheader=${auth_header}" "$@"; }
           generator="${RUNNER_TEMP}/changelog-generator"
@@ -393,6 +395,12 @@ jobs:
           cp scripts/generate-changelog.py scripts/release-version.py "${generator}/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          deploy_key="${RUNNER_TEMP}/changelog-deploy-key"
+          known_hosts="${RUNNER_TEMP}/known_hosts"
+          (umask 077 && printf '%s\n' "${CHANGELOG_DEPLOY_KEY}" > "${deploy_key}")
+          # GitHub's published ed25519 host key (api.github.com/meta).
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "${known_hosts}"
+          export GIT_SSH_COMMAND="ssh -i ${deploy_key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${known_hosts} -o StrictHostKeyChecking=yes"
 
           for attempt in 1 2 3; do
             git_auth fetch --quiet origin main
@@ -407,8 +415,8 @@ jobs:
               echo "CHANGELOG.md on main already records ${VERSION}."
               exit 0
             fi
-            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" CHANGELOG.md
-            if git_auth push origin HEAD:main; then
+            git commit --quiet -m "docs(changelog): record v${VERSION} release notes" -m "[skip ci]" CHANGELOG.md
+            if git push "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:main; then
               exit 0
             fi
             if [[ "${attempt}" -eq 3 ]]; then

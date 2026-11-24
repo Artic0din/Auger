@@ -70,7 +70,8 @@ Fixes read as plain sentences.
 A release with no user-facing commits reads `General maintenance and stability improvements.`
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
-After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes; commits pushed with `GITHUB_TOKEN` do not trigger downstream workflows).
+After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
+It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
 A changelog that already has the version stays unchanged.
 If the changelog job fails after the release is published, use **Re-run failed jobs** to retry only the changelog update, or add the section locally with:
 
