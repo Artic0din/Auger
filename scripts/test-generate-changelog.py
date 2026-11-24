@@ -5,8 +5,11 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -277,6 +280,194 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(1, run("release", "--version", "1.2", "--date", "2026-01-31")[0])
         self.assertEqual(1, run("release", "--version", "1.2.0", "--date", "31/01/2026")[0])
         self.assertEqual(1, run("release", "--version", "1.2.0", "--from", "v9.9.9")[0])
+
+
+def extract_job_block(workflow_text: str, job_name: str) -> str:
+    lines = workflow_text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line == f"  {job_name}:")
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("  ") and not lines[i].startswith("   ")),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def extract_job_mapping(job_block: str, section: str) -> dict[str, str]:
+    lines = job_block.splitlines()
+    start = next(i for i, line in enumerate(lines) if line == f"    {section}:")
+    entries: dict[str, str] = {}
+    for line in lines[start + 1 :]:
+        if line and not line.startswith("      "):
+            break
+        if ":" in line:
+            key, _, value = line.strip().partition(":")
+            entries[key.strip()] = value.split("#", 1)[0].strip()
+    return entries
+
+
+def extract_step_run(job_block: str, step_name: str) -> str:
+    lines = job_block.splitlines()
+    name_index = next(i for i, line in enumerate(lines) if line == f"      - name: {step_name}")
+    run_index = next(i for i in range(name_index + 1, len(lines)) if lines[i] == "        run: |")
+    body: list[str] = []
+    for line in lines[run_index + 1 :]:
+        if line and not line.startswith("          "):
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body))
+
+
+class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
+    """Runs the release.yml notes and changelog steps against a real temp repo."""
+
+    def test_changelog_keeps_original_range_after_previous_tag_moves(self):
+        workflow_text = (SCRIPT_DIR.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish_block = extract_job_block(workflow_text, "publish")
+        changelog_block = extract_job_block(workflow_text, "changelog")
+
+        publish_outputs = extract_job_mapping(publish_block, "outputs")
+        changelog_env = extract_job_mapping(changelog_block, "env")
+        self.assertEqual("${{ steps.notes.outputs.previous_sha }}", publish_outputs["previous_sha"])
+        self.assertEqual("${{ steps.notes.outputs.release_date }}", publish_outputs["release_date"])
+        self.assertEqual("${{ needs.publish.outputs.previous_sha }}", changelog_env["PREVIOUS_SHA"])
+        self.assertEqual("${{ needs.publish.outputs.release_date }}", changelog_env["RELEASE_DATE"])
+        self.assertNotIn("PREVIOUS_TAG", changelog_env)
+
+        notes_script = extract_step_run(publish_block, "Write the release notes")
+        changelog_script = extract_step_run(changelog_block, "Open a pull request to record the release in CHANGELOG.md")
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            root = Path(tmp_name)
+            origin = root / "origin.git"
+            work = root / "work"
+            stub_bin = root / "bin"
+            stub_bin.mkdir()
+            gh_log = root / "gh.log"
+
+            gh_stub = stub_bin / "gh"
+            gh_stub.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ "${1:-}" == "release" && "${2:-}" == "view" ]]; then\n'
+                "  exit 1\n"
+                "fi\n"
+                'if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then\n'
+                "  exit 0\n"
+                "fi\n"
+                'if [[ "${1:-}" == "pr" && "${2:-}" == "create" ]]; then\n'
+                '  printf "%s\\n" "$*" >> "${GH_LOG}"\n'
+                "  exit 0\n"
+                "fi\n"
+                'echo "unexpected gh call: $*" >&2\n'
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            gh_stub.chmod(gh_stub.stat().st_mode | stat.S_IXUSR)
+
+            base_env = {
+                **os.environ,
+                "PATH": f"{stub_bin}{os.pathsep}{os.environ['PATH']}",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_AUTHOR_NAME": "Test",
+                "GIT_AUTHOR_EMAIL": "test@example.com",
+                "GIT_COMMITTER_NAME": "Test",
+                "GIT_COMMITTER_EMAIL": "test@example.com",
+                "GH_TOKEN": "test-token",
+                "GH_REPO": "Artic0din/Auger-Tizen",
+                "GH_LOG": str(gh_log),
+            }
+
+            def git(cwd: Path, *args: str) -> str:
+                return subprocess.run(
+                    ["git", *args], cwd=cwd, env=base_env, check=True, capture_output=True, text=True
+                ).stdout.strip()
+
+            git(root, "init", "--bare", "--quiet", "--initial-branch=main", str(origin))
+            work.mkdir()
+            git(work, "init", "--quiet", "--initial-branch=main")
+            git(work, "remote", "add", "origin", str(origin))
+
+            (work / "scripts").mkdir()
+            shutil.copy2(SCRIPT_DIR / "generate-changelog.py", work / "scripts/generate-changelog.py")
+            shutil.copy2(SCRIPT_DIR / "release-version.py", work / "scripts/release-version.py")
+            (work / "CHANGELOG.md").write_text(
+                f"{HEADER}<!-- changelog:releases -->\n\n## [Earlier changes]\n\n- Old.\n",
+                encoding="utf-8",
+            )
+            git(work, "add", "scripts", "CHANGELOG.md")
+            git(work, "commit", "--quiet", "-m", "feat(search): initial feature")
+            older_sha = git(work, "rev-parse", "HEAD")
+
+            git(work, "commit", "--quiet", "--allow-empty", "-m", "fix: old bug")
+            prev_tag_sha = git(work, "rev-parse", "HEAD")
+            git(work, "tag", "v0.1.0")
+
+            git(work, "commit", "--quiet", "--allow-empty", "-m", "feat(player): add chapters")
+            target_sha = git(work, "rev-parse", "HEAD")
+            git(work, "push", "--quiet", "-u", "origin", "main", "--tags")
+
+            publish_temp = root / "publish-temp"
+            publish_temp.mkdir()
+            github_output = root / "github-output.txt"
+            github_summary = root / "github-summary.md"
+            publish_env = {
+                **base_env,
+                "RUNNER_TEMP": str(publish_temp),
+                "GITHUB_OUTPUT": str(github_output),
+                "GITHUB_STEP_SUMMARY": str(github_summary),
+                "VERSION": "0.2.0",
+                "TAG": "v0.2.0",
+                "PREVIOUS_TAG": "v0.1.0",
+                "TARGET_SHA": target_sha,
+            }
+            publish_run = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", notes_script],
+                cwd=work,
+                env=publish_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, publish_run.returncode, publish_run.stderr)
+
+            outputs = dict(line.split("=", 1) for line in github_output.read_text(encoding="utf-8").splitlines())
+            self.assertEqual(prev_tag_sha, outputs["previous_sha"])
+            notes_text = (publish_temp / "notes.md").read_text(encoding="utf-8")
+            self.assertIn("- **Playback**: Add chapters", notes_text)
+            self.assertNotIn("- Old bug", notes_text)
+            self.assertNotIn("Initial feature", notes_text)
+
+            # Move v0.1.0 to an older still-reachable commit before the changelog job runs.
+            git(work, "tag", "-f", "v0.1.0", older_sha)
+            git(work, "push", "--quiet", "-f", "origin", "refs/tags/v0.1.0")
+            git(work, "checkout", "--quiet", "--detach", target_sha)
+
+            changelog_temp = root / "changelog-temp"
+            changelog_temp.mkdir()
+            changelog_env_vars = {
+                **base_env,
+                "RUNNER_TEMP": str(changelog_temp),
+                "VERSION": "0.2.0",
+                "TAG": "v0.2.0",
+                "PREVIOUS_SHA": outputs["previous_sha"],
+                "TARGET_SHA": target_sha,
+                "RELEASE_DATE": outputs["release_date"],
+            }
+            changelog_run = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", changelog_script],
+                cwd=work,
+                env=changelog_env_vars,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, changelog_run.returncode, changelog_run.stderr)
+
+            committed = git(origin, "show", "refs/heads/docs/changelog-v0.2.0:CHANGELOG.md")
+            self.assertIn(f"## [0.2.0] - {outputs['release_date']}", committed)
+            self.assertIn("- **Playback**: Add chapters", committed)
+            self.assertNotIn("- Old bug", committed)
+            self.assertNotIn("Initial feature", committed)
+            self.assertIn("--head docs/changelog-v0.2.0", gh_log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

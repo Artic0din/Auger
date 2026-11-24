@@ -69,6 +69,12 @@ class LatestTagTest(unittest.TestCase):
         self.assertEqual("v0.2.0", latest.name)
         self.assertFalse(latest.is_prerelease)
 
+    def test_newer_beta_outranks_an_older_exact_tag(self):
+        tags = ["v0.1.0", "v0.2.0-beta.1", "v0.2.0-beta.2", *BETAS]
+        latest = release.latest_tag(tags)
+        self.assertEqual("v0.2.0-beta.2", latest.name)
+        self.assertTrue(latest.is_prerelease)
+
     def test_legacy_build_metadata_tags(self):
         tag = release.parse_tag("v1.0.0+21")
         self.assertEqual(release.SemVer(1, 0, 0), tag.version)
@@ -107,6 +113,18 @@ class AutoBumpTest(unittest.TestCase):
         )
         self.assertEqual("v0.3.0", plan(tags, "feat: a").tag)
 
+    def test_from_a_beta_tag_newer_than_an_exact_tag(self):
+        tags = ["v0.1.0", "v0.2.0-beta.1", "v0.2.0-beta.2"]
+        self.assertEqual(
+            release.ReleasePlan(True, "0.2.1", "v0.2.1", "v0.2.0-beta.2", "patch"),
+            plan(tags, "fix: a"),
+        )
+        self.assertEqual(
+            release.ReleasePlan(True, "0.3.0", "v0.3.0", "v0.2.0-beta.2", "minor"),
+            plan(tags, "feat: a"),
+        )
+        self.assertEqual("v1.0.0", plan(tags, "feat!: a").tag)
+
     def test_without_tags(self):
         self.assertEqual(release.ReleasePlan(True, "0.1.0", "v0.1.0", "", "minor"), plan([], "feat: a"))
         self.assertEqual("v0.0.1", plan([], "fix: a").tag)
@@ -124,6 +142,14 @@ class ManualBumpTest(unittest.TestCase):
             release.ReleasePlan(True, "1.0.0", "v1.0.0", "v0.1.0-beta.3", "major"),
             plan(BETAS, "docs: a", mode="major"),
         )
+
+    def test_from_a_beta_tag_newer_than_an_exact_tag(self):
+        tags = ["v0.1.0", "v0.2.0-beta.1"]
+        self.assertEqual(
+            release.ReleasePlan(True, "0.2.1", "v0.2.1", "v0.2.0-beta.1", "patch"),
+            plan(tags, mode="patch"),
+        )
+        self.assertEqual("v0.3.0", plan(tags, mode="minor").tag)
 
     def test_already_released_target_makes_no_release(self):
         result = plan(["v0.2.1"], mode="patch", target_already_released=True)
@@ -147,6 +173,9 @@ class ExplicitVersionTest(unittest.TestCase):
     def test_must_be_newer_than_the_latest_tag(self):
         with self.assertRaisesRegex(release.ReleaseError, "not newer"):
             plan(BETAS, explicit_version="0.1.0")
+        with self.assertRaisesRegex(release.ReleaseError, "not newer than the latest tag, v0.2.0-beta.1"):
+            plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.2.0")
+        self.assertEqual("v0.2.1", plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.2.1").tag)
         with self.assertRaisesRegex(release.ReleaseError, "not newer"):
             plan(["v0.2.0"], explicit_version="0.1.9")
         with self.assertRaisesRegex(release.ReleaseError, "look like"):
@@ -322,6 +351,19 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(
             {"should_release": "true", "version": "0.3.0", "tag": "v0.3.0", "previous_tag": "v0.1.0", "bump": "minor"},
             self.next_published("--target", target),
+        )
+
+    def test_bumps_from_a_beta_tag_newer_than_a_published_tag(self):
+        self.commit("feat: initial", "v0.1.0")
+        self.commit("feat: beta work", "v0.2.0-beta.1", published=False)
+        target = self.commit("fix: polish beta")
+        self.assertEqual(
+            {"should_release": "true", "version": "0.2.1", "tag": "v0.2.1", "previous_tag": "v0.2.0-beta.1", "bump": "patch"},
+            self.next_published("--target", target),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "0.3.0", "tag": "v0.3.0", "previous_tag": "v0.2.0-beta.1", "bump": "minor"},
+            self.next_published("--target", target, "--bump", "minor"),
         )
 
 
