@@ -35,6 +35,7 @@ on:
 concurrency:
   group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) && 'release' || format('release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -216,6 +217,24 @@ jobs:
 
       - name: Publish the release
         run: |
+          # Check an existing release first so an already-published retry does
+          # not fail on extra API calls, and never silently accepts a tag that
+          # belongs to a different commit.
+          release_state="missing"
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
+            if [[ "${is_draft}" == "false" ]]; then
+              tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
+              if [[ "${tag_sha}" == "${TARGET_SHA}" ]]; then
+                echo "${TAG} is already published for ${TARGET_SHA::9}."
+                exit 0
+              fi
+              echo "::error::${TAG} is already published for ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
+              exit 1
+            fi
+            release_state="draft"
+          fi
+
           # Never roll Latest backward if a newer stable release published
           # before a retry of this job ran.
           published_tags="$(gh api "repos/${GH_REPO}/releases" --paginate \
@@ -248,16 +267,10 @@ jobs:
             echo "- **Sideload:** download \`Auger.wgt\` and \`Auger.wgt.sha256\`, check it with \`sha256sum --check Auger.wgt.sha256\`, and run \`tizen install -n Auger.wgt -t <device>\` on a TV in Developer Mode. It installs only on TVs listed in the maintainer's signing certificate."
           } > notes.md
 
-          # "Re-run failed jobs" re-runs this whole job. Leave an already
-          # published release untouched. For a leftover draft, replace both
-          # assets from this run's verified bundle and update target/notes so a
-          # retry never mixes artifacts across commits.
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-            is_draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft)"
-            if [[ "${is_draft}" == "false" ]]; then
-              echo "${TAG} is already published."
-              exit 0
-            fi
+          # "Re-run failed jobs" re-runs this whole job. For a leftover draft,
+          # replace both assets from this run's verified bundle and update
+          # target and notes so a retry never mixes artifacts across commits.
+          if [[ "${release_state}" == "draft" ]]; then
             gh release upload "${TAG}" --clobber wgt/Auger.wgt wgt/Auger.wgt.sha256
             gh release edit "${TAG}" --target "${TARGET_SHA}" --title "Auger ${VERSION}" \
               --notes-file notes.md --draft=false --prerelease=false "${latest_flag}"
