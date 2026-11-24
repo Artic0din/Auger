@@ -956,6 +956,109 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
 
 // PlayerView.metadata(for:) and CountdownRing (PlayerView.swift:1348-1395, :1777, silo-apple main f70e16a): the series line, the S·E code
 // before the title, the synopsis, and the countdown as a ring of seconds left over the countdown's length beside Play Now (#697).
+// #801: every Up Next text is Apple's tvOS point size times the SF Pro cap scale, at Apple's weight (silo-apple 449ba47 PlayerView.swift).
+test("Up Next draws its text at Apple's points times the cap scale, in every state (#801)", async () => {
+    const { page } = await open();
+    try {
+        /** [selector, points, weight, PlayerView.swift source]. */
+        type Role = readonly [string, number, string, string];
+        const check = async (state: string, roles: readonly Role[]): Promise<void> => {
+            const off = await page.evaluate(list => {
+                const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+                const found: string[] = [];
+                for (const [selector, points, weight] of list) {
+                    const nodes = [...document.querySelectorAll(selector)].filter(node => node.getClientRects().length > 0);
+                    if (nodes.length === 0) { found.push(`${selector}: not shown`); continue; }
+                    for (const node of nodes) {
+                        const css = getComputedStyle(node);
+                        const drawn = parseFloat(css.fontSize) / cap;
+                        if (Math.abs(drawn - points) > 0.01 || css.fontWeight !== weight) found.push(`${selector}: ${drawn.toFixed(2)} pt ${css.fontWeight}, not ${points} pt ${weight}`);
+                    }
+                }
+                return found;
+            }, roles);
+            assert.deepEqual(off, [], state);
+        };
+        const episode = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 13, overview: "A storm closes the harbor.", airDate: "2022-02-18", runtimeMinutes: 57 };
+        await show(page, { ...playing(TRACKS), upNext: { next: episode, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        await check("an episode on the prompt", [
+            [".player-next-eyebrow", 18, "600", ":1256-1261 eyebrowSize, semibold"],
+            [".player-next-series", 34, "700", ":1353 seriesTitleSize, bold"],
+            [".player-next-up .player-title.player-next-episode-title", 25, "600", ":1364 subtitleSize, semibold"],
+            [".player-next-meta", 19, "500", ":1379 captionSize, medium"],
+            [".player-next-synopsis", 22, "400", ":1387 bodySize"],
+            ['.player-next-up [data-focus="play-next"]', 30, "600", ":1409 Play Now, 30 semibold"],
+            ['.player-next-up [data-focus="keep-watching"]', 26, "600", ":1452 Keep Watching, 26 semibold"],
+            ['.player-next-up [data-focus="back"]', 26, "600", ":1469 Close, 26 semibold"],
+            [".player-countdown-seconds", 24, "700", ":1790 CountdownRing, 24 bold rounded"],
+        ]);
+        // PlayerView.swift:1387-1390: the overview at 0.58, three lines at most, 620 wide.
+        assert.deepEqual(await page.locator(".player-next-synopsis").evaluate(node => { const css = getComputedStyle(node); return [css.opacity, css.maxWidth, css.webkitLineClamp]; }), ["0.58", "620px", "3"]);
+        // A synopsis that wraps past three lines shows three.
+        await show(page, { ...playing(TRACKS), upNext: { next: { ...episode, overview: "A storm closes the harbor and the town waits. ".repeat(20) }, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        const clamp = await page.locator(".player-next-synopsis").evaluate(node => ({ height: node.getBoundingClientRect().height, line: parseFloat(getComputedStyle(node).lineHeight), full: node.scrollHeight }));
+        assert.ok(clamp.full > clamp.line * 3, `the text wraps past three lines (${clamp.full} px)`);
+        assert.ok(clamp.height <= clamp.line * 3 + 0.5, `but shows at most three: ${clamp.height} px for ${clamp.line} px lines`);
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } });
+        await check("a title with no episode code", [[".player-next-up .player-title", 34, "700", ":1369-1372 seriesTitleSize, bold"]]);
+        await show(page, { ...playing(TRACKS), upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } });
+        await check("while the next item is looked up", [[".player-next-up .player-title", 42, "600", ":1327-1328 titleSize, semibold"]]);
+        await page.route("**/images/bright-still.svg", route => route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ffffff"/></svg>' }));
+        const brightDeck = [{ contentId: "movie:bright", fileId: "9", title: "Bright", startSeconds: 0, backdropUrl: "/images/bright-still.svg" }];
+        await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, deck: brightDeck });
+        await check("with nothing to follow", [
+            [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
+            [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
+        ]);
+        // finishedContent (:1340-1343) draws finishedMessage, which is also the failed lookup's sentence (:1613-1630), white at 0.62 and
+        // 560 wide. Over a rendered bright white still behind Up Next's dimming layers, contrast must stay above 4.5:1.
+        const message = async (): Promise<{ color: string; opacity: string; maxWidth: string; contrast: number; backdrop: readonly [number, number, number] }> => {
+            await page.locator(".player-next-card img").evaluate(node => {
+                const img = node as HTMLImageElement;
+                return img.complete ? undefined : new Promise<void>(done => {
+                    img.addEventListener("load", () => done(), { once: true });
+                    img.addEventListener("error", () => done(), { once: true });
+                });
+            });
+            await page.clock.runFor(50);
+            const box = await page.locator(".player-next-up .player-error-text").boundingBox();
+            assert.ok(box !== null, "finished message box");
+            const pixelPng = await page.screenshot({ clip: { x: Math.max(0, Math.round(box.x - 40)), y: Math.round(box.y + box.height / 2), width: 1, height: 1 } });
+            return page.locator(".player-next-up .player-error-text").evaluate(async (node, pngBytes) => {
+                const backdropNode = document.querySelector<HTMLElement>(".player-next-backdrop");
+                if (backdropNode === null || backdropNode.hidden) throw new Error("Up Next backdrop must be rendered for the contrast check");
+                const bitmap = await createImageBitmap(new Blob([new Uint8Array(pngBytes)], { type: "image/png" }));
+                const canvas = document.createElement("canvas");
+                canvas.width = 1;
+                canvas.height = 1;
+                const ctx = canvas.getContext("2d")!;
+                ctx.drawImage(bitmap, 0, 0);
+                bitmap.close();
+                const [bgR = 0, bgG = 0, bgB = 0] = ctx.getImageData(0, 0, 1, 1).data;
+                const css = getComputedStyle(node);
+                const [r = 0, g = 0, b = 0] = css.color.match(/[\d.]+/g)!.map(Number);
+                const alpha = Number(css.opacity);
+                const mix = (fg: number, bg: number): number => fg * alpha + bg * (1 - alpha);
+                const linear = (channel: number): number => { const c = channel / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+                const luminance = (red: number, green: number, blue: number): number => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+                const text = luminance(mix(r, bgR), mix(g, bgG), mix(b, bgB));
+                const ground = luminance(bgR, bgG, bgB);
+                const lighter = Math.max(text, ground);
+                const darker = Math.min(text, ground);
+                return { color: css.color, opacity: css.opacity, maxWidth: css.maxWidth, contrast: Math.round((lighter + 0.05) / (darker + 0.05) * 100) / 100, backdrop: [bgR, bgG, bgB] as const };
+            }, [...pixelPng]);
+        };
+        const finished = await message();
+        assert.deepEqual({ color: finished.color, opacity: finished.opacity, maxWidth: finished.maxWidth }, { color: "rgb(255, 255, 255)", opacity: "0.62", maxWidth: "560px" }, "the finished message");
+        assert.ok(finished.backdrop.some(channel => channel > 0), `bright still rendered through backdrop: ${JSON.stringify(finished.backdrop)}`);
+        assert.ok(finished.contrast >= 4.5, `contrast ${finished.contrast}:1 over backdrop ${JSON.stringify(finished.backdrop)}`);
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "failed", retryable: true, next: undefined, deck: brightDeck });
+        const failed = await message();
+        assert.deepEqual([failed.color, failed.opacity], ["rgb(255, 255, 255)", "0.62"], "a failed lookup's sentence is the same text, not error red");
+        assert.ok(failed.contrast >= 4.5, `failed lookup contrast ${failed.contrast}:1 over backdrop ${JSON.stringify(failed.backdrop)}`);
+    } finally { await page.close(); }
+});
+
 test("Up Next names the series and the episode code, shows the synopsis and counts down in a ring beside Play Now", async () => {
     const { page } = await open();
     try {

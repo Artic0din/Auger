@@ -21,16 +21,29 @@
     overflow-y: auto;
     background: transparent;
 }
-.player-next-up .player-title { font-size: 42px; }
-.player-next-eyebrow { font-size: 18px; text-transform: uppercase; opacity: .52; }
-.player-next-synopsis { font-size: 22px; line-height: 1.4; }
+/* PlayerView.swift:1740-1746, tvOS sizes times the cap scale (#801). The card's heading is titleSize 42: bold for Almost Finished and End
+   of Playback, semibold while the next item is looked up (:1320-1346). A next item without an episode code is seriesTitleSize 34 bold (:1369-1372). */
+/* `.player-error.player-next-up` outranks the error page's 48 px `.player-error .player-title`, which drew Up Next's heading until now. */
+.player-error.player-next-up .player-title { font-size: calc(42px * var(--silo-sf-cap-scale)); font-weight: 700; }
+.player-error.player-next-up .player-title.player-next-working { font-weight: 600; }
+.player-error.player-next-up .player-title.player-next-named { font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; }
+.player-next-eyebrow { font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; text-transform: uppercase; opacity: .52; }
+/* :1385-1390: bodySize at 0.58, three lines at most, 620 wide. */
+.player-next-synopsis[hidden] { display: none; }
+.player-next-synopsis:not([hidden]) { display: -webkit-box; max-width: 620px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 1.4; opacity: .58; }
+/* :1340-1343: the finished message, bodySize medium, white at 0.62, 560 wide. The failed lookup's sentence is the same Text (:1613-1630). */
+.player-next-up .player-error-text { max-width: 560px; color: #ffffff; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .62; }
+/* actionRow (:1405-1470): Play Now at 30 semibold, Keep Watching and Close at 26 semibold. */
+.player-next-up .player-button[data-focus="play-next"] { font-size: calc(30px * var(--silo-sf-cap-scale)); }
+.player-next-up .player-button[data-focus="keep-watching"],
+.player-next-up .player-button[data-focus="back"] { font-size: calc(26px * var(--silo-sf-cap-scale)); }
 /* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
-.player-next-series { margin: 0; font-size: 34px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-next-series { margin: 0; font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-next-series[hidden] { display: none; }
 /* PlayerView.metadata(for:): captionSize 19 pt, medium, white at 0.46. */
 .player-next-meta { margin: 0; font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .46; }
 .player-next-meta[hidden] { display: none; }
-.player-next-up .player-title.player-next-episode-title { font-size: 25px; font-weight: 600; }
+.player-next-up .player-title.player-next-episode-title { font-size: calc(25px * var(--silo-sf-cap-scale)); font-weight: 600; }
 .player-next-code { margin-inline-end: 4px; opacity: .62; }
 /* CountdownRing: 58 px, a 3 px track at 12% white and the remaining part in white with round ends, the seconds at 24 bold rounded. */
 .player-countdown { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin: 18px 0 0; margin-inline-end: 20px; vertical-align: top; }
@@ -71,7 +84,7 @@
 .player-countdown circle { fill: none; stroke-width: 3; }
 .player-countdown-track { stroke: rgba(255, 255, 255, 0.12); }
 .player-countdown-progress { stroke: #ffffff; stroke-linecap: round; }
-.player-countdown-seconds { position: relative; font-size: 24px; font-weight: 700; font-family: ui-rounded, var(--silo-font, sans-serif); color: #ffffff; }
+.player-countdown-seconds { position: relative; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 700; font-family: ui-rounded, var(--silo-font, sans-serif); color: #ffffff; }
 /* PlayerView.backgroundImage: the still fills the page, blurred 44 and scaled 1.12 at 0.18, under 0.78 black. */
 .player-next-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .player-next-backdrop[hidden] { display: none; }
