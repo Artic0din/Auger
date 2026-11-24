@@ -8,6 +8,19 @@ If you cannot create a GitHub account, post the same details in the Silo Discord
 Before reporting, check whether the same problem happens in the Silo web app.
 Problems that also happen in the web app usually belong in [silo-server](https://github.com/Silo-Server/silo-server/issues/new/choose).
 
+## Fastest way: send a Diagnostics report straight from Auger
+
+Auger can gather your TV model, firmware/Tizen version, Auger version, Silo server version, last playback Stats, and recent redacted events automatically.
+Server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
+
+1. Open your **Profile** icon (top-right of Auger) → **Settings** → **Diagnostics**.
+2. **Primary (no GitHub or Discord account needed):** Select **Send Diagnostics Report** and confirm **Send Report**.
+   Auger submits the redacted report through the Auger diagnostics relay, which opens a GitHub diagnostics issue automatically and displays the reference number on your TV (for example, `#901`).
+3. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
+   The helper page decodes the link `#fragment` locally in your browser (never sent to a server) and lets you tap **Copy for Discord** or **Open Pre-filled GitHub Bug Report**.
+
+If Auger cannot open **Settings**, follow the manual steps below instead.
+
 ## 1. TV model and Tizen / firmware version
 
 Samsung TVs do not always show the Tizen OS version number directly, so share both the **Model Code** and **Software Version**.

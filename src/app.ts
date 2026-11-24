@@ -1,4 +1,5 @@
 import { startPlayback, type PlayerPlatform, type PlayerScreen } from "./player/playerScreen.ts";
+import { DiagnosticsCollector, type DiagnosticsDeviceInfo, sendDiagnosticsReport } from "./diagnostics.ts";
 import { connect, type ConnectedServer, type SessionCoreDeps } from "./session/core.ts";
 import type { LogoutResult } from "./session/session.ts";
 import { mountBrowse, type Browse, type PlayRequest } from "./ui/browse.ts";
@@ -17,6 +18,7 @@ import { lateRedraw } from "./ui/selectRelease.ts";
 
 export interface AppOptions {
     readonly core: SessionCoreDeps;
+    readonly diagnostics?: DiagnosticsDeviceInfo;
     readonly player: PlayerPlatform | undefined;
     readonly exit: () => void;
 }
@@ -47,6 +49,10 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     let accounts: AccountsScreen | undefined;
     let connected: ConnectedServer | undefined;
     let startup: ScreenHost | undefined;
+    const diagnostics = new DiagnosticsCollector(
+        options.diagnostics ?? { appVersion: options.player?.appVersion ?? APP_VERSION, tvModel: options.core.deviceName ?? "Samsung TV" },
+        options.core.clock,
+    );
     const transient = new Map<string, string>();
     let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
         secrets: openSecretStore(undefined),
@@ -217,6 +223,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     };
 
     const showBrowse = (server: ConnectedServer, active: ProfileHandoff): void => {
+        if (activeServer !== undefined && activeServer !== server) diagnostics.clear();
+        diagnostics.setServerVersion(server.server.serverVersion);
         activeServer = server;
         server.profileLaunch.recordActive();
         stopContent();
@@ -230,19 +238,22 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         const text = avatarText(active.profile);
         const content = mountBrowse(root, {
             server,
+            diagnostics,
+            sendDiagnostics: (collector, signal) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal }),
             profileName: active.profile.name,
             ...(avatar === undefined ? {} : { profileAvatarUrl: avatar }),
             ...(text === undefined ? {} : { profileAvatarText: text }),
             ...(activeCore.publicStorage === undefined ? {} : { publicStorage: activeCore.publicStorage }),
             ...(activeCore.keyManager === undefined ? {} : { keyManager: activeCore.keyManager }),
             onSignOut: () => {
+                diagnostics.clear();
                 stopContent();
                 profiles?.signOut();
             },
             onSwitchServer: back => switchServer(server, back),
             onAccounts: back => {
                 accounts = mountAccounts(root, activeCore, server, openFromAccounts, () => { accounts = undefined; if (active.signal.aborted) showAccounts(); else back(); }, true,
-                () => { active.signal.removeEventListener("abort", stopContent); profiles?.destroy(); profiles = undefined; });
+                () => { diagnostics.clear(); active.signal.removeEventListener("abort", stopContent); profiles?.destroy(); profiles = undefined; });
             },
             onChooseProfile: () => {
                 stopContent();
@@ -264,7 +275,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap());
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics);
     };
 
     const onBack = (event: KeyboardEvent): void => {

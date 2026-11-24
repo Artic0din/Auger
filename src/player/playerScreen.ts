@@ -10,6 +10,7 @@
 // switch, say) is never erased.
 
 import type { Clock } from "../api/clock.ts";
+import type { DiagnosticsCollector } from "../diagnostics.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
@@ -2016,12 +2017,29 @@ export function startPlayback(
     spoilers?: () => EpisodeSpoilerSettings,
     storage?: PublicStorage,
     resolutionCap?: PlaybackDeps["resolutionCap"],
+    diagnostics?: DiagnosticsCollector,
 ): PlayerScreen {
     const clock = platform.clock ?? systemClock;
     let screen: PlayerScreen | undefined;
+    let stopDiagnostics: (() => void) | undefined;
     const finish = (): void => {
+        stopDiagnostics?.();
+        stopDiagnostics = undefined;
         screen?.destroy();
         controller.destroy();
+    };
+    // Record only structured codes or validated HTTP status; never forward free-form server text that could contain account names or media titles.
+    const playbackErrorText = (error: PlaybackError): string => {
+        if (error.kind === "terminal") return /^[a-z0-9_.-]{1,48}$/i.test(error.reason) ? error.reason : "terminal_error";
+        if (error.kind !== "server" || error.reason === undefined) return "";
+        const reason = error.reason;
+        if ("text" in reason) return "server_error";
+        if ("status" in reason) {
+            return typeof reason.status === "number" && Number.isInteger(reason.status) && reason.status >= 100 && reason.status <= 599
+                ? `HTTP ${reason.status}`
+                : "server_error";
+        }
+        return "app_update_required";
     };
     const controller = new PlaybackController({
         session: server.session,
@@ -2039,6 +2057,7 @@ export function startPlayback(
                 exits.onEnd(reason);
             },
             onError: (error) => {
+                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error));
                 finish();
                 exits.onError(error);
             },
@@ -2047,6 +2066,21 @@ export function startPlayback(
         ...(storage === undefined ? {} : { publicStorage: storage }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
     });
+    if (diagnostics !== undefined) {
+        let lastErrorKey: string | undefined;
+        stopDiagnostics = controller.subscribe(view => {
+            if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
+                diagnostics.recordPlaybackStats(view.hud.stats);
+            } else if (view.phase === "error") {
+                const detail = playbackErrorText(view.error);
+                const key = `${view.error.kind}:${detail}`;
+                if (key !== lastErrorKey) {
+                    lastErrorKey = key;
+                    diagnostics.recordPlaybackError(view.error.kind, detail);
+                }
+            }
+        });
+    }
     screen = mountPlayerScreen(root, controller, clock, server.server.http.base.baseUrl);
     controller.play(request);
     return { destroy: finish };
