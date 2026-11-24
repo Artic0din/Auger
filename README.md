@@ -36,8 +36,9 @@ The installed OS version, not the TV's model year, decides compatibility; earlie
 Auger ships through Apps2Samsung and GitHub Releases.
 Install it in one of two ways:
 
-- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (recommended):** add this repository as a source (`github.com/Artic0din/Auger-Tizen`), then install from it.
+- **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (recommended):** open Apps2Samsung, find **Auger** under **Media servers & players**, and install it directly from the official community catalog.
   Apps2Samsung signs `Auger.wgt` with your own Samsung certificate and updates it in one click when a new release ships.
+  Do not add this repository as a custom source; doing so creates a duplicate `Unverified · Auger-Tizen` entry alongside the official listing.
 - **Sideload from source:** public releases are signed with the Tizen SDK public certificate (no personal TV DUIDs), so direct `tizen install` requires building and signing locally with your own Samsung TV certificate profile; see [Releasing](docs/releasing.md#sideloading-a-build).
 
 The two signatures differ, so to switch between Apps2Samsung and a sideloaded build, in either direction, uninstall the app first.
