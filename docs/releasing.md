@@ -1,34 +1,73 @@
 # Releasing
 
-Releases run from GitHub Actions on `main` and compute version and build numbers from repository tags. Auger ships by sideloading and through [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung). It is not submitted to the Samsung TV store ([#732](https://github.com/Artic0din/silo-tizen/issues/732)).
+Every user-facing change that lands on `main` becomes a GitHub Release with a signed `Auger.wgt`.
+Auger ships through [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) and by sideloading.
 
-## Publishing a tester build
+## Automatic releases and tags
 
-1. Confirm **Tizen Builds** passed on the target `main` commit.
-2. Open **Actions**, select **Release**, and run the workflow with `bump` left on `build`. (On the very first release with no prior tag, supply a starting `version` such as `0.1.0`.)
-3. Verify the run tags `vX.Y.Z-beta.B`, writes `X.Y.Z` into `app/config.xml`, signs `silo-tizen-X.Y.Z-B.wgt` with the maintainer's Samsung certificate, and publishes the `.wgt` and `.sha256` on a GitHub prerelease grouped by `.github/release.yml`.
+The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Builds** succeeds on a `main` push.
+`scripts/release-version.py` reads the Conventional Commit messages since the latest `v*` tag and picks the bump:
 
-If a run fails, use **Re-run failed jobs** to keep the same tag and build number. Delete the tag only if the run never published a prerelease; the next run refuses to start while the newest tag has no release.
+| Commits since the latest tag | Bump |
+| --- | --- |
+| `feat!:`, `fix(ui)!:` or any type with `!`, or a body line starting `BREAKING CHANGE:` | major (`1.4.2` to `2.0.0`) |
+| `feat` | minor (`1.4.2` to `1.5.0`) |
+| `fix`, `perf`, `revert`, or a `Revert "..."` subject | patch (`1.4.2` to `1.4.3`) |
+| only `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` or merge commits | no release |
+
+The largest bump wins.
+When the workflow releases, it writes `X.Y.Z` into `app/config.xml`, signs the `.wgt` with the maintainer's Samsung certificate, and creates the `vX.Y.Z` tag together with the release.
+A commit that is already at or behind the latest `vX.Y.Z` tag never releases again, so re-runs are safe.
+
+Tizen limits widget versions to `[0-255].[0-255].[0-65535]`, and the script refuses a version outside that range.
+
+The older tester tags (`vX.Y.Z-beta.B`) count as their `X.Y.Z`, so the first automatic release after `v0.1.0-beta.3` is `v0.1.1`, `v0.2.0` or `v1.0.0`.
+
+### Running a release by hand
+
+Open **Actions**, select **Release**, and run it on `main`.
+The commit must have passed **Tizen Builds**.
+
+- `bump: auto` releases only when the commits call for it, as above.
+- `bump: patch`, `minor` or `major` forces that bump from the latest tag.
+- `version: X.Y.Z` releases exactly that version, which must be newer than the latest tag.
+
+If a run fails, use **Re-run failed jobs**.
+The publish step uploads only missing files and publishes a release that an earlier attempt left as a draft.
+
+## Release artifacts
+
+Each release carries two files:
+
+- `Auger.wgt`, the signed package, with `<widget version="X.Y.Z">` in its `config.xml`.
+- `Auger.wgt.sha256`, its checksum.
+
+Every release is marked Latest, so `https://github.com/Artic0din/Auger/releases/latest/download/Auger.wgt` always serves the newest build.
+Release notes are generated from merged pull requests and grouped by `.github/release.yml`.
+
+## Installing and updating with Apps2Samsung
+
+1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger`, or use **Settings > Installing > Your sources** in the app.
+2. Install Auger from that source.
+   Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so your TV needs no listing in the maintainer's certificate.
+3. Update with one click.
+   Every release raises `X.Y.Z` in `app/config.xml`, so Apps2Samsung's updater sees every release.
+
+### Community catalog
+
+[`docs/apps2samsung/Artic0din__Auger.json`](apps2samsung/Artic0din__Auger.json) is a manifest for the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages).
+It is ready to submit to that repository's `packages/` folder once it is reviewed and a first `vX.Y.Z` release is live.
 
 ## Sideloading a build
 
-The maintainer's certificate lists allowed TV DUIDs, so a sideloaded build installs only on those TVs.
+The maintainer's certificate lists the TV DUIDs it allows, so a sideloaded build installs only on those TVs.
 
-1. Download the versioned `.wgt` and `.sha256` from GitHub Releases and verify the checksum.
-2. On a listed TV in Developer Mode, install through Tizen Studio Device Manager or run `tizen install -n silo-tizen-1.0.0-23.wgt -t <device>`.
+1. Download `Auger.wgt` and `Auger.wgt.sha256` from [GitHub Releases](https://github.com/Artic0din/Auger/releases).
+2. Check the file with `sha256sum --check Auger.wgt.sha256`.
+3. On a listed TV in Developer Mode, install it through Tizen Studio Device Manager or run `tizen install -n Auger.wgt -t <device>`.
 
-## Installing with Apps2Samsung
+## Switching between Apps2Samsung and a sideloaded build
 
-1. Add this repository as a source in [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (`apps2samsung-cli sources add github.com/Artic0din/Auger`) and install from it. Apps2Samsung re-signs the `.wgt` with the user's own Samsung certificate, so the TV needs no listing in the maintainer's certificate.
-2. When upgrading to a newer build with the same widget version in `config.xml`, install from the source again because Apps2Samsung's update button compares only `X.Y.Z`, not the build number.
-3. Uninstall the existing app before switching between a sideloaded build and Apps2Samsung in either direction because their signatures differ; uninstalling clears app data.
-
-## Version and tag scheme
-
-- **Version (`X.Y.Z`):** user-visible widget version in `app/config.xml`, constrained by Tizen to `[0-255].[0-255].[0-65535]`. Keep the same version across beta builds; start a new version by entering it in the `version` workflow input. `bump: minor` and `bump: patch` count from exact `vX.Y.Z` tags, so they stop with "Nothing has been released yet" (`scripts/release-version.py`) while only `vX.Y.Z-beta.B` tags exist.
-- **Build number (`B`):** single monotonically increasing counter across the repository.
-- **Tags:** `vX.Y.Z-beta.B` for GitHub prereleases.
-
-## Latest tester build link
-
-`releases/download/beta-latest/silo-tizen-latest-beta.wgt` always serves the newest tester build without a `.sha256` file; use the versioned release file when checksum verification is required. Each Release run moves `beta-latest` to its commit and replaces that file unless a newer tester build already exists.
+Apps2Samsung and the maintainer sign with different certificates.
+Uninstall Auger before switching in either direction.
+Uninstalling clears the app's data, so you sign in again afterwards.

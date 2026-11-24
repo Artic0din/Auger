@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Every user-facing change on `main` now ships as a GitHub Release: after CI passes, the Release workflow picks `vX.Y.Z` from the Conventional Commits since the last tag and publishes `Auger.wgt` with `Auger.wgt.sha256`, so Apps2Samsung updates in one click. An Apps2Samsung community catalog manifest is ready to submit.
 - Up Next now has an Auto-play toggle below its buttons, as on Apple TV. On the finished card, turning it off stops the countdown and turning it on starts it again (#759).
 - Up Next now shows the next episode's air date and runtime under its title, as on Apple TV (#759).
 - Added a tvOS source check: a pull request that changes the TV interface must cite the silo-apple tvOS source it ports, file and line range, under a "tvOS source" heading.
@@ -586,7 +587,7 @@ All notable changes to this project are documented in this file.
 - Added a weekly Parity drift workflow that opens an issue when the Apple TV or Android TV apps change features since FEATURES.md was last reviewed.
 - Added a docs index, a native API v2 reference and a TV focus guide, and grouped the feature, playback and evidence notes into folders as the Apple and Android repositories do.
 - Added a contributing guide, a platform licence exception, a trademark notice, third-party notices, CLAUDE.md and t3.json, and rewrote the README and agent guide.
-- Added a Release workflow that tags a numbered tester build, signs its `.wgt` and publishes it on a GitHub prerelease, plus a fixed "latest tester build" link.
+- Added a Release workflow that signs the `.wgt` and publishes it on a GitHub Release.
 - Added a Tizen Builds CI job that packages the `.wgt` on every pull request and signs it with the maintainer's Samsung certificate on main and same-repository pull requests.
 - Added issue forms, contact links, a pull request template, evidence paths and release-note categories.
 - Added a separate library Browse grid with continuous loading, sort and filter panels, an A–Z prefix rail, remembered preferences and server-owned Shuffle, while keeping Recommended and the existing library destinations.
