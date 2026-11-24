@@ -2,20 +2,8 @@
 
 > [!IMPORTANT]
 > The most helpful way to contribute to Auger right now is a clear, accurate
-> issue. Pull requests are welcome when a maintainer asks for one in an issue
-> comment. We close other pull requests without review.
-
-## Why we're asking for issues
-
-Pull requests now arrive faster than we can review them carefully. Reviewing a
-change properly means reading every line, checking it against work already in
-flight, re-running validation, and owning the result after it merges. Writing
-the change ourselves from a precise issue takes less time, and it keeps every
-change on one workflow with the same tests and the same review.
-
-This is about review capacity, not the quality of anyone's work, and it applies
-whether or not you used AI. Thank you for taking the time to write things up
-well.
+> issue. Pull requests are welcome when accompanied by an issue.
+> We close other pull requests without review.
 
 ## Write a useful issue
 
@@ -44,12 +32,8 @@ the repository's Security tab, not in a public issue.
 
 ## Pull requests
 
-Pull requests are welcome when a maintainer asks for one, usually in an issue
-comment. The rest of this guide applies to those pull requests.
-
-We close other pull requests without review. That isn't a judgment of the
-work. If the problem still matters, open an issue for it and link the closed
-pull request; we may use the code as a reference.
+Pull requests are welcome when accompanied by an issue. 
+The rest of this guide applies to those pull requests.
 
 ## Before you start
 
