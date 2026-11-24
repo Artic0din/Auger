@@ -359,7 +359,7 @@ jobs:
               return 0
             fi
             git_auth fetch --quiet origin main || return 1
-            if git show origin/main:CHANGELOG.md 2>/dev/null | grep -qE "^## \[${VERSION//./\\.}\]"; then
+            if git grep -qE "^## \[${VERSION//./\\.}\]" origin/main -- CHANGELOG.md 2>/dev/null; then
               echo "CHANGELOG.md on main already records ${VERSION}."
               return 0
             fi
