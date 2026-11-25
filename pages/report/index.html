@@ -342,12 +342,18 @@
       function buildGitHubUrl(p) {
         var params = new URLSearchParams();
         params.set("template", "bug-report.yml");
-        params.set("device-details", formatDevice(p));
+        params.set("device-details", p.tv);
+        if (p.fw) params.set("firmware-version", p.fw);
+        if (p.os) params.set("tizen-version", p.os);
         params.set("app-version", p.app);
         if (p.srv) params.set("server-version", p.srv);
         var playback = formatPlayback(p);
         if (playback) params.set("playback-details", playback);
-        var notes = formatNotes(p);
+        var notes = [
+          p.ua ? "Web engine: " + p.ua : undefined,
+          p.scr ? "Screen: " + p.scr : undefined,
+          formatNotes(p),
+        ].filter(Boolean).join("\n");
         if (notes) params.set("technical-notes", notes);
         return ISSUE_BASE + "?" + params.toString();
       }

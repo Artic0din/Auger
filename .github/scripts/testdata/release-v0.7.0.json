@@ -1,0 +1,9 @@
+{
+  "name": "Auger 0.7.0",
+  "tag_name": "v0.7.0",
+  "html_url": "https://github.com/Artic0din/Auger-Tizen/releases/tag/v0.7.0",
+  "body": "Released: 2026-11-25\n\n## New\n\n- Audio and subtitle reports showed the selected tracks, what AVPlay reported playing, caption loading and the outcome of a track switch.\n- Buffering reports showed recent stalls, quality changes and recovery attempts. Navigation reports showed the screen and remote actions leading to an error.\n- Playback error screens used a local explanation for HTTP problem responses. Playback credentials stayed in the query for stream URLs containing a fragment.\n\nFull technical details in [CHANGELOG.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CHANGELOG.md). Need help? See [Reporting Bugs](https://github.com/Artic0din/Auger-Tizen/blob/main/docs/reporting-bugs.md).\n",
+  "published_at": "2026-11-25T10:46:15Z",
+  "draft": false,
+  "prerelease": false
+}

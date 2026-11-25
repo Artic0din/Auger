@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.7.1] - 2026-11-25
+
+### Fixes
+
+- **Diagnostics**: Retain Home navigation when opening Settings ([#920](https://github.com/Artic0din/Auger-Tizen/pull/920), [`4487de9d`](https://github.com/Artic0din/Auger-Tizen/commit/4487de9d))
+
+### Refactors & Maintenance
+
+- **Browse**: Extract DOM-free Person, Search, Requests, and BrowseStack modules ([#895](https://github.com/Artic0din/Auger-Tizen/pull/895), [`79bd0aaf`](https://github.com/Artic0din/Auger-Tizen/commit/79bd0aaf))
+
+### CI
+
+- **Releases**: Remove Install or update block from GitHub Release notes ([`22705129`](https://github.com/Artic0din/Auger-Tizen/commit/22705129))
+- **Releases**: Require category subheadings in PR Release Notes ([`8c36c5b8`](https://github.com/Artic0din/Auger-Tizen/commit/8c36c5b8))
+- Post published releases to Discord as embeds ([#904](https://github.com/Artic0din/Auger-Tizen/pull/904), [`41d1eed3`](https://github.com/Artic0din/Auger-Tizen/commit/41d1eed3))
+
 ## [0.7.0] - 2026-11-25
 
 ### Features
