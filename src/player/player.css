@@ -791,6 +791,9 @@
     position: absolute;
     top: -34px;
     right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     margin: 0;
     padding: 7px 12px;
     border-radius: 999px;
@@ -800,6 +803,22 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.player-rate[hidden] {
+    display: none;
+}
+
+.player-rate-glyph {
+    display: inline-flex;
+    align-items: center;
+    height: 13px;
+}
+
+.player-rate-glyph svg {
+    display: block;
+    height: 13px;
+    width: auto;
 }
 
 .player-transport .player-button:focus {

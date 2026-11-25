@@ -12,6 +12,7 @@
 import type { Clock } from "../api/clock.ts";
 import type { DiagnosticsCollector, DiagnosticsIncidentRecord } from "../diagnostics.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
+import { localizeNumerals } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
 import { onCatalogLoaded, type MessageKey, serverText, translate } from "../i18n/translate.ts";
@@ -32,11 +33,12 @@ import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
-import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
+import { arrowDownCircleIcon, backwardFillIcon, closeIcon, episodesIcon, forwardFillIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
+import { withEndTime } from "./endTime.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
 import { currentChapter, statLabel } from "./playerHUD.ts";
 import { heading } from "./headings.ts";
@@ -264,6 +266,20 @@ const AUTO_SEEK_MS = 100;
 /** TVPlayerScrubber timelineAutoSeekBaseStep. Each tick moves 2s times the rate. */
 const AUTO_SEEK_STEP = 2;
 
+/**
+ * `PreparedPlayback.episodeTag` (PlaybackSessionBridge.swift:47-60): `catalog.episodeCaption`
+ * when both numbers are present, falling back to `calendar.seasonShort` / `calendar.episodeShort`.
+ * Season and episode codes keep ASCII digits in every language (`LocaleFormat.codeNumber`).
+ */
+export function episodeTag(seasonNumber: number | undefined, episodeNumber: number | undefined): string | undefined {
+    if (seasonNumber !== undefined && episodeNumber !== undefined) {
+        return translate("catalog.episodeCaption", { season: String(seasonNumber), episode: String(episodeNumber) });
+    }
+    if (seasonNumber !== undefined) return translate("calendar.seasonShort", { season: String(seasonNumber) });
+    if (episodeNumber !== undefined) return translate("calendar.episodeShort", { episode: String(episodeNumber) });
+    return undefined;
+}
+
 /** Compact runtime for the Info pane. PlayerTimeFormatter.formatRuntime. */
 export function runtimeText(seconds: number | undefined): string | undefined {
     if (seconds === undefined || !(seconds > 0)) return undefined;
@@ -487,8 +503,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     track.appendChild(fill);
     const rate = el("p", "player-rate");
     rate.hidden = true;
+    const rateGlyph = el("span", "player-rate-glyph");
+    rateGlyph.setAttribute("aria-hidden", "true");
     const rateValue = el("span", "player-rate-value");
-    rate.append(rateValue);
+    rate.append(rateGlyph, rateValue);
     bar.append(track, puck, rate);
     // `.mediaLayoutDirection()` (TVPlayerControls.swift lines 325, 555, 557 and 575): media timelines and transport read left to right in every language.
     bar.setAttribute("dir", "ltr");
@@ -688,6 +706,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** A playing or paused view means AVPlay can show a frame. Later loads must not cover it. */
     let pictureShown = false;
     let cancelHide: (() => void) | undefined;
+    let cancelEndTick: (() => void) | undefined;
     /** Back took the controls down over a buffering stall, which otherwise keeps them up (dismissControls); a key or the stall's end clears it. */
     let dismissed = false;
     let menuOpen = false;
@@ -773,8 +792,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const series = episode ? metadata?.seriesTitle ?? view.seriesTitle : undefined;
         if (series) titleColumn.appendChild(el("p", "player-info-series", series.toUpperCase()));
         titleColumn.appendChild(el("p", "player-info-title", view.title));
-        const tag = [view.seasonNumber === undefined ? undefined : `S${view.seasonNumber}`, view.episodeNumber === undefined ? undefined : `E${view.episodeNumber}`].filter(part => part !== undefined).join(" · ");
-        if (episode && tag !== "") titleColumn.appendChild(el("p", "player-info-episode", tag));
+        const tag = episodeTag(view.seasonNumber, view.episodeNumber);
+        if (episode && tag !== undefined) titleColumn.appendChild(el("p", "player-info-episode", tag));
         const metaBits = [episode || metadata?.year === undefined ? undefined : String(metadata.year), runtimeText(view.durationSeconds)].filter(part => part !== undefined);
         if (metaBits.length > 0) titleColumn.appendChild(el("p", "player-info-meta", metaBits.join("  ·  ")));
         if (view.hud?.overview) titleColumn.appendChild(el("p", "player-info-overview", view.hud.overview));
@@ -1088,7 +1107,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         mark.hidden = view.phase !== "error";
         if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
         else labelWithSymbol(back, closeIcon(), translate("upNext.close"), { size: 24, gap: 16 });
+        const stopEndTick = (): void => {
+            cancelEndTick?.();
+            cancelEndTick = undefined;
+        };
         if (view.phase === "completion" || prompt !== undefined) {
+            stopEndTick();
             cancelScrub();
             closeMenu();
             hud.hidden = true;
@@ -1196,6 +1220,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (view.phase === "error") {
+            stopEndTick();
             failure.classList.remove("player-next-up");
             retry.hidden = view.error.kind !== "settings" && !view.retryable;
             failureTitle.textContent = "";
@@ -1208,6 +1233,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (view.phase === "closed") {
+            stopEndTick();
             spinner.hidden = true;
             status.hidden = true;
             return;
@@ -1216,7 +1242,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const activeView = view.phase === "playing" || view.phase === "paused" ? view : undefined;
         series.textContent = activeView?.seriesTitle ?? "";
         series.hidden = !series.textContent;
-        episode.textContent = activeView?.seasonNumber !== undefined && activeView.episodeNumber !== undefined ? `S${activeView.seasonNumber} · E${activeView.episodeNumber}` : "";
+        episode.textContent = episodeTag(activeView?.seasonNumber, activeView?.episodeNumber) ?? "";
         episode.hidden = !episode.textContent;
         const namedStatus = view.phase === "loading" && view.detail !== undefined ? loadingText(view.detail) : "";
         status.textContent = namedStatus;
@@ -1228,6 +1254,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         time.hidden = conceal;
         spinner.hidden = !(view.phase === "loading" || (active && view.buffering));
         if (view.phase === "loading") {
+            stopEndTick();
             elapsed.textContent = "";
             remaining.hidden = true;
             remaining.textContent = "";
@@ -1257,9 +1284,14 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (duration === undefined || duration <= 0) {
                 remaining.hidden = true;
                 remaining.textContent = "";
+                stopEndTick();
             } else {
                 remaining.hidden = false;
-                remaining.textContent = `−${clockText(Math.max(0, duration - position))}`;
+                const left = Math.max(0, duration - position);
+                remaining.textContent = withEndTime(`−${clockText(left)}`, clock.now(), left, view.hud?.speed ?? 1);
+                if (time.hidden || controlsHidden()) stopEndTick();
+                // TimelineView(.periodic(by: 1)): the finish moves with the clock even while the position stands still.
+                else if (cancelEndTick === undefined) cancelEndTick = clock.schedule(() => { cancelEndTick = undefined; render(); }, 1000);
             }
             bar.setAttribute("aria-valuenow", String(position));
             bar.setAttribute("aria-valuetext", clockText(position));
@@ -1267,7 +1299,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else bar.setAttribute("aria-valuemax", String(duration));
             bar.className = timeline ? "player-bar player-bar-preview" : "player-bar";
             rate.hidden = autoRate === 0;
-            rateValue.textContent = autoRate === 0 ? "" : `${Math.abs(autoRate)}x`;
+            if (autoRate === 0) {
+                delete rate.dataset.direction;
+                rateGlyph.textContent = "";
+                rateValue.textContent = "";
+            } else {
+                const direction = autoRate < 0 ? "backward" : "forward";
+                if (rate.dataset.direction !== direction) {
+                    rate.dataset.direction = direction;
+                    rateGlyph.innerHTML = direction === "backward" ? backwardFillIcon() : forwardFillIcon();
+                }
+                rateValue.textContent = `${localizeNumerals(String(Math.abs(autoRate)))}x`;
+            }
             const fraction = duration === undefined || duration <= 0 ? 0 : Math.min(100, (position / duration) * 100);
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
@@ -2043,6 +2086,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             stopCatalog();
             late.clear();
             cancelHide?.();
+            cancelEndTick?.();
             // A Select still down when the player closes must not reach the screen underneath.
             swallowSelect();
             document.removeEventListener("keydown", onKey);
