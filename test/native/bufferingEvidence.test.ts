@@ -209,14 +209,20 @@ test("Restore quality clears a learned limit only after its plan is adopted", ()
     const evidence = new BufferingEvidence();
     const cleared = () => evidence.trace({ mode: "always", advertised: true, preference: "auto", manualCapKbps: undefined }).learnedLimitCleared;
     const plan = { quality: "auto", plannedKbps: undefined, sourceKbps: undefined, outputKbps: undefined };
+    const restore = { operation: "quality_change", qualityPreference: "auto", learnedLimit: "clear" } as const;
     for (const outcome of ["not_sent", "not_adopted"] as const) {
-        evidence.stepSent("restore", undefined, undefined, true);
+        const refused = { ...restore };
+        evidence.stepQueued("restore", refused);
         assert.equal(cleared(), false);
-        evidence.stepEnded(outcome);
-        evidence.planAdopted(plan, false);
+        evidence.stepEnded(refused, outcome);
+        evidence.planAdopted(plan);
         assert.equal(cleared(), false);
     }
-    evidence.stepSent("restore", undefined, undefined, true);
-    evidence.planAdopted(plan, true);
+    const lower = { operation: "quality_change", qualityPreference: "720p" } as const;
+    evidence.stepQueued("auto", lower);
+    evidence.stepQueued("restore", restore);
+    evidence.planAdopted(plan, lower);
+    assert.equal(cleared(), false, "an older response cannot settle the restore");
+    evidence.planAdopted(plan, restore);
     assert.equal(cleared(), true);
 });

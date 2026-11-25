@@ -2219,7 +2219,7 @@ export class PlaybackController implements PlayerControls {
                 if (start === undefined && decision.plan.delivery === "original_http" && target !== decision.plan.timeline.sourceStartSeconds) attempt.queuedReanchorSeconds = target;
                 return;
             }
-            this.adopt(attempt, decision.plan, decision.serverFeatures, buffering !== undefined);
+            this.adopt(attempt, decision.plan, decision.serverFeatures, buffering);
         } else {
             this.qualityUnsettled(attempt, buffering);
             if (buffering !== undefined) {
@@ -2243,7 +2243,7 @@ export class PlaybackController implements PlayerControls {
     /** A quality change did not become a plan: the controller hears that its own replan failed, or that the viewer's pick did. */
     private qualityUnsettled(attempt: Attempt, buffering: ReplanRequest | undefined): void {
         if (buffering === undefined) attempt.bufferingQuality.pickRefused();
-        else attempt.bufferingQuality.replanFailed();
+        else attempt.bufferingQuality.replanFailed(buffering);
     }
 
     /** A codec or route failure on this TV: the server picks the next route, a bounded number of times. */
@@ -2591,7 +2591,7 @@ export class PlaybackController implements PlayerControls {
 
     // --- transport ---
 
-    private adopt(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[], bufferingReplan = false): void {
+    private adopt(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[], bufferingReplan?: ReplanRequest): void {
         reachedStage(attempt.trace, attempt.trace.stage);
         this.clearThumbnails(attempt);
         this.readCaptions(attempt, plan);

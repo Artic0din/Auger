@@ -98,7 +98,7 @@ const READING_INSET = 32;
 export class FocusHost {
     private readonly container: HTMLElement;
     private view: View | undefined;
-    private zoneByElement = new WeakMap<Element, string>();
+    private zoneLookup: { element: Element | null; zone: string | undefined } | undefined;
     /** zone id -> key last focused there, for the current view name. */
     private memory = new Map<string, string>();
     private lastZone: string | undefined;
@@ -233,12 +233,7 @@ export class FocusHost {
         this.view = view;
         this.container.setAttribute("data-view", view.name);
         view.prepare?.();
-        this.zoneByElement = new WeakMap();
-        for (const zone of view.zones) {
-            for (const { element } of zone.items) {
-                if (!this.zoneByElement.has(element)) this.zoneByElement.set(element, zone.id);
-            }
-        }
+        this.zoneLookup = undefined;
         // Moving the retained grid past rebuilt headings can blur its card; keep its reveal running.
         const retainedPerson = sameVisit && view.name.startsWith("person:") && kept !== undefined
             && (focus === undefined || (focus.zone === kept.zone && focus.key === kept.key))
@@ -307,7 +302,8 @@ export class FocusHost {
     /** Id of the zone holding focus, for diagnostics. */
     focusedZone(): string | undefined {
         const active = document.activeElement;
-        return active === null ? undefined : this.zoneByElement.get(active);
+        if (this.zoneLookup !== undefined && active === this.zoneLookup.element) return this.zoneLookup.zone;
+        return this.locate(active)?.zone.id;
     }
 
     revealFocused(): void {
@@ -419,7 +415,7 @@ export class FocusHost {
     destroy(): void {
         this.stop();
         this.view = undefined;
-        this.zoneByElement = new WeakMap();
+        this.zoneLookup = undefined;
         this.memory = new Map();
         this.visits.clear();
         this.visitHeld = false;
@@ -439,9 +435,11 @@ export class FocusHost {
             const index = zone === undefined ? -1 : zone.items.findIndex((item) => item.element === element);
             const item = zone?.items[index];
             if (zone !== undefined && item !== undefined) {
+                this.zoneLookup = { element, zone: zone.id };
                 return { zone, zoneIndex, item, index };
             }
         }
+        this.zoneLookup = { element, zone: undefined };
         return undefined;
     }
 

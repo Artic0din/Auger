@@ -115,10 +115,10 @@ export class BufferingBridge {
     }
 
     /**
-     * A plan became the playing plan. `controllerInitiated` is true for the plan that answers this
+     * A plan became the playing plan. `request` identifies the plan that answers this
      * controller's own replan. `quality` is `auto`, or the label of the quality the viewer asked for.
      */
-    planAdopted(plan: PlaybackPlan, serverFeatures: readonly string[], qualityPreference: string, controllerInitiated: boolean): void {
+    planAdopted(plan: PlaybackPlan, serverFeatures: readonly string[], qualityPreference: string, request?: ReplanRequest): void {
         this.planRevision++;
         this.replanEpoch++;
         const named = qualityPreference === AUTO_QUALITY ? AUTO_QUALITY : plan.availableQualities.find((quality) => quality.label === qualityPreference)?.label ?? qualityPreference;
@@ -131,8 +131,8 @@ export class BufferingBridge {
             availableQualities: plan.availableQualities.flatMap((quality) => (quality.bitrateKbps === undefined ? [] : [{ label: quality.label, bitrateKbps: quality.bitrateKbps }])),
             qualityReductionUnavailable: plan.warnings.some((warning) => warning.code === QUALITY_REDUCTION_UNAVAILABLE),
         };
-        this.controller.planAdopted(buffering, controllerInitiated);
-        this.evidence.planAdopted({ quality: buffering.activeQuality ?? named, plannedKbps: buffering.deliveredKbps ?? undefined, sourceKbps: plan.sourceBitrateKbps, outputKbps: plan.recipe?.bitrateKbps }, controllerInitiated);
+        this.controller.planAdopted(buffering, request !== undefined);
+        this.evidence.planAdopted({ quality: buffering.activeQuality ?? named, plannedKbps: buffering.deliveredKbps ?? undefined, sourceKbps: plan.sourceBitrateKbps, outputKbps: plan.recipe?.bitrateKbps }, request);
         this.signals.planAdopted();
     }
 
@@ -184,8 +184,8 @@ export class BufferingBridge {
     }
 
     /** The replan this controller sent failed. */
-    replanFailed(): void {
-        this.evidence.stepEnded("not_adopted");
+    replanFailed(request: ReplanRequest): void {
+        this.evidence.stepEnded(request, "not_adopted");
         this.controller.replanFailed();
     }
 
@@ -256,17 +256,20 @@ export class BufferingBridge {
                 const epoch = this.replanEpoch;
                 const reason: StepDownReason = restore ? "restore" : this.prompting ? "prompt" : "auto";
                 // A replan still waiting to go out is replaced by this one.
-                if (this.cancelReplan !== undefined) this.evidence.stepEnded("not_sent");
-                this.evidence.stepSent(reason, request.bandwidthEstimateKbps, request.observedThroughputKbps, request.learnedLimit === "clear");
                 this.cancelReplan?.();
-                this.cancelReplan = this.clock.schedule(() => {
+                this.evidence.stepQueued(reason, request);
+                const cancel = this.clock.schedule(() => {
                     this.cancelReplan = undefined;
                     // Restore quality is the viewer's answer and outlives a plan change; any other request was decided against a plan or pick that has since been replaced.
                     if ((epoch !== this.replanEpoch && !restore) || !this.host.issueReplan(request, restore)) {
-                        this.evidence.stepEnded("not_sent");
+                        this.evidence.stepEnded(request, "not_sent");
                         this.controller.replanRefused();
                     }
                 }, 0);
+                this.cancelReplan = () => {
+                    cancel();
+                    this.evidence.stepEnded(request, "not_sent");
+                };
                 break;
             }
             case "notice":

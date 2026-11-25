@@ -57,6 +57,7 @@ function fakeTv(options: { longTasks?: boolean; dom?: boolean } = {}) {
         advance(ms: number): void { now += ms; },
         longTask(duration: number): void { longTask?.(duration, now); },
         setHidden(value: boolean): void { hidden = value; for (const listener of [...visibility]) listener(); },
+        observerCallback: () => longTask,
         observing: () => observing,
         counted: () => counted,
         listening: () => capture.size + bubble.size,
@@ -188,7 +189,12 @@ test("a profile reset discards late request and frame callbacks while retaining 
     const url = "https://synthetic.example.invalid/api/v2/home/sections";
     const late = recorder.timedFetch(() => pending)(url, {});
     tv.press(KEY.right);
+    const oldObserver = tv.observerCallback();
+    assert.ok(oldObserver);
     recorder.reset();
+    oldObserver(185, tv.env.now());
+    tv.longTask(75);
+    assert.deepEqual(recorder.capture().lt, { n: 1, w: 75 });
     tv.advance(1000);
     release(new Response());
     await late;

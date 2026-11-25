@@ -4,7 +4,7 @@
 // validates every value before anything leaves the TV.
 
 import type { BandwidthReading } from "./bandwidthReadings.ts";
-import type { BufferingQualityMode } from "./bufferingQuality.ts";
+import type { BufferingQualityMode, ReplanRequest } from "./bufferingQuality.ts";
 
 export const MAX_STALLS = 8;
 export const MAX_STEP_DOWNS = 4;
@@ -100,9 +100,8 @@ export class BufferingEvidence {
     private stallCount = 0;
     private readonly stallsMs: number[] = [];
     private longestStallMs = 0;
-    private readonly stepDowns: StepDown[] = [];
+    private readonly steps: { request: ReplanRequest; evidence: StepDown }[] = [];
     private learnedLimitCleared = false;
-    private pendingClear = false;
 
     startRead(speed: SpeedEvidence, estimateKbps: number | undefined): void {
         this.speed = speed;
@@ -118,22 +117,25 @@ export class BufferingEvidence {
         this.revision++;
     }
 
-    stepSent(reason: StepDownReason, estimateKbps: number | undefined, throughputKbps: number | undefined, clearsLimit: boolean): void {
-        this.pendingClear = clearsLimit;
-        this.stepDowns.push({ reason, from: this.plan, to: undefined, estimateKbps, throughputKbps, outcome: "pending" });
-        if (this.stepDowns.length > MAX_STEP_DOWNS) this.stepDowns.shift();
+    stepQueued(reason: StepDownReason, request: ReplanRequest): void {
+        this.steps.push({ request, evidence: {
+            reason, from: this.plan, to: undefined, outcome: "pending",
+            estimateKbps: request.bandwidthEstimateKbps, throughputKbps: request.observedThroughputKbps,
+        } });
+        if (this.steps.length > MAX_STEP_DOWNS) this.steps.shift();
         this.revision++;
     }
 
-    /** The pending step-down ended without a plan. */
-    stepEnded(outcome: "not_adopted" | "not_sent"): void {
-        this.settle({ outcome });
+    stepEnded(request: ReplanRequest, outcome: "not_adopted" | "not_sent"): void {
+        this.settle(request, { outcome });
     }
 
-    /** A plan became the playing plan; `answersStep` when it answers this controller's own replan. */
-    planAdopted(plan: PlanQuality, answersStep: boolean): void {
+    planAdopted(plan: PlanQuality, request?: ReplanRequest): void {
         this.plan = plan;
-        if (answersStep) this.settle({ outcome: "adopted", to: plan });
+        if (request !== undefined) {
+            if (request.learnedLimit === "clear") this.learnedLimitCleared = true;
+            this.settle(request, { outcome: "adopted", to: plan });
+        }
         this.revision++;
     }
 
@@ -149,17 +151,14 @@ export class BufferingEvidence {
             stallCount: this.stallCount,
             stallsMs: this.stallsMs.slice(),
             longestStallMs: this.longestStallMs,
-            stepDowns: this.stepDowns.slice(),
+            stepDowns: this.steps.map(step => step.evidence),
         };
     }
 
-    private settle(change: Pick<StepDown, "outcome"> & Partial<Pick<StepDown, "to">>): void {
-        const index = this.stepDowns.length - 1;
-        const last = this.stepDowns[index];
-        if (last === undefined || last.outcome !== "pending") return;
-        if (this.pendingClear && change.outcome === "adopted") this.learnedLimitCleared = true;
-        this.pendingClear = false;
-        this.stepDowns[index] = { ...last, ...change };
+    private settle(request: ReplanRequest, change: Pick<StepDown, "outcome"> & Partial<Pick<StepDown, "to">>): void {
+        const step = this.steps.find(entry => entry.request === request);
+        if (step === undefined || step.evidence.outcome !== "pending") return;
+        step.evidence = { ...step.evidence, ...change };
         this.revision++;
     }
 }
