@@ -207,22 +207,35 @@ test("a lowering whose answer is lost and a reconnect that runs out is one buffe
 
 test("Restore quality clears a learned limit only after its plan is adopted", () => {
     const evidence = new BufferingEvidence();
-    const cleared = () => evidence.trace({ mode: "always", advertised: true, preference: "auto", manualCapKbps: undefined }).learnedLimitCleared;
+    const trace = () => evidence.trace({ mode: "always", advertised: true, preference: "auto", manualCapKbps: undefined });
     const plan = { quality: "auto", plannedKbps: undefined, sourceKbps: undefined, outputKbps: undefined };
     const restore = { operation: "quality_change", qualityPreference: "auto", learnedLimit: "clear" } as const;
     for (const outcome of ["not_sent", "not_adopted"] as const) {
         const refused = { ...restore };
         evidence.stepQueued("restore", refused);
-        assert.equal(cleared(), false);
+        assert.equal(trace().learnedLimitCleared, false);
         evidence.stepEnded(refused, outcome);
         evidence.planAdopted(plan);
-        assert.equal(cleared(), false);
+        assert.equal(trace().learnedLimitCleared, false);
     }
     const lower = { operation: "quality_change", qualityPreference: "720p" } as const;
     evidence.stepQueued("auto", lower);
     evidence.stepQueued("restore", restore);
-    evidence.planAdopted(plan, lower);
-    assert.equal(cleared(), false, "an older response cannot settle the restore");
+    const loweredPlan = { ...plan, quality: "720p", plannedKbps: 3000 };
+    const recentSteps = () => trace().stepDowns.slice(-2).map(step => [step.reason, step.outcome, step.to]);
+    evidence.planAdopted(loweredPlan, lower);
+    assert.deepEqual(recentSteps(), [["auto", "adopted", loweredPlan], ["restore", "pending", undefined]]);
+    assert.equal(trace().learnedLimitCleared, false, "an older response cannot settle the restore");
     evidence.planAdopted(plan, restore);
-    assert.equal(cleared(), true);
+    assert.deepEqual(recentSteps(), [["auto", "adopted", loweredPlan], ["restore", "adopted", plan]]);
+    assert.equal(trace().learnedLimitCleared, true);
+
+    const nextLower = { ...lower };
+    const nextRestore = { ...restore };
+    evidence.stepQueued("auto", nextLower);
+    evidence.stepQueued("restore", nextRestore);
+    evidence.planAdopted(plan, nextRestore);
+    assert.deepEqual(recentSteps(), [["auto", "pending", undefined], ["restore", "adopted", plan]]);
+    evidence.stepEnded(nextLower, "not_adopted");
+    assert.deepEqual(recentSteps(), [["auto", "not_adopted", undefined], ["restore", "adopted", plan]]);
 });
