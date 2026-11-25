@@ -121,6 +121,32 @@ test("turning the toggle off removes the entry again", async () => {
     } finally { await tv.page.context().close(); }
 });
 
+test("turning Watch Party off in Settings after dismissing an active lobby closes the room socket and does not restore the room (#783)", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        await button(tv, "create").click();
+        await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        await tv.eventually(async () => fake.sockets.length === 1, "room socket opens");
+        await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        assert.equal(fake.sockets[0]?.closed, false, "lobby dismiss keeps socket alive");
+        await openServerSettings(tv);
+        const row = tv.page.getByRole("switch", { name: "Watch Party", exact: true });
+        await row.click();
+        assert.equal(await row.getAttribute("aria-checked"), "false");
+        await leaveSettings(tv);
+        await tv.eventually(async () => fake.sockets[0]?.closed === true, "disabling Watch Party closes the active room socket");
+        await openServerSettings(tv);
+        await tv.page.getByRole("switch", { name: "Watch Party", exact: true }).click();
+        await leaveSettings(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "re-enabling offers Watch Party, not Return to Watch Party");
+        assert.ok(!(await menuTitles(tv)).includes("Return to Watch Party"));
+    } finally { await tv.page.context().close(); }
+});
+
 test("the hub is a full-screen page with no top bar, Apple's copy, Host and Join sections, and focus on Start a party", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {

@@ -160,8 +160,8 @@ export class WatchPartyHub {
         this.notify();
     }
 
-    async create(mode: CreatableSelectionMode): Promise<void> {
-        await this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), mode, signal));
+    async create(mode: CreatableSelectionMode): Promise<boolean> {
+        return this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), mode, signal));
     }
 
     async join(invitation: string): Promise<void> {
@@ -706,24 +706,28 @@ export class WatchPartyHub {
         }
     }
 
-    /** WatchPartySession.enter: support is read again before every create or join. */
-    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>): Promise<void> {
-        if (this.state.busy || this.stopped) return;
+    /** WatchPartySession.enter: support is read again before every create or join. Returns true only when this call entered a room. */
+    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>): Promise<boolean> {
+        if (this.state.busy || this.stopped) return false;
         this.state.busy = true;
         this.state.error = undefined;
         this.notify();
         try {
-            if (!await this.load()) return;
-            if (!this.state.supported) { this.state.error = { key: "watchParty.error.unavailable" }; return; }
+            if (!await this.load()) return false;
+            if (!this.state.supported) { this.state.error = { key: "watchParty.error.unavailable" }; return false; }
             try {
                 const entered = await operation(this.controller.signal);
                 if (!this.stopped) {
                     this.reset();
-                    if (this.accept(entered)) this.connect(entered.room.roomId);
+                    if (this.accept(entered)) {
+                        this.connect(entered.room.roomId);
+                        return true;
+                    }
                 }
             } catch (error) {
                 if (!this.stopped) this.state.error = this.describe(error);
             }
+            return false;
         } finally {
             if (!this.stopped) { this.state.busy = false; this.notify(); }
         }
