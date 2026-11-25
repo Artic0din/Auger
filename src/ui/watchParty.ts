@@ -48,7 +48,7 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "picker": return pickerView(context);
         case "search": return searchView(context, screen.searchInput);
         case "choice": return choiceView(context, page.choice);
-        case "episodes": return episodesView(context, page.series, page.season);
+        case "episodes": return episodesView(context, page.series, page.season, page.from);
         case "lobby": return lobbyView(context, room, back);
     }
 }

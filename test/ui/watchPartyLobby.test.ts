@@ -125,6 +125,19 @@ test("Choose a title opens the picker with Apple's shelves, icon-only chrome, an
         await view(tv, "watchParty:choice").waitFor();
         await tv.remote(10009);
         await view(tv, "watchParty:search").waitFor();
+        // Editing the query and pressing Enter within the debounce window runs the new search immediately rather than focusing stale results.
+        await tv.page.locator('[data-focus="picker-search-input"]').fill("Night Shift");
+        await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').waitFor();
+        // Opening a series without next-up from Search -> episode -> Back twice returns to Search.
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').click();
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.page.locator(".watch-party-episode").first().click();
+        await view(tv, "watchParty:choice").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:search").waitFor();
         await tv.remote(10009);
         await view(tv, "watchParty:picker:shelves").waitFor();
         await tv.remote(10009);

@@ -47,6 +47,10 @@ export interface PickerShelf { readonly id: string; readonly title: () => string
 
 export interface PickerSearchState {
     query: string;
+    /** The trimmed query that produced `results`; prevents Done from jumping into stale results during the debounce window. */
+    completedQuery: string;
+    /** Stable identity key for `feedGrid` across `loadMoreSearch()` appends; rotates on each fresh search. */
+    feedKey: object;
     results: readonly Card[];
     total: number;
     nextCursor: string | undefined;
@@ -55,7 +59,7 @@ export interface PickerSearchState {
     error: ErrorState | undefined;
 }
 
-const emptySearch = (): PickerSearchState => ({ query: "", results: [], total: 0, nextCursor: undefined, searching: false, hasSearched: false, error: undefined });
+const emptySearch = (): PickerSearchState => ({ query: "", completedQuery: "", feedKey: {}, results: [], total: 0, nextCursor: undefined, searching: false, hasSearched: false, error: undefined });
 
 /** A notice is the server's own text, or a catalog message read when it is drawn, so a language file that lands later relabels it. */
 export type Notice = string | { readonly key: MessageKey; readonly args?: MessageArgs };
@@ -802,7 +806,12 @@ export class WatchPartyHub {
         if (this.api.searchCatalog === undefined) return;
         this.state.search.searching = true;
         this.state.search.error = undefined;
-        if (cursor === undefined) { this.state.search.results = []; this.state.search.nextCursor = undefined; }
+        if (cursor === undefined) {
+            this.state.search.feedKey = {};
+            this.state.search.completedQuery = "";
+            this.state.search.results = [];
+            this.state.search.nextCursor = undefined;
+        }
         this.notify();
         try {
             const page = await this.api.searchCatalog(query, cursor, this.controller.signal);
@@ -817,6 +826,7 @@ export class WatchPartyHub {
                 this.state.search.results = next;
                 this.state.search.total = page.total ?? next.length;
             }
+            this.state.search.completedQuery = query;
             this.state.search.nextCursor = page.nextCursor;
             this.state.search.hasSearched = true;
         } catch (error) {
