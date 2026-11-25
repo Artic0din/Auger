@@ -2055,9 +2055,10 @@ test("a moved stream opens at a playhead of 0 s, not its own resume point, when 
         await r.h.clock.advance(5000);
         await settle(r);
         await settle(r);
-        r.avplay.finishPrepare();
-        await settle(r);
+        await playReplacement(r);
         assert.deepEqual(seeksTo(r).slice(before).filter(call => call !== "seekTo 0"), [], "0 s, not 12.5 s");
+        assert.equal(r.avplay.getState(), "PLAYING", "the replacement stream starts playing");
+        assert.equal(r.avplay.getCurrentTime(), 0, "the replacement stream plays from 0 s");
     } finally { r.controller.destroy(); }
 });
 
