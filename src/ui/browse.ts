@@ -2963,6 +2963,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         name: profileName,
         serverName: () => cachedBranding(options.publicStorage, context.baseUrl)?.serverName,
         settings: () => {
+            const diagnostics = options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock, options.publicStorage);
+            const origin = top()?.kind;
+            switch (origin) {
+                case "item": case "season": case "boxSet": diagnostics.setPrecedingScreen("details"); break;
+                case "homeSection": case "resume": diagnostics.setPrecedingScreen("home"); break;
+                case "libraryResults": diagnostics.setPrecedingScreen("library"); break;
+                default: diagnostics.setPrecedingScreen(origin);
+            }
             const spoilersBeforeSettings = episodeSpoilers?.settings;
             stopSearchSupplement();
             shuffleGeneration++;
@@ -3021,7 +3029,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
                 ...(options.onSwitchServer === undefined ? {} : { switchServer: options.onSwitchServer }),
-            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs, options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock, options.publicStorage), options.sendDiagnostics);
+            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs, diagnostics, options.sendDiagnostics);
             syncThemeMusic();
         },
         personal: (source, anchor = "profiles") => {

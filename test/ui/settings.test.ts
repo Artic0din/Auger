@@ -1723,14 +1723,17 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         await tv.page.locator('[data-focus="send-diagnostics"]').waitFor();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Send a redacted bug report directly to GitHub, or share via QR code.");
 
-        // Empty session blocks blank manual reports with a clear hint instead of hitting the relay.
+        // A viewer can report a symptom even when the app has not detected an error.
         await tv.page.locator('[data-focus="send-diagnostics"]').click();
-        await tv.page.getByText("Play something or reproduce an issue first, or use Share via QR Code.", { exact: true }).waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').waitFor();
+        await tv.page.locator('[data-focus="cancel-send-diagnostics"]').click();
         assert.equal(sentPayloads.length, 0);
 
         // Automatic Error Reports defaults to Off and toggles On/Off cleanly.
         const autoRow = tv.page.locator('[data-focus="auto-diagnostics"]');
         assert.equal(await autoRow.getAttribute("aria-checked"), "false");
+        assert.match(await autoRow.ariaSnapshot(), /Automatic Error Reports/);
+        await tv.page.getByText("Turning this on sends redacted error reports from all profiles on this TV to public GitHub issues.", { exact: true }).waitFor();
         await autoRow.click();
         assert.equal(await autoRow.getAttribute("aria-checked"), "true");
         await autoRow.click();

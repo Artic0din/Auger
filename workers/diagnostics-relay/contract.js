@@ -159,7 +159,8 @@ export const DYNAMIC_RANGES = ["sdr", "hdr10", "hdr10_plus", "hdr10+", "hlg", "d
 const QUALITY_PATTERN = /^(?:\d{3,4}p|[48]k|original|auto|source|unknown)$/;
 
 export const VERSION_PATTERN = /^\d{1,3}\.\d{1,3}\.\d{1,4}(?:-[0-9A-Za-z]{1,12}(?:\.[0-9A-Za-z]{1,12}){0,2})?$/;
-export const MODEL_PATTERN = /^[A-Z0-9][A-Z0-9-]{2,23}$/;
+// Consumer model codes start with a product/market prefix and panel size.
+export const MODEL_PATTERN = /^(?:[QUGKLP][A-Z]\d{2,3}[A-Z][A-Z0-9]{2,14}|S\d{2}[A-Z]|[A-Z]{1,2}\d{4})$/;
 // Firmware/software version, e.g. 1650 or T-KTSUDEUC-1650.1; a separator is required so a serial number cannot pass.
 export const FIRMWARE_PATTERN = /^(?:\d{1,8}(?:\.\d{1,4}){0,3}|[A-Z0-9]{1,4}-[A-Z0-9]{2,12}-\d{1,6}(?:\.\d{1,4}){0,2})$/;
 // Silo build, e.g. 412, 0.9.3 or "412 · 1a2b3c4d". A leading digit blocks hostnames; IPv4 is rejected separately.
@@ -190,8 +191,8 @@ export const INCIDENT_CONTRACT = Object.freeze({
   src: enumOf(["manual", "auto"]),
   out: required(enumOf(INCIDENT_OUTCOMES)),
   kind: enumOf(ERROR_KINDS),
-  op: required(enumOf(PLAYBACK_OPERATIONS)),
-  stage: required(enumOf(PLAYBACK_STAGES)),
+  op: enumOf(PLAYBACK_OPERATIONS),
+  stage: enumOf(PLAYBACK_STAGES),
   code: { kind: "code" },
   fs: enumOf(PLAYBACK_STAGES),
   fc: { kind: "code" },

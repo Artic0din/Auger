@@ -40,7 +40,7 @@ export function legacyEvidenceMatches(state, equivalent) {
   if (state === undefined || state.e === undefined) return false;
   const log = Array.isArray(state.log) ? state.log.filter((line) => typeof line === "string") : [];
   if (equivalent.family === "terminal") {
-    if (state.e !== equivalent.signature) return false;
+    if (state.e !== equivalent.signature || state.hadPlanEvent === true || state.m || state.d) return false;
     // A plan, AVPlay or rebuffer line means a stream was already running, so the refusal may have come from a replan.
     return !log.some((line) => /^\[playback\] (?:plan|avplay|rebuffer)\b/.test(line));
   }

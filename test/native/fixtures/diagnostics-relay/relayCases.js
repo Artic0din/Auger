@@ -210,7 +210,8 @@ export const CASES = [
       equal(titles[2], "Player could not begin playback: PLAYER_ERROR_GENERIC", "play title");
       equal(gh.issues.length, 3, "three issues");
       const unknown = fakeGitHub();
-      await send(handleRequest, unknown, report({ ...avplayAt("avplay_prepare", "PLAYER_ERROR_GENERIC"), stage: "transmogrify" }, "auto"));
+      const result = await send(handleRequest, unknown, report({ ...avplayAt("avplay_prepare", "PLAYER_ERROR_GENERIC"), stage: "transmogrify" }, "auto"));
+      equal(result.status, 201, "unknown stage still creates an issue");
       const fallback = unknown.created()[0].body;
       equal(fallback.title, "Playback problem reported", "unknown stage falls back");
       includes(fallback.body, "| First failed stage | Not reported |", "unknown stage not rendered");
@@ -370,6 +371,7 @@ export const CASES = [
       };
       const hostile = {
         ...device,
+        tv: "SYNTHSERIAL0123456789",
         fw: "SYNTHSERIAL0123456789",
         srv: "192.0.2.77",
         ua: "Mozilla SYNTHTOKEN",
@@ -425,7 +427,7 @@ export const CASES = [
           s: "SYNTH_SUBTITLE track",
           src: "MKV · /media/SYNTH_PATH/movie.mkv",
           tr: "HLS · SYNTHTOKEN",
-          sub: "burn_in · SYNTH_SUBTITLE",
+          sub: "burn_in · embedded SYNTHTOKEN (burn_in_only)",
           pos: "SYNTHSTACK",
           n: ["Decision for SYNTH_TITLE"],
           e: "playback_failed: SYNTH_TITLE",
@@ -575,6 +577,15 @@ export const CASES = [
       await send(handleRequest, reversed, report(sessionExpiredAtStart, "auto"));
       const ambiguous = { v: 1, app: APP, tv: TV, play: { e: "terminal: session_expired" }, log: ["01:00:00 [playback] plan Direct play · MKV (Original HTTP)"] };
       equal((await send(handleRequest, reversed, ambiguous)).status, 201, "an ambiguous legacy report stays separate when it arrives second");
+
+      const localized = { ...ambiguous, log: ["01:00:00 [playback] plan Direktwiedergabe · MKV"] };
+      for (const legacyFirst of [true, false]) {
+        const destination = fakeGitHub();
+        const current = report(sessionExpiredAtStart, "auto");
+        const sequence = legacyFirst ? [localized, current] : [current, localized];
+        for (const payload of sequence) equal((await send(handleRequest, destination, payload)).status, 201, "localized plan evidence keeps the issues separate");
+        check(!JSON.stringify(destination.created()).includes("Direktwiedergabe"), "localized text stays private");
+      }
 
       const missingState = fakeGitHub([{ number: 602, title: "legacy", body: `<!-- auger-fp:${terminalFp} -->` }]);
       equal((await send(handleRequest, missingState, report(sessionExpiredAtStart, "auto"))).status, 201, "legacy issue without evidence is ambiguous");

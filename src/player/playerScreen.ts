@@ -2043,15 +2043,15 @@ export function startPlayback(
         return "app_update_required";
     };
     // The scope ties this attempt's evidence to the profile session it started in; a cleared session ignores it.
-    const scope = diagnostics?.beginPlaybackSession();
+    let scope = diagnostics?.beginPlaybackSession();
     let lastErrorKey: string | undefined;
     // Recorded once when the error first shows; the viewer's later dismissal reports the same failure.
     const observeError = (error: PlaybackError): void => {
-        if (diagnostics === undefined || scope === undefined) return;
+        if (diagnostics === undefined || scope === undefined || !diagnostics.isCurrentPlaybackSession(scope)) return;
         const details = controller.diagnosticsDetails();
         const trace = controller.incidentTrace();
         const detail = playbackErrorText(error);
-        const key = `${trace?.seq ?? 0}:${error.kind}:${detail}:${details?.avplayError ?? ""}`;
+        const key = `${trace?.seq ?? 0}:${trace?.chain ?? 0}:${error.kind}:${detail}:${details?.avplayError ?? ""}`;
         if (key === lastErrorKey) return;
         lastErrorKey = key;
         diagnostics.recordPlaybackError(error.kind, detail, details);
@@ -2087,7 +2087,18 @@ export function startPlayback(
         let lastAvplayKey: string | undefined;
         let recoveredKey: string | undefined;
         let wasBuffering = false;
+        let previousAttempt: number | undefined;
         stopDiagnostics = controller.subscribe(view => {
+            if (scope === undefined || !diagnostics.isCurrentPlaybackSession(scope)) return;
+            const trace = controller.incidentTrace();
+            const sequence = trace?.seq;
+            if (sequence !== undefined && previousAttempt !== undefined && previousAttempt !== sequence) {
+                scope = diagnostics.beginPlaybackSession();
+                lastAvplayKey = undefined;
+                recoveredKey = undefined;
+                wasBuffering = false;
+            }
+            if (sequence !== undefined) previousAttempt = sequence;
             const details = controller.diagnosticsDetails();
             if (details?.avplayError !== undefined) {
                 const avKey = `${details.avplayError}:${details.routeFallbacks ?? 0}`;
@@ -2098,10 +2109,9 @@ export function startPlayback(
             }
             if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
                 diagnostics.recordPlaybackStats(view.hud.stats, details);
-                const trace = controller.incidentTrace();
                 // A recovered failure stays available for a manual report; it never files automatically.
-                // Captured when the trace gains a step, not on every position tick.
-                const key = trace?.recovered === true ? `${trace.seq}:${trace.steps.length}:${trace.steps.at(-1) ?? ""}` : undefined;
+                // The controller freezes a recovered chain, so each chain is captured once.
+                const key = trace?.recovered === true ? `${trace.seq}:${trace.chain}` : undefined;
                 if (trace !== undefined && key !== undefined && key !== recoveredKey) {
                     recoveredKey = key;
                     diagnostics.recordPlaybackIncident(scope, trace);

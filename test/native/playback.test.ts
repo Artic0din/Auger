@@ -5623,3 +5623,132 @@ test("AVPlay prepare failures that exhaust every route report first and last cod
     assert.ok(incidentAutoEligible(incident));
     r.controller.destroy();
 });
+
+test("a progress 404 names the missing session as the first failure, and a later failure in the same attempt opens its own chain (#873)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    r.avplay.tick(20000);
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "one replacement start");
+    const pending = r.controller.incidentTrace();
+    assert.ok(pending !== undefined);
+    assert.deepEqual(pending.first, { stage: "progress", code: "http_404", buffering: false }, "captured before the replacement start");
+    assert.equal(pending.http, undefined, "the 404 is the cause, not a final status");
+    assert.equal(pending.reconnects, 1);
+    await finishReplacement(r);
+
+    const recovered = r.controller.incidentTrace();
+    assert.ok(recovered !== undefined && recovered.recovered);
+    const first = playbackIncident(recovered);
+    assert.ok(first !== undefined);
+    assert.deepEqual([first.out, first.op, first.stage, first.code, first.http], ["recovered", "progress_report", "progress", "http_404", undefined]);
+    assert.deepEqual(first.rec, { n: 0, c: 1, r: "recovered" });
+    assert.ok(first.t.includes("progress:fallback:http_404"), JSON.stringify(first.t));
+    r.avplay.tick(40000);
+    await r.h.clock.advance(10000);
+    assert.equal(r.controller.incidentTrace(), recovered, "the recovered chain stays frozen while playback continues");
+
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    await r.h.clock.advance(0);
+    for (let failure = 0; failure < 3; failure++) {
+        r.avplay.finishPrepare("UnknownError");
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "playback_failed");
+    const later = r.controller.incidentTrace();
+    assert.ok(later !== undefined);
+    assert.equal(later.seq, recovered.seq, "the same playback attempt");
+    assert.equal(later.chain, recovered.chain + 1, "an independent failure has its own identity");
+    const second = playbackIncident(later, view.error);
+    assert.ok(second !== undefined);
+    assert.deepEqual([second.out, second.op, second.stage, second.code, second.http], ["failed", "avplay", "playing", "PLAYER_ERROR_NOT_SUPPORTED_FORMAT", undefined]);
+    assert.deepEqual(second.rec, { n: 3, c: 0, r: "exhausted" });
+    assert.deepEqual(second.av, { f: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT", l: "prepareAsync:UnknownError" });
+    assert.ok(!second.t.some(step => step.startsWith("progress:")), JSON.stringify(second.t));
+    assert.ok(incidentAutoEligible(second));
+    assert.deepEqual(playbackIncident(recovered), first, "the earlier chain's incident is unchanged");
+    r.controller.destroy();
+});
+
+test("a progress 404 after an earlier recovery counts its replacement in the new chain (#873)", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    await finishReplacement(r);
+    const recovered = r.controller.incidentTrace();
+    assert.ok(recovered !== undefined && recovered.recovered);
+    assert.equal(recovered.chain, 0);
+    const id = sessionIds(r.server).pop();
+    assert.ok(id !== undefined);
+    r.avplay.tick(20000);
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    const pending = r.controller.incidentTrace();
+    assert.ok(pending !== undefined);
+    assert.equal(pending.chain, 1);
+    assert.deepEqual(pending.first, { stage: "progress", code: "http_404", buffering: false });
+    assert.equal(pending.reconnects, 1, "opening the chain does not erase its first replacement");
+    await finishReplacement(r);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.deepEqual(playbackIncident(trace)?.rec, { n: 0, c: 1, r: "recovered" });
+    r.controller.destroy();
+});
+
+test("a replacement start refused after a progress 404 ends as exhausted recovery without an invented HTTP status (#873)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    r.avplay.tick(20000);
+    r.h.fake.script("/playback/start", problem(400, "validation_failed", "Rejected"));
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "one replacement start");
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "network", JSON.stringify(view));
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.op, incident.stage, incident.code, incident.fs, incident.fc, incident.http], ["progress_report", "progress", "http_404", "reconnect", "network_unreachable", undefined]);
+    assert.deepEqual(incident.rec, { n: 0, c: 1, r: "exhausted" });
+    assert.ok(incidentAutoEligible(incident), "recovery ran out, so this is not ordinary connectivity");
+    r.controller.destroy();
+});
+
+test("a plan refused before adoption still describes the failed start (#873)", async () => {
+    const r = await rig();
+    r.h.fake.script("/watch/movie-1?file_id=42", problem(404, "not_found", "Unavailable"));
+    r.controller.play({ ...MOVIE, subtitle: { kind: "auto" } });
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "terminal" && view.error.reason === "subtitle_selection_unavailable", JSON.stringify(view));
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.ok(trace.plan !== undefined, "the received plan is recorded before the preference read");
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined && incident.pl !== "not_reached");
+    assert.deepEqual([incident.out, incident.stage, incident.done], ["refused", "subtitles", "start"]);
+    assert.equal(incident.pl.pos, 12);
+    r.controller.destroy();
+});
+
+test("an unavailable HDR probe reaches the incident apart from an observed SDR answer and declares SDR either way (#873)", async () => {
+    for (const [scope, expected] of [[{ webapis: {} }, "unavailable"], [hdrPanel(false), { hdr10: false, hlg: false, dolbyVision: false }]] as const) {
+        const r = await rig("p-owner", undefined, scope);
+        r.server.next.push({ terminal: "session_expired", retryable: true });
+        r.controller.play(MOVIE);
+        await r.h.clock.advance(0);
+        assert.deepEqual(r.controller.incidentTrace()?.hdrPanel, expected);
+        const start = only(bodies(r.h, "/playback/start"));
+        assert.deepEqual(start.client_capabilities, clientCapabilities());
+        r.controller.destroy();
+    }
+});

@@ -15,8 +15,8 @@ const DEVICE = { appVersion: "0.4.1", tvModel: "QA77S95CAWXXY" };
 
 function trace(overrides: Partial<PlaybackAttemptTrace> = {}): PlaybackAttemptTrace {
     return {
-        seq: 1, stage: "start", done: "settings", first: undefined, http: undefined, decision: undefined, firstAvplay: undefined, lastAvplay: undefined,
-        resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false, steps: [],
+        seq: 1, chain: 0, stage: "start", done: "settings", first: undefined, http: undefined, decision: undefined, firstAvplay: undefined, lastAvplay: undefined,
+        resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false, exhausted: false, steps: [],
         settings: { quality: "auto", capKbps: undefined, hdr: true },
         hdrPanel: { hdr10: true, hlg: true, dolbyVision: false },
         request: { startSeconds: undefined, subtitle: "auto", audio: "default" },
@@ -208,4 +208,39 @@ test("a new attempt's incident snapshot excludes an earlier attempt's events and
     assert.ok(!json.includes("Direct play"), json);
     assert.ok(record.snapshot.events.some(event => event.text.startsWith("error playback_failed")), json);
     assert.ok(diagnostics.snapshot().events.some(event => event.text.startsWith("plan Direct play")), "the live log keeps history for user-observed reports");
+});
+
+test("successive player screens can each report their first attempt", () => {
+    const diagnostics = collector();
+    const first = diagnostics.beginPlaybackSession();
+    const early = diagnostics.recordPlaybackIncident(first, trace({ seq: 1 }), SESSION_EXPIRED);
+    const second = diagnostics.beginPlaybackSession();
+    assert.equal(diagnostics.incidentFor("playback"), early);
+    const latest = diagnostics.recordPlaybackIncident(second, trace({ seq: 1, stage: "avplay_play" }), { kind: "playback_failed" });
+    assert.ok(latest);
+    assert.equal(latest.incident.stage, "avplay_play");
+    assert.equal(diagnostics.recordPlaybackIncident(first, trace(), SESSION_EXPIRED), undefined);
+    assert.equal(diagnostics.incidentFor("playback"), latest);
+});
+
+test("ordinary connectivity loss stays manual; a buffering or network recovery that ran out files once", () => {
+    const lost = playbackIncident(trace({ stage: "avplay_play", opened: true, first: { stage: "avplay_play", buffering: false } }), { kind: "network" });
+    assert.ok(lost !== undefined);
+    assert.equal(lost.rec.r, "none");
+    assert.equal(incidentAutoEligible(lost), false, "a network failure without exhausted recovery is ordinary connectivity");
+    const attempted = playbackIncident(trace({ stage: "reconnect", reconnects: 1, first: { stage: "playing", code: "connection_lost", buffering: false } }), { kind: "network" });
+    assert.equal(attempted?.rec.r, "attempted");
+    assert.equal(attempted === undefined ? true : incidentAutoEligible(attempted), false);
+    const exhausted = playbackIncident(trace({
+        stage: "reconnect", opened: true, shown: true, reconnects: 1, exhausted: true,
+        first: { stage: "quality_change", code: "no_answer", buffering: true },
+    }), { kind: "network" });
+    assert.ok(exhausted !== undefined);
+    assert.deepEqual([exhausted.cat, exhausted.rec.r], ["buffering", "exhausted"]);
+    assert.ok(incidentAutoEligible(exhausted));
+});
+
+test("an unavailable HDR probe is reported apart from an observed SDR answer", () => {
+    assert.equal(playbackIncident(trace({ hdrPanel: "unavailable" }), SESSION_EXPIRED)?.hp, "unavailable");
+    assert.deepEqual(playbackIncident(trace({ hdrPanel: { hdr10: false, hlg: false, dolbyVision: false } }), SESSION_EXPIRED)?.hp, { h10: false, hlg: false, dv: false });
 });

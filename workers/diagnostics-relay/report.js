@@ -111,6 +111,7 @@ export function legacyStableState(record) {
   const play = record.play ?? {};
   return {
     sg: record.legacySignatureDigest,
+    ...(record.hadPlanEvent ? { hadPlanEvent: true } : {}),
     og: record.observedGuard,
     ps: record.screen,
     fw: record.fw,

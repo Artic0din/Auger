@@ -100,7 +100,7 @@ export const LEGACY_FIELD_CHECKS = {
     const [mode, rest, extra] = raw.split(" · ");
     if (extra !== undefined || !/^(?:render|convert|burn_in)$/.test(mode ?? "")) return undefined;
     if (rest === undefined) return raw;
-    return /^(?:(?:embedded|external|downloaded|unknown)(?: [A-Z0-9_]{2,10})?)?(?: ?\([a-z_]{2,20}\))?$/.test(rest) && rest !== "" ? raw : undefined;
+    return /^(?:(?:embedded|external|downloaded|unknown)(?: (?:SRT|SUBRIP|ASS|SSA|VTT|WEBVTT|PGS|SUP|HDMV_PGS_SUBTITLE|VOBSUB|DVD_SUBTITLE|TX3G|MOV_TEXT))?)?(?: ?\((?:sidecar|burn_in_only|unknown)\))?$/.test(rest) && rest !== "" ? raw : undefined;
   },
   pos: anchored(new RegExp(String.raw`^${clock}(?: \/ ${clock})?$`)),
   rb: (raw) => nonNegInt(raw, 10000),
@@ -265,6 +265,10 @@ export function validateV1(raw) {
       if (value !== undefined) play[key] = value;
     }
     if (Object.keys(play).length > 0) record.play = play;
+  }
+  // Installed clients localize plan descriptions. The event prefix alone proves a plan was logged.
+  if (Array.isArray(raw.log) && raw.log.some((line) => typeof line === "string" && /^\d{2}:\d{2}:\d{2} \[playback\] plan\b/.test(line))) {
+    record.hadPlanEvent = true;
   }
   const log = Array.isArray(raw.log) ? raw.log.slice(0, 32).map(parseLegacyLogLine).filter(Boolean).slice(0, 12) : [];
   if (log.length > 0) record.log = log;

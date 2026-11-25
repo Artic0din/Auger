@@ -34,7 +34,7 @@ import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import type { AVPlay, AVPlayListener, AVPlayTrackInfo } from "./avplay.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
-import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, playbackContext, probeHdrPanel, type HdrPanel } from "./capabilities.ts";
+import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, type HdrPanel, type HdrProbe } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
 import { AUTO_QUALITY, DEFAULT_BUFFERING_QUALITY_MODE, type BufferingQualityMode, type ReplanRequest } from "./bufferingQuality.ts";
 import type { BufferingSnapshot } from "./bufferingSignals.ts";
@@ -871,29 +871,35 @@ export class PlaybackController implements PlayerControls {
 
     /** The current attempt's structured trace for incident reports. Plan and settings appear only once this attempt reached them. */
     incidentTrace(): PlaybackAttemptTrace | undefined {
-        const attempt = this.attempt;
-        if (attempt === undefined) return undefined;
+        return this.attempt === undefined ? undefined : this.traceOf(this.attempt);
+    }
+
+    private traceOf(attempt: Attempt): PlaybackAttemptTrace {
         const trace = attempt.trace;
-        const plan = attempt.plan;
+        if (trace.frozen !== undefined) return trace.frozen;
+        // A plan the server sent but this attempt refused before adopting it still describes the failure.
+        const plan = attempt.plan ?? trace.received;
         const subtitle = attempt.request.subtitle?.kind ?? "auto";
         return {
             seq: trace.seq,
+            chain: trace.chain,
             stage: trace.stage,
             done: trace.done,
             first: trace.first,
             http: trace.http,
             decision: trace.decision,
             firstAvplay: trace.firstAvplay,
-            lastAvplay: attempt.lastAvplayError,
+            lastAvplay: trace.lastAvplay,
             resends: trace.resends,
             fallbacks: trace.fallbacks,
             reconnects: trace.reconnects,
             opened: trace.opened,
             shown: trace.shown,
             recovered: trace.recovered,
+            exhausted: trace.exhausted,
             steps: trace.steps.slice(),
             settings: trace.settingsRead ? { quality: attempt.qualityPreference, capKbps: attempt.bandwidthCapKbps, hdr: attempt.hdrEnabled } : undefined,
-            hdrPanel: { hdr10: attempt.hdrPanel.hdr10, hlg: attempt.hdrPanel.hlg, dolbyVision: attempt.hdrPanel.dolbyVision },
+            hdrPanel: trace.hdrProbe === "unavailable" ? "unavailable" : { hdr10: attempt.hdrPanel.hdr10, hlg: attempt.hdrPanel.hlg, dolbyVision: attempt.hdrPanel.dolbyVision },
             request: { startSeconds: attempt.request.startSeconds, subtitle, audio: attempt.request.audioTrackId === undefined ? "default" : "track" },
             plan: plan === undefined ? undefined : {
                 delivery: plan.delivery,
@@ -906,7 +912,8 @@ export class PlaybackController implements PlayerControls {
                 height: plan.source.height,
                 dynamicRange: plan.source.dolbyVisionProfile !== undefined ? `dv_p${plan.source.dolbyVisionProfile}` : plan.source.dynamicRange,
                 startSeconds: plan.timeline.sourceStartSeconds,
-                atSeconds: attempt.sourceSeconds,
+                // Before adoption the position is the received plan's own start, not the plan it would replace.
+                atSeconds: attempt.plan === undefined ? plan.timeline.sourceStartSeconds : attempt.sourceSeconds,
             },
         };
     }
@@ -1708,7 +1715,8 @@ export class PlaybackController implements PlayerControls {
     }
 
     private async begin(attempt: Attempt): Promise<void> {
-        attempt.hdrPanel = probeHdrPanel(this.deps.device.hdrProbeScope);
+        attempt.trace.hdrProbe = probeHdr(this.deps.device.hdrProbeScope);
+        attempt.hdrPanel = hdrPanelFor(attempt.trace.hdrProbe);
         const session = this.deps.session;
         let decision: PlaybackDecision;
         const trace = attempt.trace;
@@ -1809,6 +1817,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private async startSubtitles(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[]): Promise<void> {
+        attempt.trace.received = plan;
         attempt.sourceSeconds = plan.timeline.sourceStartSeconds;
         if (attempt.request.allowAlternateVersions === false && plan.effectiveMediaFileId !== attempt.request.fileId) {
             this.fail(attempt, { kind: "terminal", reason: "version_unavailable", message: "The selected version is no longer available. Choose another version in Details.", retryable: false }, true);
@@ -1964,6 +1973,7 @@ export class PlaybackController implements PlayerControls {
                 this.fail(attempt, { kind: "server" }, true);
                 return;
             }
+            attempt.trace.received = decision.plan;
             if (attempt.plan === undefined && operation === "track_change" && decision.plan.effectiveMediaFileId !== plan.effectiveMediaFileId) {
                 this.fail(attempt, { kind: "server" }, true);
                 return;
@@ -2027,6 +2037,9 @@ export class PlaybackController implements PlayerControls {
 
     /** The buffering controller's replan did not become a plan: the transport that was playing keeps playing. */
     private keepPlaying(attempt: Attempt): void {
+        // The kept transport is playing again, so a later failure is not this replan's.
+        enterStage(attempt.trace, "playing");
+        attempt.trace.buffering = false;
         attempt.busy = false;
         attempt.change = { state: "idle" };
         this.showPlayback(attempt);
@@ -2067,8 +2080,9 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.closeTransport();
-        traceFailure(attempt.trace, attempt.recoveries >= MAX_RECOVERY_REPLANS ? "fail" : "fallback", attempt.lastAvplayError ?? classification);
+        traceFailure(attempt.trace, attempt.recoveries >= MAX_RECOVERY_REPLANS ? "fail" : "fallback", attempt.trace.lastAvplay ?? classification);
         if (attempt.recoveries >= MAX_RECOVERY_REPLANS) {
+            attempt.trace.exhausted = true;
             this.fail(attempt, { kind: "playback_failed" }, true);
             return;
         }
@@ -2919,7 +2933,11 @@ export class PlaybackController implements PlayerControls {
             attempt.started = true;
             attempt.presented = true;
             attempt.resuming = false;
-            tracePlaying(attempt.trace);
+            if (tracePlaying(attempt.trace)) {
+                // The recovered chain is published as it stood; later steps belong to the next chain.
+                attempt.trace.frozen = this.traceOf(attempt);
+                attempt.trace.steps.length = 0;
+            }
             this.finishSkipSeek(attempt, true);
             if (attempt.recovery?.active === true) attempt.recovery.recovered(this.deps.clock.now());
             if (attempt.cancelTimer === undefined) {
@@ -3036,7 +3054,7 @@ export class PlaybackController implements PlayerControls {
                 noteAvplay(attempt, eventType);
                 if (eventType === "PLAYER_ERROR_CONNECTION_FAILED") {
                     attempt.bufferingQuality.noteMediaRequestFailed();
-                    this.recoverConnection(attempt);
+                    this.recoverConnection(attempt, eventType);
                 } else {
                     this.routeFailed(attempt, "avplay_playback_error");
                 }
@@ -3523,6 +3541,14 @@ export class PlaybackController implements PlayerControls {
         if (error instanceof ApiError && error.aborted) {
             return;
         }
+        if (error instanceof ApiError && error.status === 404 && attempt.presented && attempt.live && this.shownError === undefined) {
+            // The missing session is this chain's cause; its status lives in the step code, not as the final HTTP.
+            traceFailure(attempt.trace, "fallback", httpCode(error));
+            // Counted after the failure opens its chain, which starts from zero.
+            if (attempt.recovery?.active !== true) attempt.trace.reconnects++;
+            this.sessionMissing(attempt);
+            return;
+        }
         noteApiError(attempt.trace, error);
         if (error instanceof ApiError && error.status === 410) {
             // Ended by an administrator: leave, and never start a fresh session at this position.
@@ -3533,10 +3559,6 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (error instanceof ApiError && error.status === 404) {
-            if (attempt.presented && attempt.live && this.shownError === undefined) {
-                this.sessionMissing(attempt);
-                return;
-            }
             this.fail(attempt, { kind: "session_expired" }, false);
             return;
         }
@@ -3605,7 +3627,7 @@ export class PlaybackController implements PlayerControls {
         this.show({ phase: "loading", title: attempt.request.title, ...(detail === undefined ? {} : { detail }) });
     }
 
-    private recoverConnection(attempt: Attempt): void {
+    private recoverConnection(attempt: Attempt, failureCode = "connection_lost"): void {
         attempt.pendingAIResult = undefined;
         if (!attempt.live || !attempt.presented) {
             this.fail(attempt, { kind: "network" }, true);
@@ -3615,8 +3637,8 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.capturePosition(attempt);
+        traceFailure(attempt.trace, "fallback", failureCode);
         attempt.trace.reconnects++;
-        traceFailure(attempt.trace, "fallback", attempt.lastAvplayError ?? "connection_lost");
         attempt.cancelTimer?.();
         attempt.cancelTimer = undefined;
         this.closeTransport();
@@ -3948,6 +3970,8 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         const error: PlaybackError = { kind: "network" };
+        traceFailure(attempt.trace, "end", error.kind);
+        attempt.trace.exhausted = true;
         this.shownError = error;
         this.show({ phase: "error", title: attempt.request.title, error, retryable: true });
     }
@@ -4958,19 +4982,27 @@ function sessionGone(error: unknown): boolean {
 /** Mutable per-attempt trace; `incidentTrace()` publishes a read-only copy. */
 interface AttemptTrace {
     readonly seq: number;
+    chain: number;
+    /** The recovered chain as published at recovery; cleared when the next failure opens a chain. */
+    frozen: PlaybackAttemptTrace | undefined;
     stage: PlaybackStage;
     done: PlaybackStage | undefined;
     first: PlaybackTraceFailure | undefined;
     http: number | undefined;
     decision: "adaptation_unavailable" | "unknown" | undefined;
     firstAvplay: string | undefined;
+    lastAvplay: string | undefined;
     resends: number;
     fallbacks: number;
     reconnects: number;
     opened: boolean;
     shown: boolean;
     recovered: boolean;
+    exhausted: boolean;
     settingsRead: boolean;
+    hdrProbe: HdrProbe;
+    /** The latest plan this attempt received, recorded before any check can refuse it. */
+    received: PlaybackPlan | undefined;
     /** A buffering-quality replan is in flight. */
     buffering: boolean;
     readonly steps: string[];
@@ -4987,9 +5019,27 @@ const REPLAN_STAGES: Readonly<Record<ReplanOperation, PlaybackStage>> = {
 
 function newTrace(seq: number): AttemptTrace {
     return {
-        seq, stage: "capabilities", done: undefined, first: undefined, http: undefined, decision: undefined, firstAvplay: undefined,
-        resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false, settingsRead: false, buffering: false, steps: [],
+        seq, chain: 0, frozen: undefined, stage: "capabilities", done: undefined, first: undefined, http: undefined, decision: undefined,
+        firstAvplay: undefined, lastAvplay: undefined, resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false,
+        exhausted: false, settingsRead: false, hdrProbe: "unavailable", received: undefined, buffering: false, steps: [],
     };
+}
+
+/** A failure after a recovery is independent of it: it opens the next chain, leaving the recovered one as published. */
+function nextChain(trace: AttemptTrace): void {
+    if (!trace.recovered) return;
+    trace.chain++;
+    trace.frozen = undefined;
+    trace.recovered = false;
+    trace.exhausted = false;
+    trace.first = undefined;
+    trace.http = undefined;
+    trace.decision = undefined;
+    trace.firstAvplay = undefined;
+    trace.lastAvplay = undefined;
+    trace.resends = 0;
+    trace.fallbacks = 0;
+    trace.reconnects = 0;
 }
 
 function traceStep(trace: AttemptTrace, result: TraceStepResult, code?: string): void {
@@ -5006,31 +5056,38 @@ function reachedStage(trace: AttemptTrace, stage: PlaybackStage): void {
     traceStep(trace, "ok");
 }
 
-/** Records the step and, once per attempt, the first causally relevant failure. */
+/** Records the step and, once per chain, the first causally relevant failure. A recovery attempt clears the HTTP status, so only the ending failure's own status is final. */
 function traceFailure(trace: AttemptTrace, result: TraceStepResult, code?: string): void {
+    nextChain(trace);
+    if (result === "fallback") trace.http = undefined;
     if (trace.first === undefined) trace.first = { stage: trace.stage, ...(result === "end" ? {} : { code }), buffering: trace.buffering };
     traceStep(trace, result, code);
 }
 
-function tracePlaying(trace: AttemptTrace): void {
+/** Returns true when this playing state recovers the chain's failure. */
+function tracePlaying(trace: AttemptTrace): boolean {
     trace.shown = true;
     trace.buffering = false;
     enterStage(trace, "playing");
-    if (trace.first !== undefined) {
+    if (trace.first !== undefined && !trace.recovered) {
         trace.recovered = true;
         traceStep(trace, "recovered");
-    } else {
-        reachedStage(trace, "playing");
+        return true;
     }
+    reachedStage(trace, "playing");
+    return false;
 }
 
 function noteAvplay(attempt: Attempt, code: string): void {
     attempt.lastAvplayError = code;
+    nextChain(attempt.trace);
     attempt.trace.firstAvplay ??= code;
+    attempt.trace.lastAvplay = code;
 }
 
 /** Keeps only an HTTP status the server actually answered with. */
 function noteApiError(trace: AttemptTrace, error: unknown): void {
+    nextChain(trace);
     if (error instanceof ApiError && error.status !== undefined) trace.http = error.status;
 }
 
@@ -5039,6 +5096,7 @@ function httpCode(error: unknown): string | undefined {
 }
 
 function traceDecision(trace: AttemptTrace, decision: PlaybackDecision): PlaybackError {
+    nextChain(trace);
     if (decision.outcome !== "playable") trace.decision = decision.outcome;
     return decisionFailure(decision);
 }

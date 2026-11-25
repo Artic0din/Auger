@@ -485,6 +485,31 @@ test("a lowering the server refuses leaves the plan playing and shows no error",
     }
 });
 
+test("a refused lowering restores the playing context, so a later missing session is not a buffering failure (#873)", async () => {
+    for (const how of ["terminal", "refused"] as const) {
+        const r = await rig();
+        r.server.next.push(advertised());
+        if (how === "terminal") r.server.next.push({ terminal: "adaptation_unavailable" });
+        await playPastGrace(r);
+        const id = [...r.server.sessions.keys()].pop();
+        assert.ok(id !== undefined);
+        if (how === "refused") r.h.fake.script(`/playback/${id}/replan`, problem(422, "validation_failed", "Refused"));
+        r.avplay.listener?.onbufferingstart();
+        await r.h.clock.advance(6000);
+        assert.equal(qualityChanges(r).length, 1, `${how}: the automatic lowering went out`);
+        r.avplay.listener?.onbufferingcomplete();
+        await r.h.clock.advance(60_000);
+        assert.ok(last(r).phase === "playing", how);
+        const kept = r.controller.incidentTrace();
+        assert.equal(kept?.stage, "playing", `${how}: the kept transport is playing, not still in the replan`);
+        r.server.sessions.delete(id);
+        await r.h.clock.advance(10_000);
+        await r.h.clock.advance(0);
+        assert.deepEqual(r.controller.incidentTrace()?.first, { stage: "progress", code: "http_404", buffering: false }, how);
+        r.controller.destroy();
+    }
+});
+
 /** The replan answer is lost or unusable, so the server may already have adopted the lowered plan. */
 const AMBIGUOUS_ANSWERS = {
     unanswered: Array.from({ length: 3 }, () => ({ status: 503 })),

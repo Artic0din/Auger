@@ -27,7 +27,7 @@ import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatu
 import { applyLayoutDirection } from "../i18n/direction.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
-import { buildDiagnosticsReportUrl, DIAGNOSTICS_CATEGORIES, type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReport } from "../diagnostics.ts";
+import { buildDiagnosticsReportUrl, DIAGNOSTICS_CATEGORIES, type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReportFor } from "../diagnostics.ts";
 
 type Category = "general" | "playback" | "subtitles" | "diagnostics" | "server";
 const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", diagnostics: "player.settings.diagnostics", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
@@ -72,7 +72,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     root.appendChild(container);
     const host = new FocusHost(container);
     const diagnosticsCollector = diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
-    const submitDiagnostics = sendDiagnostics ?? ((collector, signal, category) => sendDiagnosticsReport(collector.snapshot(), (url, init) => window.fetch(url, init), { signal, category }));
+    const submitDiagnostics = sendDiagnostics ?? ((collector, signal, category) => sendDiagnosticsReportFor(collector.reportFor(category), (url, init) => window.fetch(url, init), { signal }));
     let category: Category = "general";
     let picker: Picker | undefined;
     let extraPicker: SettingsRow | undefined;
@@ -473,7 +473,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 "Send Diagnostics Report",
                 [
                     el("h1", "browse-title", "Send Diagnostics Report"),
-                    el("p", "settings-value", "Choose what best matches the issue. Redacted TV, memory, playback, and error details will be sent to GitHub."),
+                    el("p", "settings-value", "Choose the problem you noticed. The redacted report will be posted to a public GitHub issue."),
                     el("p", "settings-value", "Server addresses, account names, tokens, and media titles are never included."),
                     ...(diagnosticsSending ? [el("p", "browse-text", "Sending diagnostics report…")] : []),
                 ],
@@ -636,11 +636,6 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (category === "diagnostics") {
             const snapshot = diagnosticsCollector.snapshot();
             const send = actionButton("send-diagnostics", "Send Diagnostics Report", () => {
-                if (!diagnosticsCollector.hasReportableData()) {
-                    diagnosticsStatus = { kind: "ok", text: "Play something or reproduce an issue first, or use Share via QR Code." };
-                    render({ zone: "settings-rows", key: "send-diagnostics" });
-                    return;
-                }
                 confirmingDiagnosticsSend = true;
                 render();
             });
@@ -660,6 +655,9 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             autoToggle.element.setAttribute("role", "switch");
             autoToggle.element.setAttribute("aria-label", "Automatic Error Reports");
             autoToggle.element.setAttribute("aria-checked", String(autoOn));
+            const disclosure = el("p", "settings-value", "Turning this on sends redacted error reports from all profiles on this TV to public GitHub issues.");
+            disclosure.id = "automatic-reports-disclosure";
+            autoToggle.element.setAttribute("aria-describedby", disclosure.id);
             const clear = actionButton("clear-diagnostics", "Clear Session Log", () => { diagnosticsCollector.clear(); diagnosticsStatus = { kind: "ok", text: "Session log cleared." }; render({ zone: "settings-rows", key: "send-diagnostics" }); });
             clear.element.classList.add("settings-server-action");
             clear.element.prepend(navigationIcon("reset"));
@@ -668,7 +666,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 send.element,
                 share.element,
                 autoToggle.element,
-                el("p", "settings-value", "Automatically sends a redacted report on fatal playback errors or crashes (at most once per issue)."),
+                disclosure,
                 clear.element,
             );
             if (diagnosticsStatus !== undefined) {

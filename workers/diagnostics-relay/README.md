@@ -19,7 +19,9 @@ Unknown fields and unrecognized free text are discarded, never truncated into an
 | `report.js` | Issue bodies, follow-up comments and `auger-state` metadata. |
 
 Codes the client allows but the relay does not list still group, but render as "Unlisted code".
-An automatic report whose incident is not a terminal technical failure (`out` other than `failed`, or `kind` `network`) is rejected with HTTP 422 `not_auto_reportable`.
+Automatic submission requires a failed incident.
+For a network failure, recovery must also have reached `exhausted`.
+The relay returns HTTP 422 `not_auto_reportable` for other automatic submissions with an incident.
 
 ## Grouping markers
 

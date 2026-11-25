@@ -112,7 +112,10 @@ export interface DiagnosticsEvent {
     readonly text: string;
 }
 
+export type DiagnosticsScreen = "home" | "details" | "library" | "search" | "person" | "calendar" | "requests" | "audiobook" | "personal" | "watchParty" | "for_you";
+
 export interface DiagnosticsSnapshot {
+    readonly precedingScreen?: DiagnosticsScreen;
     readonly device: DiagnosticsDeviceInfo;
     readonly lastPlayback?: DiagnosticsPlayback | undefined;
     readonly lastAppError?: string | undefined;
@@ -123,8 +126,6 @@ export interface DiagnosticsPayloadPlayback {
     readonly m?: string;
     readonly v?: string;
     readonly dr?: string;
-    readonly a?: string;
-    readonly s?: string;
     readonly d?: string;
     readonly st?: string;
     readonly src?: string;
@@ -144,6 +145,7 @@ export interface DiagnosticsPayloadV1 {
     readonly app: string;
     readonly tv: string;
     readonly cat?: DiagnosticsCategory;
+    readonly precedingScreen?: DiagnosticsScreen;
     readonly auto?: true;
     readonly err?: string;
     readonly fw?: string;
@@ -358,11 +360,14 @@ function formatStreamSummary(details: DiagnosticsPlanDetails): string | undefine
     return parts.length === 0 ? undefined : cleanOptional(parts.join(" · "), 64);
 }
 
+const PUBLIC_SUBTITLE_CODECS = new Set(["SRT", "SUBRIP", "ASS", "SSA", "VTT", "WEBVTT", "PGS", "SUP", "HDMV_PGS_SUBTITLE", "VOBSUB", "DVD_SUBTITLE", "TX3G", "MOV_TEXT"]);
+
 function formatSubtitleDetail(details: DiagnosticsPlanDetails): string | undefined {
     const mode = details.subtitleMode?.trim();
     if (mode === undefined || mode === "") return undefined;
     if (mode === "off") return "off";
-    const track = [details.subtitleSource, details.subtitleCodec?.toUpperCase()].filter(Boolean).join(" ");
+    const codec = details.subtitleCodec?.toUpperCase();
+    const track = [details.subtitleSource, codec !== undefined && PUBLIC_SUBTITLE_CODECS.has(codec) ? codec : undefined].filter(Boolean).join(" ");
     const delivery = details.subtitleDelivery === undefined ? undefined : `(${details.subtitleDelivery})`;
     const parts = [mode, [track, delivery].filter(Boolean).join(" ")].filter(Boolean);
     return cleanOptional(parts.join(" · "), 80);
@@ -374,6 +379,9 @@ function formatPosition(positionSeconds: number | undefined, durationSeconds: nu
     if (durationSeconds === undefined || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return pos;
     return `${pos} / ${formatClockTime(durationSeconds)}`;
 }
+
+// HUD warning messages are free-form server text. Only recognized diagnostic phrases may leave the TV.
+const PUBLIC_PLAYBACK_NOTES = new Set(["Validated original playback", "Audio codec incompatible"]);
 
 export interface DiagnosticsPayloadOptions {
     readonly category?: DiagnosticsCategory | undefined;
@@ -404,14 +412,11 @@ function payloadFromSnapshot(
     let play: DiagnosticsPayloadPlayback | undefined;
     if (lastPlayback !== undefined) {
         const notes = (lastPlayback.diagnostics ?? [])
-            .map(line => cleanOptional(line, 96))
-            .filter((line): line is string => line !== undefined)
+            .filter(line => PUBLIC_PLAYBACK_NOTES.has(line))
             .slice(0, noteLimit);
         const m = cleanOptional(lastPlayback.playback, 64);
         const v = cleanOptional(lastPlayback.video, 72);
         const dr = cleanOptional(lastPlayback.dynamicRange, 40);
-        const a = cleanOptional(lastPlayback.audio, 64);
-        const s = cleanOptional(lastPlayback.subtitles, 64);
         const d = cleanOptional(lastPlayback.delivery, 48);
         const st = cleanOptional(lastPlayback.status, 32);
         const src = includeExtended ? cleanOptional(lastPlayback.source, 110) : undefined;
@@ -431,8 +436,6 @@ function payloadFromSnapshot(
             ...(m === undefined ? {} : { m }),
             ...(v === undefined ? {} : { v }),
             ...(dr === undefined ? {} : { dr }),
-            ...(a === undefined ? {} : { a }),
-            ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
             ...(src === undefined ? {} : { src }),
@@ -459,6 +462,7 @@ function payloadFromSnapshot(
         app: cleanOptional(device.appVersion, 32) ?? "unknown",
         tv: cleanOptional(device.tvModel, 48) ?? "Samsung TV",
         ...(options?.category === undefined ? {} : { cat: options.category }),
+        ...(snapshot.precedingScreen === undefined ? {} : { precedingScreen: snapshot.precedingScreen }),
         ...(options?.auto === true ? { auto: true as const } : {}),
         ...(err === undefined ? {} : { err }),
         ...(fw === undefined ? {} : { fw }),
@@ -673,8 +677,6 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         const m = readOptionalString(playObj, "m");
         const v = readOptionalString(playObj, "v");
         const dr = readOptionalString(playObj, "dr");
-        const a = readOptionalString(playObj, "a");
-        const s = readOptionalString(playObj, "s");
         const d = readOptionalString(playObj, "d");
         const st = readOptionalString(playObj, "st");
         const src = readOptionalString(playObj, "src");
@@ -691,8 +693,6 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
             ...(m === undefined ? {} : { m }),
             ...(v === undefined ? {} : { v }),
             ...(dr === undefined ? {} : { dr }),
-            ...(a === undefined ? {} : { a }),
-            ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
             ...(src === undefined ? {} : { src }),
@@ -760,8 +760,6 @@ export function formatPlaybackDetails(payload: DiagnosticsPayloadV1): string {
         play.src === undefined ? undefined : `Source file: ${play.src}`,
         play.v === undefined ? undefined : `Video: ${play.v}`,
         play.dr === undefined ? undefined : `Dynamic range: ${play.dr}`,
-        play.a === undefined ? undefined : `Audio: ${play.a}`,
-        play.s === undefined ? undefined : `Subtitles: ${play.s}`,
         play.sub === undefined ? undefined : `Subtitle mode: ${play.sub}`,
         play.pos === undefined ? undefined : `Position: ${play.pos}`,
         play.rb === undefined ? undefined : `Rebuffers: ${play.rb}`,
@@ -827,8 +825,9 @@ interface StoredEvent extends DiagnosticsEvent {
 
 interface StoredIncident {
     readonly seq: number;
+    readonly chain: number;
     readonly scope: number;
-    record: DiagnosticsIncidentRecord;
+    readonly record: DiagnosticsIncidentRecord;
     autoClaimed: boolean;
 }
 
@@ -848,6 +847,7 @@ export class DiagnosticsCollector {
     private playbackEventFloor = 0;
     /** Bumped on every clear so a player from an ended profile session cannot record into the next one. */
     private scope = 0;
+    private precedingScreen: DiagnosticsScreen | undefined;
     private readonly incidents: StoredIncident[] = [];
     private lastPlanSignature: string | undefined;
     private sessionHasPlayback = false;
@@ -899,7 +899,7 @@ export class DiagnosticsCollector {
         if (category === undefined) return undefined;
         for (let index = this.incidents.length - 1; index >= 0; index--) {
             const stored = this.incidents[index];
-            if (stored === undefined || stored.scope !== this.scope) continue;
+            if (stored === undefined) continue;
             const record = stored.record;
             if (record.category === category) return record;
             if (category === "playback" && record.incident.out !== "recovered") return record;
@@ -909,7 +909,13 @@ export class DiagnosticsCollector {
 
     /** What a manual submission for `category` sends: the matching frozen incident, else the live context as a user-observed symptom. */
     reportFor(category?: DiagnosticsCategory): DiagnosticsReport {
-        return this.incidentFor(category) ?? { snapshot: this.snapshot(), ...(category === undefined ? {} : { category }) };
+        const record = this.incidentFor(category);
+        if (record !== undefined) return record;
+        const snapshot = this.snapshot();
+        return {
+            snapshot: this.precedingScreen === undefined ? snapshot : { ...snapshot, precedingScreen: this.precedingScreen },
+            ...(category === undefined ? {} : { category }),
+        };
     }
 
     /** Stable content hash ignoring volatile runtime counters (memory, uptime, playback position) for instant duplicate-click detection. */
@@ -925,6 +931,7 @@ export class DiagnosticsCollector {
             fw: this.device.firmware,
             srv: this.device.serverVersion,
             cat: category,
+            precedingScreen: this.precedingScreen,
             err: this.lastAppError,
             play: play === undefined ? undefined : {
                 m: play.playback,
@@ -1000,7 +1007,10 @@ export class DiagnosticsCollector {
         }
     }
 
-    /** Starts a playback attempt's evidence and returns the profile-session scope its incidents must carry. */
+    isCurrentPlaybackSession(scope: number): boolean {
+        return this.scope === scope;
+    }
+
     beginPlaybackSession(): number {
         this.rebufferCount = 0;
         this.lastPlanSignature = undefined;
@@ -1008,7 +1018,7 @@ export class DiagnosticsCollector {
         // An earlier attempt's plan, status and position never describe this one (#864).
         this.lastPlayback = undefined;
         this.playbackEventFloor = this.eventSeq;
-        return this.scope;
+        return ++this.scope;
     }
 
     /**
@@ -1019,20 +1029,14 @@ export class DiagnosticsCollector {
         if (scope !== this.scope) return undefined;
         const incident = playbackIncident(trace, error);
         if (incident === undefined) return undefined;
-        const existing = this.incidents.find(entry => entry.seq === trace.seq && entry.scope === scope);
-        if (existing !== undefined && (existing.record.incident.out !== "recovered" || JSON.stringify(existing.record.incident) === JSON.stringify(incident))) {
-            return existing.record;
-        }
+        const existing = this.incidents.find(entry => entry.scope === scope && entry.seq === trace.seq && entry.chain === trace.chain);
+        if (existing !== undefined) return existing.record;
         const captured = this.captureSnapshot(this.playbackEventFloor);
         // An unrelated app error belongs to its own report, not to this attempt's evidence.
         const snapshot: DiagnosticsSnapshot = { device: captured.device, events: captured.events, ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }) };
         const record: DiagnosticsIncidentRecord = { snapshot, category: incident.cat, incident };
-        if (existing !== undefined) {
-            existing.record = record;
-        } else {
-            this.incidents.push({ seq: trace.seq, scope, record, autoClaimed: false });
-            if (this.incidents.length > MAX_INCIDENTS) this.incidents.splice(0, this.incidents.length - MAX_INCIDENTS);
-        }
+        this.incidents.push({ seq: trace.seq, chain: trace.chain, scope, record, autoClaimed: false });
+        if (this.incidents.length > MAX_INCIDENTS) this.incidents.shift();
         this.emit();
         return record;
     }
@@ -1164,7 +1168,12 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
+    setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
+        this.precedingScreen = screen;
+    }
+
     clear(): void {
+        this.precedingScreen = undefined;
         this.scope++;
         this.playbackEventFloor = this.eventSeq;
         if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;

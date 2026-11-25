@@ -203,7 +203,7 @@ AVPlay quotes below are from Samsung's [AVPlay API](https://developer.samsung.co
 | TrueHD Atmos and DTS:X | Hidden in Apple's own Silo build (`AetherLoadSpec.swift:660-666`), and Samsung lists neither codec. |
 | Still Watching prompt | Apple's EPISODES row limits consecutive autoplay episodes (`TVPlaybackSettingsView.swift:275-279`); Samsung has no guard yet ([#796](https://github.com/Artic0din/Auger-Tizen/issues/796)). |
 | Use Device Settings (captions) | Samsung exposes no TV-wide caption-style API for the app subtitle overlay. |
-| Diagnostics (Silo server upload) | Auger is a third-party client and does not upload to Silo's first-party diagnostics endpoint (#138). Instead, **Settings > Diagnostics** provides a 4-category **Send Diagnostics Report** picker (deduplicated through the Auger Cloudflare Worker relay to `diagnostics` GitHub Issues), an opt-in **Automatic Error Reports** toggle (off by default), and a zero-backend **Share via QR Code** backup (#847). |
+| Diagnostics (Silo server upload) | Auger is a third-party client and does not upload to Silo's first-party diagnostics endpoint (#138). Instead, **Settings > Diagnostics** provides a 4-category **Send Diagnostics Report** picker (deduplicated through the Auger Cloudflare Worker relay to `diagnostics` GitHub Issues), a TV-wide **Automatic Error Reports** toggle for public GitHub issues (off by default), and a zero-backend **Share via QR Code** backup (#847). |
 
 Open question: whether to claim multichannel LPCM direct play requires HDMI/eARC channel-count proof on the S95C first.
 

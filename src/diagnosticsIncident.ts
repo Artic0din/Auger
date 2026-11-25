@@ -35,6 +35,8 @@ export interface PlaybackTraceFailure {
 export interface PlaybackAttemptTrace {
     /** Local attempt sequence; never serialized. */
     readonly seq: number;
+    /** Causal chain within the attempt: a failure after a recovery opens the next one, and the recovered chain stays frozen. Never serialized. */
+    readonly chain: number;
     readonly stage: PlaybackStage;
     readonly done: PlaybackStage | undefined;
     readonly first: PlaybackTraceFailure | undefined;
@@ -48,10 +50,13 @@ export interface PlaybackAttemptTrace {
     readonly opened: boolean;
     readonly shown: boolean;
     readonly recovered: boolean;
+    /** The reconnect loop gave up: applicable recovery ran out, so the failure is not ordinary connectivity. */
+    readonly exhausted: boolean;
     readonly steps: readonly string[];
     /** Undefined until the playback defaults were read for this attempt. */
     readonly settings: { readonly quality: string; readonly capKbps: number | undefined; readonly hdr: boolean } | undefined;
-    readonly hdrPanel: { readonly hdr10: boolean; readonly hlg: boolean; readonly dolbyVision: boolean };
+    /** "unavailable" when the probe gave no usable answer; an object only for an observed answer. */
+    readonly hdrPanel: { readonly hdr10: boolean; readonly hlg: boolean; readonly dolbyVision: boolean } | "unavailable";
     readonly request: { readonly startSeconds: number | undefined; readonly subtitle: "auto" | "off" | "track"; readonly audio: "default" | "track" };
     /** Undefined until this attempt received a plan; never an earlier attempt's plan. */
     readonly plan: {
@@ -113,7 +118,7 @@ export interface DiagnosticsIncidentPayload {
     readonly rec: { readonly n: number; readonly c: number; readonly r: IncidentRecovery };
     readonly pl: DiagnosticsIncidentPlan | "not_reached";
     readonly set: { readonly q: string; readonly cap: number | "none"; readonly hdr: boolean } | "not_reached";
-    readonly hp: { readonly h10: boolean; readonly hlg: boolean; readonly dv: boolean };
+    readonly hp: { readonly h10: boolean; readonly hlg: boolean; readonly dv: boolean } | "unavailable";
     readonly req: { readonly pos: number | "none"; readonly sub: "auto" | "off" | "track"; readonly aud: "default" | "track" };
     readonly t: readonly string[];
 }
@@ -157,25 +162,36 @@ export function cleanAvplayError(value: string | undefined): string | undefined 
     return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
-const SAFE_CODE = /^[a-z0-9_]{1,48}$/;
-const SAFE_TOKEN = /^[a-z0-9_.-]{1,24}$/;
+const FAILURE_CODES = new Set([
+    "settings", "unavailable", "terminal", "terminal_error", "session_expired", "session_missing",
+    "installation_changed", "revoked", "backgrounded", "network", "server", "server_error",
+    "no_answer", "no_response", "network_unreachable", "connection_lost", "playback_failed",
+    "client_upgrade_required", "routes_exhausted", "hls_playlist_unreadable", "audio_track_switch_failed",
+    "avplay_prepare_failed", "avplay_open_failed", "avplay_play_failed", "avplay_resume_seek_failed",
+    "avplay_playback_error", "avplay_startup_timeout", "version_unavailable", "subtitle_selection_unavailable",
+]);
+const PROTOCOLS = new Set(["http", "https", "hls", "http_progressive"]);
+const CONTAINERS = new Set(["mkv", "matroska", "webm", "mp4", "mov", "mpegts", "ts", "fmp4", "avi", "hls"]);
+const QUALITIES = new Set(["auto", "original", "2160p", "1080p", "720p", "480p", "360p"]);
+const VIDEO_CODECS = new Set(["h264", "h.264", "avc", "avc1", "h265", "h.265", "hevc", "av1", "vp9", "mpeg2video", "mpeg4"]);
+const DYNAMIC_RANGES = new Set(["sdr", "hdr", "hdr10", "hdr10plus", "hdr10+", "hlg", "dv", "dolby_vision"]);
 const MAX_STEPS = 16;
 const MAX_COUNT = 99;
 const DELIVERIES = new Set(["original_http", "server_remux_progressive", "server_remux_hls", "server_transcode_hls", "unknown"]);
 const EXPECTED_REFUSALS = new Set(["version_unavailable", "subtitle_selection_unavailable"]);
 
-/** An allowlisted AVPlay code or a lowercase snake_case code; anything else is dropped. */
+/** An allowlisted AVPlay code or a recognized technical code; anything else is dropped. */
 export function cleanIncidentCode(raw: string | undefined): string | undefined {
     if (raw === undefined) return undefined;
     const avplay = cleanAvplayError(raw);
     if (avplay !== undefined) return avplay;
-    return SAFE_CODE.test(raw) ? raw : undefined;
+    return FAILURE_CODES.has(raw) || /^http_[1-5]\d{2}$/.test(raw) ? raw : undefined;
 }
 
-function token(raw: string | undefined): string | undefined {
+function token(raw: string | undefined, allowed: ReadonlySet<string>): string | undefined {
     if (raw === undefined) return undefined;
     const lowered = raw.trim().toLowerCase();
-    return SAFE_TOKEN.test(lowered) ? lowered : undefined;
+    return allowed.has(lowered) ? lowered : undefined;
 }
 
 function count(value: number): number {
@@ -206,7 +222,7 @@ export function cleanTraceStep(step: string): string | undefined {
 export function playbackErrorCode(error: PlaybackError, trace: PlaybackAttemptTrace): string {
     const http = httpStatus(trace.http);
     switch (error.kind) {
-        case "terminal": return SAFE_CODE.test(error.reason) ? error.reason : "terminal_error";
+        case "terminal": return FAILURE_CODES.has(error.reason) ? error.reason : "terminal_error";
         case "server": {
             const reason = error.reason;
             if (reason !== undefined && "update" in reason) return "client_upgrade_required";
@@ -234,9 +250,12 @@ export function playbackOutcome(error: PlaybackError | undefined): IncidentOutco
     }
 }
 
-/** Opt-in filing applies only to a technical failure that ended the requested playback after applicable recovery. */
+/**
+ * Opt-in filing applies only to a technical failure that ended the requested playback after applicable recovery.
+ * A connectivity failure files only when the reconnect loop ran out; ordinary loss of network stays manual.
+ */
 export function incidentAutoEligible(incident: DiagnosticsIncidentPayload): boolean {
-    return incident.out === "failed" && incident.kind !== "network";
+    return incident.out === "failed" && (incident.kind !== "network" || incident.rec.r === "exhausted");
 }
 
 /**
@@ -255,24 +274,25 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
     const lastAv = cleanAvplayError(trace.lastAvplay);
     const fallbacks = count(trace.fallbacks);
     const reconnects = count(trace.reconnects);
+    // The route budget and the reconnect loop are per attempt, so either can be spent before this chain's first fallback.
     const recovery: IncidentRecovery = error === undefined
         ? "recovered"
-        : fallbacks + reconnects === 0
-            ? "none"
-            : error.kind === "playback_failed" ? "exhausted" : "attempted";
+        : error.kind === "playback_failed" || trace.exhausted
+            ? "exhausted"
+            : fallbacks + reconnects === 0 ? "none" : "attempted";
     const plan = trace.plan;
     const dl = plan === undefined ? undefined : DELIVERIES.has(plan.delivery) ? plan.delivery : "unknown";
-    const pr = token(plan?.protocol);
-    const ct = token(plan?.container);
-    const q = token(plan?.quality);
+    const pr = token(plan?.protocol, PROTOCOLS);
+    const ct = token(plan?.container, CONTAINERS);
+    const q = token(plan?.quality, QUALITIES);
     const kbps = plan?.sourceKbps !== undefined && Number.isFinite(plan.sourceKbps) && plan.sourceKbps > 0 ? Math.min(Math.round(plan.sourceKbps), 1_000_000) : undefined;
-    const vc = token(plan?.videoCodec);
+    const vc = token(plan?.videoCodec, VIDEO_CODECS);
     const res = plan?.width !== undefined && plan.height !== undefined && Number.isInteger(plan.width) && Number.isInteger(plan.height) && plan.width > 0 && plan.height > 0 && plan.width <= 16384 && plan.height <= 16384
         ? `${plan.width}x${plan.height}`
         : undefined;
-    const dr = token(plan?.dynamicRange);
+    const dr = token(plan?.dynamicRange, DYNAMIC_RANGES);
     const settings = trace.settings;
-    const settingQuality = settings === undefined ? undefined : token(settings.quality) ?? "unknown";
+    const settingQuality = settings === undefined ? undefined : token(settings.quality, QUALITIES) ?? "unknown";
     const cap = settings?.capKbps !== undefined && Number.isFinite(settings.capKbps) && settings.capKbps > 0 ? Math.min(Math.round(settings.capKbps), 1_000_000) : "none";
     const requestPos = seconds(trace.request.startSeconds);
     const steps = trace.steps.map(cleanTraceStep).filter((step): step is string => step !== undefined).slice(-MAX_STEPS);
@@ -308,7 +328,7 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
             at: seconds(plan.atSeconds) ?? 0,
         },
         set: settings === undefined || settingQuality === undefined ? "not_reached" : { q: settingQuality, cap, hdr: settings.hdr },
-        hp: { h10: trace.hdrPanel.hdr10, hlg: trace.hdrPanel.hlg, dv: trace.hdrPanel.dolbyVision },
+        hp: trace.hdrPanel === "unavailable" ? "unavailable" : { h10: trace.hdrPanel.hdr10, hlg: trace.hdrPanel.hlg, dv: trace.hdrPanel.dolbyVision },
         req: { pos: requestPos ?? "none", sub: trace.request.subtitle, aud: trace.request.audio },
         t: steps,
     };
