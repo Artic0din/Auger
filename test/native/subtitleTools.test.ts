@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import { AUDIO_KEY, decodeSettingsContract } from "../../src/contracts/v2/settings.ts";
-import { allowedScopes, appearanceSummary, appearanceValue, delayLabel, delayOptions, editAppearance, languageChoices, scoreTier, subtitleControlSupport, syncWriteScope } from "../../src/player/subtitleAppearance.ts";
+import { allowedScopes, appearanceSummary, appearanceValue, delayLabel, delayOptions, editAppearance, languageChoices, resultDetail, scoreTier, subtitleControlSupport, syncWriteScope } from "../../src/player/subtitleAppearance.ts";
 import { SubtitleDisplay, subtitleSettingsScope } from "../../src/player/subtitleDisplay.ts";
 import { SubtitleSearch } from "../../src/player/subtitleSearch.ts";
 import { decodeProviderStatus, decodeSearchResponse } from "../../src/contracts/v2/subtitleSearch.ts";
@@ -555,4 +555,30 @@ test("the not-set-up reason and the adding line read in the shown language, and 
         adding.destroy();
     } finally { setAppLanguage(null); }
     search.destroy();
+});
+
+test("resultDetail and search empty/searching copy use Apple catalog keys and locale digits (#780)", async () => {
+    assert.equal(resultDetail({ language: "en", downloads: 1200, hearingImpaired: true }), "English • 1200 downloads • HI");
+    assert.equal(resultDetail({ language: "fr", downloads: 0, hearingImpaired: false }), "French");
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(resultDetail({ language: "en", downloads: 1200, hearingImpaired: true }), "English • 1200 Downloads • HI");
+    } finally { setAppLanguage(null); }
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const arabicDetail = resultDetail({ language: "en", downloads: 42, hearingImpaired: true });
+        assert.ok(arabicDetail.includes("٤٢"), `expected Arabic-Indic digits in ${arabicDetail}`);
+        const h = await signed();
+        const search = new SubtitleSearch(h.core.session, FILE, () => true, () => undefined);
+        h.fake.script(PROVIDERS, { status: 200, body: available });
+        h.fake.script(SEARCH, { status: 200, body: { results: [], warnings: [] } });
+        await search.refresh();
+        const held = h.fake.hold(SEARCH);
+        const pending = search.pick("en");
+        assert.notEqual(search.view.status, "Searching providers… This can take up to half a minute.");
+        held.release();
+        await pending;
+        assert.notEqual(search.view.message, "No subtitles found for English.");
+        search.destroy();
+    } finally { setAppLanguage(null); }
 });

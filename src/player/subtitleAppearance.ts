@@ -244,7 +244,7 @@ export function providerLabel(provider: string): string {
 export function resultDetail(result: { readonly language: string; readonly downloads: number; readonly hearingImpaired: boolean }): string {
     const parts: string[] = [];
     if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(result.language)) parts.push(languageLabel(result.language));
-    if (result.downloads > 0) parts.push(`${result.downloads} downloads`);
-    if (result.hearingImpaired) parts.push("HI");
-    return parts.join(" · ");
+    if (result.downloads > 0) parts.push(translate("subtitleSearch.downloadCount", { count: result.downloads, count_text: integerText(result.downloads) }));
+    if (result.hearingImpaired) parts.push(translate("subtitleSearch.hearingImpaired"));
+    return parts.join(" • ");
 }

@@ -4300,6 +4300,88 @@ test("Search Subtitles opens in the shared 1280x800 modal dialog with phase head
     } finally { await page.close(); }
 });
 
+test("Search Subtitles renders grouped languages, scored result rows, warnings, searching spinner, and failure panel (#780)", async () => {
+    const { page } = await open();
+    type SearchState = NonNullable<TrackView["subtitleTools"]>["search"];
+    const searchBase: SearchState = {
+        offered: true, unavailableReason: "", phase: "languages",
+        suggested: [{ code: "en", label: "English", hint: "subtitleSearch.preferred" }],
+        other: [{ code: "fr", label: "French" }],
+        language: "en", status: "", message: "", warnings: [], canRetry: false,
+        results: [], downloadingKey: undefined,
+    };
+    const withSearch = (patch: Partial<SearchState>): TrackView => ({
+        ...TRACKS,
+        subtitleTools: {
+            search: { ...searchBase, ...patch },
+            display: { delay: true, styling: true, deviceScope: true, textOpacity: true, delayMs: 0, appearance: DEFAULT_APPEARANCE, deviceOverride: false, busy: false, message: "" },
+            overlay: true,
+        },
+    });
+    try {
+        await show(page, playing(withSearch({ phase: "closed" })));
+        await openPanel(page);
+        await nextTab(page, 4);
+
+        // Languages: PREFERRED LANGUAGE + ALL LANGUAGES headers, star/globe glyphs, Preferred hint, chevron.
+        await show(page, playing(withSearch({ phase: "languages" })));
+        assert.deepEqual(
+            await page.locator(".player-search-menu .player-menu-heading").allTextContents(),
+            ["PREFERRED LANGUAGE", "ALL LANGUAGES"],
+        );
+        assert.equal(await text(page, '[data-focus="subtitle-language:en"] .player-choice-detail'), "Preferred");
+        assert.equal(await page.locator('[data-focus="subtitle-language:en"] .player-setting-glyph svg').count(), 1);
+        assert.equal(await page.locator('[data-focus="subtitle-language:en"] .player-setting-chevron svg').count(), 1);
+        await show(page, playing(withSearch({ phase: "languages", suggested: [] })));
+        assert.deepEqual(await page.locator(".player-search-menu .player-menu-heading").allTextContents(), ["LANGUAGE"]);
+
+        // Searching: spinner + catalog title & note + Cancel.
+        await show(page, playing(withSearch({ phase: "searching" })));
+        assert.equal(await page.locator(".player-search-searching-spinner svg").count(), 1);
+        assert.equal(await text(page, ".player-search-searching-title"), "Searching providers…");
+        assert.equal(await text(page, ".player-search-searching-note"), "This can take up to half a minute.");
+        assert.equal(await focused(page), "subtitle-search-cancel");
+
+        // Results: amber warning + 3 score tiers + untitled fallback + detail bullets + 64px/150px columns.
+        const results = [
+            { key: "os:1", id: "1", provider: "opensubtitles", releaseName: "Movie.2026.1080p", format: "srt", language: "en", score: 85.4, downloads: 1200, hearingImpaired: true },
+            { key: "sdl:2", id: "2", provider: "subdl", releaseName: "", format: "ass", language: "en", score: 52, downloads: 0, hearingImpaired: false },
+            { key: "ss:3", id: "3", provider: "subsource", releaseName: "Low.Score", format: "vtt", language: "en", score: 20, downloads: 5, hearingImpaired: false },
+        ];
+        await show(page, playing(withSearch({ phase: "results", results, warnings: ["Subsource timed out."] })));
+        assert.equal(await text(page, ".player-search-warning-text"), "Subsource timed out.");
+        assert.equal(await page.locator(".player-search-warning-icon svg").count(), 1);
+        assert.deepEqual(
+            await page.locator(".player-search-score-badge").evaluateAll(nodes => nodes.map(n => [n.textContent, n.getAttribute("data-score-tier")])),
+            [["85", "good"], ["52", "fair"], ["20", "poor"]],
+        );
+        assert.equal(await text(page, '[data-focus="subtitle-result:os:1"] .player-search-match-label'), "Match");
+        assert.equal(await text(page, '[data-focus="subtitle-result:os:1"] .player-search-result-detail'), "English • 1200 downloads • HI");
+        assert.equal(await text(page, '[data-focus="subtitle-result:os:1"] .player-search-provider-name'), "OpenSubtitles");
+        assert.equal(await text(page, '[data-focus="subtitle-result:os:1"] .player-search-format-text'), "SRT");
+        assert.equal(await text(page, '[data-focus="subtitle-result:sdl:2"] .player-search-result-title'), "Untitled release");
+        const widths = await page.locator('[data-focus="subtitle-result:os:1"]').evaluate(row => ({
+            score: Math.round(row.querySelector(".player-search-score-col")!.getBoundingClientRect().width),
+            provider: Math.round(row.querySelector(".player-search-provider-col")!.getBoundingClientRect().width),
+        }));
+        assert.deepEqual(widths, { score: 64, provider: 150 });
+
+        // Downloading: swaps provider column for spinner on active row and disables sibling rows.
+        await show(page, playing(withSearch({ phase: "results", results, downloadingKey: "os:1" })));
+        assert.equal(await page.locator('[data-focus="subtitle-result:os:1"] .player-search-result-spinner svg').count(), 1);
+        assert.equal(await page.locator('[data-focus="subtitle-result:os:1"] .player-search-provider-col').count(), 0);
+        assert.equal(await page.locator('[data-focus="subtitle-result:sdl:2"]').getAttribute("aria-disabled"), "true");
+
+        // Failure: warning icon + message + Try Again + Back.
+        await show(page, playing(withSearch({ phase: "failed", message: "Providers unavailable", canRetry: true, downloadingKey: undefined })));
+        assert.equal(await page.locator(".player-search-failure-icon svg").count(), 1);
+        assert.equal(await text(page, ".player-search-failure-text"), "Providers unavailable");
+        assert.equal(await focused(page), "subtitle-search-retry");
+        assert.equal(await text(page, '[data-focus="subtitle-search-retry"]'), "Try Again");
+        assert.equal(await text(page, '[data-focus="subtitle-search-back"]'), "Back");
+    } finally { await page.close(); }
+});
+
 // VideoPane (TVPlayerInfoHUD.swift:795-957, silo-apple e0337595): PICTURE holds Quality and Aspect, PLAYBACK holds Speed and
 // Auto-play next; subtitle timing lives only in the Subtitles pane's TIMING group (#1178).
 // HUDRowButtonStyle (TVPlayerInfoHUD.swift:450, 479, 482, silo-apple main 71a3beb9): a held panel row scales to 0.98, animated

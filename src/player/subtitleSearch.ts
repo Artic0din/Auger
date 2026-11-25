@@ -28,8 +28,15 @@ export const STORED = "The subtitle was saved but couldn't be turned on now. It 
 const UNCONFIRMED = "Auger couldn't confirm the download. If it was saved, it will be available the next time you play this video.";
 const UNAVAILABLE = "Not set up on this server";
 const ADDING = "Adding subtitle…";
-/** The lines Apple reads from the catalog stay English ids in this state and are worded when the view is read, so a later language file rewords them. */
-const shown = (text: string): string => text === UNAVAILABLE ? translate("subtitleSearch.notSetUpShort") : text === ADDING ? translate("subtitleSearch.adding") : text;
+const NO_RESULTS = "__no_results__";
+/** The lines Apple reads from the catalog stay sentinel ids in this state and are worded when the view is read, so a later language file rewords them. */
+function shown(text: string, language?: string): string {
+    if (text === UNAVAILABLE) return translate("subtitleSearch.notSetUpShort");
+    if (text === ADDING) return translate("subtitleSearch.adding");
+    if (text === SEARCHING) return `${translate("subtitleSearch.searching")} ${translate("subtitleSearch.searchingNote")}`;
+    if (text === NO_RESULTS) return language !== undefined ? translate("subtitleSearch.noResults", { language }) : translate("subtitleSearch.noResultsAnyLanguage");
+    return text;
+}
 
 export class SubtitleSearch {
     private readonly session: NativeSession;
@@ -65,10 +72,11 @@ export class SubtitleSearch {
     }
 
     get view(): SubtitleSearchView {
+        const language = this.language === undefined ? undefined : this.languageName(this.language);
         return {
             offered: this.offered, unavailableReason: shown(this.unavailableReason), phase: this.phase,
             suggested: this.suggested, other: this.other, language: this.language, status: shown(this.status),
-            message: shown(this.message), warnings: this.warnings, canRetry: this.canRetry, results: this.results,
+            message: shown(this.message, language), warnings: this.warnings, canRetry: this.canRetry, results: this.results,
             downloadingKey: this.downloadingKey,
         };
     }
@@ -167,7 +175,7 @@ export class SubtitleSearch {
             this.warnings = response.warnings;
             this.phase = "results";
             this.status = "";
-            this.message = response.results.length === 0 ? `No subtitles found for ${this.languageName(language)}.` : "";
+            this.message = response.results.length === 0 ? NO_RESULTS : "";
         } catch (error) {
             if (this.abort.signal.aborted || generation !== this.searchGeneration || (error instanceof ApiError && error.aborted)) return;
             this.phase = "failed";

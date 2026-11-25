@@ -1794,7 +1794,8 @@
     color: rgba(255, 255, 255, 0.65);
 }
 
-.player-ai-menu .player-menu-heading {
+.player-ai-menu .player-menu-heading,
+.player-search-menu .player-menu-heading {
     margin: 10px 0 0;
     padding: 0 12px 8px;
     font-size: 14px;
@@ -1902,4 +1903,196 @@
 
 .player-captions-secondary[hidden] {
     display: none;
+}
+
+/* SubtitleSearchMenu.swift (silo-apple 3289bedb): scored result rows, warning rows, searching/empty/failure states. */
+.player-search-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 4px 16px;
+    font-size: 20px;
+    color: #ffc107;
+}
+
+.player-search-warning-icon,
+.player-search-failure-icon {
+    display: inline-flex;
+    flex: none;
+    width: 24px;
+    height: 24px;
+}
+
+.player-search-warning-icon svg,
+.player-search-failure-icon svg,
+.player-search-format-icon svg,
+.player-search-searching-spinner svg,
+.player-search-result-spinner svg {
+    width: 100%;
+    height: 100%;
+}
+
+.player-search-empty {
+    margin: 0;
+    padding: 12px 16px;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.player-search-back-row .player-setting-label {
+    font-size: 22px;
+}
+
+.player[dir="rtl"] .player-search-back-icon svg {
+    transform: scaleX(-1);
+}
+
+.player-search-searching-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.player-search-searching-spinner,
+.player-search-result-spinner {
+    display: inline-flex;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    color: #ffffff;
+    animation: player-spin 0.9s steps(8, end) infinite;
+}
+
+.player-search-result-row:focus .player-search-result-spinner {
+    color: #000000;
+}
+
+.player-search-searching-title {
+    font-size: 22px;
+    font-weight: 500;
+    color: #ffffff;
+}
+
+.player-search-searching-note {
+    margin: 0;
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.player-search-failure {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.player-search-result-row {
+    align-items: center;
+}
+
+.player-search-score-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    width: 64px;
+}
+
+.player-search-score-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #ffffff;
+}
+
+.player-search-score-good {
+    background: rgba(48, 209, 88, 0.85);
+}
+
+.player-search-score-fair {
+    background: rgba(255, 193, 7, 0.85);
+}
+
+.player-search-score-poor {
+    background: rgba(176, 0, 32, 0.85);
+}
+
+.player-search-match-label {
+    font-size: 14px;
+    line-height: 1.1;
+    opacity: 0.65;
+}
+
+.player-search-result-copy {
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+}
+
+.player-search-result-title {
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.player-search-result-detail {
+    font-size: 20px;
+    line-height: 1.25;
+    opacity: 0.65;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.player-search-result-row:focus .player-search-result-detail {
+    color: rgba(0, 0, 0, 0.65);
+    opacity: 1;
+}
+
+.player-search-provider-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex: none;
+    width: 150px;
+}
+
+.player-search-provider-name {
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.player-search-format {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 17px;
+    line-height: 1.2;
+    opacity: 0.6;
+}
+
+.player-search-format-icon {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-search-searching-spinner,
+    .player-search-result-spinner {
+        animation: none;
+    }
 }

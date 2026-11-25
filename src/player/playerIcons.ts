@@ -34,6 +34,11 @@ export function arrowDownCircleIcon(): string {
     return svg(`<circle cx="12" cy="12" r="10" fill="currentColor"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 7v9m-4-4 4 4 4-4"/>`);
 }
 
+/** `arrow.down.circle`: the subtitle search result format symbol. */
+export function arrowDownCircleOutlineIcon(): string {
+    return svg(`<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v8.5m-3.5-3.5L12 16l3.5-3.5"/>`);
+}
+
 /** `info.circle.fill`: the information tone's symbol. */
 export function infoCircleIcon(): string {
     return svg(`<circle cx="12" cy="12" r="10" fill="currentColor"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 11v6m0-9.4v.1"/>`);
@@ -42,6 +47,11 @@ export function infoCircleIcon(): string {
 /** `exclamationmark.triangle.fill`: the warning tone's symbol. */
 export function warningTriangleIcon(): string {
     return svg(`<path fill="currentColor" d="M10.3 3.6a2 2 0 0 1 3.4 0l8.2 14.3a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 9.5v4.5m0 3v.1"/>`);
+}
+
+/** `exclamationmark.triangle`: the subtitle search warning and failure symbol. */
+export function warningTriangleOutlineIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M10.4 4.2a1.85 1.85 0 0 1 3.2 0l7.5 13a1.85 1.85 0 0 1-1.6 2.8H4.5a1.85 1.85 0 0 1-1.6-2.8z"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 9.5v4.5"/><circle cx="12" cy="16.8" r="1" fill="currentColor"/>`);
 }
 
 /** `rectangle.inset.filled`: Up Next's Keep Watching symbol, a picture frame with the picture inset (semibold stroke). */
