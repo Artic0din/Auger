@@ -51,15 +51,27 @@ function field(value: unknown, key: string): unknown {
  * only. HLG stays false. Dolby Vision stays false. See docs/settings.md.
  */
 export function probeHdrPanel(scope: unknown = globalThis): HdrPanel {
+    return hdrPanelFor(probeHdr(scope));
+}
+
+/** What the probe observed: the TV answered true or false, or gave no usable answer. Only diagnostics tell the last two apart. */
+export type HdrProbe = "hdr" | "sdr" | "unavailable";
+
+export function probeHdr(scope: unknown = globalThis): HdrProbe {
     try {
         const avinfo = field(field(scope, "webapis"), "avinfo");
         const read = field(avinfo, "isHdrTvSupport");
-        if (typeof read !== "function") return NO_HDR;
+        if (typeof read !== "function") return "unavailable";
         const supported: unknown = read.call(avinfo);
-        return supported === true ? { hdr10: true, hlg: false, dolbyVision: false } : NO_HDR;
+        return supported === true ? "hdr" : supported === false ? "sdr" : "unavailable";
     } catch {
-        return NO_HDR;
+        return "unavailable";
     }
+}
+
+/** An unavailable probe declares SDR, exactly as an observed false does. */
+export function hdrPanelFor(probe: HdrProbe): HdrPanel {
+    return probe === "hdr" ? { hdr10: true, hlg: false, dolbyVision: false } : NO_HDR;
 }
 
 /**

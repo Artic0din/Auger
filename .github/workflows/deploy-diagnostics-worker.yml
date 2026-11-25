@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'workers/diagnostics-relay/**'
+      - 'shared/diagnostics-media.js'
       - '!workers/diagnostics-relay/**/*.md'
       - '!workers/diagnostics-relay/**/*.d.ts'
       - '.github/workflows/deploy-diagnostics-worker.yml'

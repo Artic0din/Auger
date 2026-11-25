@@ -1,7 +1,6 @@
 name: Feature request
 description: Suggest an improvement to Auger (Samsung TV / Tizen)
-title: "[feature] "
-labels: ["enhancement", "feature-request"]
+labels: ["enhancement"]
 body:
   - type: markdown
     attributes:

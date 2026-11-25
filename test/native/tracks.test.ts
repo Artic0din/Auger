@@ -20,6 +20,7 @@ import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { FakePlayback } from "./support/fakePlayback.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { connected, type Harness, signIn } from "./support/harness.ts";
+import { playbackIncident } from "../../src/diagnosticsIncident.ts";
 
 const MOVIE: PlayRequest = { contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: 12.5 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -299,6 +300,30 @@ for (const refusal of ["terminal", "validation"] as const) {
         r.controller.destroy();
     });
 }
+
+test("an initial track change refused before opening reports the replacement plan and its position (#873)", async () => {
+    const r = await rig();
+    const plan = decodePlaybackDecision(fixture("playback_start_opaque_ids"));
+    assert.ok(plan.outcome === "playable");
+    const track = plan.plan.subtitle.inventory[1];
+    assert.ok(track);
+    const request = { ...MOVIE, audioTrackId: "file:42:audio:1", subtitle: { kind: "track" as const, signature: { source: track.source, language: track.language, codec: track.codec, label: track.label, forced: track.forced, hearingImpaired: track.hearingImpaired } } };
+    // The start plan, then a replacement that drops the subtitle and starts elsewhere.
+    r.server.next.push({}, { clearSubtitle: true, timeline: { source_start_seconds: 30, player_start_seconds: 30, timeline_offset_seconds: 0 } });
+    try {
+        r.controller.play(request);
+        await settle(r);
+        assert.equal(only(replans(r.h)).operation, "track_change");
+        const view = last(r.views);
+        assert.ok(view.phase === "error" && view.error.kind === "terminal" && view.error.reason === "subtitle_selection_unavailable", JSON.stringify(view));
+        assert.equal(r.avplay.urls.length, 0, "refused before AVPlay opened");
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined && incident.pl !== "not_reached");
+        assert.deepEqual([incident.stage, incident.open, incident.pl.pos, incident.pl.at], ["track_change", false, 30, 30], "the replacement plan, not the start plan at 12.5 s");
+    } finally { r.controller.destroy(); }
+});
 
 test("a subtitle disappearing during initial reconciliation cannot silently start with subtitles Off", async () => {
     const r = await rig();
@@ -824,6 +849,17 @@ test("a profile change during a pending change aborts it and acts no further", a
     await settle(r);
     assert.equal(r.avplay.urls.length, 1);
     assert.deepEqual(r.exits, ["end:authority_changed"]);
+});
+
+test("a player error after a refused subtitle switch belongs to the playing stream", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.controller.selectSubtitle("file:42:subtitle:0");
+    await settle(r);
+    assert.equal(tracks(r).change.state, "refused");
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.equal(r.controller.incidentTrace()?.first?.stage, "playing");
+    r.controller.destroy();
 });
 
 test("a failed route during a refused change is recovered once the change settles", async () => {
@@ -3969,6 +4005,8 @@ test("an embedded SRT sidecar on the same direct-play URL switches without reope
     view = last(r.views);
     assert.equal(view.phase, "playing");
     if (view.phase === "playing") assert.equal(view.captions?.text ?? "", "");
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.equal(r.controller.incidentTrace()?.first?.stage, "playing");
     r.controller.destroy();
 });
 

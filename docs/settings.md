@@ -202,7 +202,7 @@ AVPlay quotes below are from Samsung's [AVPlay API](https://developer.samsung.co
 | Lossless Multichannel Audio | AVPlay has no client-side lossless bridge decoder; Samsung TVs lack TrueHD and dropped DTS in Tizen 7.0+; `tvaudiocontrol.getOutputMode()` cannot attest lossless sink support; server transcode targets are `copy`, `opus`, `eac3`, `ac3`, `aac`. |
 | TrueHD Atmos and DTS:X | Hidden in Apple's own Silo build (`AetherLoadSpec.swift:660-666`), and Samsung lists neither codec. |
 | Use Device Settings (captions) | Samsung exposes no TV-wide caption-style API for the app subtitle overlay. |
-| Diagnostics (Silo server upload) | Auger is a third-party client and does not upload to Silo's first-party diagnostics endpoint (#138). Instead, **Settings > Diagnostics** provides a 4-category **Send Diagnostics Report** picker (deduplicated through the Auger Cloudflare Worker relay to `diagnostics` GitHub Issues), an opt-in **Automatic Error Reports** toggle (off by default), and a zero-backend **Share via QR Code** backup (#847). |
+| Diagnostics (Silo server upload) | Auger is a third-party client and does not upload to Silo's first-party diagnostics endpoint (#138). Instead, **Settings > Diagnostics** provides a 4-category **Send Diagnostics Report** picker (deduplicated through the Auger Cloudflare Worker relay to `diagnostics` GitHub Issues), a TV-wide **Automatic Error Reports** toggle for public GitHub issues (off by default), and a zero-backend **Share via QR Code** backup (#847). |
 
 Open question: whether to claim multichannel LPCM direct play requires HDMI/eARC channel-count proof on the S95C first.
 

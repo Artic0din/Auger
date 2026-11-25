@@ -1,6 +1,5 @@
 name: Bug report
 description: Report something broken in Auger (Samsung TV / Tizen)
-title: "[bug] "
 labels: ["bug"]
 body:
   - type: markdown

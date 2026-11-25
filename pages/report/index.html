@@ -245,8 +245,6 @@
             m: readStr(parsed.play, "m"),
             v: readStr(parsed.play, "v"),
             dr: readStr(parsed.play, "dr"),
-            a: readStr(parsed.play, "a"),
-            s: readStr(parsed.play, "s"),
             d: readStr(parsed.play, "d"),
             st: readStr(parsed.play, "st"),
             src: readStr(parsed.play, "src"),
@@ -294,8 +292,6 @@
         if (play.src) lines.push("Source file: " + play.src);
         if (play.v) lines.push("Video: " + play.v);
         if (play.dr) lines.push("Dynamic range: " + play.dr);
-        if (play.a) lines.push("Audio: " + play.a);
-        if (play.s) lines.push("Subtitles: " + play.s);
         if (play.sub) lines.push("Subtitle mode: " + play.sub);
         if (play.pos) lines.push("Position: " + play.pos);
         if (typeof play.rb === "number" && play.rb > 0) lines.push("Rebuffers: " + play.rb);
@@ -387,8 +383,6 @@
         addRow(playList, "Delivery", payload.play.d);
         addRow(playList, "Video", payload.play.v);
         addRow(playList, "Dynamic Range", payload.play.dr);
-        addRow(playList, "Audio", payload.play.a);
-        addRow(playList, "Subtitles", payload.play.s);
         addRow(playList, "HDR setting", typeof payload.play.hdr === "boolean" ? (payload.play.hdr ? "On" : "Off") : undefined);
         addRow(playList, "Route fallbacks", typeof payload.play.fb === "number" && payload.play.fb > 0 ? String(payload.play.fb) : undefined);
         addRow(playList, "AVPlay error", payload.play.av);
