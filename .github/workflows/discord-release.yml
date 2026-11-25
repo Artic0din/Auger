@@ -27,12 +27,18 @@ on:
         required: false
         type: boolean
         default: false
+      confirm_this_run:
+        description: If true, post only after confirming this run published the tag; fail if that cannot be determined
+        required: false
+        type: boolean
+        default: false
     secrets:
       DISCORD_RELEASES_WEBHOOK:
         required: true
 
 permissions:
   contents: read
+  actions: read # confirm_this_run looks up prior attempts of this run
 
 jobs:
   post:
@@ -47,8 +53,60 @@ jobs:
           # branch so the current payload builder always runs.
           ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
 
+      - name: Confirm this run published the tag
+        id: confirm
+        if: ${{ inputs.confirm_this_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          release_meta="$(gh release view "${TAG}" --json author,publishedAt)"
+          release_author="$(printf '%s\n' "${release_meta}" | jq -r '.author.login // empty')"
+          release_published_at="$(printf '%s\n' "${release_meta}" | jq -r '.publishedAt // empty')"
+          published_this_run="false"
+          lookup_failed="false"
+          if [[ "${release_author}" == "github-actions[bot]" && -n "${release_published_at}" ]]; then
+            attempts="${GITHUB_RUN_ATTEMPT:-1}"
+            if [[ "${attempts}" -gt 1 ]]; then
+              for ((attempt=1; attempt<attempts; attempt++)); do
+                if ! job_json="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/attempts/${attempt}/jobs" \
+                  --jq '[.jobs[] | select(.name == "Publish the GitHub Release")][0] // empty')"; then
+                  echo "::warning::Could not list jobs for publish attempt ${attempt}; attribution is still indeterminate."
+                  lookup_failed="true"
+                  continue
+                fi
+                if [[ -z "${job_json}" ]]; then
+                  continue
+                fi
+                job_started="$(printf '%s\n' "${job_json}" | jq -r '.started_at // empty')"
+                job_completed="$(printf '%s\n' "${job_json}" | jq -r '.completed_at // empty')"
+                if [[ -n "${job_started}" ]] &&
+                   { [[ "${release_published_at}" > "${job_started}" ]] ||
+                     [[ "${release_published_at}" == "${job_started}" ]]; } &&
+                   { [[ -z "${job_completed}" ]] ||
+                     [[ "${release_published_at}" < "${job_completed}" ]] ||
+                     [[ "${release_published_at}" == "${job_completed}" ]]; }; then
+                  published_this_run="true"
+                  break
+                fi
+              done
+            fi
+          fi
+          if [[ "${published_this_run}" == "true" ]]; then
+            echo "should_post=true" >> "${GITHUB_OUTPUT}"
+          elif [[ "${lookup_failed}" == "true" ]]; then
+            echo "::error::Could not attribute ${TAG} to this run; re-run this job after the Actions API recovers, or dispatch Discord Releases manually."
+            exit 1
+          else
+            echo "should_post=false" >> "${GITHUB_OUTPUT}"
+            echo "${TAG} is already published and is not attributed to this run; skipping Discord."
+          fi
+
       - name: Build Discord payload
         id: build
+        if: ${{ !inputs.confirm_this_run || steps.confirm.outputs.should_post == 'true' }}
         env:
           DISPATCH_TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
@@ -92,7 +150,7 @@ jobs:
           jq . "$RUNNER_TEMP/payload.json"
 
       - name: Post to Discord
-        if: ${{ github.event_name == 'release' || (inputs.tag != '' && inputs.dry_run == false) }}
+        if: ${{ (!inputs.confirm_this_run || steps.confirm.outputs.should_post == 'true') && (github.event_name == 'release' || (inputs.tag != '' && inputs.dry_run == false)) }}
         env:
           DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
         run: |
