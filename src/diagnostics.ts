@@ -154,7 +154,6 @@ const SECRET_ASSIGN_PATTERN = /\b(?:bearer|token|api[_-]?key|password|passwd|sec
 const BEARER_PATTERN = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
 const LONG_TOKEN_PATTERN = /\b[A-Za-z0-9_-]{28,}\b/g;
-const PLAYER_ERROR_CODE_PATTERN = /^PLAYER_ERROR_[A-Z0-9_]{1,40}$/;
 
 /** Removes URLs, IP addresses, query strings, and token-like secrets before any diagnostic text is stored or shared. */
 export function redactDiagnosticText(raw: string, maxLength = 160): string {
@@ -164,12 +163,31 @@ export function redactDiagnosticText(raw: string, maxLength = 160): string {
         .replace(SECRET_ASSIGN_PATTERN, "<redacted>")
         .replace(IPV4_PATTERN, "<ip>")
         .replace(QUERY_PATTERN, "")
-        .replace(LONG_TOKEN_PATTERN, match => (PLAYER_ERROR_CODE_PATTERN.test(match) ? match : "<redacted>"))
+        .replace(LONG_TOKEN_PATTERN, "<redacted>")
         .replace(/\s+/g, " ")
         .trim();
     return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
+const ALLOWED_AVPLAY_ERROR_CODES = new Set([
+    "PLAYER_ERROR_NONE",
+    "PLAYER_ERROR_INVALID_PARAMETER",
+    "PLAYER_ERROR_NO_SUCH_FILE",
+    "PLAYER_ERROR_INVALID_OPERATION",
+    "PLAYER_ERROR_SEEK_FAILED",
+    "PLAYER_ERROR_INVALID_STATE",
+    "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+    "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+    "PLAYER_ERROR_INVALID_URI",
+    "PLAYER_ERROR_CONNECTION_FAILED",
+    "PLAYER_ERROR_GENEREIC",
+    "PLAYER_ERROR_GENERIC",
+    "PLAYER_ERROR_DRM_INFO_ERROR",
+    "PLAYER_ERROR_INVALID_BUFFER",
+    "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
+    "PLAYER_ERROR_OUT_OF_MEMORY",
+]);
 const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
 const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
     "Error",
@@ -203,13 +221,29 @@ const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
 function cleanAvplayError(value: string | undefined): string | undefined {
     if (value === undefined) return undefined;
     const trimmed = value.trim();
-    if (trimmed === "startup_timeout" || PLAYER_ERROR_CODE_PATTERN.test(trimmed)) return trimmed;
+    if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
     const colon = trimmed.indexOf(":");
     if (colon <= 0) return undefined;
     const stage = trimmed.slice(0, colon);
     if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
     const name = trimmed.slice(colon + 1);
     return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
+}
+
+const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(\)| \(fallback #\d+\))?$/;
+
+function formatEventText(text: string, maxLength: number): string {
+    const match = TRUSTED_AVPLAY_EVENT_PATTERN.exec(text);
+    const code = match?.[2];
+    if (match !== null && code !== undefined && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
+        const prefix = match[1] ?? "";
+        const suffix = match[3] ?? "";
+        const safePrefix = redactDiagnosticText(prefix.trimEnd(), maxLength);
+        const spacer = prefix.endsWith(" ") ? " " : "";
+        const rebuilt = `${safePrefix}${spacer}${code}${suffix}`;
+        return rebuilt.length <= maxLength ? rebuilt : `${rebuilt.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+    }
+    return redactDiagnosticText(text, maxLength);
 }
 
 function cleanOptional(value: string | undefined, maxLength = 80): string | undefined {
@@ -458,7 +492,7 @@ function payloadFromSnapshot(
         ? []
         : events
             .slice(-logLimit)
-            .map(event => `${event.at} [${event.kind}] ${redactDiagnosticText(event.text, MAX_EVENT_TEXT)}`);
+            .map(event => `${event.at} [${event.kind}] ${formatEventText(event.text, MAX_EVENT_TEXT)}`);
     const err = cleanOptional(snapshot.lastAppError, 64);
     return {
         v: 1,
@@ -799,6 +833,7 @@ export class DiagnosticsCollector {
     private lastAppError: string | undefined;
     private readonly events: DiagnosticsEvent[] = [];
     private lastPlanSignature: string | undefined;
+    private sessionHasPlayback = false;
     private rebufferCount = 0;
     private lastSentHash: string | undefined;
     private lastSentReportId: string | undefined;
@@ -916,6 +951,15 @@ export class DiagnosticsCollector {
     beginPlaybackSession(): void {
         this.rebufferCount = 0;
         this.lastPlanSignature = undefined;
+        this.sessionHasPlayback = false;
+    }
+
+    recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
+        const cleaned = cleanAvplayError(avplayError);
+        if (cleaned === undefined) return;
+        const fbText = routeFallbacks !== undefined && Number.isInteger(routeFallbacks) && routeFallbacks > 0 ? ` (fallback #${routeFallbacks})` : "";
+        this.pushTrustedEvent("playback", `avplay ${cleaned}${fbText}`);
+        this.emit();
     }
 
     recordAppError(code: string): void {
@@ -992,6 +1036,7 @@ export class DiagnosticsCollector {
         // Deliberately omit `Source` from `stats.engine`, because it contains the user's server hostname.
         // Clear any prior playback's error once a new or active playback reports stats (the historical error stays in `events`).
         this.lastPlayback = next;
+        this.sessionHasPlayback = true;
         if (planChanged) {
             this.lastPlanSignature = signature;
             const summary = [next.playback, next.delivery === undefined ? undefined : `(${next.delivery})`, next.video].filter(Boolean).join(" ");
@@ -1005,15 +1050,16 @@ export class DiagnosticsCollector {
         const cleanedKind = redactDiagnosticText(kind, 32);
         const cleanedMessage = redactDiagnosticText(message, 120);
         const combined = cleanedMessage === "" ? cleanedKind : `${cleanedKind}: ${cleanedMessage}`;
-        const source = details === undefined ? this.lastPlayback?.source : formatSourceSummary(details) ?? this.lastPlayback?.source;
-        const stream = details === undefined ? this.lastPlayback?.stream : formatStreamSummary(details) ?? this.lastPlayback?.stream;
-        const subtitleDetail = details === undefined ? this.lastPlayback?.subtitleDetail : formatSubtitleDetail(details) ?? this.lastPlayback?.subtitleDetail;
-        const position = formatPosition(details?.positionSeconds, details?.durationSeconds) ?? this.lastPlayback?.position;
-        const hdrEnabled = details?.hdrEnabled ?? this.lastPlayback?.hdrEnabled;
-        const avplayError = cleanAvplayError(details?.avplayError) ?? this.lastPlayback?.avplayError;
-        const routeFallbacks = details?.routeFallbacks !== undefined && details.routeFallbacks > 0 ? details.routeFallbacks : this.lastPlayback?.routeFallbacks;
+        const prior = this.sessionHasPlayback ? this.lastPlayback : undefined;
+        const source = details === undefined ? prior?.source : formatSourceSummary(details) ?? prior?.source;
+        const stream = details === undefined ? prior?.stream : formatStreamSummary(details) ?? prior?.stream;
+        const subtitleDetail = details === undefined ? prior?.subtitleDetail : formatSubtitleDetail(details) ?? prior?.subtitleDetail;
+        const position = formatPosition(details?.positionSeconds, details?.durationSeconds) ?? prior?.position;
+        const hdrEnabled = details?.hdrEnabled ?? prior?.hdrEnabled;
+        const avplayError = cleanAvplayError(details?.avplayError) ?? prior?.avplayError;
+        const routeFallbacks = details?.routeFallbacks !== undefined && details.routeFallbacks > 0 ? details.routeFallbacks : prior?.routeFallbacks;
         this.lastPlayback = {
-            ...this.lastPlayback,
+            ...prior,
             status: "Failed",
             error: combined,
             ...(source === undefined ? {} : { source }),
@@ -1024,8 +1070,9 @@ export class DiagnosticsCollector {
             ...(avplayError === undefined ? {} : { avplayError }),
             ...(routeFallbacks === undefined ? {} : { routeFallbacks }),
         };
+        this.sessionHasPlayback = true;
         const suffix = avplayError === undefined ? "" : ` (${avplayError})`;
-        this.pushEvent("playback", `error ${combined}${suffix}`);
+        this.pushTrustedEvent("playback", `error ${combined}${suffix}`);
         this.emit();
     }
 
@@ -1040,6 +1087,7 @@ export class DiagnosticsCollector {
         this.lastAppError = undefined;
         this.events.length = 0;
         this.lastPlanSignature = undefined;
+        this.sessionHasPlayback = false;
         this.rebufferCount = 0;
         this.lastSentHash = undefined;
         this.lastSentReportId = undefined;
@@ -1085,6 +1133,13 @@ export class DiagnosticsCollector {
 
     private pushEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = redactDiagnosticText(text, MAX_EVENT_TEXT);
+        if (cleaned === "") return;
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
+    }
+
+    private pushTrustedEvent(kind: DiagnosticsEvent["kind"], text: string): void {
+        const cleaned = formatEventText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
         this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);

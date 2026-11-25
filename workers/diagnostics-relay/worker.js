@@ -47,7 +47,6 @@ const SECRET_ASSIGN_PATTERN = /\b(?:bearer|token|api[_-]?key|password|passwd|sec
 const BEARER_PATTERN = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
 const LONG_TOKEN_PATTERN = /\b[A-Za-z0-9_-]{28,}\b/g;
-const PLAYER_ERROR_CODE_PATTERN = /^PLAYER_ERROR_[A-Z0-9_]{1,40}$/;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -75,7 +74,7 @@ export function sanitize(raw, maxLength = 140) {
     .replace(SECRET_ASSIGN_PATTERN, "<redacted>")
     .replace(IPV4_PATTERN, "<ip>")
     .replace(QUERY_PATTERN, "")
-    .replace(LONG_TOKEN_PATTERN, (match) => (PLAYER_ERROR_CODE_PATTERN.test(match) ? match : "<redacted>"))
+    .replace(LONG_TOKEN_PATTERN, "<redacted>")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -83,6 +82,25 @@ export function sanitize(raw, maxLength = 140) {
   return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
+const ALLOWED_AVPLAY_ERROR_CODES = new Set([
+  "PLAYER_ERROR_NONE",
+  "PLAYER_ERROR_INVALID_PARAMETER",
+  "PLAYER_ERROR_NO_SUCH_FILE",
+  "PLAYER_ERROR_INVALID_OPERATION",
+  "PLAYER_ERROR_SEEK_FAILED",
+  "PLAYER_ERROR_INVALID_STATE",
+  "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+  "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+  "PLAYER_ERROR_INVALID_URI",
+  "PLAYER_ERROR_CONNECTION_FAILED",
+  "PLAYER_ERROR_GENEREIC",
+  "PLAYER_ERROR_GENERIC",
+  "PLAYER_ERROR_DRM_INFO_ERROR",
+  "PLAYER_ERROR_INVALID_BUFFER",
+  "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
+  "PLAYER_ERROR_OUT_OF_MEMORY",
+]);
 const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
 const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
   ...ALLOWED_APP_ERRORS,
@@ -99,13 +117,32 @@ const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
 function sanitizeAvplayError(raw) {
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
-  if (trimmed === "startup_timeout" || PLAYER_ERROR_CODE_PATTERN.test(trimmed)) return trimmed;
+  if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
   const colon = trimmed.indexOf(":");
   if (colon <= 0) return undefined;
   const stage = trimmed.slice(0, colon);
   if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
   const name = trimmed.slice(colon + 1);
   return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
+}
+
+const TRUSTED_AVPLAY_LOG_PATTERN = /^(\d{2}:\d{2}:\d{2} \[playback\] (?:avplay |error [A-Za-z0-9_.: -]+ \())(PLAYER_ERROR_[A-Z_]+)(\)| \(fallback #\d+\))?$/;
+
+function sanitizeLogEntry(raw) {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  const match = TRUSTED_AVPLAY_LOG_PATTERN.exec(trimmed);
+  const code = match?.[2];
+  if (match && code && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
+    const prefix = match[1] ?? "";
+    const suffix = match[3] ?? "";
+    const safePrefix = sanitize(prefix.trimEnd(), 120);
+    if (!safePrefix) return undefined;
+    const spacer = prefix.endsWith(" ") ? " " : "";
+    const rebuilt = `${safePrefix}${spacer}${code}${suffix}`;
+    return rebuilt.length <= 120 ? rebuilt : `${rebuilt.slice(0, 119).trimEnd()}…`;
+  }
+  return sanitize(raw, 120);
 }
 
 function nonNegInt(raw, max) {
@@ -178,7 +215,7 @@ export function validatePayload(raw) {
   }
 
   const log = Array.isArray(raw.log)
-    ? raw.log.map((item) => sanitize(item, 120)).filter(Boolean).slice(0, 12)
+    ? raw.log.map((item) => sanitizeLogEntry(item)).filter(Boolean).slice(0, 12)
     : [];
 
   const cat = typeof raw.cat === "string" && Object.hasOwn(CATEGORY_LABELS, raw.cat) ? raw.cat : undefined;

@@ -1319,6 +1319,8 @@ test("a prepare that hangs is a failed route after 15 s, before the TV gives up 
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(1);
     assert.deepEqual(only(bodies(r.h, "/replan")).failure, { classification: "avplay_startup_timeout" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "startup_timeout");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 1);
     assert.equal(r.avplay.urls.length, 2);
     const opened = r.avplay.calls.length;
 
@@ -1346,6 +1348,8 @@ test("prepares that hang end in the playback error page within a bounded time, w
     const view = last(r.views);
     assert.equal(view.phase, "error");
     assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "startup_timeout");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 3);
     assert.equal(r.avplay.state, "NONE", "AVPlay is closed, not left in its half-open state");
     assert.equal(r.avplay.calls.filter((call) => call.startsWith("open ")).length, 4, "one open per route tried");
     assert.equal(r.avplay.calls.filter((call) => call === "close").length >= 4, true, "every hung route was closed");
@@ -1376,6 +1380,8 @@ test("failure replans are bounded; then playback ends with an error and a stop",
     const view = last(r.views);
     assert.equal(view.phase, "error");
     assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "prepareAsync:UnknownError");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 3);
     assert.equal(r.avplay.state, "NONE");
     assert.equal(ops(r.h)[ops(r.h).length - 1], "DELETE /playback/S1");
     assert.deepEqual(r.exits, []);

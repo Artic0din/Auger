@@ -658,11 +658,23 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
     const fpTimeout = diagnosticsFingerprint(collector.snapshot(), "playback", "playback");
     assert.notEqual(fpNotSupported, fpTimeout, "different AVPlay failure codes must not collapse into the same fingerprint");
 
-    // Unknown stage exceptions collapse to <stage>:error; arbitrary token-like strings are dropped at client and Worker boundaries.
-    // Long PLAYER_ERROR_* codes survive log redaction while real 28+ char tokens stay redacted.
-    const logRedacted = redactDiagnosticText("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT token SecretToken12345678901234567890");
-    assert.ok(logRedacted.includes("PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), logRedacted);
-    assert.ok(!logRedacted.includes("SecretToken12345678901234567890"), logRedacted);
+    // Starting a new playback session prevents a pre-stats failure from inheriting the previous session's AVPlay error or fallbacks.
+    collector.beginPlaybackSession();
+    collector.recordPlaybackError("playback_failed", "");
+    assert.equal(collector.snapshot().lastPlayback?.avplayError, undefined, "new playback session must not inherit previous AVPlay error");
+    assert.equal(collector.snapshot().lastPlayback?.routeFallbacks, undefined, "new playback session must not inherit previous fallback count");
+    assert.equal(collector.snapshot().lastPlayback?.playback, undefined, "new playback session must not inherit previous playback summary");
+
+    // Generic redactor keeps LONG_TOKEN_PATTERN unconditional (even for PLAYER_ERROR_-prefixed strings),
+    // while trusted recordAvplayEvent preserves only explicitly allowlisted Samsung AVPlayError constants.
+    const genericRedacted = redactDiagnosticText("secret PLAYER_ERROR_SECRET_TOKEN_1234567890 and PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.ok(!genericRedacted.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"), genericRedacted);
+    assert.ok(!genericRedacted.includes("PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), genericRedacted);
+    collector.recordAvplayEvent("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", 1);
+    collector.recordAvplayEvent("PLAYER_ERROR_SECRET_TOKEN_1234567890", 2);
+    const avEvents = collector.snapshot().events.map(event => event.text);
+    assert.ok(avEvents.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), JSON.stringify(avEvents));
+    assert.ok(!avEvents.some(text => text.includes("PLAYER_ERROR_SECRET_TOKEN")), JSON.stringify(avEvents));
     collector.recordPlaybackError("playback_failed", "", { avplayError: "open:SecretToken12345678901234567890" });
     assert.equal(collector.snapshot().lastPlayback?.avplayError, "open:error");
 
@@ -698,6 +710,10 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
                 tv: "QE65S95C",
                 cat: "playback",
                 play: { e: "playback_failed", hdr: true, fb: 2, av: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT" },
+                log: [
+                    "03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)",
+                    "03:00:01 [app] leak PLAYER_ERROR_SECRET_TOKEN_1234567890",
+                ],
             }),
         }),
         env,
@@ -708,6 +724,8 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
     assert.ok(firstBody.includes("| HDR setting | On |"));
     assert.ok(firstBody.includes("| Route fallbacks | 2 |"));
     assert.ok(firstBody.includes("| AVPlay error | PLAYER_ERROR_NOT_SUPPORTED_FORMAT |"));
+    assert.ok(firstBody.includes("03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"));
+    assert.ok(!firstBody.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"));
 
     // Same AVPlay code with HDR toggled Off posts a diff comment on #910 showing HDR setting change.
     const hdrDiff = await handleRequest(
@@ -729,8 +747,8 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
     assert.deepEqual(await hdrDiff.json(), { ok: true, status: "updated", issueNumber: 910, reportId: "AUG-910" });
     assert.ok(String(posted[1]?.body.body ?? "").includes("**HDR setting:** `On` → `Off`"));
 
-    // Different AVPlay error opens a separate issue (#911); token-like raw av values are dropped.
-    const second = await handleRequest(
+    // A second valid AVPlay code (startup_timeout) opens a separate issue (#911) distinct from PLAYER_ERROR_NOT_SUPPORTED_FORMAT (#910).
+    const secondValid = await handleRequest(
         new Request("https://auger-diagnostics.plaintextlab.com/report", {
             method: "POST",
             headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.3" },
@@ -739,22 +757,43 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
                 app: "0.4.0",
                 tv: "QE65S95C",
                 cat: "playback",
-                play: { e: "playback_failed", av: "SecretToken12345678901234567890" },
+                play: { e: "playback_failed", hdr: true, fb: 3, av: "startup_timeout" },
             }),
         }),
         env,
         { fetch: fakeFetch },
     );
-    assert.equal(second.status, 201);
-    assert.deepEqual(await second.json(), { ok: true, status: "created", issueNumber: 911, reportId: "AUG-911" });
-    const secondBody = String(posted[2]?.body.body ?? "");
-    assert.ok(!secondBody.includes("SecretToken12345678901234567890"), "arbitrary token-like play.av must be dropped");
-    assert.ok(!secondBody.includes("| AVPlay error |"));
+    assert.equal(secondValid.status, 201);
+    assert.deepEqual(await secondValid.json(), { ok: true, status: "created", issueNumber: 911, reportId: "AUG-911" });
+    const secondValidBody = String(posted[2]?.body.body ?? "");
+    assert.ok(secondValidBody.includes("| AVPlay error | startup_timeout |"));
+
+    // Unrecognized PLAYER_ERROR_-prefixed or token-like raw av values are dropped at the Worker boundary (#912).
+    const droppedToken = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.4" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", av: "PLAYER_ERROR_SECRET_TOKEN_1234567890" },
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(droppedToken.status, 201);
+    assert.deepEqual(await droppedToken.json(), { ok: true, status: "created", issueNumber: 912, reportId: "AUG-912" });
+    const droppedBody = String(posted[3]?.body.body ?? "");
+    assert.ok(!droppedBody.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"), "unrecognized PLAYER_ERROR_* token must be dropped");
+    assert.ok(!droppedBody.includes("| AVPlay error |"));
 
     const stageFallback = await handleRequest(
         new Request("https://auger-diagnostics.plaintextlab.com/report", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.4" },
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.5" },
             body: JSON.stringify({
                 v: 1,
                 app: "0.4.0",
@@ -767,7 +806,7 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
         { fetch: fakeFetch },
     );
     assert.equal(stageFallback.status, 201);
-    const stageBody = String(posted[3]?.body.body ?? "");
+    const stageBody = String(posted[4]?.body.body ?? "");
     assert.ok(!stageBody.includes("SecretToken12345678901234567890"));
     assert.ok(stageBody.includes("| AVPlay error | open:error |"));
 });

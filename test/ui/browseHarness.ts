@@ -186,15 +186,22 @@ const harness: BrowseHarness = {
     },
     seedDiagnostics() {
         diagnostics ??= new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
-        diagnostics.recordPlaybackStats({
-            nowPlaying: [],
-            playback: [
-                { label: "Playback", value: "Remuxed · MKV" },
-                { label: "Video", value: "HEVC · 3840×2160 · 23.976 fps" },
-            ],
-            stream: [{ label: "Playback status", value: "Playing" }],
-            engine: [{ label: "Delivery", value: "Server Remux HLS" }, { label: "Source", value: "silo.example.test" }],
-        });
+        diagnostics.recordPlaybackStats(
+            {
+                nowPlaying: [],
+                playback: [
+                    { label: "Playback", value: "Remuxed · MKV" },
+                    { label: "Video", value: "HEVC · 3840×2160 · 23.976 fps" },
+                ],
+                stream: [{ label: "Playback status", value: "Playing" }],
+                engine: [{ label: "Delivery", value: "Server Remux HLS" }, { label: "Source", value: "silo.example.test" }],
+            },
+            {
+                hdrEnabled: true,
+                routeFallbacks: 2,
+                avplayError: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+            },
+        );
         diagnostics.recordEvent("app", "seeded test event");
     },
     cacheOffline(route = "home") {

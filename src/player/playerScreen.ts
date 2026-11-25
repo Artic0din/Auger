@@ -2080,8 +2080,7 @@ export function startPlayback(
                 const avKey = `${details.avplayError}:${details.routeFallbacks ?? 0}`;
                 if (avKey !== lastAvplayKey) {
                     lastAvplayKey = avKey;
-                    const fbText = details.routeFallbacks !== undefined && details.routeFallbacks > 0 ? ` (fallback #${details.routeFallbacks})` : "";
-                    diagnostics.recordEvent("playback", `avplay ${details.avplayError}${fbText}`);
+                    diagnostics.recordAvplayEvent(details.avplayError, details.routeFallbacks);
                 }
             }
             if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
