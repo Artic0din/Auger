@@ -1,5 +1,5 @@
 import { startPlayback, type PlayerPlatform, type PlayerScreen } from "./player/playerScreen.ts";
-import { DiagnosticsCollector, type DiagnosticsDeviceInfo, diagnosticsFingerprint, sendDiagnosticsReport } from "./diagnostics.ts";
+import { DiagnosticsCollector, type DiagnosticsDeviceInfo, type DiagnosticsIncidentRecord, diagnosticsFingerprint, sendDiagnosticsReportFor } from "./diagnostics.ts";
 import { connect, type ConnectedServer, type SessionCoreDeps } from "./session/core.ts";
 import type { LogoutResult } from "./session/session.ts";
 import { mountBrowse, type Browse, type PlayRequest } from "./ui/browse.ts";
@@ -56,14 +56,14 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     );
     const autoReportController = new AbortController();
     let autoReportInFlight = false;
-    const triggerAutoReport = (source: "playback" | "app"): void => {
+    const triggerAutoReport = (incident?: DiagnosticsIncidentRecord): void => {
         if (destroyed || autoReportInFlight) return;
-        const snapshot = diagnostics.snapshot();
-        const fp = diagnosticsFingerprint(snapshot, undefined, source);
-        if (!diagnostics.canAutoReport(fp)) return;
+        const report = incident ?? { snapshot: diagnostics.snapshot() };
+        const fp = incident === undefined ? diagnosticsFingerprint(report.snapshot, undefined, "app") : diagnostics.claimAutoReport(incident);
+        if (fp === undefined || (incident === undefined && !diagnostics.canAutoReport(fp))) return;
         autoReportInFlight = true;
         diagnostics.markAutoAttempt();
-        void sendDiagnosticsReport(snapshot, activeCore.fetch, { signal: autoReportController.signal, auto: true })
+        void sendDiagnosticsReportFor(report, activeCore.fetch, { signal: autoReportController.signal, auto: true })
             .then(result => {
                 if (result.ok) diagnostics.markAutoDelivered(fp);
             }, () => undefined)
@@ -77,12 +77,12 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         if (destroyed) return;
         // Record only a safe error class identifier; never forward free-form messages that could contain account names or media titles.
         diagnostics.recordAppError(classifyError(event.error, "UncaughtError"));
-        triggerAutoReport("app");
+        triggerAutoReport();
     };
     const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
         if (destroyed) return;
         diagnostics.recordAppError(classifyError(event.reason, "UnhandledRejection"));
-        triggerAutoReport("app");
+        triggerAutoReport();
     };
     const transient = new Map<string, string>();
     let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
@@ -265,12 +265,14 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         profile = active;
         // The signal aborts before profile-screen listeners reclaim the root.
         active.signal.addEventListener("abort", stopContent, { once: true });
+        // Another profile, a refused PIN or an ended sign-in ends this profile session's evidence; it is never sent later.
+        active.signal.addEventListener("abort", () => diagnostics.clear(), { once: true });
         const avatar = avatarReference(active.profile);
         const text = avatarText(active.profile);
         const content = mountBrowse(root, {
             server,
             diagnostics,
-            sendDiagnostics: (collector, signal, category) => sendDiagnosticsReport(collector.snapshot(), activeCore.fetch, { signal, category }),
+            sendDiagnostics: (collector, signal, category) => sendDiagnosticsReportFor(collector.reportFor(category), activeCore.fetch, { signal }),
             profileName: active.profile.name,
             ...(avatar === undefined ? {} : { profileAvatarUrl: avatar }),
             ...(text === undefined ? {} : { profileAvatarText: text }),
@@ -306,7 +308,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, () => triggerAutoReport("playback"));
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, record => triggerAutoReport(record));
     };
 
     const onBack = (event: KeyboardEvent): void => {

@@ -14,7 +14,9 @@ import { FakeSettings } from "./support/fakeSettings.ts";
 import { SettingsState } from "../../src/ui/settingsState.ts";
 import { NEXT_UP_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
-import { HDR_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS } from "../../src/contracts/v2/settings.ts";
+import { BITRATE_KEY, HDR_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS } from "../../src/contracts/v2/settings.ts";
+import { DiagnosticsCollector } from "../../src/diagnostics.ts";
+import { incidentAutoEligible, playbackIncident } from "../../src/diagnosticsIncident.ts";
 import { clientCapabilities, playbackContext } from "../../src/player/capabilities.ts";
 import { operations } from "../../src/api/operations.ts";
 import { setAppLanguage } from "../../src/i18n/language.ts";
@@ -5472,5 +5474,152 @@ test("the master and the variant share one five-second budget (#650)", async () 
     assert.deepEqual(opens(r), [], "the held variant read is still waiting");
     await r.h.clock.advance(1);
     assert.equal(opens(r).length, 1, "five seconds in all, then AVPlay gets it");
+    r.controller.destroy();
+});
+
+// --- Incident capture (#873): the report follows the failed attempt from Play through recovery ---
+
+test("a failed capped HLS attempt after a working Direct Play reports only its own plan, settings, stage and position (#864)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "QA77S95CAWXXY" }, r.h.clock);
+        const firstScope = collector.beginPlaybackSession();
+        await playMovie(r);
+        const firstTrace = r.controller.incidentTrace();
+        assert.ok(firstTrace !== undefined);
+        assert.ok(firstTrace.plan !== undefined && firstTrace.plan.delivery !== "server_transcode_hls");
+        assert.equal(firstTrace.shown, true);
+        assert.equal(collector.recordPlaybackIncident(firstScope, firstTrace), undefined, "a clean Direct Play is no incident");
+        collector.recordPlaybackStats({
+            nowPlaying: [],
+            playback: [{ label: "Playback", value: "Direct play · MKV" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Original HTTP" }],
+        }, r.controller.diagnosticsDetails());
+        r.controller.back();
+        await r.h.clock.advance(0);
+
+        const settings = new FakeSettings(r.h.fake);
+        settings.overrides.set(BITRATE_KEY, 4000);
+        r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+        const scope = collector.beginPlaybackSession();
+        await playHls(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "error" && view.error.kind === "playback_failed");
+        assert.equal(only(bodies(r.h, "/start").slice(-1)).bandwidth_cap_kbps, 4000);
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.seq !== firstTrace.seq, "a new attempt has its own trace");
+        assert.equal(trace.plan?.delivery, "server_transcode_hls");
+        assert.equal(trace.settings?.capKbps, 4000);
+        assert.equal(trace.opened, false, "AVPlay never opened the failed attempt");
+        assert.equal(trace.shown, false);
+        assert.equal(trace.lastAvplay, undefined, "no AVPlay code is invented");
+
+        const record = collector.recordPlaybackIncident(scope, trace, view.error);
+        assert.ok(record !== undefined);
+        const incident = record.incident;
+        assert.equal(incident.out, "failed");
+        assert.equal(incident.op, "hls_playlist");
+        assert.equal(incident.stage, "playlist_check");
+        assert.equal(incident.code, "hls_playlist_unreadable");
+        assert.equal(incident.done, "media_token");
+        assert.equal(incident.open, false);
+        assert.equal(incident.http, undefined);
+        assert.equal(incident.av, undefined);
+        assert.ok(incident.pl !== "not_reached");
+        assert.equal(incident.pl.dl, "server_transcode_hls");
+        assert.equal(incident.pl.pr, "hls");
+        assert.ok(incident.set !== "not_reached");
+        assert.equal(incident.set.cap, 4000);
+        assert.equal(incident.req.pos, 12);
+        const serialized = JSON.stringify(record.snapshot);
+        assert.ok(!serialized.includes("Direct play"), serialized);
+        assert.ok(!serialized.includes("Original HTTP"), serialized);
+        assert.ok(incidentAutoEligible(incident));
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a playback start refused with session_expired reports the start decision without an invented HTTP status or AVPlay state (#868)", async () => {
+    const r = await rig();
+    r.server.next.push({ terminal: "session_expired", retryable: true });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "terminal");
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.equal(trace.decision, "adaptation_unavailable");
+    assert.equal(trace.http, undefined, "the terminal reason supplies no HTTP status");
+    assert.equal(trace.opened, false);
+    assert.equal(trace.plan, undefined);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.op, "start_playback");
+    assert.equal(incident.stage, "start");
+    assert.equal(incident.done, "settings");
+    assert.equal(incident.code, "session_expired");
+    assert.equal(incident.dec, "adaptation_unavailable");
+    assert.equal(incident.rt, true);
+    assert.equal(incident.http, undefined);
+    assert.equal(incident.open, false);
+    assert.equal(incident.pl, "not_reached");
+    assert.deepEqual(incident.rec, { n: 0, c: 0, r: "none" });
+    r.controller.destroy();
+});
+
+test("an AVPlay prepare failure that a fallback route recovers keeps its first code and never files automatically", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    assert.equal(r.avplay.state, "PLAYING");
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.equal(trace.recovered, true);
+    assert.deepEqual(trace.first, { stage: "avplay_prepare", code: "prepareAsync:UnknownError", buffering: false });
+    const incident = playbackIncident(trace);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.out, "recovered");
+    assert.equal(incident.code, "prepareAsync:UnknownError");
+    assert.deepEqual(incident.rec, { n: 1, c: 0, r: "recovered" });
+    assert.equal(incidentAutoEligible(incident), false);
+    r.controller.destroy();
+});
+
+test("AVPlay prepare failures that exhaust every route report first and last codes and a terminal outcome", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    for (let failure = 0; failure < 4; failure++) {
+        r.avplay.finishPrepare("UnknownError");
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.ok(view.phase === "error");
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.out, "failed");
+    assert.equal(incident.kind, "playback_failed");
+    assert.equal(incident.stage, "avplay_prepare");
+    assert.equal(incident.code, "prepareAsync:UnknownError");
+    assert.equal(incident.fc, "prepareAsync:UnknownError");
+    assert.deepEqual(incident.av, { f: "prepareAsync:UnknownError", l: "prepareAsync:UnknownError" });
+    assert.equal(incident.open, true);
+    assert.deepEqual(incident.rec, { n: 3, c: 0, r: "exhausted" });
+    assert.ok(incident.t.includes("avplay_prepare:fallback:prepareAsync:UnknownError"), JSON.stringify(incident.t));
+    assert.ok(incidentAutoEligible(incident));
     r.controller.destroy();
 });

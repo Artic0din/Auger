@@ -3,6 +3,17 @@ import { systemClock } from "./api/clock.ts";
 import type { PlanSource } from "./contracts/v2/playback.ts";
 import type { PlaybackStats } from "./player/playerHUD.ts";
 import type { PublicStorage } from "./session/deviceIdentity.ts";
+import type { PlaybackError } from "./player/controller.ts";
+import {
+    ALLOWED_AVPLAY_ERROR_CODES,
+    cleanAvplayError,
+    type DiagnosticsIncidentPayload,
+    type IncidentCategory,
+    incidentAutoEligible,
+    incidentGroupKey,
+    type PlaybackAttemptTrace,
+    playbackIncident,
+} from "./diagnosticsIncident.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -146,6 +157,7 @@ export interface DiagnosticsPayloadV1 {
     readonly up?: number;
     readonly play?: DiagnosticsPayloadPlayback;
     readonly log?: readonly string[];
+    readonly inc?: DiagnosticsIncidentPayload;
 }
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -167,67 +179,6 @@ export function redactDiagnosticText(raw: string, maxLength = 160): string {
         .replace(/\s+/g, " ")
         .trim();
     return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
-/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
-const ALLOWED_AVPLAY_ERROR_CODES = new Set([
-    "PLAYER_ERROR_NONE",
-    "PLAYER_ERROR_INVALID_PARAMETER",
-    "PLAYER_ERROR_NO_SUCH_FILE",
-    "PLAYER_ERROR_INVALID_OPERATION",
-    "PLAYER_ERROR_SEEK_FAILED",
-    "PLAYER_ERROR_INVALID_STATE",
-    "PLAYER_ERROR_NOT_SUPPORTED_FILE",
-    "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
-    "PLAYER_ERROR_INVALID_URI",
-    "PLAYER_ERROR_CONNECTION_FAILED",
-    "PLAYER_ERROR_GENEREIC",
-    "PLAYER_ERROR_GENERIC",
-    "PLAYER_ERROR_DRM_INFO_ERROR",
-    "PLAYER_ERROR_INVALID_BUFFER",
-    "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
-    "PLAYER_ERROR_OUT_OF_MEMORY",
-]);
-const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
-const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
-    "Error",
-    "TypeError",
-    "RangeError",
-    "ReferenceError",
-    "SyntaxError",
-    "URIError",
-    "EvalError",
-    "AggregateError",
-    "DOMException",
-    "WebAPIException",
-    "AbortError",
-    "NotAllowedError",
-    "NotSupportedError",
-    "QuotaExceededError",
-    "SecurityError",
-    "NetworkError",
-    "TimeoutError",
-    "DataCloneError",
-    "InvalidAccessError",
-    "InvalidStateError",
-    "InvalidValuesError",
-    "NotFoundError",
-    "UnknownError",
-    "OperationNotSupportedError",
-    "failed",
-    "error",
-]);
-
-function cleanAvplayError(value: string | undefined): string | undefined {
-    if (value === undefined) return undefined;
-    const trimmed = value.trim();
-    if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
-    const colon = trimmed.indexOf(":");
-    if (colon <= 0) return undefined;
-    const stage = trimmed.slice(0, colon);
-    if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
-    const name = trimmed.slice(colon + 1);
-    return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
 const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
@@ -427,6 +378,8 @@ function formatPosition(positionSeconds: number | undefined, durationSeconds: nu
 export interface DiagnosticsPayloadOptions {
     readonly category?: DiagnosticsCategory | undefined;
     readonly auto?: boolean | undefined;
+    /** The frozen incident this report describes; its submission source follows `auto`. */
+    readonly incident?: DiagnosticsIncidentPayload | undefined;
 }
 
 function payloadFromSnapshot(
@@ -519,6 +472,7 @@ function payloadFromSnapshot(
         ...(up === undefined ? {} : { up }),
         ...(play === undefined ? {} : { play }),
         ...(log.length === 0 ? {} : { log }),
+        ...(options?.incident === undefined ? {} : { inc: { ...options.incident, src: options.auto === true ? "auto" as const : "manual" as const } }),
     };
 }
 
@@ -555,6 +509,7 @@ export async function sendDiagnosticsReport(
         readonly timeoutMs?: number;
         readonly category?: DiagnosticsCategory | undefined;
         readonly auto?: boolean | undefined;
+        readonly incident?: DiagnosticsIncidentPayload | undefined;
     },
 ): Promise<DiagnosticsSendResult> {
     const controller = new AbortController();
@@ -570,7 +525,7 @@ export async function sendDiagnosticsReport(
         const response = await fetchFn(relayUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(diagnosticsPayload(snapshot, { category: options?.category, auto: options?.auto })),
+            body: JSON.stringify(diagnosticsPayload(snapshot, { category: options?.category, auto: options?.auto, incident: options?.incident })),
             signal: controller.signal,
         });
         if (response.status === 429) {
@@ -600,6 +555,42 @@ export async function sendDiagnosticsReport(
         clearTimeout(timer);
         options?.signal?.removeEventListener("abort", onAbort);
     }
+}
+
+/** What one submission describes: a frozen incident, or the live context of a user-observed symptom. */
+export interface DiagnosticsReport {
+    readonly snapshot: DiagnosticsSnapshot;
+    readonly category?: DiagnosticsCategory | undefined;
+    readonly incident?: DiagnosticsIncidentPayload | undefined;
+}
+
+/** A captured incident, frozen at failure time so manual and automatic submissions serialize identical evidence. */
+export interface DiagnosticsIncidentRecord extends DiagnosticsReport {
+    readonly category: IncidentCategory;
+    readonly incident: DiagnosticsIncidentPayload;
+}
+
+/** Grouping fingerprint for a report: the incident's canonical key when present, else the legacy signature. */
+export function diagnosticsReportFingerprint(report: DiagnosticsReport, source?: "playback" | "app"): string {
+    const { snapshot, incident } = report;
+    if (incident === undefined) return diagnosticsFingerprint(snapshot, report.category, source);
+    return fnv1aHex(incidentGroupKey(cleanOptional(snapshot.device.appVersion, 32) ?? "unknown", cleanOptional(snapshot.device.tvModel, 48) ?? "Samsung TV", incident));
+}
+
+/** The single send path for manual and automatic reports. */
+export function sendDiagnosticsReportFor(
+    report: DiagnosticsReport,
+    fetchFn: DiagnosticsFetch,
+    options?: { readonly relayUrl?: string; readonly signal?: AbortSignal; readonly timeoutMs?: number; readonly auto?: boolean | undefined },
+): Promise<DiagnosticsSendResult> {
+    return sendDiagnosticsReport(report.snapshot, fetchFn, {
+        ...(options?.relayUrl === undefined ? {} : { relayUrl: options.relayUrl }),
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        category: report.category,
+        auto: options?.auto,
+        incident: report.incident,
+    });
 }
 
 /**
@@ -830,6 +821,19 @@ export function buildGitHubBugReportUrl(payload: DiagnosticsPayloadV1, issueBase
     return `${issueBaseUrl}?${params.toString()}`;
 }
 
+interface StoredEvent extends DiagnosticsEvent {
+    readonly n: number;
+}
+
+interface StoredIncident {
+    readonly seq: number;
+    readonly scope: number;
+    record: DiagnosticsIncidentRecord;
+    autoClaimed: boolean;
+}
+
+const MAX_INCIDENTS = 4;
+
 export class DiagnosticsCollector {
     private device: DiagnosticsDeviceInfo;
     private readonly clock: Clock;
@@ -838,7 +842,13 @@ export class DiagnosticsCollector {
     private readonly runtimeProbe: () => DiagnosticsRuntimeEnvironment;
     private lastPlayback: DiagnosticsPlayback | undefined;
     private lastAppError: string | undefined;
-    private readonly events: DiagnosticsEvent[] = [];
+    private readonly events: StoredEvent[] = [];
+    private eventSeq = 0;
+    /** First event of the current playback attempt; an incident snapshot never includes earlier attempts' lines. */
+    private playbackEventFloor = 0;
+    /** Bumped on every clear so a player from an ended profile session cannot record into the next one. */
+    private scope = 0;
+    private readonly incidents: StoredIncident[] = [];
     private lastPlanSignature: string | undefined;
     private sessionHasPlayback = false;
     private rebufferCount = 0;
@@ -881,11 +891,33 @@ export class DiagnosticsCollector {
     }
 
     hasReportableData(): boolean {
-        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0;
+        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0 || this.incidents.length > 0;
+    }
+
+    /** The most recent incident in this profile session matching the chosen category. A buffering-owned failure that ended playback also matches Playback failed, keeping its canonical category. */
+    incidentFor(category: DiagnosticsCategory | undefined): DiagnosticsIncidentRecord | undefined {
+        if (category === undefined) return undefined;
+        for (let index = this.incidents.length - 1; index >= 0; index--) {
+            const stored = this.incidents[index];
+            if (stored === undefined || stored.scope !== this.scope) continue;
+            const record = stored.record;
+            if (record.category === category) return record;
+            if (category === "playback" && record.incident.out !== "recovered") return record;
+        }
+        return undefined;
+    }
+
+    /** What a manual submission for `category` sends: the matching frozen incident, else the live context as a user-observed symptom. */
+    reportFor(category?: DiagnosticsCategory): DiagnosticsReport {
+        return this.incidentFor(category) ?? { snapshot: this.snapshot(), ...(category === undefined ? {} : { category }) };
     }
 
     /** Stable content hash ignoring volatile runtime counters (memory, uptime, playback position) for instant duplicate-click detection. */
     stableSnapshotHash(category?: DiagnosticsCategory): string {
+        const incident = this.incidentFor(category);
+        if (incident !== undefined) {
+            return fnv1aHex(JSON.stringify({ app: this.device.appVersion, tv: this.device.tvModel, cat: incident.category, inc: incident.incident }));
+        }
         const play = this.lastPlayback;
         return fnv1aHex(JSON.stringify({
             app: this.device.appVersion,
@@ -934,6 +966,19 @@ export class DiagnosticsCollector {
         return !this.autoSentKeys.has(key);
     }
 
+    /**
+     * Claims the single automatic submission of an incident: only a terminal technical failure from the current
+     * profile session, with reporting enabled, outside the cooldown and not already delivered. Returns its fingerprint.
+     */
+    claimAutoReport(record: DiagnosticsIncidentRecord): string | undefined {
+        const stored = this.incidents.find(entry => entry.record === record);
+        if (stored === undefined || stored.scope !== this.scope || stored.autoClaimed || !incidentAutoEligible(record.incident)) return undefined;
+        const fingerprint = diagnosticsReportFingerprint(record);
+        if (!this.canAutoReport(fingerprint)) return undefined;
+        stored.autoClaimed = true;
+        return fingerprint;
+    }
+
     markAutoAttempt(): void {
         this.lastAutoSendAt = this.clock.now();
     }
@@ -955,10 +1000,41 @@ export class DiagnosticsCollector {
         }
     }
 
-    beginPlaybackSession(): void {
+    /** Starts a playback attempt's evidence and returns the profile-session scope its incidents must carry. */
+    beginPlaybackSession(): number {
         this.rebufferCount = 0;
         this.lastPlanSignature = undefined;
         this.sessionHasPlayback = false;
+        // An earlier attempt's plan, status and position never describe this one (#864).
+        this.lastPlayback = undefined;
+        this.playbackEventFloor = this.eventSeq;
+        return this.scope;
+    }
+
+    /**
+     * Captures or updates one attempt's incident, freezing the snapshot at capture. A terminal record is never
+     * overwritten, so the dismissal that follows a failure cannot change what was captured.
+     */
+    recordPlaybackIncident(scope: number, trace: PlaybackAttemptTrace, error?: PlaybackError): DiagnosticsIncidentRecord | undefined {
+        if (scope !== this.scope) return undefined;
+        const incident = playbackIncident(trace, error);
+        if (incident === undefined) return undefined;
+        const existing = this.incidents.find(entry => entry.seq === trace.seq && entry.scope === scope);
+        if (existing !== undefined && (existing.record.incident.out !== "recovered" || JSON.stringify(existing.record.incident) === JSON.stringify(incident))) {
+            return existing.record;
+        }
+        const captured = this.captureSnapshot(this.playbackEventFloor);
+        // An unrelated app error belongs to its own report, not to this attempt's evidence.
+        const snapshot: DiagnosticsSnapshot = { device: captured.device, events: captured.events, ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }) };
+        const record: DiagnosticsIncidentRecord = { snapshot, category: incident.cat, incident };
+        if (existing !== undefined) {
+            existing.record = record;
+        } else {
+            this.incidents.push({ seq: trace.seq, scope, record, autoClaimed: false });
+            if (this.incidents.length > MAX_INCIDENTS) this.incidents.splice(0, this.incidents.length - MAX_INCIDENTS);
+        }
+        this.emit();
+        return record;
     }
 
     recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
@@ -1089,7 +1165,10 @@ export class DiagnosticsCollector {
     }
 
     clear(): void {
-        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined) return;
+        this.scope++;
+        this.playbackEventFloor = this.eventSeq;
+        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
+        this.incidents.length = 0;
         this.lastPlayback = undefined;
         this.lastAppError = undefined;
         this.events.length = 0;
@@ -1102,6 +1181,10 @@ export class DiagnosticsCollector {
     }
 
     snapshot(): DiagnosticsSnapshot {
+        return this.captureSnapshot(0);
+    }
+
+    private captureSnapshot(eventFloor: number): DiagnosticsSnapshot {
         const runtime = this.runtimeProbe();
         const uptimeMinutes = Math.max(0, Math.floor((this.clock.now() - this.startedAt) / 60000));
         return {
@@ -1114,7 +1197,7 @@ export class DiagnosticsCollector {
             },
             ...(this.lastPlayback === undefined ? {} : { lastPlayback: { ...this.lastPlayback } }),
             ...(this.lastAppError === undefined ? {} : { lastAppError: this.lastAppError }),
-            events: [...this.events],
+            events: this.events.filter(event => event.n >= eventFloor).map(event => ({ at: event.at, kind: event.kind, text: event.text })),
         };
     }
 
@@ -1141,14 +1224,14 @@ export class DiagnosticsCollector {
     private pushEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = redactDiagnosticText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
-        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned, n: this.eventSeq++ });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     }
 
     private pushTrustedEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = formatEventText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
-        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned, n: this.eventSeq++ });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     }
 

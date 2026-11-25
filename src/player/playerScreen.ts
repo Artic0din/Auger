@@ -10,7 +10,7 @@
 // switch, say) is never erased.
 
 import type { Clock } from "../api/clock.ts";
-import type { DiagnosticsCollector } from "../diagnostics.ts";
+import type { DiagnosticsCollector, DiagnosticsIncidentRecord } from "../diagnostics.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
@@ -2018,7 +2018,7 @@ export function startPlayback(
     storage?: PublicStorage,
     resolutionCap?: PlaybackDeps["resolutionCap"],
     diagnostics?: DiagnosticsCollector,
-    onAutoReport?: () => void,
+    onIncident?: (record: DiagnosticsIncidentRecord) => void,
 ): PlayerScreen {
     const clock = platform.clock ?? systemClock;
     let screen: PlayerScreen | undefined;
@@ -2042,7 +2042,22 @@ export function startPlayback(
         }
         return "app_update_required";
     };
-    const isFatalAutoReportable = (error: PlaybackError): boolean => error.kind === "terminal" || error.kind === "playback_failed";
+    // The scope ties this attempt's evidence to the profile session it started in; a cleared session ignores it.
+    const scope = diagnostics?.beginPlaybackSession();
+    let lastErrorKey: string | undefined;
+    // Recorded once when the error first shows; the viewer's later dismissal reports the same failure.
+    const observeError = (error: PlaybackError): void => {
+        if (diagnostics === undefined || scope === undefined) return;
+        const details = controller.diagnosticsDetails();
+        const trace = controller.incidentTrace();
+        const detail = playbackErrorText(error);
+        const key = `${trace?.seq ?? 0}:${error.kind}:${detail}:${details?.avplayError ?? ""}`;
+        if (key === lastErrorKey) return;
+        lastErrorKey = key;
+        diagnostics.recordPlaybackError(error.kind, detail, details);
+        const record = trace === undefined ? undefined : diagnostics.recordPlaybackIncident(scope, trace, error);
+        if (record !== undefined) onIncident?.(record);
+    };
     const controller = new PlaybackController({
         session: server.session,
         avplay: platform.avplay,
@@ -2059,8 +2074,7 @@ export function startPlayback(
                 exits.onEnd(reason);
             },
             onError: (error) => {
-                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error), controller.diagnosticsDetails());
-                if (isFatalAutoReportable(error)) onAutoReport?.();
+                observeError(error);
                 finish();
                 exits.onError(error);
             },
@@ -2069,10 +2083,9 @@ export function startPlayback(
         ...(storage === undefined ? {} : { publicStorage: storage }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
     });
-    if (diagnostics !== undefined) {
-        diagnostics.beginPlaybackSession();
-        let lastErrorKey: string | undefined;
+    if (diagnostics !== undefined && scope !== undefined) {
         let lastAvplayKey: string | undefined;
+        let recoveredKey: string | undefined;
         let wasBuffering = false;
         stopDiagnostics = controller.subscribe(view => {
             const details = controller.diagnosticsDetails();
@@ -2085,19 +2098,21 @@ export function startPlayback(
             }
             if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
                 diagnostics.recordPlaybackStats(view.hud.stats, details);
+                const trace = controller.incidentTrace();
+                // A recovered failure stays available for a manual report; it never files automatically.
+                // Captured when the trace gains a step, not on every position tick.
+                const key = trace?.recovered === true ? `${trace.seq}:${trace.steps.length}:${trace.steps.at(-1) ?? ""}` : undefined;
+                if (trace !== undefined && key !== undefined && key !== recoveredKey) {
+                    recoveredKey = key;
+                    diagnostics.recordPlaybackIncident(scope, trace);
+                }
                 if (view.phase === "playing" && view.buffering && !wasBuffering) {
                     diagnostics.recordRebuffer();
                 }
                 wasBuffering = view.buffering;
             } else if (view.phase === "error") {
                 wasBuffering = false;
-                const detail = playbackErrorText(view.error);
-                const key = `${view.error.kind}:${detail}:${details?.avplayError ?? ""}`;
-                if (key !== lastErrorKey) {
-                    lastErrorKey = key;
-                    diagnostics.recordPlaybackError(view.error.kind, detail, details);
-                    if (isFatalAutoReportable(view.error)) onAutoReport?.();
-                }
+                observeError(view.error);
             }
         });
     }
