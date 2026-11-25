@@ -271,21 +271,25 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (state.error !== undefined) { const error = el("p", "browse-text browse-error settings-warning", state.error); error.setAttribute("role", "alert"); nodes.push(error); }
         return nodes;
     };
-    const retryButton = (onSuccess?: () => void): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
-        void state.retry().then(() => {
+    const serializePlayerSetting = <T>(key: SettingsKey, work: () => Promise<T>): Promise<T> =>
+        actions?.playerSettings === undefined ? work() : actions.playerSettings.runSerialized(key, work);
+    const retryButton = (onSuccess?: () => void, serializeKey?: SettingsKey): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
+        const run = (): Promise<void> => state.retry();
+        void (serializeKey === undefined ? run() : serializePlayerSetting(serializeKey, run)).then(() => {
             if (!torn && state.error === undefined) onSuccess?.();
         });
     })];
     const resetPlayback = async (retry = false): Promise<void> => {
         if (state.busy) return;
         if (retry) {
-            await state.retry();
+            const firstKey = pendingPlaybackReset[0];
+            await (firstKey === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.retry()) : state.retry());
             if (torn || state.error !== undefined) return;
         }
         while (pendingPlaybackReset.length > 0) {
             const key = pendingPlaybackReset[0];
             if (torn || !confirmingPlaybackReset || key === undefined) return;
-            await state.reset(key);
+            await (key === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.reset(key)) : state.reset(key));
             if (torn || state.error !== undefined) return;
             if (key === AUTO_NEXT_KEY) actions?.playerSettings?.clearKey(key);
             pendingPlaybackReset.shift();
@@ -540,7 +544,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const current = unsettled !== undefined ? unsettled : rowValue(row, state);
             const controls = [...row.choices.map(([value, text]) => {
                 const item = button(`choice:${String(value)}`, text, () => {
-                    void state.save(row.key, rowEdit(row, value, state)).then(() => {
+                    void serializePlayerSetting(row.key, () => state.save(row.key, rowEdit(row, value, state))).then(() => {
                         if (!torn && state.error === undefined) {
                             actions?.playerSettings?.clearKey(row.key);
                             if (extraPicker === row) back();
@@ -552,7 +556,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 return item;
             })];
             const reset = button("reset-row", row.key === "ui.card_presentation" ? translate("settings.cards.useProfileDefault") : state.scope(row.key) === "profile_device" ? translate("settings.profileSettings.useRow") : "Use inherited default", () => {
-                void state.reset(row.key).then(() => {
+                void serializePlayerSetting(row.key, () => state.reset(row.key)).then(() => {
                     if (!torn && state.error === undefined) {
                         actions?.playerSettings?.clearKey(row.key);
                         if (extraPicker === row) back();
@@ -568,7 +572,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             controls.push(...retryButton(() => {
                 actions?.playerSettings?.clearKey(row.key);
                 if (extraPicker === row) back();
-            }));
+            }, row.key));
             showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback()], controls);
             return;
         }

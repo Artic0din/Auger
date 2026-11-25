@@ -260,3 +260,35 @@ test("aborted writes stay in their original profile journal on scope switch and 
     assert.deepEqual(throttled.heldKeys, []);
     throttled.destroy();
 });
+
+test("runSerialized aborts and waits for an in-flight player write before running direct Settings saves (#810)", async () => {
+    const clock = new ManualClock();
+    const events: string[] = [];
+    let releaseOldPut: (() => void) | undefined;
+    const flusher = new PlayerSettingsFlusher({
+        putValue: async (_key, _scope, _value, signal) => new Promise<void>((resolve, reject) => {
+            events.push("player-put-start");
+            signal.addEventListener("abort", () => {
+                events.push("player-put-aborted");
+                reject(new ApiError({ kind: "aborted" }));
+            }, { once: true });
+            releaseOldPut = () => {
+                events.push("player-put-done");
+                resolve();
+            };
+        }),
+        effectiveValues: async () => new Map(),
+    }, clock);
+    flusher.enqueue(AUTO_PLAY, false);
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    assert.deepEqual(events, ["player-put-start"]);
+
+    await flusher.runSerialized(AUTO_PLAY, async () => {
+        events.push("settings-save");
+        flusher.clearKey(AUTO_PLAY);
+    });
+    releaseOldPut?.();
+    assert.deepEqual(events, ["player-put-start", "player-put-aborted", "settings-save", "player-put-done"]);
+    assert.equal(flusher.unsettledValue(AUTO_PLAY), undefined);
+    flusher.destroy();
+});

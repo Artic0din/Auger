@@ -121,6 +121,9 @@ export class PlayerSettingsFlusher {
     private pending = new Map<SettingsKey, PendingSettingWrite>();
     private inFlight = new Map<SettingsKey, PendingSettingWrite>();
     private failedInDrain = new Map<SettingsKey, PendingSettingWrite>();
+    private readonly inFlightAborts = new Map<SettingsKey, AbortController>();
+    private readonly inFlightPromises = new Map<SettingsKey, Promise<void>>();
+    private readonly serializingKeys = new Map<SettingsKey, number>();
     private readonly keyGenerations = new Map<SettingsKey, number>();
     private cancelDebounce: (() => void) | undefined;
     private cancelRetry: (() => void) | undefined;
@@ -192,6 +195,7 @@ export class PlayerSettingsFlusher {
             return;
         }
         const generation = this.bumpGeneration(key);
+        this.inFlightAborts.get(key)?.abort();
         this.inFlight.delete(key);
         this.failedInDrain.delete(key);
         this.pending.set(key, { value, scope, scopeId: this.activeScopeId, generation, failedAttempts: 0, isHeld: false });
@@ -204,6 +208,7 @@ export class PlayerSettingsFlusher {
     /** Forget any queued, in-flight, or held entry for `key` (for example after Settings saved or reset it directly). */
     clearKey(key: SettingsKey): void {
         this.syncScope();
+        this.inFlightAborts.get(key)?.abort();
         const hadPending = this.pending.delete(key);
         const hadInFlight = this.inFlight.delete(key);
         const hadFailed = this.failedInDrain.delete(key);
@@ -211,6 +216,31 @@ export class PlayerSettingsFlusher {
         this.bumpGeneration(key);
         this.persistJournal();
         this.notify();
+    }
+
+    /**
+     * Serializes a direct Settings save/reset/retry for `key` after any in-flight player PUT:
+     * aborts and awaits an active PUT for `key`, and pauses flusher sends for `key` until `work` finishes.
+     */
+    async runSerialized<T>(key: SettingsKey, work: () => Promise<T>): Promise<T> {
+        this.syncScope();
+        this.serializingKeys.set(key, (this.serializingKeys.get(key) ?? 0) + 1);
+        try {
+            this.inFlightAborts.get(key)?.abort();
+            const active = this.inFlightPromises.get(key);
+            if (active !== undefined) {
+                try { await active; } catch { /* settlement only */ }
+            }
+            return await work();
+        } finally {
+            const remaining = (this.serializingKeys.get(key) ?? 1) - 1;
+            if (remaining <= 0) this.serializingKeys.delete(key);
+            else this.serializingKeys.set(key, remaining);
+            if (!this.destroyed && !this.draining && remaining <= 0) {
+                const queued = this.pending.get(key);
+                if (queued !== undefined && !queued.isHeld) this.scheduleRestoredWrites();
+            }
+        }
     }
 
     /** Immediately drain all non-held queued writes and resolve once the drain completes. */
@@ -328,8 +358,8 @@ export class PlayerSettingsFlusher {
 
     private hasSendableWrites(): boolean {
         const now = this.clock.now();
-        for (const write of this.pending.values()) {
-            if (!write.isHeld && (write.retryNotBeforeMs === undefined || write.retryNotBeforeMs <= now)) return true;
+        for (const [key, write] of this.pending) {
+            if (!write.isHeld && !this.serializingKeys.has(key) && (write.retryNotBeforeMs === undefined || write.retryNotBeforeMs <= now)) return true;
         }
         return false;
     }
@@ -368,7 +398,7 @@ export class PlayerSettingsFlusher {
                 const now = this.clock.now();
                 const snapshot = new Map<SettingsKey, PendingSettingWrite>();
                 for (const [key, write] of this.pending) {
-                    if (write.isHeld) continue;
+                    if (write.isHeld || this.serializingKeys.has(key)) continue;
                     if (write.retryNotBeforeMs !== undefined && write.retryNotBeforeMs > now) continue;
                     snapshot.set(key, write);
                     this.pending.delete(key);
@@ -385,38 +415,60 @@ export class PlayerSettingsFlusher {
                         if (this.isCurrent(key, write)) this.failedInDrain.set(key, write);
                         continue;
                     }
+                    if (this.serializingKeys.has(key)) {
+                        if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+                        if (this.isCurrent(key, write)) this.failedInDrain.set(key, write);
+                        continue;
+                    }
+                    const requestAbort = new AbortController();
+                    const parentSignal = this.readSignal();
+                    const onParentAbort = (): void => { requestAbort.abort(); };
+                    if (parentSignal.aborted) requestAbort.abort();
+                    else parentSignal.addEventListener("abort", onParentAbort, { once: true });
+                    this.inFlightAborts.set(key, requestAbort);
+                    const requestPromise = (async (): Promise<void> => {
+                        try {
+                            await this.transport.putValue(key, write.scope, write.value, requestAbort.signal);
+                            if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+                            if (this.isCurrent(key, write)) {
+                                this.failedInDrain.delete(key);
+                                for (const listener of [...this.commitListeners]) listener(key);
+                            }
+                        } catch (error) {
+                            if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+                            if (!this.isCurrent(key, write)) return;
+                            const kind = classifyFailure(error);
+                            if (kind === "permanent") {
+                                this.failedInDrain.delete(key);
+                                rejected.push(key);
+                            } else if (kind === "aborted") {
+                                this.failedInDrain.set(key, write);
+                            } else {
+                                const failedAttempts = write.failedAttempts + 1;
+                                const isHeld = failedAttempts > this.retryPolicy.maximumAutomaticRetries;
+                                const serverWait = retryAfterMs(error);
+                                const backoff = retryDelayMs(this.retryPolicy, failedAttempts);
+                                const retryNotBeforeMs = !isHeld && serverWait !== undefined && serverWait > backoff ? this.clock.now() + serverWait : undefined;
+                                this.failedInDrain.set(key, {
+                                    value: write.value,
+                                    scope: write.scope,
+                                    scopeId: write.scopeId,
+                                    generation: write.generation,
+                                    failedAttempts,
+                                    isHeld,
+                                    ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
+                                });
+                            }
+                        } finally {
+                            parentSignal.removeEventListener("abort", onParentAbort);
+                            if (this.inFlightAborts.get(key) === requestAbort) this.inFlightAborts.delete(key);
+                        }
+                    })();
+                    this.inFlightPromises.set(key, requestPromise);
                     try {
-                        await this.transport.putValue(key, write.scope, write.value, this.readSignal());
-                        if (this.inFlight.get(key) === write) this.inFlight.delete(key);
-                        if (this.isCurrent(key, write)) {
-                            this.failedInDrain.delete(key);
-                            for (const listener of [...this.commitListeners]) listener(key);
-                        }
-                    } catch (error) {
-                        if (this.inFlight.get(key) === write) this.inFlight.delete(key);
-                        if (!this.isCurrent(key, write)) continue;
-                        const kind = classifyFailure(error);
-                        if (kind === "permanent") {
-                            this.failedInDrain.delete(key);
-                            rejected.push(key);
-                        } else if (kind === "aborted") {
-                            this.failedInDrain.set(key, write);
-                        } else {
-                            const failedAttempts = write.failedAttempts + 1;
-                            const isHeld = failedAttempts > this.retryPolicy.maximumAutomaticRetries;
-                            const serverWait = retryAfterMs(error);
-                            const backoff = retryDelayMs(this.retryPolicy, failedAttempts);
-                            const retryNotBeforeMs = !isHeld && serverWait !== undefined && serverWait > backoff ? this.clock.now() + serverWait : undefined;
-                            this.failedInDrain.set(key, {
-                                value: write.value,
-                                scope: write.scope,
-                                scopeId: write.scopeId,
-                                generation: write.generation,
-                                failedAttempts,
-                                isHeld,
-                                ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
-                            });
-                        }
+                        await requestPromise;
+                    } finally {
+                        if (this.inFlightPromises.get(key) === requestPromise) this.inFlightPromises.delete(key);
                     }
                     if (this.readScopeId() === this.activeScopeId) this.persistJournal();
                 }
