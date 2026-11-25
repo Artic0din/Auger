@@ -2117,6 +2117,11 @@ svg.library-empty-icon { width: auto; }
 .watch-party-body { margin: 0; font-size: 26px; line-height: 32px; color: var(--silo-secondary); }
 .watch-party-actions { flex: none; display: flex; flex-direction: column; gap: 28px; width: 640px; }
 .watch-party-section { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.watch-party-rejoin-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
+.watch-party-ui .watch-party-rejoin { max-width: 100%; border: 1px solid rgba(255,255,255,.28); overflow: hidden; text-overflow: ellipsis; }
+.watch-party-rejoin-note { margin: 0; font-size: 21px; line-height: 26px; color: var(--silo-secondary); }
+.watch-party-starting { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 1920px; height: 1080px; outline: none; }
+.watch-party-starting .marquee-spinner { width: 56px; height: 56px; border-width: 5px; }
 .watch-party-banner { box-sizing: border-box; display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 16px 20px; border-radius: 12px; border: 1px solid var(--silo-hairline); background: rgba(255,255,255,.08); font-size: 21px; line-height: 26px; color: var(--silo-text); }
 .watch-party-banner-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--silo-secondary); }
 .watch-party-banner-warning { border-color: rgba(245,197,99,.3); background: rgba(245,197,99,.12); color: #f5c563; }

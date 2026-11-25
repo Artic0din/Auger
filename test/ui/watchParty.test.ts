@@ -315,9 +315,18 @@ test("Start a party creates a host-pick room and shows the code and members the 
         await tv.page.locator('.browse[data-view="watchParty:options"]').waitFor();
         await button(tv, "leave").click();
         await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
-        assert.equal(await tv.focused(), "create", "Leave party returns to the entry on its first control");
+        assert.equal(await tv.focused(), "rejoin", "Leave party remembers the recent room and focuses Rejoin on the entry");
+        assert.equal(await button(tv, "rejoin").textContent(), "Rejoin recent party");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "Leave party closes the room socket");
         assert.deepEqual(fake.closedRooms, [], "Leave party does not end the room; only End party ends it");
+        // Rejoining from the entry re-enters the remembered room by its code (#783).
+        await button(tv, "rejoin").click();
+        await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        assert.deepEqual(fake.joined, ["K7M2QX"]);
+        await button(tv, "options").click();
+        await tv.page.locator('.browse[data-view="watchParty:options"]').waitFor();
+        await button(tv, "leave").click();
+        await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
         await tv.remote(10009);
         await tv.page.locator('.browse[data-view="home"]').waitFor();
         await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "top bar returns to Watch Party after leaving");
@@ -468,5 +477,35 @@ test("a Watch Party row that appears while the profile menu is open leaves focus
         capabilities.hold?.release();
         await tv.eventually(async () => await button(tv, "watch-party").count() > 0, "Watch Party row appears");
         assert.equal(await tv.focused(), "settings", "the rebuild keeps focus on the row it was on");
+    } finally { await tv.page.context().close(); }
+});
+
+test("starting Watch Party from a title holds on its artwork with a focused spinner instead of flashing the entry page (#783)", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await tv.page.keyboard.press("Escape");
+        // Open the first movie card on Home -> Details -> More -> Watch Party.
+        await tv.page.locator('.browse-card').first().click();
+        await tv.page.locator('.browse[data-view^="item:"]').waitFor();
+        const heldCreate = tv.fake.hold("/watch-together/rooms");
+        await button(tv, "more").click();
+        await button(tv, "watch-party").waitFor();
+        await button(tv, "watch-party").click();
+        await tv.page.locator('.browse[data-view="watchParty:starting"]').waitFor();
+        assert.equal(await tv.page.locator('.browse[data-view="watchParty:hub"]').count(), 0, "never flashes create-or-join entry");
+        assert.equal(await tv.focused(), "starting", "spinner owns focus so Back can cancel a slow start");
+        assert.equal(await tv.page.locator('[data-focus="starting"]').getAttribute("aria-label"), "Starting your party");
+        assert.equal(await tv.page.locator(".watch-party-backdrop").count(), 1);
+        heldCreate.release();
+        await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        // Leaving a room with a staged title shows Rejoin {title} on the entry page.
+        await button(tv, "options").click();
+        await tv.page.locator('.browse[data-view="watchParty:options"]').waitFor();
+        await button(tv, "leave").click();
+        await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
+        assert.equal(await tv.focused(), "rejoin");
+        assert.match(await button(tv, "rejoin").textContent() ?? "", /^Rejoin /);
     } finally { await tv.page.context().close(); }
 });
