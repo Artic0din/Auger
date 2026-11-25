@@ -176,6 +176,54 @@ test("a discovery settings read started before a save cannot overwrite Auto-play
     r.controller.destroy();
 });
 
+test("a failed discovery settings read cannot turn Auto-play off while an Off-to-On save is pending (#816)", async () => {
+    const r = await autoplayRig(false);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", false);
+    const episodePart = "/catalog/series/series%3As1/seasons?image_size=small";
+    const autoNextRead = "/settings/values/effective?keys=playback.auto_play_next";
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, EPISODE, () => {
+        // Fail only the first-frame episode lookup so entering the Up Next window triggers a discovery retry during the held save.
+        r.h.fake.script(episodePart, unavailable);
+    });
+    await r.h.clock.advance(0);
+    const initial = last(r.views);
+    assert.ok(initial.phase === "playing" && initial.durationSeconds !== undefined);
+    assert.equal(initial.hud?.autoNext, false, "Auto-play starts Off");
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(0);
+    const pending = last(r.views);
+    assert.ok(pending.phase === "playing");
+    assert.equal(pending.hud?.autoNext, true, "Auto-play switches On while the save is held");
+    // Fail the discovery read started at the current settingsEpoch while the save is still pending.
+    const readsBefore = r.h.fake.requests.filter(request => request.path === autoNextRead).length;
+    r.h.fake.script(autoNextRead, unavailable);
+    r.avplay.tick((initial.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === autoNextRead).length, readsBefore + 1, "the discovery retry issued the failed Auto-play read");
+    const afterFailedRead = last(r.views);
+    assert.ok(afterFailedRead.phase === "playing");
+    assert.equal(afterFailedRead.hud?.autoNext, true, "the failed discovery read does not flip Auto-play back Off while the save is pending");
+    // Leave the early prompt window so EOF exercises the 10 s completion countdown rather than immediate prompt handoff.
+    r.avplay.tick(1000);
+    await r.h.clock.advance(0);
+    hold.release();
+    await r.h.clock.advance(0);
+    const confirmed = last(r.views);
+    assert.ok(confirmed.phase === "playing");
+    assert.equal(confirmed.hud?.autoNext, true, "Auto-play stays On after the save confirms");
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, 10, "countdown behaviour stays intact");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode autoplays");
+    r.controller.destroy();
+});
+
 test("a completed Shuffle item advances the same server session before offering its next pick", async () => {
     const r = await rig();
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
