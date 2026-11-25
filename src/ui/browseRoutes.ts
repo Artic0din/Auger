@@ -1,16 +1,13 @@
 // The places browse can show, what each holds, and which view each state shows: loading,
 // failed, or its data (with a note when a refresh or page turn failed). Loading lives in browse.ts.
 
-import { ApiError } from "../api/errors.ts";
-import { requestsView, type RequestsHandlers, type RequestsState, type RequestWrite } from "./requests.ts";
+import { requestsView, type RequestsHandlers, type RequestsState } from "./requests.ts";
 import type { TextSearchScope } from "../api/operations.ts";
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { audiobookView } from "./audiobookView.ts";
 import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
-import type { Person } from "../contracts/v2/details.ts";
-import type { PersonMetadataRefresh } from "./personMetadataRefresh.ts";
+import type { PersonModule } from "./person.ts";
 import type { DetailsState } from "./detailsState.ts";
-import { SessionError, SessionRefreshError } from "../session/session.ts";
 import type { FocusTarget, View } from "./browseFocus.ts";
 import { itemView, seasonView, withDetailsAlert } from "./browseDetails.ts";
 import { audiobookLoadingView } from "./audiobookLoading.ts";
@@ -19,16 +16,15 @@ import { browseCardDestination, type SearchFilter, type EpisodeSelection, type P
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
 import { translate } from "../i18n/translate.ts";
-import { type ErrorBody, errorMessage, errorState, type ErrorState } from "./errorState.ts";
+import type { ErrorState } from "./errorState.ts";
 
-export { errorHeadline, errorMessage, errorState, failureState, type ErrorBody, type ErrorKind, type ErrorState } from "./errorState.ts";
+export { errorHeadline, errorMessage, errorState, failureBody, failureState, failureText, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, type ErrorBody, type ErrorKind, type ErrorState, type RequestWrite } from "./errorState.ts";
 import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
 import { collectionRowCards } from "./collectionCards.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
 import { personalView, type PersonalFilter, type PersonalSource, type PersonalListCapability } from "./personalLists.ts";
-import type { MediaScope } from "../contracts/v2/discovery.ts";
 import { personFilmographyView } from "./personFilmography.ts";
 import type { RecommendationRow } from "../contracts/v2/recommendations.ts";
 import { globalSearchView, type SearchSupplement } from "./globalSearch.ts";
@@ -69,7 +65,7 @@ export type RouteData =
     | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
     | { readonly kind: "boxSet"; readonly id: string; readonly libraryId: string; readonly title: string; data: CatalogBoxSetDetail | undefined }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean; error?: ErrorState; data: { detail: ItemDetail; seasons: Season[]; details?: DetailsState; boxSet?: BoxSetRowState } | undefined }
-    | { readonly kind: "person"; readonly id: string; readonly title: string; data: { person: Person } | undefined; metadataLoading?: boolean; metadataRefresh?: PersonMetadataRefresh; metadataFailure?: string | undefined; metadataError?: ErrorState | undefined; availabilityLoading?: boolean; availableFilters?: MediaScope[]; filter: MediaScope; pages: Pages; pendingIndex: number | undefined }
+    | { readonly kind: "person"; readonly id: string; readonly title: string; readonly person: PersonModule }
     | { readonly kind: "season"; readonly seriesId: string; readonly seasonNumber: number; readonly title: string; readonly id?: string; readonly episodeId?: string; data: { episodes: Episode[]; detail: ItemDetail | undefined; details?: DetailsState } | undefined };
 
 export type Route = RouteData & {
@@ -105,7 +101,7 @@ export function hasData(current: Route): boolean {
         case "library":
             return current.discovery?.mode === "Browse" ? current.discovery.snapshot !== undefined : current.discovery?.data !== undefined;
         // A loaded filmography is kept; only a missing person is read again (Apple loadInitial: person == nil, items.isEmpty).
-        case "person": return current.data !== undefined || current.pages.page !== undefined;
+        case "person": return current.person.hasData();
         case "libraryResults":
         case "homeSection":
             return current.pages.page !== undefined;
@@ -127,8 +123,6 @@ export interface RouteHandlers {
     readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
-    readonly personFilter: (route: Extract<Route, { kind: "person" }>, filter: MediaScope) => void;
-    readonly morePerson: (route: Extract<Route, { kind: "person" }>) => void;
     readonly moreSearch: (route: Extract<Route, { kind: "search" }>) => void;
     readonly calendar: (route: Extract<Route, { kind: "calendar" }>) => CalendarHandlers;
     readonly personalFilter: (route: Extract<Route, { kind: "personal" }>, filter: PersonalFilter) => void;
@@ -167,7 +161,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     const back = current.kind === "home" ? undefined : pop;
     const escape = back === undefined ? actionButton("profiles", translate("account.profiles"), handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
     if (current.kind === "personal") return personalView(current, handlers);
-    if (current.kind === "person") return personFilmographyView(current, handlers);
+    if (current.kind === "person") return personFilmographyView(current.person, { context: handlers.context, gridColumns: handlers.gridColumns, back: handlers.pop, signIn: handlers.signIn });
     if (current.kind === "library") {
         if (current.library.type === "music") return statusView(`library:${current.library.id}`, translate("library.kind.music"), ["Music browsing is not available on this TV."], [escape], back);
         current.discovery ??= discoveryState();
@@ -317,65 +311,4 @@ function withNote(view: View, failure: string | undefined): View {
     const note = el("p", "browse-text browse-error", failure);
     note.setAttribute("role", "alert");
     return { ...view, content: [note, ...view.content] };
-}
-
-/** Apple RequestMutationFailure.isUncertain: only an answer from the server, or a refusal before sending, rules out a write having landed. */
-export function writeMayHaveApplied(error: unknown): boolean {
-    if (error instanceof SessionError || error instanceof SessionRefreshError) return false;
-    return !(error instanceof ApiError) || (error.failure.kind !== "problem" && error.failure.kind !== "http");
-}
-
-/** Apple RequestErrorCopy.message(for:). */
-export function writeFailureMessage(error: unknown): string {
-    if (error instanceof ApiError && error.failure.kind === "problem") {
-        const { id, detail } = error.failure.problem;
-        if (id === "validation_failed") return translate("requests.reason.validation_failed");
-        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return translate("requests.reason.requests_disabled");
-        if (detail?.trim()) return detail;
-    }
-    return errorMessage(errorState(error));
-}
-
-/** Apple RequestErrorCopy.unconfirmed*Message; Apple TV has no Follow, so it keeps this client's wording. */
-export function unconfirmedWriteMessage(action: RequestWrite): string {
-    if (action === "create") return translate("requests.notice.unconfirmedCreate");
-    return action === "cancel" ? translate("requests.notice.unconfirmedCancel") : "Could not confirm the change. Refresh before trying again.";
-}
-
-/** What to tell the person, as a catalog key where Apple has the words; undefined for an error that is not a server or session answer (a defect). */
-export function failureBody(error: unknown, current: Route): ErrorBody | undefined {
-    const text = (line: string): ErrorBody => ({ text: line });
-    if (error instanceof SessionError) {
-        return error.reason === "unavailable" ? { key: "shell.error.serverProblem" } : text("This TV is no longer signed in.");
-    }
-    if (!(error instanceof ApiError)) {
-        return undefined;
-    }
-    const kind = error.failure.kind;
-    if (kind === "network" || kind === "timeout") {
-        return text("Could not reach the server. Check the connection and try again.");
-    }
-    if (error.status === 404) {
-        if (current.kind === "calendar") return text("Could not load Calendar. Try again.");
-        if (current.kind === "audiobook") return text("This audiobook is no longer available.");
-        if (current.kind === "boxSet") return { key: "boxSets.unavailableMessage" };
-        return text(current.kind === "library"
-            ? "This library is no longer available."
-            : current.kind === "season"
-              ? "This season is no longer available."
-              : current.kind === "person" ? "This person is no longer available." : "This title is no longer available.");
-    }
-    if (error.problemId === "invalid_cursor") {
-        return text(current.kind === "homeSection" || current.kind === "person" ? "The list changed. Try again." : "The list changed. Go back and open it again.");
-    }
-    if (kind === "invalid_response") {
-        return text("The server sent an answer this TV could not read.");
-    }
-    return error.transient ? { key: "shell.error.serverProblem" } : text("Something went wrong. Try again.");
-}
-
-/** What to tell the person, in the language shown now. */
-export function failureText(error: unknown, current: Route): string | undefined {
-    const body = failureBody(error, current);
-    return body === undefined ? undefined : errorMessage({ body });
 }

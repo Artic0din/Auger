@@ -9,9 +9,9 @@ import { canCancel, canRemove, visibleMineRequests } from "./requestRemoval.ts";
 import { cullToRailBounds, requestActionSpinner, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, TRAY_ICON } from "./requestsScene.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
-import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
+import { errorHeadline, errorMessage, failureState, type RequestWrite } from "./errorState.ts";
 
-export type RequestWrite = "create" | "cancel" | "follow" | "unfollow";
+export type { RequestWrite };
 export type RequestsSource =
     | { readonly kind: "hub" }
     | { readonly kind: "search"; query: string; page: number }

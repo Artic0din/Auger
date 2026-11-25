@@ -45,10 +45,9 @@ import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
 import { personalEndCanReenter, personalListCapability, readPersonalPage, type PersonalFilter } from "./personalLists.ts";
-import type { MediaScope } from "../contracts/v2/discovery.ts";
 import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
-import { personQuery } from "./personFilmography.ts";
-import { PersonMetadataRefresh } from "./personMetadataRefresh.ts";
+import { createForegroundRunner, type Arrival, type FocusReader } from "./browseEnv.ts";
+import { createPerson } from "./person.ts";
 import { mountSettings, type SettingsScreen } from "./settings.ts";
 import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
 import { signOutRemovesServer } from "./signOutConfirmation.ts";
@@ -139,7 +138,6 @@ const PAGE_HEIGHT = 1080;
  */
 const KEYBOARD_UP_HEIGHT = (568 + PAGE_HEIGHT) / 2;
 const SEARCH_DELAY_MS = 300;
-const SLOW_MS = 5000;
 /** SectionRowLimit.cards (silo-apple SectionRowLimit.swift:6). */
 const HOME_SECTION_CARDS = 20;
 
@@ -273,10 +271,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         activeSection?.stop();
         if (activeBrowse !== undefined) stopFeed(activeBrowse);
         if (activePersonal !== undefined) stopFeed(activePersonal);
-        loading?.abort();
-        loading = undefined;
-        cancelSlow();
-        if (current.kind === "homeSection" || current.kind === "person" || current.kind === "personal") current.pendingIndex = undefined;
+        foreground.abort();
+        if (current.kind === "homeSection" || current.kind === "personal") current.pendingIndex = undefined;
         menuOrigin = { route: current, focus: host.focused() };
         cardActions.open(card, options);
     }, watchParty: { offered: () => watchPartyOffered, open: choice => openWatchParty(choice) } };
@@ -315,11 +311,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const repickSeasons = new Set<string>();
     /** The last 20 Details visits, in order, including ones a change dropped from `visitedDetails` (ItemDetailCache.swift:34). */
     const visitOrder = new Set<string>();
-    let loading: AbortController | undefined;
-    let personRead: { route: Route; controller: AbortController } | undefined;
-    let personFilterGeneration = 0;
+    const foreground = createForegroundRunner(clock);
+    const focusReader: FocusReader = { inputRevision: () => inputRevision, focused: () => host.focused() };
     let homeLibraries: AbortController | undefined;
-    let cancelSlow: () => void = () => undefined;
     let cancelSearch: () => void = () => undefined;
     let cancelCalendarDay: () => void = () => undefined;
     let playing = false;
@@ -436,9 +430,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (visitOrder.size > 20) { const evicted = visitOrder.values().next().value!; visitOrder.delete(evicted); visitedDetails.delete(evicted); seriesSeasons.delete(evicted); }
         }
         detailWork?.stop(); detailWork = undefined;
-        personRead?.controller.abort();
-        if (personRead?.route.kind === "person") { personRead.route.metadataLoading = false; personRead.route.availabilityLoading = false; }
-        personRead = undefined;
+        const active = top();
+        if (active?.kind === "person") active.person.cover();
         boxSetRowWork?.stop(); boxSetRowWork = undefined;
     };
     let boxSetRowWork: BoxSetRowState | undefined;
@@ -724,7 +717,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const clearPersonalRoot = (): void => {
         const index = stack.findIndex(isPersonalRoot);
         if (index < 1) return;
-        stopSearchSupplement(); stopDetails(); loading?.abort(); loading = undefined; cancelSearch();
+        stopSearchSupplement(); stopDetails(); foreground.abort(); cancelSearch();
         for (const removed of stack.slice(index)) retireRoute(removed);
         stack.length = index;
     };
@@ -749,6 +742,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const retireRoute = (route: Route | undefined): void => {
         if (route === undefined) return;
         if (route.kind === "watchParty") route.watchParty.hub.stop();
+        if (route.kind === "person") route.person.retire();
         const visit = detailVisits.get(route);
         if (visit !== undefined) host.forgetPresentation(visit);
     };
@@ -765,7 +759,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (!capability.enabled) {
                 roots.delete("requests");
                 if (top()?.kind === "requests") {
-                    loading?.abort(); loading = undefined;
+                    foreground.abort();
                     // Drop an open card menu without its onClose paint: the stack is about to leave Requests.
                     if (requestMenu.active) requestMenu.destroy();
                     closeRequests();
@@ -808,7 +802,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     }
     function upgradeLibraryArtwork(): void {
         const current = top();
-        if (current?.kind !== "library" || current.discovery?.mode !== "Recommended" || current.discovery.data === undefined || torn || playing || cardActions.active || loading !== undefined || current.failure !== undefined) return;
+        if (current?.kind !== "library" || current.discovery?.mode !== "Recommended" || current.discovery.data === undefined || torn || playing || cardActions.active || foreground.busy() || current.failure !== undefined) return;
         const attempt = libraryArtworkAttempts.get(current);
         const query = homeArtworkQuery(imageCapability, window.devicePixelRatio);
         if (attempt === undefined || !Object.entries(query).some(([key, value]) => attempt[key] !== value)) return;
@@ -838,7 +832,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     function upgradeHomeArtwork(): void {
         if (home.kind !== "home") return;
         const data = home.data;
-        if (torn || playing || cardActions.active || top() !== home || loading !== undefined || data === undefined || home.failure !== undefined || homeArtworkAttempt === undefined) return;
+        if (torn || playing || cardActions.active || top() !== home || foreground.busy() || data === undefined || home.failure !== undefined || homeArtworkAttempt === undefined) return;
         const query = homeArtworkQuery(imageCapability, window.devicePixelRatio);
         // Named sizes such as "medium" and "large" are not numbers, so any changed query value refetches.
         // The row cap still goes with that read (listHomeSections item_limit).
@@ -940,9 +934,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Sign-in and profile screens still read English, so they stay left to right.
         clearLayoutDirection();
         stopAuthority();
-        loading?.abort();
+        foreground.abort();
         homeLibraries?.abort();
-        cancelSlow();
         cancelSearch();
         cancelCalendarDay();
         document.removeEventListener("keydown", recordKey, true);
@@ -966,50 +959,45 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const browseAppends = new WeakSet<Route>();
     /** Runs one read for the top route; an answer for a route or query no longer shown is dropped. */
     const load = <T>(current: Route, read: (signal: AbortSignal) => Promise<T>, apply: (value: T) => FocusTarget | void, quiet = false): void => {
-        loading?.abort();
-        cancelSlow();
-        const controller = new AbortController();
-        loading = controller;
         readStamps.set(current, notInterestedStore.stamp());
         const entryRevision = inputRevision;
         const enterResults = !quiet && (current.kind === "personal" || (current.kind === "requests" && current.requests.data === undefined && current.requests.source.kind !== "search") || (current.kind === "library" && host.focused()?.key !== "sort"));
         current.slow = false;
-        if (!quiet) {
-            cancelSlow = clock.schedule(() => {
-                if (loading === controller && top() === current) {
+        const slot = foreground.begin({
+            quiet,
+            onSlow: () => {
+                if (top() === current) {
                     current.slow = true;
                     render();
                 }
-            }, SLOW_MS);
-        }
-        read(controller.signal).then(
+            },
+        });
+        read(slot.signal).then(
             (value) => {
-                if (loading !== controller || torn) {
+                if (!slot.active() || torn) {
                     return;
                 }
-                loading = undefined;
-                cancelSlow();
+                slot.finish();
                 current.failure = undefined;
                 current.stale = false;
                 const focus = apply(value);
                 if (top() === current) {
                     const enterContent = enterResults && inputRevision === entryRevision;
                     const lateCalendarContext = (current.kind === "item" && current.seriesContext !== undefined) || (current.kind === "season" && current.episodeId !== undefined);
-                    const nextFocus = lateCalendarContext && inputRevision !== entryRevision ? host.focused() : (current.kind === "library" || ((current.kind === "personal" || current.kind === "person") && !quiet)) && !enterContent ? host.focused() : focus;
+                    const nextFocus = lateCalendarContext && inputRevision !== entryRevision ? host.focused() : (current.kind === "library" || (current.kind === "personal" && !quiet)) && !enterContent ? host.focused() : focus;
                     render(nextFocus === undefined ? undefined : nextFocus);
                     if (enterContent) host.focusDefault();
                 }
             },
             (error: unknown) => {
-                if (loading !== controller || torn || controller.signal.aborted) {
+                if (!slot.active() || torn || slot.signal.aborted) {
                     return;
                 }
-                loading = undefined;
-                cancelSlow();
-                if (error instanceof ApiError && error.problemId === "invalid_cursor" && (current.kind === "homeSection" || current.kind === "person" || current.kind === "personal" || current.kind === "library" || current.kind === "libraryResults" || current.kind === "search") && current.pages !== undefined) {
+                slot.finish();
+                if (error instanceof ApiError && error.problemId === "invalid_cursor" && (current.kind === "homeSection" || current.kind === "personal" || current.kind === "library" || current.kind === "libraryResults" || current.kind === "search") && current.pages !== undefined) {
                     Object.assign(current.pages, newPages());
                     current.focus = undefined;
-                    if (current.kind === "personal" || current.kind === "homeSection" || current.kind === "person") current.pendingIndex = undefined;
+                    if (current.kind === "personal" || current.kind === "homeSection") current.pendingIndex = undefined;
                     if (current.kind === "personal") personalSnapshots.delete(current);
                 }
                 const text = error instanceof CalendarTimezoneError ? error.message : failureText(error, current);
@@ -1044,12 +1032,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     // failure is the error page with Try Again rather than cards that are known to be stale.
                     current.pages.page = undefined;
                     current.discovery.snapshot = undefined;
-                }
-                // Apple PersonDetailView: a failed later page keeps the cards; a stale failure would make Back read every loaded page again.
-                if (current.kind === "person" && (current.pages.page?.items.length ?? 0) > 0 && text !== undefined) {
-                    current.failure = undefined;
-                    if (top() === current) render(host.focused());
-                    return;
                 }
                 current.failure = text ?? "Something went wrong. Try again.";
                 // A generic error keeps Apple's keyed message so a late language redraws it; a route's own wording (no key) replaces it.
@@ -1090,7 +1072,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         cancelOfflineRefresh();
         if (torn || top() !== current || (!routeOffline(current) && !deferredDetails.has(current))) return;
         const details = current.kind === "item" || current.kind === "season" ? current.data?.details : undefined;
-        if (playing || loading !== undefined || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay) {
+        if (playing || foreground.busy() || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay) {
             cancelOfflineRefresh = clock.schedule(() => recoverCachedRoute(current), 15000);
             return;
         }
@@ -1241,7 +1223,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const retry = focus?.key === "retry-episodes" && series?.failed;
             render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
         }
-        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && loading === undefined) queueMicrotask(() => recoverCachedRoute(current));
+        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && !foreground.busy()) queueMicrotask(() => recoverCachedRoute(current));
     };
 
     const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail, artwork: Readonly<Record<string, string>>): DetailsState => {
@@ -1403,16 +1385,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }, quiet || current.pages.page !== undefined);
     };
     const morePersonal = (current: Extract<Route, { kind: "personal" }>): void => {
-        if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.pages.page?.nextCursor === undefined) return;
+        if (torn || playing || top() !== current || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.pages.page?.nextCursor === undefined) return;
         loadPersonal(current, true, true);
     };
-    const morePerson = (current: Extract<Route, { kind: "person" }>): void => {
-        if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.pages.page?.nextCursor === undefined) return;
-        loadPage(current, current.pages, current.pages.index + 1, true);
-        render(host.focused());
-    };
     const moreBrowse = (current: Extract<Route, { kind: "library" }>): void => {
-        if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.discovery?.panel !== undefined || shuffleFailure?.route === current || current.failure !== undefined || current.discovery?.snapshot?.page.nextCursor === undefined) return;
+        if (torn || playing || top() !== current || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.discovery?.panel !== undefined || shuffleFailure?.route === current || current.failure !== undefined || current.discovery?.snapshot?.page.nextCursor === undefined) return;
         loadBrowse(current, true, true);
     };
     const changeBrowse = (current: Extract<Route, { kind: "library" }>, change: BrowseChange): void => {
@@ -1595,7 +1572,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 });
                 return;
             case "person":
-                loadPage(current, current.pages, current.pendingIndex ?? current.pages.index, quiet);
+                current.person.arrive("reshow");
                 return;
             case "homeSection":
                 loadPage(current, current.pages, current.pendingIndex ?? current.pages.index, quiet);
@@ -1815,115 +1792,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
     };
 
-    /** PersonDetailView.onAppear: returning resumes only the metadata refresh; the loaded filmography is not read again. */
-    const resumePersonRefresh = (current: Extract<Route, { kind: "person" }>): AbortSignal => {
-        if (personRead?.route !== current) {
-            personRead?.controller.abort();
-            personRead = { route: current, controller: new AbortController() };
-        }
-        const signal = personRead.controller.signal;
-        current.metadataRefresh ??= new PersonMetadataRefresh(clock, () => current.data?.person,
-            refreshSignal => session.call({ ...detailOperations.refreshPerson(current.id), profileScoped: true, replayAfterRefresh: false, signal: refreshSignal }),
-            readSignal => read(detailOperations.person(current.id), readSignal),
-            person => {
-                if (person !== undefined) current.data = { person };
-                if (top() === current) render(host.focused());
-            });
-        current.metadataRefresh.start(signal);
-        return signal;
-    };
-
-    /** The person's own metadata read; the caller sets metadataLoading first. */
-    const readPersonMetadata = (current: Extract<Route, { kind: "person" }>, signal: AbortSignal): Promise<void> =>
-        read(detailOperations.person(current.id), signal).then(person => {
-            if (!signal.aborted) { current.data = { person }; current.metadataFailure = undefined; current.metadataError = undefined; current.metadataRefresh?.start(signal); }
-        }, (error: unknown) => {
-            if (!signal.aborted) { current.metadataFailure = failureText(error, current) ?? "Could not load metadata. Try again."; current.metadataError = errorState(error); }
-        }).finally(() => { if (!signal.aborted) { current.metadataLoading = false; if (top() === current) render(); } });
-
-    const availabilityPending = (current: Extract<Route, { kind: "person" }>): boolean => current.availableFilters === undefined && current.availabilityLoading !== true;
-
-    /** PersonDetailView.refreshAvailableFilters: one single-item probe per type. A failed probe keeps its chip. */
-    const probeAvailability = (current: Extract<Route, { kind: "person" }>, signal: AbortSignal): Promise<void> => {
-        current.availabilityLoading = true;
-        const probedGeneration = personFilterGeneration;
-        return Promise.resolve().then(() => Promise.all((["movie", "series"] as const).map(async type => {
-            try {
-                const page = await read(operations.queryCatalogItems({ ...personQuery(current.id, type), limit: 1 }), signal);
-                return page.items.length > 0 || (page.total ?? 0) > 0;
-            } catch { return undefined; }
-        }))).then(([movies, series]) => {
-            // A filter chosen while these probes were out keeps its chip (PersonDetailView.swift refreshAvailableFilters).
-            if (!signal.aborted && probedGeneration === personFilterGeneration) {
-                current.availableFilters = ["video", ...(movies === false ? [] : ["movie" as const]), ...(series === false ? [] : ["series" as const])];
-                current.availabilityLoading = false;
-                if (top() === current) render();
-            }
-        });
-    };
-
     const loadPage = (current: Route, pages: Pages, index: number, quiet = false): void => {
-        if (current.kind === "person") {
-            current.pendingIndex = index;
-            const metadataSignal = resumePersonRefresh(current);
-            const loadMetadata = current.data === undefined && current.metadataLoading !== true;
-            const loadAvailability = availabilityPending(current);
-            if (loadMetadata) current.metadataLoading = true;
-            const commit = (page: CatalogPage, cursors: (string | undefined)[], committedIndex: number): void => {
-                const focus = host.focused();
-                const oldIndex = pages.page?.items.findIndex(item => item.id === focus?.key) ?? -1;
-                const nearby = index === pages.index && focus?.zone === "grid" && oldIndex >= 0 && !page.items.some(item => item.id === focus.key)
-                    ? page.items[Math.min(oldIndex, page.items.length - 1)] : undefined;
-                pages.page = page;
-                pages.index = committedIndex;
-                pages.cursors = cursors.slice(0, committedIndex + 2);
-                current.pendingIndex = undefined;
-                render(nearby === undefined ? undefined : { zone: "grid", key: nearby.id });
-            };
-            load(current, async signal => {
-                const repaint = (): void => { if (!metadataSignal.aborted && top() === current) render(); };
-                const metadata = loadMetadata ? readPersonMetadata(current, metadataSignal) : Promise.resolve();
-                const availability = loadAvailability ? probeAvailability(current, metadataSignal) : Promise.resolve();
-                const credits = (async (): Promise<void> => {
-                    const append = index > pages.index;
-                    let items = append ? [...(pages.page?.items ?? [])] : [];
-                    const cursors = append ? pages.cursors.slice(0, index + 1) : [undefined];
-                    let page: CatalogPage | undefined;
-                    let committedIndex = index;
-                    for (let position = append ? index : 0; position <= index; position++) {
-                        let startsOver = false;
-                        try {
-                            page = await read(operations.queryCatalogItems(personQuery(current.id, current.filter, cursors[position])), signal);
-                        } catch (error) {
-                            if (signal.aborted || position === 0 || !(error instanceof ApiError) || error.problemId !== "invalid_cursor") throw error;
-                            // Apple nextCatalogPage replaces the list with a fresh first page once.
-                            page = await read(operations.queryCatalogItems(personQuery(current.id, current.filter)), signal);
-                            startsOver = true;
-                            position = 0;
-                            items = [];
-                            cursors.splice(0, cursors.length, undefined);
-                        }
-                        if (signal.aborted) return;
-                        if (page.nextCursor !== undefined && cursors.includes(page.nextCursor)) throw new ApiError({ kind: "invalid_response", path: "personFilmography.page.next_cursor" });
-                        const seen = new Set(items.map(item => item.id));
-                        items.push(...page.items.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; }));
-                        cursors[position + 1] = page.nextCursor;
-                        committedIndex = position;
-                        if (startsOver || page.nextCursor === undefined) break;
-                    }
-                    if (page !== undefined) {
-                        commit({ ...page, items }, cursors, committedIndex);
-                    }
-                })().catch((error: unknown) => {
-                    if (!signal.aborted) { current.failure = failureText(error, current) ?? "Could not load titles. Try again."; repaint(); }
-                    throw error;
-                });
-                void metadata;
-                void availability;
-                await credits;
-            }, () => {}, quiet || pages.page !== undefined);
-            return;
-        }
         if (current.kind === "homeSection") {
             current.pendingIndex = index;
             load(current, signal => read(operations.queryCatalogItems({ source: "section", scope: "home", section_id: current.id, limit: PAGE_SIZE, ...(pages.cursors[index] === undefined ? {} : { cursor: pages.cursors[index] }) }), signal), page => {
@@ -2052,8 +1921,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let searchReturnFocus: { readonly route: Extract<Route, { kind: "search" }>; readonly target: FocusTarget } | undefined;
     /** SearchViewModel.resetState: an empty field clears every section at once. */
     const clearSearch = (current: Extract<Route, { kind: "search" }>): void => {
-        loading?.abort();
-        loading = undefined;
+        foreground.abort();
         stopSearchSupplement();
         current.pages = undefined;
         current.resultsFor = "";
@@ -2077,7 +1945,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         render(focus);
     };
     const moreSearch = (current: Extract<Route, { kind: "search" }>): void => {
-        if (torn || playing || top() !== current || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.query !== current.resultsFor || current.filter !== current.resultsFilter || current.pages?.page?.nextCursor === undefined) return;
+        if (torn || playing || top() !== current || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.query !== current.resultsFor || current.filter !== current.resultsFilter || current.pages?.page?.nextCursor === undefined) return;
         loadSearch(current, true, true);
         render(host.focused());
     };
@@ -2088,9 +1956,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (current?.kind !== "search") {
             return;
         }
-        loading?.abort();
-        loading = undefined;
-        cancelSlow();
+        foreground.abort();
         current.slow = false;
         current.query = input.value;
         cancelSearch();
@@ -2121,8 +1987,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             return;
         }
         stopDetails();
-        loading?.abort();
-        loading = undefined;
+        foreground.abort();
         cancelSearch();
         retireRoute(stack.pop());
         const current = top();
@@ -2132,8 +1997,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 if (current.kind === "personal") current.pendingIndex = undefined;
                 current.stale = true;
             }
-            // Apple keeps the loaded filmography (loadInitial runs only while empty); a visit that never got its first page reads it now.
-            if (current.kind === "person" && current.pages.page === undefined) current.stale = true;
             const fromProfileMenu = (active?.kind === "requests" && active.requests.source.kind === "hub") || active?.kind === "personal" || active?.kind === "watchParty";
             if (current.kind === "item" && current.data?.details?.series !== undefined && (active?.kind === "season" || active?.kind === "item" && active.data?.detail.type === "episode")) {
                 const details = current.data.details, series = details.series;
@@ -2144,16 +2007,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 const visit = detailVisits.get(current);
                 if (visit !== undefined) host.forgetPresentation(visit);
             }
-            showRoute(current, fromProfileMenu ? tabFocus(current) : current.focus);
-            if (current.kind === "person") {
-                const signal = resumePersonRefresh(current);
-                // A visit without its first page reads everything through load(); otherwise only what Details aborted or changed.
-                if (current.pages.page !== undefined) {
-                    // Deliberate improvement over Apple (its loadInitial needs the person and the items both missing): read a missing person once the titles are loaded, because Details can abort the first metadata read.
-                    if (current.data === undefined && current.metadataLoading !== true) { current.metadataLoading = true; void readPersonMetadata(current, signal); }
-                    if (availabilityPending(current)) void probeAvailability(current, signal);
-                }
-            }
+            showRoute(current, fromProfileMenu ? tabFocus(current) : current.focus, "reveal");
         }
     };
 
@@ -2167,11 +2021,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopDetails();
         if (current !== undefined) {
             current.focus = panel === undefined ? host.focused() : { zone: "actions", key: panel };
-            if (current.kind === "homeSection" || current.kind === "person") current.pendingIndex = undefined;
+            if (current.kind === "homeSection") current.pendingIndex = undefined;
             if (current.kind === "boxSet" || trailerFetchInFlight) current.stale = true;
         }
-        loading?.abort();
-        loading = undefined;
+        foreground.abort();
         cancelSearch();
         stack.push(next);
         showRoute(next, focus);
@@ -2195,8 +2048,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopSearchSupplement();
         shuffleGeneration++;
         stopDetails();
-        loading?.abort();
-        loading = undefined;
+        foreground.abort();
         cancelSearch();
         retireRoute(stack.pop());
         stack.push(next);
@@ -2205,7 +2057,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const tabFocus = (current: Route): FocusTarget => ({ zone: "nav", key: current.kind === "library" ? (current.library.type === "music" ? "music" : current.library.type === "audiobooks" ? "audiobooks" : current.library.type === "series" ? "series" : "movies") : current.kind === "personal" ? current.anchor ?? "profiles" : current.kind === "requests" || current.kind === "watchParty" ? current.anchor ?? "home" : current.kind });
 
-    const showRoute = (current: Route, focus: FocusTarget | undefined): void => {
+    const showRoute = (current: Route, focus: FocusTarget | undefined, arrival: Arrival = "push"): void => {
         if (current.kind === "home" && current.data === undefined) {
             const sections = cache.peek(operations.listHomeSections());
             if (sections !== undefined) {
@@ -2252,6 +2104,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         homeDetails.suspend();
         render(focus);
+        if (current.kind === "person") {
+            if (current.stale) {
+                current.person.markStale();
+                current.stale = false;
+            }
+            current.person.arrive(arrival);
+            return;
+        }
         if ((current.kind === "item" || current.kind === "season") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details))) {
             detailWork = current.data.details;
             detailWork.start();
@@ -2297,11 +2157,33 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
         }
         if (destination.kind === "item") host.forgetVisit(`item:${destination.id}`);
-        if (destination.kind === "person") host.forgetVisit(`person:${destination.id}`);
+        if (destination.kind === "person") {
+            host.forgetVisit(`person:${destination.id}`);
+            let personRoute!: Extract<Route, { kind: "person" }>;
+            personRoute = newRoute({
+                kind: "person",
+                id: destination.id,
+                title: destination.title,
+                person: createPerson({
+                    id: destination.id,
+                    title: destination.title,
+                    session,
+                    clock,
+                    focus: focusReader,
+                    foreground,
+                    onChange: paint => {
+                        if (!torn && !playing && !cardActions.active && !requestMenu.active && settingsScreen === undefined && top() === personRoute) {
+                            render(paint?.focus);
+                        }
+                    },
+                }),
+            }) as Extract<Route, { kind: "person" }>;
+            push(personRoute);
+            return;
+        }
         if (destination.kind === "audiobook") { push(newRoute({ kind: "audiobook", id: destination.id, title: destination.title, ...(destination.seed === undefined ? {} : { seed: destination.seed }), data: undefined })); return; }
         push(destination.kind === "item"
             ? newRoute({ kind: "item", id: destination.id, title: destination.title, ...(destination.seriesContext === undefined ? {} : { seriesContext: destination.seriesContext }), ...(destination.seed === undefined ? {} : { seed: destination.seed }), ...(destination.fromRelated === true ? { fromRelated: true } : {}), data: undefined })
-            : destination.kind === "person" ? newRoute({ kind: "person", id: destination.id, title: destination.title, data: undefined, filter: "video", pages: newPages(), pendingIndex: undefined })
             : newRoute({ kind: "season", ...(destination.id === undefined ? {} : { id: destination.id }), ...(destination.episodeId === undefined ? {} : { episodeId: destination.episodeId }), seriesId: destination.seriesId, seasonNumber: destination.seasonNumber, title: destination.title, data: undefined }));
     };
 
@@ -2315,9 +2197,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const focus = host.focused();
         if (details === undefined) handoff(request);
         else {
-            loading?.abort();
-            loading = undefined;
-            cancelSlow();
+            foreground.abort();
             detailWork = details;
             details.start();
             const playbackState = details.nextEpisodeState?.detail.id === request.contentId ? details.nextEpisodeState : details;
@@ -2401,10 +2281,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         shell.setAvatar(profileName, profileAvatarUrl, context.baseUrl, profileAvatarText);
         const searchFilter = (route: Extract<Route, { kind: "search" }>, filter: SearchFilter | undefined): void => {
             if (top() !== route || route.filter === filter) return;
-            loading?.abort(); loading = undefined; cancelSlow();
+            foreground.abort();
             route.filter = filter; search(route);
         };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: loading !== undefined, searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, morePerson, moreSearch, signIn: options.onSignOut, personFilter, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: foreground.busy(), searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, moreSearch, signIn: options.onSignOut, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2423,7 +2303,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
         container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
         if (browsing) activeBrowse = current.pages;
-        const feedOwner = current.kind === "personal" || current.kind === "person" || current.kind === "search" ? current.pages : undefined;
+        const feedOwner = current.kind === "personal" || current.kind === "search" ? current.pages : current.kind === "person" ? current.person.snapshot().feedKey : undefined;
         if (feedOwner !== undefined) {
             if (activePersonal !== undefined && activePersonal !== feedOwner) stopFeed(activePersonal);
             activePersonal = feedOwner;
@@ -2433,8 +2313,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         if (isSectionRoute(current)) activeSection = sectionCatalog(current);
         const view = activeSection !== undefined && isSectionRoute(current)
-            ? activeSection.view(current, context, loading !== undefined, pop, () => retry(current), () => {
-                if (top() !== current || torn || playing || loading !== undefined || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.pages.page?.nextCursor === undefined) return;
+            ? activeSection.view(current, context, foreground.busy(), pop, () => retry(current), () => {
+                if (top() !== current || torn || playing || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.pages.page?.nextCursor === undefined) return;
                 loadSection(current, true, true);
             }, options.onSignOut) : routeView(current, { ...handlers, manageServers: options.onSwitchServer === undefined ? undefined : () => { options.onSwitchServer?.(() => render()); }, retryPeople: route => {
                 if (top() !== route || route.searchType === undefined || route.query.trim() === "") return;
@@ -2484,10 +2364,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const retry = (current: Route): void => {
+        if (current.kind === "person") {
+            current.person.retry();
+            return;
+        }
         current.failure = undefined;
         current.error = undefined;
-        // PersonDetailViewModel.reload clears the person's error too, so the page shows loading rather than the old failure.
-        if (current.kind === "person") { current.metadataFailure = undefined; current.metadataError = undefined; }
         render();
         loadRoute(current);
     };
@@ -2717,7 +2599,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
     const requestsHandlers = (current: Extract<Route, { kind: "requests" }>): RequestsHandlers => ({
         // List cancel/remove and detail writes share one mutation lock so navigating between them cannot duplicate a POST.
-        capability: requestsCapability, busy: loading !== undefined || requestWritePending || requestGate.actingId !== undefined, failure: current.failure,
+        capability: requestsCapability, busy: foreground.busy() || requestWritePending || requestGate.actingId !== undefined, failure: current.failure,
         profileId: session.activeProfile?.id ?? "", back: pop, signIn: options.onSignOut, open: openRequests,
         retry: () => {
             current.focus = host.focused();
@@ -2728,7 +2610,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         openCatalog: (id, title) => open({ kind: "item", id, title }),
         edit: () => {
             if (top() !== current) return;
-            loading?.abort(); loading = undefined; cancelSlow();
+            foreground.abort();
             current.requests.data = undefined; current.failure = undefined;
             render({ zone: "search", key: "query" });
         },
@@ -2750,9 +2632,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const cancel = canCancel(record, requestGate.actingId, held);
             const remove = canRemove(record, requestsCapability.removeFailed, requestGate.actingId, held);
             if (!cancel && !remove) return;
-            loading?.abort();
-            loading = undefined;
-            cancelSlow();
+            foreground.abort();
             requestMenu.open({
                 container,
                 title: record.title,
@@ -2768,7 +2648,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         },
         write: action => {
             const state = current.requests, data = state.data;
-            if (top() !== current || torn || requestWritePending || requestGate.actingId !== undefined || state.writing || state.uncertain || loading !== undefined || data === undefined || !requestsCapability.enabled) return;
+            if (top() !== current || torn || requestWritePending || requestGate.actingId !== undefined || state.writing || state.uncertain || foreground.busy() || data === undefined || !requestsCapability.enabled) return;
             const title = "request" in data ? data : state.detail;
             const spec = action === "cancel" && "id" in data ? requestOperations.cancel(data.id)
                 : title === undefined || action === "cancel" ? undefined : action === "create" ? requestOperations.create(title) : requestOperations.follow(title, action === "follow");
@@ -2841,7 +2721,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
     };
     const calendarHandlers = (current: Extract<Route, { kind: "calendar" }>): CalendarHandlers => ({
-        now: clock.now(), busy: loading !== undefined, failure: current.failure, context,
+        now: clock.now(), busy: foreground.busy(), failure: current.failure, context,
         focus: target => render(target), retry: () => retry(current), signIn: options.onSignOut, back: pop,
         change: value => {
             try { prepareCalendar(current); }
@@ -2879,17 +2759,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         render({ zone: "filters", key: `filter:${filter}` });
     };
 
-    const personFilter = (current: Extract<Route, { kind: "person" }>, filter: MediaScope): void => {
-        if (current.filter === filter) return;
-        personFilterGeneration += 1;
-        current.filter = filter;
-        current.pages = newPages();
-        current.pendingIndex = undefined;
-        current.failure = undefined;
-        loadRoute(current, true);
-        render({ zone: "filters", key: `filter:${filter}` });
-    };
-
     const audiobookPicker = (current: Extract<Route, { kind: "audiobook" }>, open: boolean): void => {
         if (top() !== current || (current.picker === true) === open) return;
         current.picker = open;
@@ -2910,7 +2779,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const turn = (current: Route, pages: Pages, step: -1 | 1): void => {
         const index = pages.index + step;
         // One page request at a time; a press while one is out is ignored.
-        if (loading !== undefined || index < 0 || index >= pages.cursors.length || (step === 1 && pages.cursors[index] === undefined)) {
+        if (foreground.busy() || index < 0 || index >= pages.cursors.length || (step === 1 && pages.cursors[index] === undefined)) {
             return;
         }
         current.failure = undefined;
@@ -2962,8 +2831,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (current !== undefined) current.focus = tabFocus(current);
             return;
         }
-        loading?.abort();
-        loading = undefined;
+        foreground.abort();
         cancelSearch();
         for (const covered of stack) retireRoute(covered);
         stack = route === home ? [home] : [home, route];
@@ -2989,9 +2857,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             shuffleGeneration++;
             stopDetails();
             cancelCalendarDay();
-            loading?.abort();
-            loading = undefined;
-            cancelSlow();
+            foreground.abort();
             cancelSearch();
             host.holdVisit();
             shell.hide();
