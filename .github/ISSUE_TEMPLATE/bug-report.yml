@@ -79,7 +79,6 @@ body:
       label: Installed from
       options:
         - "Apps2Samsung (official catalog)"
-        - "Apps2Samsung (custom GitHub source)"
         - ".wgt from GitHub Releases"
         - "Built from source"
         - "Other"
@@ -89,9 +88,7 @@ body:
     id: server-version
     attributes:
       label: Silo server version
-      description: The **Build** value at the bottom of the server's **Admin** sidebar, for example `412 · 1a2b3c4d`. Ask your server admin if that is not you.
-    validations:
-      required: true
+      description: In Auger, open **Profile > Settings > Diagnostics** and look for **Silo Server** under **Device**. Leave this field blank if the version is unavailable.
   - type: textarea
     id: playback-details
     attributes:

@@ -53,13 +53,13 @@ If you installed through **Apps2Samsung**, the connected TV model also appears a
 
 1. From Auger's top navigation bar, move to your **Profile** icon at the top right and open **Settings**.
 2. Read the version at the bottom of the left sidebar (for example, `Auger 0.2.1`), or open **Server** → **About** → **App Version**.
-3. Note how you installed Auger: **Apps2Samsung** (official catalog or custom source), a `.wgt` from **GitHub Releases**, or **built from source**.
+3. Note how you installed Auger: the **Apps2Samsung** official catalog, a `.wgt` from **GitHub Releases**, **built from source**, or **Other**.
 
 ## 3. Silo server version
 
-1. Open your Silo server in a web browser and go to **Admin**.
-2. Read the **Build** value at the bottom of the admin sidebar (for example, `412 · 1a2b3c4d`).
-3. If someone else runs the server, ask them for the build version.
+1. In Auger, open **Profile** → **Settings** → **Diagnostics**.
+2. Under **Device**, look for **Silo Server**.
+3. If the version is unavailable, leave the field blank.
 
 ## 4. Playback problems: how to open the Stats tab
 
