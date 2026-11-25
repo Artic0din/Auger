@@ -2,24 +2,24 @@
 // failed, or its data (with a note when a refresh or page turn failed). Loading lives in browse.ts.
 
 import { requestsView, type RequestsHandlers, type RequestsState } from "./requests.ts";
-import type { TextSearchScope } from "../api/operations.ts";
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { audiobookView } from "./audiobookView.ts";
 import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import type { PersonModule } from "./person.ts";
+import type { SearchModule } from "./search.ts";
 import type { DetailsState } from "./detailsState.ts";
 import type { FocusTarget, View } from "./browseFocus.ts";
 import { itemView, seasonView, withDetailsAlert } from "./browseDetails.ts";
 import { audiobookLoadingView } from "./audiobookLoading.ts";
 import { detailsLoadingView } from "./detailsLoading.ts";
-import { browseCardDestination, type SearchFilter, type EpisodeSelection, type PlayRequest, type SeriesContext, type SeriesLine, type DetailSeed } from "./browseModel.ts";
+import type { EpisodeSelection, PlayRequest, SeriesContext, SeriesLine, DetailSeed } from "./browseModel.ts";
 import type { CalendarState } from "./calendarState.ts";
 import { calendarView, type CalendarHandlers } from "./calendarView.ts";
 import { translate } from "../i18n/translate.ts";
 import type { ErrorState } from "./errorState.ts";
 
 export { errorHeadline, errorMessage, errorState, failureBody, failureState, failureText, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, type ErrorBody, type ErrorKind, type ErrorState, type RequestWrite } from "./errorState.ts";
-import { actionButton, homeView, lines, errorView, failureError, pagedGrid, type SearchResults, searchView, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
+import { actionButton, homeView, lines, errorView, failureError, pagedGrid, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
 import { collectionRowCards } from "./collectionCards.ts";
@@ -27,8 +27,6 @@ import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
 import { personalView, type PersonalFilter, type PersonalSource, type PersonalListCapability } from "./personalLists.ts";
 import { personFilmographyView } from "./personFilmography.ts";
 import type { RecommendationRow } from "../contracts/v2/recommendations.ts";
-import { globalSearchView, type SearchSupplement } from "./globalSearch.ts";
-import { feedGrid } from "./catalogFeed.ts";
 import { boxSetView } from "./boxSetView.ts";
 import type { BoxSetRowState } from "./boxSetRow.ts";
 import { boxSetNextMovie, type CatalogBoxSetDetail } from "../contracts/v2/boxSets.ts";
@@ -37,10 +35,6 @@ import { watchPartyView, type WatchPartyScreen } from "./watchParty.ts";
 
 /** Cards per catalog page: four grid rows. Only the shown page is kept. */
 export const PAGE_SIZE = 24;
-/** Apple's SearchViewModel.pageSize: each read adds this many titles to the one grid. */
-export const SEARCH_PAGE_SIZE = 60;
-/** TVCatalogGrid.prefetchRowsRemaining: the next page is read once a card this many rows from the end is on screen. */
-const SEARCH_LOAD_ROWS = 8;
 
 export interface Pages {
     page: CatalogPage | undefined;
@@ -60,8 +54,7 @@ export type RouteData =
     | { readonly kind: "resume"; readonly id: string; readonly title: string; readonly episode?: true; readonly startOver?: boolean; readonly selection?: EpisodeSelection; readonly seriesLine?: SeriesLine }
     | { readonly kind: "library"; readonly library: UserLibrary; pages: Pages; discovery?: DiscoveryState }
     | { readonly kind: "libraryResults"; readonly library: UserLibrary; readonly title: string; readonly source: LibrarySource; pages: Pages }
-    /** `resultsFor`: the query the shown page answers, which typing can move ahead of. */
-    | { readonly kind: "search"; query: string; pages: Pages | undefined; resultsFor: string; resultsFilter?: SearchFilter | undefined; appending?: boolean; restarted?: boolean; searchType?: TextSearchScope; filter?: SearchFilter | undefined; peopleSupported?: boolean; boxSetsSupported?: boolean; supplement?: SearchSupplement }
+    | { readonly kind: "search"; readonly search: SearchModule }
     | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
     | { readonly kind: "boxSet"; readonly id: string; readonly libraryId: string; readonly title: string; data: CatalogBoxSetDetail | undefined }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean; error?: ErrorState; data: { detail: ItemDetail; seasons: Season[]; details?: DetailsState; boxSet?: BoxSetRowState } | undefined }
@@ -106,7 +99,7 @@ export function hasData(current: Route): boolean {
         case "homeSection":
             return current.pages.page !== undefined;
         case "search":
-            return current.pages?.page !== undefined;
+            return current.search.hasData();
         case "boxSet":
             return current.data !== undefined;
         default:
@@ -123,7 +116,6 @@ export interface RouteHandlers {
     readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
-    readonly moreSearch: (route: Extract<Route, { kind: "search" }>) => void;
     readonly calendar: (route: Extract<Route, { kind: "calendar" }>) => CalendarHandlers;
     readonly personalFilter: (route: Extract<Route, { kind: "personal" }>, filter: PersonalFilter) => void;
     readonly audiobookPicker: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
@@ -133,13 +125,7 @@ export interface RouteHandlers {
     readonly focusDefault: () => void;
     /** A read is in flight. */
     readonly busy: boolean;
-    /** The search heading, label and field, kept across renders. */
-    readonly searchHead: readonly HTMLElement[];
-    readonly input: HTMLInputElement;
-    readonly searchFilter: (route: Extract<Route, { kind: "search" }>, filter: SearchFilter | undefined) => void;
-    /** Audiobooks take part in Search: the opt-in is on and an audiobook library is visible. */
-    readonly audiobooksEnabled: boolean;
-    readonly retryPeople: (route: Extract<Route, { kind: "search" }>) => void;
+    readonly openSearch: () => void;
     readonly push: (route: Route) => void;
     /** Opens a card of a row of collections: a server collection in its library, a personal one on its own page. */
     readonly openCollection: (card: SectionCollectionCard, library: UserLibrary | undefined) => void;
@@ -167,9 +153,6 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
         current.discovery ??= discoveryState();
         return discoveryView(current, current.discovery, handlers);
     }
-    if (current.kind === "search") {
-        return globalSearchView(searchView(handlers.searchHead, handlers.input, searchResults(current, handlers), pop), current, handlers);
-    }
     if (current.failure !== undefined && !hasData(current)) {
         return errorView(`${current.kind}:failed`, failureError(current.failure, current.error), () => handlers.retry(current), back, handlers.signIn, current.kind === "home" ? handlers.manageServers : undefined);
     }
@@ -178,7 +161,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
             if (current.data === undefined) return pageLoadingView("home:loading", translate("home.loading"));
             const view = homeView(current.data.libraries, current.data.sections, context, {
                 expand: section => handlers.push(newRoute({ kind: "homeSection", id: section.id, title: sectionTitle(section), continuing: section.sectionType === "continue_watching", pages: newPages(), pendingIndex: undefined })),
-                search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
+                search: handlers.openSearch,
                 library: (library) => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,
                 collectionCards: (section, rowTitle) => collectionRowCards(section, rowTitle, handlers),
@@ -275,32 +258,6 @@ function grid(current: Route, pages: Pages, page: CatalogPage, handlers: RouteHa
             ? { ...handlers.context, seriesYears: true, overlays: handlers.context.cardOverlays?.(), posterWidth: 260 * (handlers.context.posterScale?.() ?? 1) }
             : { ...handlers.context, seriesYears: true },
     );
-}
-
-/**
- * Search posters are 220pt (`SearchView` `cardWidth`) and carry overlay data, as `TVCatalogGrid` does.
- * Select opens the card's detail route. It does not use the shared episode play shortcut.
- */
-function searchCards(context: ViewContext): ViewContext {
-    return { ...context, cardDestination: browseCardDestination, seriesYears: true };
-}
-
-function searchResults(current: Extract<Route, { kind: "search" }>, handlers: RouteHandlers): SearchResults {
-    const pages = current.pages;
-    if (current.failure !== undefined) {
-        return { status: "failed", error: failureError(current.failure, current.error), retry: () => handlers.retry(current), signIn: handlers.signIn };
-    }
-    if (pages === undefined) {
-        return { status: "idle" };
-    }
-    if (pages.page === undefined) {
-        return { status: "searching" };
-    }
-    // One grid for every loaded page (TVCatalogGrid), keyed by this answer's pages so a new answer starts a new one.
-    const feed = feedGrid(pages, pages.page, searchCards(handlers.context), SEARCH_LOAD_ROWS * handlers.gridColumns, handlers.busy, () => handlers.moreSearch(current), handlers.gridColumns, 220);
-    // Search draws its own poster grid (browse.css `.search-scene > .browse-grid`), not the catalog grid's.
-    feed.content[0]?.classList.remove("catalog-grid");
-    return { status: "ready", query: current.resultsFor, grid: feed };
 }
 
 /** A failed refresh or page turn keeps what is shown and says why above it. */

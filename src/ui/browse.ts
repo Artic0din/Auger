@@ -18,10 +18,9 @@ import { requestsState, type RequestsHandlers, type RequestsSource } from "./req
 import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
-import { operations, type TextSearchScope } from "../api/operations.ts";
+import { operations } from "../api/operations.ts";
 import { ShowAudiobooks } from "./audiobookPreference.ts";
-import { detailOperations } from "../api/detailOperations.ts";
-import { BOX_SET_SEARCH_LIMIT, boxSetOperations } from "../api/boxSetOperations.ts";
+import { boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import { DetailsState } from "./detailsState.ts";
@@ -36,8 +35,8 @@ import type { TizenKeyManager } from "../session/secretStore.ts";
 import { Skyline } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
-import { type Destination, type PlayRequest, type SearchFilter, applySeriesLine, artworkUrl, destinationOf, searchScope, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
-import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, SEARCH_PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
+import { type Destination, type PlayRequest, applySeriesLine, artworkUrl, destinationOf, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
+import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
 import { collectionRowPreview } from "./collectionCards.ts";
 import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, withNotInterested, type ViewContext } from "./browseViews.ts";
@@ -47,7 +46,9 @@ import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readS
 import { personalEndCanReenter, personalListCapability, readPersonalPage, type PersonalFilter } from "./personalLists.ts";
 import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
 import { createForegroundRunner, type Arrival, type FocusReader } from "./browseEnv.ts";
+import { globalSearchView } from "./globalSearch.ts";
 import { createPerson } from "./person.ts";
+import { createSearch } from "./search.ts";
 import { mountSettings, type SettingsScreen } from "./settings.ts";
 import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
 import { signOutRemovesServer } from "./signOutConfirmation.ts";
@@ -137,7 +138,6 @@ const PAGE_HEIGHT = 1080;
  * open and closed heights (824 px) counts as up, so the closing frames keep the normal layout.
  */
 const KEYBOARD_UP_HEIGHT = (568 + PAGE_HEIGHT) / 2;
-const SEARCH_DELAY_MS = 300;
 /** SectionRowLimit.cards (silo-apple SectionRowLimit.swift:6). */
 const HOME_SECTION_CARDS = 20;
 
@@ -314,7 +314,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const foreground = createForegroundRunner(clock);
     const focusReader: FocusReader = { inputRevision: () => inputRevision, focused: () => host.focused() };
     let homeLibraries: AbortController | undefined;
-    let cancelSearch: () => void = () => undefined;
     let cancelCalendarDay: () => void = () => undefined;
     let playing = false;
     let torn = false;
@@ -432,6 +431,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         detailWork?.stop(); detailWork = undefined;
         const active = top();
         if (active?.kind === "person") active.person.cover();
+        else if (active?.kind === "search") active.search.cover();
         boxSetRowWork?.stop(); boxSetRowWork = undefined;
     };
     let boxSetRowWork: BoxSetRowState | undefined;
@@ -533,114 +533,36 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     themePrefs.subscribe(syncThemeMusic);
     void themePrefs.refresh();
     let requestsCapability: RequestsCapability = { enabled: false, follow: false, removeFailed: false };
-    let searchPeopleController: AbortController | undefined;
-    let searchBoxSetController: AbortController | undefined;
-    let searchRequestsController: AbortController | undefined;
     const acceptRequestsCapability = (capability: RequestsCapability): void => {
         requestsCapability = capability;
         if (capability.enabled) return;
-        searchRequestsController?.abort();
         for (const route of new Set([...roots.values(), ...stack])) {
-            if (route.kind === "search" && route.supplement !== undefined) { route.supplement.requests = []; route.supplement.requestsFor = undefined; }
+            if (route.kind === "search") route.search.clearRequests();
         }
-    };
-    const stopSearchSupplement = (): void => {
-        searchPeopleController?.abort(); searchPeopleController = undefined;
-        searchBoxSetController?.abort(); searchBoxSetController = undefined;
-        searchRequestsController?.abort(); searchRequestsController = undefined;
-    };
-    const searchRequests = (current: Extract<Route, { kind: "search" }>): void => {
-        const query = current.query.trim();
-        const supplement = current.supplement ??= {};
-        // RequestSearchSectionViewModel.onQueryChanged: a query of one character clears the matches; longer ones keep them until answered.
-        if (!requestsCapability.enabled || query.length <= 1) { supplement.requests = query.length === 0 ? undefined : []; supplement.requestsFor = undefined; return; }
-        if (supplement.requestsFor === query) return;
-        searchRequestsController?.abort();
-        const controller = new AbortController(); searchRequestsController = controller;
-        supplement.requestsFor = query;
-        controller.signal.onabort = () => { supplement.requestsFor = undefined; };
-        const owns = (): boolean => !torn && !controller.signal.aborted && top() === current && current.supplement === supplement && current.query.trim() === query;
-        void read(requestOperations.search(query, 1), controller.signal).then(page => {
-            if (!owns()) return;
-            searchRequestsController = undefined;
-            supplement.requests = page.results.filter(title => ["movie", "series"].includes(title.mediaType) && title.availability !== "available").slice(0, 12);
-            render(host.focused());
-        }, (error: unknown) => {
-            if (!owns()) return;
-            searchRequestsController = undefined;
-            supplement.requestsFor = undefined; supplement.requests = [];
-            render(host.focused());
-            if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests(false);
-        });
     };
     /** Apple SearchView.audiobooksAvailable on tvOS: the opt-in is on and the profile can see an audiobook library. */
     const audiobooksInSearch = (): boolean => showAudiobooks.value && (pendingHomeLibraries ?? []).some(library => library.type === "audiobooks");
-    const searchTypeFor = (current: Extract<Route, { kind: "search" }>, base: TextSearchScope): TextSearchScope | SearchFilter | undefined =>
-        searchScope(current.filter, audiobooksInSearch(), base === "video_with_episodes");
-    const searchPeople = (current: Extract<Route, { kind: "search" }>, type: TextSearchScope | SearchFilter | undefined): void => {
-        searchPeopleController?.abort();
-        const supplement = current.supplement ??= {};
-        supplement.peopleFailure = false;
-        // SearchViewModel.startPeopleSearch: the shown people stay until this lookup answers.
-        if (!current.peopleSupported) { supplement.people = []; supplement.peoplePending = false; return; }
-        const query = current.query;
-        const controller = new AbortController(); searchPeopleController = controller;
-        supplement.peoplePending = true;
-        const owns = (): boolean => !torn && !controller.signal.aborted && top() === current && current.supplement === supplement && current.query === query;
-        void read(detailOperations.people(query.trim(), type), controller.signal).then(people => {
-            if (!owns()) return;
-            supplement.people = people; supplement.peoplePending = false; render(host.focused());
-        }, () => {
-            if (!owns()) return;
-            // SearchViewModel.matchingPeople answers none on failure, replacing the shown people.
-            supplement.people = []; supplement.peoplePending = false; supplement.peopleFailure = true; render(host.focused());
-        });
-    };
-    /** Box sets are movies, so only All and Movies ask. A failed read shows none and leaves titles alone. */
-    const searchBoxSets = (current: Extract<Route, { kind: "search" }>): void => {
-        searchBoxSetController?.abort();
-        const supplement = current.supplement ??= {};
-        const wants = current.boxSetsSupported === true && (current.filter === undefined || current.filter === "movie");
-        if (!wants) {
-            searchBoxSetController = undefined;
-            supplement.boxSets = [];
-            supplement.boxSetsPending = false;
-            return;
-        }
-        const query = current.query.trim();
-        if (query === "") {
-            searchBoxSetController = undefined;
-            supplement.boxSets = [];
-            supplement.boxSetsPending = false;
-            return;
-        }
-        const controller = new AbortController();
-        searchBoxSetController = controller;
-        supplement.boxSetsPending = true;
-        const owns = (): boolean => !torn && !controller.signal.aborted && top() === current && current.supplement === supplement && current.query.trim() === query && (current.filter === undefined || current.filter === "movie");
-        const miss = (): void => {
-            if (!owns()) return;
-            searchBoxSetController = undefined;
-            supplement.boxSets = [];
-            supplement.boxSetsPending = false;
-            render(host.focused());
-        };
-        // search() throws before a request exists. That miss stays here, as Apple's
-        // box-set task does, so the title search in load() is still sent.
-        let request: ReturnType<typeof boxSetOperations.search>;
-        try {
-            request = boxSetOperations.search(query, BOX_SET_SEARCH_LIMIT);
-        } catch {
-            miss();
-            return;
-        }
-        void read(request, controller.signal).then(found => {
-            if (!owns()) return;
-            searchBoxSetController = undefined;
-            supplement.boxSets = found.slice(0, BOX_SET_SEARCH_LIMIT);
-            supplement.boxSetsPending = false;
-            render(host.focused());
-        }, miss);
+    const makeSearchRoute = (): Extract<Route, { kind: "search" }> => {
+        let searchRoute!: Extract<Route, { kind: "search" }>;
+        searchRoute = newRoute({
+            kind: "search",
+            search: createSearch({
+                session,
+                clock,
+                focus: focusReader,
+                foreground,
+                audiobooksEnabled: audiobooksInSearch,
+                requestsEnabled: () => requestsCapability.enabled,
+                onBoxSetsCapability: supported => { boxSetsAnswer = Promise.resolve(supported); },
+                onRequestsRefused: () => { void probeRequests(false); },
+                onChange: paint => {
+                    if (!torn && !playing && !cardActions.active && !requestMenu.active && settingsScreen === undefined && top() === searchRoute) {
+                        render(paint?.focus);
+                    }
+                },
+            }),
+        }) as Extract<Route, { kind: "search" }>;
+        return searchRoute;
     };
     let probeOrdinal = 0;
     let requestWritePending = false;
@@ -717,7 +639,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const clearPersonalRoot = (): void => {
         const index = stack.findIndex(isPersonalRoot);
         if (index < 1) return;
-        stopSearchSupplement(); stopDetails(); foreground.abort(); cancelSearch();
+        stopDetails(); foreground.abort();
         for (const removed of stack.slice(index)) retireRoute(removed);
         stack.length = index;
     };
@@ -743,6 +665,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (route === undefined) return;
         if (route.kind === "watchParty") route.watchParty.hub.stop();
         if (route.kind === "person") route.person.retire();
+        if (route.kind === "search") route.search.retire();
         const visit = detailVisits.get(route);
         if (visit !== undefined) host.forgetPresentation(visit);
     };
@@ -753,7 +676,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (torn || ordinal !== probeOrdinal) return;
             acceptRequestsCapability(capability);
             const searchRoute = top();
-            if (refreshSearch && capability.enabled && searchRoute?.kind === "search") searchRequests(searchRoute);
+            if (refreshSearch && capability.enabled && searchRoute?.kind === "search") searchRoute.search.refreshRequestsIfEnabled();
             const focus = host.focused();
             shell.setRequestsEnabled(capability.enabled);
             if (!capability.enabled) {
@@ -904,7 +827,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         torn = true;
         translations.reset();
-        stopSearchSupplement();
         presentation.stop();
         resolutionCap.stop();
         playerSettings.destroy();
@@ -936,7 +858,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopAuthority();
         foreground.abort();
         homeLibraries?.abort();
-        cancelSearch();
         cancelCalendarDay();
         document.removeEventListener("keydown", recordKey, true);
         document.removeEventListener("keyup", reconcileAfterKey);
@@ -994,7 +915,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     return;
                 }
                 slot.finish();
-                if (error instanceof ApiError && error.problemId === "invalid_cursor" && (current.kind === "homeSection" || current.kind === "personal" || current.kind === "library" || current.kind === "libraryResults" || current.kind === "search") && current.pages !== undefined) {
+                if (error instanceof ApiError && error.problemId === "invalid_cursor" && (current.kind === "homeSection" || current.kind === "personal" || current.kind === "library" || current.kind === "libraryResults") && current.pages !== undefined) {
                     Object.assign(current.pages, newPages());
                     current.focus = undefined;
                     if (current.kind === "personal" || current.kind === "homeSection") current.pendingIndex = undefined;
@@ -1040,14 +961,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 current.error = body === undefined ? state : { ...state, route: body };
                 // Apple BoxSetDetailViewModel.errorState: a 404 keeps Not found but says why a box set can be missing.
                 if (current.kind === "boxSet" && current.error.kind === "notFound" && text !== undefined) current.error = { ...current.error, body: { key: "boxSets.unavailableMessage" } };
-                // SearchViewModel.performSearch: a failed new search clears its titles, people and box sets; a failed next page keeps them behind the error.
-                if (current.kind === "search" && current.appending !== true) {
-                    current.pages = newPages();
-                    searchPeopleController?.abort(); searchPeopleController = undefined;
-                    searchBoxSetController?.abort(); searchBoxSetController = undefined;
-                    if (current.supplement !== undefined) Object.assign(current.supplement, { people: [], peoplePending: false, boxSets: [], boxSetsPending: false });
-                }
-                if (current.kind === "search") current.appending = false;
                 if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? failureState(error.message) : errorState(error);
                 if (current.kind === "requests") { current.requests.error = errorState(error); if (!current.requests.unconfirmed && !current.requests.writing) current.requests.action = undefined; }
                 if (current.kind === "requests" && error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
@@ -1639,7 +1552,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 loadPage(current, current.pages, current.pages.index, quiet);
                 return;
             case "search":
-                search(current, quiet);
+                current.search.arrive("reshow");
                 return;
             case "item": {
                 const previousRow = current.data?.boxSet;
@@ -1827,168 +1740,31 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }, quiet || pages.page !== undefined);
             return;
         }
-        if (current.kind === "search") loadSearch(current, false, quiet);
-    };
-
-    /**
-     * SearchViewModel.performSearch: a new search keeps the shown results until its first page answers, then replaces
-     * them; `append` adds the next page to the same list (loadMore), or starts the list over when the server rejects
-     * the cursor (SiloAPI.nextCatalogPage).
-     */
-    const loadSearch = (current: Extract<Route, { kind: "search" }>, append: boolean, quiet = false): void => {
-        const query = current.query;
-        const filter = current.filter;
-        const shown = current.pages;
-        // A quiet reread of the answered query and filter (a card change marks every route stale) keeps every loaded page.
-        const depth = quiet && !append && shown?.page !== undefined && current.resultsFor === query && current.resultsFilter === filter ? shown.index + 1 : 1;
-        current.appending = append;
-        load(current, async signal => {
-            if (append && shown?.page !== undefined) {
-                const cursor = shown.cursors[shown.index + 1];
-                const scope = searchTypeFor(current, current.searchType ?? "video");
-                const first = (): Promise<CatalogPage> => read(operations.listCatalogItems({ q: query.trim(), type: scope, limit: SEARCH_PAGE_SIZE, cursor: undefined }), signal);
-                let rejected: unknown;
-                try {
-                    const seen = new Set(shown.page.items.map(item => item.id));
-                    const skipped: (string | undefined)[] = [];
-                    for (let next = cursor; ;) {
-                        const page = await read(operations.listCatalogItems({ q: query.trim(), type: scope, limit: SEARCH_PAGE_SIZE, cursor: next }), signal);
-                        if (page.nextCursor !== undefined && (shown.cursors.includes(page.nextCursor) || skipped.includes(page.nextCursor))) {
-                            rejected = new ApiError({ kind: "invalid_response", path: "search.page.next_cursor" });
-                            break;
-                        }
-                        // The end observer asks again only when cards are added, so a page of cards already shown reads on.
-                        if (page.nextCursor === undefined || page.items.some(item => !seen.has(item.id))) return { page, startsOver: false, skipped };
-                        skipped.push(page.nextCursor);
-                        next = page.nextCursor;
-                    }
-                } catch (error) {
-                    if (signal.aborted || !(error instanceof ApiError) || error.problemId !== "invalid_cursor") throw error;
-                    rejected = error;
-                }
-                // Restart once; a restarted list whose cursor is rejected again shows the error until Try Again, not an endless reread.
-                if (current.restarted === true) throw rejected;
-                return { page: await first(), startsOver: true };
-            }
-            let type = current.searchType;
-            if (type === undefined) {
-                const capability = await read(operations.getCatalogSearchCapabilities(), signal);
-                type = capability.allowed && capability.state === "available" && capability.videoWithEpisodesScope === true
-                    ? "video_with_episodes" : "video";
-                if (!signal.aborted && top() === current && current.query === query) {
-                    current.searchType = type;
-                    current.peopleSupported = capability.allowed && capability.state === "available" && capability.peopleMediaScope === true;
-                    current.boxSetsSupported = capability.boxSets === true;
-                    boxSetsAnswer = Promise.resolve(current.boxSetsSupported);
-                }
-            }
-            if (signal.aborted || top() !== current || current.query !== query) throw new DOMException("Aborted", "AbortError");
-            searchPeople(current, searchTypeFor(current, type));
-            searchBoxSets(current);
-            let page = await read(operations.listCatalogItems({ q: query.trim(), type: searchTypeFor(current, type), limit: SEARCH_PAGE_SIZE, cursor: undefined }), signal);
-            const cursors: (string | undefined)[] = [undefined, page.nextCursor];
-            const items = [...page.items], seen = new Set(items.map(item => item.id));
-            while (cursors.length - 1 < depth && page.nextCursor !== undefined) {
-                try {
-                    page = await read(operations.listCatalogItems({ q: query.trim(), type: searchTypeFor(current, type), limit: SEARCH_PAGE_SIZE, cursor: page.nextCursor }), signal);
-                } catch (error) {
-                    // The list changed under the refresh: keep the fresh pages read so far, as a restarted list does.
-                    if (signal.aborted || !(error instanceof ApiError) || error.problemId !== "invalid_cursor") throw error;
-                    break;
-                }
-                if (page.nextCursor !== undefined && cursors.includes(page.nextCursor)) throw new ApiError({ kind: "invalid_response", path: "search.page.next_cursor" });
-                for (const item of page.items) if (!seen.has(item.id)) { seen.add(item.id); items.push(item); }
-                cursors.push(page.nextCursor);
-            }
-            return { page: { ...page, items }, startsOver: true, cursors };
-        }, ({ page, startsOver, cursors, skipped }) => {
-            current.appending = false;
-            // A restarted list keeps its guard until a new search or Try Again, so a good page between rejections cannot loop.
-            current.restarted = append && (startsOver || current.restarted === true);
-            current.resultsFor = query;
-            current.resultsFilter = filter;
-            if (startsOver || shown?.page === undefined) {
-                current.pages = { page, index: (cursors?.length ?? 2) - 2, cursors: cursors ?? [undefined, page.nextCursor] };
-                return;
-            }
-            const seen = new Set(shown.page.items.map(item => item.id));
-            shown.page = { ...page, items: [...shown.page.items, ...page.items.filter(item => !seen.has(item.id))] };
-            shown.index += 1 + (skipped?.length ?? 0);
-            shown.cursors.push(...(skipped ?? []), page.nextCursor);
-        }, quiet || shown?.page !== undefined);
-    };
-
-    let searchReturnFocus: { readonly route: Extract<Route, { kind: "search" }>; readonly target: FocusTarget } | undefined;
-    /** SearchViewModel.resetState: an empty field clears every section at once. */
-    const clearSearch = (current: Extract<Route, { kind: "search" }>): void => {
-        foreground.abort();
-        stopSearchSupplement();
-        current.pages = undefined;
-        current.resultsFor = "";
-        current.supplement = {};
-        current.failure = undefined;
-        current.error = undefined;
-    };
-    /** Titles, People, box sets and Requests each stay on screen until their own replacement answers. */
-    const search = (current: Extract<Route, { kind: "search" }>, quiet = false, focus?: FocusTarget): void => {
-        cancelSearch();
-        stopSearchSupplement();
-        current.failure = undefined;
-        if (current.query.trim() === "") {
-            clearSearch(current);
-            render();
-            return;
-        }
-        searchRequests(current);
-        current.pages ??= newPages();
-        loadSearch(current, false, quiet);
-        render(focus);
-    };
-    const moreSearch = (current: Extract<Route, { kind: "search" }>): void => {
-        if (torn || playing || top() !== current || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.query !== current.resultsFor || current.filter !== current.resultsFilter || current.pages?.page?.nextCursor === undefined) return;
-        loadSearch(current, true, true);
-        render(host.focused());
     };
 
     input.addEventListener("input", () => {
-        searchReturnFocus = undefined;
         const current = top();
-        if (current?.kind !== "search") {
-            return;
-        }
-        foreground.abort();
-        current.slow = false;
-        current.query = input.value;
-        cancelSearch();
-        // Only the replacement request is debounced; an obsolete read stops immediately, and what it replaces stays shown.
-        stopSearchSupplement();
-        if (current.query.trim() === "") clearSearch(current);
-        else if (current.query.trim().length <= 1) searchRequests(current);
-        render(host.focused());
-        if (current.query.trim() !== "") cancelSearch = clock.schedule(() => search(current), SEARCH_DELAY_MS);
+        if (current?.kind === "search") current.search.setQuery(input.value);
     });
-    input.addEventListener("blur", () => { searchReturnFocus = undefined; });
+    input.addEventListener("blur", () => {
+        const current = top();
+        if (current?.kind === "search") current.search.blurInput();
+    });
     input.addEventListener("keydown", (event) => {
         const current = top();
         // The TV keyboard's Done key, or Enter on a desktop keyboard: search now.
         if (current?.kind === "search" && (event.keyCode === 65376 || event.key === "Enter") && input.value !== "") {
-            // Only a viewer's search drops the result Back is returning to; the reread of an answer an earlier push interrupted keeps it.
-            searchReturnFocus = undefined;
-            current.query = input.value;
-            // Done closes the Samsung keyboard; leaving Apple's keyboard lands on the selected filter.
-            search(current, false, event.keyCode === 65376 ? { zone: "search-filters", key: `search-filter:${current.filter ?? "all"}` } : undefined);
+            current.search.submit(input.value, event.keyCode === 65376);
         }
     });
 
     const pop = (): void => {
-        stopSearchSupplement();
         const active = top();
         if (stack.length <= 1) {
             return;
         }
         stopDetails();
         foreground.abort();
-        cancelSearch();
         retireRoute(stack.pop());
         const current = top();
         if (current?.kind === "requests" && !requestsCapability.enabled) { closeRequests(); return; }
@@ -2012,7 +1788,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const push = (next: Route, focus?: FocusTarget): void => {
-        stopSearchSupplement();
         shuffleGeneration++;
         const current = top();
         const panel = (current?.kind === "item" || current?.kind === "season") ? current.data?.details?.panel : undefined;
@@ -2025,7 +1800,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (current.kind === "boxSet" || trailerFetchInFlight) current.stale = true;
         }
         foreground.abort();
-        cancelSearch();
         stack.push(next);
         showRoute(next, focus);
     };
@@ -2045,11 +1819,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     /** push() without keeping the top page: Back from the new page returns to the one beneath. */
     const replaceTop = (next: Route): void => {
-        stopSearchSupplement();
         shuffleGeneration++;
         stopDetails();
         foreground.abort();
-        cancelSearch();
         retireRoute(stack.pop());
         stack.push(next);
         showRoute(next, undefined);
@@ -2089,18 +1861,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 current.stale = true;
             }
         }
-        searchReturnFocus = current.kind === "search" && focus?.zone === "search-requests" && current.supplement?.requests === undefined
-            ? { route: current, target: focus } : undefined;
         if (current.kind === "calendar") {
             try { prepareCalendar(current); }
             catch (error) { current.failure = error instanceof Error ? error.message : "Could not read this TV’s timezone. Try again."; }
         }
         if (current.kind === "search") {
-            input.value = current.query;
-            if (current.supplement?.peoplePending && current.searchType !== undefined && current.query === current.resultsFor) searchPeople(current, searchTypeFor(current, current.searchType));
-            if (current.supplement?.boxSetsPending === true && current.boxSetsSupported === true && current.query === current.resultsFor) searchBoxSets(current);
-            if (current.supplement !== undefined && current.supplement.requests === undefined) current.supplement.requestsFor = undefined;
-            searchRequests(current);
+            input.value = current.search.snapshot().query;
         }
         homeDetails.suspend();
         render(focus);
@@ -2112,14 +1878,20 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             current.person.arrive(arrival);
             return;
         }
+        if (current.kind === "search") {
+            if (current.stale) {
+                current.search.markStale();
+                current.stale = false;
+            }
+            current.search.arrive(arrival, focus);
+            return;
+        }
         if ((current.kind === "item" || current.kind === "season") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details))) {
             detailWork = current.data.details;
             detailWork.start();
         }
-        // A query or filter whose answer an earlier push interrupted is searched again on return.
-        const queryChanged = current.kind === "search" && (current.query !== current.resultsFor || current.filter !== current.resultsFilter);
-        if (!hasData(current) || current.stale || current.failure !== undefined || queryChanged) {
-            loadRoute(current, hasData(current) && !queryChanged);
+        if (!hasData(current) || current.stale || current.failure !== undefined) {
+            loadRoute(current, hasData(current));
             if (current.kind === "calendar") render(focus);
         } else if (current.kind === "item" && current.data !== undefined && current.data.detail.type === "movie" && current.data.boxSet !== undefined) {
             // push() stopped this read. The cached movie is not loaded again, so start it once.
@@ -2218,7 +1990,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         playing = true;
         // Theme audio is gone before the player opens AVPlay.
         syncThemeMusic();
-        stopSearchSupplement();
         cancelCalendarDay();
         host.holdVisit();
         shell.hide();
@@ -2269,22 +2040,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
         // A card-change failure that arrived while another owner held the screen shows once this render settles.
         queueMicrotask(() => cardActions.showDeferredAlert());
-        if (searchReturnFocus?.route === current && current.kind === "search" && current.supplement?.requests !== undefined) {
-            if (current.supplement.requests.some(title => `${title.mediaType}:${title.tmdbId}` === searchReturnFocus?.target.key)) focus = searchReturnFocus.target;
-            searchReturnFocus = undefined;
-        }
         if (current.kind === "calendar") {
             const midnight = new Date(clock.now());
             midnight.setHours(24, 0, 0, 0);
             cancelCalendarDay = clock.schedule(() => render(host.focused()), midnight.getTime() - clock.now());
         }
         shell.setAvatar(profileName, profileAvatarUrl, context.baseUrl, profileAvatarText);
-        const searchFilter = (route: Extract<Route, { kind: "search" }>, filter: SearchFilter | undefined): void => {
-            if (top() !== route || route.filter === filter) return;
-            foreground.abort();
-            route.filter = filter; search(route);
-        };
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: foreground.busy(), searchHead, input, searchFilter, audiobooksEnabled: audiobooksInSearch(), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, moreSearch, signIn: options.onSignOut, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: foreground.busy(), openSearch: () => push(makeSearchRoute()), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, signIn: options.onSignOut, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2303,7 +2065,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
         container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
         if (browsing) activeBrowse = current.pages;
-        const feedOwner = current.kind === "personal" || current.kind === "search" ? current.pages : current.kind === "person" ? current.person.snapshot().feedKey : undefined;
+        const feedOwner = current.kind === "personal" ? current.pages : current.kind === "person" ? current.person.snapshot().feedKey : current.kind === "search" ? current.search.snapshot().feedKey : undefined;
         if (feedOwner !== undefined) {
             if (activePersonal !== undefined && activePersonal !== feedOwner) stopFeed(activePersonal);
             activePersonal = feedOwner;
@@ -2312,15 +2074,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             activePersonal = undefined;
         }
         if (isSectionRoute(current)) activeSection = sectionCatalog(current);
-        const view = activeSection !== undefined && isSectionRoute(current)
+        const view = current.kind === "search"
+            ? globalSearchView(current.search, {
+                context,
+                gridColumns: handlers.gridColumns,
+                searchHead,
+                input,
+                back: pop,
+                signIn: options.onSignOut,
+                openBoxSet: (id, libraryId, title) => push(newRoute({ kind: "boxSet", id, libraryId, title, data: undefined })),
+                openRequestMedia: title => push(newRoute({ kind: "requests", requests: requestsState({ kind: "media", title }) })),
+                openCatalogItem: (id, title) => push(newRoute({ kind: "item", id, title, data: undefined })),
+            })
+            : activeSection !== undefined && isSectionRoute(current)
             ? activeSection.view(current, context, foreground.busy(), pop, () => retry(current), () => {
                 if (top() !== current || torn || playing || foreground.busy() || cardActions.active || settingsScreen !== undefined || current.failure !== undefined || current.pages.page?.nextCursor === undefined) return;
                 loadSection(current, true, true);
-            }, options.onSignOut) : routeView(current, { ...handlers, manageServers: options.onSwitchServer === undefined ? undefined : () => { options.onSwitchServer?.(() => render()); }, retryPeople: route => {
-                if (top() !== route || route.searchType === undefined || route.query.trim() === "") return;
-                searchPeople(route, searchTypeFor(route, route.searchType));
-                render(host.focused());
-            } });
+            }, options.onSignOut) : routeView(current, { ...handlers, manageServers: options.onSwitchServer === undefined ? undefined : () => { options.onSwitchServer?.(() => render()); } });
         // Watch Party is a full-screen page, as on tvOS: Apple pushes it, and its shell draws the bar only while the stack is empty.
         const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current);
         cancelOfflineRefresh();
@@ -2368,6 +2138,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             current.person.retry();
             return;
         }
+        if (current.kind === "search") {
+            current.search.retry();
+            return;
+        }
         current.failure = undefined;
         current.error = undefined;
         render();
@@ -2375,16 +2149,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
     // Retained roots must reread too: a settled or uncertain write may have changed them.
     const markRequestsStale = (): void => {
-        searchRequestsController?.abort();
         const visible = top();
         for (const route of new Set([...roots.values(), ...stack])) {
             if (route.kind === "requests") route.stale = true;
-            if (route.kind === "search" && route.supplement !== undefined) {
-                if (route !== visible) route.supplement.requests = undefined;
-                route.supplement.requestsFor = undefined;
-            }
+            if (route.kind === "search") route.search.invalidateRequests(route === visible);
         }
-        if (visible?.kind === "search") searchRequests(visible);
     };
     const requestListRoutes = (): Extract<Route, { kind: "requests" }>[] => [...new Set([...roots.values(), ...stack])].filter((route): route is Extract<Route, { kind: "requests" }> => route.kind === "requests");
     const dismissRequestNotice = (): void => {
@@ -2805,7 +2574,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         let route = roots.get(key);
         if (route === undefined) {
             route = typeof target === "string"
-                ? target === "for_you" ? newRoute({ kind: "for_you", data: undefined }) : target === "calendar" ? newRoute({ kind: "calendar", calendar: calendarState(readCalendarFilter()) }) : newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })
+                ? target === "for_you" ? newRoute({ kind: "for_you", data: undefined }) : target === "calendar" ? newRoute({ kind: "calendar", calendar: calendarState(readCalendarFilter()) }) : makeSearchRoute()
                 : newRoute({ kind: "library", library: target, pages: newPages() });
             roots.set(key, route);
         }
@@ -2825,17 +2594,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             route.pages = newPages();
         }
         if (route.kind === "search") {
-            route = newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" });
+            route = makeSearchRoute();
             roots.set(key, route);
             push(route, { zone: "field", key: "query" });
             if (current !== undefined) current.focus = tabFocus(current);
             return;
         }
         foreground.abort();
-        cancelSearch();
         for (const covered of stack) retireRoute(covered);
         stack = route === home ? [home] : [home, route];
-        stopSearchSupplement();
         showRoute(route, route.focus?.zone === "nav" ? undefined : route.focus);
         if (hasData(route) && (route.focus === undefined || route.focus.zone === "nav")) host.focusDefault();
     }, {
@@ -2853,12 +2620,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 default: diagnostics.setPrecedingScreen(origin);
             }
             const spoilersBeforeSettings = episodeSpoilers?.settings;
-            stopSearchSupplement();
             shuffleGeneration++;
             stopDetails();
             cancelCalendarDay();
             foreground.abort();
-            cancelSearch();
             host.holdVisit();
             shell.hide();
             host.stop();
