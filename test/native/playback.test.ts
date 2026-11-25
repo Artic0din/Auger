@@ -2049,6 +2049,57 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     r.controller.destroy();
 });
 
+test("stopShuffling cancels the countdown, sends one DELETE /shuffles/{id}, and closes the player (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1", { status: 204 });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    r.controller.stopShuffling();
+    assert.equal(last(r.views).phase, "closed");
+    assert.deepEqual(r.exits, ["back"]);
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "countdown was cancelled and never started the next pick");
+    const deletes = r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1");
+    assert.equal(deletes.length, 1, "exactly one DELETE /shuffles/sh1");
+    r.controller.destroy();
+});
+
+test("stopShuffling still closes the player with no unhandled rejection when DELETE fails (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1", { status: 500, body: { type: "about:blank", title: "Server error", status: 500 } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => { rejections.push(reason); };
+    process.on("unhandledRejection", onRejection);
+    try {
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.controller.stopShuffling();
+        assert.equal(last(r.views).phase, "closed");
+        assert.deepEqual(r.exits, ["back"]);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1").length, 1);
+        assert.deepEqual(rejections, [], "failed delete produces no unhandled rejection");
+    } finally {
+        process.off("unhandledRejection", onRejection);
+        r.controller.destroy();
+    }
+});
+
 // The contract decoder keeps Auto-play only as Apple's profile and profile_device row (src/contracts/v2/settings.ts), the scope this
 // toggle writes, so a server that offers it per profile alone gets no toggle and no device write it would refuse (#806 review).
 test("a server that offers Auto-play per profile only shows no toggle and gets no device write (#806)", async () => {

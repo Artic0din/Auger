@@ -71,6 +71,7 @@ const controls: PlayerControls = {
     playNext: request => commands.push(request === undefined ? "playNext" : `playNext ${request.contentId} ${request.fileId}`),
     showUpNext: () => commands.push("showUpNext"),
     cancelAutoplay: () => commands.push("cancelAutoplay"),
+    stopShuffling: () => commands.push("stopShuffling"),
     keepWatching: () => commands.push("keepWatching"),
     saveSeriesSubtitle: () => commands.push("saveSeriesSubtitle"),
     startSubtitleAI: language => commands.push(`startSubtitleAI ${language}`),

@@ -1284,6 +1284,54 @@ test("Up Next's Auto-play toggle sits below the actions, names the setting and f
     } finally { await page.close(); }
 });
 
+// PlayerView.autoPlayFooter / stopShufflingButton (silo-apple d315ef9c PlayerView.swift:1293-1318): during a shuffle,
+// Stop shuffling sits 12 px to the right of the Auto-play toggle in the same style. Right reaches it, Up returns to
+// Play Now, Down enters On Deck, and Enter triggers stopShuffling (#807).
+test("Up Next shows Stop shuffling beside Auto-play during a shuffle only, and wires remote focus and command (#807)", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "movie:2", fileId: "43", title: "Random Pick", startSeconds: 0 };
+        const card = { contentId: "movie:other", fileId: "9", title: "Other", startSeconds: 0 };
+        const stop = page.locator('[data-focus="stop-shuffling"]');
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, deck: [card], autoNext: true, countdown: 9 });
+        assert.equal(await stop.isHidden(), true, "hidden outside a shuffle");
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", retryable: false, next, deck: [card], shuffle: true, autoNext: true, countdown: 9 });
+        assert.equal(await stop.isHidden(), false, "shown during a shuffle");
+        assert.equal(await stop.innerText(), "Stop shuffling");
+        const layout = await page.evaluate(() => {
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const toggle = document.querySelector<HTMLElement>('[data-focus="auto-play"]')!;
+            const btn = document.querySelector<HTMLElement>('[data-focus="stop-shuffling"]')!;
+            const tBox = toggle.getBoundingClientRect();
+            const bBox = btn.getBoundingClientRect();
+            const css = getComputedStyle(btn);
+            return { gap: Math.round(bBox.left - tBox.right), sameRow: Math.abs(tBox.top - bBox.top) < 1, size: parseFloat(css.fontSize) / cap, weight: css.fontWeight };
+        });
+        assert.equal(layout.sameRow, true, "same row as Auto-play toggle");
+        assert.equal(layout.gap, 12, "12 px gap from Auto-play toggle");
+        assert.ok(Math.abs(layout.size - 19) < 0.02 && layout.weight === "600", `captionSize semibold: ${JSON.stringify(layout)}`);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "back");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next", "Up from Stop shuffling returns to Play Now");
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:movie:other", "Down from Stop shuffling enters On Deck");
+        await remote(page, UP);
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["stopShuffling"]);
+    } finally { await page.close(); }
+});
+
 test("finished-card countdown has no Cancel autoplay button, walks Close and Auto-play toggle, and keeps Play Now", async () => {
     const { page } = await open();
     const next = { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true as const };

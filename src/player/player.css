@@ -57,11 +57,18 @@
 .player-next-up .player-actions-row > .player-countdown { margin: 0; }
 .player-next-up .player-actions-row > .player-button { display: inline-flex; align-items: center; }
 .player-next-up .player-actions-row > [hidden] { display: none; }
-/* AutoPlayToggleButtonStyle (PlayerView.swift:1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
-   and a 1.04 scale when focused, 0.98 when pressed. */
+/* AutoPlayToggleButtonStyle (PlayerView.swift:1293-1318, 1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
+   and a 1.04 scale when focused, 0.98 when pressed. Stop shuffling sits 12 px beside the toggle in the same row (#807). */
+.player-autoplay-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0 0;
+}
+.player-autoplay-footer[hidden] { display: none; }
 .player-autoplay-toggle {
     align-self: flex-start;
-    margin: 18px 0 0;
+    margin: 0;
     padding: 10px 22px;
     border: 0;
     border-radius: 999px;

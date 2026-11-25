@@ -318,7 +318,7 @@ export type PlaybackView =
           readonly buffering: boolean;
           /** Apple's episodes icon: a next episode, On Deck row, in-flight read, or a failed read that can be tried again. */
           readonly episodes?: boolean;
-          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; /** The countdown's full length, for the ring (Apple's `nextUpCountdownTotalSeconds`). */ readonly countdownTotal?: number; readonly status: string; readonly loading?: boolean; readonly failed?: boolean };
+          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; /** The countdown's full length, for the ring (Apple's `nextUpCountdownTotalSeconds`). */ readonly countdownTotal?: number; readonly status: string; readonly loading?: boolean; readonly failed?: boolean; readonly shuffle?: true };
           readonly resumePending?: boolean;
           readonly transportCommandCount?: number;
           readonly tracks: TrackView;
@@ -363,6 +363,8 @@ export interface PlayerControls {
     /** Opens the manual Up Next panel. Apple tvOS `showNextUpNow`. */
     showUpNext(): void;
     cancelAutoplay(): void;
+    /** PlayerViewModel.stopShuffling: cancels countdown, fires DELETE /shuffles/{id} without awaiting, and closes the player (#807). */
+    stopShuffling(): void;
     keepWatching(): void;
     saveSeriesSubtitle(): void;
     /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
@@ -3196,6 +3198,17 @@ export class PlaybackController implements PlayerControls {
         this.cancelAutoplayTimer?.();
         this.cancelAutoplayTimer = undefined;
         if (this.current.phase === "completion" && this.current.countdown !== undefined) this.show({ ...this.current, countdown: undefined });
+    }
+
+    stopShuffling(): void {
+        const attempt = this.completion?.attempt ?? this.attempt;
+        const shuffleId = attempt?.request.shuffleId;
+        if (shuffleId === undefined) return;
+        this.cancelAutoplay();
+        const signal = this.deps.session.authoritySignal;
+        // PlayerViewModel.stopShuffling: do not await delete; a failed delete leaves a shuffle the server cleans up.
+        void this.deps.session.call({ ...operations.deleteShuffle(shuffleId), profileScoped: true, signal }).catch(() => undefined);
+        this.back();
     }
 
     keepWatching(): void {

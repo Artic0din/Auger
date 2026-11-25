@@ -16,6 +16,11 @@ test("Shuffle operations retain the pinned retry and scope contracts", () => {
     assert.equal(advance.retry, "safe");
     assert.equal(advance.path, "/shuffles/sh%2F1/advance");
     assert.deepEqual(advance.body, { from_content_id: "movie:done" });
+    const remove = operations.deleteShuffle("sh/1");
+    assert.equal(remove.method, "DELETE");
+    assert.equal(remove.retry, "never");
+    assert.equal(remove.path, "/shuffles/sh%2F1");
+    assert.equal(remove.decode(undefined), undefined);
 });
 
 test("Shuffle decoding admits only the consumed typed fields", () => {
