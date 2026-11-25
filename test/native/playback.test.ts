@@ -4234,6 +4234,9 @@ test("a start resend honors Retry-After and keeps its operation identity", async
     assert.deepEqual(starts[1], starts[0]);
     r.avplay.finishPrepare();
     await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PLAYING");
     const trace = r.controller.incidentTrace();
     assert.ok(trace);
     const incident = playbackIncident(trace);
