@@ -205,6 +205,36 @@ test("a profile reset discards late request and frame callbacks while retaining 
     assert.deepEqual(recorder.capture().api, { op: "home_sections", ms: 3 });
 });
 
+test("Home row moves and top-bar focus survive the full remote path to a manual Settings report", () => {
+    const tv = fakeTv();
+    const collector = new DiagnosticsCollector({ appVersion: "test", tvModel: "TV" }, clock, new MemoryPublicStorage(), () => ({}), () => tv.env);
+    collector.navigation.attach(source(tv));
+    tv.press(KEY.down, { zone: "section:second" });
+    for (let i = 0; i < 3; i++) tv.press(KEY.right, { zone: "section:second" });
+    tv.press(KEY.up, { zone: "section:first" });
+    tv.press(KEY.up, { zone: "nav" });
+    tv.press(KEY.up, "stay");
+    for (let i = 0; i < 5; i++) tv.press(KEY.right, { zone: "nav" });
+    tv.press(KEY.right, "stay");
+    tv.press(KEY.enter, { zone: "selector" });
+    for (let i = 0; i < 2; i++) tv.press(KEY.down, { zone: "selector" });
+    tv.press(KEY.enter);
+    collector.setPrecedingScreen("home");
+    const { snapshot } = collector.reportFor("app_ui");
+    const steps = diagnosticsPayload(snapshot, { category: "app_ui" }).nav?.st ?? [];
+    assert.ok(steps.includes("home:section:right:moved*3"), "include the row movement being reported");
+    assert.ok(steps.includes("home:nav:right:stayed"), "include a top-bar focus problem");
+    assert.ok(steps.length <= 8);
+    assert.ok(!steps.join(" ").includes("section:second"));
+    assert.ok(!steps.some(step => step.startsWith("home:selector:")));
+    collector.recordAppError("TypeError");
+    assert.ok(collector.snapshot().navigation?.st.includes("home:selector:down:moved*2"),
+        "an error in the open menu still records that menu's live focus history");
+    collector.clear();
+    collector.setPrecedingScreen("home");
+    assert.deepEqual(collector.reportFor("app_ui").snapshot.navigation?.st, []);
+});
+
 test("opening Settings freezes the Home navigation, and an app error freezes its own for both submission paths", () => {
     const tv = fakeTv();
     const storage = new MemoryPublicStorage();

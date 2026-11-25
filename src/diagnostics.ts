@@ -1253,7 +1253,7 @@ export class DiagnosticsCollector {
     /** Opening Settings freezes the navigation that led there, so a manual report still describes it. */
     setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
         this.precedingScreen = screen;
-        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture();
+        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture("settings");
     }
 
     clear(): void {
