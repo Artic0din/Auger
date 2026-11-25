@@ -50,7 +50,6 @@ jobs:
       - name: Build Discord payload
         id: build
         env:
-          EVENT_NAME: ${{ github.event_name }}
           DISPATCH_TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -58,7 +57,10 @@ jobs:
           # Never enable xtrace: it would print secrets if a later step added one.
           mkdir -p "$RUNNER_TEMP"
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "workflow_call" ]; then
+          # Reusable workflows keep the caller's event name (workflow_run or
+          # workflow_dispatch), not workflow_call. A non-empty tag input is
+          # the reliable signal to fetch that release instead of the event payload.
+          if [ -n "${DISPATCH_TAG}" ]; then
             tag="${DISPATCH_TAG#refs/tags/}"
             case "$tag" in
               ''|*..*|/*|*[[:space:]]*)
@@ -90,7 +92,7 @@ jobs:
           jq . "$RUNNER_TEMP/payload.json"
 
       - name: Post to Discord
-        if: ${{ github.event_name == 'release' || ((github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch') && inputs.dry_run == false) }}
+        if: ${{ github.event_name == 'release' || (inputs.tag != '' && inputs.dry_run == false) }}
         env:
           DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
         run: |

@@ -221,6 +221,7 @@ jobs:
     outputs:
       release_date: ${{ steps.notes.outputs.release_date }}
       previous_sha: ${{ steps.notes.outputs.previous_sha }}
+      published: ${{ steps.publish.outputs.published }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -300,6 +301,7 @@ jobs:
           cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Publish the release
+        id: publish
         env:
           WGT: ${{ runner.temp }}/wgt
           NOTES: ${{ runner.temp }}/notes.md
@@ -312,6 +314,7 @@ jobs:
             if [[ "${is_draft}" == "false" ]]; then
               tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
               if [[ "${tag_sha}" == "${TARGET_SHA}" ]]; then
+                echo "published=false" >> "${GITHUB_OUTPUT}"
                 echo "${TAG} is already published for ${TARGET_SHA::9}."
                 exit 0
               fi
@@ -369,6 +372,7 @@ jobs:
             gh release upload "${TAG}" --clobber "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
             gh release edit "${TAG}" --title "Auger ${VERSION}" \
               --notes-file "${NOTES}" --draft=false --prerelease=false "${latest_flag}"
+            echo "published=true" >> "${GITHUB_OUTPUT}"
             echo "${TAG} is published with its .wgt."
             exit 0
           fi
@@ -376,6 +380,7 @@ jobs:
           # --verify-tag publishes on the reserved tag and never creates or moves one.
           gh release create "${TAG}" --verify-tag "${latest_flag}" \
             --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+          echo "published=true" >> "${GITHUB_OUTPUT}"
 
   changelog:
     name: Update CHANGELOG.md on main
@@ -450,7 +455,7 @@ jobs:
   discord:
     name: Post the release to Discord
     needs: [prepare, publish]
-    if: needs.prepare.outputs.should_release == 'true'
+    if: needs.prepare.outputs.should_release == 'true' && needs.publish.outputs.published == 'true'
     uses: ./.github/workflows/discord-release.yml
     with:
       tag: ${{ needs.prepare.outputs.tag }}
