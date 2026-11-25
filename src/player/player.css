@@ -91,24 +91,22 @@
 .player-next-backdrop-art { position: absolute; inset: 0; background-size: cover; background-position: center; transform: scale(1.12); filter: blur(44px); opacity: 0.18; }
 .player-next-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.78); }
 .player-next-up .player-button { margin: 18px 0 0; margin-inline-end: 20px; }
+/* PlayerView.onDeckSection (#808): reuses Home's .home-section, .browse-section-title, .home-row-glyph, .skyline-continue and .skyline-progress styles. */
 .player-next-deck {
     margin: 34px 0 0;
     margin-inline-start: -800px;
-    display: flex;
-    gap: 40px;
-    overflow-x: auto;
-    padding: 20px;
 }
-.player-next-deck > h2 { position: absolute; margin-top: -24px; }
-.player-next-card { flex: 0 0 360px; display: flex; flex-direction: column; }
-.player-next-card img { width: 360px; aspect-ratio: 16 / 9; object-fit: cover; }
-.player-next-card .episode-spoiler-blur { display: block; width: 360px; aspect-ratio: 16 / 9; overflow: hidden; }
-.player-next-card .episode-spoiler-blur > .player-next-still {
-    filter: blur(24px);
-    width: calc(100% + 48px);
-    height: calc(100% + 48px);
-    max-width: none;
-    margin: -24px;
+.player-next-deck .browse-row {
+    display: flex;
+    overflow-x: auto;
+    margin-left: 0;
+    margin-inline-start: -40px;
+    padding: 34px 40px 14px;
+}
+.player-next-deck .browse-card {
+    flex: none;
+    margin: 0;
+    margin-inline-end: 40px;
 }
 .player-next-deck[hidden] { display: none; }
 

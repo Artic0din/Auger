@@ -168,6 +168,7 @@ test("an On Deck episode keeps the card series title and the fresh season and ep
         overview: undefined,
         backdropUrl: undefined,
         startSeconds: 0,
+        durationSeconds: 2500,
         episode: true,
         seriesTitle: "Night Shift",
         seasonNumber: 3,

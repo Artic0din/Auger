@@ -13,7 +13,7 @@ import { decodeItemDetail, type ItemDetail } from "../../src/contracts/v2/catalo
 import { readLive } from "./support/tv.ts";
 
 const ORIGIN = "https://tv.example.test";
-const CSS = ["theme.css", "app.css", "player/player.css"].map((name) => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
+const CSS = ["theme.css", "app.css", "ui/browse.css", "player/player.css"].map((name) => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
 const HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Silo</title>
 <link rel="stylesheet" href="player.css">
 <style>#sibling { position: absolute; inset: 0; background: #000; }</style></head>
@@ -1006,9 +1006,11 @@ test("Up Next draws its text at Apple's points times the cap scale, in every sta
         await page.route("**/images/bright-still.svg", route => route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ffffff"/></svg>' }));
         const brightDeck = [{ contentId: "movie:bright", fileId: "9", title: "Bright", startSeconds: 0, backdropUrl: "/images/bright-still.svg" }];
         await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, deck: brightDeck });
-        await check("with nothing to follow", [
+        await check("with nothing to follow and On Deck", [
             [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
             [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
+            [".player-next-deck .browse-section-title", 36, "600", "Components/MediaRow.swift:438; Theme/Typography.swift:14"],
+            [".player-next-deck .browse-card-title", 24, "500", "tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
         ]);
         // finishedContent (:1340-1343) draws finishedMessage, which is also the failed lookup's sentence (:1613-1630), white at 0.62 and
         // 560 wide. Over a rendered bright white still behind Up Next's dimming layers, contrast must stay above 4.5:1.
@@ -1377,6 +1379,23 @@ test("Up Next hides a seek preview moved with Left or Right the moment it appear
     } finally { await page.close(); }
 });
 
+test("On Deck draws Home's media row: header icon, 360x200 thumbnail artwork, and watch-progress bar (#808)", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true as const };
+        const inProgress = { contentId: "movie:half", fileId: "50", title: "Quarter Watched", startSeconds: 900, durationSeconds: 3600, watch: { played: false, positionSeconds: 900 } };
+        const unstarted = { contentId: "movie:fresh", fileId: "51", title: "Fresh Movie", startSeconds: 0, durationSeconds: 3600, watch: { played: false } };
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, deck: [inProgress, unstarted], autoNext: true, countdown: 9 });
+        assert.equal(await page.locator(".player-next-deck .browse-section-title .home-row-glyph").count(), 1, "play.circle.fill stand-in header icon");
+        assert.equal(await page.locator(".player-next-deck .browse-section-title").innerText(), "On Deck");
+        const artBox = await page.locator('[data-focus="deck:movie:half"] .browse-art').boundingBox();
+        assert.ok(artBox !== null && Math.abs(artBox.width - 360) < 0.5 && Math.abs(artBox.height - 200) < 0.5, `thumbnail art box: ${JSON.stringify(artBox)}`);
+        assert.equal(await page.locator('[data-focus="deck:movie:half"] .skyline-progress .skyline-progress-fill').count(), 1, "in-progress card shows progress bar");
+        assert.equal(await page.locator('[data-focus="deck:movie:half"] .skyline-progress-fill').evaluate(node => (node as HTMLElement).style.width), "25%");
+        assert.equal(await page.locator('[data-focus="deck:movie:fresh"] .skyline-progress').count(), 0, "unstarted card hides progress bar");
+    } finally { await page.close(); }
+});
+
 test("On Deck resolves relative artwork against the connected server", async () => {
     const { page } = await open();
     try {
@@ -1394,9 +1413,9 @@ test("On Deck blurs an unwatched episode still and leaves other artwork sharp", 
         const still = { contentId: "still", fileId: "43", title: "Secret", startSeconds: 0, episode: true as const, backdropUrl: "/api/v2/images/still", hideBackdrop: true as const };
         const series = { contentId: "series-art", fileId: "44", title: "Key art", startSeconds: 0, episode: true as const, backdropUrl: "/api/v2/images/series" };
         await show(page, { ...playing(TRACKS), upNext: { next: still, deck: [still, series], countdown: undefined, status: "Up Next" } });
-        assert.equal(await page.locator(".player-next-card .episode-spoiler-blur .player-next-still").count(), 1);
-        assert.match(await page.locator(".player-next-still").evaluate(node => getComputedStyle(node).filter), /blur\(24px\)/);
-        assert.equal(await page.locator(".player-next-card > img").count(), 1);
+        assert.equal(await page.locator(".player-next-card .browse-art.episode-spoiler-blur .browse-art-image").count(), 1);
+        assert.match(await page.locator(".player-next-card .browse-art.episode-spoiler-blur .browse-art-image").evaluate(node => getComputedStyle(node).filter), /blur\(24px\)/);
+        assert.equal(await page.locator(".player-next-card .browse-art:not(.episode-spoiler-blur) .browse-art-image").count(), 1);
     } finally { await page.close(); }
 });
 

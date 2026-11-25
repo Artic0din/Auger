@@ -23,6 +23,8 @@ import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
+import { artwork, thumbnailProgress } from "../ui/browseViews.ts";
+import { artworkSymbol, defaultArtwork } from "../ui/defaultArtwork.ts";
 import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
@@ -591,7 +593,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         nextMeta.textContent = [episodeAirDate(candidate?.airDate), (candidate?.runtimeMinutes === undefined ? undefined : episodeRuntime(candidate.runtimeMinutes))].filter(part => part !== undefined).join(" · ");
         nextMeta.hidden = nextMeta.textContent === "";
     };
-    const deck = el("div", "player-next-deck");
+    const deck = el("section", "player-next-deck browse-section home-section");
     const keep = el("button", "player-button");
     keep.type = "button";
     keep.setAttribute("data-focus", "keep-watching");
@@ -1064,38 +1066,38 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const bottom = UP_NEXT_PREVIEW.top + UP_NEXT_PREVIEW.height;
                 nextBackdrop.style.clipPath = view.phase === "completion" ? "none" : `polygon(evenodd, 0px 0px, ${UP_NEXT_SCREEN.width}px 0px, ${UP_NEXT_SCREEN.width}px ${UP_NEXT_SCREEN.height}px, 0px ${UP_NEXT_SCREEN.height}px, 0px 0px, ${left}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${UP_NEXT_PREVIEW.top}px)`;
             }
-            const identity = cards.map(card => `${card.contentId}:${card.hideBackdrop === true ? "1" : "0"}`).join("|");
+            const deckHeading = translate("upNext.onDeck");
+            const identity = `${deckHeading}||${cards.map(card => `${card.contentId}:${card.title}:${card.backdropUrl ?? ""}:${card.hideBackdrop === true ? "1" : "0"}:${card.watch?.positionSeconds ?? ""}:${card.durationSeconds ?? ""}`).join("|")}`;
             if (deck.dataset.items !== identity) {
                 const focusedCard = deck.contains(document.activeElement) ? document.activeElement?.getAttribute("data-focus") : undefined;
                 deck.dataset.items = identity;
                 deck.replaceChildren();
-                if (cards.length > 0) deck.appendChild(el("h2", "player-menu-heading", translate("upNext.onDeck")));
-                for (const card of cards) {
-                    const button = el("button", "player-choice player-next-card", card.title);
-                    button.type = "button";
-                    button.setAttribute("data-focus", `deck:${card.contentId}`);
-                    const backdrop = artworkUrl(card.backdropUrl, baseUrl);
-                    if (backdrop !== undefined) {
-                        const img = document.createElement("img");
-                        img.src = backdrop;
-                        img.alt = "";
-                        img.addEventListener("error", () => img.remove(), { once: true });
-                        if (card.hideBackdrop === true) {
-                            img.className = "player-next-still";
-                            const frame = el("span", "episode-spoiler-blur");
-                            frame.append(img);
-                            blurEpisodeStill(frame);
-                            button.prepend(frame);
-                        } else {
-                            button.prepend(img);
+                if (cards.length > 0) {
+                    const title = el("h2", "browse-section-title", deckHeading);
+                    const glyph = el("span", "home-row-glyph");
+                    glyph.setAttribute("aria-hidden", "true");
+                    title.prepend(glyph);
+                    const row = el("div", "browse-row");
+                    for (const card of cards) {
+                        const button = el("button", "browse-card skyline-continue player-next-card");
+                        button.type = "button";
+                        button.setAttribute("data-focus", `deck:${card.contentId}`);
+                        const art = artwork("browse-art", card.backdropUrl, baseUrl, defaultArtwork(artworkSymbol(card.episode === true ? "episode" : "movie")));
+                        if (card.hideBackdrop === true) blurEpisodeStill(art);
+                        const position = card.watch?.positionSeconds;
+                        const duration = card.durationSeconds;
+                        if (position !== undefined && duration !== undefined && position > 0 && duration > 0) {
+                            art.appendChild(thumbnailProgress(position / duration));
                         }
+                        button.append(art, el("span", "browse-card-title", card.title));
+                        button.addEventListener("click", () => {
+                            const current = view.phase === "completion" ? view.deck : view.phase === "playing" || view.phase === "paused" ? view.upNext?.deck : undefined;
+                            const selected = current?.find(candidate => candidate.contentId === card.contentId);
+                            if (selected !== undefined) controls.playNext(selected);
+                        });
+                        row.appendChild(button);
                     }
-                    button.addEventListener("click", () => {
-                        const current = view.phase === "completion" ? view.deck : view.phase === "playing" || view.phase === "paused" ? view.upNext?.deck : undefined;
-                        const selected = current?.find(candidate => candidate.contentId === card.contentId);
-                        if (selected !== undefined) controls.playNext(selected);
-                    });
-                    deck.appendChild(button);
+                    deck.append(title, row);
                 }
                 if (focusedCard !== undefined) {
                     Array.from(deck.querySelectorAll<HTMLButtonElement>("button")).find(button => button.getAttribute("data-focus") === focusedCard)?.focus();

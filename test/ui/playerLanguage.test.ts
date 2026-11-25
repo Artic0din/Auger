@@ -18,7 +18,7 @@ import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 registerSourceCatalogs();
 
 const ORIGIN = "https://tv.example.test";
-const CSS = ["theme.css", "app.css", "player/player.css"].map(name => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
+const CSS = ["theme.css", "app.css", "ui/browse.css", "player/player.css"].map(name => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
 const HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Silo</title>
 <link rel="stylesheet" href="player.css">
 <style>#sibling { position: absolute; inset: 0; background: #000; }</style></head>
@@ -261,7 +261,7 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
             assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 30 }));
             assert.equal(await page.locator(".player-countdown-seconds").textContent(), language === "ar" ? "٣٠" : "30", "the ring writes the seconds in the language's digits");
-            assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
+            assert.equal(await page.locator(".player-next-deck .browse-section-title").first().textContent(), text("upNext.onDeck", language));
             await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 1 });
             assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 1 }));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));
