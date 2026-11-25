@@ -1,5 +1,5 @@
 // Numbers and dates written the way the shown language writes them, following silo-apple Shared/LocaleFormat.swift.
-import { deviceLanguages, formattingLocale, shownLanguage } from "./language.ts";
+import { deviceLanguages, formattingLocale, shownLanguage, SOURCE_LANGUAGE } from "./language.ts";
 
 let lastLocale: { readonly language: string; readonly device: string | undefined; readonly locale: string } | undefined;
 
@@ -37,4 +37,36 @@ export function percentText(wholePercent: number, locale: string = shownLocale()
 /** Apple's `LocaleFormat.groupedCount`: a count with the language's thousands separator and digits ("1,234", "1.234" in German). */
 export function groupedCount(count: number, locale: string = shownLocale()): string {
     return cached(groupedFormats, locale, { useGrouping: true }).format(count);
+}
+
+/** The TV's own clock setting: `tizen.time.getTimeFormat()` is "h:m:s ap" for 12 hours and "h:m:s" for 24 (no privilege needed). Undefined where the API is missing or fails. */
+function tvHourCycle(): "h12" | "h23" | undefined {
+    const time: unknown = Reflect.get(Object(Reflect.get(globalThis, "tizen") ?? {}), "time");
+    const read: unknown = Reflect.get(Object(time ?? {}), "getTimeFormat");
+    if (typeof read !== "function") return undefined;
+    try {
+        const format: unknown = read.call(time);
+        return typeof format === "string" && format !== "" ? (format.includes("ap") ? "h12" : "h23") : undefined;
+    } catch { return undefined; }
+}
+
+/**
+ * Apple's `Date.FormatStyle(time: .shortened, locale: AppLanguage.formattingLocale)`: the shown language's words and digits,
+ * and the device's clock setting for 12 or 24 hours. Chromium takes the cycle from the language alone, so the TV's
+ * own setting is passed in, else the device region's ("8:00 AM" in German on an Australian or US TV, "08:00" on a German one).
+ * English keeps "en" rather than the TV's region and 12 hours, and an explicit h12 keeps noon and midnight at 12 on Chromium 108.
+ */
+function clock(): { readonly locale: string; readonly options: Intl.DateTimeFormatOptions } {
+    const english = shownLanguage() === SOURCE_LANGUAGE;
+    const device = deviceLanguages()[0];
+    const hourCycle = tvHourCycle() ?? (english ? "h12" : new Intl.DateTimeFormat(device, { hour: "numeric" }).resolvedOptions().hourCycle);
+    // 12 hours drops the leading zero ("8:00 AM"); 24 hours takes the language's own short pattern ("08:00" in German).
+    const twelve = hourCycle === "h11" || hourCycle === "h12";
+    return { locale: english ? "en" : shownLocale(), options: { ...(twelve ? { hour: "numeric", minute: "2-digit" } : { timeStyle: "short" }), ...(hourCycle === undefined ? {} : { hourCycle }) } };
+}
+
+/** A wall-clock time as `clock` writes it, in `timeZone` when given (a time zone the engine cannot read throws a RangeError). */
+export function shortTime(date: Date, timeZone?: string): string {
+    const { locale, options } = clock();
+    return new Intl.DateTimeFormat(locale, timeZone === undefined ? options : { ...options, timeZone }).format(date);
 }
