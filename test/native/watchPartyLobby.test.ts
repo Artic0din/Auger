@@ -555,7 +555,7 @@ test("the picker reads the shelves once with the room token and lists group pick
     await hub.openPicker();
     assert.deepEqual(tokens, ["room-proof"]);
     assert.equal(hub.state.page.kind, "picker");
-    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.titleKey, shelf.entries.map(entry => entry.card.id)]), [["watchParty.picker.continueTogether", ["movie:a"]], ["watchParty.picker.watchlists", ["movie:b"]]]);
+    assert.deepEqual(hub.state.shelves.map(shelf => [shelf.title(), shelf.entries.map(entry => entry.card.id)]), [["Continue Together", ["movie:a"]], ["On Your Watchlists", ["movie:b"]]]);
     assert.equal(hub.state.shelvesLoading, false);
 });
 
@@ -565,7 +565,58 @@ test("a server without the picker reads the viewer's own watchlist instead", asy
     await hub.create("host_pick");
     await hub.openPicker();
     assert.equal(reads, 1);
-    assert.deepEqual(hub.state.shelves.map(shelf => shelf.titleKey), ["watchParty.picker.watchlists"]);
+    assert.deepEqual(hub.state.shelves.map(shelf => shelf.title()), ["On Your Watchlists"]);
+});
+
+test("the picker appends up to four discovery Home rows and recently added movies and series, skipping personal rows (#783)", async () => {
+    const card = (id: string, type: "movie" | "series" = "movie") => decodeCard({ content_id: id, type, title: id }, "card");
+    const entry = (id: string) => ({ card: card(id), members: [], nextUp: undefined });
+    const recentCalls: string[] = [];
+    const { hub } = lobby({
+        picker: async () => ({ members: [], continueTogether: [entry("movie:t1")], watchlistUnion: [entry("movie:w1")] }),
+        homeSections: async () => [
+            { id: "cw", sectionType: "continue_watching", title: "Continue Watching", items: [card("movie:skip1")] },
+            { id: "ra", sectionType: "recently_added", title: "Recently Added", items: [card("movie:skip2")] },
+            { id: "d1", sectionType: "trending_on_server", title: "Trending", items: [card("movie:d1")] },
+            { id: "d2", sectionType: "hidden_gems", title: "Hidden Gems", items: [card("movie:d2")] },
+            { id: "d3", sectionType: "award_winners", title: "Award Winners", items: [card("movie:d3")] },
+            { id: "d4", sectionType: "critically_acclaimed", title: "Acclaimed", items: [card("movie:d4")] },
+            { id: "d5", sectionType: "mood_collection", title: "Fifth Discovery", items: [card("movie:d5")] },
+        ],
+        recentCatalog: async type => {
+            recentCalls.push(type);
+            return { items: [card(type === "movie" ? "movie:r1" : "series:r2", type)], nextCursor: undefined, total: 1, totalExact: true };
+        },
+    });
+    await hub.create("host_pick");
+    await hub.openPicker();
+    assert.deepEqual(recentCalls, ["movie", "series"]);
+    assert.deepEqual(hub.state.shelves.map(shelf => shelf.title()), [
+        "Continue Together", "On Your Watchlists", "Trending", "Hidden Gems", "Award Winners", "Acclaimed", "Recently Added Movies", "Recently Added Series",
+    ]);
+});
+
+test("picker search queries playable catalog titles, paginates, and Back returns to the picker (#783)", async () => {
+    const calls: [string, string | undefined][] = [];
+    const card = (id: string, type: "movie" | "series" | "audiobook" = "movie") => decodeCard({ content_id: id, type, title: id }, "card");
+    const { hub } = lobby({
+        searchCatalog: async (q, cursor) => {
+            calls.push([q, cursor]);
+            if (cursor === undefined) return { items: [card("movie:s1"), card("audiobook:ab1", "audiobook")], nextCursor: "p2", total: 2, totalExact: true };
+            return { items: [card("series:s2", "series")], nextCursor: undefined, total: 2, totalExact: true };
+        },
+    });
+    await hub.create("host_pick");
+    hub.openSearch();
+    assert.equal(hub.state.page.kind, "search");
+    await hub.searchNow("  dune ");
+    assert.deepEqual(calls, [["dune", undefined]]);
+    assert.deepEqual(hub.state.search.results.map(item => item.id), ["movie:s1"]);
+    await hub.loadMoreSearch();
+    assert.deepEqual(calls, [["dune", undefined], ["dune", "p2"]]);
+    assert.deepEqual(hub.state.search.results.map(item => item.id), ["movie:s1", "series:s2"]);
+    assert.equal(hub.back(), true);
+    assert.equal(hub.state.page.kind, "picker");
 });
 
 test("a failed picker read says so and can be tried again", async () => {

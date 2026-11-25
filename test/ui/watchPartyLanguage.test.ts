@@ -196,9 +196,10 @@ test("the picker and the confirmation page read in German", async () => {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         assert.equal(await tv.page.locator(".watch-party-picker-name").textContent(), text("watchParty.picker.select", "de"));
-        assert.equal(await button(tv, "picker-close").textContent(), text("watchParty.picker.close", "de"));
+        assert.equal(await button(tv, "picker-search").getAttribute("aria-label"), text("watchParty.picker.search", "de"));
+        assert.equal(await button(tv, "picker-close").getAttribute("aria-label"), text("watchParty.picker.close", "de"));
         const titles = await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents();
-        assert.ok(titles.length > 0 && titles.every(title => [text("watchParty.picker.continueTogether", "de"), text("watchParty.picker.watchlists", "de")].includes(title)), titles.join(" | "));
+        assert.ok(titles.includes(text("watchParty.picker.continueTogether", "de")) && titles.includes(text("watchParty.picker.watchlists", "de")) && titles.includes(text("watchParty.picker.recentMovies", "de")) && titles.includes(text("watchParty.picker.recentSeries", "de")), titles.join(" | "));
         await button(tv, "movie:m0004").click();
         await view(tv, "watchParty:choice").waitFor();
         assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").textContent(), text("watchParty.picker.watchTogether", "de"));
@@ -285,9 +286,12 @@ test("the picker's shelf titles read English while German's file is on its way, 
         await enterRoom(tv, fake, "create", "en");
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        assert.deepEqual([...new Set(await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents())].sort(), [text("watchParty.picker.continueTogether", "en"), text("watchParty.picker.watchlists", "en")].sort());
+        assert.ok((await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents()).includes(text("watchParty.picker.continueTogether", "en")));
         release();
-        await tv.eventually(async () => (await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents()).every(title => [text("watchParty.picker.continueTogether", "de"), text("watchParty.picker.watchlists", "de")].includes(title)), "the shelves relabel in German");
+        await tv.eventually(async () => {
+            const titles = await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents();
+            return titles.includes(text("watchParty.picker.continueTogether", "de")) && titles.includes(text("watchParty.picker.recentMovies", "de"));
+        }, "the shelves relabel in German");
     }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
 });
 

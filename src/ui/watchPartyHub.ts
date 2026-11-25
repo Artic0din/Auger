@@ -6,7 +6,7 @@
 
 import { ApiError } from "../api/errors.ts";
 import { type Clock, sleep, systemClock } from "../api/clock.ts";
-import { writeMayHaveApplied } from "./browseRoutes.ts";
+import { errorState, type ErrorState, writeMayHaveApplied } from "./browseRoutes.ts";
 import type { Card, Episode, Season } from "../contracts/v2/catalog.ts";
 import type { CreatableSelectionMode, GuestControlPolicy, PickerEntry, Room, RoomAccess, RoomSelection, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
 import type { PlayRequest } from "./browseModel.ts";
@@ -16,11 +16,19 @@ import { browserSocket, type ConnectionStatus, RoomConnection, type RoomEnd, typ
 import type { RoomServerMessage, Suggestion } from "../contracts/v2/watchTogether.ts";
 import { RoomVotes, voteWinner } from "./watchPartyVotes.ts";
 import type { MessageArgs } from "../i18n/icu.ts";
-import { translate, type MessageKey } from "../i18n/translate.ts";
+import { serverText, translate, type MessageKey } from "../i18n/translate.ts";
 
 export { supportsSynchronizedParty, uuidV4, watchPartyApi, watchPartyFailureText, type WatchPartyApi } from "./watchPartyApi.ts";
 
 const PLAYABLE_TYPES: readonly string[] = ["movie", "series", "episode"];
+/** Apple's WatchPartyMediaPicker.skippedHomeSectionTypes: skip personal rows and per-library recently added rows. */
+const SKIPPED_HOME_SECTION_TYPES: ReadonlySet<string> = new Set([
+    "recently_added", "recently_released", "new_to_library", "continue_watching", "next_up",
+    "next_in_series", "watchlist", "favorites", "profile_activity_feed", "because_you_watched",
+    "recommended_for_you", "similar_users_liked", "taste_match", "forgotten_favorites",
+]);
+const MAX_HOME_SECTIONS = 4;
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** The pages of one open room. Back steps through them in order. */
 export type LobbyPage =
@@ -29,12 +37,25 @@ export type LobbyPage =
     | { readonly kind: "end" }
     | { readonly kind: "invite" }
     | { readonly kind: "picker" }
+    | { readonly kind: "search" }
     | { readonly kind: "choice"; readonly choice: MediaChoice; readonly from?: LobbyPage }
     /** Apple's episode picker: the series' season tabs over the chosen season's episodes. */
-    | { readonly kind: "episodes"; readonly series: Card; readonly season: Season | undefined };
+    | { readonly kind: "episodes"; readonly series: Card; readonly season: Season | undefined; readonly from?: LobbyPage };
 
-/** `titleKey` is read when the shelf is drawn, so a language that lands after the shelves load relabels them. */
-export interface PickerShelf { readonly id: string; readonly titleKey: MessageKey; readonly entries: readonly PickerEntry[] }
+/** `title` is read when the shelf is drawn, so a language that lands after the shelves load relabels them. */
+export interface PickerShelf { readonly id: string; readonly title: () => string; readonly entries: readonly PickerEntry[] }
+
+export interface PickerSearchState {
+    query: string;
+    results: readonly Card[];
+    total: number;
+    nextCursor: string | undefined;
+    searching: boolean;
+    hasSearched: boolean;
+    error: ErrorState | undefined;
+}
+
+const emptySearch = (): PickerSearchState => ({ query: "", results: [], total: 0, nextCursor: undefined, searching: false, hasSearched: false, error: undefined });
 
 /** A notice is the server's own text, or a catalog message read when it is drawn, so a language file that lands later relabels it. */
 export type Notice = string | { readonly key: MessageKey; readonly args?: MessageArgs };
@@ -71,6 +92,8 @@ export interface WatchPartyState {
     votes: RoomVotes;
     /** What the picker's confirmation does: stage the host's pick, or put the title on the ballot. */
     pickerPurpose: PickerPurpose;
+    /** Apple's WatchPartySearchPage state inside the picker. */
+    search: PickerSearchState;
 }
 
 export type PickerPurpose = "select" | "suggest";
@@ -120,6 +143,8 @@ export class WatchPartyHub {
     private epoch = 0;
     /** Counts season and episode reads; leaving the page ends them. The picker's read is not tied to its page, so backing out does not strand it. */
     private browseEpoch = 0;
+    /** Counts picker search requests and debounce timers so stale queries are dropped. */
+    private searchEpoch = 0;
     private refocus = false;
     private ending = false;
     /** A lost change was not read back because the party was ending; a failed close reads it then. */
@@ -145,7 +170,7 @@ export class WatchPartyHub {
         this.state = {
             supported: options.supported ?? false, checking: false, busy: false, error: undefined, room: undefined, connection: "idle", capabilities: undefined,
             page: LOBBY, selected: undefined, selectedUnavailable: false, shelves: [], shelvesLoading: false, shelvesError: undefined,
-            seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select",
+            seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select", search: emptySearch(),
         };
     }
 
@@ -208,8 +233,9 @@ export class WatchPartyHub {
         const page = this.state.page;
         switch (page.kind) {
             case "lobby": return false;
+            case "search": this.show({ kind: "picker" }); return true;
             case "choice": this.show(page.from ?? { kind: "picker" }); return true;
-            case "episodes": this.show({ kind: "picker" }); return true;
+            case "episodes": this.show(page.from ?? { kind: "picker" }); return true;
             default: this.show(LOBBY); return true;
         }
     }
@@ -331,7 +357,7 @@ export class WatchPartyHub {
         }
     }
 
-    /** The picker: group picks and watchlists, from the server's picker when it has one. The host picks with it; in a vote room anyone suggests. */
+    /** The picker: group picks, watchlists, Home discovery rows, and recently added movies/series. */
     async openPicker(purpose: PickerPurpose = "select"): Promise<void> {
         const epoch = ++this.epoch;
         this.state.page = { kind: "picker" };
@@ -339,25 +365,70 @@ export class WatchPartyHub {
         this.state.shelvesLoading = true;
         this.state.shelvesError = undefined;
         this.notify();
-        try {
-            const shelves = await this.loadShelves();
-            if (this.stale(epoch)) return;
-            this.state.shelves = shelves;
-        } catch (error) {
-            if (this.stale(epoch)) return;
-            this.state.shelvesError = this.describe(error);
-        }
+        const { shelves, error } = await this.loadShelves();
         if (this.stale(epoch)) return;
+        if (shelves.length > 0 || error === undefined) this.state.shelves = shelves;
+        this.state.shelvesError = error;
         this.state.shelvesLoading = false;
         this.refocus = this.state.page.kind === "picker" && this.state.shelves.length > 0;
         this.notify();
     }
 
+    /** Apple's WatchPartySearchPage: opens catalog search scoped to playable movies and series. */
+    openSearch(): void {
+        this.searchEpoch++;
+        this.state.search = emptySearch();
+        this.show({ kind: "search" });
+    }
+
+    /** Updates the search query and schedules a debounced search, or resets to the initial state when cleared. */
+    setSearchQuery(query: string): void {
+        const epoch = ++this.searchEpoch;
+        this.state.search.query = query;
+        const trimmed = query.trim();
+        if (trimmed === "") {
+            this.state.search = emptySearch();
+            this.notify();
+            return;
+        }
+        this.state.search.error = undefined;
+        void (async () => {
+            try {
+                await sleep(this.options.clock ?? systemClock, SEARCH_DEBOUNCE_MS, this.controller.signal, () => new Error("stopped"));
+            } catch { return; }
+            if (this.stopped || epoch !== this.searchEpoch) return;
+            await this.runSearch(trimmed, undefined, epoch);
+        })();
+    }
+
+    /** Runs the current picker search immediately without waiting for the debounce timer. */
+    async searchNow(query?: string): Promise<void> {
+        const next = query ?? this.state.search.query;
+        const epoch = ++this.searchEpoch;
+        this.state.search.query = next;
+        const trimmed = next.trim();
+        if (trimmed === "") {
+            this.state.search = emptySearch();
+            this.notify();
+            return;
+        }
+        await this.runSearch(trimmed, undefined, epoch);
+    }
+
+    /** Loads the next page of picker search results when available. */
+    async loadMoreSearch(): Promise<void> {
+        const { query, nextCursor, searching } = this.state.search;
+        const trimmed = query.trim();
+        if (trimmed === "" || nextCursor === undefined || searching) return;
+        await this.runSearch(trimmed, nextCursor, this.searchEpoch);
+    }
+
     /** The series' seasons with one season's episodes: the one asked for, else the first that is not specials. A retry reads the seasons again only when there are none to show. */
-    async openEpisodes(series: Card, wanted?: Season, retry = false): Promise<void> {
+    async openEpisodes(series: Card, wanted?: Season, retry = false, from?: LobbyPage): Promise<void> {
         const epoch = ++this.browseEpoch;
         const sameSeries = this.state.page.kind === "episodes" && this.state.page.series.id === series.id;
-        Object.assign(this.state, { page: { kind: "episodes", series, season: wanted }, episodes: undefined, browseLoading: true, browseError: undefined, ...(sameSeries && !(retry && (wanted === undefined || this.state.seasons?.length === 0)) ? {} : { seasons: undefined }) });
+        const origin = from ?? (sameSeries && this.state.page.kind === "episodes" ? this.state.page.from : undefined);
+        Object.assign(this.state, { page: { kind: "episodes", series, season: wanted, ...(origin === undefined ? {} : { from: origin }) }, episodes: undefined, browseLoading: true, browseError: undefined, ...(sameSeries && !(retry && (wanted === undefined || this.state.seasons?.length === 0)) ? {} : { seasons: undefined }) });
         this.notify();
         await this.browse(epoch, async signal => {
             const seasons = this.state.seasons ?? await this.api.seasons(series.id, signal);
@@ -365,7 +436,7 @@ export class WatchPartyHub {
             this.state.seasons = seasons;
             const season = wanted ?? seasons.find(candidate => candidate.isSpecials !== true) ?? seasons[0];
             if (season === undefined) return;
-            this.state.page = { kind: "episodes", series, season };
+            this.state.page = { kind: "episodes", series, season, ...(origin === undefined ? {} : { from: origin }) };
             const episodes = await this.api.episodes(series.id, season.seasonNumber, signal);
             if (this.staleBrowse(epoch)) return;
             this.state.episodes = episodes;
@@ -402,6 +473,7 @@ export class WatchPartyHub {
     private reset(): void {
         this.epoch++;
         this.browseEpoch++;
+        this.searchEpoch++;
         this.roomToken = "";
         this.connection?.close();
         this.connection = undefined;
@@ -411,7 +483,7 @@ export class WatchPartyHub {
         this.refreshPending = false;
         Object.assign(this.state, {
             room: undefined, connection: "idle", page: LOBBY, selected: undefined, selectedUnavailable: false, shelves: [], shelvesLoading: false, shelvesError: undefined,
-            seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select",
+            seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select", search: emptySearch(),
         });
     }
 
@@ -657,19 +729,103 @@ export class WatchPartyHub {
         }
     }
 
-    private async loadShelves(): Promise<PickerShelf[]> {
+    private async loadShelves(): Promise<{ readonly shelves: PickerShelf[]; readonly error: string | undefined }> {
         const room = this.requireRoom();
+        const signal = this.controller.signal;
         const playable = (entry: PickerEntry): boolean => PLAYABLE_TYPES.includes(entry.card.type);
-        const shelf = (id: string, titleKey: MessageKey, entries: readonly PickerEntry[]): PickerShelf[] => {
+        const shelf = (id: string, title: () => string, entries: readonly PickerEntry[]): PickerShelf[] => {
             const shown = entries.filter(playable);
-            return shown.length === 0 ? [] : [{ id, titleKey, entries: shown }];
+            return shown.length === 0 ? [] : [{ id, title, entries: shown }];
         };
-        if (this.state.capabilities?.picker === true) {
-            const picker = await this.api.picker(room.roomId, this.roomToken, this.controller.signal);
-            return [...shelf("together", "watchParty.picker.continueTogether", picker.continueTogether), ...shelf("watchlist", "watchParty.picker.watchlists", picker.watchlistUnion)];
+        const toEntries = (cards: readonly Card[]): PickerEntry[] => cards.map(card => ({ card, members: [], nextUp: undefined }));
+        let primaryError: string | undefined;
+        let moviesError: string | undefined;
+
+        const [primary, home, movies, series] = await Promise.all([
+            (async (): Promise<PickerShelf[]> => {
+                try {
+                    if (this.state.capabilities?.picker === true) {
+                        const picker = await this.api.picker(room.roomId, this.roomToken, signal);
+                        return [
+                            ...shelf("together", () => translate("watchParty.picker.continueTogether"), picker.continueTogether),
+                            ...shelf("watchlist", () => translate("watchParty.picker.watchlists"), picker.watchlistUnion),
+                        ];
+                    }
+                    const page = await this.api.watchlist(signal);
+                    return shelf("watchlist", () => translate("watchParty.picker.watchlists"), toEntries(page.items));
+                } catch (error) {
+                    primaryError = this.describe(error);
+                    return [];
+                }
+            })(),
+            (async (): Promise<PickerShelf[]> => {
+                if (this.api.homeSections === undefined) return [];
+                try {
+                    const sections = await this.api.homeSections(signal);
+                    const rows: PickerShelf[] = [];
+                    for (const section of sections) {
+                        if (rows.length >= MAX_HOME_SECTIONS) break;
+                        if (SKIPPED_HOME_SECTION_TYPES.has(section.sectionType.toLowerCase())) continue;
+                        const items = section.items.filter(card => card.type === "movie" || card.type === "series");
+                        if (items.length === 0) continue;
+                        rows.push({ id: `home:${section.id}`, title: () => serverText(section.title, section.titleKey, section.titleArgs), entries: toEntries(items) });
+                    }
+                    return rows;
+                } catch {
+                    return [];
+                }
+            })(),
+            (async (): Promise<PickerShelf[]> => {
+                if (this.api.recentCatalog === undefined) return [];
+                try {
+                    const page = await this.api.recentCatalog("movie", signal);
+                    return shelf("recent-movies", () => translate("watchParty.picker.recentMovies"), toEntries(page.items));
+                } catch (error) {
+                    moviesError = this.describe(error);
+                    return [];
+                }
+            })(),
+            (async (): Promise<PickerShelf[]> => {
+                if (this.api.recentCatalog === undefined) return [];
+                try {
+                    const page = await this.api.recentCatalog("series", signal);
+                    return shelf("recent-series", () => translate("watchParty.picker.recentSeries"), toEntries(page.items));
+                } catch {
+                    return [];
+                }
+            })(),
+        ]);
+        return { shelves: [...primary, ...home, ...movies, ...series], error: primaryError ?? moviesError };
+    }
+
+    private async runSearch(query: string, cursor: string | undefined, epoch: number): Promise<void> {
+        if (this.api.searchCatalog === undefined) return;
+        this.state.search.searching = true;
+        this.state.search.error = undefined;
+        if (cursor === undefined) { this.state.search.results = []; this.state.search.nextCursor = undefined; }
+        this.notify();
+        try {
+            const page = await this.api.searchCatalog(query, cursor, this.controller.signal);
+            if (this.stopped || epoch !== this.searchEpoch) return;
+            const playable = page.items.filter(card => PLAYABLE_TYPES.includes(card.type));
+            if (cursor === undefined) {
+                this.state.search.results = playable;
+                this.state.search.total = page.total ?? playable.length;
+            } else {
+                const seen = new Set(this.state.search.results.map(card => card.id));
+                const next = [...this.state.search.results, ...playable.filter(card => !seen.has(card.id))];
+                this.state.search.results = next;
+                this.state.search.total = page.total ?? next.length;
+            }
+            this.state.search.nextCursor = page.nextCursor;
+            this.state.search.hasSearched = true;
+        } catch (error) {
+            if (this.stopped || epoch !== this.searchEpoch) return;
+            this.state.search.error = errorState(error);
         }
-        const page = await this.api.watchlist(this.controller.signal);
-        return shelf("watchlist", "watchParty.picker.watchlists", page.items.map(card => ({ card, members: [], nextUp: undefined })));
+        if (this.stopped || epoch !== this.searchEpoch) return;
+        this.state.search.searching = false;
+        this.notify();
     }
 
     private async browse(epoch: number, load: (signal: AbortSignal) => Promise<void>): Promise<void> {

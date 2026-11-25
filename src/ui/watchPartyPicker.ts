@@ -1,83 +1,168 @@
-// Apple's WatchPartyMediaPicker, WatchPartyEpisodePicker and WatchPartyMediaChoiceView on tvOS: the host
-// chooses a title from group picks and watchlists, a series opens its episodes, and a confirmation page
-// stages the choice, or in a vote room puts it on the ballot. Not built: search, Home's discovery rows,
-// recently added shelves and each member's viewing history.
+// Apple's WatchPartyMediaPicker, WatchPartySearchPage, WatchPartyEpisodePicker and WatchPartyMediaChoiceView on tvOS:
+// the host chooses a title (or anyone suggests in a vote room) from group picks, watchlists, Home discovery rows,
+// recently added movies/series, or catalog search; a series opens its episodes, and a confirmation page stages or suggests it.
 
 import type { Card, Episode, Season } from "../contracts/v2/catalog.ts";
+import type { PickerEntry } from "../contracts/v2/watchTogether.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
-import { actionButton, artwork, cardItem, zoneNode } from "./browseViews.ts";
+import { errorHeadline, errorMessage } from "./browseRoutes.ts";
+import { actionButton, artwork, cardItem, searchLoading, searchState, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
-import { backdrop, banner, checkIcon, eyebrow, labelled, plusIcon } from "./watchPartyParts.ts";
+import { backdrop, banner, checkIcon, closeIcon, eyebrow, FILM_STACK_ICON, labelled, plusIcon, searchIcon } from "./watchPartyParts.ts";
 import { choiceFromCard, choiceFromEpisode, choiceFromNextUp, type MediaChoice } from "./watchPartyChoice.ts";
-import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
+import { type LobbyPage, noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 import { runtimeText } from "./cardPresentation.ts";
 
 export interface PickerContext { readonly hub: WatchPartyHub; readonly baseUrl: string }
 
-const CLOSE = (hub: WatchPartyHub): FocusItem => actionButton("picker-close", translate("watchParty.picker.close"), () => { hub.show({ kind: "lobby" }); });
+/** The IME Done key on the Tizen keyboard, plus Enter for hardware keyboards. */
+const IME_DONE = 65376;
+const SEARCH_COLUMNS = 6;
 
-/** The strip over the shelves: the page name at the left and Close at the right, as the top bar sits over Home. */
-function chrome(hub: WatchPartyHub): { node: HTMLElement; close: FocusItem } {
-    const close = CLOSE(hub);
-    close.element.classList.add("watch-party-button", "watch-party-secondary");
+function chromeIcon(key: string, label: string, glyph: SVGSVGElement, onPress: () => void): FocusItem {
+    const item = actionButton(key, "", onPress);
+    item.element.classList.add("watch-party-chrome-icon");
+    item.element.setAttribute("aria-label", label);
+    item.element.appendChild(glyph);
+    return item;
+}
+
+/** Apple's tvChrome: same inset, height and capsule icons as the top bar; left is purpose, right is Search and Close. */
+function chrome(hub: WatchPartyHub): { node: HTMLElement; search: FocusItem; close: FocusItem } {
+    const search = chromeIcon("picker-search", translate("watchParty.picker.search"), searchIcon(), () => { hub.openSearch(); });
+    const close = chromeIcon("picker-close", translate("watchParty.picker.close"), closeIcon(), () => { hub.show({ kind: "lobby" }); });
+    const tools = el("div", "watch-party-picker-tools");
+    tools.append(search.element, close.element);
     const node = el("div", "watch-party-picker-chrome watch-party-ui");
-    node.append(el("span", "watch-party-picker-name", translate(hub.state.pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select")), close.element);
-    return { node, close };
+    node.append(el("span", "watch-party-picker-name", translate(hub.state.pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select")), tools);
+    return { node, search, close };
+}
+
+/** Looks up a series' Continue Together next-up entry when opened from search or another shelf. */
+function nextUpFor(hub: WatchPartyHub, contentId: string): PickerEntry["nextUp"] {
+    for (const shelf of hub.state.shelves) {
+        if (shelf.id !== "together") continue;
+        const hit = shelf.entries.find(entry => entry.card.id === contentId);
+        if (hit?.nextUp !== undefined) return hit.nextUp;
+    }
+    return undefined;
 }
 
 /** Select on a series the group is part-way through goes to its next episode; any other series opens its seasons. */
-function open(hub: WatchPartyHub, card: Card, nextUp: Parameters<typeof choiceFromNextUp>[1] | undefined): void {
+function open(hub: WatchPartyHub, card: Card, nextUp: Parameters<typeof choiceFromNextUp>[1] | undefined, from?: LobbyPage): void {
     if (card.type === "series") {
-        if (nextUp !== undefined) hub.show({ kind: "choice", choice: choiceFromNextUp(card, nextUp) });
-        else void hub.openEpisodes(card);
-    } else hub.show({ kind: "choice", choice: choiceFromCard(card) });
+        if (nextUp !== undefined) hub.show({ kind: "choice", choice: choiceFromNextUp(card, nextUp), ...(from === undefined ? {} : { from }) });
+        else void hub.openEpisodes(card, undefined, false, from);
+    } else hub.show({ kind: "choice", choice: choiceFromCard(card), ...(from === undefined ? {} : { from }) });
 }
 
 export function pickerView({ hub, baseUrl }: PickerContext): View {
     const { shelves, shelvesLoading, shelvesError } = hub.state;
     const top = chrome(hub);
     const content: HTMLElement[] = [top.node];
-    const zones: Zone[] = [{ id: "picker-top", layout: "row", items: [top.close] }];
+    const zones: Zone[] = [{ id: "picker-top", layout: "row", items: [top.search, top.close] }];
     let firstShelf: FocusItem | undefined;
     for (const shelf of shelves) {
         // Each card opens its own shelf's entry: the same series can sit in both shelves, and only one has a next-up episode.
         const cards = shelf.entries.map(entry => cardItem(entry.card, {
             baseUrl, posterWidth: 220, seriesYears: true,
             cardDestination: card => ({ kind: "item" as const, id: card.id, title: card.title }),
-            open: () => { open(hub, entry.card, entry.nextUp); },
+            open: () => { open(hub, entry.card, entry.nextUp ?? nextUpFor(hub, entry.card.id)); },
         })).filter((card): card is FocusItem => card !== undefined);
         if (cards.length === 0) continue;
         firstShelf ??= cards[0];
         zones.push({ id: `shelf:${shelf.id}`, layout: "row", spatial: true, items: cards });
         const block = el("section", "browse-section watch-party-shelf watch-party-ui");
-        block.append(el("h2", "browse-section-title", translate(shelf.titleKey)), zoneNode("browse-row", cards));
+        block.append(el("h2", "browse-section-title", shelf.title()), zoneNode("browse-row", cards));
         content.push(block);
     }
-    // A failed read shows its reason and Try Again whether or not an earlier read left shelves on the page.
-    const retry = shelvesError === undefined ? undefined : actionButton("picker-retry", translate("shell.errorView.tryAgain"), () => { void hub.openPicker(hub.state.pickerPurpose); });
     const notice = el("div", "watch-party-picker-empty watch-party-ui");
     if (shelves.length === 0) {
         if (shelvesLoading) {
-            const loading = el("p", "watch-party-lead", "Loading titles…");
-            loading.setAttribute("role", "status");
+            const loading = searchLoading();
+            loading.classList.add("watch-party-picker-spinner");
             notice.appendChild(loading);
         } else {
-            notice.append(el("h2", "watch-party-empty-title", translate("watchParty.picker.emptyTitle")), el("p", "watch-party-lead", "Add a title to a watchlist and it shows up here."));
+            notice.appendChild(searchState(translate("watchParty.picker.emptyTitle"), translate("watchParty.picker.emptyBody"), "watch-party-picker-empty-state", FILM_STACK_ICON));
         }
     }
     if (shelvesError !== undefined) notice.appendChild(banner(shelvesError, true));
-    if (retry !== undefined) {
-        retry.element.classList.add("watch-party-button", "watch-party-secondary");
-        notice.appendChild(retry.element);
-        zones.push({ id: "picker-retry", layout: "row", items: [retry] });
-    }
     if (notice.childElementCount > 0) content.push(notice);
-    const first = firstShelf ?? retry ?? top.close;
+    const first = firstShelf ?? top.search;
     const zone = zones.find(candidate => candidate.items.includes(first))?.id ?? "picker-top";
-    // Shelves arriving is a new page for focus: the first title takes it, as the first card does on Home; the empty and loading page keeps the strip.
+    // Shelves arriving is a new page for focus: the first title takes it, as the first card does on Home; empty/loading focuses Search.
     return { name: `watchParty:picker:${firstShelf === undefined ? "empty" : "shelves"}`, content, zones, focus: { zone, key: first.key }, back: () => hub.back() };
+}
+
+/** Apple's WatchPartySearchPage on tvOS: retained search field over a 6-column poster grid. */
+export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInputElement): View {
+    const { search, pickerPurpose } = hub.state;
+    const prompt = translate("watchParty.picker.searchPromptTv");
+    searchInput.placeholder = prompt;
+    searchInput.setAttribute("aria-label", prompt);
+    if (searchInput.value !== search.query) searchInput.value = search.query;
+
+    const field: FocusItem = { key: "picker-search-input", element: searchInput };
+    const header = el("div", "watch-party-search-head watch-party-ui");
+    header.append(el("h1", "watch-party-search-title", translate("watchParty.picker.searchPage")), searchInput);
+
+    const content: HTMLElement[] = [header];
+    const zones: Zone[] = [{ id: "picker-search-field", layout: "row", items: [field] }];
+    const body = el("div", "watch-party-search-body watch-party-ui");
+    let firstCard: FocusItem | undefined;
+
+    if (search.searching && search.results.length === 0) {
+        body.appendChild(searchLoading());
+    } else if (search.error !== undefined) {
+        const retry = actionButton("search-retry", translate("shell.errorView.tryAgain"), () => { void hub.searchNow(); });
+        const goBack = actionButton("search-back", translate("player.goBack"), () => { hub.back(); });
+        const failure = searchState(errorHeadline(search.error), errorMessage(search.error), "search-failure");
+        failure.setAttribute("role", "alert");
+        failure.appendChild(zoneNode("browse-actions", [retry, goBack]));
+        body.appendChild(failure);
+        zones.push({ id: "picker-search-status", layout: "column", items: [retry, goBack] });
+    } else if (search.hasSearched && search.results.length === 0) {
+        body.appendChild(searchState(translate("watchParty.picker.noResults"), translate("watchParty.picker.noResultsBody"), "search-empty"));
+    } else if (search.results.length === 0) {
+        body.appendChild(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
+    } else {
+        body.appendChild(el("p", "watch-party-search-count", translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) })));
+        const cards = search.results.map((card, index) => {
+            const item = cardItem(card, {
+                baseUrl, posterWidth: 220, seriesYears: true,
+                cardDestination: target => ({ kind: "item" as const, id: target.id, title: target.title }),
+                open: () => { open(hub, card, nextUpFor(hub, card.id), { kind: "search" }); },
+            });
+            if (item !== undefined && search.nextCursor !== undefined && index >= search.results.length - SEARCH_COLUMNS) {
+                item.element.addEventListener("focus", () => { void hub.loadMoreSearch(); });
+            }
+            return item;
+        }).filter((card): card is FocusItem => card !== undefined);
+        firstCard = cards[0];
+        if (cards.length > 0) {
+            const grid = zoneNode("browse-grid watch-party-search-grid", cards);
+            body.appendChild(grid);
+            zones.push({ id: "picker-search-grid", layout: "grid", columns: SEARCH_COLUMNS, items: cards });
+        }
+    }
+    content.push(body);
+
+    searchInput.oninput = () => { hub.setSearchQuery(searchInput.value); };
+    searchInput.onkeydown = event => {
+        if (event.keyCode !== IME_DONE && event.key !== "Enter") return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (firstCard !== undefined && searchInput.value.trim() === search.query.trim() && search.hasSearched && !search.searching) {
+            firstCard.element.focus();
+            return;
+        }
+        void hub.searchNow(searchInput.value);
+    };
+
+    const focus = { zone: "picker-search-field", key: field.key };
+    return { name: "watchParty:search", content, zones, focus, back: () => hub.back() };
 }
 
 /** WatchPartyMediaChoiceView: the title, and the one button that stages it or adds it to the ballot. */

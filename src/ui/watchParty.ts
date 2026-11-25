@@ -7,11 +7,15 @@ import { actionButton } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { banner, enabled, eyebrow, pill, plusIcon } from "./watchPartyParts.ts";
 import { endView, inviteView, lobbyView, optionsView } from "./watchPartyLobby.ts";
-import { choiceView, episodesView, pickerView } from "./watchPartyPicker.ts";
+import { choiceView, episodesView, pickerView, searchView } from "./watchPartyPicker.ts";
 import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 
-/** What a route keeps across renders: the hub, and the code field so a focused field is never rebuilt. */
-export interface WatchPartyScreen { readonly hub: WatchPartyHub; readonly input: HTMLInputElement }
+/** What a route keeps across renders: the hub, and the text fields so a focused field is never rebuilt. */
+export interface WatchPartyScreen {
+    readonly hub: WatchPartyHub;
+    readonly input: HTMLInputElement;
+    readonly searchInput: HTMLInputElement;
+}
 
 export function watchPartyScreen(hub: WatchPartyHub): WatchPartyScreen {
     const input = el("input", "browse-input watch-party-input");
@@ -20,7 +24,12 @@ export function watchPartyScreen(hub: WatchPartyHub): WatchPartyScreen {
     input.setAttribute("autocomplete", "off");
     input.setAttribute("autocapitalize", "characters");
     input.spellcheck = false;
-    return { hub, input };
+    const searchInput = el("input", "browse-input watch-party-search-input");
+    searchInput.type = "search";
+    searchInput.setAttribute("data-focus", "picker-search-input");
+    searchInput.setAttribute("autocomplete", "off");
+    searchInput.spellcheck = false;
+    return { hub, input, searchInput };
 }
 
 /** The IME Done key on the Tizen keyboard. */
@@ -37,6 +46,7 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "end": return endView(context, room);
         case "invite": return inviteView(context, room);
         case "picker": return pickerView(context);
+        case "search": return searchView(context, screen.searchInput);
         case "choice": return choiceView(context, page.choice);
         case "episodes": return episodesView(context, page.series, page.season);
         case "lobby": return lobbyView(context, room, back);
