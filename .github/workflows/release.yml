@@ -218,9 +218,11 @@ jobs:
     permissions:
       contents: write # create the tag and release
       pull-requests: read # read each merged PR's Release Notes section
+      actions: read # compare this run's start time to a pre-existing release
     outputs:
       release_date: ${{ steps.notes.outputs.release_date }}
       previous_sha: ${{ steps.notes.outputs.previous_sha }}
+      published: ${{ steps.publish.outputs.published }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -292,6 +294,7 @@ jobs:
           cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Publish the release
+        id: publish
         env:
           WGT: ${{ runner.temp }}/wgt
           NOTES: ${{ runner.temp }}/notes.md
@@ -304,7 +307,55 @@ jobs:
             if [[ "${is_draft}" == "false" ]]; then
               tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
               if [[ "${tag_sha}" == "${TARGET_SHA}" ]]; then
-                echo "${TAG} is already published for ${TARGET_SHA::9}."
+                # A retry after the CLI lost a successful github.token publish must
+                # still notify Discord. A maintainer publish already triggered
+                # release: published, so that path stays published=false.
+                release_meta="$(gh release view "${TAG}" --json author,publishedAt)"
+                release_author="$(printf '%s\n' "${release_meta}" | jq -r '.author.login // empty')"
+                release_published_at="$(printf '%s\n' "${release_meta}" | jq -r '.publishedAt // empty')"
+                published_this_run="false"
+                lookup_failed="false"
+                # Only bot-authored releases need the Actions lookup. Tie the
+                # publication to a previous attempt of this run's publish job so
+                # a later run that already announced the tag is not retried here.
+                # Bash has no >= or <= inside [[ ]], so compare with > / < / ==.
+                if [[ "${release_author}" == "github-actions[bot]" && -n "${release_published_at}" ]]; then
+                  attempts="${GITHUB_RUN_ATTEMPT:-1}"
+                  if [[ "${attempts}" -gt 1 ]]; then
+                    for ((attempt=1; attempt<attempts; attempt++)); do
+                      if ! job_json="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/attempts/${attempt}/jobs" \
+                        --jq '[.jobs[] | select(.name == "Publish the GitHub Release")][0] // empty')"; then
+                        echo "::warning::Could not list jobs for publish attempt ${attempt}; attribution is indeterminate."
+                        lookup_failed="true"
+                        continue
+                      fi
+                      if [[ -z "${job_json}" ]]; then
+                        continue
+                      fi
+                      job_started="$(printf '%s\n' "${job_json}" | jq -r '.started_at // empty')"
+                      job_completed="$(printf '%s\n' "${job_json}" | jq -r '.completed_at // empty')"
+                      if [[ -n "${job_started}" ]] &&
+                         { [[ "${release_published_at}" > "${job_started}" ]] ||
+                           [[ "${release_published_at}" == "${job_started}" ]]; } &&
+                         { [[ -z "${job_completed}" ]] ||
+                           [[ "${release_published_at}" < "${job_completed}" ]] ||
+                           [[ "${release_published_at}" == "${job_completed}" ]]; }; then
+                        published_this_run="true"
+                        break
+                      fi
+                    done
+                  fi
+                fi
+                if [[ "${published_this_run}" == "true" ]]; then
+                  echo "published=true" >> "${GITHUB_OUTPUT}"
+                  echo "${TAG} was published earlier in this run for ${TARGET_SHA::9}; Discord can still be notified."
+                elif [[ "${lookup_failed}" == "true" ]]; then
+                  echo "published=unknown" >> "${GITHUB_OUTPUT}"
+                  echo "${TAG} is already published for ${TARGET_SHA::9}, but this run could not be attributed; Discord will retry attribution."
+                else
+                  echo "published=false" >> "${GITHUB_OUTPUT}"
+                  echo "${TAG} is already published for ${TARGET_SHA::9}."
+                fi
                 exit 0
               fi
               echo "::error::${TAG} is already published for ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
@@ -361,6 +412,7 @@ jobs:
             gh release upload "${TAG}" --clobber "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
             gh release edit "${TAG}" --title "Auger ${VERSION}" \
               --notes-file "${NOTES}" --draft=false --prerelease=false "${latest_flag}"
+            echo "published=true" >> "${GITHUB_OUTPUT}"
             echo "${TAG} is published with its .wgt."
             exit 0
           fi
@@ -368,6 +420,7 @@ jobs:
           # --verify-tag publishes on the reserved tag and never creates or moves one.
           gh release create "${TAG}" --verify-tag "${latest_flag}" \
             --title "Auger ${VERSION}" --notes-file "${NOTES}" "${WGT}/Auger.wgt" "${WGT}/Auger.wgt.sha256"
+          echo "published=true" >> "${GITHUB_OUTPUT}"
 
   changelog:
     name: Update CHANGELOG.md on main
@@ -438,3 +491,18 @@ jobs:
             fi
             echo "Push to main raced with another commit (attempt ${attempt}/3); retrying on latest main."
           done
+
+  discord:
+    name: Post the release to Discord
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.should_release == 'true' && (needs.publish.outputs.published == 'true' || needs.publish.outputs.published == 'unknown')
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/discord-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      dry_run: false
+      confirm_this_run: ${{ needs.publish.outputs.published == 'unknown' }}
+    secrets:
+      DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
