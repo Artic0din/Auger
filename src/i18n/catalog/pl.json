@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Odtwórz teraz",
  "upNext.playingNextIn": "{seconds, plural, one {Następny odcinek za # sekundę} few {Następny odcinek za # sekundy} many {Następny odcinek za # sekund} other {Następny odcinek za # sekundy}}",
  "upNext.shuffleDone": "W tym odtwarzaniu losowym nie ma już nic do odtworzenia.",
+ "upNext.stopShuffling": "Wyłącz odtwarzanie losowe",
  "update.appRequired": "Zaktualizuj aplikację Auger, aby dalej korzystać z tego serwera.",
  "watchParty.ballot.addCaption": "Każdy może dodać propozycję",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # głos} few {{title}, # głosy} many {{title}, # głosów} other {{title}, # głosu}}",

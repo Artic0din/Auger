@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Nu afspelen",
  "upNext.playingNextIn": "{seconds, plural, one {Volgende start over # seconde} other {Volgende start over # seconden}}",
  "upNext.shuffleDone": "Er kan niets meer uit deze shuffle worden afgespeeld.",
+ "upNext.stopShuffling": "Shuffle stoppen",
  "update.appRequired": "Werk Auger bij om deze server te blijven gebruiken.",
  "watchParty.ballot.addCaption": "Iedereen kan er een toevoegen",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # stem} other {{title}, # stemmen}}",

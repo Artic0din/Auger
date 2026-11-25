@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Şimdi oynat",
  "upNext.playingNextIn": "{seconds, plural, one {Sıradaki # saniye sonra oynatılacak} other {Sıradaki # saniye sonra oynatılacak}}",
  "upNext.shuffleDone": "Bu karıştırmada oynatılabilecek başka bir şey kalmadı.",
+ "upNext.stopShuffling": "Karıştırmayı durdur",
  "update.appRequired": "Bu sunucuyu kullanmaya devam etmek için Auger’yu güncelleyin.",
  "watchParty.ballot.addCaption": "Herkes ekleyebilir",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # oy} other {{title}, # oy}}",

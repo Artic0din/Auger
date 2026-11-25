@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Přehrát hned",
  "upNext.playingNextIn": "{seconds, plural, one {Další se přehraje za # sekundu} few {Další se přehraje za # sekundy} many {Další se přehraje za # sekundy} other {Další se přehraje za # sekund}}",
  "upNext.shuffleDone": "V tomto náhodném přehrávání už nelze nic dalšího přehrát.",
+ "upNext.stopShuffling": "Vypnout náhodné přehrávání",
  "update.appRequired": "Chcete-li tento server dál používat, aktualizujte Auger.",
  "watchParty.ballot.addCaption": "Přidat může kdokoli",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # hlas} few {{title}, # hlasy} many {{title}, # hlasu} other {{title}, # hlasů}}",

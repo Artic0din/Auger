@@ -1175,6 +1175,7 @@
  "upNext.playNow": "立即播放",
  "upNext.playingNextIn": "{seconds, plural, other {# 秒後播放下一個}}",
  "upNext.shuffleDone": "這次隨機播放中已沒有其他可播放的內容。",
+ "upNext.stopShuffling": "停止隨機播放",
  "update.appRequired": "請更新 Auger 以繼續使用這台伺服器。",
  "watchParty.ballot.addCaption": "任何人都可以新增",
  "watchParty.ballot.candidate": "{count, plural, other {{title}，# 票}}",

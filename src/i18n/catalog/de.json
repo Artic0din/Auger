@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Jetzt abspielen",
  "upNext.playingNextIn": "{seconds, plural, one {Weiter in # Sekunde} other {Weiter in # Sekunden}}",
  "upNext.shuffleDone": "In dieser Zufallswiedergabe kann nichts weiter abgespielt werden.",
+ "upNext.stopShuffling": "Zufallswiedergabe beenden",
  "update.appRequired": "Aktualisiere Auger, um diesen Server weiter zu nutzen.",
  "watchParty.ballot.addCaption": "Alle können einen hinzufügen",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # Stimme} other {{title}, # Stimmen}}",

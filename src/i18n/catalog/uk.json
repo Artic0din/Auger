@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Відтворити зараз",
  "upNext.playingNextIn": "{seconds, plural, one {Наступне відтворення через # секунду} few {Наступне відтворення через # секунди} many {Наступне відтворення через # секунд} other {Наступне відтворення через # секунди}}",
  "upNext.shuffleDone": "У цьому перемішуванні більше нічого не можна відтворити.",
+ "upNext.stopShuffling": "Вимкнути перемішування",
  "update.appRequired": "Оновіть Auger, щоб і далі користуватися цим сервером.",
  "watchParty.ballot.addCaption": "Додати може будь-хто",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # голос} few {{title}, # голоси} many {{title}, # голосів} other {{title}, # голосу}}",
