@@ -137,9 +137,6 @@ export class SubtitleSession {
         this.tools = new SubtitleTools(
             deps.session,
             deps.clock,
-            request.contentId,
-            request.episode,
-            signal,
             () => this.notifyChanged(),
             key => this.refetchCaptionsForSync(key),
             id => this.attachDownloaded(id),
@@ -348,7 +345,6 @@ export class SubtitleSession {
         return {
             ai: this.tools.aiView(plan),
             aiMenu: this.tools.aiMenuView(plan, shown, this.host.snapshot().audioVersions),
-            seriesSubtitle: this.tools.seriesSubtitle,
             subtitles: orderedInventory(plan.subtitle.inventory, this.orderingLanguage).map(entry => {
                 const choice = subtitleChoice(entry, this.tools.generatedLabel(entry.syncKey));
                 const status = entry.unplayable === true || entry.syncKey === undefined ? undefined : sync?.status[entry.syncKey];
@@ -427,12 +423,6 @@ export class SubtitleSession {
         const snap = this.host.snapshot();
         if (!snap.live || this.destroyed || snap.plan === undefined || snap.hidden || snap.restoring) return;
         this.captions.selectSecondary(snap.plan, trackId, key => this.tools.timingVersion(key));
-    }
-
-    saveSeriesSubtitle(): void {
-        const snap = this.host.snapshot();
-        if (!this.canStartTrackChange(snap) || snap.plan === undefined) return;
-        this.tools.saveSeries(snap.plan, this.shownSubtitleId(snap.plan), () => this.alive());
     }
 
     startSubtitleAI(language: string): void {

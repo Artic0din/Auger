@@ -527,7 +527,6 @@ All are Bearer plus Profile.
 | --- | --- | --- |
 | subtitle appearance | `GET /settings/subtitle-appearance/effective` | safe |
 | subtitle sync | `GET /settings/values/effective?keys=player.subtitle_sync_ms` | safe |
-| save series subtitle | `PUT /subtitle-prefs/{seriesId}` | never |
 | AI status | `GET /subtitles/ai/status` | safe |
 | AI quota | `GET /subtitles/ai/quota` | safe |
 | AI languages | `GET /settings/contract` | safe |

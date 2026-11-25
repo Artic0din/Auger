@@ -138,7 +138,6 @@ export interface SubtitleSessionDeps {
 export interface SubtitleSessionRequest {
     readonly contentId: string;
     readonly fileId: string;
-    readonly episode?: true;
     readonly subtitle?: SubtitleIntent;
     readonly subtitleTracks?: readonly CatalogSubtitleTrack[];
 }
@@ -152,7 +151,6 @@ export type PendingStoredTrack = { readonly kind: "ai" | "download"; readonly id
 export interface SubtitleTrackViewSlice {
     readonly ai?: SubtitleAIView | undefined;
     readonly aiMenu?: { readonly menu: AIMenu; readonly quota: string | undefined; readonly quotaExhausted: boolean } | undefined;
-    readonly seriesSubtitle?: { readonly busy: boolean; readonly message: string } | undefined;
     readonly subtitles: readonly TrackChoice[];
     readonly selectedSubtitleId: string | undefined;
     readonly subtitleMode: string;
