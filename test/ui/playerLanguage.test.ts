@@ -651,3 +651,21 @@ test("a subtitle Appearance picker that is open when German lands is drawn again
         assert.equal(await page.locator('[data-focus="subtitle-appearance:fontSize"]').count(), 1, "and returns to the Appearance rows");
     } finally { await page.close(); }
 });
+
+test("Secondary heading and Secondary Off row use the catalog in German and Arabic (#780)", async () => {
+    for (const language of ["de", "ar"] as const) {
+        const page = await open(language);
+        try {
+            await show(page, playing({
+                tracks: {
+                    ...TRACKS,
+                    selectedSubtitleId: "file:42:subtitle:0",
+                    secondary: { choices: [{ id: "file:42:subtitle:0", label: "English", unavailable: true }, { id: "file:42:subtitle:1", label: "Japanese" }], selectedId: undefined },
+                },
+            }));
+            await openPanel(page, 4);
+            assert.equal(await page.locator(".player-menu-heading-secondary").textContent(), text("player.hud.secondaryHeading", language).toUpperCase());
+            assert.equal(await page.locator('[data-focus="secondary-off"] .player-choice-label').textContent(), text("player.tracks.subtitlesOff", language));
+        } finally { await page.close(); }
+    }
+});

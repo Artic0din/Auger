@@ -103,7 +103,6 @@ function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
 
 const OFF = "subtitles-off";
 const SERIES_SUBTITLE = "series-subtitles";
-const RETRY = "audio-retry";
 /** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
 const AI_JOB_ACTIONS: readonly string[] = ["ai-cancel", "ai-dismiss", "ai-discard"];
 
@@ -153,22 +152,10 @@ function choice(id: string, label: string, current: boolean, detail?: string): H
 }
 
 function fillAudio(list: HTMLElement, tracks: TrackView): void {
+    if (tracks.audio.state !== "ready" || tracks.audio.choices.length === 0) return;
     list.appendChild(el("h2", "player-menu-heading", heading("player.hud.tracks")));
-    const audio = tracks.audio;
-    if (audio.state === "loading") {
-        list.appendChild(el("p", "player-menu-note", "Loading audio tracks"));
-    } else if (audio.state === "failed") {
-        list.appendChild(el("p", "player-menu-note", "Couldn't load audio tracks."));
-        list.appendChild(choice(RETRY, translate("common.retry"), false));
-    } else if (audio.choices.length === 0) {
-        const note = el("p", "player-menu-note", "No audio tracks listed");
-        note.tabIndex = -1;
-        note.setAttribute("data-focus", "audio-empty");
-        list.appendChild(note);
-    } else {
-        for (const track of audio.choices) {
-            list.appendChild(choice(track.id, track.label, track.id === tracks.selectedAudioId, track.detail));
-        }
+    for (const track of tracks.audio.choices) {
+        list.appendChild(choice(track.id, track.label, track.id === tracks.selectedAudioId, track.detail));
     }
 }
 
@@ -223,9 +210,9 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         trackColumn.rows.appendChild(row);
     }
     if (tracks.secondary !== undefined) {
-        // SubtitlesPane.trackRows: a SECONDARY heading, then Off and the same rows, the primary's own dimmed.
-        trackColumn.rows.appendChild(el("h2", "player-menu-heading player-menu-heading-secondary", "SECONDARY"));
-        trackColumn.rows.appendChild(choice("secondary-off", "Off", tracks.secondary.selectedId === undefined));
+        // SubtitlesPane.trackRows (TVPlayerInfoHUD.swift:1757, 1765): localized SECONDARY heading, Off, and track rows.
+        trackColumn.rows.appendChild(el("h2", "player-menu-heading player-menu-heading-secondary", heading("player.hud.secondaryHeading")));
+        trackColumn.rows.appendChild(choice("secondary-off", translate("player.tracks.subtitlesOff"), tracks.secondary.selectedId === undefined));
         for (const track of tracks.secondary.choices) {
             const row = choice(`secondary:${track.id}`, track.label, track.id === tracks.secondary.selectedId, track.detail);
             // HUDTrackRow is `.disabled(isDisabled)` for the primary's own row, so the focus engine skips it (TVPlayerInfoHUD.swift:2146, :1776).
@@ -822,7 +809,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 list.textContent = "";
                 const name = tabNames[index];
                 const hud = view.phase === "playing" || view.phase === "paused" ? view.hud : undefined;
-                const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && tracks.aiMenu === undefined && tracks.subtitleTools?.search.offered !== true;
+                const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && (tracks.audio.state !== "ready" || tracks.audio.choices.length === 0) || name === "Subtitles" && tracks.subtitles.length === 0 && tracks.aiMenu === undefined && tracks.subtitleTools?.search.offered !== true;
                 list.style.display = hidden ? "none" : "";
                 if (hidden) continue;
                 if (name === "Info") fillInfo(list);
@@ -1596,9 +1583,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 }
             } else if (id === "chapters-retry") controls.retryChapters();
             else if (id === "auto-next") controls.toggleAutoNext();
-            else if (id === RETRY) {
-                controls.retryTrackInfo();
-            } else if (id === "secondary-off") {
+            else if (id === "secondary-off") {
                 controls.selectSecondarySubtitle(undefined);
             } else if (id?.startsWith("secondary:")) {
                 controls.selectSecondarySubtitle(id.slice("secondary:".length));
@@ -1673,8 +1658,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             } else if (id === "subtitle-device") {
                 const enabled = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.display?.deviceOverride === true : false;
                 controls.subtitleTool({ kind: "device", enabled: !enabled });
-            } else if (id === "audio-empty") {
-                return;
             } else if (id !== null) {
                 if (tabNames[column] === "Audio") {
                     controls.selectAudio(id);
