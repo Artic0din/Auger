@@ -1067,7 +1067,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 nextBackdrop.style.clipPath = view.phase === "completion" ? "none" : `polygon(evenodd, 0px 0px, ${UP_NEXT_SCREEN.width}px 0px, ${UP_NEXT_SCREEN.width}px ${UP_NEXT_SCREEN.height}px, 0px ${UP_NEXT_SCREEN.height}px, 0px 0px, ${left}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${UP_NEXT_PREVIEW.top}px)`;
             }
             const deckHeading = translate("upNext.onDeck");
-            const identity = `${deckHeading}||${cards.map(card => `${card.contentId}:${card.title}:${card.backdropUrl ?? ""}:${card.hideBackdrop === true ? "1" : "0"}:${card.watch?.positionSeconds ?? ""}:${card.durationSeconds ?? ""}`).join("|")}`;
+            const identity = `${deckHeading}||${cards.map(card => `${card.contentId}:${card.title}:${card.backdropUrl ?? ""}:${card.hideBackdrop === true ? "1" : "0"}:${card.thumbnailPositionSeconds ?? card.watch?.positionSeconds ?? ""}:${card.durationSeconds ?? ""}`).join("|")}`;
             if (deck.dataset.items !== identity) {
                 const focusedCard = deck.contains(document.activeElement) ? document.activeElement?.getAttribute("data-focus") : undefined;
                 deck.dataset.items = identity;
@@ -1084,7 +1084,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                         button.setAttribute("data-focus", `deck:${card.contentId}`);
                         const art = artwork("browse-art", card.backdropUrl, baseUrl, defaultArtwork(artworkSymbol(card.episode === true ? "episode" : "movie")));
                         if (card.hideBackdrop === true) blurEpisodeStill(art);
-                        const position = card.watch?.positionSeconds;
+                        const position = card.thumbnailPositionSeconds ?? card.watch?.positionSeconds;
                         const duration = card.durationSeconds;
                         if (position !== undefined && duration !== undefined && position > 0 && duration > 0) {
                             art.appendChild(thumbnailProgress(position / duration));
