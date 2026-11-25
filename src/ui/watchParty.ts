@@ -30,11 +30,9 @@ const IME_DONE = 65376;
 
 export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseUrl: string): View {
     const { hub } = screen;
+    if (hub.state.startingPreview !== undefined) return startingView(hub.state.startingPreview, back, baseUrl);
     const room = hub.state.room;
-    if (room === undefined) {
-        if (hub.state.startingPreview !== undefined && hub.state.busy) return startingView(hub.state.startingPreview, back, baseUrl);
-        return entryView(screen, back);
-    }
+    if (room === undefined) return entryView(screen, back);
     const context = { hub, baseUrl };
     const page = hub.state.page;
     switch (page.kind) {
