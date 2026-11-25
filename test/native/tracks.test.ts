@@ -3053,18 +3053,55 @@ test("after a route failure only the first replay skips the backoff; later quick
 test("a reconnect that replaces the transport is not ended by the old switch's deadline (#750)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
-        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }), ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable", { "Retry-After": "40" })));
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }));
         r.controller.selectSubtitle("file:42:subtitle:5");
         await settle(r);
         r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
         await settle(r);
         // The connection then drops: the reconnect replaces the transport while the switch's replay still sleeps.
+        const callsBefore = r.avplay.calls.length;
         r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
         await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        await settle(r);
+        const reconnectCalls = r.avplay.calls.slice(callsBefore);
+        const openIndex = reconnectCalls.findIndex(call => call.startsWith("open "));
+        const prepareIndex = reconnectCalls.indexOf("prepareAsync", openIndex + 1);
+        assert.ok(openIndex !== -1 && prepareIndex > openIndex, `reconnect opens and prepares a replacement stream (${JSON.stringify(reconnectCalls)})`);
+        await playReplacement(r);
+        assert.equal(last(r.views).phase, "playing", "playback recovers before the old switch's deadline");
         await r.h.clock.advance(30000);
         await settle(r);
         const view = last(r.views);
         assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.equal(view.phase, "playing", `playback stays playing past the old switch's 30 s deadline (${view.phase})`);
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
+test("a reconnect still awaiting its replacement plan is not ended by the old switch's deadline (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }), ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable", { "Retry-After": "40" })));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        // Reconnect closes the old transport while its replacement replan is delayed past the old switch's 30 s deadline.
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await settle(r);
+        await r.h.clock.advance(1000);
+        await settle(r);
+        const sent = replans(r.h);
+        assert.equal(sent.length, 2, "reconnect sends one replacement replan after the subtitle switch request");
+        assert.notDeepEqual(sent[1], sent[0], "the replacement replan is not a replay of the subtitle switch");
+        await r.h.clock.advance(29000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the 503 Retry-After holds recovery through the old switch's 30 s deadline");
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.equal(view.phase === "loading" ? view.detail : view.phase, "reconnecting");
         assert.deepEqual(r.exits, []);
     } finally { r.controller.destroy(); }
 });
