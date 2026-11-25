@@ -263,7 +263,6 @@ export class WatchPartyHub {
             () => {
                 this.state.selected = choice.lobby;
                 this.state.selectedUnavailable = false;
-                if (this.state.recentRoom?.roomId === room.roomId) this.state.recentRoom = { ...this.state.recentRoom, selectedTitle: choice.lobby.title() };
             },
             // A live selection whose answer is lost has taken effect when the room holds the title at a higher selection revision:
             // the same title at the same revision may be the one that was already playing.
@@ -272,6 +271,7 @@ export class WatchPartyHub {
         const done = await picked;
         if (!done && !this.stopped && this.state.selected?.contentId === choice.contentId) this.state.selected = before;
         if (done) {
+            if (this.state.recentRoom?.roomId === room.roomId) this.state.recentRoom = { ...this.state.recentRoom, selectedTitle: choice.lobby.title() };
             this.show(LOBBY);
             // Choosing for a party that is already playing starts it for everyone, as the button says.
             if (!staged && !this.ending) this.resume();

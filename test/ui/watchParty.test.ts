@@ -490,6 +490,7 @@ test("starting Watch Party from a title holds on its artwork with a focused spin
         await tv.page.locator('.browse-card').first().click();
         await tv.page.locator('.browse[data-view^="item:"]').waitFor();
         const heldCreate = tv.fake.hold("/watch-together/rooms");
+        const heldStage = tv.fake.hold("/watch-together/rooms/0b6f3f0e-6c1d-4a39-9d52-3a1f7c7f9e10/staged-selection");
         await button(tv, "more").click();
         await button(tv, "watch-party").waitFor();
         await button(tv, "watch-party").click();
@@ -499,6 +500,10 @@ test("starting Watch Party from a title holds on its artwork with a focused spin
         assert.equal(await tv.page.locator('[data-focus="starting"]').getAttribute("aria-label"), "Starting your party");
         assert.equal(await tv.page.locator(".watch-party-backdrop").count(), 1);
         heldCreate.release();
+        // While staging is still in flight, keep holding on the artwork spinner rather than flashing an unselected lobby.
+        await tv.eventually(async () => tv.fake.requests.some(r => r.path.includes("/staged-selection")), "staging request started");
+        assert.equal(await tv.page.locator('.browse[data-view="watchParty:starting"]').count(), 1, "starting preview stays up until staging finishes");
+        heldStage.release();
         await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
         // Leaving a room with a staged title shows Rejoin {title} on the entry page.
         await button(tv, "options").click();

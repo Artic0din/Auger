@@ -298,6 +298,7 @@ test("createWithChoice holds startingPreview while creating and clears it once d
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
     const { api } = fakeApi({
+        capabilities: async () => roomCapabilities({ staged_selection: true }),
         createRoom: async () => { await held; return access(); },
         stageSelection: async () => access(),
     });
@@ -315,4 +316,14 @@ test("createWithChoice holds startingPreview while creating and clears it once d
     await pending;
     assert.equal(hub.state.startingPreview, undefined);
     assert.equal(hub.state.recentRoom?.selectedTitle, "Arrival");
+
+    // A refused stage must not overwrite recentRoom.selectedTitle with the rejected title.
+    const refused = fakeApi({
+        capabilities: async () => roomCapabilities({ staged_selection: true }),
+        stageSelection: async () => { throw new ApiError({ kind: "problem", problem: { id: "conflict", title: "Conflict", status: 409, detail: "Cannot stage now.", instance: "", errors: [] }, retryAfterSeconds: undefined }); },
+    });
+    const hub2 = new WatchPartyHub(refused.api, () => undefined, { ...offline(), supported: true });
+    await hub2.create("host_pick");
+    assert.equal(await hub2.stage(choice), false);
+    assert.equal(hub2.state.recentRoom?.selectedTitle, undefined);
 });
