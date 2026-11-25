@@ -4280,12 +4280,22 @@ test("Search Subtitles opens in the shared 1280x800 modal dialog with phase head
         assert.equal(await page.locator('[data-focus="subtitle-search-back"]').count(), 0);
         assert.equal(await focused(page), "subtitle-result:os:1");
 
-        // While downloading: footer switches to wait-for-download + Adding subtitle…, and Back is inert.
+        // Empty language list (before catalog loads) still moves focus into the modal dialog container.
+        await show(page, playing(withSearch({ phase: "languages", suggested: [], other: [] })));
+        assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "dialog");
+
+        // While downloading: footer switches to wait-for-download + Adding subtitle…, and both Back and backdrop click are inert.
         await show(page, playing(withSearch({ phase: "results", results: [result], downloadingKey: "os:1" })));
         assert.equal(await text(page, ".player-subtitle-dialog-back-text"), "Please wait for the download to finish");
         assert.equal(await text(page, ".player-subtitle-dialog-status"), "Adding subtitle…");
         await remote(page, BACK);
-        assert.deepEqual(await commands(page), [], "Back is inert while a download is in flight");
+        await page.locator(".player-subtitle-dialog-backdrop").click({ position: { x: 10, y: 10 } });
+        assert.deepEqual(await commands(page), [], "Back and backdrop click are inert while a download is in flight");
+
+        // Idle backdrop click closes Search Subtitles via search-close (matching SubtitleSearchMenu.swift:323).
+        await show(page, playing(withSearch({ phase: "results", results: [result], downloadingKey: undefined })));
+        await page.locator(".player-subtitle-dialog-backdrop").click({ position: { x: 10, y: 10 } });
+        assert.deepEqual(await commands(page), ['subtitleTool {"kind":"search-close"}']);
 
         // Empty results state: offers Choose another language fallback row.
         await show(page, playing(withSearch({ phase: "results", results: [], downloadingKey: undefined, message: "No subtitles found for English." })));
