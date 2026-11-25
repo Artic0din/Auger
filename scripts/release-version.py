@@ -103,6 +103,7 @@ class TagInfo:
 class CommitMessage:
     subject: str
     body: str = ""
+    sha: str = ""
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,22 @@
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, publicHudMethod, publicHudRange, publicHudVideo } from "../shared/diagnostics-media.js";
 import type { Clock } from "./api/clock.ts";
 import { systemClock } from "./api/clock.ts";
 import type { PlanSource } from "./contracts/v2/playback.ts";
 import type { PlaybackStats } from "./player/playerHUD.ts";
 import type { PublicStorage } from "./session/deviceIdentity.ts";
+import type { PlaybackError } from "./player/controller.ts";
+import {
+    ALLOWED_AVPLAY_ERROR_CODES,
+    cleanAvplayError,
+    publicMediaToken,
+    QUALITIES,
+    type DiagnosticsIncidentPayload,
+    type IncidentCategory,
+    incidentAutoEligible,
+    incidentGroupKey,
+    type PlaybackAttemptTrace,
+    playbackIncident,
+} from "./diagnosticsIncident.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -101,7 +115,10 @@ export interface DiagnosticsEvent {
     readonly text: string;
 }
 
+export type DiagnosticsScreen = "home" | "details" | "library" | "search" | "person" | "calendar" | "requests" | "audiobook" | "personal" | "watchParty" | "for_you";
+
 export interface DiagnosticsSnapshot {
+    readonly precedingScreen?: DiagnosticsScreen;
     readonly device: DiagnosticsDeviceInfo;
     readonly lastPlayback?: DiagnosticsPlayback | undefined;
     readonly lastAppError?: string | undefined;
@@ -112,8 +129,6 @@ export interface DiagnosticsPayloadPlayback {
     readonly m?: string;
     readonly v?: string;
     readonly dr?: string;
-    readonly a?: string;
-    readonly s?: string;
     readonly d?: string;
     readonly st?: string;
     readonly src?: string;
@@ -133,6 +148,7 @@ export interface DiagnosticsPayloadV1 {
     readonly app: string;
     readonly tv: string;
     readonly cat?: DiagnosticsCategory;
+    readonly precedingScreen?: DiagnosticsScreen;
     readonly auto?: true;
     readonly err?: string;
     readonly fw?: string;
@@ -146,6 +162,7 @@ export interface DiagnosticsPayloadV1 {
     readonly up?: number;
     readonly play?: DiagnosticsPayloadPlayback;
     readonly log?: readonly string[];
+    readonly inc?: DiagnosticsIncidentPayload;
 }
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -167,67 +184,6 @@ export function redactDiagnosticText(raw: string, maxLength = 160): string {
         .replace(/\s+/g, " ")
         .trim();
     return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
-/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
-const ALLOWED_AVPLAY_ERROR_CODES = new Set([
-    "PLAYER_ERROR_NONE",
-    "PLAYER_ERROR_INVALID_PARAMETER",
-    "PLAYER_ERROR_NO_SUCH_FILE",
-    "PLAYER_ERROR_INVALID_OPERATION",
-    "PLAYER_ERROR_SEEK_FAILED",
-    "PLAYER_ERROR_INVALID_STATE",
-    "PLAYER_ERROR_NOT_SUPPORTED_FILE",
-    "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
-    "PLAYER_ERROR_INVALID_URI",
-    "PLAYER_ERROR_CONNECTION_FAILED",
-    "PLAYER_ERROR_GENEREIC",
-    "PLAYER_ERROR_GENERIC",
-    "PLAYER_ERROR_DRM_INFO_ERROR",
-    "PLAYER_ERROR_INVALID_BUFFER",
-    "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
-    "PLAYER_ERROR_OUT_OF_MEMORY",
-]);
-const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
-const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
-    "Error",
-    "TypeError",
-    "RangeError",
-    "ReferenceError",
-    "SyntaxError",
-    "URIError",
-    "EvalError",
-    "AggregateError",
-    "DOMException",
-    "WebAPIException",
-    "AbortError",
-    "NotAllowedError",
-    "NotSupportedError",
-    "QuotaExceededError",
-    "SecurityError",
-    "NetworkError",
-    "TimeoutError",
-    "DataCloneError",
-    "InvalidAccessError",
-    "InvalidStateError",
-    "InvalidValuesError",
-    "NotFoundError",
-    "UnknownError",
-    "OperationNotSupportedError",
-    "failed",
-    "error",
-]);
-
-function cleanAvplayError(value: string | undefined): string | undefined {
-    if (value === undefined) return undefined;
-    const trimmed = value.trim();
-    if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
-    const colon = trimmed.indexOf(":");
-    if (colon <= 0) return undefined;
-    const stage = trimmed.slice(0, colon);
-    if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
-    const name = trimmed.slice(colon + 1);
-    return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
 const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
@@ -371,15 +327,13 @@ function formatApproxSize(durationSeconds: number, bitrateKbps: number): string 
 function formatSourceSummary(details: DiagnosticsPlanDetails): string | undefined {
     const src = details.source;
     if (src === undefined) return undefined;
-    const container = src.container?.trim().toUpperCase();
-    const codec = src.videoCodec?.trim().toUpperCase();
+    const container = publicMediaToken(src.container, CONTAINERS)?.toUpperCase();
+    const codec = publicMediaToken(src.videoCodec, VIDEO_CODECS)?.toUpperCase();
     const res = src.width !== undefined && src.width > 0 && src.height !== undefined && src.height > 0 ? `${src.width}x${src.height}` : undefined;
     const fps = src.frameRate !== undefined && Number.isFinite(src.frameRate) && src.frameRate > 0 ? `${src.frameRate.toFixed(2).replace(/\.?0+$/, "")}fps` : undefined;
     const dr = src.dolbyVisionProfile !== undefined
         ? `DV P${src.dolbyVisionProfile}`
-        : src.dynamicRange !== undefined && src.dynamicRange.trim() !== ""
-            ? src.dynamicRange.trim().toUpperCase()
-            : undefined;
+        : publicMediaToken(src.dynamicRange, DYNAMIC_RANGES)?.toUpperCase();
     const bitrate = details.sourceBitrateKbps !== undefined && details.sourceBitrateKbps > 0 ? formatBitrate(details.sourceBitrateKbps) : undefined;
     const duration = details.durationSeconds !== undefined && details.durationSeconds > 0 ? formatClockTime(details.durationSeconds) : undefined;
     const approxSize = details.durationSeconds !== undefined && details.sourceBitrateKbps !== undefined
@@ -400,18 +354,21 @@ function formatStreamSummary(details: DiagnosticsPlanDetails): string | undefine
         ? "HTTP"
         : details.streamProtocol === "hls"
             ? "HLS"
-            : details.streamProtocol?.toUpperCase();
-    const container = details.streamContainer?.trim().toUpperCase();
-    const quality = details.activeQuality?.trim();
+            : publicMediaToken(details.streamProtocol, PROTOCOLS)?.toUpperCase();
+    const container = publicMediaToken(details.streamContainer, CONTAINERS)?.toUpperCase();
+    const quality = publicMediaToken(details.activeQuality, QUALITIES);
     const parts = [protocol, container, quality].filter((part): part is string => part !== undefined && part !== "");
     return parts.length === 0 ? undefined : cleanOptional(parts.join(" · "), 64);
 }
+
+const PUBLIC_SUBTITLE_CODECS = new Set(["SRT", "SUBRIP", "ASS", "SSA", "VTT", "WEBVTT", "PGS", "SUP", "HDMV_PGS_SUBTITLE", "VOBSUB", "DVD_SUBTITLE", "TX3G", "MOV_TEXT"]);
 
 function formatSubtitleDetail(details: DiagnosticsPlanDetails): string | undefined {
     const mode = details.subtitleMode?.trim();
     if (mode === undefined || mode === "") return undefined;
     if (mode === "off") return "off";
-    const track = [details.subtitleSource, details.subtitleCodec?.toUpperCase()].filter(Boolean).join(" ");
+    const codec = details.subtitleCodec?.toUpperCase();
+    const track = [details.subtitleSource, codec !== undefined && PUBLIC_SUBTITLE_CODECS.has(codec) ? codec : undefined].filter(Boolean).join(" ");
     const delivery = details.subtitleDelivery === undefined ? undefined : `(${details.subtitleDelivery})`;
     const parts = [mode, [track, delivery].filter(Boolean).join(" ")].filter(Boolean);
     return cleanOptional(parts.join(" · "), 80);
@@ -424,9 +381,14 @@ function formatPosition(positionSeconds: number | undefined, durationSeconds: nu
     return `${pos} / ${formatClockTime(durationSeconds)}`;
 }
 
+// HUD warning messages are free-form server text. Only recognized diagnostic phrases may leave the TV.
+const PUBLIC_PLAYBACK_NOTES = new Set(["Validated original playback", "Audio codec incompatible"]);
+
 export interface DiagnosticsPayloadOptions {
     readonly category?: DiagnosticsCategory | undefined;
     readonly auto?: boolean | undefined;
+    /** The frozen incident this report describes; its submission source follows `auto`. */
+    readonly incident?: DiagnosticsIncidentPayload | undefined;
 }
 
 function payloadFromSnapshot(
@@ -451,14 +413,11 @@ function payloadFromSnapshot(
     let play: DiagnosticsPayloadPlayback | undefined;
     if (lastPlayback !== undefined) {
         const notes = (lastPlayback.diagnostics ?? [])
-            .map(line => cleanOptional(line, 96))
-            .filter((line): line is string => line !== undefined)
+            .filter(line => PUBLIC_PLAYBACK_NOTES.has(line))
             .slice(0, noteLimit);
-        const m = cleanOptional(lastPlayback.playback, 64);
-        const v = cleanOptional(lastPlayback.video, 72);
-        const dr = cleanOptional(lastPlayback.dynamicRange, 40);
-        const a = cleanOptional(lastPlayback.audio, 64);
-        const s = cleanOptional(lastPlayback.subtitles, 64);
+        const m = publicHudMethod(lastPlayback.playback);
+        const v = publicHudVideo(lastPlayback.video);
+        const dr = publicHudRange(lastPlayback.dynamicRange);
         const d = cleanOptional(lastPlayback.delivery, 48);
         const st = cleanOptional(lastPlayback.status, 32);
         const src = includeExtended ? cleanOptional(lastPlayback.source, 110) : undefined;
@@ -478,8 +437,6 @@ function payloadFromSnapshot(
             ...(m === undefined ? {} : { m }),
             ...(v === undefined ? {} : { v }),
             ...(dr === undefined ? {} : { dr }),
-            ...(a === undefined ? {} : { a }),
-            ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
             ...(src === undefined ? {} : { src }),
@@ -506,6 +463,7 @@ function payloadFromSnapshot(
         app: cleanOptional(device.appVersion, 32) ?? "unknown",
         tv: cleanOptional(device.tvModel, 48) ?? "Samsung TV",
         ...(options?.category === undefined ? {} : { cat: options.category }),
+        ...(snapshot.precedingScreen === undefined ? {} : { precedingScreen: snapshot.precedingScreen }),
         ...(options?.auto === true ? { auto: true as const } : {}),
         ...(err === undefined ? {} : { err }),
         ...(fw === undefined ? {} : { fw }),
@@ -519,6 +477,7 @@ function payloadFromSnapshot(
         ...(up === undefined ? {} : { up }),
         ...(play === undefined ? {} : { play }),
         ...(log.length === 0 ? {} : { log }),
+        ...(options?.incident === undefined ? {} : { inc: { ...options.incident, src: options.auto === true ? "auto" as const : "manual" as const } }),
     };
 }
 
@@ -555,6 +514,7 @@ export async function sendDiagnosticsReport(
         readonly timeoutMs?: number;
         readonly category?: DiagnosticsCategory | undefined;
         readonly auto?: boolean | undefined;
+        readonly incident?: DiagnosticsIncidentPayload | undefined;
     },
 ): Promise<DiagnosticsSendResult> {
     const controller = new AbortController();
@@ -570,7 +530,7 @@ export async function sendDiagnosticsReport(
         const response = await fetchFn(relayUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(diagnosticsPayload(snapshot, { category: options?.category, auto: options?.auto })),
+            body: JSON.stringify(diagnosticsPayload(snapshot, { category: options?.category, auto: options?.auto, incident: options?.incident })),
             signal: controller.signal,
         });
         if (response.status === 429) {
@@ -600,6 +560,42 @@ export async function sendDiagnosticsReport(
         clearTimeout(timer);
         options?.signal?.removeEventListener("abort", onAbort);
     }
+}
+
+/** What one submission describes: a frozen incident, or the live context of a user-observed symptom. */
+export interface DiagnosticsReport {
+    readonly snapshot: DiagnosticsSnapshot;
+    readonly category?: DiagnosticsCategory | undefined;
+    readonly incident?: DiagnosticsIncidentPayload | undefined;
+}
+
+/** A captured incident, frozen at failure time so manual and automatic submissions serialize identical evidence. */
+export interface DiagnosticsIncidentRecord extends DiagnosticsReport {
+    readonly category: IncidentCategory;
+    readonly incident: DiagnosticsIncidentPayload;
+}
+
+/** Grouping fingerprint for a report: the incident's canonical key when present, else the legacy signature. */
+export function diagnosticsReportFingerprint(report: DiagnosticsReport, source?: "playback" | "app"): string {
+    const { snapshot, incident } = report;
+    if (incident === undefined) return diagnosticsFingerprint(snapshot, report.category, source);
+    return fnv1aHex(incidentGroupKey(cleanOptional(snapshot.device.appVersion, 32) ?? "unknown", cleanOptional(snapshot.device.tvModel, 48) ?? "Samsung TV", incident));
+}
+
+/** The single send path for manual and automatic reports. */
+export function sendDiagnosticsReportFor(
+    report: DiagnosticsReport,
+    fetchFn: DiagnosticsFetch,
+    options?: { readonly relayUrl?: string; readonly signal?: AbortSignal; readonly timeoutMs?: number; readonly auto?: boolean | undefined },
+): Promise<DiagnosticsSendResult> {
+    return sendDiagnosticsReport(report.snapshot, fetchFn, {
+        ...(options?.relayUrl === undefined ? {} : { relayUrl: options.relayUrl }),
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        category: report.category,
+        auto: options?.auto,
+        incident: report.incident,
+    });
 }
 
 /**
@@ -682,8 +678,6 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         const m = readOptionalString(playObj, "m");
         const v = readOptionalString(playObj, "v");
         const dr = readOptionalString(playObj, "dr");
-        const a = readOptionalString(playObj, "a");
-        const s = readOptionalString(playObj, "s");
         const d = readOptionalString(playObj, "d");
         const st = readOptionalString(playObj, "st");
         const src = readOptionalString(playObj, "src");
@@ -700,8 +694,6 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
             ...(m === undefined ? {} : { m }),
             ...(v === undefined ? {} : { v }),
             ...(dr === undefined ? {} : { dr }),
-            ...(a === undefined ? {} : { a }),
-            ...(s === undefined ? {} : { s }),
             ...(d === undefined ? {} : { d }),
             ...(st === undefined ? {} : { st }),
             ...(src === undefined ? {} : { src }),
@@ -769,8 +761,6 @@ export function formatPlaybackDetails(payload: DiagnosticsPayloadV1): string {
         play.src === undefined ? undefined : `Source file: ${play.src}`,
         play.v === undefined ? undefined : `Video: ${play.v}`,
         play.dr === undefined ? undefined : `Dynamic range: ${play.dr}`,
-        play.a === undefined ? undefined : `Audio: ${play.a}`,
-        play.s === undefined ? undefined : `Subtitles: ${play.s}`,
         play.sub === undefined ? undefined : `Subtitle mode: ${play.sub}`,
         play.pos === undefined ? undefined : `Position: ${play.pos}`,
         play.rb === undefined ? undefined : `Rebuffers: ${play.rb}`,
@@ -830,6 +820,20 @@ export function buildGitHubBugReportUrl(payload: DiagnosticsPayloadV1, issueBase
     return `${issueBaseUrl}?${params.toString()}`;
 }
 
+interface StoredEvent extends DiagnosticsEvent {
+    readonly n: number;
+}
+
+interface StoredIncident {
+    readonly seq: number;
+    readonly chain: number;
+    readonly scope: number;
+    readonly record: DiagnosticsIncidentRecord;
+    autoClaimed: boolean;
+}
+
+const MAX_INCIDENTS = 4;
+
 export class DiagnosticsCollector {
     private device: DiagnosticsDeviceInfo;
     private readonly clock: Clock;
@@ -838,7 +842,14 @@ export class DiagnosticsCollector {
     private readonly runtimeProbe: () => DiagnosticsRuntimeEnvironment;
     private lastPlayback: DiagnosticsPlayback | undefined;
     private lastAppError: string | undefined;
-    private readonly events: DiagnosticsEvent[] = [];
+    private readonly events: StoredEvent[] = [];
+    private eventSeq = 0;
+    /** First event of the current playback attempt; an incident snapshot never includes earlier attempts' lines. */
+    private playbackEventFloor = 0;
+    /** Bumped on every clear so a player from an ended profile session cannot record into the next one. */
+    private scope = 0;
+    private precedingScreen: DiagnosticsScreen | undefined;
+    private readonly incidents: StoredIncident[] = [];
     private lastPlanSignature: string | undefined;
     private sessionHasPlayback = false;
     private rebufferCount = 0;
@@ -881,11 +892,39 @@ export class DiagnosticsCollector {
     }
 
     hasReportableData(): boolean {
-        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0;
+        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0 || this.incidents.length > 0;
+    }
+
+    /** The most recent incident in this profile session matching the chosen category. A buffering-owned failure that ended playback also matches Playback failed, keeping its canonical category. */
+    incidentFor(category: DiagnosticsCategory | undefined): DiagnosticsIncidentRecord | undefined {
+        if (category === undefined) return undefined;
+        for (let index = this.incidents.length - 1; index >= 0; index--) {
+            const stored = this.incidents[index];
+            if (stored === undefined) continue;
+            const record = stored.record;
+            if (record.category === category) return record;
+            if (category === "playback" && record.incident.out !== "recovered") return record;
+        }
+        return undefined;
+    }
+
+    /** What a manual submission for `category` sends: the matching frozen incident, else the live context as a user-observed symptom. */
+    reportFor(category?: DiagnosticsCategory): DiagnosticsReport {
+        const record = this.incidentFor(category);
+        if (record !== undefined) return record;
+        const snapshot = this.snapshot();
+        return {
+            snapshot: this.precedingScreen === undefined ? snapshot : { ...snapshot, precedingScreen: this.precedingScreen },
+            ...(category === undefined ? {} : { category }),
+        };
     }
 
     /** Stable content hash ignoring volatile runtime counters (memory, uptime, playback position) for instant duplicate-click detection. */
     stableSnapshotHash(category?: DiagnosticsCategory): string {
+        const incident = this.incidentFor(category);
+        if (incident !== undefined) {
+            return fnv1aHex(JSON.stringify({ app: this.device.appVersion, tv: this.device.tvModel, cat: incident.category, inc: incident.incident }));
+        }
         const play = this.lastPlayback;
         return fnv1aHex(JSON.stringify({
             app: this.device.appVersion,
@@ -893,6 +932,7 @@ export class DiagnosticsCollector {
             fw: this.device.firmware,
             srv: this.device.serverVersion,
             cat: category,
+            precedingScreen: this.precedingScreen,
             err: this.lastAppError,
             play: play === undefined ? undefined : {
                 m: play.playback,
@@ -934,6 +974,19 @@ export class DiagnosticsCollector {
         return !this.autoSentKeys.has(key);
     }
 
+    /**
+     * Claims the single automatic submission of an incident: only a terminal technical failure from the current
+     * profile session, with reporting enabled, outside the cooldown and not already delivered. Returns its fingerprint.
+     */
+    claimAutoReport(record: DiagnosticsIncidentRecord): string | undefined {
+        const stored = this.incidents.find(entry => entry.record === record);
+        if (stored === undefined || stored.scope !== this.scope || stored.autoClaimed || !incidentAutoEligible(record.incident)) return undefined;
+        const fingerprint = diagnosticsReportFingerprint(record);
+        if (!this.canAutoReport(fingerprint)) return undefined;
+        stored.autoClaimed = true;
+        return fingerprint;
+    }
+
     markAutoAttempt(): void {
         this.lastAutoSendAt = this.clock.now();
     }
@@ -955,10 +1008,38 @@ export class DiagnosticsCollector {
         }
     }
 
-    beginPlaybackSession(): void {
+    isCurrentPlaybackSession(scope: number): boolean {
+        return this.scope === scope;
+    }
+
+    beginPlaybackSession(): number {
         this.rebufferCount = 0;
         this.lastPlanSignature = undefined;
         this.sessionHasPlayback = false;
+        // An earlier attempt's plan, status and position never describe this one (#864).
+        this.lastPlayback = undefined;
+        this.playbackEventFloor = this.eventSeq;
+        return ++this.scope;
+    }
+
+    /**
+     * Captures or updates one attempt's incident, freezing the snapshot at capture. A terminal record is never
+     * overwritten, so the dismissal that follows a failure cannot change what was captured.
+     */
+    recordPlaybackIncident(scope: number, trace: PlaybackAttemptTrace, error?: PlaybackError): DiagnosticsIncidentRecord | undefined {
+        if (scope !== this.scope) return undefined;
+        const incident = playbackIncident(trace, error);
+        if (incident === undefined) return undefined;
+        const existing = this.incidents.find(entry => entry.scope === scope && entry.seq === trace.seq && entry.chain === trace.chain);
+        if (existing !== undefined) return existing.record;
+        const captured = this.captureSnapshot(this.playbackEventFloor);
+        // An unrelated app error belongs to its own report, not to this attempt's evidence.
+        const snapshot: DiagnosticsSnapshot = { device: captured.device, events: captured.events, ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }) };
+        const record: DiagnosticsIncidentRecord = { snapshot, category: incident.cat, incident };
+        this.incidents.push({ seq: trace.seq, chain: trace.chain, scope, record, autoClaimed: false });
+        if (this.incidents.length > MAX_INCIDENTS) this.incidents.shift();
+        this.emit();
+        return record;
     }
 
     recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
@@ -1046,7 +1127,7 @@ export class DiagnosticsCollector {
         this.sessionHasPlayback = true;
         if (planChanged) {
             this.lastPlanSignature = signature;
-            const summary = [next.playback, next.delivery === undefined ? undefined : `(${next.delivery})`, next.video].filter(Boolean).join(" ");
+            const summary = [publicHudMethod(next.playback), next.delivery === undefined ? undefined : `(${next.delivery})`, publicHudVideo(next.video)].filter(Boolean).join(" ");
             this.pushEvent("playback", `plan ${summary}`);
         }
         this.emit();
@@ -1088,8 +1169,16 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
+    setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
+        this.precedingScreen = screen;
+    }
+
     clear(): void {
-        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined) return;
+        this.precedingScreen = undefined;
+        this.scope++;
+        this.playbackEventFloor = this.eventSeq;
+        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
+        this.incidents.length = 0;
         this.lastPlayback = undefined;
         this.lastAppError = undefined;
         this.events.length = 0;
@@ -1102,6 +1191,10 @@ export class DiagnosticsCollector {
     }
 
     snapshot(): DiagnosticsSnapshot {
+        return this.captureSnapshot(0);
+    }
+
+    private captureSnapshot(eventFloor: number): DiagnosticsSnapshot {
         const runtime = this.runtimeProbe();
         const uptimeMinutes = Math.max(0, Math.floor((this.clock.now() - this.startedAt) / 60000));
         return {
@@ -1114,7 +1207,7 @@ export class DiagnosticsCollector {
             },
             ...(this.lastPlayback === undefined ? {} : { lastPlayback: { ...this.lastPlayback } }),
             ...(this.lastAppError === undefined ? {} : { lastAppError: this.lastAppError }),
-            events: [...this.events],
+            events: this.events.filter(event => event.n >= eventFloor).map(event => ({ at: event.at, kind: event.kind, text: event.text })),
         };
     }
 
@@ -1141,14 +1234,14 @@ export class DiagnosticsCollector {
     private pushEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = redactDiagnosticText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
-        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned, n: this.eventSeq++ });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     }
 
     private pushTrustedEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = formatEventText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
-        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned, n: this.eventSeq++ });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     }
 

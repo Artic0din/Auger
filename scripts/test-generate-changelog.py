@@ -174,10 +174,99 @@ class FormatTest(unittest.TestCase):
         )
         self.assertEqual(
             "## [0.2.0] - 2026-01-31\n\n"
-            "### ✨ New Features\n\n- **Playback**: Add chapters\n\n"
-            "### 🐛 Fixes\n\n- Stop a crash\n",
+            "### New Features\n\n- **Playback**: Add chapters\n\n"
+            "### Fixes\n\n- Stop a crash\n",
             notes.changelog_entry(),
         )
+
+
+class TechnicalChangelogTest(unittest.TestCase):
+    def test_includes_all_technical_categories_without_emojis_or_compare_links(self):
+        commits = [
+            Commit("feat!: drop Tizen 7 (#10)", "BREAKING CHANGE: upgrade to Tizen 8", "11111111"),
+            Commit("feat(player): add chapters (#11)", "", "22222222"),
+            Commit("perf(home): cache backdrop (#12)", "", "33333333"),
+            Commit("fix(security): redact tokens (#13)", "", "44444444"),
+            Commit("fix(ci): stop flaky runner (#14)", "", "55555555"),
+            Commit("refactor(ui): simplify row (#15)", "", "66666666"),
+            Commit("chore(deps-dev): bump playwright (#16)", "", "77777777"),
+            Commit("test(player): add seek regression (#17)", "", "88888888"),
+            Commit("docs(readme): update screenshots (#18)", "", "99999999"),
+            Commit("docs(changelog): record v0.4.0 release notes troubleshooting (#22)", "", "eeeeeeee"),
+            Commit("ci(release): add deploy key (#19)", "", "aaaaaaaa"),
+            Commit("Update README.md", "", "bbbbbbbb"),
+            Commit("docs(changelog): record v0.4.0 release notes (#20)", "", "cccccccc"),
+            Commit("Merge pull request #21 from Artic0din/Auger-Tizen", "", "dddddddd"),
+        ]
+        rendered = changelog.build_technical_changelog("0.5.0", "2026-11-25", commits).changelog_entry()
+        self.assertIn("## [0.5.0] - 2026-11-25\n", rendered)
+        expected_pairs = (
+            (
+                "### Breaking Changes",
+                "- Upgrade to Tizen 8 ([#10](https://github.com/Artic0din/Auger-Tizen/pull/10), [`11111111`](https://github.com/Artic0din/Auger-Tizen/commit/11111111))",
+            ),
+            (
+                "### Features",
+                "- Drop Tizen 7 ([#10](https://github.com/Artic0din/Auger-Tizen/pull/10), [`11111111`](https://github.com/Artic0din/Auger-Tizen/commit/11111111))\n"
+                "- **Playback**: Add chapters ([#11](https://github.com/Artic0din/Auger-Tizen/pull/11), [`22222222`](https://github.com/Artic0din/Auger-Tizen/commit/22222222))",
+            ),
+            (
+                "### Performance",
+                "- **Home**: Cache backdrop ([#12](https://github.com/Artic0din/Auger-Tizen/pull/12), [`33333333`](https://github.com/Artic0din/Auger-Tizen/commit/33333333))",
+            ),
+            (
+                "### Security",
+                "- Redact tokens ([#13](https://github.com/Artic0din/Auger-Tizen/pull/13), [`44444444`](https://github.com/Artic0din/Auger-Tizen/commit/44444444))",
+            ),
+            (
+                "### Fixes",
+                "- **CI**: Stop flaky runner ([#14](https://github.com/Artic0din/Auger-Tizen/pull/14), [`55555555`](https://github.com/Artic0din/Auger-Tizen/commit/55555555))",
+            ),
+            (
+                "### Refactors & Maintenance",
+                "- **Interface**: Simplify row ([#15](https://github.com/Artic0din/Auger-Tizen/pull/15), [`66666666`](https://github.com/Artic0din/Auger-Tizen/commit/66666666))\n"
+                "- **Dependencies**: Bump playwright ([#16](https://github.com/Artic0din/Auger-Tizen/pull/16), [`77777777`](https://github.com/Artic0din/Auger-Tizen/commit/77777777))",
+            ),
+            (
+                "### Tests",
+                "- **Playback**: Add seek regression ([#17](https://github.com/Artic0din/Auger-Tizen/pull/17), [`88888888`](https://github.com/Artic0din/Auger-Tizen/commit/88888888))",
+            ),
+            (
+                "### Documentation",
+                "- **README**: Update screenshots ([#18](https://github.com/Artic0din/Auger-Tizen/pull/18), [`99999999`](https://github.com/Artic0din/Auger-Tizen/commit/99999999))\n"
+                "- **Changelog**: Record v0.4.0 release notes troubleshooting ([#22](https://github.com/Artic0din/Auger-Tizen/pull/22), [`eeeeeeee`](https://github.com/Artic0din/Auger-Tizen/commit/eeeeeeee))",
+            ),
+            (
+                "### CI",
+                "- **Releases**: Add deploy key ([#19](https://github.com/Artic0din/Auger-Tizen/pull/19), [`aaaaaaaa`](https://github.com/Artic0din/Auger-Tizen/commit/aaaaaaaa))",
+            ),
+            (
+                "### Other Changes",
+                "- Update README.md ([`bbbbbbbb`](https://github.com/Artic0din/Auger-Tizen/commit/bbbbbbbb))",
+            ),
+        )
+        for heading, bullets in expected_pairs:
+            self.assertIn(f"\n{heading}\n\n{bullets}\n", rendered)
+        for emoji in ("⚠️", "✨", "🔧", "🔒", "🐛"):
+            self.assertNotIn(emoji, rendered)
+        self.assertNotIn("/compare/", rendered)
+        self.assertNotIn("cccccccc", rendered)
+        self.assertNotIn("Merge pull request", rendered)
+
+    def test_breaking_single_bullet_when_footer_absent_or_identical_and_custom_repo(self):
+        commits = [
+            Commit("feat!: drop Tizen 7 (#10)", "", "11111111"),
+            Commit("feat(player): add chapters (#11)", "BREAKING CHANGE: add chapters", "22222222"),
+        ]
+        rendered = changelog.build_technical_changelog("1.0.0", "2026-11-25", commits, repo="ForkOwner/ForkRepo").changelog_entry()
+        self.assertIn(
+            "### Breaking Changes\n\n"
+            "- Drop Tizen 7 ([#10](https://github.com/ForkOwner/ForkRepo/pull/10), [`11111111`](https://github.com/ForkOwner/ForkRepo/commit/11111111))\n"
+            "- **Playback**: Add chapters ([#11](https://github.com/ForkOwner/ForkRepo/pull/11), [`22222222`](https://github.com/ForkOwner/ForkRepo/commit/22222222))\n",
+            rendered,
+        )
+        self.assertNotIn("### Features", rendered)
+        self.assertNotIn("Artic0din/Auger-Tizen", rendered)
 
 
 def user_notes(*commits, bodies=None):
@@ -360,13 +449,116 @@ class UserReleaseNotesTest(unittest.TestCase):
         )
         self.assertEqual({UserSection.NEW: ["Works on CRLF bodies."]}, user_sections("feat: crlf (#1)", bodies={1: body}))
 
+    def test_singular_release_note_heading_is_accepted(self):
+        body = pr_body("## Release note\n\nAdded Still Watching prompt under Settings > Playback.")
+        self.assertEqual(
+            {UserSection.NEW: ["Added Still Watching prompt under Settings > Playback."]},
+            user_sections("feat(player): add still watching (#886)", bodies={886: body}),
+        )
+
+
+class CheckPrReleaseNotesTest(unittest.TestCase):
+    def test_non_releasing_prs_pass_without_release_notes(self):
+        for title in (
+            "docs(releasing): clarify guide",
+            "chore(deps): bump actions/checkout",
+            "ci(release): update check",
+            "test(ui): stabilize focus test",
+            "refactor(player): simplify state",
+            "fix(ci): stop flaky check",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual([], changelog.check_pr_release_notes(title, ""))
+
+    def test_user_facing_prs_require_populated_release_notes(self):
+        for title in ("feat(player): add chapters", "fix: stop crash", "perf(home): faster rows", "revert: undo change", "feat!: drop Tizen 7"):
+            for body in ("", pr_body(""), pr_body("## Release Notes\n\n<!-- comment only -->"), pr_body("## Release Notes\n\n### New\n")):
+                with self.subTest(title=title, body=body[:30]):
+                    self.assertTrue(changelog.check_pr_release_notes(title, body))
+
+    def test_suppression_rules_and_quality_guards(self):
+        self.assertEqual([], changelog.check_pr_release_notes("fix(ui): internal tweak", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("feat(player): add chapters", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("perf(home): faster rows", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("feat!: drop Tizen 7", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "refactor(settings): rename storage keys",
+                "## Problem\n\nRename keys.\n\nBREAKING CHANGE: settings reset once.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "fix(auth): change session format",
+                pr_body("## Release Notes\n\nNone") + "\nBREAKING CHANGE: sign in again.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                "## Problem\n\nNo chapters.\n\nRelease note: Added chapters.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n<!-- empty -->") + "\nRelease note: Added chapters.\n",
+            )
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): add still watching",
+                pr_body("## Release note\n\n### New\n\n- Pause Auto-play after 3 episodes. See [guide](https://example.com/docs#123)."),
+            ),
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add still watching",
+                pr_body("## Release Notes\n\n- Added prompt (#886)."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "fix(player): stop crash",
+                pr_body("## Release Notes\n\n- fix(player): stop crash"),
+            )
+        )
+
+    def test_check_pr_cli_and_workflow_step(self):
+        workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
+        self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
+        self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow_text)
+        self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", workflow_text)
+        step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Check user-facing PR release notes")
+        with tempfile.TemporaryDirectory() as tmp_name:
+            runner_temp = Path(tmp_name)
+            env = {**os.environ, "RUNNER_TEMP": str(runner_temp)}
+            good = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=SCRIPT_DIR.parent,
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n- Jump to any chapter from the player.")},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, good.returncode, good.stderr)
+            missing = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=SCRIPT_DIR.parent,
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": "## Problem\n\nNo chapters."},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, missing.returncode)
+            self.assertIn("## Release Notes", missing.stderr)
+
 
 HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"
 
 
 class InsertEntryTest(unittest.TestCase):
     def entry(self, version):
-        return f"## [{version}] - 2026-01-31\n\n### 🐛 Fixes\n\n- Fix {version}\n"
+        return f"## [{version}] - 2026-01-31\n\n### Fixes\n\n- Fix {version}\n"
 
     def test_inserts_below_the_marker_newest_first(self):
         text = f"{HEADER}<!-- changelog:releases -->\n\n## [Earlier changes]\n\n- Old.\n"
@@ -460,7 +652,8 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(0, run(*args)[0])
         self.assertEqual(first, path.read_text(encoding="utf-8"))
         self.assertEqual(1, first.count("## [0.2.0] - 2026-01-31"))
-        self.assertIn("<!-- changelog:releases -->\n\n## [0.2.0] - 2026-01-31\n\n### ✨ New Features\n", first)
+        self.assertIn("<!-- changelog:releases -->\n\n## [0.2.0] - 2026-01-31\n\n### Features\n", first)
+        self.assertIn("### Documentation\n\n- README", first)
         self.assertLess(first.index("## [0.2.0]"), first.index("## [Earlier changes]"))
 
     def test_without_from_reads_all_history(self):
@@ -741,9 +934,11 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
 
             committed = git(origin, "show", "refs/heads/main:CHANGELOG.md")
             self.assertIn(f"## [0.2.0] - {outputs['release_date']}", committed)
-            self.assertIn("### ✨ New Features\n\n- **Playback**: Add chapters\n", committed)
-            self.assertIn("### 🐛 Fixes\n\n- Stop a crash\n", committed)
+            self.assertIn("### Features\n\n- **Playback**: Add chapters ([#5](https://github.com/Artic0din/Auger-Tizen/pull/5), [`", committed)
+            self.assertIn("### Fixes\n\n- Stop a crash ([#6](https://github.com/Artic0din/Auger-Tizen/pull/6), [`", committed)
+            self.assertIn("### Documentation\n\n- Mention (#12) in passing ([`", committed)
             self.assertNotIn("Pick a chapter", committed, "CHANGELOG.md stays the technical commit record")
+            self.assertNotIn("/compare/", committed)
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
             self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))

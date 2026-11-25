@@ -21,11 +21,13 @@ a reviewer would ask about it.
 
 ## Release Notes
 
-<!-- This section becomes this PR's entry in the GitHub Release notes. Write for people
-using Auger on a Samsung TV: plain language, no internal jargon, no PR or issue numbers.
-Say what changed, why it matters, and where to find it or what to do next. Optionally
-group bullets under ### Highlights, ### Breaking Changes, ### New, ### Improved, or
-### Fixed. Write "None" for an internal-only change. -->
+<!-- This section becomes this PR's entry in the GitHub Release notes (enforced by CI for
+feat, fix, perf, revert, and breaking PRs). Write for people using Auger on a Samsung TV:
+plain language, no internal symbols, no "match Apple TV" phrasing, and no #123 issue or PR
+numbers. Explain what changed, why it matters, and where to find it or what to do next; for
+bundled PRs, cover every user-visible feature or fix. Optionally group bullets under
+### Highlights, ### Breaking Changes, ### New, ### Improved, or ### Fixed. Write "None" for
+an internal-only change. -->
 
 ## Validation
 
