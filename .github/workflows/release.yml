@@ -314,14 +314,31 @@ jobs:
                 release_author="$(printf '%s\n' "${release_meta}" | jq -r '.author.login // empty')"
                 release_published_at="$(printf '%s\n' "${release_meta}" | jq -r '.publishedAt // empty')"
                 published_this_run="false"
-                # Only bot-authored releases need the Actions run lookup. Bash has
-                # no >= inside [[ ]], so compare with > or ==.
-                if [[ "${release_author}" == "github-actions[bot]" ]]; then
-                  run_created="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
-                  if [[ -n "${release_published_at}" && -n "${run_created}" ]] &&
-                     { [[ "${release_published_at}" > "${run_created}" ]] ||
-                       [[ "${release_published_at}" == "${run_created}" ]]; }; then
-                    published_this_run="true"
+                # Only bot-authored releases need the Actions lookup. Tie the
+                # publication to a previous attempt of this run's publish job so
+                # a later run that already announced the tag is not retried here.
+                # Bash has no >= or <= inside [[ ]], so compare with > / < / ==.
+                if [[ "${release_author}" == "github-actions[bot]" && -n "${release_published_at}" ]]; then
+                  attempts="${GITHUB_RUN_ATTEMPT:-1}"
+                  if [[ "${attempts}" -gt 1 ]]; then
+                    for ((attempt=1; attempt<attempts; attempt++)); do
+                      job_json="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/attempts/${attempt}/jobs" \
+                        --jq '[.jobs[] | select(.name == "Publish the GitHub Release")][0] // empty')"
+                      if [[ -z "${job_json}" ]]; then
+                        continue
+                      fi
+                      job_started="$(printf '%s\n' "${job_json}" | jq -r '.started_at // empty')"
+                      job_completed="$(printf '%s\n' "${job_json}" | jq -r '.completed_at // empty')"
+                      if [[ -n "${job_started}" ]] &&
+                         { [[ "${release_published_at}" > "${job_started}" ]] ||
+                           [[ "${release_published_at}" == "${job_started}" ]]; } &&
+                         { [[ -z "${job_completed}" ]] ||
+                           [[ "${release_published_at}" < "${job_completed}" ]] ||
+                           [[ "${release_published_at}" == "${job_completed}" ]]; }; then
+                        published_this_run="true"
+                        break
+                      fi
+                    done
                   fi
                 fi
                 if [[ "${published_this_run}" == "true" ]]; then
