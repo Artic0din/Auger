@@ -619,6 +619,25 @@ test("picker search queries playable catalog titles, paginates, and Back returns
     assert.equal(hub.state.page.kind, "picker");
 });
 
+test("opening a choice reads member-state when supported and surfaces failures without losing the choice (#783)", async () => {
+    const requests: { readonly roomId: string; readonly token: string; readonly ids: readonly string[] }[] = [];
+    const { hub } = lobby({
+        memberState: async (roomId, token, ids) => {
+            requests.push({ roomId, token, ids });
+            return {
+                members: [],
+                items: [{ contentId: "movie:m0004", members: [{ userId: "1", profileId: "p-owner", state: "watched", positionSeconds: undefined, durationSeconds: undefined, onWatchlist: false }] }],
+            };
+        },
+    }, { staged_selection: true, member_state: true, max_member_state_ids: 50 });
+    await hub.create("host_pick");
+    hub.show({ kind: "choice", choice: movie() });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(requests, [{ roomId: "0b6f3f0e-6c1d-4a39-9d52-3a1f7c7f9e10", token: "room-proof", ids: ["movie:m0004"] }]);
+    assert.equal(hub.state.memberStateLoading, false);
+    assert.equal(hub.state.memberState?.items[0]?.members[0]?.state, "watched");
+});
+
 test("a failed picker read says so and can be tried again", async () => {
     let fail = true;
     const { hub } = lobby({ picker: async () => { if (fail) throw problem(503, "Down."); return { members: [], continueTogether: [], watchlistUnion: [] }; } });

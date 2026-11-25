@@ -36,6 +36,9 @@ export interface MediaChoice {
     readonly overview: string | undefined;
     readonly facts: () => readonly string[];
     readonly lobby: LobbyItem;
+    /** Series to open when the viewer chooses "See all episodes" from an episode or next-up choice. */
+    readonly seriesLink?: Card;
+    readonly seasonNumber?: number;
 }
 
 /** `LocaleFormat.codeNumber`: a season or episode number in a code is ASCII digits in every language. */
@@ -94,6 +97,8 @@ export function choiceFromEpisode(series: Card, episode: Episode): MediaChoice {
         backdropUrl: series.backdropUrl,
         overview: undefined,
         facts,
+        seriesLink: series,
+        seasonNumber: episode.seasonNumber,
         lobby: {
             contentId: episode.id,
             title,
@@ -118,6 +123,8 @@ export function choiceFromNextUp(series: Card, nextUp: { readonly contentId: str
         backdropUrl: series.backdropUrl,
         overview: undefined,
         facts: () => [],
+        seriesLink: series,
+        seasonNumber: nextUp.seasonNumber,
         lobby: {
             contentId: nextUp.contentId,
             title: () => nextUp.title ?? episodeFallback(nextUp.episodeNumber),

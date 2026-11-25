@@ -8,7 +8,7 @@ import { ApiError } from "../api/errors.ts";
 import { type Clock, sleep, systemClock } from "../api/clock.ts";
 import { errorState, type ErrorState, writeMayHaveApplied } from "./browseRoutes.ts";
 import type { Card, Episode, Season } from "../contracts/v2/catalog.ts";
-import type { CreatableSelectionMode, GuestControlPolicy, PickerEntry, Room, RoomAccess, RoomSelection, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
+import type { CreatableSelectionMode, GuestControlPolicy, MemberState, PickerEntry, Room, RoomAccess, RoomSelection, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
 import type { PlayRequest } from "./browseModel.ts";
 import { type LobbyItem, type MediaChoice, lobbyItemFromDetail } from "./watchPartyChoice.ts";
 import { supportsSynchronizedParty, uuidV4, type WatchPartyApi, watchPartyFailureText } from "./watchPartyApi.ts";
@@ -40,7 +40,7 @@ export type LobbyPage =
     | { readonly kind: "search" }
     | { readonly kind: "choice"; readonly choice: MediaChoice; readonly from?: LobbyPage }
     /** Apple's episode picker: the series' season tabs over the chosen season's episodes. */
-    | { readonly kind: "episodes"; readonly series: Card; readonly season: Season | undefined; readonly from?: LobbyPage };
+    | { readonly kind: "episodes"; readonly series: Card; readonly season: Season | undefined; readonly from?: LobbyPage; readonly initialEpisodeId?: string };
 
 /** `title` is read when the shelf is drawn, so a language that lands after the shelves load relabels them. */
 export interface PickerShelf { readonly id: string; readonly title: () => string; readonly entries: readonly PickerEntry[] }
@@ -94,6 +94,10 @@ export interface WatchPartyState {
     pickerPurpose: PickerPurpose;
     /** Apple's WatchPartySearchPage state inside the picker. */
     search: PickerSearchState;
+    /** Apple's "Who's seen it" member watch history for the current choice. */
+    memberState: MemberState | undefined;
+    memberStateLoading: boolean;
+    memberStateError: Notice | undefined;
 }
 
 export type PickerPurpose = "select" | "suggest";
@@ -145,6 +149,8 @@ export class WatchPartyHub {
     private browseEpoch = 0;
     /** Counts picker search requests and debounce timers so stale queries are dropped. */
     private searchEpoch = 0;
+    /** Counts member-state reads for the Choice page so late answers for another title are dropped. */
+    private memberStateEpoch = 0;
     private refocus = false;
     private ending = false;
     /** A lost change was not read back because the party was ending; a failed close reads it then. */
@@ -171,6 +177,7 @@ export class WatchPartyHub {
             supported: options.supported ?? false, checking: false, busy: false, error: undefined, room: undefined, connection: "idle", capabilities: undefined,
             page: LOBBY, selected: undefined, selectedUnavailable: false, shelves: [], shelvesLoading: false, shelvesError: undefined,
             seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select", search: emptySearch(),
+            memberState: undefined, memberStateLoading: false, memberStateError: undefined,
         };
     }
 
@@ -221,10 +228,52 @@ export class WatchPartyHub {
     }
 
     show(page: LobbyPage): void {
-        // Leaving a page ends its season and episode reads: a late answer must not undo the move.
+        // Leaving a page ends its season, episode, and member-state reads: a late answer must not undo the move.
         this.browseEpoch++;
+        this.memberStateEpoch++;
         this.state.browseLoading = false;
+        this.state.memberStateLoading = false;
+        this.state.memberStateError = undefined;
         this.state.page = page;
+        if (page.kind === "choice" && this.state.capabilities?.memberState === true) {
+            void this.refreshMemberState([page.choice.contentId]);
+            return;
+        }
+        this.notify();
+    }
+
+    /** Apple's WatchPartySession.refreshMemberState: loads per-member watch history for "Who's seen it". */
+    async refreshMemberState(contentIds: readonly string[]): Promise<void> {
+        const room = this.state.room;
+        if (room === undefined || this.state.capabilities?.memberState !== true || this.api.memberState === undefined || this.stopped) {
+            this.notify();
+            return;
+        }
+        const maxIds = this.state.capabilities.maxMemberStateIds > 0 ? Math.min(200, this.state.capabilities.maxMemberStateIds) : 200;
+        const seen = new Set<string>();
+        const ids: string[] = [];
+        for (const id of contentIds) {
+            if (id === "" || seen.has(id)) continue;
+            seen.add(id);
+            ids.push(id);
+            if (ids.length === maxIds) break;
+        }
+        if (ids.length === 0) { this.notify(); return; }
+        const epoch = ++this.memberStateEpoch;
+        this.state.memberState = undefined;
+        this.state.memberStateLoading = true;
+        this.state.memberStateError = undefined;
+        this.notify();
+        try {
+            const result = await this.api.memberState(room.roomId, this.roomToken, ids, this.controller.signal);
+            if (this.stopped || epoch !== this.memberStateEpoch || this.state.room?.roomId !== room.roomId) return;
+            this.state.memberState = result;
+        } catch (error) {
+            if (this.stopped || epoch !== this.memberStateEpoch || this.state.room?.roomId !== room.roomId) return;
+            this.state.memberStateError = { key: "watchParty.whoSeen.error", args: { error: this.describe(error) } };
+        }
+        if (this.stopped || epoch !== this.memberStateEpoch) return;
+        this.state.memberStateLoading = false;
         this.notify();
     }
 
@@ -424,22 +473,33 @@ export class WatchPartyHub {
     }
 
     /** The series' seasons with one season's episodes: the one asked for, else the first that is not specials. A retry reads the seasons again only when there are none to show. */
-    async openEpisodes(series: Card, wanted?: Season, retry = false, from?: LobbyPage): Promise<void> {
+    async openEpisodes(series: Card, wanted?: Season | number, retry = false, from?: LobbyPage, initialEpisodeId?: string): Promise<void> {
         const epoch = ++this.browseEpoch;
-        const sameSeries = this.state.page.kind === "episodes" && this.state.page.series.id === series.id;
-        const origin = from ?? (sameSeries && this.state.page.kind === "episodes" ? this.state.page.from : undefined);
-        Object.assign(this.state, { page: { kind: "episodes", series, season: wanted, ...(origin === undefined ? {} : { from: origin }) }, episodes: undefined, browseLoading: true, browseError: undefined, ...(sameSeries && !(retry && (wanted === undefined || this.state.seasons?.length === 0)) ? {} : { seasons: undefined }) });
+        const currentPage = this.state.page.kind === "episodes" ? this.state.page : undefined;
+        const sameSeries = currentPage?.series.id === series.id;
+        const origin = from ?? (sameSeries ? currentPage?.from : undefined);
+        const episodeTarget = initialEpisodeId ?? (sameSeries ? currentPage?.initialEpisodeId : undefined);
+        const wantedSeason = typeof wanted === "number" ? undefined : wanted;
+        const wantedNumber = typeof wanted === "number" ? wanted : wanted?.seasonNumber;
+        Object.assign(this.state, {
+            page: { kind: "episodes", series, season: wantedSeason, ...(origin === undefined ? {} : { from: origin }), ...(episodeTarget === undefined ? {} : { initialEpisodeId: episodeTarget }) },
+            episodes: undefined, browseLoading: true, browseError: undefined,
+            ...(sameSeries && !(retry && (wantedNumber === undefined || this.state.seasons?.length === 0)) ? {} : { seasons: undefined }),
+        });
         this.notify();
         await this.browse(epoch, async signal => {
             const seasons = this.state.seasons ?? await this.api.seasons(series.id, signal);
             if (this.staleBrowse(epoch)) return;
             this.state.seasons = seasons;
-            const season = wanted ?? seasons.find(candidate => candidate.isSpecials !== true) ?? seasons[0];
+            const season = (wantedNumber === undefined ? undefined : seasons.find(candidate => candidate.seasonNumber === wantedNumber))
+                ?? wantedSeason
+                ?? seasons.find(candidate => candidate.isSpecials !== true)
+                ?? seasons[0];
             if (season === undefined) return;
-            this.state.page = { kind: "episodes", series, season, ...(origin === undefined ? {} : { from: origin }) };
+            this.state.page = { kind: "episodes", series, season, ...(origin === undefined ? {} : { from: origin }), ...(episodeTarget === undefined ? {} : { initialEpisodeId: episodeTarget }) };
             const episodes = await this.api.episodes(series.id, season.seasonNumber, signal);
             if (this.staleBrowse(epoch)) return;
-            this.state.episodes = episodes;
+            this.state.episodes = [...episodes].sort((a, b) => a.episodeNumber - b.episodeNumber);
         });
     }
 
@@ -474,6 +534,7 @@ export class WatchPartyHub {
         this.epoch++;
         this.browseEpoch++;
         this.searchEpoch++;
+        this.memberStateEpoch++;
         this.roomToken = "";
         this.connection?.close();
         this.connection = undefined;
@@ -484,6 +545,7 @@ export class WatchPartyHub {
         Object.assign(this.state, {
             room: undefined, connection: "idle", page: LOBBY, selected: undefined, selectedUnavailable: false, shelves: [], shelvesLoading: false, shelvesError: undefined,
             seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select", search: emptySearch(),
+            memberState: undefined, memberStateLoading: false, memberStateError: undefined,
         });
     }
 

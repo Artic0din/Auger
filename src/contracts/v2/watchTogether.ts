@@ -311,6 +311,57 @@ export function decodePicker(value: unknown): Picker {
     };
 }
 
+// --- Member watch state ("Who's seen it") ---
+
+export interface MemberWatchState {
+    readonly userId: string;
+    readonly profileId: string;
+    readonly state: string;
+    readonly positionSeconds: number | undefined;
+    readonly durationSeconds: number | undefined;
+    readonly onWatchlist: boolean;
+}
+
+export interface ItemMemberState {
+    readonly contentId: string;
+    readonly members: readonly MemberWatchState[];
+}
+
+export interface MemberState {
+    readonly members: readonly RoomMember[];
+    readonly items: readonly ItemMemberState[];
+}
+
+export function decodeMemberState(value: unknown, requestedIds?: readonly string[]): MemberState {
+    const path = "watch_together_member_state";
+    const body = object(value, path);
+    const requested = requestedIds === undefined ? undefined : new Set(requestedIds);
+    return {
+        members: array(body, "members", path).map((member, index) => decodeRoomMember(member, `${path}.members[${index}]`)),
+        items: array(body, "items", path).map((entry, index) => {
+            const itemPath = `${path}.items[${index}]`;
+            const item = object(entry, itemPath);
+            const contentId = nonEmptyString(item, "content_id", itemPath);
+            if (requested !== undefined && !requested.has(contentId)) throw new WireError(`${itemPath}.content_id`, "a requested content id");
+            return {
+                contentId,
+                members: array(item, "members", itemPath).map((member, memberIndex) => {
+                    const memberPath = `${itemPath}.members[${memberIndex}]`;
+                    const fields = object(member, memberPath);
+                    return {
+                        userId: opaqueId(fields, "user_id", memberPath),
+                        profileId: string(fields, "profile_id", memberPath),
+                        state: string(fields, "state", memberPath),
+                        positionSeconds: optionalNonNegativeNumber(fields, "position_seconds", memberPath),
+                        durationSeconds: optionalNonNegativeNumber(fields, "duration_seconds", memberPath),
+                        onWatchlist: optionalBoolean(fields, "on_watchlist", memberPath),
+                    };
+                }),
+            };
+        }),
+    };
+}
+
 /** A title the host picks: the content, and optionally the file and library to play it from. */
 export interface RoomSelection {
     readonly contentId: string;

@@ -32,7 +32,11 @@ export class FakeWatchParty extends FakeRequests {
     connectionReplaced = true;
     playbackFeatures = WATCH_PARTY_FEATURES;
     /** The optional capability flags the lobby reads; a missing flag is false. */
-    flags: Record<string, boolean> = { staged_selection: true, selection_mode_switch: true, stop_playback: true, picker: true, lobby_ready: true };
+    flags: Record<string, boolean> = { staged_selection: true, selection_mode_switch: true, stop_playback: true, picker: true, lobby_ready: true, member_state: true };
+    memberStateFailure: Reply | undefined;
+    readonly memberStateCalls: { readonly contentIds: readonly string[]; readonly roomToken: string | undefined }[] = [];
+    /** Optional per-content-id watch state rows returned by POST /member-state. */
+    memberStateByContent: Readonly<Record<string, readonly { readonly userId: string; readonly profileId: string; readonly state: string; readonly onWatchlist?: boolean }[]>> = {};
     capabilitiesFailure: Reply | undefined;
     createFailure: Reply | undefined;
     joinFailure: Reply | undefined;
@@ -257,6 +261,19 @@ export class FakeWatchParty extends FakeRequests {
         if (method === "GET" && pathname === `${ROOM_PATH}/picker`) {
             this.pickerTokens.push(headers?.["x-room-token"]);
             return this.pickerFailure ?? { status: 200, body: this.pickerBody() };
+        }
+        if (method === "POST" && pathname === `${ROOM_PATH}/member-state`) {
+            const ids = Array.isArray(body?.content_ids) ? body.content_ids.map(String) : [];
+            this.memberStateCalls.push({ contentIds: ids, roomToken: headers?.["x-room-token"] });
+            if (this.memberStateFailure !== undefined) return this.memberStateFailure;
+            const items = ids.map(contentId => ({
+                content_id: contentId,
+                members: (this.memberStateByContent[contentId] ?? [
+                    { userId: "1", profileId: "p-owner", state: "watched", onWatchlist: false },
+                    { userId: "2", profileId: "p-guest", state: "not_watched", onWatchlist: true },
+                ]).map(entry => ({ user_id: entry.userId, profile_id: entry.profileId, state: entry.state, on_watchlist: entry.onWatchlist === true })),
+            }));
+            return { status: 200, body: { members: this.room().members, items } };
         }
         if (pathname.startsWith(`${ROOM_PATH}/suggestions`)) {
             const handled = this.ballot(method, pathname.slice(ROOM_PATH.length), new URL(path, "https://fake.invalid").searchParams, body, headers?.["x-room-token"]);
