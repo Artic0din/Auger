@@ -27,13 +27,22 @@ export async function refreshShuffle(read: Read, shuffleId: string, quality?: st
     return { next, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
 }
 
+export type SkipShuffleResult =
+    | { readonly kind: "ok"; readonly next: PlayRequest | undefined; readonly scopeLabel?: string | undefined }
+    | { readonly kind: "lookup_failed"; readonly scopeLabel?: string | undefined; readonly cause: unknown };
+
 /** Pick Another: replaces `nextContentId` via POST /shuffles/{id}/skip and resolves the replacement `next` pick. */
-export async function skipShuffle(read: Read, shuffleId: string, nextContentId: string, quality?: string): Promise<{ readonly next: PlayRequest | undefined; readonly scopeLabel?: string | undefined }> {
+export async function skipShuffle(read: Read, shuffleId: string, nextContentId: string, quality?: string): Promise<SkipShuffleResult> {
     const shuffle = await read(operations.skipShuffleItem(shuffleId, nextContentId));
     if (shuffle.id !== shuffleId) throw new ApiError({ kind: "invalid_response", path: "shuffle.id" });
-    if (shuffle.next.id === shuffle.current.id) return { next: undefined, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
-    const next = await shufflePickItem(read, shuffle, shuffle.next.id, quality);
-    return { next, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
+    const scope = shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel };
+    if (shuffle.next.id === shuffle.current.id) return { kind: "ok", next: undefined, ...scope };
+    try {
+        const next = await shufflePickItem(read, shuffle, shuffle.next.id, quality);
+        return { kind: "ok", next, ...scope };
+    } catch (cause) {
+        return { kind: "lookup_failed", ...scope, cause };
+    }
 }
 
 // Apple starts every pick from its beginning, not from saved progress (silo-apple 27cf4a2 PlayerViewModel.loadShufflePick).

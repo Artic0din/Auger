@@ -247,6 +247,38 @@ test("Pick Another failure shows upNext.pickAnotherFailed and restarts the count
     assert.equal(completion(r).shuffleActionError, "upNext.pickAnotherFailed");
     assert.equal(completion(r).countdown, 10, "countdown restarts after failed Pick Another");
     r.controller.destroy();
+
+    // If /skip succeeds on the server but /watch/{replacement} fails, do not advertise the skipped pick or auto-play it; offer Retry to refresh.
+    const partial = await autoplayRig(true);
+    partial.settings.overrides.delete("playback.auto_play_next");
+    partial.settings.profile().set("playback.auto_play_next", true);
+    partial.h.fake.script("/shuffles/sh1",
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } },
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } },
+    );
+    partial.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    scriptParts(partial, [{ file_id: "42", duration_seconds: 3000 }]);
+    partial.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    partial.h.fake.script("/watch/movie-3",
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    await playMovie(partial, { ...MOVIE, shuffleId: "sh1" });
+    partial.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    partial.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "failed", "partial skip failure clears the stale skipped pick");
+    assert.equal(completion(partial).next, undefined);
+    assert.equal(completion(partial).retryable, true);
+    assert.equal(completion(partial).countdown, undefined, "no countdown while the replacement pick is unresolved");
+    await partial.h.clock.advance(15_000);
+    assert.equal(bodies(partial.h, "/start").length, 1, "does not auto-play after a partial skip failure");
+    partial.controller.retryCompletion();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "ready");
+    assert.equal(completion(partial).next?.contentId, "movie-3", "Retry refreshes GET /shuffles/{id} and offers the server's replacement pick");
+    partial.controller.destroy();
 });
 
 test("the next Shuffle pick starts and reports progress from zero although it has a saved position", async () => {

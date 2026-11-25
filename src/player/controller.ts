@@ -3376,6 +3376,12 @@ export class PlaybackController implements PlayerControls {
             const currentView = this.current;
             if (currentView.phase !== "completion") return;
             const scope = completion.shuffleScopeLabel;
+            if (result.kind === "lookup_failed") {
+                completion.autoplays = false;
+                const retryable = !(result.cause instanceof ApiError && (result.cause.status === 401 || result.cause.status === 403 || result.cause.status === 410 || result.cause.problemId === "installation_changed"));
+                this.show({ ...currentView, state: "failed", status: "upNext.headingFinished", next: undefined, retryable, countdown: undefined, shuffleActionError: undefined, ...(scope === undefined ? {} : { shuffleScopeLabel: scope }) });
+                return;
+            }
             if (result.next === undefined) {
                 completion.autoplays = false;
                 this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined, ...(scope === undefined ? {} : { shuffleScopeLabel: scope }) });
