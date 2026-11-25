@@ -40,6 +40,60 @@ test("redactDiagnosticText strips URLs, IPs, query strings, and token-like secre
     assert.ok(redacted.includes("<redacted>"), redacted);
 });
 
+test("source metadata is allowlisted before report submission and QR encoding", async () => {
+    const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "Samsung TV" }, fakeClock(0));
+    const privateText = "Family recital rehearsal";
+    const details = {
+        source: { container: privateText, videoCodec: privateText, width: 1920, height: 1080, frameRate: 24, dynamicRange: privateText, dolbyVisionProfile: undefined },
+        streamContainer: privateText, streamProtocol: privateText, activeQuality: privateText,
+    };
+    collector.recordPlaybackStats({ nowPlaying: [], stream: [], engine: [{ label: "Delivery", value: "Original HTTP" }],
+        playback: [{ label: "Playback", value: `Direct play · ${privateText}` }, { label: "Video", value: privateText }, { label: "Dynamic range", value: privateText }],
+    }, details);
+    assert.equal(collector.snapshot().lastPlayback?.playback, `Direct play · ${privateText}`, "the local HUD retains its display text");
+    collector.recordPlaybackError("playback_failed", "", details);
+    const snapshot = collector.snapshot();
+    for (const auto of [false, true]) {
+        let posted = "";
+        await sendDiagnosticsReport(snapshot, async (_url, init) => {
+            posted = String(init.body);
+            return new Response(JSON.stringify({ ok: true, status: "created", reportId: "AUG-1" }));
+        }, { category: "playback", auto });
+        assert.ok(posted.includes("1920x1080"));
+        assert.ok(!posted.toLowerCase().includes(privateText.toLowerCase()));
+    }
+    const qr = decodeDiagnosticsReportHash(new URL(buildDiagnosticsReportUrl(snapshot, DIAGNOSTICS_REPORT_URL, 4096)).hash);
+    assert.ok(qr);
+    assert.ok(!JSON.stringify(qr).toLowerCase().includes(privateText.toLowerCase()));
+});
+
+test("both submissions omit free-form HUD warnings from the complete outgoing body", async () => {
+    const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "Samsung TV" }, fakeClock(42));
+    const privateWarning = "Family recital rehearsal";
+    collector.recordPlaybackStats({
+        nowPlaying: [], engine: [], stream: [],
+        playback: [
+            { label: "Diagnostics", value: "Validated original playback" },
+            { label: "", value: privateWarning },
+        ],
+    });
+    collector.setPrecedingScreen("home");
+    for (const auto of [false, true]) {
+        let posted: string | undefined;
+        const result = await sendDiagnosticsReport(collector.reportFor("playback").snapshot, async (_url, init) => {
+            posted = String(init.body);
+            return new Response(JSON.stringify({ ok: true, status: "created", reportId: "AUG-1" }));
+        }, { category: "playback", auto });
+        assert.ok(result.ok);
+        assert.ok(posted);
+        assert.equal(posted.includes(privateWarning), false);
+        assert.deepEqual(JSON.parse(posted).play.n, ["Validated original playback"]);
+        assert.equal(JSON.parse(posted).precedingScreen, "home");
+    }
+    collector.clear();
+    assert.equal(collector.reportFor("playback").snapshot.precedingScreen, undefined);
+});
+
 test("DiagnosticsCollector captures playback stats without leaking server host, bounds events, and clears cleanly", () => {
     const clock = fakeClock(Date.UTC(2026, 10, 25, 1, 2, 3));
     const collector = new DiagnosticsCollector({
@@ -146,8 +200,8 @@ test("diagnostics hash URL round-trips, stays under the QR length budget, and fo
             { label: "Playback", value: "Direct play · MKV" },
             { label: "Video", value: "H.264 · 1920×1080 · 23.976 fps · 8.0 Mbps" },
             { label: "Dynamic range", value: "SDR" },
-            { label: "Audio", value: "English · AAC Stereo" },
-            { label: "Subtitles", value: "Off" },
+            { label: "Audio", value: "Private audio track name" },
+            { label: "Subtitles", value: "Private subtitle track name" },
         ],
         stream: [{ label: "Playback status", value: "Playing" }],
         engine: [{ label: "Delivery", value: "Original HTTP" }, { label: "Source", value: "secret.internal" }],
@@ -171,6 +225,9 @@ test("diagnostics hash URL round-trips, stays under the QR length budget, and fo
     assert.equal(decoded.srv, "412 · 1a2b3c4d");
     assert.equal(decoded.play?.m, "Direct play · MKV");
     assert.equal(decoded.play?.d, "Original HTTP");
+    for (const report of [decoded, diagnosticsPayload(collector.snapshot()), diagnosticsPayload(collector.snapshot(), { auto: true })]) {
+        assert.doesNotMatch(JSON.stringify(report), /Private (audio|subtitle) track name/);
+    }
     assert.ok(!url.includes("secret.internal"));
 
     const discord = formatDiscordDiagnostics(decoded);

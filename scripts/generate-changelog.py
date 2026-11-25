@@ -58,10 +58,16 @@ release = load_release_version()
 CommitMessage = release.CommitMessage
 
 RELEASES_MARKER = "<!-- changelog:releases -->"
+DEFAULT_REPO = "Artic0din/Auger-Tizen"
 NO_CHANGES = "General maintenance and stability improvements."
 PR_SUFFIX = re.compile(r"(?:\s*\(#\d+\))+\s*$")
 BREAKING_FOOTER = re.compile(r"^BREAKING[- ]CHANGE:[ \t]*(.*)$", re.MULTILINE)
 TRAILER = re.compile(r"^(?:[A-Za-z][A-Za-z0-9-]*:[ \t]|[A-Za-z][A-Za-z0-9-]* #)")
+CHANGELOG_BOT_SUBJECT = re.compile(
+    r"^docs\(changelog\):\s+record v\d+\.\d+\.\d+ release notes(?:\s*\(#\d+\))?\Z",
+    re.IGNORECASE,
+)
+MERGE_SUBJECT = re.compile(r"^(?:Merge pull request #\d+|Merge branch |merge:)", re.IGNORECASE)
 SECURITY_SCOPES = {"security", "sec"}
 INTERNAL_SCOPES = {"ci", "docs", "test", "tests", "scripts", "deps", "build"}
 SECURITY_WORDS = re.compile(
@@ -69,6 +75,19 @@ SECURITY_WORDS = re.compile(
     re.IGNORECASE,
 )
 CATEGORY_BY_TYPE = {"feat": "FEATURES", "perf": "IMPROVEMENTS", "fix": "FIXES", "revert": "FIXES"}
+CHANGELOG_CATEGORY_BY_TYPE = {
+    "feat": "FEATURES",
+    "perf": "PERFORMANCE",
+    "fix": "FIXES",
+    "revert": "FIXES",
+    "refactor": "MAINTENANCE",
+    "chore": "MAINTENANCE",
+    "build": "MAINTENANCE",
+    "style": "MAINTENANCE",
+    "test": "TESTS",
+    "docs": "DOCS",
+    "ci": "CI",
+}
 
 SCOPE_LABELS = {
     "player": "Playback",
@@ -94,6 +113,9 @@ SCOPE_LABELS = {
     "brand": "Branding",
     "release": "Releases",
     "security": "Security",
+    "ci": "CI",
+    "deps": "Dependencies",
+    "deps-dev": "Dependencies",
 }
 
 # Words whose casing a plain capitalize would break, keyed by their lower case.
@@ -101,17 +123,30 @@ TERMS = {
     term.lower(): term
     for term in (
         "AVPlay", "HDR", "HDR10", "PIN", "QR", "RTL", "TV", "Tizen", "Apps2Samsung",
-        "TMDB", "Silo", "Auger", "HLS", "URL", "API",
+        "TMDB", "Silo", "Auger", "HLS", "URL", "API", "CI", "README",
     )
 }
 
 
 class Category(Enum):
-    BREAKING = "⚠️ Breaking Changes"
-    FEATURES = "✨ New Features"
-    IMPROVEMENTS = "🔧 Improvements"
-    SECURITY = "🔒 Security"
-    FIXES = "🐛 Fixes"
+    BREAKING = "Breaking Changes"
+    FEATURES = "New Features"
+    IMPROVEMENTS = "Improvements"
+    SECURITY = "Security"
+    FIXES = "Fixes"
+
+
+class ChangelogCategory(Enum):
+    BREAKING = "Breaking Changes"
+    FEATURES = "Features"
+    PERFORMANCE = "Performance"
+    SECURITY = "Security"
+    FIXES = "Fixes"
+    MAINTENANCE = "Refactors & Maintenance"
+    TESTS = "Tests"
+    DOCS = "Documentation"
+    CI = "CI"
+    OTHER = "Other Changes"
 
 
 # Fixes read as plain sentences, as in the changelog-generator example.
@@ -612,12 +647,105 @@ def load_pr_bodies(path: Path) -> dict[int, str]:
     return bodies
 
 
+@dataclass(frozen=True)
+class TechnicalChangelog:
+    version: str
+    date: str
+    sections: tuple[tuple[ChangelogCategory, tuple[str, ...]], ...]
+
+    def changelog_entry(self) -> str:
+        lines = [f"## [{self.version}] - {self.date}"]
+        for category, bullets in self.sections:
+            lines += ["", f"### {category.value}", "", *bullets]
+        return "\n".join(lines) + "\n"
+
+
+def format_commit_refs(subject: str, sha: str, repo: str) -> str:
+    refs: list[str] = []
+    pr_match = TRAILING_PR_NUMBER.search(subject)
+    if pr_match:
+        pr = pr_match.group(1)
+        refs.append(f"[#{pr}](https://github.com/{repo}/pull/{pr})" if repo else f"#{pr}")
+    if sha:
+        refs.append(f"[`{sha}`](https://github.com/{repo}/commit/{sha})" if repo else f"`{sha}`")
+    return f" ({', '.join(refs)})" if refs else ""
+
+
+def changelog_entries_for(commit: CommitMessage, repo: str = DEFAULT_REPO) -> list[tuple[ChangelogCategory, str]]:
+    subject = commit.subject.strip()
+    header = release.HEADER.fullmatch(subject)
+    footer = breaking_text(commit.body)
+    is_breaking = bool((header and header.group("bang")) or release.BREAKING.search(commit.body))
+    if not is_breaking and (CHANGELOG_BOT_SUBJECT.match(subject) or MERGE_SUBJECT.match(subject)):
+        return []
+
+    if header:
+        kind = header.group("type").lower()
+        scope = header.group("scope") or ""
+        description = clean(header.group("description"))
+    elif subject.startswith('Revert "'):
+        inner = PR_SUFFIX.sub("", subject).removeprefix('Revert "').removesuffix('"')
+        reverted = release.HEADER.fullmatch(inner)
+        kind, scope = "revert", ""
+        description = f"Reverted: {clean(reverted.group('description') if reverted else inner)}"
+    else:
+        kind, scope, description = "", "", clean(subject)
+
+    scope_parts = [part.strip().lower() for part in scope.split(",") if part.strip()]
+    category_name = CHANGELOG_CATEGORY_BY_TYPE.get(kind, "OTHER")
+    category = ChangelogCategory[category_name]
+    if category == ChangelogCategory.FIXES and (
+        any(part in SECURITY_SCOPES for part in scope_parts) or (kind == "fix" and SECURITY_WORDS.search(description))
+    ):
+        category = ChangelogCategory.SECURITY
+
+    label = scope_label(scope)
+    if category == ChangelogCategory.SECURITY and label == "Security":
+        label = ""
+    refs = format_commit_refs(subject, commit.sha, repo)
+
+    def bullet(text: str) -> str:
+        prefix = f"**{label}**: " if label else ""
+        return f"- {prefix}{text}{refs}"
+
+    entries: list[tuple[ChangelogCategory, str]] = []
+    if is_breaking:
+        migration = sentence_case(footer) if footer else ""
+        entries.append((ChangelogCategory.BREAKING, bullet(migration or description)))
+        if not migration or migration == description:
+            return entries
+    entries.append((category, bullet(description)))
+    return entries
+
+
+def build_technical_changelog(
+    version: str, date: str, commits: Iterable[CommitMessage], repo: str = DEFAULT_REPO
+) -> TechnicalChangelog:
+    bullets: dict[ChangelogCategory, list[str]] = {category: [] for category in ChangelogCategory}
+    for commit in commits:
+        for category, text in changelog_entries_for(commit, repo=repo):
+            if text not in bullets[category]:
+                bullets[category].append(text)
+    sections = tuple((category, tuple(items)) for category, items in bullets.items() if items)
+    if not sections:
+        sections = ((ChangelogCategory.MAINTENANCE, (f"- {NO_CHANGES}",)),)
+    return TechnicalChangelog(version, date, sections)
+
+
 def read_commits(start: str, end: str) -> list[CommitMessage]:
     log_range = f"{start}..{end}" if start else end
     output = release.git(
-        "log", "--reverse", f"--format=%s{release.FIELD_END}%b{release.RECORD_END}", log_range
+        "log", "--abbrev=8", "--reverse", f"--format=%h{release.FIELD_END}%s{release.FIELD_END}%b{release.RECORD_END}", log_range
     ).stdout
-    return release.parse_git_log(output)
+    commits: list[CommitMessage] = []
+    for record in output.split(release.RECORD_END):
+        record = record.lstrip("\n")
+        if not record:
+            continue
+        sha, _, rest = record.partition(release.FIELD_END)
+        subject, _, body = rest.partition(release.FIELD_END)
+        commits.append(CommitMessage(subject, body.strip(), sha.strip()))
+    return commits
 
 
 def insert_entry(changelog: str, version: str, entry: str) -> Optional[str]:
@@ -676,6 +804,7 @@ def main(argv: list[str]) -> int:
             command.add_argument("--pr-notes-file", type=Path)
         if name == "update":
             command.add_argument("--file", type=Path, required=True)
+            command.add_argument("--repo", default=DEFAULT_REPO)
     check_parser = commands.add_parser("check-pr")
     check_parser.add_argument("--title", required=True)
     check_parser.add_argument("--body-file", type=Path, required=True)
@@ -695,7 +824,7 @@ def main(argv: list[str]) -> int:
             pr_bodies = load_pr_bodies(args.pr_notes_file) if args.pr_notes_file else {}
             sys.stdout.write(build_user_notes(version, args.date, commits, pr_bodies).render())
             return 0
-        notes = build_notes(version, args.date, commits)
+        notes = build_technical_changelog(version, args.date, commits, repo=args.repo)
         updated = insert_entry(args.file.read_text(encoding="utf-8"), version, notes.changelog_entry())
         if updated is None:
             print(f"{args.file} already lists {version}.", file=sys.stderr)

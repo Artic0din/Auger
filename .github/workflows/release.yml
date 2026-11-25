@@ -431,7 +431,7 @@ jobs:
             fi
             git checkout --quiet -B changelog-update origin/main
             python3 "${generator}/generate-changelog.py" update --file CHANGELOG.md --version "${VERSION}" \
-              --date "${RELEASE_DATE}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
+              --date "${RELEASE_DATE}" --repo "${GITHUB_REPOSITORY}" ${PREVIOUS_SHA:+--from "${PREVIOUS_SHA}"} --to "${TARGET_SHA}"
             if git diff --quiet CHANGELOG.md; then
               echo "CHANGELOG.md on main already records ${VERSION}."
               exit 0

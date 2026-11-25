@@ -11,12 +11,15 @@ Problems that also happen in the web app usually belong in [silo-server](https:/
 ## Fastest way: send a Diagnostics report straight from Auger
 
 Auger can gather your TV model, firmware/Tizen version, JS heap memory and uptime, Auger version, Silo server version, source and transcoded playback stats (including subtitle mode and delivery, HDR setting, route fallback count, and native Samsung AVPlay error codes), rebuffer count, and recent redacted events automatically.
+A recovered playback report means the player’s clock advanced after the retry while playback was running.
 Server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
 
 1. Open your **Profile** icon (top-right of Auger) → **Settings** → **Diagnostics**.
 2. **Primary (no GitHub or Discord account needed):** Select **Send Diagnostics Report** and choose the category that best matches the issue (**Playback failed**, **Audio / Subtitles**, **Buffering / Quality**, or **App / Navigation**).
    Auger submits the redacted report through the Auger diagnostics relay, which deduplicates against open `diagnostics` issues (opening a new issue or appending a compact diff comment when new details appear) and displays the reference number on your TV (for example, `AUG-901`).
-3. **Optional Automatic Error Reports:** Toggle **Automatic Error Reports** on (off by default) to send a redacted report automatically in the background after fatal playback errors or uncaught app errors (capped to once per unique issue per app version, with a 15-minute cooldown).
+3. **Optional Automatic Error Reports:** Turn on **Automatic Error Reports** to send redacted reports from all profiles on this TV to public GitHub issues.
+   This setting defaults to off.
+   Auger reports qualifying playback failures and uncaught app errors (capped to once per unique issue per app version, with a 15-minute cooldown).
 4. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
    The helper page decodes the link `#fragment` locally in your browser (never sent to a server) and lets you tap **Copy for Discord** or **Open Pre-filled GitHub Bug Report**.
 
