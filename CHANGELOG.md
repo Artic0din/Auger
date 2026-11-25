@@ -10,6 +10,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.6.1] - 2026-11-25
+
+### 🐛 Fixes
+
+- Report the playback attempt that failed
+
 ## [0.6.0] - 2026-11-25
 
 ### Features
