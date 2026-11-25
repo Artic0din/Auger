@@ -20,7 +20,7 @@ For preplay audio/subtitle persistence and fresh resume resolution, see [Skyline
 - **Find Trailers:** profile-scoped non-retryable `POST /api/v2/catalog/items/{id}/trailers/refresh` (never replayed after token refresh), polling item detail every 3 s (at least 60 s before five unchanged polls settle, 120 s max). Leaving pauses observation; returning resumes without another POST; Authority changes discard it.
 - **Not Interested:** writes `PUT`/`DELETE /not-interested/{id}` (idempotent), updates state optimistically, removes the title from Home recommendation rows and every For You row via `notInterestedStore.ts`, and rolls back with `Couldn't Update Item` on failure.
 - **Failure alerts (`MediaActionFeedback`):** definite write refusals show `Couldn't Update Item` (`Couldn't Update Watched Status` for seasons; `Couldn't Shuffle` for shuffle with Apple's 409/404/default copy). Unanswered network/timeout writes hold the change (`Change Not Confirmed` with `Discard Held Change`) and reconcile by reading state rather than auto-replaying.
-- **Removed controls (tvOS parity):** Read synopsis (synopsis is a non-focusable 3-line clamp at 92% white), personal 1–5 star ratings (external IMDb/TMDB scores remain), and Season details button (season tabs drive the inline rail).
+- **Removed controls (tvOS parity):** Read synopsis (synopsis is a non-focusable 3-line clamp at 92% white), Season details button (season tabs drive the inline rail), and personal 1–5 star ratings (removed when tvOS showed external scores only; tvOS has since added half-star ratings via `TVRatingActionButton` / `TVRatingEditor`, tracked under #106).
 
 ## Series seasons and episode rail
 
