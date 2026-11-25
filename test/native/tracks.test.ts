@@ -3091,8 +3091,14 @@ test("a reconnect still awaiting its replacement plan is not ended by the old sw
         // Reconnect closes the old transport while its replacement replan is delayed past the old switch's 30 s deadline.
         r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
         await settle(r);
-        await r.h.clock.advance(30000);
+        await r.h.clock.advance(1000);
         await settle(r);
+        const sent = replans(r.h);
+        assert.equal(sent.length, 2, "reconnect sends one replacement replan after the subtitle switch request");
+        assert.notDeepEqual(sent[1], sent[0], "the replacement replan is not a replay of the subtitle switch");
+        await r.h.clock.advance(29000);
+        await settle(r);
+        assert.equal(replans(r.h).length, 2, "the 503 Retry-After holds recovery through the old switch's 30 s deadline");
         const view = last(r.views);
         assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
         assert.equal(view.phase === "loading" ? view.detail : view.phase, "reconnecting");
