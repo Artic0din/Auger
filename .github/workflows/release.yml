@@ -218,6 +218,7 @@ jobs:
     permissions:
       contents: write # create the tag and release
       pull-requests: read # read each merged PR's Release Notes section
+      actions: read # compare this run's start time to a pre-existing release
     outputs:
       release_date: ${{ steps.notes.outputs.release_date }}
       previous_sha: ${{ steps.notes.outputs.previous_sha }}
@@ -314,8 +315,22 @@ jobs:
             if [[ "${is_draft}" == "false" ]]; then
               tag_sha="$(gh api "repos/${GH_REPO}/commits/${TAG}" --jq .sha)"
               if [[ "${tag_sha}" == "${TARGET_SHA}" ]]; then
-                echo "published=false" >> "${GITHUB_OUTPUT}"
-                echo "${TAG} is already published for ${TARGET_SHA::9}."
+                # A retry after the CLI lost a successful github.token publish must
+                # still notify Discord. A maintainer publish already triggered
+                # release: published, so that path stays published=false.
+                release_meta="$(gh release view "${TAG}" --json author,publishedAt)"
+                release_author="$(printf '%s\n' "${release_meta}" | jq -r '.author.login // empty')"
+                release_published_at="$(printf '%s\n' "${release_meta}" | jq -r '.publishedAt // empty')"
+                run_created="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
+                if [[ "${release_author}" == "github-actions[bot]" &&
+                      -n "${release_published_at}" && -n "${run_created}" &&
+                      "${release_published_at}" >= "${run_created}" ]]; then
+                  echo "published=true" >> "${GITHUB_OUTPUT}"
+                  echo "${TAG} was published earlier in this run for ${TARGET_SHA::9}; Discord can still be notified."
+                else
+                  echo "published=false" >> "${GITHUB_OUTPUT}"
+                  echo "${TAG} is already published for ${TARGET_SHA::9}."
+                fi
                 exit 0
               fi
               echo "::error::${TAG} is already published for ${tag_sha::9}, not ${TARGET_SHA::9}. Run Release on main so it plans the next version."
