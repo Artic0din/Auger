@@ -88,6 +88,8 @@ export interface PlayRequest {
     readonly episode?: true;
     /** Watch progress for the Up Next synopsis and On Deck progress bar. Absent means the item has not started. */
     readonly watch?: { readonly played: boolean; readonly isInProgress?: boolean; readonly positionSeconds?: number };
+    /** Cosmetic card fallback position for On Deck progress bars when watch detail carries none, kept separate from spoiler watch state. */
+    readonly thumbnailPositionSeconds?: number | undefined;
     /** Media duration in seconds for On Deck thumbnail progress bars. */
     readonly durationSeconds?: number | undefined;
     readonly audioTrackId?: string;
@@ -489,6 +491,7 @@ interface Attempt {
         /** Skip Credits reached EOF: Up Next stays open over playing credits with a fixed 10 s countdown (#795). */
         credits: boolean;
         creditsCountdown: number | undefined;
+        creditsDeadline: number | undefined;
         cancelCreditsTimer: (() => void) | undefined;
         episodeLoading: boolean;
         deckLoading: boolean;
@@ -680,6 +683,7 @@ export class PlaybackController implements PlayerControls {
     private readonly stillWatching = new PlayerStillWatchingGuard();
     private readonly readStillWatchingThreshold: () => number;
     private nextStartUnattended = false;
+    private readonly stopFlusherCommit: () => void;
     private readonly pending: PendingTransport;
     private attempt: Attempt | undefined;
     /** Increases on every AVPlay open and teardown; callbacks of an older value are dropped. */
@@ -714,6 +718,9 @@ export class PlaybackController implements PlayerControls {
             scopeId: () => deps.session.activeProfile?.id ?? "default",
             signal: () => deps.session.authoritySignal,
             ...(deps.publicStorage === undefined ? {} : { storage: deps.publicStorage }),
+        });
+        this.stopFlusherCommit = this.flusher.onCommit(key => {
+            if (key === AUTO_NEXT_KEY && this.attempt !== undefined) this.attempt.settingsEpoch += 1;
         });
         const pending = pendingTransports.get(deps.avplay) ?? { seek: undefined, closing: undefined };
         pendingTransports.set(deps.avplay, pending);
@@ -773,7 +780,7 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, creditsDeadline: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0,
@@ -1041,7 +1048,7 @@ export class PlaybackController implements PlayerControls {
         if (duration !== undefined && Number.isFinite(duration) && duration > 0 && targetSeconds >= duration - 0.5) {
             if (this.presentNextUpOverCredits(attempt)) return;
         }
-        this.seekToSeconds(targetSeconds);
+        this.seekAbsolute(targetSeconds);
         this.showPlayback(attempt);
     }
 
@@ -1056,10 +1063,11 @@ export class PlaybackController implements PlayerControls {
         return true;
     }
 
-    private cancelCreditsCountdown(attempt: Attempt): void {
+    private cancelCreditsCountdown(attempt: Attempt, clearDeadline = true): void {
         attempt.offer.cancelCreditsTimer?.();
         attempt.offer.cancelCreditsTimer = undefined;
         attempt.offer.creditsCountdown = undefined;
+        if (clearDeadline) attempt.offer.creditsDeadline = undefined;
     }
 
     /** PlayerViewModel.startNextUpCountdownIfNeeded for `.credits`: fixed 10 s countdown while credits keep playing. */
@@ -1081,6 +1089,7 @@ export class PlaybackController implements PlayerControls {
         }
         if (attempt.offer.cancelCreditsTimer !== undefined) return;
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        attempt.offer.creditsDeadline = deadline;
         const tick = (): void => {
             if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated() || attempt.promptDismissed || this.completion !== undefined) {
                 this.cancelCreditsCountdown(attempt);
@@ -1187,7 +1196,13 @@ export class PlaybackController implements PlayerControls {
                     }
                 }
             }
-            if (moved) this.updatePrompt(attempt);
+            if (moved) {
+                if (attempt.offer.credits && markerAt((attempt.markers?.segments ?? []).filter(segment => segment.kind === "credits"), attempt.sourceSeconds) === undefined) {
+                    attempt.offer.credits = false;
+                    this.cancelCreditsCountdown(attempt);
+                }
+                this.updatePrompt(attempt);
+            }
             this.finishSkipSeek(attempt, moved);
             this.showPlayback(attempt);
             // A switch that settled while this seek held the controls left its queued subtitle choice for now (#738).
@@ -1534,6 +1549,7 @@ export class PlaybackController implements PlayerControls {
             this.leave(attempt, "stop");
         }
         this.attempt = undefined;
+        this.stopFlusherCommit();
         if (this.ownsFlusher) this.flusher.destroy();
         this.stopAuthority();
         globalThis.removeEventListener?.("online", this.onConnectivity);
@@ -3003,7 +3019,7 @@ export class PlaybackController implements PlayerControls {
                             this.performCreditsSkip(attempt, marker.endSeconds);
                             return;
                         }
-                        this.seekToSeconds(marker.endSeconds);
+                        this.seekAbsolute(marker.endSeconds);
                         // Apple arms Watch Intro's five seconds as it issues the skip, so the seek counts against them.
                         this.showPlayback(attempt);
                         return;
@@ -3432,9 +3448,9 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
+    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>, seconds = AUTOPLAY_COUNTDOWN_SECONDS): void {
         if (this.stillWatchingGated()) return;
-        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        const deadline = this.deps.clock.now() + seconds * 1000;
         const tick = (): void => {
             const view = this.current;
             if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined || completion.pickingAnother || completion.advancingShuffle || this.stillWatchingGated()) return;
@@ -3568,7 +3584,11 @@ export class PlaybackController implements PlayerControls {
                     if (current() && this.current.phase === "completion" && this.current.state === "ready") this.show({ ...this.current, deck });
                 }, () => undefined);
                 if (current() && attempt.autoNext && !attempt.promptDismissed && !this.stillWatchingGated()) {
-                    if (attempt.prompt !== undefined) this.advanceNext(undefined, true);
+                    if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined) {
+                        const remaining = Math.max(0, Math.ceil((attempt.offer.creditsDeadline - this.deps.clock.now()) / 1000));
+                        if (remaining > 0) this.startAutoplay(completion, remaining);
+                        else this.advanceNext(undefined, true);
+                    } else if (attempt.prompt !== undefined) this.advanceNext(undefined, true);
                     else this.startAutoplay(completion);
                 }
                 return;
@@ -3605,7 +3625,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         attempt.live = false;
-        this.cancelCreditsCountdown(attempt);
+        this.cancelCreditsCountdown(attempt, false);
         attempt.bufferingQuality.destroy();
         this.clearThumbnails(attempt);
         attempt.cancelTimer?.();
