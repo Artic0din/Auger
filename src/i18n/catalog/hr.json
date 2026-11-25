@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # glas, vodi} few {{title}, # glasa, vodi} other {{title}, # glasova, vodi}}",
  "watchParty.ballot.loadingVote": "Učitavanje vašeg glasa",
  "watchParty.ballot.note": "„{note}“",
+ "watchParty.ballot.remove": "Ukloni prijedlog",
  "watchParty.ballot.removeVote": "Ukloni glas za {title}",
+ "watchParty.ballot.startThis": "Pokreni ovaj",
  "watchParty.ballot.vote": "Glasaj za {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {GLAS} few {GLASA} other {GLASOVA}}",
  "watchParty.banner.hostAway": "Veza s osobom {host} je prekinuta. Party čeka dvije minute da se vrati.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "vi",
  "watchParty.seats.hereNow": "Sada ovdje",
  "watchParty.seats.members": "Članovi",
+ "watchParty.strip.guest": "Domaćin odlučuje što se reproducira.",
+ "watchParty.strip.manager": "Dodajte prijedlog u red da bi bio sljedeći.",
+ "watchParty.strip.titleCount": "Prijedlozi · {count}",
+ "watchParty.suggestion.playTitle": "Reproduciraj {title}",
+ "watchParty.suggestion.queueTitle": "Dodaj {title} u red",
  "watchParty.theHost": "Domaćin",
  "watchParty.title": "Watch Party"
 }

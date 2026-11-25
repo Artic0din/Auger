@@ -145,6 +145,10 @@ export const watchTogetherOperations = {
     setVote: (roomId: string, token: string, suggestionId: string, voted: boolean): RequestSpec<undefined> =>
         ({ method: voted ? "POST" : "DELETE", path: `${suggestionPath(roomId, suggestionId)}/vote`, retry: "safe", roomToken: roomToken(token), decode: () => undefined }),
 
+    /** Host, or the member who suggested it: removes the suggestion from the room. 204 with no body. */
+    deleteSuggestion: (roomId: string, token: string, suggestionId: string): RequestSpec<undefined> =>
+        ({ method: "DELETE", path: suggestionPath(roomId, suggestionId), retry: "safe", roomToken: roomToken(token), decode: () => undefined }),
+
     /** Host only: plays the suggestion for everyone. Non-retryable; a lost answer is read back from the room. */
     promoteSuggestion: (roomId: string, token: string, suggestionId: string): RequestSpec<RoomAccess> => {
         if (suggestionId === "") throw new RangeError("Suggestion id is required");

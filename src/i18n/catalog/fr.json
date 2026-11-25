@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # vote, en tête} many {{title}, # de votes, en tête} other {{title}, # votes, en tête}}",
  "watchParty.ballot.loadingVote": "Chargement de votre vote",
  "watchParty.ballot.note": "« {note} »",
+ "watchParty.ballot.remove": "Retirer la suggestion",
  "watchParty.ballot.removeVote": "Retirer le vote pour {title}",
+ "watchParty.ballot.startThis": "Lancer celui-ci",
  "watchParty.ballot.vote": "Voter pour {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {VOTE} many {DE VOTES} other {VOTES}}",
  "watchParty.banner.hostAway": "{host} a perdu la connexion. La Watch Party est maintenue deux minutes pour lui laisser le temps de revenir.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "vous",
  "watchParty.seats.hereNow": "Présents",
  "watchParty.seats.members": "Membres",
+ "watchParty.strip.guest": "L’hôte choisit ce qui est lu.",
+ "watchParty.strip.manager": "Ajoutez-en une à la file d’attente pour la lire ensuite.",
+ "watchParty.strip.titleCount": "Suggestions · {count}",
+ "watchParty.suggestion.playTitle": "Lire {title}",
+ "watchParty.suggestion.queueTitle": "Ajouter {title} à la file",
  "watchParty.theHost": "L’hôte",
  "watchParty.title": "Watch Party"
 }

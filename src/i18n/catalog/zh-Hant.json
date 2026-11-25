@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, other {{title}，# 票，領先}}",
  "watchParty.ballot.loadingVote": "正在載入你的投票",
  "watchParty.ballot.note": "「{note}」",
+ "watchParty.ballot.remove": "移除推薦",
  "watchParty.ballot.removeVote": "取消投給 {title}",
+ "watchParty.ballot.startThis": "開始播放這部",
  "watchParty.ballot.vote": "投給 {title}",
  "watchParty.ballot.votesLabel": "{count, plural, other {票}}",
  "watchParty.banner.hostAway": "{host} 已中斷連線。Watch Party 會保留兩分鐘，等待主持人重新連線。",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "你",
  "watchParty.seats.hereNow": "目前在場",
  "watchParty.seats.members": "成員",
+ "watchParty.strip.guest": "由主持人決定播放內容。",
+ "watchParty.strip.manager": "將建議加入佇列，即可設為下一部播放。",
+ "watchParty.strip.titleCount": "建議 · {count}",
+ "watchParty.suggestion.playTitle": "播放 {title}",
+ "watchParty.suggestion.queueTitle": "將 {title} 加入佇列",
  "watchParty.theHost": "主持人",
  "watchParty.title": "Watch Party"
 }

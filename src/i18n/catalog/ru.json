@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # голос, лидирует} few {{title}, # голоса, лидирует} many {{title}, # голосов, лидирует} other {{title}, # голоса, лидирует}}",
  "watchParty.ballot.loadingVote": "Загрузка вашего голоса",
  "watchParty.ballot.note": "«{note}»",
+ "watchParty.ballot.remove": "Удалить предложение",
  "watchParty.ballot.removeVote": "Отменить голос за «{title}»",
+ "watchParty.ballot.startThis": "Запустить этот вариант",
  "watchParty.ballot.vote": "Голосовать за «{title}»",
  "watchParty.ballot.votesLabel": "{count, plural, one {ГОЛОС} few {ГОЛОСА} many {ГОЛОСОВ} other {ГОЛОСА}}",
  "watchParty.banner.hostAway": "Организатор {host} отключился. Watch Party подождёт две минуты, пока организатор не вернётся.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "вы",
  "watchParty.seats.hereNow": "Сейчас здесь",
  "watchParty.seats.members": "Участники",
+ "watchParty.strip.guest": "Что включить, решает организатор.",
+ "watchParty.strip.manager": "Добавьте предложение в очередь, чтобы включить его следующим.",
+ "watchParty.strip.titleCount": "Предложения · {count}",
+ "watchParty.suggestion.playTitle": "Воспроизвести «{title}»",
+ "watchParty.suggestion.queueTitle": "Добавить «{title}» в очередь",
  "watchParty.theHost": "Организатор",
  "watchParty.title": "Watch Party"
 }

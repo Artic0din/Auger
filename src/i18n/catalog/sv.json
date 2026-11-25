@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # röst, leder} other {{title}, # röster, leder}}",
  "watchParty.ballot.loadingVote": "Läser in din röst",
  "watchParty.ballot.note": "”{note}”",
+ "watchParty.ballot.remove": "Ta bort förslag",
  "watchParty.ballot.removeVote": "Ta bort röst på {title}",
+ "watchParty.ballot.startThis": "Starta den här",
  "watchParty.ballot.vote": "Rösta på {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {RÖST} other {RÖSTER}}",
  "watchParty.banner.hostAway": "{host} tappade anslutningen. Watch Partyn väntar i två minuter så att värden kan återansluta.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "du",
  "watchParty.seats.hereNow": "Här nu",
  "watchParty.seats.members": "Medlemmar",
+ "watchParty.strip.guest": "Värden bestämmer vad som spelas.",
+ "watchParty.strip.manager": "Köa ett förslag för att spela det härnäst.",
+ "watchParty.strip.titleCount": "Förslag · {count}",
+ "watchParty.suggestion.playTitle": "Spela upp {title}",
+ "watchParty.suggestion.queueTitle": "Köa {title}",
  "watchParty.theHost": "Värden",
  "watchParty.title": "Watch Party"
 }

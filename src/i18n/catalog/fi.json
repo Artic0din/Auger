@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # ääni, johdossa} other {{title}, # ääntä, johdossa}}",
  "watchParty.ballot.loadingVote": "Ladataan ääntäsi…",
  "watchParty.ballot.note": "”{note}”",
+ "watchParty.ballot.remove": "Poista ehdotus",
  "watchParty.ballot.removeVote": "Peru ääni kohteelle {title}",
+ "watchParty.ballot.startThis": "Aloita tämä",
  "watchParty.ballot.vote": "Äänestä kohdetta {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {ÄÄNI} other {ÄÄNTÄ}}",
  "watchParty.banner.hostAway": "{host} menetti yhteyden. Watch Party pysyy auki kaksi minuuttia, jotta järjestäjä ehtii palata.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "sinä",
  "watchParty.seats.hereNow": "Paikalla nyt",
  "watchParty.seats.members": "Jäsenet",
+ "watchParty.strip.guest": "Järjestäjä päättää, mitä toistetaan.",
+ "watchParty.strip.manager": "Lisää ehdotus jonoon, niin se toistetaan seuraavaksi.",
+ "watchParty.strip.titleCount": "Ehdotukset · {count}",
+ "watchParty.suggestion.playTitle": "Toista kohde {title}",
+ "watchParty.suggestion.queueTitle": "Lisää kohde {title} jonoon",
  "watchParty.theHost": "Järjestäjä",
  "watchParty.title": "Watch Party"
 }

@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # stemme, leder} other {{title}, # stemmer, leder}}",
  "watchParty.ballot.loadingVote": "Laster inn stemmen din",
  "watchParty.ballot.note": "«{note}»",
+ "watchParty.ballot.remove": "Fjern forslag",
  "watchParty.ballot.removeVote": "Fjern stemmen på {title}",
+ "watchParty.ballot.startThis": "Start denne",
  "watchParty.ballot.vote": "Stem på {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {STEMME} other {STEMMER}}",
  "watchParty.banner.hostAway": "{host} mistet tilkoblingen. Watch Party venter i to minutter på at verten kommer tilbake.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "du",
  "watchParty.seats.hereNow": "Her nå",
  "watchParty.seats.members": "Medlemmer",
+ "watchParty.strip.guest": "Verten bestemmer hva som spilles.",
+ "watchParty.strip.manager": "Legg et forslag i kø for å spille det som neste.",
+ "watchParty.strip.titleCount": "Forslag · {count}",
+ "watchParty.suggestion.playTitle": "Spill av {title}",
+ "watchParty.suggestion.queueTitle": "Legg {title} i kø",
  "watchParty.theHost": "Verten",
  "watchParty.title": "Watch Party"
 }

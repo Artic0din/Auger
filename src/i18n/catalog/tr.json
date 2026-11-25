@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # oy, önde} other {{title}, # oy, önde}}",
  "watchParty.ballot.loadingVote": "Oyunuz yükleniyor",
  "watchParty.ballot.note": "“{note}”",
+ "watchParty.ballot.remove": "Öneriyi kaldır",
  "watchParty.ballot.removeVote": "{title} için verilen oyu kaldır",
+ "watchParty.ballot.startThis": "Bunu başlat",
  "watchParty.ballot.vote": "{title} için oy ver",
  "watchParty.ballot.votesLabel": "{count, plural, one {OY} other {OY}}",
  "watchParty.banner.hostAway": "{host} bağlantıyı kaybetti. Geri dönebilmesi için parti iki dakika bekletilir.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "siz",
  "watchParty.seats.hereNow": "Şu an burada",
  "watchParty.seats.members": "Üyeler",
+ "watchParty.strip.guest": "Neyin oynatılacağına ev sahibi karar verir.",
+ "watchParty.strip.manager": "Sıradaki yapmak için bir öneriyi sıraya alın.",
+ "watchParty.strip.titleCount": "Öneriler · {count}",
+ "watchParty.suggestion.playTitle": "Oynat: {title}",
+ "watchParty.suggestion.queueTitle": "Sıraya al: {title}",
  "watchParty.theHost": "Ev sahibi",
  "watchParty.title": "Watch Party"
 }

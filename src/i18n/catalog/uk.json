@@ -1190,7 +1190,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # голос, лідирує} few {{title}, # голоси, лідирує} many {{title}, # голосів, лідирує} other {{title}, # голосу, лідирує}}",
  "watchParty.ballot.loadingVote": "Завантаження вашого голосу",
  "watchParty.ballot.note": "«{note}»",
+ "watchParty.ballot.remove": "Вилучити пропозицію",
  "watchParty.ballot.removeVote": "Скасувати голос за «{title}»",
+ "watchParty.ballot.startThis": "Почати цю",
  "watchParty.ballot.vote": "Проголосувати за «{title}»",
  "watchParty.ballot.votesLabel": "{count, plural, one {ГОЛОС} few {ГОЛОСИ} many {ГОЛОСІВ} other {ГОЛОСУ}}",
  "watchParty.banner.hostAway": "З’єднання з {host} втрачено. Watch Party чекатиме на повернення дві хвилини.",
@@ -1320,6 +1322,11 @@
  "watchParty.seat.youLower": "ви",
  "watchParty.seats.hereNow": "Зараз тут",
  "watchParty.seats.members": "Учасники",
+ "watchParty.strip.guest": "Що відтворювати, вирішує організатор.",
+ "watchParty.strip.manager": "Додайте пропозицію в чергу, щоб відтворити її наступною.",
+ "watchParty.strip.titleCount": "Пропозиції · {count}",
+ "watchParty.suggestion.playTitle": "Відтворити {title}",
+ "watchParty.suggestion.queueTitle": "Додати в чергу {title}",
  "watchParty.theHost": "Організатор",
  "watchParty.title": "Watch Party"
 }
