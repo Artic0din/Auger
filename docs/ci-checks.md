@@ -16,7 +16,7 @@ Reusable workflow calls display as `<Caller workflow name> / <Caller job name> /
 | `Tizen Builds / Playwright UI tests (shard 3/3)` | `Playwright UI tests (shard 3/3)` | `.github/workflows/tizen-build.yml` (`ui`) | Runs shard 3 of 3 of the Playwright Chromium screen tests (`test/ui/*.test.ts`). |
 | `Tizen Builds / All build and test checks` | `All build and test checks` | `.github/workflows/tizen-build.yml` (`test`) | Passes only when `Typecheck, build, and native unit tests` and all three UI shards succeed. |
 | `Tizen Builds / Package and sign .wgt` | `Package and sign .wgt` | `.github/workflows/tizen-build.yml` (`package`) | Packages and signs `dist/Auger.wgt` with the Tizen public distributor certificate and uploads `auger-wgt`. |
-| `CI Scripts and Guards / API v2 guard and automation script tests` | `API v2 guard and automation script tests` | `.github/workflows/ci-scripts.yml` (`test`) | Blocks `/api/v1` paths in app and test code and tests the repository's CI, release, parity, and PR-gate scripts. |
+| `CI Scripts and Guards / API v2 guard and automation script tests` | `API v2 guard and automation script tests` | `.github/workflows/ci-scripts.yml` (`test`) | Blocks `/api/v1` paths, tests CI/release/parity/PR-gate scripts, and enforces user-facing PR `## Release Notes`. |
 | `Security / Gitleaks secret scan` | `Gitleaks secret scan` | `.github/workflows/secrets.yml` (`gitleaks`) | Scans the commit range with pinned Gitleaks using the base commit's rules. |
 | `Repository Checks / Standards / Repository baseline` | `Standards / Repository baseline` | `.github/workflows/baseline.yml` (`shared` calling `baseline`) | Verifies that required root documentation and config files exist. |
 | `Repository Checks / Standards / Pull request hygiene` | `Standards / Pull request hygiene` | `.github/workflows/baseline.yml` (`shared` calling `pr-hygiene`) | Enforces Conventional Commits, AI attribution template rules, and forbidden-path bans. |
@@ -39,9 +39,9 @@ The workflow name stays `Tizen Builds` because `.github/workflows/release.yml` s
 
 ### CI Scripts and Guards (`.github/workflows/ci-scripts.yml`)
 
-This workflow runs on pull requests, pushes to `main`, and manual dispatch.
+This workflow runs on pull requests (`opened`, `edited`, `synchronize`, `reopened`), pushes to `main`, and manual dispatch.
 
-- **API v2 guard and automation script tests (`test`).** Runs eight script and guard steps in sequence:
+- **API v2 guard and automation script tests (`test`).** Runs nine script and guard steps in sequence:
   1. `bash scripts/ci/check-no-api-v1.test.sh` tests the `/api/v1` detector.
   2. `bash scripts/ci/check-no-api-v1.sh` fails if `app/`, `src/`, or `test/` (excluding `fixtures/`) references an `/api/v1` request path.
   3. `bash scripts/sync-apiv2-fixtures.test.sh` tests API v2 fixture synchronization.
@@ -50,6 +50,7 @@ This workflow runs on pull requests, pushes to `main`, and manual dispatch.
   6. `python3 scripts/test-generate-changelog.py` tests release note generation and `CHANGELOG.md` updates.
   7. `python3 scripts/test-pr-gate.py` tests the local merge gate script (`scripts/pr-gate.py`).
   8. `scripts/ci/set-wgt-version.sh` verifies stamping a valid three-part version (`1.2.30`) into `app/config.xml` and rejecting an invalid two-part version (`1.2`).
+  9. `python3 scripts/generate-changelog.py check-pr` (pull requests only) verifies that `feat`, `fix`, `perf`, `revert`, and breaking pull requests include a populated user-facing `## Release Notes` (or `## Release note`) section without raw `#123` references or Conventional Commit prefixes, allowing `None` only for non-breaking internal fixes.
 
 ### Security (`.github/workflows/secrets.yml`)
 
