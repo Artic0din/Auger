@@ -2953,7 +2953,7 @@ export class PlaybackController implements PlayerControls {
             }
             if (transport !== this.transport || !attempt.live) return;
             reachedStage(attempt.trace, "media_token");
-            url = `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
+            url = withMediaToken(published, token);
         }
         if (attempt.hidden || attempt.restoring) {
             attempt.deferredOpen = true;
@@ -4481,7 +4481,7 @@ export class PlaybackController implements PlayerControls {
         if (media.origin !== base.origin) {
             return published;
         }
-        return `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
+        return withMediaToken(published, token);
     }
 
     private restartProgress(attempt: Attempt): void {
@@ -5171,6 +5171,17 @@ function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requeste
 }
 
 /** Same path and query, ignoring a renewed `st`. A different path or any other query value is a new stream. */
+/**
+ * Adds the media credential to the query, before any fragment, so the HTTP request carries it.
+ * The published URL stays byte-for-byte otherwise: reserializing would re-encode the signed `st`.
+ */
+function withMediaToken(published: string, token: string): string {
+    const hash = published.indexOf("#");
+    const head = hash === -1 ? published : published.slice(0, hash);
+    const fragment = hash === -1 ? "" : published.slice(hash);
+    return `${head}${head.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}${fragment}`;
+}
+
 function sameDirectStreamUrl(current: string, next: string): boolean {
     if (current === next) return true;
     let left: URL;

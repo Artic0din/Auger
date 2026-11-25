@@ -397,6 +397,28 @@ for (const failed of [false, true]) test(`hide during local seek suspends after 
     r.controller.destroy();
 });
 
+for (const site of ["same", "other"] as const) test(`warm restore of a ${site}-origin media URL with a fragment keeps ${site === "same" ? "one token in its query" : "the account token off it"}`, async () => {
+    const r = await rig();
+    const signed = "st=fix%2Bture%20a";
+    const origin = site === "same" ? "" : "https://node.example.test";
+    r.server.next.push({ url: (sessionId) => `${origin}/api/v2/stream/${sessionId}/video.mkv?${signed}#chapter` });
+    const id = await play(r);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const restores = r.avplay.calls.filter(call => call.startsWith("restoreAsync"));
+    assert.equal(restores.length, 1);
+    const token = r.h.fake.requests.find(request => request.path === "/playback/start")?.headers.authorization?.replace(/^Bearer /, "") ?? "";
+    assert.notEqual(token, "");
+    const restored = new URL(r.avplay.urls.at(-1) ?? "");
+    assert.equal(restored.pathname, `/api/v2/stream/${id}/video.mkv`);
+    // `search` is what the HTTP request sends; the fragment stays local to AVPlay.
+    assert.equal(restored.search, site === "same" ? `?${signed}&token=${encodeURIComponent(token)}` : `?${signed}`);
+    assert.deepEqual(restored.searchParams.getAll("token"), site === "same" ? [token] : []);
+    assert.equal(restored.hash, "#chapter");
+    r.controller.destroy();
+});
+
 test("missing progress during a local seek leaves successor controls usable", async () => {
     const r = await rig();
     const old = await play(r);

@@ -4570,6 +4570,26 @@ test("the account token is never added to a media URL on another origin", async 
     assert.deepEqual(r.avplay.urls, [`https://node.example.test/stream/v3/${id}?st=node-signed`]);
 });
 
+// Synthetic signed query with percent-encoding the server signed byte-for-byte, then a fragment the HTTP request never carries.
+const FRAGMENT_QUERY = "st=fix%2Bture%20a";
+for (const site of ["same", "other"] as const) test(`a ${site}-origin media URL with a fragment opens with ${site === "same" ? "one token in its query" : "no account token"}`, async () => {
+    const r = await rig();
+    const origin = site === "same" ? "" : "https://node.example.test";
+    r.server.next.push({ url: (id) => `${origin}/api/v2/stream/${id}/video.mkv?${FRAGMENT_QUERY}#chapter` });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const id = only(sessionIds(r.server));
+    const token = only(playbackRequests(r.h).filter((request) => request.path === "/playback/start")).headers.authorization?.replace(/^Bearer /, "") ?? "";
+    assert.notEqual(token, "");
+    const opened = new URL(only(r.avplay.urls));
+    assert.equal(opened.origin, site === "same" ? r.h.fake.origin : "https://node.example.test");
+    assert.equal(opened.pathname, `/api/v2/stream/${id}/video.mkv`);
+    // `search` is what the HTTP request sends: the signed query unchanged, then exactly one credential on our own origin only.
+    assert.equal(opened.search, site === "same" ? `?${FRAGMENT_QUERY}&token=${encodeURIComponent(token)}` : `?${FRAGMENT_QUERY}`);
+    assert.deepEqual(opened.searchParams.getAll("token"), site === "same" ? [token] : []);
+    assert.equal(opened.hash, "#chapter");
+});
+
 const SEEK_ENDINGS: readonly ("back" | "destroy")[] = ["back", "destroy"];
 for (const ending of SEEK_ENDINGS) {
     test(`${ending} during a local seek waits for its callback before closing AVPlay`, async () => {

@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Playback diagnostics identified which attempt failed and showed the operation and recovery details available on the TV.
+- Videos whose stream link ended in a `#` bookmark started and resumed with their playback sign-in.
 
 <!-- changelog:releases -->
 
