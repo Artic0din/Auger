@@ -212,11 +212,13 @@ trailerTest("a movie with only a YouTube video shows Trailers & More and leaves 
     assert.equal(metrics.captionWeight, "500");
     assert.equal(metrics.captionColor, "rgba(237, 237, 237, 0.6)");
     assert.equal(metrics.badge, 60);
-    // Wait for Details' opening reads (and any chained reads they start) to finish before counting focus-move requests (#512).
+    // Wait for Details' opening reads—including the watchlist and favorites membership reads chained after personal capabilities—to settle before counting focus-move requests (#512).
     let stableRequests = -1;
     await tv.eventually(async () => {
+        const hasWatchlist = tv.fake.requests.some(request => request.path.startsWith("/watchlist/movie%3Am0001/membership"));
+        const hasFavorites = tv.fake.requests.some(request => request.path.startsWith("/favorites/movie%3Am0001/membership"));
         const count = tv.fake.requests.length;
-        if (tv.pendingReplies !== 0) {
+        if (!hasWatchlist || !hasFavorites || tv.pendingReplies !== 0) {
             stableRequests = -1;
             return false;
         }
