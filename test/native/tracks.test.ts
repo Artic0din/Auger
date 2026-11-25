@@ -2056,6 +2056,7 @@ test("a moved stream opens at a playhead of 0 s, not its own resume point, when 
         await settle(r);
         await settle(r);
         await playReplacement(r);
+        assert.match(r.avplay.urls.at(-1) ?? "", /st=moved/, "AVPlay opened the moved replacement stream");
         assert.deepEqual(seeksTo(r).slice(before).filter(call => call !== "seekTo 0"), [], "0 s, not 12.5 s");
         assert.equal(r.avplay.getState(), "PLAYING", "the replacement stream starts playing");
         assert.equal(r.avplay.getCurrentTime(), 0, "the replacement stream plays from 0 s");
