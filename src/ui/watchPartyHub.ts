@@ -151,6 +151,8 @@ export class WatchPartyHub {
     private epoch = 0;
     /** Counts season and episode reads; leaving the page ends them. The picker's read is not tied to its page, so backing out does not strand it. */
     private browseEpoch = 0;
+    /** Series and season key of `state.episodes`, so Back through nested episode pickers reloads when they diverge. */
+    private loadedEpisodesKey: string | undefined;
     /** Counts picker search requests and debounce timers so stale queries are dropped. */
     private searchEpoch = 0;
     /** Counts member-state reads for the Choice page so late answers for another title are dropped. */
@@ -287,8 +289,19 @@ export class WatchPartyHub {
         switch (page.kind) {
             case "lobby": return false;
             case "search": this.show({ kind: "picker" }); return true;
-            case "choice": this.show(page.from ?? { kind: "picker" }); return true;
-            case "episodes": this.show(page.from ?? { kind: "picker" }); return true;
+            case "choice":
+            case "episodes": {
+                const target = page.from ?? { kind: "picker" as const };
+                if (target.kind === "episodes") {
+                    const wantedKey = target.season === undefined ? undefined : `${target.series.id}:${target.season.seasonNumber}`;
+                    if (this.state.episodes === undefined || this.state.seasons === undefined || wantedKey === undefined || this.loadedEpisodesKey !== wantedKey) {
+                        void this.openEpisodes(target.series, target.season, false, target.from, target.initialEpisodeId);
+                        return true;
+                    }
+                }
+                this.show(target);
+                return true;
+            }
             default: this.show(LOBBY); return true;
         }
     }
@@ -485,6 +498,7 @@ export class WatchPartyHub {
         const episodeTarget = initialEpisodeId ?? (sameSeries ? currentPage?.initialEpisodeId : undefined);
         const wantedSeason = typeof wanted === "number" ? undefined : wanted;
         const wantedNumber = typeof wanted === "number" ? wanted : wanted?.seasonNumber;
+        this.loadedEpisodesKey = undefined;
         Object.assign(this.state, {
             page: { kind: "episodes", series, season: wantedSeason, ...(origin === undefined ? {} : { from: origin }), ...(episodeTarget === undefined ? {} : { initialEpisodeId: episodeTarget }) },
             episodes: undefined, browseLoading: true, browseError: undefined,
@@ -504,6 +518,7 @@ export class WatchPartyHub {
             const episodes = await this.api.episodes(series.id, season.seasonNumber, signal);
             if (this.staleBrowse(epoch)) return;
             this.state.episodes = [...episodes].sort((a, b) => a.episodeNumber - b.episodeNumber);
+            this.loadedEpisodesKey = `${series.id}:${season.seasonNumber}`;
         });
     }
 
@@ -537,6 +552,7 @@ export class WatchPartyHub {
     private reset(): void {
         this.epoch++;
         this.browseEpoch++;
+        this.loadedEpisodesKey = undefined;
         this.searchEpoch++;
         this.memberStateEpoch++;
         this.roomToken = "";

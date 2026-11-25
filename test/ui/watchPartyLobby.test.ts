@@ -231,6 +231,13 @@ test("a series the group is part-way through goes straight to its next episode, 
         await tv.page.locator(".watch-party-who-seen-row").first().waitFor();
         assert.deepEqual(await texts(tv, ".watch-party-who-seen-name"), ["Owner", "Sam"]);
         assert.deepEqual(await texts(tv, ".watch-party-who-seen-state"), ["Watched", "Not watched · Watchlist"]);
+        // D-pad Down reaches the reading zone for "Who's seen it" so large parties can scroll member history.
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "browse-series");
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "who-seen");
+        await tv.remote(38);
+        assert.equal(await tv.focused(), "browse-series");
         await button(tv, "browse-series").click();
         await view(tv, "watchParty:episodes").waitFor();
         assert.equal(await tv.page.locator(".watch-party-episodes-title").textContent(), "Harbor Lights");

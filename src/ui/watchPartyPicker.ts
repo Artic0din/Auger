@@ -229,6 +229,7 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice,
     const choiceActions = el("div", "watch-party-choice-actions");
     choiceActions.append(confirm.element, ...(browseSeries === undefined ? [] : [browseSeries.element]));
     page.appendChild(choiceActions);
+    let whoSeenTarget: FocusItem | undefined;
     if (hub.state.capabilities?.memberState === true) {
         const seen = el("div", "watch-party-who-seen");
         seen.appendChild(eyebrow(translate("watchParty.whoSeen.title")));
@@ -245,6 +246,12 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice,
                     row.append(el("span", "watch-party-who-seen-name", member.displayName), el("span", "watch-party-who-seen-state", historyLabel(state)));
                     seen.appendChild(row);
                 }
+                if ((room?.members.length ?? 0) > 0) {
+                    seen.tabIndex = -1;
+                    seen.setAttribute("data-focus", "who-seen");
+                    seen.setAttribute("aria-label", translate("watchParty.whoSeen.title"));
+                    whoSeenTarget = { key: "who-seen", element: seen };
+                }
             }
         }
         page.appendChild(seen);
@@ -252,10 +259,14 @@ export function choiceView({ hub, baseUrl }: PickerContext, choice: MediaChoice,
     const warning = hub.state.error ?? hub.state.memberStateError;
     if (warning !== undefined) page.appendChild(banner(noticeText(warning), true));
     const items = browseSeries === undefined ? [confirm] : [confirm, browseSeries];
+    const zones: Zone[] = [
+        { id: "choice", layout: "column", items },
+        ...(whoSeenTarget === undefined ? [] : [{ id: "choice-who-seen", layout: "column" as const, reading: true, items: [whoSeenTarget] }]),
+    ];
     return {
         name: "watchParty:choice",
         content: [backdrop(choice.backdropUrl ?? choice.posterUrl, baseUrl, choice.backdropUrl === undefined), page],
-        zones: [{ id: "choice", layout: "column", items }],
+        zones,
         focus: { zone: "choice", key: "confirm" },
         back: () => hub.back(),
     };

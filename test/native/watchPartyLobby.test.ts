@@ -638,6 +638,36 @@ test("opening a choice reads member-state when supported and surfaces failures w
     assert.equal(hub.state.memberState?.items[0]?.members[0]?.state, "watched");
 });
 
+test("Back through nested See all episodes reloads the restored season when a nested browse changed seasons (#783)", async () => {
+    const reads: number[] = [];
+    const season = (n: number) => ({ id: `series:s1-S${n}`, seasonNumber: n, title: `Season ${n}`, episodeCount: 1, posterUrl: undefined, isSpecials: false });
+    const episode = (s: number) => ({ id: `episode:s${s}e1`, seasonNumber: s, episodeNumber: 1, title: `S${s}E1`, runtimeMinutes: 45, stillUrl: undefined, played: false });
+    const series = decodeCard({ content_id: "series:s1", type: "series", title: "Harbor Lights" }, "card");
+    const { hub } = lobby({
+        seasons: async () => [season(1), season(2)],
+        episodes: async (_id, number) => { reads.push(number); return [episode(number)]; },
+    });
+    const readPage = () => hub.state.page;
+    await hub.create("host_pick");
+    await hub.openEpisodes(series);
+    assert.deepEqual(reads, [1]);
+    const ep1 = hub.state.episodes![0]!;
+    const season1 = hub.state.seasons![0]!;
+    hub.show({ kind: "choice", choice: { ...movie(), contentId: ep1.id, seriesLink: series, seasonNumber: 1 }, from: { kind: "episodes", series, season: season1, initialEpisodeId: ep1.id } });
+    // Nested "See all episodes" -> switch to season 2 -> Back twice restores season 1's episodes.
+    await hub.openEpisodes(series, 1, false, readPage(), ep1.id);
+    await hub.openEpisodes(series, hub.state.seasons![1]);
+    assert.equal(hub.state.episodes?.[0]?.id, "episode:s2e1");
+    hub.back();
+    assert.equal(readPage().kind, "choice");
+    hub.back();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const restored = readPage();
+    assert.equal(restored.kind, "episodes");
+    assert.equal(restored.kind === "episodes" && restored.season?.seasonNumber, 1);
+    assert.equal(hub.state.episodes?.[0]?.id, "episode:s1e1", "restored season 1 reloads its own episodes");
+});
+
 test("a failed picker read says so and can be tried again", async () => {
     let fail = true;
     const { hub } = lobby({ picker: async () => { if (fail) throw problem(503, "Down."); return { members: [], continueTogether: [], watchlistUnion: [] }; } });

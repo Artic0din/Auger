@@ -2265,9 +2265,12 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-search-count { margin: 0; font-size: 22px; color: var(--silo-secondary); }
 .watch-party-search-grid.browse-grid { grid-template-columns: repeat(6, 220px); column-gap: 40px; row-gap: 60px; width: auto; padding: 12px 0 48px; }
 .watch-party-empty-title { margin: 0; font-size: 28px; font-weight: 600; color: var(--silo-text); }
-.watch-party-choice { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; height: 1080px; padding: 96px 88px; overflow-y: auto; }
+.browse[data-view="watchParty:choice"] { padding: 0; }
+.browse[data-view="watchParty:choice"] .watch-party-backdrop { position: fixed; }
+.watch-party-choice { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; min-height: 1080px; padding: 96px 88px; }
 .watch-party-choice-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
-.watch-party-who-seen { display: flex; flex-direction: column; gap: 10px; width: 760px; max-width: 100%; }
+.watch-party-who-seen { display: flex; flex-direction: column; gap: 10px; width: 760px; max-width: 100%; border-radius: 14px; outline: none; }
+.watch-party-who-seen:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.35); padding: 12px 16px; margin: -12px -16px; }
 .watch-party-who-seen-checking { margin: 0; font-size: 20px; color: var(--silo-secondary); }
 .watch-party-who-seen-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; font-size: 26px; line-height: 32px; }
 .watch-party-who-seen-name { color: var(--silo-text); }
