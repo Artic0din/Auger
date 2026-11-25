@@ -664,6 +664,15 @@ export const CASES = [
         equal(gh.created().length, 1, "one creation");
         equal(results[0].json.issueNumber, results[1].json.issueNumber, "same destination");
       }
+
+      const gh = fakeGitHub();
+      await send(handleRequest, gh, legacy);
+      for (const fw of ["1651", "1652", "1653", "1654"]) {
+        equal((await send(handleRequest, gh, { ...legacy, fw })).json.status, "updated", "seed follow-up");
+      }
+      const last = await Promise.all([send(handleRequest, gh, current), send(handleRequest, gh, { ...legacy, fw: "1655" })]);
+      equal(gh.comments().length, 5, "equivalent writers share the five-comment cap");
+      equal(last.filter(result => result.json.status === "updated").length, 1, "only one writer uses the last slot");
     },
   },
   {

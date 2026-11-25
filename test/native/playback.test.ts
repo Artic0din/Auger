@@ -5500,6 +5500,7 @@ test("a failed capped HLS attempt after a working Direct Play reports only its o
         const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "QA77S95CAWXXY" }, r.h.clock);
         const firstScope = collector.beginPlaybackSession();
         await playMovie(r);
+        r.avplay.tick(r.avplay.positionMs + 1000);
         const firstTrace = r.controller.incidentTrace();
         assert.ok(firstTrace !== undefined);
         assert.ok(firstTrace.plan !== undefined && firstTrace.plan.delivery !== "server_transcode_hls");

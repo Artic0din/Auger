@@ -2834,6 +2834,7 @@ export class PlaybackController implements PlayerControls {
             }
             if (transport !== this.transport || !attempt.live) return;
             reachedStage(attempt.trace, "media_token");
+            url = `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
         }
         if (attempt.hidden || attempt.restoring) {
             attempt.deferredOpen = true;
