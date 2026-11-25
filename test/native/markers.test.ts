@@ -25,6 +25,7 @@ test("file marker read encodes the identity and decodes intro, recap, credits, a
     const raw = { file_id: "file/42", marker_segments: [
         { kind: "intro", start_seconds: 20, end_seconds: 60 },
         { kind: "preview", start_seconds: 100, end_seconds: 120 },
+        { kind: "preview", start_seconds: 125, end_seconds: 125 },
         { kind: "unknown", start_seconds: 130, end_seconds: 140 },
         { kind: "recap", start_seconds: 200, end_seconds: 210 },
     ] };

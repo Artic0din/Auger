@@ -23,6 +23,7 @@ export function decodeMarkers(value: unknown, fileId: string): readonly Timeline
         const start = segment.start_seconds;
         const end = segment.end_seconds;
         if (typeof start !== "number" || typeof end !== "number" || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+            if (kind === "preview") return [];
             throw new WireError("marker.window", "finite increasing source seconds");
         }
         return [{ kind, startSeconds: start, endSeconds: end }];

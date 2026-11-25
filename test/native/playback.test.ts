@@ -1178,11 +1178,20 @@ test("effective file markers follow source time and cannot replace an in-flight 
         file_id: "42", marker_segments: [
             { kind: "recap", start_seconds: 0, end_seconds: 15 },
             { kind: "intro", start_seconds: 20, end_seconds: 60 },
+            { kind: "preview", start_seconds: 70, end_seconds: 80 },
             { kind: "credits", start_seconds: 90, end_seconds: 100 },
         ],
     } }]);
     await playMovie(r);
-    for (const [seconds, kind] of [[12.5, "recap"], [15, undefined], [20, "intro"], [60, undefined], [90, "credits"], [100, undefined]] as const) {
+    const loadedView = last(r.views);
+    assert.ok(loadedView.phase === "playing");
+    assert.deepEqual(loadedView.markers, [
+        { kind: "recap", startSeconds: 0, endSeconds: 15 },
+        { kind: "intro", startSeconds: 20, endSeconds: 60 },
+        { kind: "preview", startSeconds: 70, endSeconds: 80 },
+        { kind: "credits", startSeconds: 90, endSeconds: 100 },
+    ]);
+    for (const [seconds, kind] of [[12.5, "recap"], [15, undefined], [20, "intro"], [60, undefined], [75, undefined], [90, "credits"], [100, undefined]] as const) {
         r.avplay.tick(seconds * 1000);
         const view = last(r.views);
         assert.ok(view.phase === "playing");
