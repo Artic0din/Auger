@@ -11,11 +11,10 @@ import { type Clock, systemClock } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
 import { browseCache } from "../session/browseCache.ts";
 import type { CatalogPage } from "../contracts/v2/catalog.ts";
-import { requestOperations } from "../api/requestOperations.ts";
-import type { MediaRequest, MyRequests, RequestsCapability } from "../contracts/v2/requests.ts";
-import { WireError, type ProfileSummary } from "../contracts/v2/wire.ts";
-import { requestsState, type RequestsHandlers, type RequestsSource } from "./requests.ts";
-import { canCancel, canRemove, focusAfterRemoval, removeConflictMessage, removedNotice, RequestActionGate, REQUEST_NOTICE_MS, visibleMineRequests } from "./requestRemoval.ts";
+import type { MediaRequest } from "../contracts/v2/requests.ts";
+import type { ProfileSummary } from "../contracts/v2/wire.ts";
+import { requestsView, type RequestsSource } from "./requests.ts";
+import { createRequests } from "./requestsModule.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
@@ -36,7 +35,7 @@ import { Skyline } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, applySeriesLine, artworkUrl, destinationOf, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
-import { errorState, failureBody, failureState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, failureText, hasData, newPages, newRoute, PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
+import { errorState, failureBody, failureState, failureText, hasData, newPages, newRoute, PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
 import { collectionRowPreview } from "./collectionCards.ts";
 import { homeRows, removingDismissed, removingNotInterested, removingNotInterestedFromAll, withNotInterested, type ViewContext } from "./browseViews.ts";
@@ -394,27 +393,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         pendingElsewhere: () => detailWork?.pending === true,
         canAlert: () => !torn && !playing && settingsScreen === undefined && !requestMenu.active,
     });
-    const requestGate = new RequestActionGate();
     const requestMenu = new RequestRecordMenu();
-    let clearRequestNotice = (): void => undefined;
-    const syncRequestActions = (route: Extract<Route, { kind: "requests" }>): void => {
-        const state = route.requests;
-        state.actingId = requestGate.actingId;
-        state.heldIds = requestGate.heldIds();
-        state.notice = requestGate.notice;
-        state.listMessage = requestGate.listMessage;
-    };
-    const publishRequestNotice = (text: string): void => {
-        clearRequestNotice();
-        requestGate.notice = text;
-        clearRequestNotice = clock.schedule(() => {
-            clearRequestNotice = () => undefined;
-            if (requestGate.notice !== text || torn) return;
-            requestGate.notice = undefined;
-            const current = top();
-            if (current?.kind === "requests" && !requestMenu.active) { syncRequestActions(current); render(host.focused()); }
-        }, REQUEST_NOTICE_MS);
-    };
     const stopDetails = (): void => {
         if (detailWork !== undefined) {
             const id = detailWork.detail.id;
@@ -432,6 +411,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const active = top();
         if (active?.kind === "person") active.person.cover();
         else if (active?.kind === "search") active.search.cover();
+        else if (active?.kind === "requests") active.page.cover();
         boxSetRowWork?.stop(); boxSetRowWork = undefined;
     };
     let boxSetRowWork: BoxSetRowState | undefined;
@@ -532,14 +512,53 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     document.addEventListener("visibilitychange", themeVisibility);
     themePrefs.subscribe(syncThemeMusic);
     void themePrefs.refresh();
-    let requestsCapability: RequestsCapability = { enabled: false, follow: false, removeFailed: false };
-    const acceptRequestsCapability = (capability: RequestsCapability): void => {
-        requestsCapability = capability;
-        if (capability.enabled) return;
-        for (const route of new Set([...roots.values(), ...stack])) {
-            if (route.kind === "search") route.search.clearRequests();
-        }
-    };
+    const requests = createRequests({
+        session,
+        clock,
+        focus: focusReader,
+        foreground,
+        isPaintBlocked: () => requestMenu.active || playing || cardActions.active || settingsScreen !== undefined,
+        onEnsurePresentation: () => presentation.ensure(),
+        onCapabilityChange: (capability, { refreshSearch, fromProbe }) => {
+            if (torn) return;
+            if (!capability.enabled) {
+                for (const route of new Set([...roots.values(), ...stack])) {
+                    if (route.kind === "search") route.search.clearRequests();
+                }
+            }
+            const focus = host.focused();
+            shell.setRequestsEnabled(capability.enabled);
+            if (!capability.enabled) {
+                roots.delete("requests");
+                if (top()?.kind === "requests") {
+                    foreground.abort();
+                    // Drop an open card menu without its onClose paint: the stack is about to leave Requests.
+                    if (requestMenu.active) requestMenu.destroy();
+                    closeRequests();
+                    return;
+                }
+            } else if (refreshSearch) {
+                const searchRoute = top();
+                if (searchRoute?.kind === "search") searchRoute.search.refreshRequestsIfEnabled();
+            }
+            if (fromProbe) {
+                render(focus?.key === "requests" && !capability.enabled ? { zone: "nav", key: "home" } : focus);
+            }
+        },
+        onStale: () => {
+            const visible = top();
+            for (const route of new Set([...roots.values(), ...stack])) {
+                if (route.kind === "requests") route.stale = true;
+                if (route.kind === "search") route.search.invalidateRequests(route === visible);
+            }
+        },
+        onChange: (page, paint) => {
+            const current = top();
+            if (torn || playing || cardActions.active || requestMenu.active || settingsScreen !== undefined || current?.kind !== "requests" || current.page !== page) return;
+            render(paint?.focus);
+            if (paint?.enter) host.focusDefault();
+        },
+    });
     /** Apple SearchView.audiobooksAvailable on tvOS: the opt-in is on and the profile can see an audiobook library. */
     const audiobooksInSearch = (): boolean => showAudiobooks.value && (pendingHomeLibraries ?? []).some(library => library.type === "audiobooks");
     const makeSearchRoute = (): Extract<Route, { kind: "search" }> => {
@@ -552,9 +571,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 focus: focusReader,
                 foreground,
                 audiobooksEnabled: audiobooksInSearch,
-                requestsEnabled: () => requestsCapability.enabled,
+                requestsEnabled: () => requests.capability.enabled,
                 onBoxSetsCapability: supported => { boxSetsAnswer = Promise.resolve(supported); },
-                onRequestsRefused: () => { void probeRequests(false); },
+                onRequestsRefused: () => { void requests.probe({ refreshSearch: false }); },
                 onChange: paint => {
                     if (!torn && !playing && !cardActions.active && !requestMenu.active && settingsScreen === undefined && top() === searchRoute) {
                         render(paint?.focus);
@@ -564,8 +583,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }) as Extract<Route, { kind: "search" }>;
         return searchRoute;
     };
-    let probeOrdinal = 0;
-    let requestWritePending = false;
     let shuffleCapability: ShuffleCapability = { usable: false, scopeKinds: [] };
     let shuffleProbe: Promise<void> | undefined;
     let shuffleStarting = false;
@@ -621,14 +638,18 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         // Shuffle starts video; audiobook shuffle waits for audiobook playback.
         return route.library.type !== "audiobooks" && shuffleCapability.usable && shuffleCapability.scopeKinds.includes(kind) && (original?.type !== "mixed" || route.library.type === "mixed");
     };
-    const isHubRoot = (route: Route | undefined): route is Extract<Route, { kind: "requests" }> => route?.kind === "requests" && route.requests.source.kind === "hub";
+    const isHubRoot = (route: Route | undefined): route is Extract<Route, { kind: "requests" }> => route?.kind === "requests" && route.page.root;
     // Apple's closeRequestsScreens closes only the Requests pages on top, then closesRequestsRoot closes the root hub once nothing covers it
     // and focus goes to the tab's content. A page above Requests (Search, Watchlist, a title) stays; pop() closes them when they are back in view.
     const closeRequests = (): void => {
         roots.delete("requests");
         if (top()?.kind !== "requests") return;
         let closedHub = false;
-        while (stack.length > 1 && top()?.kind === "requests") closedHub = isHubRoot(stack.pop()) || closedHub;
+        while (stack.length > 1 && top()?.kind === "requests") {
+            const removed = stack.pop();
+            closedHub = isHubRoot(removed) || closedHub;
+            retireRoute(removed);
+        }
         const origin = top();
         if (origin === undefined) return;
         showRoute(origin, closedHub ? undefined : origin.focus);
@@ -666,31 +687,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (route.kind === "watchParty") route.watchParty.hub.stop();
         if (route.kind === "person") route.person.retire();
         if (route.kind === "search") route.search.retire();
+        if (route.kind === "requests") route.page.retire();
         const visit = detailVisits.get(route);
         if (visit !== undefined) host.forgetPresentation(visit);
-    };
-    const probeRequests = async (refreshSearch = true): Promise<void> => {
-        const ordinal = ++probeOrdinal;
-        try {
-            const capability = await session.call({ ...requestOperations.status(), profileScoped: true, signal: requestsController.signal });
-            if (torn || ordinal !== probeOrdinal) return;
-            acceptRequestsCapability(capability);
-            const searchRoute = top();
-            if (refreshSearch && capability.enabled && searchRoute?.kind === "search") searchRoute.search.refreshRequestsIfEnabled();
-            const focus = host.focused();
-            shell.setRequestsEnabled(capability.enabled);
-            if (!capability.enabled) {
-                roots.delete("requests");
-                if (top()?.kind === "requests") {
-                    foreground.abort();
-                    // Drop an open card menu without its onClose paint: the stack is about to leave Requests.
-                    if (requestMenu.active) requestMenu.destroy();
-                    closeRequests();
-                    return;
-                }
-            }
-            render(focus?.key === "requests" && !capability.enabled ? { zone: "nav", key: "home" } : focus);
-        } catch { /* A transient probe failure keeps the last confirmed capability. */ }
     };
     // Artwork sizing (Apple ImageSizeCapability): one probe per Browse. The last answer for this
     // server is remembered so Home does not wait for it; a failed probe leaves per-slot widths off.
@@ -810,7 +809,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             homeLibrariesNeedForeground = true;
             return;
         }
-        void probeRequests();
+        void requests.probe();
         const current = top();
         if (current !== undefined) recoverCachedRoute(current);
         if (!homeLibrariesFailed || !homeLibrariesNeedForeground) return;
@@ -843,12 +842,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         homeDetails.stop();
         navigation.destroy();
         requestsController.abort();
+        requests.dispose();
         watchPartyProbe?.stop();
         for (const route of stack) retireRoute(route);
         document.removeEventListener("visibilitychange", requestsVisibility);
         cardActions.destroy();
         requestMenu.destroy();
-        clearRequestNotice();
         menuOrigin = undefined;
         stopDetails();
         settingsScreen?.destroy();
@@ -882,7 +881,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const load = <T>(current: Route, read: (signal: AbortSignal) => Promise<T>, apply: (value: T) => FocusTarget | void, quiet = false): void => {
         readStamps.set(current, notInterestedStore.stamp());
         const entryRevision = inputRevision;
-        const enterResults = !quiet && (current.kind === "personal" || (current.kind === "requests" && current.requests.data === undefined && current.requests.source.kind !== "search") || (current.kind === "library" && host.focused()?.key !== "sort"));
+        const enterResults = !quiet && (current.kind === "personal" || (current.kind === "library" && host.focused()?.key !== "sort"));
         current.slow = false;
         const slot = foreground.begin({
             quiet,
@@ -962,8 +961,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 // Apple BoxSetDetailViewModel.errorState: a 404 keeps Not found but says why a box set can be missing.
                 if (current.kind === "boxSet" && current.error.kind === "notFound" && text !== undefined) current.error = { ...current.error, body: { key: "boxSets.unavailableMessage" } };
                 if (current.kind === "calendar") current.calendar.error = error instanceof CalendarTimezoneError ? failureState(error.message) : errorState(error);
-                if (current.kind === "requests") { current.requests.error = errorState(error); if (!current.requests.unconfirmed && !current.requests.writing) current.requests.action = undefined; }
-                if (current.kind === "requests" && error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
                 if (top() === current) {
                     render();
                 }
@@ -1323,81 +1320,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         render(change.focus ?? host.focused());
     };
 
-    // Apple's hub sends each read once (RequestsHubViewModel.load); Try Again is its retry.
-    const once = <T>(spec: RequestSpec<T>): RequestSpec<T> => ({ ...spec, retry: "never" });
-    const readMyRequests = async (signal: AbortSignal): Promise<MyRequests> => {
-        const maxPages = 100, pageSize = 50;
-        const items: MediaRequest[] = [], cursors = new Set<string>();
-        let cursor: string | undefined;
-        for (let pageIndex = 0; pageIndex < maxPages; pageIndex++) {
-            signal.throwIfAborted();
-            const page = await read(once(requestOperations.mine(cursor, pageSize)), signal);
-            signal.throwIfAborted();
-            items.push(...page.items);
-            if (page.cursor === undefined) return { items, cursor: undefined };
-            if (cursors.has(page.cursor)) throw new WireError("requests.mine.page.next_cursor", "an advancing cursor");
-            cursors.add(page.cursor); cursor = page.cursor;
-        }
-        throw new WireError("requests.mine.page", `a list of at most ${maxPages} pages`);
-    };
-
     const loadRoute = (current: Route, quiet = false): void => {
         if (loadSection(current, quiet)) return;
         if (current.kind === "library" && current.discovery?.mode === "Browse") { loadBrowse(current, quiet); return; }
         switch (current.kind) {
-            case "requests": {
-                presentation.ensure();
-                const state = current.requests, source = state.source;
-                const capabilityOrdinal = ++probeOrdinal;
-                const entryRevision = inputRevision;
-                load(current, async signal => {
-                    const startedEpoch = requestGate.epoch;
-                    const coveredHolds = requestGate.cover();
-                    const capability = await read(source.kind === "hub" ? once(requestOperations.status()) : requestOperations.status(), signal);
-                    if (!capability.enabled) return { capability, data: undefined, detail: undefined, detailFailed: false, startedEpoch, coveredHolds };
-                    const hub = source.kind === "hub" ? await Promise.allSettled([read(once(requestOperations.discover()), signal), readMyRequests(signal)]) : undefined;
-                    const isRefusal = (error: unknown): boolean => error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "");
-                    for (const result of hub ?? []) if (result.status === "rejected" && isRefusal(result.reason)) throw result.reason;
-                    // Apple's hub reads both together: either failing fails the load (RequestsHubViewModel.load).
-                    const answered = <T>(result: PromiseSettledResult<T>): T => { if (result.status === "rejected") throw result.reason; return result.value; };
-                    const data = hub !== undefined ? { sections: answered(hub[0]), mine: answered(hub[1]) }
-                        : source.kind === "mine" ? await read(requestOperations.mine(source.cursor), signal)
-                        : source.kind === "media" ? await read(requestOperations.detail(source.title), signal)
-                        : source.kind === "request" ? await read(requestOperations.request(source.id), signal)
-                        : source.kind !== "search" || source.query.trim() === "" ? undefined : await read(requestOperations.search(source.query.trim(), source.page), signal);
-                    let detail: import("../contracts/v2/requests.ts").RequestTitle | undefined;
-                    let detailFailed = false;
-                    if (source.kind === "request" && data !== undefined && "tmdbId" in data) {
-                        try { detail = await read(requestOperations.detail(data), signal); }
-                        catch (error) { if (isRefusal(error)) throw error; detailFailed = true; }
-                    }
-                    return { capability, data, detail, detailFailed, startedEpoch, coveredHolds };
-                }, result => {
-                    if (capabilityOrdinal === probeOrdinal) {
-                        acceptRequestsCapability(result.capability);
-                        shell.setRequestsEnabled(result.capability.enabled);
-                    }
-                    if (!requestsCapability.enabled) { closeRequests(); return; }
-                    let data: typeof state.data = result.data;
-                    // Apple's hub leaves a removed or cancelled request out of every answer. A My Requests read that started before the tombstone does not put it back.
-                    if (data !== undefined && "sections" in data) data = { ...data, mine: { ...data.mine, items: requestGate.filter(data.mine.items) } };
-                    else if (source.kind === "mine" && data !== undefined && "items" in data) data = result.startedEpoch === requestGate.epoch ? { ...data, items: requestGate.filter(data.items) } : state.data;
-                    if ((source.kind === "hub" || source.kind === "mine") && result.startedEpoch === requestGate.epoch) requestGate.releaseHolds(result.coveredHolds);
-                    // A successful request detail read settles that row's uncertain cancel hold without clearing unrelated holds.
-                    if (source.kind === "request" && data !== undefined && "id" in data) requestGate.releaseHold(data.id);
-                    state.data = data;
-                    state.detail = result.detail;
-                    state.detailFailed = result.detailFailed;
-                    state.uncertain = false;
-                    // The server's answer now decides the action (RequestDetailViewModel.swift:250).
-                    if (!state.writing) { state.action = undefined; if (state.unconfirmed) state.actionMessage = undefined; state.unconfirmed = false; }
-                    syncRequestActions(current);
-                    // Focus the person moved while the read was out stays where it is.
-                    return inputRevision === entryRevision ? current.focus : host.focused();
-                }, quiet);
-                render(current.focus);
+            case "requests":
+                current.page.arrive("reshow");
                 return;
-            }
             case "calendar": {
                 const state = current.calendar;
                 const focus = host.focused();
@@ -1767,13 +1696,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         foreground.abort();
         retireRoute(stack.pop());
         const current = top();
-        if (current?.kind === "requests" && !requestsCapability.enabled) { closeRequests(); return; }
+        if (current?.kind === "requests" && !current.page.admissible?.()) { closeRequests(); return; }
         if (current !== undefined) {
-            if (current.kind === "personal" || current.kind === "calendar" || current.kind === "requests") {
+            if (current.kind === "personal" || current.kind === "calendar") {
                 if (current.kind === "personal") current.pendingIndex = undefined;
                 current.stale = true;
             }
-            const fromProfileMenu = (active?.kind === "requests" && active.requests.source.kind === "hub") || active?.kind === "personal" || active?.kind === "watchParty";
+            const fromProfileMenu = (active?.kind === "requests" && active.page.root) || active?.kind === "personal" || active?.kind === "watchParty";
             if (current.kind === "item" && current.data?.details?.series !== undefined && (active?.kind === "season" || active?.kind === "item" && active.data?.detail.type === "episode")) {
                 const details = current.data.details, series = details.series;
                 details.focusedEpisodeId = undefined;
@@ -1868,6 +1797,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (current.kind === "search") {
             input.value = current.search.snapshot().query;
         }
+        requests.setVisible(current.kind === "requests" ? current.page : undefined);
         homeDetails.suspend();
         render(focus);
         if (current.kind === "person") {
@@ -1884,6 +1814,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 current.stale = false;
             }
             current.search.arrive(arrival, focus);
+            return;
+        }
+        if (current.kind === "requests") {
+            current.page.focus = focus ?? current.focus;
+            if (current.stale) {
+                current.page.markStale();
+                current.stale = false;
+            }
+            current.page.arrive(arrival);
             return;
         }
         if ((current.kind === "item" || current.kind === "season") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details))) {
@@ -2034,7 +1973,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         activeBrowse = undefined;
         cancelCalendarDay();
         const current = top();
-        if (current?.kind === "requests") syncRequestActions(current);
         if (current === undefined || torn || playing || cardActions.active || requestMenu.active || settingsScreen !== undefined) {
             return;
         }
@@ -2046,7 +1984,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             cancelCalendarDay = clock.schedule(() => render(host.focused()), midnight.getTime() - clock.now());
         }
         shell.setAvatar(profileName, profileAvatarUrl, context.baseUrl, profileAvatarText);
-        const handlers = { context, focusDefault: () => host.focusDefault(), busy: foreground.busy(), openSearch: () => push(makeSearchRoute()), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, signIn: options.onSignOut, calendar: calendarHandlers, requests: requestsHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
+        const handlers = { context, focusDefault: () => host.focusDefault(), busy: foreground.busy(), openSearch: () => push(makeSearchRoute()), push, openCollection, pop, play, chooseProfile, retry, turn, audiobookPicker, mode, personalFilter, morePersonal, signIn: options.onSignOut, calendar: calendarHandlers, browse: changeBrowse, more: moreBrowse, preserve: (route: Extract<Route, { kind: "library" }>) => browsePrefs.preserve(route.library), gridColumns: presentation.posterScale > 1 ? 5 : 6, ratingSources: shownRatingSources, shuffle: (current.kind === "library" || current.kind === "libraryResults" && current.source.kind === "collection") && canShuffle(current) ? { starting: shuffleStarting, failure: shuffleFailure?.route === current ? shuffleFailure.text : undefined, start: startShuffle, dismiss: () => { shuffleFailure = undefined; render({ zone: "controls", key: "shuffle" }); } } : undefined };
         container.classList.toggle("section-catalog", isSectionRoute(current));
         const browsing = current.kind === "library" && current.discovery?.mode === "Browse";
         container.classList.toggle("library-browse", browsing);
@@ -2063,7 +2001,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             searchTitle.textContent = translate("search.title");
         }
         container.classList.toggle("details-series-scene", current.kind === "item" && current.data?.detail.type === "series");
-        container.classList.toggle("requests-hub", current.kind === "requests" && current.requests.source.kind === "hub");
+        container.classList.toggle("requests-hub", current.kind === "requests" && current.page.root);
         if (browsing) activeBrowse = current.pages;
         const feedOwner = current.kind === "personal" ? current.pages : current.kind === "person" ? current.person.snapshot().feedKey : current.kind === "search" ? current.search.snapshot().feedKey : undefined;
         if (feedOwner !== undefined) {
@@ -2074,7 +2012,16 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             activePersonal = undefined;
         }
         if (isSectionRoute(current)) activeSection = sectionCatalog(current);
-        const view = current.kind === "search"
+        const view = current.kind === "requests"
+            ? requestsView(current.page, {
+                baseUrl: context.baseUrl,
+                back: pop,
+                signIn: options.onSignOut,
+                open: openRequests,
+                openCatalog: (id, title) => open({ kind: "item", id, title }),
+                menu: record => openRequestMenu(current, record),
+            })
+            : current.kind === "search"
             ? globalSearchView(current.search, {
                 context,
                 gridColumns: handlers.gridColumns,
@@ -2083,7 +2030,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 back: pop,
                 signIn: options.onSignOut,
                 openBoxSet: (id, libraryId, title) => push(newRoute({ kind: "boxSet", id, libraryId, title, data: undefined })),
-                openRequestMedia: title => push(newRoute({ kind: "requests", requests: requestsState({ kind: "media", title }) })),
+                openRequestMedia: title => push(newRoute({ kind: "requests", page: requests.open({ kind: "media", title }) })),
                 openCatalogItem: (id, title) => push(newRoute({ kind: "item", id, title, data: undefined })),
             })
             : activeSection !== undefined && isSectionRoute(current)
@@ -2142,209 +2089,41 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             current.search.retry();
             return;
         }
+        if (current.kind === "requests") {
+            current.page.retry();
+            return;
+        }
         current.failure = undefined;
         current.error = undefined;
         render();
         loadRoute(current);
     };
-    // Retained roots must reread too: a settled or uncertain write may have changed them.
-    const markRequestsStale = (): void => {
-        const visible = top();
-        for (const route of new Set([...roots.values(), ...stack])) {
-            if (route.kind === "requests") route.stale = true;
-            if (route.kind === "search") route.search.invalidateRequests(route === visible);
-        }
-    };
-    const requestListRoutes = (): Extract<Route, { kind: "requests" }>[] => [...new Set([...roots.values(), ...stack])].filter((route): route is Extract<Route, { kind: "requests" }> => route.kind === "requests");
-    const dismissRequestNotice = (): void => {
-        clearRequestNotice();
-        clearRequestNotice = () => undefined;
-        requestGate.notice = undefined;
-    };
-    const requestFocusSurvives = (route: Extract<Route, { kind: "requests" }>, target: FocusTarget | undefined): boolean => {
-        if (target === undefined) return false;
-        const data = route.requests.data;
-        const state = route.requests;
-        if (data !== undefined && "sections" in data) {
-            if (visibleMineRequests(data.mine.items, state.actingId, state.heldIds ?? []).some(item => item.id === target.key)) return true;
-            return data.sections.some(section => section.results.some(item => `${item.mediaType}:${item.tmdbId}` === target.key));
-        }
-        if (data !== undefined && "items" in data && route.requests.source.kind === "mine") {
-            return visibleMineRequests(data.items, state.actingId, state.heldIds ?? []).some(item => item.id === target.key);
-        }
-        return true;
-    };
-    const showRequestList = (route: Extract<Route, { kind: "requests" }>, focus: FocusTarget, revision: number): void => {
-        syncRequestActions(route);
-        const moved = inputRevision !== revision ? host.focused() : undefined;
-        // Keep moved focus only when that target still exists after cancel/remove paint; otherwise use the captured neighbor.
-        const next = moved !== undefined && requestFocusSurvives(route, moved) ? moved : focus;
-        route.focus = next;
-        if (top() !== route || requestMenu.active) return;
-        render(next);
-    };
-    const listFocusAfter = (route: Extract<Route, { kind: "requests" }>, id: string, fallback: FocusTarget): FocusTarget => {
-        const data = route.requests.data;
-        if (data !== undefined && ("sections" in data || (route.requests.source.kind === "mine" && "items" in data))) return focusAfterRemoval(data, id);
-        return fallback;
-    };
-    let requestReread = 0;
-    /** Apple's re-read after a remove, and the read that settles a hold. A stale answer installs nothing. */
-    const rereadRequestList = async (route: Extract<Route, { kind: "requests" }>): Promise<boolean> => {
-        const source = route.requests.source;
-        if (source.kind !== "hub" && source.kind !== "mine") return false;
-        const generation = ++requestReread;
-        const startedEpoch = requestGate.epoch;
-        const covered = requestGate.cover();
-        const current = (): boolean => !torn && generation === requestReread && startedEpoch === requestGate.epoch;
-        try {
-            if (source.kind === "hub") {
-                const [sections, mine] = await Promise.all([read(once(requestOperations.discover()), requestsController.signal), readMyRequests(requestsController.signal)]);
-                if (!current()) return false;
-                route.requests.data = { sections, mine: { ...mine, items: requestGate.filter(mine.items) } };
-            } else {
-                const page = await read(requestOperations.mine(source.cursor), requestsController.signal);
-                if (!current()) return false;
-                route.requests.data = { ...page, items: requestGate.filter(page.items) };
-            }
-            route.failure = undefined;
-            requestGate.releaseHolds(covered);
-            return true;
-        } catch (error) {
-            if (!current() || (error instanceof ApiError && error.aborted)) return false;
-            if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
-            return false;
-        }
-    };
-    const dropRemovedRequest = (id: string): void => {
-        requestGate.drop(id);
-        const visible = top();
-        for (const route of requestListRoutes()) {
-            const data = route.requests.data;
-            if (data !== undefined && "sections" in data) route.requests.data = { ...data, mine: { ...data.mine, items: requestGate.filter(data.mine.items) } };
-            else if (data !== undefined && "items" in data && route.requests.source.kind === "mine") route.requests.data = { ...data, items: requestGate.filter(data.items) };
-            if (route !== visible) route.stale = true;
-        }
-    };
-    const paintRequestRecord = (updated: MediaRequest): void => {
-        for (const route of requestListRoutes()) {
-            const data = route.requests.data;
-            if (data !== undefined && "sections" in data) route.requests.data = { ...data, mine: { ...data.mine, items: data.mine.items.map(item => item.id === updated.id ? updated : item) } };
-            else if (data !== undefined && "items" in data && route.requests.source.kind === "mine") route.requests.data = { ...data, items: data.items.map(item => item.id === updated.id ? updated : item) };
-        }
-    };
-    /** Apple's hub/mine actionRefresh: settle the Requests page that is on screen. */
-    const visibleRequestList = (origin: Extract<Route, { kind: "requests" }>): Extract<Route, { kind: "requests" }> => {
-        const visible = top();
-        return visible?.kind === "requests" ? visible : origin;
-    };
-    const showVisibleRequestList = (origin: Extract<Route, { kind: "requests" }>, focus: FocusTarget, revision: number): Extract<Route, { kind: "requests" }> => {
-        const target = visibleRequestList(origin);
-        showRequestList(target, target === origin ? focus : (target.focus ?? focus), revision);
-        return target;
-    };
-    /** Hub/mine reread, or detail reload when the visible page is a request detail. */
-    const settleVisibleRequests = async (origin: Extract<Route, { kind: "requests" }>, focus: FocusTarget, revision: number): Promise<void> => {
-        const target = showVisibleRequestList(origin, focus, revision);
-        const source = target.requests.source.kind;
-        if (source === "hub" || source === "mine") {
-            await rereadRequestList(target);
-            showVisibleRequestList(origin, focus, revision);
-            return;
-        }
-        if (top() !== target || torn) return;
-        // Detail-write completion reloads the visible detail after a list mutation.
-        target.requests.uncertain = true;
-        loadRoute(target, true);
-    };
-    const finishRemoval = async (route: Extract<Route, { kind: "requests" }>, id: string, fallback: FocusTarget, revision: number): Promise<void> => {
-        // Neighbor focus must be taken from the pre-removal list (AGENTS.md restore by id).
-        const focus = listFocusAfter(route, id, fallback);
-        dropRemovedRequest(id);
-        publishRequestNotice(removedNotice());
-        await settleVisibleRequests(route, focus, revision);
-    };
-    const runListRemove = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
-        dismissRequestNotice();
-        const token = requestGate.begin(record.id);
-        if (token === undefined || torn) return;
-        const revision = inputRevision;
-        showVisibleRequestList(route, origin, revision);
-        try {
-            await session.call({ ...requestOperations.remove(record.id), profileScoped: true, replayAfterRefresh: false });
-            await finishRemoval(route, record.id, origin, revision);
-        } catch (error) {
-            if (torn) return;
-            if (error instanceof ApiError && error.problemId === "not_found") {
-                await finishRemoval(route, record.id, origin, revision);
-                return;
-            }
-            if (writeMayHaveApplied(error)) {
-                requestGate.hold(record.id);
-                requestGate.release(token);
-                // Capture the neighbor before readback, as finishRemoval does: if the server already
-                // dropped the card, FocusHost cannot recover a replacement from the missing quick action.
-                const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
-                if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.holdMessage("remove");
-                showVisibleRequestList(route, focus, revision);
-                return;
-            }
-            const message = error instanceof ApiError && error.problemId === "conflict" ? removeConflictMessage() : writeFailureMessage(error);
-            if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
-            await settleVisibleRequests(route, origin, revision);
-            requestGate.listMessage = message;
-            showVisibleRequestList(route, origin, revision);
-        } finally {
-            requestGate.release(token);
-            if (!torn) showVisibleRequestList(route, route.focus ?? origin, revision);
-        }
-    };
-    const runListCancel = async (route: Extract<Route, { kind: "requests" }>, record: MediaRequest, origin: FocusTarget): Promise<void> => {
-        dismissRequestNotice();
-        const token = requestGate.begin(record.id);
-        if (token === undefined || torn) return;
-        const revision = inputRevision;
-        showVisibleRequestList(route, origin, revision);
-        try {
-            const updated: unknown = await session.call({ ...requestOperations.cancel(record.id), profileScoped: true, replayAfterRefresh: false });
-            const listed = visibleRequestList(route);
-            const focus = listFocusAfter(listed, record.id, origin);
-            // Tombstone + epoch so an ordinary hub/mine load that started before this cancel cannot put the pending row back (filter strips it; mine also fences on epoch).
-            requestGate.drop(record.id);
-            if (typeof updated === "object" && updated !== null && "id" in updated && "outcome" in updated) paintRequestRecord(updated as MediaRequest);
-            // Apple's hub applies the cancel result in place and does not reload (RequestsHubViewModel.applyRequestUpdate). A reload here can put the pending row back.
-            const kind = listed.requests.source.kind;
-            if (kind === "hub" || kind === "mine") showRequestList(listed, focus, revision);
-            else await settleVisibleRequests(route, focus, revision);
-        } catch (error) {
-            if (torn) return;
-            if (writeMayHaveApplied(error)) {
-                requestGate.hold(record.id);
-                requestGate.release(token);
-                const focus = listFocusAfter(visibleRequestList(route), record.id, origin);
-                if (!(error instanceof ApiError && error.aborted)) await settleVisibleRequests(route, focus, revision);
-                if (requestGate.held.has(record.id)) requestGate.holdMessage("cancel");
-                showVisibleRequestList(route, focus, revision);
-                return;
-            }
-            // Match detail-write refusals: RequestDetailViewModel refreshes capability and retires entry.
-            if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
-            requestGate.listMessage = writeFailureMessage(error);
-            showVisibleRequestList(route, origin, revision);
-        } finally {
-            requestGate.release(token);
-            if (!torn) showVisibleRequestList(route, route.focus ?? origin, revision);
-        }
+    const openRequestMenu = (current: Extract<Route, { kind: "requests" }>, record: MediaRequest): void => {
+        if (top() !== current || torn || requestMenu.active) return;
+        const origin = { zone: host.focused()?.zone ?? "mine", key: record.id };
+        const actions = current.page.beginMenu(record);
+        if (actions === undefined) return;
+        requestMenu.open({
+            container,
+            title: record.title,
+            ...(actions.cancel ? { cancel: () => { void current.page.cancelRecord(record, origin); } } : {}),
+            ...(actions.remove ? { remove: () => { void current.page.removeRecord(record, origin); } } : {}),
+            onClose: () => {
+                if (torn) return;
+                // Capability loss may have replaced Requests with Home while the menu was open.
+                if (top() === current) render(origin);
+                else render(host.focused());
+            },
+        });
     };
     const openRequests = (source: RequestsSource): void => {
-        if (!requestsCapability.enabled) return;
+        if (!requests.capability.enabled) return;
         // The profile menu's hub is a root page under the bar, like Watchlist: the tab it opened over stays selected.
         // Opening it replaces any other profile-menu root, including itself, so one Back pair still returns to that tab.
         if (source.kind === "hub") clearPersonalRoot();
         const origin = source.kind === "hub" ? top() : undefined;
         const anchor = origin === undefined ? undefined : tabFocus(origin).key;
-        push(newRoute({ kind: "requests", requests: requestsState(source), ...(anchor === undefined ? {} : { anchor }) }));
+        push(newRoute({ kind: "requests", page: requests.open(source), ...(anchor === undefined ? {} : { anchor }) }));
         if (origin !== undefined && anchor !== undefined) origin.focus = { zone: "nav", key: anchor };
     };
     // Like Requests, Watch Party from the profile menu is a root page under the bar: the tab it opened over stays selected.
@@ -2366,116 +2145,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (hub.state.room !== undefined) await hub.stage(choice);
         })();
     };
-    const requestsHandlers = (current: Extract<Route, { kind: "requests" }>): RequestsHandlers => ({
-        // List cancel/remove and detail writes share one mutation lock so navigating between them cannot duplicate a POST.
-        capability: requestsCapability, busy: foreground.busy() || requestWritePending || requestGate.actingId !== undefined, failure: current.failure,
-        profileId: session.activeProfile?.id ?? "", back: pop, signIn: options.onSignOut, open: openRequests,
-        retry: () => {
-            current.focus = host.focused();
-            // The hub's Try Again only exists with no rows, and Apple's retry returns to the loading page.
-            if (current.requests.source.kind === "hub") current.requests.data = undefined;
-            retry(current);
-        },
-        openCatalog: (id, title) => open({ kind: "item", id, title }),
-        edit: () => {
-            if (top() !== current) return;
-            foreground.abort();
-            current.requests.data = undefined; current.failure = undefined;
-            render({ zone: "search", key: "query" });
-        },
-        search: () => {
-            if (top() !== current || current.requests.source.kind !== "search") return;
-            current.requests.source.page = 1; current.requests.data = undefined; current.focus = { zone: "search", key: "query" }; retry(current);
-        },
-        next: value => {
-            const source = current.requests.source;
-            if (source.kind === "mine" && typeof value === "string") source.cursor = value;
-            else if (source.kind === "search" && typeof value === "number") source.page = value;
-            else return;
-            current.requests.data = undefined; current.focus = undefined; retry(current);
-        },
-        menu: record => {
-            if (top() !== current || torn || requestMenu.active || requestWritePending || requestGate.actingId !== undefined) return;
-            const origin = { zone: host.focused()?.zone ?? "mine", key: record.id };
-            const held = requestGate.heldIds();
-            const cancel = canCancel(record, requestGate.actingId, held);
-            const remove = canRemove(record, requestsCapability.removeFailed, requestGate.actingId, held);
-            if (!cancel && !remove) return;
-            foreground.abort();
-            requestMenu.open({
-                container,
-                title: record.title,
-                ...(cancel ? { cancel: () => { void runListCancel(current, record, origin); } } : {}),
-                ...(remove ? { remove: () => { void runListRemove(current, record, origin); } } : {}),
-                onClose: () => {
-                    if (torn) return;
-                    // Capability loss may have replaced Requests with Home while the menu was open.
-                    if (top() === current) render(origin);
-                    else render(host.focused());
-                },
-            });
-        },
-        write: action => {
-            const state = current.requests, data = state.data;
-            if (top() !== current || torn || requestWritePending || requestGate.actingId !== undefined || state.writing || state.uncertain || foreground.busy() || data === undefined || !requestsCapability.enabled) return;
-            const title = "request" in data ? data : state.detail;
-            const spec = action === "cancel" && "id" in data ? requestOperations.cancel(data.id)
-                : title === undefined || action === "cancel" ? undefined : action === "create" ? requestOperations.create(title) : requestOperations.follow(title, action === "follow");
-            if (spec === undefined) return;
-            // Claim the list gate for Cancel so a hub menu cannot start a second POST for the same request.
-            const cancelId = action === "cancel" && "id" in data ? data.id : undefined;
-            const gateToken = cancelId !== undefined ? requestGate.begin(cancelId) : undefined;
-            if (cancelId !== undefined && gateToken === undefined) return;
-            // The ended record is no longer the page's subject: a new request belongs to the title (RequestDetailViewModel.submitRequest reloads the title).
-            const followTitle = (): void => { if (action === "create" && title !== undefined && state.source.kind === "request") state.source = { kind: "media", title }; };
-            const releaseGate = (): void => { if (gateToken !== undefined) requestGate.release(gateToken); };
-            requestWritePending = true; state.writing = true; state.uncertain = true; state.action = action; state.unconfirmed = false; state.actionMessage = undefined; current.failure = undefined;
-            render(host.focused());
-            current.focus = host.focused();
-            const writeRevision = inputRevision;
-            // Focus the person moved while the write was out stays where it is.
-            const keepMovedFocus = (route: Route): void => { if (inputRevision !== writeRevision) route.focus = host.focused() ?? route.focus; };
-            // A write belongs to session authority, not route lifetime. Leaving never replays it.
-            session.call({ ...spec, profileScoped: true, replayAfterRefresh: false }).then(() => {
-                // Do not tombstone or paint the hub here: list Cancel owns drop/paint, and a failed quiet
-                // hub refresh after detail Cancel must keep its earlier cards (RequestsHubViewModel).
-                requestWritePending = false; state.writing = false; releaseGate();
-                if (torn) return;
-                followTitle();
-                markRequestsStale();
-                const visible = top();
-                if (visible?.kind === "requests") { keepMovedFocus(visible); visible.requests.uncertain = true; loadRoute(visible, true); }
-                else render(host.focused());
-            }, (error: unknown) => {
-                requestWritePending = false; state.writing = false;
-                if (torn) { releaseGate(); return; }
-                const unconfirmed = writeMayHaveApplied(error);
-                // Match list cancel: an uncertain Cancel stays held until a successful list/detail read settles it.
-                if (unconfirmed && cancelId !== undefined) {
-                    requestGate.hold(cancelId);
-                    releaseGate();
-                    if (requestGate.held.has(cancelId)) requestGate.holdMessage("cancel");
-                } else {
-                    releaseGate();
-                }
-                if (unconfirmed) followTitle();
-                state.uncertain = unconfirmed; state.unconfirmed = unconfirmed;
-                state.actionMessage = unconfirmed ? unconfirmedWriteMessage(action) : writeFailureMessage(error);
-                if (!unconfirmed) state.action = undefined;
-                markRequestsStale();
-                if (error instanceof ApiError && ["capability_disabled", "capability_not_configured", "capability_unsupported", "permission_denied"].includes(error.problemId ?? "")) void probeRequests();
-                const visible = top();
-                if (visible?.kind === "requests") keepMovedFocus(visible);
-                if (visible === current) {
-                    // Apple reads back an unconfirmed write, unless the answer was lost to a change of owner (RequestDetailViewModel.swift:397).
-                    if (unconfirmed && !(error instanceof ApiError && error.aborted)) loadRoute(current, true);
-                    render(current.focus);
-                }
-                else if (visible?.kind === "requests") { visible.requests.uncertain = true; loadRoute(visible, true); }
-                else render(host.focused());
-            });
-        },
-    });
     const prepareCalendar = (current: Extract<Route, { kind: "calendar" }>): void => {
         const state = current.calendar;
         let zone: string;
@@ -2737,7 +2406,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     shell.setShowAudiobooks(showAudiobooks.value);
     shell.update(pendingHomeLibraries ?? []);
     void navigation.reload();
-    void probeRequests();
+    void requests.probe();
     probeWatchParty();
     stack = [home];
     host.listen();

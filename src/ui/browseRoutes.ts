@@ -1,7 +1,7 @@
 // The places browse can show, what each holds, and which view each state shows: loading,
 // failed, or its data (with a note when a refresh or page turn failed). Loading lives in browse.ts.
 
-import { requestsView, type RequestsHandlers, type RequestsState } from "./requests.ts";
+import type { RequestPage } from "./requestsModule.ts";
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { audiobookView } from "./audiobookView.ts";
 import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
@@ -45,7 +45,7 @@ export interface Pages {
 
 export type RouteData =
     | { readonly kind: "for_you"; data: RecommendationRow[] | undefined }
-    | { readonly kind: "requests"; readonly requests: RequestsState; readonly anchor?: string }
+    | { readonly kind: "requests"; readonly page: RequestPage; readonly anchor?: string }
     | { readonly kind: "watchParty"; readonly watchParty: WatchPartyScreen; readonly anchor?: string }
     | { readonly kind: "calendar"; readonly calendar: CalendarState }
     | { readonly kind: "personal"; readonly source: PersonalSource; readonly anchor?: string; filter: PersonalFilter; capability: PersonalListCapability | undefined; pages: Pages; pendingIndex: number | undefined; error?: ErrorState | undefined; elsewhere?: boolean }
@@ -82,7 +82,7 @@ export function newPages(): Pages {
 
 export function hasData(current: Route): boolean {
     switch (current.kind) {
-        case "requests": return current.requests.data !== undefined;
+        case "requests": return current.page.hasData();
         // The hub reads nothing to open: its support answer comes with the entry point.
         case "watchParty": return true;
         case "calendar":
@@ -115,7 +115,6 @@ export interface RouteHandlers {
     /** The rating sources the server shows (`GET /capabilities/ratings`); empty until it answers, so a hidden rating sort is never offered early. */
     readonly ratingSources: ReadonlySet<string>;
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
-    readonly requests: (route: Extract<Route, { kind: "requests" }>) => RequestsHandlers;
     readonly calendar: (route: Extract<Route, { kind: "calendar" }>) => CalendarHandlers;
     readonly personalFilter: (route: Extract<Route, { kind: "personal" }>, filter: PersonalFilter) => void;
     readonly audiobookPicker: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
@@ -140,7 +139,6 @@ export interface RouteHandlers {
 
 export function routeView(current: Route, handlers: RouteHandlers): View {
     if (current.kind === "for_you") return recommendationsView(current, handlers);
-    if (current.kind === "requests") return requestsView(current.requests, handlers.requests(current), handlers.context.baseUrl);
     if (current.kind === "watchParty") return watchPartyView(current.watchParty, handlers.pop, handlers.context.baseUrl);
     const { context, pop } = handlers;
     if (current.kind === "calendar") return calendarView(current.calendar, handlers.calendar(current));

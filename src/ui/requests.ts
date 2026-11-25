@@ -1,69 +1,30 @@
-import type { MediaRequest, MyRequests, RequestPage, RequestsCapability, RequestTitle, RequestsHub } from "../contracts/v2/requests.ts";
+import type { MediaRequest, RequestTitle } from "../contracts/v2/requests.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
-import type { ErrorState } from "./browseRoutes.ts";
 import { actionButton, artwork, FAILURE_ICON, lines, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
 import { requestPosterUrl } from "./browseModel.ts";
 import { el } from "./screen.ts";
 import { requestProgress } from "./requestProgress.ts";
-import { canCancel, canRemove, visibleMineRequests } from "./requestRemoval.ts";
+import type { RequestPage, RequestPageSnapshot, RequestsSource } from "./requestsModule.ts";
 import { cullToRailBounds, requestActionSpinner, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, TRAY_ICON } from "./requestsScene.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage, failureState, type RequestWrite } from "./errorState.ts";
 
-export type { RequestWrite };
-export type RequestsSource =
-    | { readonly kind: "hub" }
-    | { readonly kind: "search"; query: string; page: number }
-    | { readonly kind: "mine"; cursor: string | undefined }
-    | { readonly kind: "media"; title: RequestTitle }
-    | { readonly kind: "request"; id: string };
-export interface RequestsState {
-    source: RequestsSource;
-    data: RequestsHub | RequestPage | MyRequests | RequestTitle | MediaRequest | undefined;
-    detail?: RequestTitle | undefined;
-    detailFailed?: boolean;
-    /** What the last failed read means; shown while `failure` is set and the hub has no rows. */
-    error?: ErrorState;
-    preview?: RequestTitle | MediaRequest;
-    /** The search title and field row, kept across renders so the focused field is never detached. */
-    search?: { readonly head: readonly HTMLElement[]; readonly items: readonly FocusItem[] };
-    writing: boolean;
-    uncertain: boolean;
-    /** Apple isSubmitting and isCancelling: a write and the read that settles it. */
-    action?: RequestWrite | undefined;
-    /** Apple isSubmissionUnconfirmed and isCancelUnconfirmed: `action` may have landed and no read has shown it. */
-    unconfirmed?: boolean;
-    /** Apple actionErrorMessage, beside the action until the next write or a settling read. */
-    actionMessage?: string | undefined;
-    /** Apple MyRequestsViewModel.actingId: the list row whose cancel or remove is running. */
-    actingId?: string | undefined;
-    /** Apple unconfirmedActions: a lost cancel or remove stays held until a later list read. */
-    heldIds?: readonly string[] | undefined;
-    /** Apple notice, under the rows, cleared after three seconds. */
-    notice?: string | undefined;
-    /** Apple actionErrorMessage for a list cancel or remove. */
-    listMessage?: string | undefined;
-}
-export function requestsState(source: RequestsSource): RequestsState { return { source, data: undefined, writing: false, uncertain: false }; }
-export interface RequestsHandlers {
-    readonly capability: RequestsCapability;
-    readonly busy: boolean;
-    readonly failure: string | undefined;
-    readonly profileId: string;
+export type { RequestWrite, RequestsSource };
+
+export interface RequestsViewNav {
+    readonly baseUrl: string;
     readonly back: () => void;
-    readonly retry: () => void;
-    /** Ends the session for a 401; undefined when this client cannot sign out from here. */
     readonly signIn: (() => void) | undefined;
     readonly open: (source: RequestsSource) => void;
     readonly openCatalog: (id: string, title: string) => void;
-    readonly write: (action: RequestWrite) => void;
     /** Apple's card context menu. Hub and My Requests records only. */
     readonly menu?: (record: MediaRequest) => void;
-    readonly search: () => void;
-    readonly edit: () => void;
-    readonly next: (page: number | string) => void;
 }
+
+const previews = new WeakMap<RequestPage, RequestTitle | MediaRequest>();
+const searchHeads = new WeakMap<RequestPage, { readonly head: readonly HTMLElement[]; readonly items: readonly FocusItem[] }>();
+
 export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string, open: () => void, preview?: (title: RequestTitle | MediaRequest) => void): FocusItem {
     const key = "id" in title ? title.id : `${title.mediaType}:${title.tmdbId}`;
     const progress = requestProgress(title), label = `${title.title} · ${progress?.short ?? "Not requested"}`;
@@ -79,7 +40,9 @@ export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string,
     if (preview !== undefined) item.element.addEventListener("focus", () => preview(title));
     return item;
 }
+
 const browsable = (title: RequestTitle): boolean => title.mediaType === "movie" || title.mediaType === "series";
+
 /** Apple TVPageFocusOwner: an inert page holds focus with no highlight, so the remote always has a target. */
 function pageOwner(page: HTMLElement, label: string): FocusItem {
     page.tabIndex = -1;
@@ -88,29 +51,39 @@ function pageOwner(page: HTMLElement, label: string): FocusItem {
     page.setAttribute("data-focus", "requests-page");
     return { key: "requests-page", element: page };
 }
+
 /** Apple ErrorView.recoveryPlan: a 401 offers sign-in, a 403 or 404 prefers leaving when there is somewhere to go, and otherwise leaving is the remote's Back. */
-function errorPlaceholder(state: RequestsState, h: RequestsHandlers, name: string, goBack?: () => void): View {
-    const error = state.error ?? failureState(h.failure ?? "");
-    const page = searchState(errorHeadline(error), errorMessage(error), "requests-state requests-failure", FAILURE_ICON);
-    page.setAttribute("role", "alert");
-    const items = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), h.retry), goBack === undefined ? undefined : actionButton("go-back", translate("player.goBack"), goBack), h.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), h.signIn));
-    page.appendChild(zoneNode("browse-actions", items));
-    return { name, content: [page], zones: [{ id: "status", layout: "column", items }], focus: { zone: "status", key: items[0]?.key ?? "retry" }, back: h.back };
+function errorPlaceholder(state: RequestPageSnapshot, page: RequestPage, nav: RequestsViewNav, name: string, goBack?: () => void): View {
+    const error = state.error ?? failureState(state.failure ?? "");
+    const node = searchState(errorHeadline(error), errorMessage(error), "requests-state requests-failure", FAILURE_ICON);
+    node.setAttribute("role", "alert");
+    const items = recoveryActions(
+        error,
+        actionButton("retry", translate("shell.errorView.tryAgain"), () => page.retry()),
+        goBack === undefined ? undefined : actionButton("go-back", translate("player.goBack"), goBack),
+        nav.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), nav.signIn),
+    );
+    node.appendChild(zoneNode("browse-actions", items));
+    return { name, content: [node], zones: [{ id: "status", layout: "column", items }], focus: { zone: "status", key: items[0]?.key ?? "retry" }, back: nav.back };
 }
+
 /** Apple TVRequestsPage.placeholder: the whole hub while it has no rows to show. */
-function hubPlaceholder(state: RequestsState, h: RequestsHandlers): View | undefined {
+function hubPlaceholder(state: RequestPageSnapshot, page: RequestPage, nav: RequestsViewNav): View | undefined {
     const data = state.data;
-    if (data !== undefined && "sections" in data && (visibleMineRequests(data.mine.items, state.actingId, state.heldIds ?? []).length > 0 || data.sections.some(section => section.results.some(browsable)))) return undefined;
-    const placeholder = (content: HTMLElement, zone: Zone): View => ({ name: "requests:hub", content: [content], zones: [zone], focus: { zone: zone.id, key: zone.items[0]?.key ?? "" }, back: h.back });
-    if (h.failure !== undefined) {
-        const view = errorPlaceholder(state, h, "requests:hub");
-        return view;
+    if (data !== undefined && "sections" in data && (state.visibleMine.length > 0 || data.sections.some(section => section.results.some(browsable)))) return undefined;
+    const placeholder = (content: HTMLElement, zone: Zone): View => ({ name: "requests:hub", content: [content], zones: [zone], focus: { zone: zone.id, key: zone.items[0]?.key ?? "" }, back: nav.back });
+    if (state.failure !== undefined) {
+        return errorPlaceholder(state, page, nav, "requests:hub");
     }
-    const page = data === undefined ? requestsLoadingPage() : searchState(translate("requests.empty"), translate("requests.emptyBody"), "requests-state requests-empty", TRAY_ICON);
-    return placeholder(page, { id: "page", layout: "row", items: [pageOwner(page, translate(data === undefined ? "requests.loadingSpoken" : "requests.empty"))] });
+    const node = data === undefined ? requestsLoadingPage() : searchState(translate("requests.empty"), translate("requests.emptyBody"), "requests-state requests-empty", TRAY_ICON);
+    return placeholder(node, { id: "page", layout: "row", items: [pageOwner(node, translate(data === undefined ? "requests.loadingSpoken" : "requests.empty"))] });
 }
-export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl: string): View {
-    const source = state.source, data = state.data;
+
+export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
+    const state = page.snapshot();
+    const source = state.source;
+    const data = state.data;
+    const baseUrl = nav.baseUrl;
     const hub = source.kind === "hub";
     const detailPage = source.kind === "media" || source.kind === "request";
     // Detail keeps the unconfirmed copy beside the action; the list banner is for hub/mine only.
@@ -122,16 +95,16 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
         return { ...view, content: [...view.content, banner] };
     };
     // Apple RequestDetailView: with no page to keep, a failed read is the whole screen.
-    const placeholder = hub ? hubPlaceholder(state, h) : detailPage && data === undefined && h.failure !== undefined ? errorPlaceholder(state, h, `requests:${source.kind}`, h.back) : undefined;
+    const placeholder = hub ? hubPlaceholder(state, page, nav) : detailPage && data === undefined && state.failure !== undefined ? errorPlaceholder(state, page, nav, `requests:${source.kind}`, nav.back) : undefined;
     if (placeholder !== undefined) return withNotice(placeholder);
     const content: HTMLElement[] = [];
     const zones: Zone[] = [];
     const openCard = (title: RequestTitle | MediaRequest): void => {
-        if (requestProgress(title)?.display === "inLibrary" && title.libraryContentId) h.openCatalog(title.libraryContentId, title.title);
-        else h.open("id" in title ? { kind: "request", id: title.id } : { kind: "media", title });
+        if (requestProgress(title)?.display === "inLibrary" && title.libraryContentId) nav.openCatalog(title.libraryContentId, title.title);
+        else nav.open("id" in title ? { kind: "request", id: title.id } : { kind: "media", title });
     };
     const preview = el("div", "requests-preview");
-    const paint = (title: RequestTitle | MediaRequest): void => { state.preview = title; preview.replaceChildren(requestHero(title, baseUrl)); };
+    const paint = (title: RequestTitle | MediaRequest): void => { previews.set(page, title); preview.replaceChildren(requestHero(title, baseUrl)); };
     const add = (id: string, items: FocusItem[], grid = false, into: HTMLElement[] = content): void => {
         if (items.length === 0) return;
         into.push(zoneNode(grid ? hub ? "browse-row requests-rail" : "requests-grid" : "browse-actions", items));
@@ -151,38 +124,48 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
     /** Apple TVRequestsPage.card: Cancel Request and Remove Request live on the record's context menu. */
     const ownCard = (record: MediaRequest): FocusItem => {
         const item = card(record, () => openCard(record));
-        const held = state.heldIds ?? [];
-        const cancel = canCancel(record, state.actingId, held);
-        const remove = canRemove(record, h.capability.removeFailed, state.actingId, held);
+        const actions = page.rowActions(record);
         if (state.actingId === record.id) item.element.dataset.busy = "true";
-        const offered = [cancel ? "cancel" : undefined, remove ? "remove" : undefined].filter((name): name is string => name !== undefined);
+        const offered = [actions.cancel ? "cancel" : undefined, actions.remove ? "remove" : undefined].filter((name): name is string => name !== undefined);
         if (offered.length === 0) return item;
         item.element.dataset.requestActions = offered.join(" ");
-        return h.menu === undefined ? item : { ...item, quickAction: () => h.menu?.(record) };
+        return nav.menu === undefined ? item : { ...item, quickAction: () => nav.menu?.(record) };
     };
     const titleItems = (titles: readonly RequestTitle[]): FocusItem[] => titles.filter(browsable).map(title => card(title, () => openCard(title)));
     if (source.kind === "search") {
-        if (state.search === undefined) {
+        let search = searchHeads.get(page);
+        if (search === undefined) {
             const input = el("input", "browse-input") as HTMLInputElement;
-            input.type = "search"; input.setAttribute("aria-label", "Search requests"); input.value = source.query;
-            input.addEventListener("input", () => { source.query = input.value; h.edit(); });
-            input.addEventListener("keydown", event => { if (event.key === "Enter" || event.keyCode === 65376) { event.preventDefault(); event.stopPropagation(); h.search(); } });
-            const items = [{ key: "query", element: input }, actionButton("submit", "Search", () => h.search())];
-            state.search = { head: [el("h1", "browse-title", translate("requests.title")), zoneNode("browse-actions", items)], items };
+            input.type = "search";
+            input.setAttribute("aria-label", "Search requests");
+            input.value = source.query;
+            input.addEventListener("input", () => page.editSearch(input.value));
+            input.addEventListener("keydown", event => {
+                if (event.key === "Enter" || event.keyCode === 65376) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    page.submitSearch();
+                }
+            });
+            const items = [{ key: "query", element: input }, actionButton("submit", "Search", () => page.submitSearch())];
+            search = { head: [el("h1", "browse-title", translate("requests.title")), zoneNode("browse-actions", items)], items };
+            searchHeads.set(page, search);
         }
-        content.push(...state.search.head);
-        zones.push({ id: "search", layout: "row", items: [...state.search.items] });
-    } else if (!hub && source.kind !== "media" && source.kind !== "request") content.push(el("h1", "browse-title", translate(source.kind === "mine" ? "requests.myRequests" : "requests.title")));
+        content.push(...search.head);
+        zones.push({ id: "search", layout: "row", items: [...search.items] });
+    } else if (!hub && source.kind !== "media" && source.kind !== "request") {
+        content.push(el("h1", "browse-title", translate(source.kind === "mine" ? "requests.myRequests" : "requests.title")));
+    }
     if (hub) content.push(preview);
     // A hub with rows keeps them through a failed or running refresh, as Apple's does; a detail's held action says why itself.
-    if (!hub && h.failure !== undefined && state.actionMessage === undefined) content.push(...lines([h.failure], "error"));
-    if (!hub && h.busy && !(detailPage && data !== undefined)) content.push(...lines(["Loading requests…"], "info"));
+    if (!hub && state.failure !== undefined && state.actionMessage === undefined) content.push(...lines([state.failure], "error"));
+    if (!hub && state.busy && !(detailPage && data !== undefined)) content.push(...lines(["Loading requests…"], "info"));
     if (data !== undefined) {
         if ("sections" in data) {
-            const mine = visibleMineRequests(data.mine.items, state.actingId, state.heldIds ?? []);
+            const mine = state.visibleMine;
             const titles = [...mine, ...data.sections.flatMap(section => section.results)];
             const identity = (title: RequestTitle | MediaRequest): string => "id" in title ? title.id : `${title.mediaType}:${title.tmdbId}`;
-            const previous = state.preview;
+            const previous = previews.get(page);
             const initial = (previous === undefined ? undefined : titles.find(title => identity(title) === identity(previous))) ?? titles[0];
             if (initial !== undefined) paint(initial);
             if (mine.length > 0) hubRow("mine", [el("h2", "requests-heading", translate("requests.yourRequests"))], mine.map(ownCard));
@@ -195,22 +178,22 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
         } else if ("results" in data) {
             add("results", titleItems(data.results), true);
             if (data.results.length === 0) content.push(...lines(["No titles found."], "info"));
-            add("pages", [...(data.page > 1 ? [actionButton("previous", "Previous page", () => h.next(data.page - 1))] : []), ...(data.nextPage <= data.totalPages ? [actionButton("next", "Next page", () => h.next(data.nextPage))] : [])]);
+            add("pages", [...(data.page > 1 ? [actionButton("previous", "Previous page", () => page.nextPage(data.page - 1))] : []), ...(data.nextPage <= data.totalPages ? [actionButton("next", "Next page", () => page.nextPage(data.nextPage))] : [])]);
         } else if ("items" in data) {
-            const mine = visibleMineRequests(data.items, state.actingId, state.heldIds ?? []);
+            const mine = state.visibleMine;
             add("mine", mine.map(ownCard), true);
             if (mine.length === 0) content.push(...lines(["No requests yet."], "info"));
-            if (data.cursor !== undefined) { const cursor = data.cursor; add("pages", [actionButton("next", "Next page", () => h.next(cursor))]); }
+            if (data.cursor !== undefined) { const cursor = data.cursor; add("pages", [actionButton("next", "Next page", () => page.nextPage(cursor))]); }
         } else if ("title" in data) {
             const metadata = "request" in data ? data : state.detail;
             const hero = requestHero(data, baseUrl, metadata, true);
             content.push(hero);
             if (state.detailFailed) content.push(...lines(["Could not load title information. Refresh to try again."], "error"));
             const actions: FocusItem[] = [];
-            const inert = state.writing || state.uncertain || h.busy;
+            const inert = state.writing || state.uncertain || state.busy;
             // Apple's primary action: one button whose label and style morph, so focus stays put (RequestDetailView.swift:11).
             const requestAction = (): FocusItem => {
-                const request = actionButton("create", translate("requests.action.request"), () => h.write("create"));
+                const request = actionButton("create", translate("requests.action.request"), () => page.write("create"));
                 request.element.classList.add("requests-primary-action");
                 const label = translate(state.action !== "create" ? "requests.action.request" : state.unconfirmed ? "requests.reason.request_unconfirmed" : "requests.action.requesting");
                 request.element.setAttribute("aria-label", label);
@@ -221,10 +204,10 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
             };
             if ("request" in data) {
                 if (data.request.requestable) actions.push(requestAction());
-                if (h.capability.follow && data.request.id !== undefined && !data.request.requestedByViewer) actions.push(actionButton("follow", data.request.following ? "Unfollow" : "Follow", () => h.write(data.request.following ? "unfollow" : "follow")));
+                if (state.capability.follow && data.request.id !== undefined && !data.request.requestedByViewer) actions.push(actionButton("follow", data.request.following ? "Unfollow" : "Follow", () => page.write(data.request.following ? "unfollow" : "follow")));
             } else {
                 // Apple's canCancel hides Cancel while it runs and until a read settles an unconfirmed one. A list cancel owns the same gate.
-                if (data.profileId === h.profileId && data.outcome === "active" && data.status === "pending" && state.action !== "cancel" && state.actingId === undefined) actions.push(actionButton("cancel", "Cancel request", () => h.write("cancel")));
+                if (data.profileId === state.profileId && data.outcome === "active" && data.status === "pending" && state.action !== "cancel" && state.actingId === undefined) actions.push(actionButton("cancel", "Cancel request", () => page.write("cancel")));
             }
             const progress = requestProgress(data);
             // A request that ended no longer blocks a new one once the fresh title says so (RequestDetailViewModel.primaryAction).
@@ -233,7 +216,7 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
             else if (progress !== undefined) {
                 const catalogId = data.libraryContentId;
                 const inLibrary = progress.display === "inLibrary" && !!catalogId;
-                const primary = actionButton("status", inLibrary ? translate("requests.action.openInLibrary") : progress.long, () => { if (inLibrary && !inert) h.openCatalog(catalogId, data.title); });
+                const primary = actionButton("status", inLibrary ? translate("requests.action.openInLibrary") : progress.long, () => { if (inLibrary && !inert) nav.openCatalog(catalogId, data.title); });
                 primary.element.classList.add("requests-primary-action");
                 if (inLibrary) primary.element.classList.add("requests-interactive-action");
                 primary.element.dataset.requestDisplay = progress.display;
@@ -249,7 +232,7 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
             if (actions.length > 0) {
                 const row = zoneNode("browse-actions requests-detail-actions", actions);
                 // Apple shows an unconfirmed write's message once its read has answered.
-                if (state.actionMessage !== undefined && !(state.unconfirmed && h.busy)) {
+                if (state.actionMessage !== undefined && !(state.unconfirmed && state.busy)) {
                     const message = el("p", "requests-action-message", state.actionMessage);
                     message.setAttribute("role", "alert");
                     row.appendChild(message);
@@ -262,13 +245,14 @@ export function requestsView(state: RequestsState, h: RequestsHandlers, baseUrl:
                 content.push(el("h2", "requests-heading", translate("requests.moreLikeThis")));
                 const items = titleItems(metadata?.recommendations ?? []);
                 const rail = zoneNode("browse-row requests-rail", items);
-                cullToRailBounds(rail); content.push(rail);
+                cullToRailBounds(rail);
+                content.push(rail);
                 zones.push({ id: "related", layout: "row", spatial: true, items });
             }
         }
     }
     // Apple's detail has no controls below More like this; these recover failures and hold focus while none is otherwise available.
-    const recovering = h.failure !== undefined || state.detailFailed === true || zones.length === 0 || (state.uncertain && !state.writing && !h.busy);
-    if (!hub && (!detailPage || recovering)) add("actions", [actionButton("refresh", h.failure !== undefined ? translate("common.retry") : "Refresh", h.retry), actionButton("back", translate("common.back"), h.back)]);
-    return withNotice({ name: `requests:${source.kind}`, content, zones, focus: { zone: zones[0]?.id ?? "actions", key: zones[0]?.items[0]?.key ?? "back" }, back: h.back });
+    const recovering = state.failure !== undefined || state.detailFailed || zones.length === 0 || (state.uncertain && !state.writing && !state.busy);
+    if (!hub && (!detailPage || recovering)) add("actions", [actionButton("refresh", state.failure !== undefined ? translate("common.retry") : "Refresh", () => page.retry()), actionButton("back", translate("common.back"), nav.back)]);
+    return withNotice({ name: `requests:${source.kind}`, content, zones, focus: { zone: zones[0]?.id ?? "actions", key: zones[0]?.items[0]?.key ?? "back" }, back: nav.back });
 }
