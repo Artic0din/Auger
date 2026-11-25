@@ -407,8 +407,7 @@
 }
 
 .player-skip[hidden] + .player-skip-caption,
-.player-skip-caption[hidden],
-.player-skip-caption:empty {
+.player-skip-caption[hidden] {
     display: block;
     opacity: 0;
     visibility: hidden;
@@ -420,8 +419,7 @@
     .player-button.player-skip[hidden],
     .player-skip-caption,
     .player-skip[hidden] + .player-skip-caption,
-    .player-skip-caption[hidden],
-    .player-skip-caption:empty {
+    .player-skip-caption[hidden] {
         transition: none;
     }
 }

@@ -2434,28 +2434,66 @@ test("skip pills fade with Apple's 0.2 s ease-out transition and drop immediatel
     try {
         await show(page, inMarker(INTRO, 25));
         const shownStyle = await page.locator(".player-skip").evaluate(node => {
+            for (const animation of node.getAnimations()) animation.finish();
             const style = getComputedStyle(node);
-            return { display: style.display, transitionProperty: style.transitionProperty, transitionDuration: style.transitionDuration, transitionTimingFunction: style.transitionTimingFunction };
+            return { display: style.display, opacity: style.opacity, visibility: style.visibility, transitionProperty: style.transitionProperty, transitionDuration: style.transitionDuration, transitionTimingFunction: style.transitionTimingFunction };
         });
         assert.equal(shownStyle.display, "flex");
+        assert.equal(shownStyle.opacity, "1");
+        assert.equal(shownStyle.visibility, "visible");
         assert.ok(shownStyle.transitionProperty.split(", ")[0] === "opacity", shownStyle.transitionProperty);
         assert.equal(shownStyle.transitionDuration.split(", ")[0], "0.2s");
         assert.equal(shownStyle.transitionTimingFunction.split(", ")[0], "ease-out");
-        // When hidden by timer expiry, the pill stays in flex layout so its opacity can fade to 0 over 0.2 s.
+        // When hidden by timer expiry, the pill stays in flex layout and fades its opacity from 1 to 0 over 0.2 s.
         await page.clock.runFor(5000);
-        const fadedStyle = await page.locator(".player-skip").evaluate(node => {
+        const midFade = await page.locator(".player-skip").evaluate(node => {
             const style = getComputedStyle(node);
-            return { hidden: (node as HTMLElement).hidden, display: style.display, opacity: style.opacity, transitionProperty: style.transitionProperty };
+            return { hidden: (node as HTMLElement).hidden, display: style.display, visibility: style.visibility, transitionProperty: style.transitionProperty, transitionDelay: style.transitionDelay };
         });
-        assert.equal(fadedStyle.hidden, true);
-        assert.equal(fadedStyle.display, "flex");
-        assert.ok(fadedStyle.transitionProperty.startsWith("opacity"), fadedStyle.transitionProperty);
-        // Re-enter intro and dismiss with Back: instant dismissal drops the transition.
+        assert.equal(midFade.hidden, true);
+        assert.equal(midFade.display, "flex");
+        assert.ok(midFade.transitionProperty.startsWith("opacity"), midFade.transitionProperty);
+        assert.equal(midFade.transitionDelay.split(", ")[1], "0.2s", "visibility waits for the 0.2 s opacity fade");
+        const settledFade = await page.locator(".player-skip").evaluate(node => {
+            for (const animation of node.getAnimations()) animation.finish();
+            const style = getComputedStyle(node);
+            return { opacity: style.opacity, visibility: style.visibility };
+        });
+        assert.equal(settledFade.opacity, "0");
+        assert.equal(settledFade.visibility, "hidden");
+        // Re-enter intro and dismiss with Back: instant dismissal drops the transition, and the next intro clears it before showing.
         await show(page, playing(TRACKS));
         await show(page, inMarker(INTRO, 25));
         await remote(page, BACK);
         assert.equal(await page.locator(".player-skip").evaluate(node => node.classList.contains("player-skip-instant")), true);
         assert.equal(await page.locator(".player-skip").evaluate(node => getComputedStyle(node).visibility), "hidden");
+        await show(page, playing(TRACKS));
+        await show(page, inMarker({ kind: "intro", startSeconds: 120, endSeconds: 160 }, 125));
+        assert.equal(await page.locator(".player-skip").evaluate(node => node.classList.contains("player-skip-instant")), false);
+        assert.ok((await page.locator(".player-skip").evaluate(node => getComputedStyle(node).transitionProperty)).startsWith("opacity"));
+        // Selecting a recap pill keeps instant-hide across an intervening redraw until the seek removes the marker.
+        await show(page, inMarker(RECAP, 6));
+        await remote(page, UP);
+        await remote(page, UP);
+        await remote(page, ENTER);
+        await show(page, inMarker(RECAP, 7));
+        await show(page, playing(TRACKS));
+        assert.equal(await page.locator(".player-skip").evaluate(node => node.classList.contains("player-skip-instant")), true);
+        // Undo caption stays populated while hidden so its opacity fade animates the text out cleanly.
+        await show(page, { ...playing(TRACKS), undoSkipSeconds: 20 });
+        assert.equal(await page.locator(".player-skip-caption").evaluate(node => (node as HTMLElement).hidden), false);
+        await page.clock.runFor(5000);
+        const captionFade = await page.locator(".player-skip-caption").evaluate(node => {
+            const hidden = (node as HTMLElement).hidden;
+            const text = node.textContent;
+            for (const animation of node.getAnimations()) animation.finish();
+            const style = getComputedStyle(node);
+            return { hidden, text, opacity: style.opacity, visibility: style.visibility };
+        });
+        assert.equal(captionFade.hidden, true);
+        assert.equal(captionFade.text, "Intro skipped");
+        assert.equal(captionFade.opacity, "0");
+        assert.equal(captionFade.visibility, "hidden");
     } finally { await page.close(); }
 });
 
