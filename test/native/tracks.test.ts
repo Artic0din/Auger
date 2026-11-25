@@ -772,6 +772,10 @@ test("three lost track-change answers reconcile before continuing with a fresh p
     assert.equal(view.phase === "loading" && view.detail, "reconnecting");
     assert.equal(r.avplay.state, "NONE");
     assert.equal(r.server.session(id).receipt, undefined, "the uncertain change joins recovery before teardown");
+    const captured = r.controller.mediaFailure();
+    assert.ok(captured);
+    assert.deepEqual([captured.failure.stage, captured.failure.code, captured.failure.network], ["audio_switch", "no_answer", true]);
+    assert.equal(incidentAutoEligible(mediaIncident(captured.trace, captured.failure)), false);
     r.controller.selectAudio("file:42:audio:2");
     r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
     await settle(r);
@@ -4362,11 +4366,13 @@ function taintSubtitleLabels(r: Rig): void {
     r.server.files.set("42", { ...file, inventory: file.inventory.map(entry => ({ ...entry, label: "SYNTH_TRACK label" })) });
 }
 
-test("#874 a caption file that fails with no AVPlay row to stand in is a failed, auto-eligible incident without the track's label", async () => {
+for (const lostAnswer of [false, true]) test(`a caption failure without a native fallback records ${lostAnswer ? "a connection loss" : "the HTTP status"}`, async () => {
     const r = await rig();
     taintSubtitleLabels(r);
     r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=gone`, format: "vtt", timing_origin_seconds: 0 } });
-    r.h.fake.script("/captions?token=gone", { status: 503, text: "unavailable" });
+    const path = "/captions?token=gone";
+    if (lostAnswer) r.h.fake.dropNextAnswer(path);
+    else r.h.fake.script(path, { status: 503, text: "unavailable" });
     r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "fra" }) }];
     try {
         await playMovie(r, { ...MOVIE, startSeconds: 0 });
@@ -4376,7 +4382,9 @@ test("#874 a caption file that fails with no AVPlay row to stand in is a failed,
         assert.deepEqual([captured.failure.stage, captured.failure.out, captured.failure.code], ["caption_load", "failed", "caption_load_failed"]);
         const incident = mediaIncident(captured.trace, captured.failure);
         assert.equal(incident.cat, "audio_subtitles");
-        assert.equal(incidentAutoEligible(incident), true);
+        assert.equal(incident.http, lostAnswer ? undefined : 503);
+        assert.equal(incident.kind, lostAnswer ? "network" : undefined);
+        assert.equal(incidentAutoEligible(incident), !lostAnswer);
         assert.ok(incident.t.includes("caption_load:fail:caption_load_failed"), incident.t.join(", "));
         const evidence = r.controller.mediaEvidence();
         assert.ok(evidence !== undefined);

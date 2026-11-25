@@ -225,6 +225,7 @@ export const BUFFERING_CASES = [
       equal((await send(handleRequest, gh, report(failedRecovery, "auto", undefined))).status, 201, "older client files");
       excludes(gh.created()[0].body.body, "### Buffering and quality", "no section without evidence");
       equal((await send(handleRequest, gh, report(failedRecovery, "manual", bufferingEvidence))).json.issueNumber, gh.issues[0].number, "the current client's report joins the same issue");
+      includes(gh.comments()[0].body.body, "### Buffering and quality", "new evidence rendered in follow-up");
       equal(gh.issues.length, 1, "one issue");
     },
   },

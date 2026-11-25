@@ -102,6 +102,7 @@ export class BufferingEvidence {
     private longestStallMs = 0;
     private readonly stepDowns: StepDown[] = [];
     private learnedLimitCleared = false;
+    private pendingClear = false;
 
     startRead(speed: SpeedEvidence, estimateKbps: number | undefined): void {
         this.speed = speed;
@@ -118,7 +119,7 @@ export class BufferingEvidence {
     }
 
     stepSent(reason: StepDownReason, estimateKbps: number | undefined, throughputKbps: number | undefined, clearsLimit: boolean): void {
-        if (clearsLimit) this.learnedLimitCleared = true;
+        this.pendingClear = clearsLimit;
         this.stepDowns.push({ reason, from: this.plan, to: undefined, estimateKbps, throughputKbps, outcome: "pending" });
         if (this.stepDowns.length > MAX_STEP_DOWNS) this.stepDowns.shift();
         this.revision++;
@@ -156,6 +157,8 @@ export class BufferingEvidence {
         const index = this.stepDowns.length - 1;
         const last = this.stepDowns[index];
         if (last === undefined || last.outcome !== "pending") return;
+        if (this.pendingClear && change.outcome === "adopted") this.learnedLimitCleared = true;
+        this.pendingClear = false;
         this.stepDowns[index] = { ...last, ...change };
         this.revision++;
     }

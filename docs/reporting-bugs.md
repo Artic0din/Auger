@@ -25,7 +25,7 @@ Silent audio or subtitles drifting out of sync after a change that succeeded are
 3. **Optional Automatic Error Reports:** Turn on **Automatic Error Reports** to send redacted reports from all profiles on this TV to public GitHub issues.
    This setting defaults to off.
    Auger reports qualifying playback failures, subtitle files that fail to load, audio or subtitle changes that fail, and uncaught app errors (capped to once per unique issue per app version, with a 15-minute cooldown).
-   A selection the server reports as unavailable, a subtitle AVPlay shows in place of a failed file, and a change whose answer was lost on the network are never sent automatically.
+   A selection the server reports as unavailable, a subtitle AVPlay shows in place of a failed file, and a track change or subtitle download whose answer was lost on the network are never sent automatically.
 4. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
    The helper page decodes the link `#fragment` locally in your browser (never sent to a server) and lets you tap **Copy for Discord** or **Open Pre-filled GitHub Bug Report**.
 

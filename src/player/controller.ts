@@ -552,7 +552,7 @@ interface Attempt {
     captionAbort: AbortController | undefined;
     captionNotice: string;
     /** An embedded track whose file failed before AVPlay could list its tracks: AVPlay draws it at the first frame. */
-    captionFallback: string | undefined;
+    captionFallback: { id: string; cause: Pick<MediaFailure, "http" | "network"> } | undefined;
     /** A subtitle switch's answer is unknown and AVPlay draws its track meanwhile: `busy` no longer belongs to the switch (#738). */
     switchLocal: boolean;
     /** A local fallback AVPlay refused, kept to try again once the player can (on restore, or the next lost answer). */
@@ -2519,7 +2519,7 @@ export class PlaybackController implements PlayerControls {
         if (pending?.result !== "pending") return;
         const failureCode = result === "ok" ? undefined : code ?? (pending.kind === "audio" ? "audio_track_switch_failed" : "subtitle_track_switch_failed");
         attempt.trace.media.switch = { kind: pending.kind, result, ...(failureCode === undefined ? {} : { code: failureCode }) };
-        if (result !== "ok") mediaFailed(attempt, pending.kind === "audio" ? "audio_switch" : "subtitle_switch", result, failureCode, error, network);
+        if (result !== "ok") mediaFailed(attempt, pending.kind === "audio" ? "audio_switch" : "subtitle_switch", result, failureCode, error instanceof ApiError ? error.status : undefined, network);
     }
 
     private changeSettled(attempt: Attempt, change: TrackChange): void {
@@ -2811,7 +2811,7 @@ export class PlaybackController implements PlayerControls {
                 attempt.cues = cues;
                 attempt.captionNotice = "";
                 attempt.trace.media.load = "loaded";
-            } catch {
+            } catch (error) {
                 if (!current()) return;
                 // Cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again. With none loaded yet, fail as usual.
                 if (refresh && attempt.cues.length > 0) {
@@ -2821,13 +2821,15 @@ export class PlaybackController implements PlayerControls {
                 attempt.captionKey = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary(attempt);
-                if (this.nativeCaptionFallback(attempt, plan)) {
-                    captionLoadFailed(attempt, "fallback");
+                const http = error instanceof ApiError ? error.status : undefined;
+                const cause = { http, network: http === undefined && unanswered(error) };
+                if (this.nativeCaptionFallback(attempt, plan, cause)) {
+                    captionLoadFailed(attempt, "fallback", cause);
                     this.showPlayback(attempt);
                     return;
                 }
                 attempt.captionNotice = CAPTION_FAILED;
-                captionLoadFailed(attempt, "failed");
+                captionLoadFailed(attempt, "failed", cause);
             }
             if (current()) this.showPlayback(attempt);
         })();
@@ -2837,18 +2839,18 @@ export class PlaybackController implements PlayerControls {
      * Original HTTP asks for embedded text as an artifact (#538). When the app cannot load that file (over the 4 MiB limit, or a failed read),
      * AVPlay still has the embedded track and draws it, as it did before; Delay and Appearance then hide, since they cannot act on AVPlay's text.
      */
-    private nativeCaptionFallback(attempt: Attempt, loaded: PlaybackPlan): boolean {
+    private nativeCaptionFallback(attempt: Attempt, loaded: PlaybackPlan, cause: Pick<MediaFailure, "http" | "network">): boolean {
         const plan = attempt.plan;
         const id = loaded.subtitle.trackId;
         // Only while the plan on screen still shows that track from that file. A same-artifact replan (an audio change) keeps the read, so the
         // plan that started it may be gone; its artifact and track, not its id, are what must still hold.
-        if (plan === undefined || captionKeyOf(plan) !== captionKeyOf(loaded) || plan.subtitle.trackId !== id || shownSubtitle(attempt, plan) !== id) return false;
+        if (id === undefined || plan === undefined || captionKeyOf(plan) !== captionKeyOf(loaded) || plan.subtitle.trackId !== id || shownSubtitle(attempt, plan) !== id) return false;
         const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
         if (plan.delivery !== "original_http" || row === undefined || !inStreamCandidate(plan, row)) return false;
         if (!this.applyStreamSubtitle(attempt, id)) {
             if (attempt.started) return false;
             // AVPlay lists its tracks only once it plays; the first frame applies this.
-            attempt.captionFallback = id;
+            attempt.captionFallback = { id, cause };
             return true;
         }
         try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
@@ -2973,8 +2975,9 @@ export class PlaybackController implements PlayerControls {
 
     /** The first frame's half of `nativeCaptionFallback`. */
     private applyCaptionFallback(attempt: Attempt, plan: PlaybackPlan): void {
-        const id = attempt.captionFallback;
-        if (id === undefined) return;
+        const fallback = attempt.captionFallback;
+        if (fallback === undefined) return;
+        const { id, cause } = fallback;
         attempt.captionFallback = undefined;
         if (shownSubtitle(attempt, plan) !== id) return;
         if (this.applyStreamSubtitle(attempt, id)) {
@@ -2983,7 +2986,7 @@ export class PlaybackController implements PlayerControls {
             try { this.deps.avplay.setSilentSubtitle?.(false); } catch { /* AVPlay keeps its own subtitle visibility. */ }
         } else {
             attempt.captionNotice = CAPTION_FAILED;
-            captionLoadFailed(attempt, "failed");
+            captionLoadFailed(attempt, "failed", cause);
         }
     }
 
@@ -5273,7 +5276,6 @@ function sameDirectTransport(current: PlaybackPlan, next: PlaybackPlan, requeste
     return true;
 }
 
-/** Same path and query, ignoring a renewed `st`. A different path or any other query value is a new stream. */
 /**
  * Adds the media credential to the query, before any fragment, so the HTTP request carries it.
  * The published URL stays byte-for-byte otherwise: reserializing would re-encode the signed `st`.
@@ -5285,6 +5287,7 @@ function withMediaToken(published: string, token: string): string {
     return `${head}${head.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}${fragment}`;
 }
 
+/** Same path and query, ignoring a renewed `st`. A different path or any other query value is a new stream. */
 function sameDirectStreamUrl(current: string, next: string): boolean {
     if (current === next) return true;
     let left: URL;
@@ -5457,19 +5460,19 @@ function requestSwitch(attempt: Attempt, kind: "audio" | "subtitle"): void {
 }
 
 /** Numbers a definite audio/subtitle failure and adds its step, leaving the playback stage and first failure alone. */
-function mediaFailed(attempt: Attempt, stage: MediaFailureStage, out: MediaFailure["out"], code: string | undefined, error: unknown, network: boolean): void {
+function mediaFailed(attempt: Attempt, stage: MediaFailureStage, out: MediaFailure["out"], code: string | undefined, http: number | undefined, network: boolean): void {
     const trace = attempt.trace;
     trace.media.failures++;
-    trace.media.failure = { n: trace.media.failures, stage, out, code, http: error instanceof ApiError ? error.status : undefined, network };
+    trace.media.failure = { n: trace.media.failures, stage, out, code, http, network };
     const result: TraceStepResult = out === "failed" ? "fail" : out === "refused" ? "refused" : "fallback";
     trace.steps.push(code === undefined ? `${stage}:${result}` : `${stage}:${result}:${code}`);
     if (trace.steps.length > MAX_TRACE_STEPS) trace.steps.splice(0, trace.steps.length - MAX_TRACE_STEPS);
 }
 
 /** `fallback`: the sidecar failed and AVPlay draws the embedded track instead. */
-function captionLoadFailed(attempt: Attempt, load: "failed" | "fallback"): void {
+function captionLoadFailed(attempt: Attempt, load: "failed" | "fallback", cause: Pick<MediaFailure, "http" | "network">): void {
     attempt.trace.media.load = load;
-    mediaFailed(attempt, "caption_load", load === "failed" ? "failed" : "recovered", "caption_load_failed", undefined, false);
+    mediaFailed(attempt, "caption_load", load === "failed" ? "failed" : "recovered", "caption_load_failed", cause.http, cause.network);
 }
 
 /** A failure after a recovery is independent of it: it opens the next chain, leaving the recovered one as published. */

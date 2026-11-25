@@ -514,10 +514,12 @@ export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?:
     const appErr = cleanOptional(snapshot.lastAppError, 64);
     const av = cleanAvplayError(play?.avplayError);
     const playErr = play?.error === undefined ? undefined : av !== undefined && play.error === "playback_failed" ? `${play.error}:${av}` : play.error;
+    const screen = snapshot.navigation?.sc;
+    const appSignature = screen === undefined || screen === "unknown" ? `app:${appErr}` : `app:${screen}:${appErr}`;
     const sig = source === "playback" && playErr !== undefined
         ? playErr
         : appErr !== undefined
-            ? `app:${appErr}`
+            ? appSignature
             : playErr ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|");
     const key = [
         cleanOptional(snapshot.device.appVersion, 32) ?? "unknown",

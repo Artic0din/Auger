@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Clock } from "../../src/api/clock.ts";
-import { DiagnosticsCollector, diagnosticsPayload } from "../../src/diagnostics.ts";
+import { DiagnosticsCollector, diagnosticsFingerprint, diagnosticsPayload } from "../../src/diagnostics.ts";
 import { NAV_SAMPLING_KEY, type NavigationEnvironment, NavigationRecorder, type NavigationScreen, type NavigationSource } from "../../src/diagnosticsNavigation.ts";
 import { MemoryPublicStorage } from "./support/keyManager.ts";
 
@@ -179,6 +179,26 @@ test("API timing keeps the slowest /api/v2 operation family and ignores other UR
     assert.deepEqual(recorder.capture().api, { op: "watch_detail", ms: 1200 });
 });
 
+test("a profile reset discards late request and frame callbacks while retaining current samples", async () => {
+    const tv = fakeTv();
+    const recorder = new NavigationRecorder(true, () => tv.env);
+    recorder.attach(source(tv));
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    const url = "https://synthetic.example.invalid/api/v2/home/sections";
+    const late = recorder.timedFetch(() => pending)(url, {});
+    tv.press(KEY.right);
+    recorder.reset();
+    tv.advance(1000);
+    release(new Response());
+    await late;
+    tv.paint(1);
+    assert.equal(recorder.capture().api, "none");
+    assert.deepEqual(recorder.capture().fr, { n: 0 });
+    await recorder.timedFetch(async () => { tv.advance(3); return new Response(); })(url, {});
+    assert.deepEqual(recorder.capture().api, { op: "home_sections", ms: 3 });
+});
+
 test("opening Settings freezes the Home navigation, and an app error freezes its own for both submission paths", () => {
     const tv = fakeTv();
     const storage = new MemoryPublicStorage();
@@ -207,6 +227,11 @@ test("opening Settings freezes the Home navigation, and an app error freezes its
     assert.deepEqual(chosen.nav, auto.nav, "manual and automatic carry the error's frozen evidence");
     assert.deepEqual(auto.nav?.st.slice(-2), ["settings:nav:down:pressed", "home:none:left:stayed"]);
     assert.equal(auto.nav?.st.includes("home:none:right:restored"), false, "presses after the error are not part of it");
+
+    const homeError = diagnosticsFingerprint(collector.snapshot(), undefined, "app");
+    screen = "details";
+    collector.recordAppError("TypeError");
+    assert.notEqual(diagnosticsFingerprint(collector.snapshot(), undefined, "app"), homeError, "a delivered Home error cannot suppress a Details error");
 
     collector.clear();
     assert.equal(collector.reportFor("app_ui").snapshot.navigation, undefined, "profile change clears frozen evidence");

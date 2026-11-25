@@ -105,7 +105,7 @@ export const MEDIA_CASES = [
         "| Recovery | None attempted |",
         "| Audio source (file) | eac3 · 6 ch |",
         "| Audio output (planned by server) | aac · 2 ch |",
-        "| Audio output (reported by AVPlay) | eac3 · 6 ch |",
+        "| Audio stream reported by AVPlay | eac3 · 6 ch |",
         "| Subtitle track | embedded · subrip · sidecar · nl |",
         "| Subtitles drawn by | Auger caption overlay |",
         "| Subtitle file load | Failed |",
@@ -184,7 +184,7 @@ export const MEDIA_CASES = [
         "| Subtitle cues loaded | 0 |",
         "| Subtitle delay (applied) | +250 ms |",
         "| Audio output (planned by server) | aac · 2 ch |",
-        "| Audio output (reported by AVPlay) | eac3 · 6 ch |",
+        "| Audio stream reported by AVPlay | eac3 · 6 ch |",
         "| Requested switch | Audio · Succeeded |",
       ]) includes(zero.body, row, "zero-cue body");
 
@@ -198,7 +198,7 @@ export const MEDIA_CASES = [
         "| Subtitle cues loaded | Not observed |",
         "| Subtitle delay (applied) | Not applied |",
         "| Audio output (planned by server) | Not stated in the plan |",
-        "| Audio output (reported by AVPlay) | Not reported by AVPlay |",
+        "| Audio stream reported by AVPlay | Not reported by AVPlay |",
         "| Requested switch | None this attempt |",
       ]) includes(offIssue.body, row, "off body");
       excludes(offIssue.body, "| Subtitle track |", "no track row when Off");
@@ -231,7 +231,7 @@ export const MEDIA_CASES = [
         "| Audio language | Not reported |",
         "| Audio source (file) | Not reported |",
         "| Audio output (planned by server) | aac · 2 ch |",
-        "| Audio output (reported by AVPlay) | eac3 |",
+        "| Audio stream reported by AVPlay | eac3 |",
         "| Subtitle track | external · sidecar |",
         "| Requested switch | Subtitle · Failed · Unlisted code |",
       ]) includes(issue.body, row, "validated media rows");

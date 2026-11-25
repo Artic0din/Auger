@@ -8,6 +8,7 @@ import { DiagnosticsCollector, diagnosticsReportFingerprint } from "../../src/di
 import { bufferingPayload } from "../../src/diagnosticsBuffering.ts";
 import { incidentAutoEligible, playbackIncident } from "../../src/diagnosticsIncident.ts";
 import { PlaybackController, type PlaybackView, type PlayRequest } from "../../src/player/controller.ts";
+import { BufferingEvidence } from "../../src/player/bufferingEvidence.ts";
 import { ManualClock } from "./support/clock.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
 import { FakePlayback, type PlanShape } from "./support/fakePlayback.ts";
@@ -202,4 +203,20 @@ test("a lowering whose answer is lost and a reconnect that runs out is one buffe
     assert.equal(diagnostics.reportFor("playback"), record);
     assert.equal(diagnosticsReportFingerprint(diagnostics.reportFor("buffering")), diagnosticsReportFingerprint(record));
     r.controller.destroy();
+});
+
+test("Restore quality clears a learned limit only after its plan is adopted", () => {
+    const evidence = new BufferingEvidence();
+    const cleared = () => evidence.trace({ mode: "always", advertised: true, preference: "auto", manualCapKbps: undefined }).learnedLimitCleared;
+    const plan = { quality: "auto", plannedKbps: undefined, sourceKbps: undefined, outputKbps: undefined };
+    for (const outcome of ["not_sent", "not_adopted"] as const) {
+        evidence.stepSent("restore", undefined, undefined, true);
+        assert.equal(cleared(), false);
+        evidence.stepEnded(outcome);
+        evidence.planAdopted(plan, false);
+        assert.equal(cleared(), false);
+    }
+    evidence.stepSent("restore", undefined, undefined, true);
+    evidence.planAdopted(plan, true);
+    assert.equal(cleared(), true);
 });

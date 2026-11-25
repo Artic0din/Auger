@@ -121,6 +121,7 @@ export class NavigationRecorder {
     private readonly steps: { text: string; count: number }[] = [];
     private readonly frames: number[] = [];
     private framePending = false;
+    private generation = 0;
     private readonly longTasks: { end: number; duration: number }[] = [];
     /** Undefined until the observer was first wanted; false when the runtime has no long-task API. */
     private longTaskSupported: boolean | undefined;
@@ -160,6 +161,10 @@ export class NavigationRecorder {
 
     /** Ends a profile session's evidence. */
     reset(): void {
+        this.generation++;
+        this.framePending = false;
+        this.syncObserver(false);
+        this.syncObserver(this.source?.screen() !== undefined);
         this.pending = undefined;
         this.steps.length = 0;
         this.frames.length = 0;
@@ -174,12 +179,9 @@ export class NavigationRecorder {
             if (op === undefined) return fetch(url, init);
             const env = this.environment();
             const started = env.now();
-            return fetch(url, init).then(response => {
-                this.pushApi(op, env.now() - started);
-                return response;
-            }, (error: unknown) => {
-                if (init.signal?.aborted !== true) this.pushApi(op, env.now() - started);
-                throw error;
+            const generation = this.generation;
+            return fetch(url, init).finally(() => {
+                if (generation === this.generation && !init.signal?.aborted) this.pushApi(op, env.now() - started);
             });
         };
     }
@@ -241,7 +243,9 @@ export class NavigationRecorder {
         const now = env.now();
         const start = event.timeStamp > 0 && event.timeStamp <= now ? event.timeStamp : now;
         this.framePending = true;
+        const generation = this.generation;
         env.frame(() => {
+            if (generation !== this.generation) return;
             this.framePending = false;
             this.frames.push(env.now() - start);
             if (this.frames.length > MAX_FRAMES) this.frames.shift();
@@ -291,8 +295,9 @@ export class NavigationRecorder {
     private syncObserver(active: boolean): void {
         const wanted = this.sampling && active && this.source !== undefined && !this.environment().hidden();
         if (wanted && this.stopLongTasks === undefined && this.longTaskSupported !== false) {
+            const generation = this.generation;
             this.stopLongTasks = this.environment().observeLongTasks((duration, end) => {
-                if (this.source?.screen() === undefined) return;
+                if (generation !== this.generation || this.source?.screen() === undefined) return;
                 this.longTasks.push({ end, duration });
                 if (this.longTasks.length > MAX_LONG_TASKS) this.longTasks.shift();
             });

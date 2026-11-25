@@ -116,6 +116,7 @@ export function incidentStableState(record) {
     srv: record.srv,
     hdr: record.hdr,
     inc,
+    nav: record.nav,
     bq: record.bq,
     md: publicMedia(record.md),
     log: (record.log ?? []).map(stripLogTimestamp),
@@ -309,7 +310,7 @@ function mediaRows(md) {
       ["Audio language", md.a.lang ?? UNREPORTED],
       ["Audio source (file)", audioFormatCell(md.a.src, "Unknown: no source track identified")],
       ["Audio output (planned by server)", audioFormatCell(md.a.pl, "Not stated in the plan")],
-      ["Audio output (reported by AVPlay)", audioFormatCell(md.a.obs, "Not reported by AVPlay")],
+      ["Audio stream reported by AVPlay", audioFormatCell(md.a.obs, "Not reported by AVPlay")],
     );
   }
   const sub = md.s;
@@ -361,7 +362,7 @@ function incidentBody(record, hash) {
   const lines = ["## What happened", "", ...table(incidentRows(record, inc))];
   if (inc.t?.length > 0) lines.push("", "### Event sequence", "", ...inc.t.map(stepLine));
   lines.push("", "### This attempt", "", ...table([...settingRows(inc.set), ...requestRows(inc.req), ...planRows(inc.pl), panelRow(inc.hp)]));
-  lines.push(...bufferingSection(record.bq, table));
+  lines.push(...navigationSection(record.nav, table), ...bufferingSection(record.bq, table));
   // A plan-free attempt must not show player rows: they could only describe an earlier attempt.
   const playRows = inc.pl === "not_reached" || record.play === undefined ? [] : legacyPlayRows(record.play);
   if (playRows.length > 0) lines.push("", "### Player summary", "", ...table(playRows));
@@ -550,12 +551,21 @@ export function formatFollowUp(previous, record, hash) {
   return record.inc ? incidentFollowUp(previous, record, hash) : legacyFollowUp(previous, record, hash);
 }
 
+function changedSections(before, record) {
+  const sections = [];
+  if (record.nav && JSON.stringify(record.nav) !== JSON.stringify(before?.nav)) sections.push(...navigationSection(record.nav, table));
+  if (record.bq && JSON.stringify(record.bq) !== JSON.stringify(before?.bq)) sections.push(...bufferingSection(record.bq, table));
+  return sections;
+}
+
 function incidentFollowUp(previous, record, hash) {
+  const sections = changedSections(previous?.state, record);
   const inc = publicIncident(record.inc);
   const lines = followUpHeader(record);
   if (typeof inc.pl === "object" && inc.pl.at !== undefined) lines.push(`- **Position at failure:** ${clockText(inc.pl.at)}`);
   if (previous?.version !== "inc1") {
     lines.push("- **Report type:** Incident record from a current Auger client", "", ...table(incidentRows(record, inc)));
+    lines.push(...sections);
     if (inc.t?.length > 0) lines.push("", ...inc.t.map(stepLine));
     lines.push("", marker("auger-hash", hash));
     return lines.join("\n");
@@ -569,20 +579,22 @@ function incidentFollowUp(previous, record, hash) {
   changed.push(...mediaChanges(previous.state.md, publicMedia(record.md)));
   const priorSteps = new Set(Array.isArray(before.t) ? before.t : []);
   const newSteps = (after.t ?? []).filter((step) => !priorSteps.has(step));
-  if (changed.length === 0 && newSteps.length === 0) return null;
+  if (changed.length === 0 && newSteps.length === 0 && sections.length === 0) return null;
   if (changed.length > 0) lines.push("", "**Changed vs. initial report:**", ...changed);
+  lines.push(...sections);
   if (newSteps.length > 0) lines.push("", "**New events:**", ...newSteps.map(stepLine));
   lines.push("", marker("auger-hash", hash));
   return lines.join("\n");
 }
 
 function legacyFollowUp(previous, record, hash) {
-  const current = legacyStableState(record);
+  const current = stableState(record);
+  const sections = changedSections(previous?.state, record);
   const prevState = previous?.version === "legacy" ? previous.state : undefined;
   const changed = prevState ? [...changedEvidence(LEGACY_DIFF_FIELDS, prevState, current), ...mediaChanges(prevState.md, current.md)] : [];
   const prevLogs = new Set(Array.isArray(prevState?.log) ? prevState.log : []);
   const newLogs = (record.log ?? []).filter((entry) => !prevLogs.has(stripLogTimestamp(entry)));
-  if (prevState && changed.length === 0 && newLogs.length === 0) return null;
+  if (prevState && changed.length === 0 && newLogs.length === 0 && sections.length === 0) return null;
   const lines = [
     ...followUpHeader(record),
     ...(record.mem ? [`- **JS heap:** ${record.mem}`] : []),
@@ -594,6 +606,7 @@ function legacyFollowUp(previous, record, hash) {
     lines.push("", "**Report summary:**", ...table([["Title", legacyTitle(record)], ...(record.play?.e ? [["Last error", record.play.e]] : []), ...(record.play?.av ? [["AVPlay error", record.play.av]] : [])]));
   }
   if (changed.length > 0) lines.push("", "**Changed vs. initial report:**", ...changed);
+  lines.push(...sections);
   if (newLogs.length > 0) lines.push("", "**New log lines:**", "```text", ...newLogs, "```");
   lines.push("", marker("auger-hash", hash));
   return lines.join("\n");

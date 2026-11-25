@@ -97,7 +97,9 @@ export const CASES = [
       equal(titles[1], "Details navigation raised an uncaught TypeError", "details title");
       equal(titles[2], "Home navigation raised an unhandled promise rejection", "rejection title");
       const later = { ...homeRowNavigation, st: ["home:section:left:stayed"], fr: { n: 3, p95: 30, w: 31 } };
-      equal((await send(handleRequest, gh, autoError(later))).json.issueNumber, first.json.issueNumber, "same screen and error reuse the first issue");
+      equal((await send(handleRequest, gh, manualError(later))).json.issueNumber, first.json.issueNumber, "same screen and error reuse the first issue");
+      check(!gh.comments()[0].body.body.includes("**Category:**"), "manual submission does not add a category change");
+      includes(gh.comments()[0].body.body, "p95 30 ms", "follow-up shows the new navigation evidence");
     },
   },
   {
