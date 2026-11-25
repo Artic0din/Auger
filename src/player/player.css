@@ -1209,7 +1209,7 @@
     border: 1px solid rgba(255, 255, 255, 0.45);
 }
 
-.player-setting-value-swatch {
+.player-setting-value.player-setting-value-swatch {
     display: inline-flex;
     align-items: center;
     gap: 10px;

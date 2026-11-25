@@ -3897,6 +3897,10 @@ test("Appearance opens as a 720px floating dialog defaulting to Style with Apple
         assert.equal(await page.locator(".player-appearance-title").textContent(), "Style and colors");
         assert.equal(await page.locator(".player-appearance-close").evaluate(node => node.getBoundingClientRect().width), 46);
         assert.equal(await page.locator('[data-focus="subtitle-appearance-back"]').count(), 0, "no Back row");
+        assert.equal(await page.locator(".player-tabs").evaluate(node => (node as HTMLElement).inert), true, "tab rail is inert while Appearance is open");
+        const dialogSwatchBox = await page.locator(".player-appearance-dialog .player-color-swatch").first().boundingBox();
+        assert.ok(dialogSwatchBox !== null && Math.abs(dialogSwatchBox.width - 18) < 0.5 && Math.abs(dialogSwatchBox.height - 18) < 0.5, `dialog swatch must render 18x18: ${JSON.stringify(dialogSwatchBox)}`);
+        assert.equal(await page.locator(".player-appearance-dialog .player-setting-value-swatch").first().evaluate(node => getComputedStyle(node).display), "flex");
         const rows = await page.locator('.player-appearance-rows [data-focus]').evaluateAll(nodes => nodes.map(node => ({
             id: node.getAttribute("data-focus"),
             label: node.querySelector(".player-setting-label")?.textContent,
@@ -3928,10 +3932,11 @@ test("Appearance opens as a 720px floating dialog defaulting to Style with Apple
         assert.ok(swatchBox !== null && Math.abs(swatchBox.width - 18) < 0.5 && Math.abs(swatchBox.height - 18) < 0.5, JSON.stringify(swatchBox));
         await remote(page, BACK);
         assert.equal(await focused(page), "subtitle-appearance:fontColor");
-        // Close button dismisses back to Appearance.
+        // Close button dismisses back to Appearance and re-enables the tab rail.
         await page.locator('[data-focus="subtitle-appearance-close"]').focus();
         await remote(page, ENTER);
         assert.equal(await focused(page), "subtitle-appearance");
+        assert.equal(await page.locator(".player-tabs").evaluate(node => (node as HTMLElement).inert), false);
     } finally { await page.close(); }
 });
 

@@ -756,7 +756,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         target.focus();
         return true;
     };
-    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen) focusList(index); }));
+    const tabRailLocked = (): boolean => openPicker() !== undefined || (tabNames[column] === "Subtitles" && subtitlePane.kind === "appearance");
+    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen && !tabRailLocked()) focusList(index); }));
 
     const fillInfo = (list: HTMLElement): void => {
         if (view.phase !== "playing" && view.phase !== "paused") return;
@@ -885,6 +886,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             }
             showPane(column, true);
         }
+        tablist.inert = tabRailLocked();
     };
 
     let focusScrubberOnRender = false;
@@ -892,6 +894,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         aiLanguages = false;
         subtitlePane = { kind: "tracks" };
         videoPicker = undefined;
+        tablist.inert = false;
         menuRestoreFocus = undefined;
         const phase = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.search.phase : undefined;
         if (phase !== undefined && phase !== "closed") controls.subtitleTool({ kind: "search-close" });
@@ -1557,8 +1560,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (scrollPane && pane !== undefined && (key === "up" || key === "down") && pageScrollPane(pane, key)) return;
         if (key === "up" && at <= 0) {
             // An open picker or Appearance dialog takes the tab rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1640-1644).
-            const modalOverlay = openPicker() !== undefined || (tabNames[column] === "Subtitles" && subtitlePane.kind === "appearance");
-            if (!modalOverlay) tabs[column]?.focus();
+            if (!tabRailLocked()) tabs[column]?.focus();
             return;
         }
         if (atTab >= 0) {
