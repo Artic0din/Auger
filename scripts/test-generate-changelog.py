@@ -174,10 +174,56 @@ class FormatTest(unittest.TestCase):
         )
         self.assertEqual(
             "## [0.2.0] - 2026-01-31\n\n"
-            "### ✨ New Features\n\n- **Playback**: Add chapters\n\n"
-            "### 🐛 Fixes\n\n- Stop a crash\n",
+            "### New Features\n\n- **Playback**: Add chapters\n\n"
+            "### Fixes\n\n- Stop a crash\n",
             notes.changelog_entry(),
         )
+
+
+class TechnicalChangelogTest(unittest.TestCase):
+    def test_includes_all_technical_categories_without_emojis_or_compare_links(self):
+        commits = [
+            Commit("feat!: drop Tizen 7 (#10)", "BREAKING CHANGE: upgrade to Tizen 8", "11111111"),
+            Commit("feat(player): add chapters (#11)", "", "22222222"),
+            Commit("perf(home): cache backdrop (#12)", "", "33333333"),
+            Commit("fix(security): redact tokens (#13)", "", "44444444"),
+            Commit("fix(ci): stop flaky runner (#14)", "", "55555555"),
+            Commit("refactor(ui): simplify row (#15)", "", "66666666"),
+            Commit("chore(deps-dev): bump playwright (#16)", "", "77777777"),
+            Commit("test(player): add seek regression (#17)", "", "88888888"),
+            Commit("docs(readme): update screenshots (#18)", "", "99999999"),
+            Commit("ci(release): add deploy key (#19)", "", "aaaaaaaa"),
+            Commit("Update README.md", "", "bbbbbbbb"),
+            Commit("docs(changelog): record v0.4.0 release notes (#20)", "", "cccccccc"),
+            Commit("Merge pull request #21 from Artic0din/Auger-Tizen", "", "dddddddd"),
+        ]
+        rendered = changelog.build_technical_changelog("0.5.0", "2026-11-25", commits).changelog_entry()
+        self.assertIn("## [0.5.0] - 2026-11-25\n", rendered)
+        for heading in (
+            "### Breaking Changes",
+            "### Features",
+            "### Performance",
+            "### Security",
+            "### Fixes",
+            "### Refactors & Maintenance",
+            "### Tests",
+            "### Documentation",
+            "### CI",
+            "### Other Changes",
+        ):
+            self.assertIn(f"\n{heading}\n", rendered)
+        for emoji in ("⚠️", "✨", "🔧", "🔒", "🐛"):
+            self.assertNotIn(emoji, rendered)
+        self.assertNotIn("/compare/", rendered)
+        self.assertIn(
+            "- **Playback**: Add chapters ([#11](https://github.com/Artic0din/Auger-Tizen/pull/11), [`22222222`](https://github.com/Artic0din/Auger-Tizen/commit/22222222))",
+            rendered,
+        )
+        self.assertIn("**CI**: Stop flaky runner", rendered)
+        self.assertIn("**Dependencies**: Bump playwright", rendered)
+        self.assertIn("**README**: Update screenshots", rendered)
+        self.assertNotIn("Record v0.4.0 release notes", rendered)
+        self.assertNotIn("Merge pull request", rendered)
 
 
 def user_notes(*commits, bodies=None):
@@ -366,7 +412,7 @@ HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"
 
 class InsertEntryTest(unittest.TestCase):
     def entry(self, version):
-        return f"## [{version}] - 2026-01-31\n\n### 🐛 Fixes\n\n- Fix {version}\n"
+        return f"## [{version}] - 2026-01-31\n\n### Fixes\n\n- Fix {version}\n"
 
     def test_inserts_below_the_marker_newest_first(self):
         text = f"{HEADER}<!-- changelog:releases -->\n\n## [Earlier changes]\n\n- Old.\n"
@@ -460,7 +506,8 @@ class GitRepoIntegrationTest(unittest.TestCase):
         self.assertEqual(0, run(*args)[0])
         self.assertEqual(first, path.read_text(encoding="utf-8"))
         self.assertEqual(1, first.count("## [0.2.0] - 2026-01-31"))
-        self.assertIn("<!-- changelog:releases -->\n\n## [0.2.0] - 2026-01-31\n\n### ✨ New Features\n", first)
+        self.assertIn("<!-- changelog:releases -->\n\n## [0.2.0] - 2026-01-31\n\n### Features\n", first)
+        self.assertIn("### Documentation\n\n- README", first)
         self.assertLess(first.index("## [0.2.0]"), first.index("## [Earlier changes]"))
 
     def test_without_from_reads_all_history(self):
@@ -741,9 +788,11 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
 
             committed = git(origin, "show", "refs/heads/main:CHANGELOG.md")
             self.assertIn(f"## [0.2.0] - {outputs['release_date']}", committed)
-            self.assertIn("### ✨ New Features\n\n- **Playback**: Add chapters\n", committed)
-            self.assertIn("### 🐛 Fixes\n\n- Stop a crash\n", committed)
+            self.assertIn("### Features\n\n- **Playback**: Add chapters ([#5](https://github.com/Artic0din/Auger-Tizen/pull/5), [`", committed)
+            self.assertIn("### Fixes\n\n- Stop a crash ([#6](https://github.com/Artic0din/Auger-Tizen/pull/6), [`", committed)
+            self.assertIn("### Documentation\n\n- Mention (#12) in passing ([`", committed)
             self.assertNotIn("Pick a chapter", committed, "CHANGELOG.md stays the technical commit record")
+            self.assertNotIn("/compare/", committed)
             self.assertNotIn("- Old bug", committed)
             self.assertNotIn("Initial feature", committed)
             self.assertEqual("docs(changelog): record v0.2.0 release notes", git(origin, "log", "-1", "--format=%s", "refs/heads/main"))
