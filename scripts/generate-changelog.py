@@ -435,15 +435,54 @@ def release_notes_section(body: str) -> Optional[str]:
     return None
 
 
+def parse_release_notes_section(section: Optional[str]) -> Optional[ParsedPrNotes]:
+    if section is None or not section.strip():
+        return None
+    if is_no_change(section):
+        return ParsedPrNotes(True, (), (), ())
+    highlights: list[str] = []
+    sectioned: dict[UserSection, list[str]] = {}
+    unsectioned: list[str] = []
+    saw_no_change = False
+
+    def keep(items: Iterable[str]) -> list[str]:
+        nonlocal saw_no_change
+        kept: list[str] = []
+        for item in items:
+            if is_no_change(item):
+                saw_no_change = True
+            else:
+                kept.append(item)
+        return kept
+
+    subheadings = list(HEADING.finditer(section))
+    unsectioned += keep(markdown_items(section[: subheadings[0].start()] if subheadings else section))
+    for index, heading in enumerate(subheadings):
+        end = subheadings[index + 1].start() if index + 1 < len(subheadings) else len(section)
+        block = section[heading.end():end]
+        key = heading_key(heading.group(2))
+        if key == "highlights":
+            highlights += keep(markdown_items(block, keep_bullets=True))
+        elif key in SUBHEADINGS:
+            sectioned.setdefault(SUBHEADINGS[key], []).extend(keep(markdown_items(block)))
+        else:
+            unsectioned += keep(markdown_items(block))
+    sectioned_tuple = tuple((section_name, tuple(items)) for section_name, items in sectioned.items() if items)
+    if highlights or sectioned_tuple or unsectioned:
+        return ParsedPrNotes(False, tuple(highlights), sectioned_tuple, tuple(unsectioned))
+    if saw_no_change:
+        return ParsedPrNotes(True, (), (), ())
+    return None
+
+
 def check_pr_release_notes(title: str, body: str) -> list[str]:
     """Validate that a user-facing pull request supplies plain-language Release Notes."""
-    entries = entries_for(CommitMessage(title))
+    cleaned = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
+    entries = entries_for(CommitMessage(title, cleaned))
     if not entries:
         return []
-    cleaned = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
-    has_section = release_notes_section(cleaned) is not None
-    parsed = parse_pr_notes(body)
-    if not has_section or parsed is None:
+    parsed = parse_release_notes_section(release_notes_section(cleaned))
+    if parsed is None:
         return [
             "User-facing PRs (feat, fix, perf, revert, or breaking) must include a populated "
             "`## Release Notes` section written in plain language for Samsung TV users "
@@ -451,11 +490,17 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
             "`### Improved`, `### Fixed`), or `None` for an internal-only fix."
         ]
     is_breaking = any(entry.category == Category.BREAKING for entry in entries)
+    allows_none = not is_breaking and all(entry.category == Category.FIXES for entry in entries)
     if parsed.suppressed:
         if is_breaking:
             return [
                 "Breaking PRs cannot use `None` in `## Release Notes`; explain what breaks "
                 "and what users need to do."
+            ]
+        if not allows_none:
+            return [
+                "Only internal-only fixes can use `None` in `## Release Notes`; "
+                "describe the user-facing change in plain language."
             ]
         return []
     errors: list[str] = []
@@ -480,42 +525,9 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
 def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
     """A PR body's user-facing notes, or None when it has none to offer."""
     body = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
-    section = release_notes_section(body)
-    if section is not None and section.strip():
-        if is_no_change(section):
-            return ParsedPrNotes(True, (), (), ())
-        highlights: list[str] = []
-        sectioned: dict[UserSection, list[str]] = {}
-        unsectioned: list[str] = []
-        saw_no_change = False
-
-        def keep(items: Iterable[str]) -> list[str]:
-            nonlocal saw_no_change
-            kept: list[str] = []
-            for item in items:
-                if is_no_change(item):
-                    saw_no_change = True
-                else:
-                    kept.append(item)
-            return kept
-
-        subheadings = list(HEADING.finditer(section))
-        unsectioned += keep(markdown_items(section[: subheadings[0].start()] if subheadings else section))
-        for index, heading in enumerate(subheadings):
-            end = subheadings[index + 1].start() if index + 1 < len(subheadings) else len(section)
-            block = section[heading.end():end]
-            key = heading_key(heading.group(2))
-            if key == "highlights":
-                highlights += keep(markdown_items(block, keep_bullets=True))
-            elif key in SUBHEADINGS:
-                sectioned.setdefault(SUBHEADINGS[key], []).extend(keep(markdown_items(block)))
-            else:
-                unsectioned += keep(markdown_items(block))
-        sectioned_tuple = tuple((section_name, tuple(items)) for section_name, items in sectioned.items() if items)
-        if highlights or sectioned_tuple or unsectioned:
-            return ParsedPrNotes(False, tuple(highlights), sectioned_tuple, tuple(unsectioned))
-        if saw_no_change:
-            return ParsedPrNotes(True, (), (), ())
+    parsed = parse_release_notes_section(release_notes_section(body))
+    if parsed is not None:
+        return parsed
     legacy = [note.strip() for note in LEGACY_NOTE.findall(body)]
     if legacy:
         if all(is_no_change(note) for note in legacy):

@@ -389,7 +389,33 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
 
     def test_suppression_rules_and_quality_guards(self):
         self.assertEqual([], changelog.check_pr_release_notes("fix(ui): internal tweak", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("feat(player): add chapters", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("perf(home): faster rows", pr_body("## Release Notes\n\nNone")))
         self.assertTrue(changelog.check_pr_release_notes("feat!: drop Tizen 7", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "refactor(settings): rename storage keys",
+                "## Problem\n\nRename keys.\n\nBREAKING CHANGE: settings reset once.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "fix(auth): change session format",
+                pr_body("## Release Notes\n\nNone") + "\nBREAKING CHANGE: sign in again.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                "## Problem\n\nNo chapters.\n\nRelease note: Added chapters.\n",
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n<!-- empty -->") + "\nRelease note: Added chapters.\n",
+            )
+        )
         self.assertEqual(
             [],
             changelog.check_pr_release_notes(
@@ -413,6 +439,8 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
         self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
+        self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow_text)
+        self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", workflow_text)
         step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Check user-facing PR release notes")
         with tempfile.TemporaryDirectory() as tmp_name:
             runner_temp = Path(tmp_name)
