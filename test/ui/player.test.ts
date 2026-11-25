@@ -949,11 +949,15 @@ test("scrubber rate chip draws a directional arrow 7px before the rate and episo
         await holdKey(page, RIGHT);
         await page.clock.fastForward(300);
         assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "forward");
-        assert.equal(await page.locator(".player-rate-glyph svg").count(), 1);
+        const forwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(forwardPath?.startsWith("M1.5 2.2"), `expected forward double-arrow glyph, got ${forwardPath}`);
         assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
         assert.equal(await page.locator(".player-rate").evaluate(node => getComputedStyle(node).columnGap), "7px");
         await remote(page, LEFT);
         assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
+        const backwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(backwardPath?.startsWith("M22.5 2.2"), `expected backward double-arrow glyph, got ${backwardPath}`);
+        assert.notEqual(backwardPath, forwardPath);
         assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
         await remote(page, LEFT);
         assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");

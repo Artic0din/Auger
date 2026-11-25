@@ -18,6 +18,7 @@ test("endDate computes wall-clock finish at playback speed and omits when nothin
     assert.equal(endDate(now, 0, 1), undefined);
     assert.equal(endDate(now, -5, 1), undefined);
     assert.equal(endDate(now, Number.NaN, 1), undefined);
+    assert.equal(endDate(now, 1e13, 1), undefined);
     assert.equal(endDate(now, 6446, 1)?.getTime(), now + 6446_000);
     assert.equal(endDate(now, 6446, 2)?.getTime(), now + 3223_000);
     assert.equal(endDate(now, 6446, 0)?.getTime(), now + 6446_000);
@@ -27,6 +28,7 @@ test("endDate computes wall-clock finish at playback speed and omits when nothin
 test("withEndTime appends localized Ends time and isolates RTL labels", () => {
     const now = new Date(2026, 10, 22, 19, 17, 34).getTime();
     assert.equal(withEndTime("−0:00", now, 0, 1), "−0:00");
+    assert.equal(withEndTime("−1:47:26", now, 1e13, 1), "−1:47:26");
     assert.equal(withEndTime("−1:47:26", now, 6446, 1), "−1:47:26 · Ends 9:05 PM");
     assert.equal(withEndTime("−1:47:26", now, 6446, 2), "−1:47:26 · Ends 8:11 PM");
 

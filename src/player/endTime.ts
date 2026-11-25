@@ -5,9 +5,10 @@ import { translate } from "../i18n/translate.ts";
 
 /** When playback finishes at `speed` (1 when it is not a positive number), or undefined when nothing is left to play. */
 export function endDate(nowMs: number, remainingSeconds: number, speed: number): Date | undefined {
-    if (!Number.isFinite(remainingSeconds) || remainingSeconds <= 0) return undefined;
+    if (!Number.isFinite(nowMs) || !Number.isFinite(remainingSeconds) || remainingSeconds <= 0) return undefined;
     const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
-    return new Date(nowMs + (remainingSeconds / rate) * 1000);
+    const end = new Date(nowMs + (remainingSeconds / rate) * 1000);
+    return Number.isNaN(end.getTime()) ? undefined : end;
 }
 
 /** `time`, followed by "· Ends 11:42 PM" in the shown language when there is a finish time. */
