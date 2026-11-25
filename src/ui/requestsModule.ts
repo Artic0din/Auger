@@ -3,7 +3,6 @@ import { ApiError } from "../api/errors.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { requestOperations } from "../api/requestOperations.ts";
 import type { MediaRequest, MyRequests, RequestPage as RequestSearchPage, RequestsCapability, RequestTitle, RequestsHub } from "../contracts/v2/requests.ts";
-import { WireError } from "../contracts/v2/wire.ts";
 import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 import { createForegroundRunner, idleFocusReader, type Arrival, type FocusReader, type ForegroundRunner, type ForegroundSlot, type Paint, type RouteEntry } from "./browseEnv.ts";
@@ -285,11 +284,11 @@ export function createRequests(options: RequestsOptions): RequestsModule {
             signal.throwIfAborted();
             items.push(...page.items);
             if (page.cursor === undefined) return { items, cursor: undefined };
-            if (cursors.has(page.cursor)) throw new WireError("requests.mine.page.next_cursor", "an advancing cursor");
+            if (cursors.has(page.cursor)) throw new ApiError({ kind: "invalid_response", path: "requests.mine.page.next_cursor" });
             cursors.add(page.cursor);
             cursor = page.cursor;
         }
-        throw new WireError("requests.mine.page", `a list of at most ${maxPages} pages`);
+        throw new ApiError({ kind: "invalid_response", path: "requests.mine.page" });
     };
 
     const notify = (page: PageInternal, paint?: Paint): void => {

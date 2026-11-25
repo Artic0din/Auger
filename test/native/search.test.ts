@@ -171,6 +171,41 @@ test("Search loadMore skips duplicate-only pages, restarts once on invalid_curso
     search.retire();
 });
 
+test("Search loadMore restarts once on a repeated cursor and fails with invalid_response if it repeats again", async () => {
+    const h = await setup();
+    const card = (id: string, title: string) => ({ content_id: id, type: "movie", title, year: 2024 });
+    h.catalog.itemReplies.push(
+        { status: 200, body: { items: [card("movie:1", "One")], total: 2, total_exact: true, page: { has_more: true, next_cursor: "c1" } } },
+        // Repeating c1 triggers one restart from page 0.
+        { status: 200, body: { items: [card("movie:1", "One")], total: 2, total_exact: true, page: { has_more: true, next_cursor: "c1" } } },
+        { status: 200, body: { items: [card("movie:2", "Two")], total: 2, total_exact: true, page: { has_more: true, next_cursor: "c2" } } },
+        // Repeating c2 after restart fails cleanly without looping.
+        { status: 200, body: { items: [card("movie:2", "Two")], total: 2, total_exact: true, page: { has_more: true, next_cursor: "c2" } } },
+    );
+
+    const search = createSearch({
+        session: h.core.session,
+        clock: h.clock,
+        audiobooksEnabled: () => false,
+        requestsEnabled: () => false,
+    });
+    search.arrive("push");
+    search.submit("One", false);
+    await settle();
+    assert.deepEqual(search.snapshot().page?.items.map(i => i.id), ["movie:1"]);
+
+    search.loadMore();
+    await settle();
+    assert.deepEqual(search.snapshot().page?.items.map(i => i.id), ["movie:2"]);
+    assert.equal(search.snapshot().failure, undefined);
+
+    search.loadMore();
+    await settle();
+    await h.clock.advance(10);
+    assert.ok(search.snapshot().failure, "second repeated cursor surfaces invalid_response failure");
+    search.retire();
+});
+
 test("Search failed new search clears titles, people, and box sets; People failure recovers via retryPeople", async () => {
     const h = await setup();
     const search = createSearch({

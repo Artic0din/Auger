@@ -90,6 +90,15 @@ test("BrowseStack orders cover-before-arrive and retire across push, pop, and re
         "second:retire",
         "home:arrive:reveal",
     ]);
+
+    // Popping a retained root does not retire it so selecting that root again still works.
+    const tab = tracked("movies");
+    stack.setRoot("movies", tab);
+    stack.selectRoot(tab);
+    stack.pop();
+    assert.equal(trace.includes("movies:retire"), false, "popping a retained root must not retire it");
+    stack.selectRoot(tab);
+    assert.equal(trace.at(-1), "movies:arrive:push");
     stack.dispose();
 });
 

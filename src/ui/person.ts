@@ -260,6 +260,7 @@ export function createPerson(options: PersonOptions): PersonModule {
             const nextCursors = append ? cursors.slice(0, targetIndex + 1) : [undefined];
             let fetched: CatalogPage | undefined;
             let finalIndex = targetIndex;
+            let restarted = false;
 
             for (let position = append ? targetIndex : 0; position <= targetIndex; position++) {
                 let startsOver = false;
@@ -270,6 +271,7 @@ export function createPerson(options: PersonOptions): PersonModule {
                     // Apple nextCatalogPage replaces the list with a fresh first page once.
                     fetched = await session.call({ ...operations.queryCatalogItems(personQuery(id, filter)), profileScoped: true, signal: slot.signal });
                     startsOver = true;
+                    restarted = true;
                     position = 0;
                     items = [];
                     nextCursors.splice(0, nextCursors.length, undefined);
@@ -307,6 +309,7 @@ export function createPerson(options: PersonOptions): PersonModule {
                 page = merged;
                 committedIndex = finalIndex;
                 cursors = nextCursors.slice(0, finalIndex + 2);
+                if (restarted) feedKey = {};
                 pendingIndex = undefined;
                 if (nearby !== undefined) {
                     notify({ focus: { zone: "grid", key: nearby.id } });

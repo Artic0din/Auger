@@ -204,7 +204,7 @@ export function createBrowseStack<T extends StackEntry>(options: BrowseStackOpti
             adapter.cover(active);
             foreground.abort();
             stack.pop();
-            adapter.retire(active);
+            retireUnretained([active]);
             const current = top();
             if (current === undefined) return active;
             if (!isAdmissible(current)) {
@@ -230,7 +230,7 @@ export function createBrowseStack<T extends StackEntry>(options: BrowseStackOpti
             }
             foreground.abort();
             const removed = stack.pop();
-            if (removed !== undefined) adapter.retire(removed);
+            if (removed !== undefined) retireUnretained([removed]);
             stack.push(next);
             adapter.arrive(next, "push", focus, false);
             return removed;

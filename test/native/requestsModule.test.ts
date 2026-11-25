@@ -100,10 +100,11 @@ test("hub loads discover and multi-page mine together, rejects cyclic cursors, a
     await settle();
     assert.deepEqual(hub.snapshot().visibleMine.map(item => item.id), ["r1", "r2"]);
 
-    // Cyclic cursor fails the hub load.
+    // Cyclic cursor fails the hub load cleanly as invalid_response without scheduling an uncaught throw.
     pages["c2"] = { status: 200, body: { items: [], page: { has_more: true, next_cursor: "c2" } } };
     hub.retry();
     await settle();
+    await h.clock.advance(10);
     assert.ok(hub.snapshot().failure);
 
     // Refusal on mine triggers capability probe even if discover fails with 500.

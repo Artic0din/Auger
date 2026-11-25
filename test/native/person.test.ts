@@ -271,12 +271,14 @@ test("Person filmography paginates, recovers once from invalid_cursor, and retai
     assert.equal(person.snapshot().page?.items.length, countBeforeCyclic);
     assert.equal(person.snapshot().failure, undefined);
 
-    // invalid_cursor on append restarts once from page 0 without reloading metadata.
+    // invalid_cursor on append restarts once from page 0 without reloading metadata, rotating feedKey.
     const metadataBefore = h.fake.requests.filter(r => r.path === "/catalog/people/7").length;
+    const feedKeyBefore = person.snapshot().feedKey;
     catalog.personReplies.push(problem(400, "invalid_cursor", "Expired"));
     person.loadMore();
     await settle();
     assert.equal(person.snapshot().page?.items.length, 60);
+    assert.notEqual(person.snapshot().feedKey, feedKeyBefore, "invalid_cursor recovery rotates feedKey");
     assert.equal(h.fake.requests.filter(r => r.path === "/catalog/people/7").length, metadataBefore);
     person.retire();
 });
