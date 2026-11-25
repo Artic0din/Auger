@@ -742,26 +742,49 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     // Apple's showPersonalRoot pops to the tab first, so Watchlist, Favorites and Requests replace each other and one Back pair returns to the tab.
     const clearPersonalRoot = (): void => { browseStack.clearPersonalRoot(); };
     // Apple WatchPartyEntry.isAvailable: the device switch is on and the server can host a synchronized party.
+    // One browse-scoped WatchPartyHub mirrors Apple's WatchPartySession.shared so Back from the lobby dismisses the
+    // page without leaving the room, and the top bar switches to "Return to Watch Party" while engaged (#783).
     const experimental = new ExperimentalFeatures(options.publicStorage);
     let watchPartyOffered = false;
+    let watchPartyHub: WatchPartyHub | undefined;
+    const syncWatchPartyMenu = (): void => {
+        if (!torn) shell.setWatchPartyEngaged(watchPartyHub?.state.room !== undefined);
+    };
     const setWatchPartyOffered = (supported: boolean): void => {
         watchPartyOffered = supported && experimental.isEnabled("watchParty");
         if (!torn) shell.setWatchPartyEnabled(watchPartyOffered);
     };
-    let watchPartyProbe: WatchPartyHub | undefined;
+    const ensureWatchPartyHub = (): WatchPartyHub => {
+        if (watchPartyHub !== undefined) return watchPartyHub;
+        const hub: WatchPartyHub = new WatchPartyHub(watchPartyApi(session), () => {
+            syncWatchPartyMenu();
+            if (!torn && top()?.kind === "watchParty") render(hub.takeRefocus() ? undefined : host.focused());
+        }, {
+            supported: watchPartyOffered,
+            onSupport: setWatchPartyOffered,
+            onLeave: () => host.forgetVisit("watchParty:hub"),
+            onPlay: request => { handoff(request); },
+        });
+        watchPartyHub = hub;
+        return hub;
+    };
     const probeWatchParty = (): void => {
-        watchPartyProbe?.stop();
-        watchPartyProbe = undefined;
-        if (!experimental.isEnabled("watchParty")) { setWatchPartyOffered(false); return; }
-        watchPartyProbe = new WatchPartyHub(watchPartyApi(session), () => undefined, { onSupport: setWatchPartyOffered });
-        void watchPartyProbe.check();
+        if (!experimental.isEnabled("watchParty")) {
+            watchPartyHub?.leave();
+            watchPartyHub?.stop();
+            watchPartyHub = undefined;
+            setWatchPartyOffered(false);
+            syncWatchPartyMenu();
+            return;
+        }
+        const hub = ensureWatchPartyHub();
+        if (hub.state.room === undefined) void hub.check();
     };
     const detailVisits = new WeakMap<Route, string>();
     let detailVisitSequence = 0;
-    /** A route leaving the stack for good: stop its live party and drop its presentation's focus snapshots. */
+    /** A route leaving the stack for good: drop its route-scoped controllers and focus snapshots. */
     const retireRoute = (route: Route | undefined): void => {
         if (route === undefined) return;
-        if (route.kind === "watchParty") route.watchParty.hub.stop();
         if (route.kind === "person") route.person.retire();
         if (route.kind === "search") route.search.retire();
         if (route.kind === "requests") route.page.retire();
@@ -921,7 +944,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         navigation.destroy();
         requestsController.abort();
         requests.dispose();
-        watchPartyProbe?.stop();
+        watchPartyHub?.stop();
+        watchPartyHub = undefined;
         document.removeEventListener("visibilitychange", requestsVisibility);
         cardActions.destroy();
         requestMenu.destroy();
@@ -2159,16 +2183,18 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (choice === undefined) clearPersonalRoot();
         const origin = top();
         const anchor = origin === undefined || choice !== undefined ? undefined : tabFocus(origin).key;
-        const hub: WatchPartyHub = new WatchPartyHub(watchPartyApi(session), () => { if (!torn && top() === route) render(hub.takeRefocus() ? undefined : host.focused()); }, { supported: true, onSupport: setWatchPartyOffered, onLeave: () => host.forgetVisit("watchParty:hub"), onPlay: request => { handoff(request); } });
+        const hub = ensureWatchPartyHub();
         const route = newRoute({ kind: "watchParty", watchParty: watchPartyScreen(hub), ...(anchor === undefined ? {} : { anchor }) });
         push(route);
         if (origin !== undefined && anchor !== undefined) origin.focus = { zone: "nav", key: anchor };
-        if (choice === undefined) { void hub.check(); return; }
+        if (choice === undefined || hub.state.room !== undefined) {
+            if (hub.state.room === undefined) void hub.check();
+            return;
+        }
         // WatchPartySession.create(selection:): a host-pick room that opens with the chosen title. create() reads support
         // itself and locks the entry at once, so a press on Start a party cannot race it.
         void (async () => {
-            await hub.create("host_pick");
-            if (hub.state.room !== undefined) await hub.stage(choice);
+            if (await hub.create("host_pick")) await hub.stage(choice);
         })();
     };
     const prepareCalendar = (current: Extract<Route, { kind: "calendar" }>): void => {

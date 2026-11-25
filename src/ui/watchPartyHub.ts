@@ -160,8 +160,8 @@ export class WatchPartyHub {
         this.notify();
     }
 
-    async create(mode: CreatableSelectionMode): Promise<void> {
-        await this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), mode, signal));
+    async create(mode: CreatableSelectionMode): Promise<boolean> {
+        return this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), mode, signal));
     }
 
     async join(invitation: string): Promise<void> {
@@ -203,14 +203,14 @@ export class WatchPartyHub {
         this.notify();
     }
 
-    /** Back inside an open room: one page at a time, and out of the room from the lobby. */
-    back(): void {
+    /** Back inside an open room: one page at a time; from the lobby returns false so the host dismisses without leaving. */
+    back(): boolean {
         const page = this.state.page;
         switch (page.kind) {
-            case "lobby": this.leave(); return;
-            case "choice": this.show(page.from ?? { kind: "picker" }); return;
-            case "episodes": this.show({ kind: "picker" }); return;
-            default: this.show(LOBBY);
+            case "lobby": return false;
+            case "choice": this.show(page.from ?? { kind: "picker" }); return true;
+            case "episodes": this.show({ kind: "picker" }); return true;
+            default: this.show(LOBBY); return true;
         }
     }
 
@@ -373,7 +373,7 @@ export class WatchPartyHub {
     }
 
     /**
-     * Back from the lobby, or Leave party: Apple's leaveRoom closes this viewer's socket and nothing else. A host who leaves is
+     * Leave party: Apple's leaveRoom closes this viewer's socket and nothing else. A host who leaves is
      * away, and the server holds the party for them; End party is what ends it for everyone.
      */
     leave(): void {
@@ -706,24 +706,28 @@ export class WatchPartyHub {
         }
     }
 
-    /** WatchPartySession.enter: support is read again before every create or join. */
-    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>): Promise<void> {
-        if (this.state.busy || this.stopped) return;
+    /** WatchPartySession.enter: support is read again before every create or join. Returns true only when this call entered a room. */
+    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>): Promise<boolean> {
+        if (this.state.busy || this.stopped) return false;
         this.state.busy = true;
         this.state.error = undefined;
         this.notify();
         try {
-            if (!await this.load()) return;
-            if (!this.state.supported) { this.state.error = { key: "watchParty.error.unavailable" }; return; }
+            if (!await this.load()) return false;
+            if (!this.state.supported) { this.state.error = { key: "watchParty.error.unavailable" }; return false; }
             try {
                 const entered = await operation(this.controller.signal);
                 if (!this.stopped) {
                     this.reset();
-                    if (this.accept(entered)) this.connect(entered.room.roomId);
+                    if (this.accept(entered)) {
+                        this.connect(entered.room.roomId);
+                        return true;
+                    }
                 }
             } catch (error) {
                 if (!this.stopped) this.state.error = this.describe(error);
             }
+            return false;
         } finally {
             if (!this.stopped) { this.state.busy = false; this.notify(); }
         }
