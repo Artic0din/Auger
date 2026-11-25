@@ -39,6 +39,7 @@ import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
 import { currentChapter, statLabel } from "./playerHUD.ts";
+import { chapterTickFractions, markerBands } from "./scrubberMarkers.ts";
 import { heading } from "./headings.ts";
 
 /** The options panel's tabs: the id the screen keys on, and the catalog key Apple's `HUDTab.title` reads. */
@@ -481,13 +482,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     bar.tabIndex = -1;
     const track = el("div", "player-bar-track");
     const fill = el("div", "player-bar-fill");
+    // Buffered-ahead sliver is omitted: the 21 Nov S95C AVPlay probe (#556) confirmed AVPlay exposes no buffered-end getter.
+    const bands = el("div", "player-bar-bands");
+    bands.setAttribute("aria-hidden", "true");
+    const ticks = el("div", "player-bar-ticks");
+    ticks.setAttribute("aria-hidden", "true");
     const puck = el("div", "player-puck");
-    track.appendChild(fill);
+    track.append(fill, bands);
     const rate = el("p", "player-rate");
     rate.hidden = true;
     const rateValue = el("span", "player-rate-value");
     rate.append(rateValue);
-    bar.append(track, puck, rate);
+    bar.append(track, ticks, puck, rate);
     // `.mediaLayoutDirection()` (TVPlayerControls.swift lines 325, 555, 557 and 575): media timelines and transport read left to right in every language.
     bar.setAttribute("dir", "ltr");
     const time = el("p", "player-time");
@@ -715,6 +721,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     let cancelAuto: (() => void) | undefined;
     let column = 0;
     let drawn: string | undefined;
+    let drawnBandsKey = "";
+    let drawnTicksKey = "";
     let aiLanguages = false;
     let subtitlePane: SubtitlePane = { kind: "tracks" };
     /** Video's own picker, so opening it leaves the Subtitles pane as it was. */
@@ -1233,6 +1241,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             tracksButton.hidden = true;
             fill.style.width = "0";
             puck.style.left = "0";
+            if (drawnBandsKey !== "") { drawnBandsKey = ""; bands.replaceChildren(); }
+            if (drawnTicksKey !== "") { drawnTicksKey = ""; ticks.replaceChildren(); }
         } else {
             const backwardSeconds = view.seekIntervals.backward;
             const forwardSeconds = view.seekIntervals.forward;
@@ -1269,6 +1279,27 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             const fraction = duration === undefined || duration <= 0 ? 0 : Math.min(100, (position / duration) * 100);
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
+            const nextBands = markerBands(view.markers, duration);
+            const bandsKey = nextBands.map(band => `${band.kind}:${band.start}:${band.end}`).join("|");
+            if (bandsKey !== drawnBandsKey) {
+                drawnBandsKey = bandsKey;
+                bands.replaceChildren(...nextBands.map(band => {
+                    const node = el("span", `player-bar-band player-bar-band-${band.kind}`);
+                    node.style.left = `${band.start * 100}%`;
+                    node.style.width = `${(band.end - band.start) * 100}%`;
+                    return node;
+                }));
+            }
+            const nextTicks = chapterTickFractions(view.hud?.chapters, duration);
+            const ticksKey = nextTicks.join("|");
+            if (ticksKey !== drawnTicksKey) {
+                drawnTicksKey = ticksKey;
+                ticks.replaceChildren(...nextTicks.map(tick => {
+                    const node = el("span", "player-bar-tick");
+                    node.style.left = `calc(${tick * 100}% - 1px)`;
+                    return node;
+                }));
+            }
         }
         const hidden = controlsHidden();
         overlay.className = ["player-overlay", hidden ? "player-overlay-hidden" : "", conceal ? "player-overlay-clear" : ""].filter(Boolean).join(" ");

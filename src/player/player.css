@@ -698,6 +698,53 @@
     background: #ffffff;
 }
 
+/* PlayerMarkerBands (PlayerMarkerBands.swift:3-32, TVPlayerScrubber.swift:219-225): translucent segment bands above the played fill. */
+.player-bar-bands {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.player-bar-band {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 999px;
+    opacity: 0.34;
+}
+
+.player-bar:focus .player-bar-band,
+.player-bar.player-bar-preview .player-bar-band {
+    opacity: 0.45;
+}
+
+.player-bar-band-intro { background: #51a2ff; }
+.player-bar-band-recap { background: #ff8904; }
+.player-bar-band-credits { background: #c27aff; }
+.player-bar-band-preview { background: #00d3f2; }
+
+/* TVPlayerScrubber.chapterTicks (TVPlayerScrubber.swift:250-264): 3px (4px scrubbing) ticks at 85% white, trackHeight + 14 tall. */
+.player-bar-ticks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.player-bar-tick {
+    position: absolute;
+    top: 50%;
+    width: 3px;
+    height: 21px;
+    margin-top: -10.5px;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.player-bar.player-bar-preview .player-bar-tick {
+    width: 4px;
+    height: 26px;
+    margin-top: -13px;
+}
+
 .player-bar:focus {
     outline: none;
 }
