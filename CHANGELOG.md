@@ -12,9 +12,9 @@ All notable changes to this project are documented in this file.
 
 ## [0.6.0] - 2026-11-25
 
-### ✨ New Features
+### Features
 
-- **Diagnostics**: Capture AVPlay error codes, route fallbacks, and HDR setting
+- **Diagnostics**: Capture AVPlay error codes, route fallbacks, and HDR setting ([#867](https://github.com/Artic0din/Auger-Tizen/pull/867), [`e6d87246`](https://github.com/Artic0din/Auger-Tizen/commit/e6d87246))
 
 ## [0.5.0] - 2026-11-25
 

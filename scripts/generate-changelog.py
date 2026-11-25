@@ -60,7 +60,10 @@ NO_CHANGES = "General maintenance and stability improvements."
 PR_SUFFIX = re.compile(r"(?:\s*\(#\d+\))+\s*$")
 BREAKING_FOOTER = re.compile(r"^BREAKING[- ]CHANGE:[ \t]*(.*)$", re.MULTILINE)
 TRAILER = re.compile(r"^(?:[A-Za-z][A-Za-z0-9-]*:[ \t]|[A-Za-z][A-Za-z0-9-]* #)")
-CHANGELOG_BOT_SUBJECT = re.compile(r"^docs\(changelog\):\s+record v\d+\.\d+\.\d+ release notes", re.IGNORECASE)
+CHANGELOG_BOT_SUBJECT = re.compile(
+    r"^docs\(changelog\):\s+record v\d+\.\d+\.\d+ release notes(?:\s*\(#\d+\))?\Z",
+    re.IGNORECASE,
+)
 MERGE_SUBJECT = re.compile(r"^(?:Merge pull request #\d+|Merge branch |merge:)", re.IGNORECASE)
 SECURITY_SCOPES = {"security", "sec"}
 INTERNAL_SCOPES = {"ci", "docs", "test", "tests", "scripts", "deps", "build"}

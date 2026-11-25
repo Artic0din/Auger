@@ -192,6 +192,7 @@ class TechnicalChangelogTest(unittest.TestCase):
             Commit("chore(deps-dev): bump playwright (#16)", "", "77777777"),
             Commit("test(player): add seek regression (#17)", "", "88888888"),
             Commit("docs(readme): update screenshots (#18)", "", "99999999"),
+            Commit("docs(changelog): record v0.4.0 release notes troubleshooting (#22)", "", "eeeeeeee"),
             Commit("ci(release): add deploy key (#19)", "", "aaaaaaaa"),
             Commit("Update README.md", "", "bbbbbbbb"),
             Commit("docs(changelog): record v0.4.0 release notes (#20)", "", "cccccccc"),
@@ -199,31 +200,73 @@ class TechnicalChangelogTest(unittest.TestCase):
         ]
         rendered = changelog.build_technical_changelog("0.5.0", "2026-11-25", commits).changelog_entry()
         self.assertIn("## [0.5.0] - 2026-11-25\n", rendered)
-        for heading in (
-            "### Breaking Changes",
-            "### Features",
-            "### Performance",
-            "### Security",
-            "### Fixes",
-            "### Refactors & Maintenance",
-            "### Tests",
-            "### Documentation",
-            "### CI",
-            "### Other Changes",
-        ):
-            self.assertIn(f"\n{heading}\n", rendered)
+        expected_pairs = (
+            (
+                "### Breaking Changes",
+                "- Upgrade to Tizen 8 ([#10](https://github.com/Artic0din/Auger-Tizen/pull/10), [`11111111`](https://github.com/Artic0din/Auger-Tizen/commit/11111111))",
+            ),
+            (
+                "### Features",
+                "- Drop Tizen 7 ([#10](https://github.com/Artic0din/Auger-Tizen/pull/10), [`11111111`](https://github.com/Artic0din/Auger-Tizen/commit/11111111))\n"
+                "- **Playback**: Add chapters ([#11](https://github.com/Artic0din/Auger-Tizen/pull/11), [`22222222`](https://github.com/Artic0din/Auger-Tizen/commit/22222222))",
+            ),
+            (
+                "### Performance",
+                "- **Home**: Cache backdrop ([#12](https://github.com/Artic0din/Auger-Tizen/pull/12), [`33333333`](https://github.com/Artic0din/Auger-Tizen/commit/33333333))",
+            ),
+            (
+                "### Security",
+                "- Redact tokens ([#13](https://github.com/Artic0din/Auger-Tizen/pull/13), [`44444444`](https://github.com/Artic0din/Auger-Tizen/commit/44444444))",
+            ),
+            (
+                "### Fixes",
+                "- **CI**: Stop flaky runner ([#14](https://github.com/Artic0din/Auger-Tizen/pull/14), [`55555555`](https://github.com/Artic0din/Auger-Tizen/commit/55555555))",
+            ),
+            (
+                "### Refactors & Maintenance",
+                "- **Interface**: Simplify row ([#15](https://github.com/Artic0din/Auger-Tizen/pull/15), [`66666666`](https://github.com/Artic0din/Auger-Tizen/commit/66666666))\n"
+                "- **Dependencies**: Bump playwright ([#16](https://github.com/Artic0din/Auger-Tizen/pull/16), [`77777777`](https://github.com/Artic0din/Auger-Tizen/commit/77777777))",
+            ),
+            (
+                "### Tests",
+                "- **Playback**: Add seek regression ([#17](https://github.com/Artic0din/Auger-Tizen/pull/17), [`88888888`](https://github.com/Artic0din/Auger-Tizen/commit/88888888))",
+            ),
+            (
+                "### Documentation",
+                "- **README**: Update screenshots ([#18](https://github.com/Artic0din/Auger-Tizen/pull/18), [`99999999`](https://github.com/Artic0din/Auger-Tizen/commit/99999999))\n"
+                "- **Changelog**: Record v0.4.0 release notes troubleshooting ([#22](https://github.com/Artic0din/Auger-Tizen/pull/22), [`eeeeeeee`](https://github.com/Artic0din/Auger-Tizen/commit/eeeeeeee))",
+            ),
+            (
+                "### CI",
+                "- **Releases**: Add deploy key ([#19](https://github.com/Artic0din/Auger-Tizen/pull/19), [`aaaaaaaa`](https://github.com/Artic0din/Auger-Tizen/commit/aaaaaaaa))",
+            ),
+            (
+                "### Other Changes",
+                "- Update README.md ([`bbbbbbbb`](https://github.com/Artic0din/Auger-Tizen/commit/bbbbbbbb))",
+            ),
+        )
+        for heading, bullets in expected_pairs:
+            self.assertIn(f"\n{heading}\n\n{bullets}\n", rendered)
         for emoji in ("⚠️", "✨", "🔧", "🔒", "🐛"):
             self.assertNotIn(emoji, rendered)
         self.assertNotIn("/compare/", rendered)
+        self.assertNotIn("cccccccc", rendered)
+        self.assertNotIn("Merge pull request", rendered)
+
+    def test_breaking_single_bullet_when_footer_absent_or_identical_and_custom_repo(self):
+        commits = [
+            Commit("feat!: drop Tizen 7 (#10)", "", "11111111"),
+            Commit("feat(player): add chapters (#11)", "BREAKING CHANGE: add chapters", "22222222"),
+        ]
+        rendered = changelog.build_technical_changelog("1.0.0", "2026-11-25", commits, repo="ForkOwner/ForkRepo").changelog_entry()
         self.assertIn(
-            "- **Playback**: Add chapters ([#11](https://github.com/Artic0din/Auger-Tizen/pull/11), [`22222222`](https://github.com/Artic0din/Auger-Tizen/commit/22222222))",
+            "### Breaking Changes\n\n"
+            "- Drop Tizen 7 ([#10](https://github.com/ForkOwner/ForkRepo/pull/10), [`11111111`](https://github.com/ForkOwner/ForkRepo/commit/11111111))\n"
+            "- **Playback**: Add chapters ([#11](https://github.com/ForkOwner/ForkRepo/pull/11), [`22222222`](https://github.com/ForkOwner/ForkRepo/commit/22222222))\n",
             rendered,
         )
-        self.assertIn("**CI**: Stop flaky runner", rendered)
-        self.assertIn("**Dependencies**: Bump playwright", rendered)
-        self.assertIn("**README**: Update screenshots", rendered)
-        self.assertNotIn("Record v0.4.0 release notes", rendered)
-        self.assertNotIn("Merge pull request", rendered)
+        self.assertNotIn("### Features", rendered)
+        self.assertNotIn("Artic0din/Auger-Tizen", rendered)
 
 
 def user_notes(*commits, bodies=None):
