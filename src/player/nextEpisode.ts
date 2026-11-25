@@ -115,10 +115,8 @@ export async function readOnDeck(read: Read, contentId: string, publish?: (items
                 if (file === undefined) continue;
                 const durationSeconds = file.durationSeconds > 0 ? file.durationSeconds : card.durationSeconds;
                 const start = resumeSeconds(detail.watch?.positionSeconds, file.durationSeconds > 0 ? file.durationSeconds : undefined);
-                const positionSeconds = detail.watch?.positionSeconds ?? card.positionSeconds;
-                const watch = presentationWatch(detail.watch === undefined
-                    ? (positionSeconds === undefined ? undefined : { played: card.played === true, positionSeconds })
-                    : (positionSeconds === undefined ? detail.watch : { ...detail.watch, positionSeconds }));
+                const watch = presentationWatch(detail.watch);
+                const thumbnailPositionSeconds = detail.watch?.positionSeconds ?? (detail.watch === undefined ? card.positionSeconds : undefined);
                 const seriesTitle = card.seriesTitle?.trim();
                 result.push({
                     contentId: detail.id,
@@ -128,6 +126,7 @@ export async function readOnDeck(read: Read, contentId: string, publish?: (items
                     backdropUrl: card.backdropUrl,
                     ...(card.backdropIsEpisodeStill === undefined ? {} : { backdropIsEpisodeStill: card.backdropIsEpisodeStill }),
                     startSeconds: start ?? 0,
+                    ...(thumbnailPositionSeconds === undefined ? {} : { thumbnailPositionSeconds }),
                     ...(durationSeconds === undefined ? {} : { durationSeconds }),
                     ...(detail.type === "episode" ? {
                         episode: true as const,

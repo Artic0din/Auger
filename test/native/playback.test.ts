@@ -873,6 +873,14 @@ test("credits skip under an already-open pre-end prompt switches its countdown t
     assert.equal(manual.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "manual Skip Credits does not seek to EOF");
     assert.equal(manualView.upNext.countdown, 10);
     assert.equal(manualView.upNext.countdownTotal, 10);
+    // Natural EOF 5 s after Skip Credits preserves the remaining 5 s instead of advancing early.
+    await manual.h.clock.advance(5000);
+    manual.avplay.listener?.onstreamcompleted();
+    await manual.h.clock.advance(0);
+    assert.equal(bodies(manual.h, "/start").length, 1, "EOF after 5 s must not start next episode early");
+    assert.equal(completion(manual).countdown, 5, "remaining 5 s of the fixed 10 s credits countdown carry over");
+    await manual.h.clock.advance(5000);
+    assert.equal(bodies(manual.h, "/start").length, 2, "next episode starts once the full 10 s elapses");
     manual.controller.destroy();
 });
 

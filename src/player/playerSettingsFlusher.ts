@@ -62,6 +62,7 @@ interface PendingSettingWrite {
     readonly value: SettingValue;
     readonly scope: PlayerSettingWriteScope;
     readonly scopeId: string;
+    readonly generation: number;
     failedAttempts: number;
     isHeld: boolean;
 }
@@ -112,11 +113,13 @@ export class PlayerSettingsFlusher {
     private pending = new Map<SettingsKey, PendingSettingWrite>();
     private inFlight = new Map<SettingsKey, PendingSettingWrite>();
     private failedInDrain = new Map<SettingsKey, PendingSettingWrite>();
+    private readonly keyGenerations = new Map<SettingsKey, number>();
     private cancelDebounce: (() => void) | undefined;
     private cancelRetry: (() => void) | undefined;
     private draining = false;
     private waiters: (() => void)[] = [];
     private listeners = new Set<() => void>();
+    private commitListeners = new Set<(key: SettingsKey) => void>();
     private destroyed = false;
 
     constructor(transport: PlayerSettingsTransport, clock: Clock, options: PlayerSettingsFlusherOptions = {}) {
@@ -130,6 +133,7 @@ export class PlayerSettingsFlusher {
         this.onRejected = options.onRejected;
         this.activeScopeId = this.readScopeId();
         this.loadJournal(this.activeScopeId);
+        this.scheduleRestoredWrites();
     }
 
     /** Keys in the active partition whose automatic retries ran out and are held on this TV. */
@@ -164,6 +168,12 @@ export class PlayerSettingsFlusher {
         return () => { this.listeners.delete(listener); };
     }
 
+    /** Notified when a queued write for `key` succeeds on the server (used to invalidate stale reads and refresh Settings). */
+    onCommit(listener: (key: SettingsKey) => void): () => void {
+        this.commitListeners.add(listener);
+        return () => { this.commitListeners.delete(listener); };
+    }
+
     /** Queue one desired value for `key`, replacing any older pending value and restarting debounce. */
     enqueue(key: SettingsKey, value: SettingValue, scope: PlayerSettingWriteScope = "profile_device"): void {
         if (this.destroyed) return;
@@ -173,17 +183,24 @@ export class PlayerSettingsFlusher {
             this.armDebounce();
             return;
         }
-        this.pending.set(key, { value, scope, scopeId: this.activeScopeId, failedAttempts: 0, isHeld: false });
+        const generation = this.bumpGeneration(key);
+        this.inFlight.delete(key);
+        this.failedInDrain.delete(key);
+        this.pending.set(key, { value, scope, scopeId: this.activeScopeId, generation, failedAttempts: 0, isHeld: false });
         this.persistJournal();
         this.clearRetryTimer();
         this.armDebounce();
         this.notify();
     }
 
-    /** Forget any queued or held entry for `key` (for example after Settings saved it directly). */
+    /** Forget any queued, in-flight, or held entry for `key` (for example after Settings saved or reset it directly). */
     clearKey(key: SettingsKey): void {
         this.syncScope();
-        if (!this.pending.delete(key)) return;
+        const hadPending = this.pending.delete(key);
+        const hadInFlight = this.inFlight.delete(key);
+        const hadFailed = this.failedInDrain.delete(key);
+        if (!hadPending && !hadInFlight && !hadFailed) return;
+        this.bumpGeneration(key);
         this.persistJournal();
         this.notify();
     }
@@ -257,6 +274,17 @@ export class PlayerSettingsFlusher {
         const queued = this.waiters.splice(0);
         for (const resolve of queued) resolve();
         this.listeners.clear();
+        this.commitListeners.clear();
+    }
+
+    private bumpGeneration(key: SettingsKey): number {
+        const next = (this.keyGenerations.get(key) ?? 0) + 1;
+        this.keyGenerations.set(key, next);
+        return next;
+    }
+
+    private isCurrent(key: SettingsKey, write: PendingSettingWrite): boolean {
+        return (this.keyGenerations.get(key) ?? 0) === write.generation;
     }
 
     private syncScope(): void {
@@ -267,6 +295,20 @@ export class PlayerSettingsFlusher {
         this.clearDebounceTimer();
         this.clearRetryTimer();
         this.loadJournal(nextScope);
+        this.scheduleRestoredWrites();
+    }
+
+    private scheduleRestoredWrites(): void {
+        if (this.destroyed) return;
+        let hasFresh = false;
+        let minRetryingAttempt: number | undefined;
+        for (const write of this.pending.values()) {
+            if (write.isHeld) continue;
+            if (write.failedAttempts === 0) hasFresh = true;
+            else minRetryingAttempt = minRetryingAttempt === undefined ? write.failedAttempts : Math.min(minRetryingAttempt, write.failedAttempts);
+        }
+        if (hasFresh) this.armDebounce();
+        else if (minRetryingAttempt !== undefined) this.armRetry(minRetryingAttempt);
     }
 
     private hasSendableWrites(): boolean {
@@ -329,9 +371,13 @@ export class PlayerSettingsFlusher {
                     try {
                         await this.transport.putValue(key, write.scope, write.value, this.readSignal());
                         if (this.inFlight.get(key) === write) this.inFlight.delete(key);
-                        this.failedInDrain.delete(key);
+                        if (this.isCurrent(key, write)) {
+                            this.failedInDrain.delete(key);
+                            for (const listener of [...this.commitListeners]) listener(key);
+                        }
                     } catch (error) {
                         if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+                        if (!this.isCurrent(key, write)) continue;
                         const kind = classifyFailure(error);
                         if (kind === "permanent") {
                             this.failedInDrain.delete(key);
@@ -351,7 +397,7 @@ export class PlayerSettingsFlusher {
             const currentScope = this.readScopeId();
             let minRetryingAttempt: number | undefined;
             for (const [key, write] of this.failedInDrain) {
-                if (write.scopeId === currentScope && !this.pending.has(key)) {
+                if (write.scopeId === currentScope && this.isCurrent(key, write) && !this.pending.has(key)) {
                     this.pending.set(key, write);
                     if (!write.isHeld && write.failedAttempts > 0) {
                         minRetryingAttempt = minRetryingAttempt === undefined ? write.failedAttempts : Math.min(minRetryingAttempt, write.failedAttempts);
@@ -411,6 +457,7 @@ export class PlayerSettingsFlusher {
                     value: record.value as SettingValue,
                     scope,
                     scopeId,
+                    generation: this.bumpGeneration(key as SettingsKey),
                     failedAttempts,
                     isHeld,
                 });

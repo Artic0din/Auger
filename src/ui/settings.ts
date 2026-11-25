@@ -129,6 +129,9 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if ((actions.playerSettings?.heldKeys.length ?? 0) === 0) heldDiscardFailed = false;
         render(host.focused());
     }) ?? (() => undefined);
+    const stopPlayerSettingsCommit = actions?.playerSettings?.onCommit(() => {
+        if (!torn && !heldBusy && !state.busy && state.loaded) void state.load();
+    }) ?? (() => undefined);
     const stopThemeMusic = themeMusic?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
     const stopDiagnostics = diagnosticsCollector.subscribe(() => { if (!torn && (category === "diagnostics" || diagnosticsQr)) render(host.focused()); });
     // A language change repaints Settings, but not under a held Select: it waits for the release, as Browse's reconcileLanguage does.
@@ -156,6 +159,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         connection.stop();
         stopSpoilers();
         stopPlayerSettings();
+        stopPlayerSettingsCommit();
         stopThemeMusic();
         stopAppLanguage();
         stopDiagnostics();

@@ -160,3 +160,44 @@ test("retryHeldChanges sends held values again with a fresh budget, and discardH
         flusher.destroy();
     }
 });
+
+test("restored non-held journal entries resume delivery and clearKey supersedes in-flight writes (#810)", async () => {
+    const clock = new ManualClock();
+    const storage = fakeStorage();
+    // Seed a non-held write in storage as if the app closed during the debounce window.
+    const first = new PlayerSettingsFlusher({ putValue: async () => {}, effectiveValues: async () => new Map() }, clock, { storage });
+    first.enqueue(AUTO_PLAY, false);
+    first.destroy();
+
+    const sent: SettingValue[] = [];
+    const committed: SettingsKey[] = [];
+    const restored = new PlayerSettingsFlusher({
+        putValue: async (_key, _scope, value) => { sent.push(value); },
+        effectiveValues: async () => new Map(),
+    }, clock, { storage });
+    restored.onCommit(key => { committed.push(key); });
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    assert.deepEqual(sent, [false], "restored non-held entry drains automatically");
+    assert.deepEqual(committed, [AUTO_PLAY], "onCommit fires once the write succeeds");
+
+    // clearKey supersedes an in-flight PUT so its transient failure is never retried.
+    let rejectInFlight: ((error: unknown) => void) | undefined;
+    let attempts = 0;
+    const flusher = new PlayerSettingsFlusher({
+        putValue: async () => {
+            attempts += 1;
+            return new Promise<void>((_resolve, reject) => { rejectInFlight = reject; });
+        },
+        effectiveValues: async () => new Map(),
+    }, clock);
+    flusher.enqueue(AUTO_PLAY, true);
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    assert.equal(attempts, 1);
+    flusher.clearKey(AUTO_PLAY);
+    rejectInFlight?.(transientError());
+    await clock.advance(60_000);
+    assert.equal(attempts, 1, "superseded in-flight write is never retried");
+    assert.equal(flusher.unsettledValue(AUTO_PLAY), undefined);
+    flusher.destroy();
+    restored.destroy();
+});
