@@ -496,6 +496,9 @@ jobs:
     name: Post the release to Discord
     needs: [prepare, publish]
     if: needs.prepare.outputs.should_release == 'true' && (needs.publish.outputs.published == 'true' || needs.publish.outputs.published == 'unknown')
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/discord-release.yml
     with:
       tag: ${{ needs.prepare.outputs.tag }}
