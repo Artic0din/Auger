@@ -230,14 +230,21 @@ function cleanAvplayError(value: string | undefined): string | undefined {
     return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
-const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(\)| \(fallback #\d+\))?$/;
+const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
 
 function formatEventText(text: string, maxLength: number): string {
     const match = TRUSTED_AVPLAY_EVENT_PATTERN.exec(text);
     const code = match?.[2];
     if (match !== null && code !== undefined && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
         const prefix = match[1] ?? "";
-        const suffix = match[3] ?? "";
+        const closeParen = match[3] ?? "";
+        const fallbackDigits = match[4];
+        let suffix = closeParen;
+        if (fallbackDigits !== undefined) {
+            const count = Number(fallbackDigits);
+            if (!Number.isInteger(count) || count < 1 || count > 20) return redactDiagnosticText(text, maxLength);
+            suffix = ` (fallback #${count})`;
+        }
         const safePrefix = redactDiagnosticText(prefix.trimEnd(), maxLength);
         const spacer = prefix.endsWith(" ") ? " " : "";
         const rebuilt = `${safePrefix}${spacer}${code}${suffix}`;

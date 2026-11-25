@@ -10,6 +10,7 @@ import {
     DIAGNOSTICS_REPORT_URL,
     DiagnosticsCollector,
     diagnosticsFingerprint,
+    diagnosticsPayload,
     formatDiscordDiagnostics,
     readRuntimeEnvironment,
     redactDiagnosticText,
@@ -675,6 +676,11 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
     const avEvents = collector.snapshot().events.map(event => event.text);
     assert.ok(avEvents.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), JSON.stringify(avEvents));
     assert.ok(!avEvents.some(text => text.includes("PLAYER_ERROR_SECRET_TOKEN")), JSON.stringify(avEvents));
+    const serialized = diagnosticsPayload(collector.snapshot());
+    assert.ok(
+        serialized.log?.some(entry => entry.endsWith("[playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)")),
+        JSON.stringify(serialized.log),
+    );
     collector.recordPlaybackError("playback_failed", "", { avplayError: "open:SecretToken12345678901234567890" });
     assert.equal(collector.snapshot().lastPlayback?.avplayError, "open:error");
 
@@ -713,6 +719,7 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
                 log: [
                     "03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)",
                     "03:00:01 [app] leak PLAYER_ERROR_SECRET_TOKEN_1234567890",
+                    "03:00:02 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #123456789012345678901234567890)",
                 ],
             }),
         }),
@@ -726,6 +733,7 @@ test("playback failure diagnostics capture AVPlay error codes, route fallbacks, 
     assert.ok(firstBody.includes("| AVPlay error | PLAYER_ERROR_NOT_SUPPORTED_FORMAT |"));
     assert.ok(firstBody.includes("03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"));
     assert.ok(!firstBody.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"));
+    assert.ok(!firstBody.includes("123456789012345678901234567890"), "overlong numeric fallback suffix must be redacted");
 
     // Same AVPlay code with HDR toggled Off posts a diff comment on #910 showing HDR setting change.
     const hdrDiff = await handleRequest(

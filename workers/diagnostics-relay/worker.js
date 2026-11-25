@@ -126,7 +126,7 @@ function sanitizeAvplayError(raw) {
   return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
-const TRUSTED_AVPLAY_LOG_PATTERN = /^(\d{2}:\d{2}:\d{2} \[playback\] (?:avplay |error [A-Za-z0-9_.: -]+ \())(PLAYER_ERROR_[A-Z_]+)(\)| \(fallback #\d+\))?$/;
+const TRUSTED_AVPLAY_LOG_PATTERN = /^(\d{2}:\d{2}:\d{2} \[playback\] (?:avplay |error [A-Za-z0-9_.: -]+ \())(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
 
 function sanitizeLogEntry(raw) {
   if (typeof raw !== "string") return undefined;
@@ -135,7 +135,14 @@ function sanitizeLogEntry(raw) {
   const code = match?.[2];
   if (match && code && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
     const prefix = match[1] ?? "";
-    const suffix = match[3] ?? "";
+    const closeParen = match[3] ?? "";
+    const fallbackDigits = match[4];
+    let suffix = closeParen;
+    if (fallbackDigits !== undefined) {
+      const count = Number(fallbackDigits);
+      if (!Number.isInteger(count) || count < 1 || count > 20) return sanitize(raw, 120);
+      suffix = ` (fallback #${count})`;
+    }
     const safePrefix = sanitize(prefix.trimEnd(), 120);
     if (!safePrefix) return undefined;
     const spacer = prefix.endsWith(" ") ? " " : "";
