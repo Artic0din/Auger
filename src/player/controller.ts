@@ -85,6 +85,8 @@ export interface PlayRequest {
     readonly episode?: true;
     /** Watch progress for the Up Next synopsis and On Deck progress bar. Absent means the item has not started. */
     readonly watch?: { readonly played: boolean; readonly isInProgress?: boolean; readonly positionSeconds?: number };
+    /** Cosmetic card fallback position for On Deck progress bars when watch detail carries none, kept separate from spoiler watch state. */
+    readonly thumbnailPositionSeconds?: number | undefined;
     /** Media duration in seconds for On Deck thumbnail progress bars. */
     readonly durationSeconds?: number | undefined;
     readonly audioTrackId?: string;
