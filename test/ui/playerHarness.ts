@@ -1,6 +1,7 @@
 // Browser entry for the player screen tests: mounts the real screen over stub controls, so the
 // test sets each playback view and sees which commands the remote keys send. No AVPlay or server.
 
+import type { SeekThumbnail } from "../../src/contracts/v2/trickplay.ts";
 import { setAppLanguage } from "../../src/i18n/language.ts";
 import { registerCatalog } from "../../src/i18n/translate.ts";
 import type { PlaybackView, PlayerControls } from "../../src/player/controller.ts";
@@ -14,6 +15,7 @@ export interface PlayerHarness {
     /** How many times the screen asked the controller to send its view again for a late language. */
     readonly refreshes: number;
     show(view: PlaybackView): void;
+    setThumbnail(provider: ((seconds: number) => Promise<SeekThumbnail | undefined>) | undefined): void;
     /** The shown language; a catalog registers as the packaged file does, so a screen already up redraws. */
     setLanguage(tag: string, catalog?: Readonly<Record<string, string>>): void;
     destroy(): void;
@@ -39,6 +41,7 @@ let dismissesBufferingPill = false;
 let skipPillShown = false;
 let refreshes = 0;
 let listener: ((view: PlaybackView) => void) | undefined;
+let thumbnailProvider: ((seconds: number) => Promise<SeekThumbnail | undefined>) | undefined;
 const controls: PlayerControls = {
     setVideo: (kind, value) => commands.push(`setVideo ${kind} ${value}`),
     toggleAutoNext: () => commands.push("toggleAutoNext"),
@@ -83,7 +86,11 @@ const controls: PlayerControls = {
     resetSubtitleTiming: key => commands.push(`resetSubtitleTiming ${key}`),
     selectSecondarySubtitle: id => commands.push(`selectSecondarySubtitle ${id ?? "off"}`),
     subtitleTool: action => commands.push(`subtitleTool ${JSON.stringify(action)}`),
-    seekThumbnail: async () => undefined,
+    seekThumbnail: async (seconds, signal, load) => {
+        const tile = await thumbnailProvider?.(seconds);
+        if (tile !== undefined) await load(tile, signal);
+        return tile;
+    },
     selectBufferingPrimary: () => commands.push("selectBufferingPrimary"),
     selectBufferingKeep: () => commands.push("selectBufferingKeep"),
     dismissBufferingPill: () => {
@@ -106,6 +113,7 @@ window.player = {
     get skipPillShown() { return skipPillShown; },
     get refreshes() { return refreshes; },
     show: (view) => listener?.(view),
+    setThumbnail: (provider) => { thumbnailProvider = provider; },
     setLanguage(tag, catalog) {
         setAppLanguage(tag);
         if (catalog !== undefined) registerCatalog(tag, catalog);

@@ -35,6 +35,7 @@ import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
+import { mountHoldSeekIndicator } from "./holdSeekIndicator.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
@@ -261,6 +262,9 @@ const SKIP_DEBOUNCE_MS = 200;
 const AUTO_SEEK_MS = 100;
 /** TVPlayerScrubber timelineAutoSeekBaseStep. Each tick moves 2s times the rate. */
 const AUTO_SEEK_STEP = 2;
+/** PlayerViewModel.startHoldSeekAutoRamp: steps 1 → 2 → 4 → 8 every 1.2 s until manual input. */
+const HOLD_SEEK_RAMP_MS = 1200;
+const HOLD_SEEK_RAMP_RATES = [2, 4, 8] as const;
 
 /** Compact runtime for the Info pane. PlayerTimeFormatter.formatRuntime. */
 export function runtimeText(seconds: number | undefined): string | undefined {
@@ -667,6 +671,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     actions.append(primaryRow, secondaryRow);
     failure.append(nextBackdrop, shuffleBadge, eyebrow, nextSeries, nextHeading, nextMeta, mark, failureText, synopsis, actions, shuffleError, autoPlayFooter, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
+    const holdSeekIndicator = mountHoldSeekIndicator(section, controls, clock);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
         spinner.setAttribute("aria-label", translate("common.loading"));
@@ -676,6 +681,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         for (const [index, tab] of tabs.entries()) tab.textContent = translate(TAB_KEYS[tabNames[index] ?? "Info"]);
         labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"), { size: 25, gap: 16 });
         retry.textContent = translate("common.retry");
+        holdSeekIndicator.refreshLabels();
     };
     labelStatics();
     const covered = Array.from(root.children).flatMap((child) => child instanceof HTMLElement ? [{ element: child, display: child.style.display }] : []);
@@ -709,10 +715,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     let holdPausedAtCommandCount: number | undefined;
     /** 0 when auto-seek is idle. Otherwise one of SEEK_RATES. */
     let autoRate = 0;
+    /** Hidden-controls hold-seek session (HoldSeekIndicator + 2×/4×/8× auto-ramp, PlayerView.swift:208-299). */
+    let holdSeeking = false;
     let pendingTap: "left" | "right" | undefined;
     let cancelDebounce: (() => void) | undefined;
     let cancelHold: (() => void) | undefined;
     let cancelAuto: (() => void) | undefined;
+    let cancelHoldRamp: (() => void) | undefined;
     let column = 0;
     let drawn: string | undefined;
     let aiLanguages = false;
@@ -1024,7 +1033,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (skipKind === "intro" || skipKind === "undo") skipPrompt.resolve();
     };
 
-    const controlsHidden = (): boolean => view.phase === "playing" && (!view.buffering || dismissed) && cancelHide === undefined && !menuOpen && seekPreview === undefined;
+    const controlsHidden = (): boolean => holdSeeking || (view.phase === "playing" && (!view.buffering || dismissed) && cancelHide === undefined && !menuOpen && seekPreview === undefined);
 
     const render = (): void => {
         draw();
@@ -1270,6 +1279,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
         }
+        if (holdSeeking && activeView !== undefined && seekPreview !== undefined) {
+            holdSeekIndicator.show(autoRate, seekPreview, activeView.durationSeconds ?? 0, clockText);
+        } else {
+            holdSeekIndicator.clear();
+        }
         const hidden = controlsHidden();
         overlay.className = ["player-overlay", hidden ? "player-overlay-hidden" : "", conceal ? "player-overlay-clear" : ""].filter(Boolean).join(" ");
         skip.className = ["player-button", "player-skip", skipKind === "recap" || skipKind === "credits" ? "player-skip-segment" : "player-skip-intro", hidden ? "player-skip-lit" : "", menuOpen ? "player-skip-hud" : ""].filter(Boolean).join(" ");
@@ -1318,6 +1332,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         cancelHold = undefined;
         cancelAuto?.();
         cancelAuto = undefined;
+        cancelHoldRamp?.();
+        cancelHoldRamp = undefined;
         pendingTap = undefined;
     };
 
@@ -1330,8 +1346,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         timeline = false;
         timelineMoved = false;
         resumeAfterTimeline = false;
+        holdSeeking = false;
         autoRate = 0;
         thumbnail.clear();
+        holdSeekIndicator.clear();
         if (resume) controls.setPaused(false);
     };
 
@@ -1421,13 +1439,80 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         render();
     };
 
-    const armHold = (direction: "left" | "right"): void => {
+    const scheduleHoldRamp = (step: number): void => {
+        const magnitude = HOLD_SEEK_RAMP_RATES[step];
+        if (magnitude === undefined) return;
+        cancelHoldRamp?.();
+        cancelHoldRamp = clock.schedule(() => {
+            cancelHoldRamp = undefined;
+            if (!holdSeeking || autoRate === 0) return;
+            autoRate = magnitude * (autoRate > 0 ? 1 : -1);
+            render();
+            scheduleHoldRamp(step + 1);
+        }, HOLD_SEEK_RAMP_MS);
+    };
+
+    const startHoldSeek = (forward: boolean): void => {
+        if (view.phase !== "playing" && view.phase !== "paused") return;
+        if (holdSeeking) return;
+        cancelDebounce?.();
+        cancelDebounce = undefined;
+        cancelHide?.();
+        cancelHide = undefined;
+        holdSeeking = true;
+        timeline = false;
+        timelineMoved = false;
+        autoRate = forward ? 1 : -1;
+        seekPreview = view.positionSeconds;
+        cancelAuto?.();
+        const tick = (): void => {
+            if (!holdSeeking || autoRate === 0 || (view.phase !== "playing" && view.phase !== "paused")) return;
+            const duration = view.durationSeconds;
+            const step = AUTO_SEEK_STEP * autoRate;
+            const base = seekPreview ?? view.positionSeconds;
+            const cap = duration !== undefined && duration > 0 ? duration : base + Math.abs(step);
+            seekPreview = Math.max(0, Math.min(base + step, cap));
+            render();
+            cancelAuto = clock.schedule(tick, AUTO_SEEK_MS);
+        };
+        tick();
+        scheduleHoldRamp(0);
+    };
+
+    const adjustHoldSeekRate = (delta: number): void => {
+        if (!holdSeeking) return;
+        cancelHoldRamp?.();
+        cancelHoldRamp = undefined;
+        adjustAutoRate(delta);
+    };
+
+    const commitHoldSeek = (): void => {
+        if (!holdSeeking) return;
+        const target = seekPreview;
+        cancelScrub();
+        if (target !== undefined) {
+            pendingSkipTarget = target;
+            controls.seekToSeconds(target);
+        }
+        reveal();
+        bar.focus();
+        render();
+    };
+
+    const cancelHoldSeek = (): void => {
+        if (!holdSeeking) return;
+        cancelScrub();
+        render();
+    };
+
+    const armHold = (direction: "left" | "right", hiddenOrigin = false): void => {
         pendingTap = direction;
         cancelHold?.();
         cancelHold = clock.schedule(() => {
             cancelHold = undefined;
             pendingTap = undefined;
-            startAutoSeek(direction === "left" ? -1 : 1);
+            if (hiddenOrigin) startHoldSeek(direction === "right");
+            else startAutoSeek(direction === "left" ? -1 : 1);
         }, HOLD_MS);
     };
 
@@ -1727,7 +1812,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
 
     /** What Select would act on beyond the focused control: a prompt or mode that appears mid-press replaces the press's action. */
-    const selectContext = (): string => [skipKind, skipTarget, view.phase, view.phase === "playing" || view.phase === "paused" ? view.upNext !== undefined : false, menuOpen, timeline, seekPreview !== undefined, autoRate, overlay.classList.contains("player-overlay-hidden"), skipUsable(), bufferingButtons().length, bufferingTarget].join("|");
+    const selectContext = (): string => [skipKind, skipTarget, view.phase, view.phase === "playing" || view.phase === "paused" ? view.upNext !== undefined : false, menuOpen, timeline, holdSeeking, seekPreview !== undefined, autoRate, overlay.classList.contains("player-overlay-hidden"), skipUsable(), bufferingButtons().length, bufferingTarget].join("|");
     const onKey = (event: KeyboardEvent, released = false): void => {
         const key = physicalKey(event);
         // Any other key, remote or not, ends a held Select.
@@ -1788,6 +1873,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         const hiddenPrompt = overlay.classList.contains("player-overlay-hidden") && !menuOpen && !timeline;
+        if (holdSeeking) {
+            if (key === "back") { cancelHoldSeek(); return; }
+            if (key === "enter") { commitHoldSeek(); return; }
+            if (key === "left" || key === "right") { if (!event.repeat) pendingTap = key; return; }
+            if (key === "up" || key === "down") return;
+        }
         const pillButtons = bufferingButtons();
         if (pillButtons.length > 0 && !menuOpen && !timeline && seekPreview === undefined && autoRate === 0) {
             const at = pillButtons.findIndex(button => button === document.activeElement);
@@ -1855,7 +1946,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 return;
             }
             if (key === "down") { openMenu("video"); return; }
-            if (key === "left" || key === "right") bar.focus();
+            if (key === "left" || key === "right") {
+                // PlayerView.swift:208-216: holding Left/Right with controls hidden enters hold-seek without revealing controls; a short tap still skips.
+                if (!event.repeat) armHold(key, true);
+                return;
+            }
         }
         // While playing, Back with the controls up only takes them down (PlayerView.onExitCommand, then dismissControls).
         if (key === "back" && view.phase === "playing" && !controlsHidden() && !timeline && seekPreview === undefined && autoRate === 0) {
@@ -1949,6 +2044,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         cancelHold?.();
         cancelHold = undefined;
         pendingTap = undefined;
+        if (holdSeeking) {
+            adjustHoldSeekRate(key === "left" ? -1 : 1);
+            return;
+        }
         if (autoRate !== 0) {
             adjustAutoRate(key === "left" ? -1 : 1);
             return;
@@ -2036,6 +2135,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         destroy() {
             cancelScrub();
             thumbnail.clear();
+            holdSeekIndicator.clear();
             skipPrompt.reset();
             unsubscribe();
             stopCatalog();

@@ -915,6 +915,79 @@ test("episode footer shows series, title and episode tag without an empty status
     } finally { await page.close(); }
 });
 
+test("holding Left or Right with controls hidden shows HoldSeekIndicator, auto-ramps 2x/4x/8x, loads 480x270 preview, and Select commits or Back cancels (#777)", async () => {
+    const { page } = await open();
+    try {
+        // Provide a trickplay tile for the 480x270 preview frame.
+        await page.route("**/trickplay.jpg", route => route.fulfill({
+            status: 200,
+            contentType: "image/svg+xml",
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#234"/></svg>',
+        }));
+        await page.evaluate(() => {
+            window.player.setThumbnail(async () => ({ index: 0, sheet: 0, url: "https://tv.example.test/trickplay.jpg", x: 0, y: 0, width: 160, height: 90, sheetWidth: 320, sheetHeight: 180 }));
+        });
+        await show(page, { ...playing(TRACKS), positionSeconds: 100, durationSeconds: 1000 });
+        // Hide controls after 5s.
+        await page.clock.fastForward(5000);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+
+        // Short tap with controls hidden still reveals controls and skips normally.
+        await remote(page, RIGHT);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0);
+        assert.equal(await page.locator(".player-hold-seek").isVisible(), false);
+        await page.clock.fastForward(200);
+        await page.evaluate(() => { window.player.commands.length = 0; });
+        await show(page, { ...playing(TRACKS), positionSeconds: 110, durationSeconds: 1000 });
+        await page.clock.fastForward(5000);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+
+        // Hold Right for 300ms with controls hidden: controls STAY hidden, HoldSeekIndicator opens at 1×.
+        await holdKey(page, RIGHT);
+        await page.clock.fastForward(300);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1, "controls remain hidden during hold-seek");
+        assert.equal(await page.locator(".player-hold-seek").isVisible(), true);
+        assert.equal(await page.locator(".player-hold-seek").getAttribute("data-direction"), "forward");
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×");
+        assert.equal(await page.locator(".player-hold-seek-progress").evaluate(node => getComputedStyle(node).width), "520px");
+        assert.deepEqual(await page.locator(".player-hold-seek-hint-label").allTextContents(), ["Speed", "Play", "Cancel"]);
+        await page.waitForFunction(() => !document.querySelector<HTMLElement>(".player-hold-seek-preview")?.hidden);
+        const previewBox = await page.locator(".player-hold-seek-preview").boundingBox();
+        assert.ok(previewBox !== null && Math.abs(previewBox.width - 480) <= 2 && Math.abs(previewBox.height - 270) <= 2, JSON.stringify(previewBox));
+
+        // Auto-ramp steps 1× -> 2× -> 4× -> 8× every 1.2s.
+        await page.clock.fastForward(1200);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "2×");
+        await page.clock.fastForward(1200);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×");
+        await page.clock.fastForward(1200);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "8×");
+
+        // Manual tap cancels ramp and steers rate along seekRates; Back cancels without seeking.
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×");
+        await page.clock.fastForward(2400);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×", "manual steer cancelled auto-ramp");
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-hold-seek").isVisible(), false);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
+        assert.deepEqual(await commands(page), []);
+
+        // Hold Left -> auto-ramps backward (-2×) -> Select commits seek and briefly reveals controls.
+        await holdKey(page, LEFT);
+        await page.clock.fastForward(300);
+        assert.equal(await page.locator(".player-hold-seek").getAttribute("data-direction"), "backward");
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×");
+        await page.clock.fastForward(1200);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "2×");
+        await remote(page, ENTER);
+        assert.equal(await page.locator(".player-hold-seek").isVisible(), false);
+        assert.equal(await page.locator(".player-overlay-hidden").count(), 0);
+        assert.equal((await commands(page)).length, 1);
+        assert.match((await commands(page))[0] ?? "", /^seekToSeconds \d+$/);
+    } finally { await page.close(); }
+});
+
 test("Info panel measured placement and Up Down Menu focus", async () => {
     const { page } = await open();
     try {
