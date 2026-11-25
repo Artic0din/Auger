@@ -228,7 +228,7 @@ test("Search Request supplement notifies refusal callback, responds to invalidat
 
     // Simulate pushing into a Request card, mutating (invalidating covered Search), and popping back.
     search.cover();
-    search.invalidateRequests(false);
+    search.onSignal?.({ kind: "requests.changed" }, false);
     assert.equal(search.snapshot().requests, undefined);
 
     search.arrive("reveal", { zone: "search-requests", key });
@@ -237,13 +237,13 @@ test("Search Request supplement notifies refusal callback, responds to invalidat
 
     // Capability refusal triggers callback without importing Requests.
     h.catalog.requestsReply = problem(403, "capability_disabled", "Disabled");
-    search.invalidateRequests(true);
+    search.onSignal?.({ kind: "requests.changed" }, true);
     await settle();
     assert.equal(refused, 1);
     assert.deepEqual(search.snapshot().requests, []);
 
-    // clearRequests clears immediately on capability loss.
-    search.clearRequests();
+    // requests.capability(enabled: false) clears immediately on capability loss.
+    search.onSignal?.({ kind: "requests.capability", enabled: false, refreshSearch: false }, true);
     assert.deepEqual(search.snapshot().requests, []);
     search.retire();
 });

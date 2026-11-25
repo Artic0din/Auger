@@ -656,6 +656,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 foreground,
                 audiobooksEnabled: audiobooksInSearch,
                 requestsEnabled: () => requests.capability.enabled,
+                isBlocked: () => playing || cardActions.active || requestMenu.active || settingsScreen !== undefined,
                 onBoxSetsCapability: supported => { boxSetsAnswer = Promise.resolve(supported); },
                 onRequestsRefused: () => { void requests.probe({ refreshSearch: false }); },
                 onChange: paint => {
@@ -1873,6 +1874,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     clock,
                     focus: focusReader,
                     foreground,
+                    isBlocked: () => playing || cardActions.active || requestMenu.active || settingsScreen !== undefined,
                     onChange: paint => {
                         if (!torn && !playing && !cardActions.active && !requestMenu.active && settingsScreen === undefined && top() === personRoute) {
                             render(paint?.focus);

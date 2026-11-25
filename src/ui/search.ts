@@ -29,6 +29,7 @@ export interface SearchOptions {
     readonly foreground?: ForegroundRunner;
     readonly audiobooksEnabled: () => boolean;
     readonly requestsEnabled: () => boolean;
+    readonly isBlocked?: () => boolean;
     readonly onBoxSetsCapability?: (supported: boolean) => void;
     readonly onRequestsRefused?: () => void;
     readonly onChange?: (paint?: Paint) => void;
@@ -66,9 +67,6 @@ export interface SearchModule extends RouteEntry {
     loadMore(): void;
     retry(): void;
     retryPeople(): void;
-    invalidateRequests(visible: boolean): void;
-    clearRequests(): void;
-    refreshRequestsIfEnabled(): void;
 }
 
 export function createSearch(options: SearchOptions): SearchModule {
@@ -450,6 +448,32 @@ export function createSearch(options: SearchOptions): SearchModule {
         notify(focus === undefined ? undefined : { focus });
     };
 
+    const isBlocked = options.isBlocked ?? (() => false);
+
+    const invalidateRequests = (visible: boolean): void => {
+        requestsController?.abort();
+        requestsController = undefined;
+        requestsFor = undefined;
+        if (!visible) {
+            requests = undefined;
+        } else if (active && !retired) {
+            startRequests();
+        }
+    };
+
+    const clearRequests = (): void => {
+        requestsController?.abort();
+        requestsController = undefined;
+        requests = [];
+        requestsFor = undefined;
+    };
+
+    const refreshRequestsIfEnabled = (): void => {
+        if (active && !retired && requestsEnabled()) {
+            startRequests();
+        }
+    };
+
     const module: SearchModule = {
         kind: "search",
         focus: undefined,
@@ -464,10 +488,10 @@ export function createSearch(options: SearchOptions): SearchModule {
 
         onSignal(signal: BrowseSignal, visible: boolean) {
             if (signal.kind === "requests.capability") {
-                if (!signal.enabled) module.clearRequests();
-                else if (signal.refreshSearch && visible) module.refreshRequestsIfEnabled();
+                if (!signal.enabled) clearRequests();
+                else if (signal.refreshSearch && visible) refreshRequestsIfEnabled();
             } else if (signal.kind === "requests.changed") {
-                module.invalidateRequests(visible);
+                invalidateRequests(visible);
             } else if (signal.kind === "catalog.changed" || signal.kind === "playback.resumed" || (signal.kind === "title.notInterested" && signal.current !== module)) {
                 stale = true;
             }
@@ -584,7 +608,7 @@ export function createSearch(options: SearchOptions): SearchModule {
         },
 
         loadMore() {
-            if (retired || !active || foreground.busy() || failure !== undefined || query !== resultsFor || filter !== resultsFilter || page?.nextCursor === undefined) return;
+            if (retired || !active || isBlocked() || foreground.busy() || failure !== undefined || query !== resultsFor || filter !== resultsFilter || page?.nextCursor === undefined) return;
             loadTitles(true, true);
             notify({ focus: focusReader.focused() });
         },
@@ -600,30 +624,6 @@ export function createSearch(options: SearchOptions): SearchModule {
             if (retired || !active || searchType === undefined || query.trim() === "") return;
             startPeople(scopeFor(searchType));
             notify({ focus: focusReader.focused() });
-        },
-
-        invalidateRequests(visible: boolean) {
-            requestsController?.abort();
-            requestsController = undefined;
-            requestsFor = undefined;
-            if (!visible) {
-                requests = undefined;
-            } else if (active && !retired) {
-                startRequests();
-            }
-        },
-
-        clearRequests() {
-            requestsController?.abort();
-            requestsController = undefined;
-            requests = [];
-            requestsFor = undefined;
-        },
-
-        refreshRequestsIfEnabled() {
-            if (active && !retired && requestsEnabled()) {
-                startRequests();
-            }
         },
     };
 

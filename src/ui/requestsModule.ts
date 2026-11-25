@@ -226,7 +226,6 @@ export interface RequestsModule {
     probe(options?: { readonly refreshSearch?: boolean }): Promise<RequestsCapability>;
     open(source: RequestsSource): RequestPage;
     setVisible(page: RequestPage | undefined): void;
-    markAllStale(): void;
     dispose(): void;
 }
 
@@ -909,9 +908,6 @@ export function createRequests(options: RequestsOptions): RequestsModule {
         open,
         setVisible(page: RequestPage | undefined) {
             visiblePage = page === undefined ? undefined : [...livePages].find(entry => entry.handle === page);
-        },
-        markAllStale() {
-            for (const page of livePages) page.stale = true;
         },
         dispose() {
             disposed = true;

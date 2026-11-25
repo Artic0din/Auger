@@ -18,7 +18,7 @@ import { calendarView, type CalendarHandlers } from "./calendarView.ts";
 import { translate } from "../i18n/translate.ts";
 import type { ErrorState } from "./errorState.ts";
 
-export { errorHeadline, errorMessage, errorState, failureBody, failureState, failureText, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, type ErrorBody, type ErrorKind, type ErrorState, type RequestWrite } from "./errorState.ts";
+export { errorHeadline, errorMessage, errorState, failureBody, failureState, failureText, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, type ErrorBody, type ErrorKind, type ErrorState } from "./errorState.ts";
 import { actionButton, homeView, lines, errorView, failureError, pagedGrid, sectionTitle, statusView, type ViewContext, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";

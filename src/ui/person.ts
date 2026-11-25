@@ -110,6 +110,7 @@ export interface PersonOptions {
     readonly clock?: Clock;
     readonly focus?: FocusReader;
     readonly foreground?: ForegroundRunner;
+    readonly isBlocked?: () => boolean;
     readonly onChange?: (paint?: Paint) => void;
 }
 
@@ -146,6 +147,7 @@ export function createPerson(options: PersonOptions): PersonModule {
     const clock = options.clock ?? systemClock;
     const focusReader = options.focus ?? idleFocusReader;
     const foreground = options.foreground ?? createForegroundRunner(clock);
+    const isBlocked = options.isBlocked ?? (() => false);
 
     let person: Person | undefined;
     let metadataLoading = false;
@@ -446,7 +448,7 @@ export function createPerson(options: PersonOptions): PersonModule {
         },
 
         loadMore() {
-            if (retired || !active || foreground.busy() || page?.nextCursor === undefined) return;
+            if (retired || !active || isBlocked() || foreground.busy() || page?.nextCursor === undefined) return;
             loadCredits(committedIndex + 1, true);
             notify({ focus: focusReader.focused() });
         },

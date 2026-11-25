@@ -59,23 +59,22 @@ export interface BrowseStack<T extends StackEntry = RouteEntry> {
     dispose(): void;
 }
 
-function defaultAdapter<T extends StackEntry>(onArrive?: (entry: T, paint: Paint) => void): StackAdapter<T> {
-    const asRoute = (entry: T): RouteEntry => entry as unknown as RouteEntry;
+function routeEntryAdapter(onArrive?: (entry: RouteEntry, paint: Paint) => void): StackAdapter<RouteEntry> {
     return {
-        hasData: entry => asRoute(entry).hasData(),
-        admissible: entry => asRoute(entry).admissible?.() ?? true,
-        isRoot: entry => asRoute(entry).root === true,
-        isPersonalRoot: entry => asRoute(entry).root === true && asRoute(entry).kind !== "home",
-        isProfileMenu: entry => asRoute(entry).root === true && asRoute(entry).kind !== "home",
-        cover: entry => asRoute(entry).cover(),
-        retire: entry => asRoute(entry).retire(),
+        hasData: entry => entry.hasData(),
+        admissible: entry => entry.admissible?.() ?? true,
+        isRoot: entry => entry.root === true,
+        isPersonalRoot: entry => entry.root === true && entry.kind !== "home",
+        isProfileMenu: entry => entry.root === true && entry.kind !== "home",
+        cover: entry => entry.cover(),
+        retire: entry => entry.retire(),
         arrive: (entry, why, focus, enter) => {
-            asRoute(entry).arrive(why, focus);
+            entry.arrive(why, focus);
             onArrive?.(entry, enter ? { focus, enter: true } : { focus });
         },
         deliverSignal: (entry, signal, visible, inStack) => {
             if (signal.kind === "playback.resumed" && !inStack) return;
-            asRoute(entry).onSignal?.(signal, visible);
+            entry.onSignal?.(signal, visible);
         },
     };
 }
@@ -85,10 +84,13 @@ function defaultAdapter<T extends StackEntry>(onArrive?: (entry: T, paint: Paint
  * single-slot foreground runner, deduplicated signal traversal, capability-loss
  * closing, and Authority teardown.
  */
-export function createBrowseStack<T extends StackEntry = RouteEntry>(options: BrowseStackOptions<T>): BrowseStack<T> {
+export function createBrowseStack(options: BrowseStackOptions<RouteEntry>): BrowseStack<RouteEntry>;
+export function createBrowseStack<T extends StackEntry>(options: BrowseStackOptions<T> & { readonly adapter: StackAdapter<T> }): BrowseStack<T>;
+export function createBrowseStack<T extends StackEntry>(options: BrowseStackOptions<T>): BrowseStack<T> {
     const clock = options.clock ?? systemClock;
     const foreground = options.foreground ?? createForegroundRunner(clock);
-    const adapter = options.adapter ?? defaultAdapter<T>(options.onArrive);
+    const adapter: StackAdapter<T> = options.adapter
+        ?? (routeEntryAdapter(options.onArrive as ((entry: RouteEntry, paint: Paint) => void) | undefined) as unknown as StackAdapter<T>);
     const home = options.home;
     const roots = new Map<string, T>([["home", home]]);
     let stack: T[] = [home];

@@ -126,7 +126,7 @@ test("Requests capability loss closes consecutive Requests pages on top, preserv
     const h = await setup();
     const home = stubRoute("home", { root: true, data: true });
     const arrivals: { readonly kind: string; readonly paint: Paint }[] = [];
-    const stack = createBrowseStack<RouteEntry>({
+    const stack = createBrowseStack({
         session: h.core.session,
         home,
         clock: h.clock,
@@ -249,7 +249,7 @@ test("Authority change tears down BrowseStack, aborts foreground reads, retires 
     const h = await setup();
     const home = stubRoute("home", { root: true });
     let disposedCallback = 0;
-    const stack = createBrowseStack<RouteEntry>({
+    const stack = createBrowseStack({
         session: h.core.session,
         home,
         clock: h.clock,
