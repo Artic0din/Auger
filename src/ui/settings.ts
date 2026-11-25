@@ -268,7 +268,11 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (state.error !== undefined) { const error = el("p", "browse-text browse-error settings-warning", state.error); error.setAttribute("role", "alert"); nodes.push(error); }
         return nodes;
     };
-    const retryButton = (): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void state.retry(); })];
+    const retryButton = (onSuccess?: () => void): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
+        void state.retry().then(() => {
+            if (!torn && state.error === undefined) onSuccess?.();
+        });
+    })];
     const resetPlayback = async (retry = false): Promise<void> => {
         if (state.busy) return;
         if (retry) {
@@ -558,7 +562,10 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 if (inherited) for (const item of controls) item.element.setAttribute("aria-checked", "false");
             }
             if (row.member === undefined && state.scope(row.key) === "profile_device") controls.unshift(reset);
-            controls.push(...retryButton());
+            controls.push(...retryButton(() => {
+                actions?.playerSettings?.clearKey(row.key);
+                if (extraPicker === row) back();
+            }));
             showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback()], controls);
             return;
         }
