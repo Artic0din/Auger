@@ -1896,7 +1896,7 @@ const INTRO = { kind: "intro" as const, startSeconds: 20, endSeconds: 60 };
 const RECAP = { kind: "recap" as const, startSeconds: 0, endSeconds: 15 };
 const CREDITS = { kind: "credits" as const, startSeconds: 7000, endSeconds: 7200 };
 const inMarker = (skipMarker: SkipMarker, positionSeconds: number): Extract<PlaybackView, { phase: "playing" | "paused" }> => ({ ...playing(TRACKS), positionSeconds, skipMarker });
-const pill = (page: Page): Promise<string | null> => page.locator(".player-skip").isVisible().then(visible => visible ? page.locator(".player-skip-label").innerText() : null);
+const pill = (page: Page): Promise<string | null> => page.locator(".player-skip:not([hidden])").isVisible().then(visible => visible ? page.locator(".player-skip-label").innerText() : null);
 const metrics = (page: Page): Promise<{ width: number; height: number; right: number; bottom: number; background: string; font: string }> => page.locator(".player-skip").evaluate(node => {
     const box = (node as HTMLElement).offsetParent?.getBoundingClientRect() ?? new DOMRect();
     const style = getComputedStyle(node);
@@ -2252,7 +2252,7 @@ test("Skip Intro, Skip Recap and Watch Intro stay drawn and enabled over the opt
             assert.equal(await page.locator(".player-hud").isVisible(), false);
             assert.equal(await pill(page), label);
             assert.equal(await page.locator(".player-skip").isDisabled(), false);
-            assert.equal((await metrics(page)).bottom, label === "Skip Recap" ? 216 : 460);
+            assert.equal((await metrics(page)).bottom, 300);
             await show(page, playing(TRACKS));
         }
         assert.deepEqual(await commands(page), []);
@@ -2404,13 +2404,13 @@ test("the skip pills sit where Apple TV draws them: bottom right, above the tran
         await show(page, inMarker(INTRO, 25));
         // The label sets this pill's width, and Inter loads on first use: read once, after it has, and leave the width out.
         await page.evaluate(() => document.fonts.ready);
-        // tvOS padding plus the 80 px side and 60 px top and bottom safe area.
+        // tvOS padding plus the 80 px side and 60 px top and bottom safe area: one shared 300 px inset for all pills.
         const { width: _labelWidth, ...intro } = await metrics(page);
-        assert.deepEqual(intro, { height: 72, right: 160, bottom: 460, background: "rgba(0, 0, 0, 0.65)", font: "28px/600" });
+        assert.deepEqual(intro, { height: 72, right: 160, bottom: 300, background: "rgba(0, 0, 0, 0.65)", font: "28px/600" });
         await show(page, playing(TRACKS));
         await show(page, inMarker(RECAP, 5));
         // 220 px label frame plus 20 px of padding a side (TVPillButtonStyle .compact).
-        assert.deepEqual(await metrics(page), { width: 260, height: 76, right: 160, bottom: 216, background: "rgba(255, 255, 255, 0.1)", font: "26px/600" });
+        assert.deepEqual(await metrics(page), { width: 260, height: 76, right: 160, bottom: 300, background: "rgba(255, 255, 255, 0.1)", font: "26px/600" });
         // Focused it takes 70 px a side, so it grows leftward to 360 px.
         await remote(page, UP);
         await remote(page, UP);
@@ -2426,6 +2426,36 @@ test("the skip pills sit where Apple TV draws them: bottom right, above the tran
         assert.equal(await page.locator(".player-overlay").evaluate(node => node.classList.contains("player-overlay-hidden")), true);
         assert.equal((await metrics(page)).bottom, 156);
         assert.equal(await page.locator(".player-skip").evaluate(node => node.classList.contains("player-skip-lit")), true, "drawn lit as the Select target while the controls are hidden");
+    } finally { await page.close(); }
+});
+
+test("skip pills fade with Apple's 0.2 s ease-out transition and drop immediately on Back (#777)", async () => {
+    const { page } = await open();
+    try {
+        await show(page, inMarker(INTRO, 25));
+        const shownStyle = await page.locator(".player-skip").evaluate(node => {
+            const style = getComputedStyle(node);
+            return { display: style.display, transitionProperty: style.transitionProperty, transitionDuration: style.transitionDuration, transitionTimingFunction: style.transitionTimingFunction };
+        });
+        assert.equal(shownStyle.display, "flex");
+        assert.ok(shownStyle.transitionProperty.split(", ")[0] === "opacity", shownStyle.transitionProperty);
+        assert.equal(shownStyle.transitionDuration.split(", ")[0], "0.2s");
+        assert.equal(shownStyle.transitionTimingFunction.split(", ")[0], "ease-out");
+        // When hidden by timer expiry, the pill stays in flex layout so its opacity can fade to 0 over 0.2 s.
+        await page.clock.runFor(5000);
+        const fadedStyle = await page.locator(".player-skip").evaluate(node => {
+            const style = getComputedStyle(node);
+            return { hidden: (node as HTMLElement).hidden, display: style.display, opacity: style.opacity, transitionProperty: style.transitionProperty };
+        });
+        assert.equal(fadedStyle.hidden, true);
+        assert.equal(fadedStyle.display, "flex");
+        assert.ok(fadedStyle.transitionProperty.startsWith("opacity"), fadedStyle.transitionProperty);
+        // Re-enter intro and dismiss with Back: instant dismissal drops the transition.
+        await show(page, playing(TRACKS));
+        await show(page, inMarker(INTRO, 25));
+        await remote(page, BACK);
+        assert.equal(await page.locator(".player-skip").evaluate(node => node.classList.contains("player-skip-instant")), true);
+        assert.equal(await page.locator(".player-skip").evaluate(node => getComputedStyle(node).visibility), "hidden");
     } finally { await page.close(); }
 });
 

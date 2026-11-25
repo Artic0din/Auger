@@ -393,6 +393,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const skip = el("button", "player-button player-skip");
     skip.type = "button";
     skip.tabIndex = -1;
+    skip.hidden = true;
     skip.setAttribute("data-focus", "skip");
     const skipTrack = el("span", "player-skip-track");
     const skipFill = el("span", "player-skip-fill");
@@ -700,6 +701,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** Which skip pill is up, and the source second its action seeks to. */
     let skipKind: "intro" | "recap" | "credits" | "undo" | undefined;
     let skipTarget: number | undefined;
+    /** Select, Back, or Up Next take the pill down without waiting for its 200 ms fade (TVPlayerControls.swift:407). */
+    let skipInstantHide = false;
     let drawnFill = -1;
     const skipPrompt = new SkipPrompt(clock, () => render());
     /** Select entered timeline scrub. Left/Right move the preview until Select or Menu. */
@@ -952,6 +955,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             drawnFill = -1;
             return;
         }
+        skipInstantHide = false;
         const label = skipKind === "undo" ? translate("introSkip.pill.undo") : skipKind === "intro" ? translate("introSkip.pill.skip") : skipKind === "recap" ? translate("marker.skipRecap") : translate("marker.skipCredits");
         skipLabel.textContent = label;
         skipCaption.textContent = skipKind === "undo" ? translate("introSkip.pill.undoCaption") : "";
@@ -1023,6 +1027,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
 
     /** Select or Back took the pill: an intro or its undo is decided for good. */
     const decideSkip = (): void => {
+        skipInstantHide = true;
         if (skipKind === "intro" || skipKind === "undo") skipPrompt.resolve();
     };
 
@@ -1092,6 +1097,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             cancelScrub();
             closeMenu();
             hud.hidden = true;
+            skipInstantHide = true;
+            skip.classList.add("player-skip-instant");
             skip.hidden = true;
             const candidate = view.phase === "completion" ? view.next : prompt?.next;
             const cards = view.phase === "completion" ? view.deck ?? [] : prompt?.deck ?? [];
@@ -1274,7 +1281,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         const hidden = controlsHidden();
         overlay.className = ["player-overlay", hidden ? "player-overlay-hidden" : "", conceal ? "player-overlay-clear" : ""].filter(Boolean).join(" ");
-        skip.className = ["player-button", "player-skip", skipKind === "recap" || skipKind === "credits" ? "player-skip-segment" : "player-skip-intro", hidden ? "player-skip-lit" : "", menuOpen ? "player-skip-hud" : ""].filter(Boolean).join(" ");
+        skip.className = ["player-button", "player-skip", skipKind === "recap" || skipKind === "credits" ? "player-skip-segment" : "player-skip-intro", hidden ? "player-skip-lit" : "", menuOpen ? "player-skip-hud" : "", skip.hidden && skipInstantHide ? "player-skip-instant" : ""].filter(Boolean).join(" ");
         // The controls hiding takes the pill out of the focus graph, as on tvOS: Select then acts on the button that held focus.
         if (hidden && (document.activeElement === bufferingPrimary || document.activeElement === bufferingKeep)) {
             bufferingTarget = document.activeElement === bufferingKeep ? "secondary" : "primary";
