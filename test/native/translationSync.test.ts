@@ -159,6 +159,8 @@ test("main downloads catalogs, renames app strings through buildCatalogs, writes
             "@search.initial": { description: "Search prompt" },
             "error.server_unavailable": "The Silo server can't be reached",
             "@error.server_unavailable": { description: "Server error" },
+            "unused.key": "Silo elsewhere",
+            "@unused.key": { description: "Unused key in English" },
         };
         const germanArb = {
             "@@locale": "de",
@@ -176,9 +178,10 @@ test("main downloads catalogs, renames app strings through buildCatalogs, writes
         const de = JSON.parse(readFileSync(join(dir, "de.json"), "utf8")) as Record<string, string>;
         assert.equal(en["search.initial"], "Search Auger");
         assert.equal(en["error.server_unavailable"], "The Silo server can't be reached");
+        assert.equal(en["unused.key"], "Silo elsewhere", "English keeps Apple-scoped keys");
         assert.equal(de["search.initial"], "Auger durchsuchen");
         assert.equal(de["error.server_unavailable"], "Der Silo-Server ist nicht erreichbar");
-        assert.equal("unused.key" in de, false, "unused keys stay out of translations");
+        assert.equal("unused.key" in de, false, "unused English-backed keys stay out of translations");
         assert.equal(readFileSync(join(dir, "SOURCE"), "utf8"), `${FAKE_COMMIT}\n`);
         assert.equal(existsSync(join(dir, "stale.json")), false, "stale catalog JSON is removed");
     } finally {
@@ -213,4 +216,29 @@ test("main preserves CLI usage errors before touching the network (#804)", async
     await assert.rejects(() => main({ argv: [], fetch: fakeFetch }), /usage/);
     await assert.rejects(() => main({ argv: ["--languages", "en"], fetch: fakeFetch }), /usage/);
     assert.equal(called, false);
+});
+
+test("main defaults to process.argv and global fetch when omitted (#804)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "auger-sync-translations-"));
+    const savedArgv = process.argv;
+    const savedFetch = globalThis.fetch;
+    try {
+        process.argv = [savedArgv[0] ?? "node", savedArgv[1] ?? "scripts/sync-translations.ts", "v1.0.0", "--languages", "en"];
+        const fakeFetch = fakeSyncFetch({
+            "https://api.github.com/repos/Silo-Server/silo-translations/commits/v1.0.0": jsonResponse({ sha: FAKE_COMMIT }),
+            [`https://raw.githubusercontent.com/Silo-Server/silo-translations/${FAKE_COMMIT}/catalog/en.arb`]: jsonResponse({
+                ...englishNames(),
+                "search.initial": "Search Silo",
+            }),
+        });
+        globalThis.fetch = fakeFetch as unknown as typeof fetch;
+        await main({ destination: dir });
+        const en = JSON.parse(readFileSync(join(dir, "en.json"), "utf8")) as Record<string, string>;
+        assert.equal(en["search.initial"], "Search Auger");
+        assert.equal(readFileSync(join(dir, "SOURCE"), "utf8"), `${FAKE_COMMIT}\n`);
+    } finally {
+        process.argv = savedArgv;
+        globalThis.fetch = savedFetch;
+        rmSync(dir, { recursive: true, force: true });
+    }
 });
