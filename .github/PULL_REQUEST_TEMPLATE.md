@@ -19,6 +19,14 @@ Summarize the architectural or behavioral change, why this approach was chosen,
 and which surfaces and repositories it affects. Mention an alternative only when
 a reviewer would ask about it.
 
+## Release Notes
+
+<!-- This section becomes this PR's entry in the GitHub Release notes. Write for people
+using Auger on a Samsung TV: plain language, no internal jargon, no PR or issue numbers.
+Say what changed, why it matters, and where to find it or what to do next. Optionally
+group bullets under ### Highlights, ### Breaking Changes, ### New, ### Improved, or
+### Fixed. Write "None" for an internal-only change. -->
+
 ## Validation
 
 Give one summary line per check category and its outcome (for example: automated

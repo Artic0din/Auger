@@ -54,6 +54,7 @@ const controls: PlayerControls = {
     setPaused: (paused) => commands.push(`setPaused ${paused}`),
     seekBy: (seconds) => commands.push(`seekBy ${seconds}`),
     seekToSeconds: (seconds) => commands.push(`seekToSeconds ${seconds}`),
+    skipCredits: (seconds) => commands.push(`skipCredits ${seconds}`),
     back: () => commands.push("back"),
     background: () => {
         commands.push("background");
@@ -71,6 +72,8 @@ const controls: PlayerControls = {
     playNext: request => commands.push(request === undefined ? "playNext" : `playNext ${request.contentId} ${request.fileId}`),
     showUpNext: () => commands.push("showUpNext"),
     cancelAutoplay: () => commands.push("cancelAutoplay"),
+    stopShuffling: () => commands.push("stopShuffling"),
+    pickAnother: () => commands.push("pickAnother"),
     keepWatching: () => commands.push("keepWatching"),
     saveSeriesSubtitle: () => commands.push("saveSeriesSubtitle"),
     startSubtitleAI: language => commands.push(`startSubtitleAI ${language}`),

@@ -2574,14 +2574,18 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
         await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" }) });
     });
     await signIn(tv);
-    // Start real playback through AVPlay preparation so startPlayback's controller.subscribe populates the shared DiagnosticsCollector.
+    // Start real playback through AVPlay preparation, trigger an AVPlay codec error fallback, and confirm Diagnostics records it.
     await startMovie(tv);
+    await tv.page.evaluate(() => {
+        window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    });
+    await prepare(tv);
     await leavePlayer(tv);
     await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, and event appear.
+    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, AVPlay error, and fallback event appear.
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
@@ -2590,7 +2594,12 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.getByText("HTTP · MP4", { exact: true }).waitFor();
     await tv.page.getByText("Source file", { exact: true }).waitFor();
     await tv.page.getByText("Subtitle mode", { exact: true }).waitFor();
+    await tv.page.getByText("HDR setting", { exact: true }).waitFor();
+    await tv.page.getByText("Route fallbacks", { exact: true }).waitFor();
+    await tv.page.getByText("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", { exact: true }).waitFor();
     await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+    const initialPaneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(initialPaneText.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), initialPaneText);
 
     // Opt in to Automatic Error Reports so the upcoming terminal failure fires one redacted auto-report silently.
     await tv.page.locator('[data-focus="auto-diagnostics"]').click();

@@ -59,7 +59,7 @@ export interface DiagnosticsDeviceInfo {
 }
 
 export interface DiagnosticsPlanDetails {
-    readonly source: PlanSource;
+    readonly source?: PlanSource | undefined;
     readonly sourceBitrateKbps?: number | undefined;
     readonly durationSeconds?: number | undefined;
     readonly streamProtocol?: string | undefined;
@@ -70,6 +70,9 @@ export interface DiagnosticsPlanDetails {
     readonly subtitleCodec?: string | undefined;
     readonly subtitleDelivery?: string | undefined;
     readonly positionSeconds?: number | undefined;
+    readonly hdrEnabled?: boolean | undefined;
+    readonly avplayError?: string | undefined;
+    readonly routeFallbacks?: number | undefined;
 }
 
 export interface DiagnosticsPlayback {
@@ -85,6 +88,9 @@ export interface DiagnosticsPlayback {
     readonly subtitleDetail?: string | undefined;
     readonly position?: string | undefined;
     readonly rebuffers?: number | undefined;
+    readonly hdrEnabled?: boolean | undefined;
+    readonly avplayError?: string | undefined;
+    readonly routeFallbacks?: number | undefined;
     readonly diagnostics?: readonly string[] | undefined;
     readonly error?: string | undefined;
 }
@@ -115,6 +121,9 @@ export interface DiagnosticsPayloadPlayback {
     readonly sub?: string;
     readonly pos?: string;
     readonly rb?: number;
+    readonly hdr?: boolean;
+    readonly av?: string;
+    readonly fb?: number;
     readonly n?: readonly string[];
     readonly e?: string;
 }
@@ -158,6 +167,90 @@ export function redactDiagnosticText(raw: string, maxLength = 160): string {
         .replace(/\s+/g, " ")
         .trim();
     return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
+const ALLOWED_AVPLAY_ERROR_CODES = new Set([
+    "PLAYER_ERROR_NONE",
+    "PLAYER_ERROR_INVALID_PARAMETER",
+    "PLAYER_ERROR_NO_SUCH_FILE",
+    "PLAYER_ERROR_INVALID_OPERATION",
+    "PLAYER_ERROR_SEEK_FAILED",
+    "PLAYER_ERROR_INVALID_STATE",
+    "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+    "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+    "PLAYER_ERROR_INVALID_URI",
+    "PLAYER_ERROR_CONNECTION_FAILED",
+    "PLAYER_ERROR_GENEREIC",
+    "PLAYER_ERROR_GENERIC",
+    "PLAYER_ERROR_DRM_INFO_ERROR",
+    "PLAYER_ERROR_INVALID_BUFFER",
+    "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
+    "PLAYER_ERROR_OUT_OF_MEMORY",
+]);
+const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
+const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
+    "Error",
+    "TypeError",
+    "RangeError",
+    "ReferenceError",
+    "SyntaxError",
+    "URIError",
+    "EvalError",
+    "AggregateError",
+    "DOMException",
+    "WebAPIException",
+    "AbortError",
+    "NotAllowedError",
+    "NotSupportedError",
+    "QuotaExceededError",
+    "SecurityError",
+    "NetworkError",
+    "TimeoutError",
+    "DataCloneError",
+    "InvalidAccessError",
+    "InvalidStateError",
+    "InvalidValuesError",
+    "NotFoundError",
+    "UnknownError",
+    "OperationNotSupportedError",
+    "failed",
+    "error",
+]);
+
+function cleanAvplayError(value: string | undefined): string | undefined {
+    if (value === undefined) return undefined;
+    const trimmed = value.trim();
+    if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
+    const colon = trimmed.indexOf(":");
+    if (colon <= 0) return undefined;
+    const stage = trimmed.slice(0, colon);
+    if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
+    const name = trimmed.slice(colon + 1);
+    return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
+}
+
+const TRUSTED_AVPLAY_EVENT_PATTERN = /^(avplay |error [A-Za-z0-9_.: -]+ \()(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
+
+function formatEventText(text: string, maxLength: number): string {
+    const match = TRUSTED_AVPLAY_EVENT_PATTERN.exec(text);
+    const code = match?.[2];
+    if (match !== null && code !== undefined && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
+        const prefix = match[1] ?? "";
+        const closeParen = match[3] ?? "";
+        const fallbackDigits = match[4];
+        let suffix = closeParen;
+        if (fallbackDigits !== undefined) {
+            const count = Number(fallbackDigits);
+            if (!Number.isInteger(count) || count < 1 || count > 20) return redactDiagnosticText(text, maxLength);
+            suffix = ` (fallback #${count})`;
+        }
+        const safePrefix = redactDiagnosticText(prefix.trimEnd(), maxLength);
+        const spacer = prefix.endsWith(" ") ? " " : "";
+        const rebuilt = `${safePrefix}${spacer}${code}${suffix}`;
+        return rebuilt.length <= maxLength ? rebuilt : `${rebuilt.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+    }
+    return redactDiagnosticText(text, maxLength);
 }
 
 function cleanOptional(value: string | undefined, maxLength = 80): string | undefined {
@@ -277,6 +370,7 @@ function formatApproxSize(durationSeconds: number, bitrateKbps: number): string 
 
 function formatSourceSummary(details: DiagnosticsPlanDetails): string | undefined {
     const src = details.source;
+    if (src === undefined) return undefined;
     const container = src.container?.trim().toUpperCase();
     const codec = src.videoCodec?.trim().toUpperCase();
     const res = src.width !== undefined && src.width > 0 && src.height !== undefined && src.height > 0 ? `${src.width}x${src.height}` : undefined;
@@ -374,6 +468,11 @@ function payloadFromSnapshot(
         const rb = includeExtended && typeof lastPlayback.rebuffers === "number" && Number.isInteger(lastPlayback.rebuffers) && lastPlayback.rebuffers > 0
             ? lastPlayback.rebuffers
             : undefined;
+        const hdr = includeExtended && typeof lastPlayback.hdrEnabled === "boolean" ? lastPlayback.hdrEnabled : undefined;
+        const av = cleanAvplayError(lastPlayback.avplayError);
+        const fb = includeExtended && typeof lastPlayback.routeFallbacks === "number" && Number.isInteger(lastPlayback.routeFallbacks) && lastPlayback.routeFallbacks > 0
+            ? lastPlayback.routeFallbacks
+            : undefined;
         const e = cleanOptional(lastPlayback.error, 120);
         const candidate: DiagnosticsPayloadPlayback = {
             ...(m === undefined ? {} : { m }),
@@ -388,6 +487,9 @@ function payloadFromSnapshot(
             ...(sub === undefined ? {} : { sub }),
             ...(pos === undefined ? {} : { pos }),
             ...(rb === undefined ? {} : { rb }),
+            ...(hdr === undefined ? {} : { hdr }),
+            ...(av === undefined ? {} : { av }),
+            ...(fb === undefined ? {} : { fb }),
             ...(notes.length === 0 ? {} : { n: notes }),
             ...(e === undefined ? {} : { e }),
         };
@@ -397,7 +499,7 @@ function payloadFromSnapshot(
         ? []
         : events
             .slice(-logLimit)
-            .map(event => `${event.at} [${event.kind}] ${redactDiagnosticText(event.text, MAX_EVENT_TEXT)}`);
+            .map(event => `${event.at} [${event.kind}] ${formatEventText(event.text, MAX_EVENT_TEXT)}`);
     const err = cleanOptional(snapshot.lastAppError, 64);
     return {
         v: 1,
@@ -428,11 +530,13 @@ export function diagnosticsPayload(snapshot: DiagnosticsSnapshot, options?: Diag
 export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?: DiagnosticsCategory, source?: "playback" | "app"): string {
     const play = snapshot.lastPlayback;
     const appErr = cleanOptional(snapshot.lastAppError, 64);
-    const sig = source === "playback" && play?.error !== undefined
-        ? play.error
+    const av = cleanAvplayError(play?.avplayError);
+    const playErr = play?.error === undefined ? undefined : av !== undefined && play.error === "playback_failed" ? `${play.error}:${av}` : play.error;
+    const sig = source === "playback" && playErr !== undefined
+        ? playErr
         : appErr !== undefined
             ? `app:${appErr}`
-            : play?.error ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|");
+            : playErr ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|");
     const key = [
         cleanOptional(snapshot.device.appVersion, 32) ?? "unknown",
         cleanOptional(snapshot.device.tvModel, 48) ?? "Samsung TV",
@@ -587,6 +691,9 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
         const sub = readOptionalString(playObj, "sub");
         const pos = readOptionalString(playObj, "pos");
         const rb = readOptionalNonNegInt(playObj, "rb");
+        const hdr = typeof playObj.hdr === "boolean" ? playObj.hdr : undefined;
+        const av = cleanAvplayError(readOptionalString(playObj, "av"));
+        const fb = readOptionalNonNegInt(playObj, "fb");
         const n = readOptionalStringArray(playObj, "n");
         const e = readOptionalString(playObj, "e");
         const candidate: DiagnosticsPayloadPlayback = {
@@ -602,6 +709,9 @@ export function decodeDiagnosticsReportHash(hash: string): DiagnosticsPayloadV1 
             ...(sub === undefined ? {} : { sub }),
             ...(pos === undefined ? {} : { pos }),
             ...(rb === undefined ? {} : { rb }),
+            ...(hdr === undefined ? {} : { hdr }),
+            ...(av === undefined ? {} : { av }),
+            ...(fb === undefined ? {} : { fb }),
             ...(n === undefined ? {} : { n }),
             ...(e === undefined ? {} : { e }),
         };
@@ -664,6 +774,9 @@ export function formatPlaybackDetails(payload: DiagnosticsPayloadV1): string {
         play.sub === undefined ? undefined : `Subtitle mode: ${play.sub}`,
         play.pos === undefined ? undefined : `Position: ${play.pos}`,
         play.rb === undefined ? undefined : `Rebuffers: ${play.rb}`,
+        play.hdr === undefined ? undefined : `HDR setting: ${play.hdr ? "On" : "Off"}`,
+        play.fb === undefined ? undefined : `Route fallbacks: ${play.fb}`,
+        play.av === undefined ? undefined : `AVPlay error: ${play.av}`,
         play.st === undefined ? undefined : `Status: ${play.st}`,
         ...(play.n ?? []).map((note, index) => `${index === 0 ? "Diagnostics: " : "  "}${note}`),
         play.e === undefined ? undefined : `Last error: ${play.e}`,
@@ -727,6 +840,7 @@ export class DiagnosticsCollector {
     private lastAppError: string | undefined;
     private readonly events: DiagnosticsEvent[] = [];
     private lastPlanSignature: string | undefined;
+    private sessionHasPlayback = false;
     private rebufferCount = 0;
     private lastSentHash: string | undefined;
     private lastSentReportId: string | undefined;
@@ -791,6 +905,9 @@ export class DiagnosticsCollector {
                 tr: play.stream,
                 sub: play.subtitleDetail,
                 rb: play.rebuffers,
+                hdr: play.hdrEnabled,
+                av: play.avplayError,
+                fb: play.routeFallbacks,
                 n: play.diagnostics,
                 e: play.error,
             },
@@ -841,6 +958,15 @@ export class DiagnosticsCollector {
     beginPlaybackSession(): void {
         this.rebufferCount = 0;
         this.lastPlanSignature = undefined;
+        this.sessionHasPlayback = false;
+    }
+
+    recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
+        const cleaned = cleanAvplayError(avplayError);
+        if (cleaned === undefined) return;
+        const fbText = routeFallbacks !== undefined && Number.isInteger(routeFallbacks) && routeFallbacks > 0 ? ` (fallback #${routeFallbacks})` : "";
+        this.pushTrustedEvent("playback", `avplay ${cleaned}${fbText}`);
+        this.emit();
     }
 
     recordAppError(code: string): void {
@@ -885,6 +1011,9 @@ export class DiagnosticsCollector {
         const stream = details === undefined ? this.lastPlayback?.stream : formatStreamSummary(details);
         const subtitleDetail = details === undefined ? this.lastPlayback?.subtitleDetail : formatSubtitleDetail(details);
         const position = details === undefined ? this.lastPlayback?.position : formatPosition(details.positionSeconds, details.durationSeconds);
+        const hdrEnabled = details?.hdrEnabled ?? this.lastPlayback?.hdrEnabled;
+        const avplayError = cleanAvplayError(details?.avplayError);
+        const routeFallbacks = details?.routeFallbacks !== undefined && details.routeFallbacks > 0 ? details.routeFallbacks : undefined;
 
         const nextBase: DiagnosticsPlayback = {
             playback: cleanOptional(readRow(stats.playback, "Playback"), 64),
@@ -898,6 +1027,9 @@ export class DiagnosticsCollector {
             ...(stream === undefined ? {} : { stream }),
             ...(subtitleDetail === undefined ? {} : { subtitleDetail }),
             ...(position === undefined ? {} : { position }),
+            ...(hdrEnabled === undefined ? {} : { hdrEnabled }),
+            ...(avplayError === undefined ? {} : { avplayError }),
+            ...(routeFallbacks === undefined ? {} : { routeFallbacks }),
             ...(diagnostics.length === 0 ? {} : { diagnostics }),
         };
         const signature = [nextBase.playback, nextBase.delivery, nextBase.video, nextBase.dynamicRange, nextBase.audio, nextBase.subtitles, nextBase.source, nextBase.subtitleDetail].join("|");
@@ -911,6 +1043,7 @@ export class DiagnosticsCollector {
         // Deliberately omit `Source` from `stats.engine`, because it contains the user's server hostname.
         // Clear any prior playback's error once a new or active playback reports stats (the historical error stays in `events`).
         this.lastPlayback = next;
+        this.sessionHasPlayback = true;
         if (planChanged) {
             this.lastPlanSignature = signature;
             const summary = [next.playback, next.delivery === undefined ? undefined : `(${next.delivery})`, next.video].filter(Boolean).join(" ");
@@ -919,19 +1052,34 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
-    recordPlaybackError(kind: string, message: string, positionSeconds?: number, durationSeconds?: number): void {
+    recordPlaybackError(kind: string, message: string, details?: DiagnosticsPlanDetails): void {
         this.lastAppError = undefined;
         const cleanedKind = redactDiagnosticText(kind, 32);
         const cleanedMessage = redactDiagnosticText(message, 120);
         const combined = cleanedMessage === "" ? cleanedKind : `${cleanedKind}: ${cleanedMessage}`;
-        const position = formatPosition(positionSeconds, durationSeconds) ?? this.lastPlayback?.position;
+        const prior = this.sessionHasPlayback ? this.lastPlayback : undefined;
+        const source = details === undefined ? prior?.source : formatSourceSummary(details) ?? prior?.source;
+        const stream = details === undefined ? prior?.stream : formatStreamSummary(details) ?? prior?.stream;
+        const subtitleDetail = details === undefined ? prior?.subtitleDetail : formatSubtitleDetail(details) ?? prior?.subtitleDetail;
+        const position = formatPosition(details?.positionSeconds, details?.durationSeconds) ?? prior?.position;
+        const hdrEnabled = details?.hdrEnabled ?? prior?.hdrEnabled;
+        const avplayError = cleanAvplayError(details?.avplayError) ?? prior?.avplayError;
+        const routeFallbacks = details?.routeFallbacks !== undefined && details.routeFallbacks > 0 ? details.routeFallbacks : prior?.routeFallbacks;
         this.lastPlayback = {
-            ...this.lastPlayback,
+            ...prior,
             status: "Failed",
             error: combined,
+            ...(source === undefined ? {} : { source }),
+            ...(stream === undefined ? {} : { stream }),
+            ...(subtitleDetail === undefined ? {} : { subtitleDetail }),
             ...(position === undefined ? {} : { position }),
+            ...(hdrEnabled === undefined ? {} : { hdrEnabled }),
+            ...(avplayError === undefined ? {} : { avplayError }),
+            ...(routeFallbacks === undefined ? {} : { routeFallbacks }),
         };
-        this.pushEvent("playback", `error ${combined}`);
+        this.sessionHasPlayback = true;
+        const suffix = avplayError === undefined ? "" : ` (${avplayError})`;
+        this.pushTrustedEvent("playback", `error ${combined}${suffix}`);
         this.emit();
     }
 
@@ -946,6 +1094,7 @@ export class DiagnosticsCollector {
         this.lastAppError = undefined;
         this.events.length = 0;
         this.lastPlanSignature = undefined;
+        this.sessionHasPlayback = false;
         this.rebufferCount = 0;
         this.lastSentHash = undefined;
         this.lastSentReportId = undefined;
@@ -991,6 +1140,13 @@ export class DiagnosticsCollector {
 
     private pushEvent(kind: DiagnosticsEvent["kind"], text: string): void {
         const cleaned = redactDiagnosticText(text, MAX_EVENT_TEXT);
+        if (cleaned === "") return;
+        this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
+        if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
+    }
+
+    private pushTrustedEvent(kind: DiagnosticsEvent["kind"], text: string): void {
+        const cleaned = formatEventText(text, MAX_EVENT_TEXT);
         if (cleaned === "") return;
         this.events.push({ at: localTime(this.clock.now()), kind, text: cleaned });
         if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);

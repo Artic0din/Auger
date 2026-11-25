@@ -77,6 +77,7 @@ File pointers are repository-relative.
 | Browse grid: sort, filters, A–Z rail, remembered choices | ✅ | ✅ | ✅ | 100 cards per read. Apple: `TVLibraryGridView`, `TVBrowseFilterUI`. Android: `TvFilterSheet`, `TvAlphabetRail` |
 | Expanded section grid (60-card reads) | ✅ | ✅ | ✅ | Apple: `SectionCatalogView`. Android: `TvSectionBrowseScreen` |
 | Collections (fan-card grid, personal collections) | ✅ | ✅ | ✅ | Layout parity open (#100). Android: `TvCollectionsScreen` |
+| Rows of collections on Home and library pages | ✅ | ✅ | ? | `collection_posters` sections decoded into `SectionCollectionCard`s and drawn as rows on Home and library pages (#676; `docs/features/library-discovery.md`). Layout parity tracked in #100 and #765. Apple: `TVCollectionsRow`. Android TV not checked |
 | Library Shuffle | ✅ | ✅ | ✅ | Server-owned; hidden in mixed-library scope. Apple: `ShuffleFeatureStore`. Android: no mixed-library screen on TV |
 | Music | 🚧 | ✅ | 🟡 | Blocked on the server parity contract (#56). Android: Music tab browses the library (`TvLibraryTabType.Music`); no music player found in `androidTvApp` |
 | Audiobooks | 🚧 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has the tab, library, cards, detail and Apple's loading frame; audiobook playback is not built |
@@ -108,7 +109,7 @@ File pointers are repository-relative.
 |---|:---:|:---:|:---:|---|
 | Watchlist, Favorites, History pages | ✅ | ✅ | ✅ | Tizen and Apple: Watchlist and Favorites under For You, History in the profile menu (`src/ui/skyline.ts`). Grid parity open (#105). Android: `TvPersonalScreens` |
 | Watched / favourite / watchlist actions on details | ✅ | ✅ | ✅ | Server-confirmed readback, never auto-replayed. Rating write reconcile open (#84). Android: `TvHeroToggleIconButton`. Apple: hero Watchlist button (`TVDetailActions`), Favorite/Watched in the More menu |
-| Personal star rating (1–5) | ➖ | ➖ | ✅ | Removed to match tvOS, which shows external scores only (`docs/features/details-actions.md`) |
+| Personal star rating (1–5) | ➖ | ✅ | ✅ | Previously removed from Tizen when tvOS showed external scores only (`docs/features/details-actions.md`). Apple TV has since added half-star ratings on Details (`TVRatingActionButton`, `TVRatingEditor`); Tizen parity falls under #106 |
 | External scores (IMDb, TMDB) | ✅ | ✅ | ✅ | TMDB logo and notice in Acknowledgements. Android: `TvDetailMetadata` and `TvFocusMarqueeModel` |
 | Title art switch (this TV or all devices) | ✅ | ✅ | ✅ | Android: `TitleArtStore`, Settings → General |
 

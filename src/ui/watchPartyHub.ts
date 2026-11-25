@@ -286,7 +286,7 @@ export class WatchPartyHub {
     resume(): void {
         const room = this.state.room;
         if (room?.phase !== "playing" || room.selectedContentId === undefined || room.selectedFileId === undefined) return;
-        this.options.onPlay?.({ contentId: room.selectedContentId, fileId: room.selectedFileId, title: this.state.selected?.title() ?? translate("watchParty.title"), startSeconds: room.anchorPositionSeconds, allowAlternateVersions: false });
+        this.options.onPlay?.({ contentId: room.selectedContentId, fileId: room.selectedFileId, title: this.state.selected?.title() ?? translate("watchParty.title"), startSeconds: room.anchorPositionSeconds, allowAlternateVersions: false, watchParty: true });
     }
 
     async stopPlayback(): Promise<boolean> {

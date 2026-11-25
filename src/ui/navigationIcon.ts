@@ -34,6 +34,7 @@ const PATHS = {
     "switch-server": "M3 3H21V10H3ZM3 14H21V21H3ZM7 6H8M7 17H8",
     signout: "M10 3H3V21H10M8 12H22M17 7 22 12 17 17",
     reset: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
+    "xmark-circle": "M12 2A10 10 0 1 1 12 22A10 10 0 1 1 12 2ZM9 9 15 15M15 9 9 15",
 } as const;
 
 /**

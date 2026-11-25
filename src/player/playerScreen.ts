@@ -23,13 +23,16 @@ import { physicalKey, remoteKey } from "../ui/keys.ts";
 import { isFreshSelect, lateRedraw, listenSelectRelease, swallowSelect } from "../ui/selectRelease.ts";
 import { el } from "../ui/screen.ts";
 import { artworkUrl } from "../ui/browseModel.ts";
+import { artwork, thumbnailProgress } from "../ui/browseViews.ts";
+import { artworkSymbol, defaultArtwork } from "../ui/defaultArtwork.ts";
 import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
+import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
-import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
+import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
@@ -286,14 +289,26 @@ export function clockText(seconds: number): string {
     return hours > 0 ? `${hours}:${two(minutes)}:${two(secs)}` : `${minutes}:${two(secs)}`;
 }
 
+interface SymbolMetrics {
+    /** Apple point size, scaled by `--silo-sf-cap-scale`. */
+    readonly size: number;
+    /** Space between the symbol and the label in pixels (Apple HStack spacing). */
+    readonly gap?: number;
+}
+
 /** A button drawn as Apple's Label: its symbol, then its words. The symbol is hidden from assistive technology, so the name is the words. */
-function labelWithSymbol(button: HTMLButtonElement, symbol: string, label: string): void {
+function labelWithSymbol(button: HTMLElement, symbol: string, label: string, metrics?: SymbolMetrics): void {
+    const cacheKey = `${label}|${metrics?.size ?? ""}|${metrics?.gap ?? ""}`;
     // The card redraws on every playback tick: leave an unchanged label alone.
-    if (button.dataset.symbolLabel === label && button.querySelector(".player-button-symbol") !== null) return;
+    if (button.dataset.symbolLabel === cacheKey && button.querySelector(".player-button-symbol") !== null) return;
     const glyph = el("span", "player-button-symbol");
+    if (metrics !== undefined) {
+        glyph.style.setProperty("--player-symbol-size", `calc(${metrics.size}px * var(--silo-sf-cap-scale))`);
+        if (metrics.gap !== undefined) glyph.style.setProperty("--player-symbol-gap", `${metrics.gap}px`);
+    }
     glyph.innerHTML = symbol;
     button.replaceChildren(glyph, document.createTextNode(label));
-    button.dataset.symbolLabel = label;
+    button.dataset.symbolLabel = cacheKey;
 }
 
 const RING_RADIUS = 27.5;
@@ -434,7 +449,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (seekPreview !== undefined) cancelScrub();
         decideSkip();
         pendingSkipTarget = target;
-        controls.seekToSeconds(target);
+        if (skipKind === "credits") controls.skipCredits(target);
+        else controls.seekToSeconds(target);
         // The options panel keeps its focus.
         if (!menuOpen) {
             overlay.focus();
@@ -546,7 +562,15 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     hud.append(tablist, menu);
     const failure = el("div", "player-error");
     failure.setAttribute("role", "alert");
+    const shuffleBadge = el("div", "player-shuffle-badge");
+    shuffleBadge.hidden = true;
+    const nextHeading = el("div", "player-next-heading");
+    const nextSpinner = el("span", "player-next-spinner");
+    nextSpinner.setAttribute("aria-hidden", "true");
+    nextSpinner.innerHTML = spinnerIcon();
+    nextSpinner.hidden = true;
     const failureTitle = el("h1", "player-title");
+    nextHeading.append(nextSpinner, failureTitle);
     const eyebrow = el("p", "player-next-eyebrow");
     const synopsis = el("p", "player-next-synopsis");
     const nextSeries = el("p", "player-next-series");
@@ -579,7 +603,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         nextMeta.textContent = [episodeAirDate(candidate?.airDate), (candidate?.runtimeMinutes === undefined ? undefined : episodeRuntime(candidate.runtimeMinutes))].filter(part => part !== undefined).join(" · ");
         nextMeta.hidden = nextMeta.textContent === "";
     };
-    const deck = el("div", "player-next-deck");
+    const deck = el("section", "player-next-deck browse-section home-section");
     const keep = el("button", "player-button");
     keep.type = "button";
     keep.setAttribute("data-focus", "keep-watching");
@@ -600,28 +624,50 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     next.type = "button";
     next.setAttribute("data-focus", "play-next");
     next.addEventListener("click", () => controls.playNext());
-    const cancelAutoplay = el("button", "player-button", "Cancel autoplay");
-    cancelAutoplay.type = "button";
-    cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
-    cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
-    // PlayerView.autoPlayToggle: below the actions while there is a next item, it flips Auto-play next for this TV.
+    const pickAnother = el("button", "player-button");
+    pickAnother.type = "button";
+    pickAnother.setAttribute("data-focus", "pick-another");
+    pickAnother.hidden = true;
+    pickAnother.addEventListener("click", () => controls.pickAnother());
+    const shuffleError = el("p", "player-shuffle-error");
+    shuffleError.hidden = true;
+    // PlayerView.autoPlayFooter: the Auto-play toggle, with Stop shuffling beside it during a shuffle (#807).
+    const autoPlayFooter = el("div", "player-autoplay-footer");
+    autoPlayFooter.hidden = true;
     const autoPlay = el("button", "player-autoplay-toggle");
     autoPlay.type = "button";
     autoPlay.setAttribute("data-focus", "auto-play");
     autoPlay.hidden = true;
     autoPlay.addEventListener("click", () => controls.toggleAutoNext());
-    const showAutoPlay = (autoNext: boolean | undefined): void => {
+    const stopShuffling = el("button", "player-autoplay-toggle");
+    stopShuffling.type = "button";
+    stopShuffling.setAttribute("data-focus", "stop-shuffling");
+    stopShuffling.hidden = true;
+    stopShuffling.addEventListener("click", () => controls.stopShuffling());
+    autoPlayFooter.append(autoPlay, stopShuffling);
+    const showAutoPlay = (autoNext: boolean | undefined, shuffle = false): void => {
         autoPlay.hidden = autoNext === undefined;
         autoPlay.textContent = translate(autoNext === true ? "upNext.autoPlayOn" : "upNext.autoPlayOff");
+        stopShuffling.hidden = autoNext === undefined || !shuffle;
+        stopShuffling.textContent = translate("upNext.stopShuffling");
+        autoPlayFooter.hidden = autoPlay.hidden && stopShuffling.hidden;
     };
     // PlayerView.actionRow: Play Now and the ring, then Keep Watching and Close. The rows are only boxes on the Up Next card; the error page
     // lays its buttons out as before.
     const primaryRow = el("div", "player-actions-row player-actions-primary");
     primaryRow.append(next, ring.element, retry);
+    const showPickAnother = (visible: boolean): void => {
+        pickAnother.hidden = !visible;
+        if (visible) {
+            if (pickAnother.parentNode !== primaryRow) primaryRow.insertBefore(pickAnother, ring.element);
+        } else if (pickAnother.parentNode === primaryRow) {
+            pickAnother.remove();
+        }
+    };
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
-    secondaryRow.append(keep, cancelAutoplay, back);
+    secondaryRow.append(keep, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlay, deck);
+    failure.append(nextBackdrop, shuffleBadge, eyebrow, nextSeries, nextHeading, nextMeta, mark, failureText, synopsis, actions, shuffleError, autoPlayFooter, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -630,7 +676,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         tracksButton.setAttribute("aria-label", translate("player.audio.options"));
         closeButton.setAttribute("aria-label", translate("player.audio.close"));
         for (const [index, tab] of tabs.entries()) tab.textContent = translate(TAB_KEYS[tabNames[index] ?? "Info"]);
-        labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"));
+        labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"), { size: 25, gap: 16 });
         retry.textContent = translate("common.retry");
     };
     labelStatics();
@@ -1018,15 +1064,22 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         hud.hidden = !menuOpen;
         tracksButton.setAttribute("aria-expanded", String(menuOpen));
         next.hidden = true;
-        // Up Next sets the toggle below; hiding it here first would drop its focus on every redraw.
-        if (view.phase !== "completion" && prompt === undefined) autoPlay.hidden = true;
+        // Up Next sets the toggle and Pick Another below; hiding or removing them first would drop their focus on every redraw.
+        if (view.phase !== "completion" && prompt === undefined) {
+            autoPlay.hidden = true;
+            stopShuffling.hidden = true;
+            autoPlayFooter.hidden = true;
+            showPickAnother(false);
+        }
         keep.hidden = prompt === undefined;
         eyebrow.hidden = view.phase !== "completion" && prompt === undefined;
         synopsis.hidden = eyebrow.hidden;
         deck.hidden = eyebrow.hidden;
-        cancelAutoplay.hidden = view.phase !== "completion" || view.countdown === undefined;
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
+        nextSpinner.hidden = true;
+        shuffleBadge.hidden = true;
+        shuffleError.hidden = true;
         nextSeries.hidden = true;
         nextMeta.hidden = true;
         nextBackdrop.hidden = true;
@@ -1034,7 +1087,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         ring.set(undefined, undefined);
         mark.hidden = view.phase !== "error";
         if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
-        else labelWithSymbol(back, closeIcon(), translate("upNext.close"));
+        else labelWithSymbol(back, closeIcon(), translate("upNext.close"), { size: 24, gap: 16 });
         if (view.phase === "completion" || prompt !== undefined) {
             cancelScrub();
             closeMenu();
@@ -1057,38 +1110,38 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const bottom = UP_NEXT_PREVIEW.top + UP_NEXT_PREVIEW.height;
                 nextBackdrop.style.clipPath = view.phase === "completion" ? "none" : `polygon(evenodd, 0px 0px, ${UP_NEXT_SCREEN.width}px 0px, ${UP_NEXT_SCREEN.width}px ${UP_NEXT_SCREEN.height}px, 0px ${UP_NEXT_SCREEN.height}px, 0px 0px, ${left}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${UP_NEXT_PREVIEW.top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${UP_NEXT_PREVIEW.top}px)`;
             }
-            const identity = cards.map(card => `${card.contentId}:${card.hideBackdrop === true ? "1" : "0"}`).join("|");
+            const deckHeading = translate("upNext.onDeck");
+            const identity = `${deckHeading}||${cards.map(card => `${card.contentId}:${card.title}:${card.backdropUrl ?? ""}:${card.hideBackdrop === true ? "1" : "0"}:${card.thumbnailPositionSeconds ?? card.watch?.positionSeconds ?? ""}:${card.durationSeconds ?? ""}`).join("|")}`;
             if (deck.dataset.items !== identity) {
                 const focusedCard = deck.contains(document.activeElement) ? document.activeElement?.getAttribute("data-focus") : undefined;
                 deck.dataset.items = identity;
                 deck.replaceChildren();
-                if (cards.length > 0) deck.appendChild(el("h2", "player-menu-heading", translate("upNext.onDeck")));
-                for (const card of cards) {
-                    const button = el("button", "player-choice player-next-card", card.title);
-                    button.type = "button";
-                    button.setAttribute("data-focus", `deck:${card.contentId}`);
-                    const backdrop = artworkUrl(card.backdropUrl, baseUrl);
-                    if (backdrop !== undefined) {
-                        const img = document.createElement("img");
-                        img.src = backdrop;
-                        img.alt = "";
-                        img.addEventListener("error", () => img.remove(), { once: true });
-                        if (card.hideBackdrop === true) {
-                            img.className = "player-next-still";
-                            const frame = el("span", "episode-spoiler-blur");
-                            frame.append(img);
-                            blurEpisodeStill(frame);
-                            button.prepend(frame);
-                        } else {
-                            button.prepend(img);
+                if (cards.length > 0) {
+                    const title = el("h2", "browse-section-title", deckHeading);
+                    const glyph = el("span", "home-row-glyph");
+                    glyph.setAttribute("aria-hidden", "true");
+                    title.prepend(glyph);
+                    const row = el("div", "browse-row");
+                    for (const card of cards) {
+                        const button = el("button", "browse-card skyline-continue player-next-card");
+                        button.type = "button";
+                        button.setAttribute("data-focus", `deck:${card.contentId}`);
+                        const art = artwork("browse-art", card.backdropUrl, baseUrl, defaultArtwork(artworkSymbol(card.episode === true ? "episode" : "movie")));
+                        if (card.hideBackdrop === true) blurEpisodeStill(art);
+                        const position = card.thumbnailPositionSeconds ?? card.watch?.positionSeconds;
+                        const duration = card.durationSeconds;
+                        if (position !== undefined && duration !== undefined && position > 0 && duration > 0) {
+                            art.appendChild(thumbnailProgress(position / duration));
                         }
+                        button.append(art, el("span", "browse-card-title", card.title));
+                        button.addEventListener("click", () => {
+                            const current = view.phase === "completion" ? view.deck : view.phase === "playing" || view.phase === "paused" ? view.upNext?.deck : undefined;
+                            const selected = current?.find(candidate => candidate.contentId === card.contentId);
+                            if (selected !== undefined) controls.playNext(selected);
+                        });
+                        row.appendChild(button);
                     }
-                    button.addEventListener("click", () => {
-                        const current = view.phase === "completion" ? view.deck : view.phase === "playing" || view.phase === "paused" ? view.upNext?.deck : undefined;
-                        const selected = current?.find(candidate => candidate.contentId === card.contentId);
-                        if (selected !== undefined) controls.playNext(selected);
-                    });
-                    deck.appendChild(button);
+                    deck.append(title, row);
                 }
                 if (focusedCard !== undefined) {
                     Array.from(deck.querySelectorAll<HTMLButtonElement>("button")).find(button => button.getAttribute("data-focus") === focusedCard)?.focus();
@@ -1098,10 +1151,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const loading = prompt?.loading === true;
                 const failed = prompt?.failed === true;
                 next.hidden = loading || failed || candidate === undefined;
-                labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
+                labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
+                showPickAnother(false);
                 retry.hidden = true;
-                cancelAutoplay.hidden = true;
-                showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext);
+                showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext, prompt?.shuffle === true);
+                nextSpinner.hidden = !loading;
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
                 failureTitle.classList.toggle("player-next-working", loading);
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
@@ -1111,14 +1165,24 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 status.hidden = true;
                 return;
             }
+            const scopeLabel = view.shuffleScopeLabel ?? view.next?.shuffleScopeLabel;
+            shuffleBadge.hidden = scopeLabel === undefined || scopeLabel === "";
+            if (!shuffleBadge.hidden && scopeLabel !== undefined) {
+                labelWithSymbol(shuffleBadge, shuffleIcon(), translate("upNext.shuffling", { scope: scopeLabel }), { size: 19, gap: 10 });
+            }
             next.hidden = view.state !== "ready" || view.next === undefined;
-            labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
+            labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
+            showPickAnother(!next.hidden && view.shuffle === true);
+            if (!pickAnother.hidden) labelWithSymbol(pickAnother, shuffleIcon(), translate("upNext.pickAnother"), { size: 26, gap: 16 });
+            shuffleError.hidden = view.shuffleActionError === undefined;
+            shuffleError.textContent = view.shuffleActionError === undefined ? "" : translate(view.shuffleActionError);
             retry.hidden = view.state !== "failed" || !view.retryable;
-            showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined);
+            showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined, view.shuffle === true);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
             const working = view.state === "finalizing" || view.state === "resolving";
+            nextSpinner.hidden = !working;
             nextTitle(working ? undefined : candidate, working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : translate("upNext.endOfPlayback"));
             failureTitle.classList.toggle("player-next-working", working);
             failureText.textContent = working ? "" : view.state === "failed" ? translate(view.failure === "session" ? "errors.apple.playback.invalidSample" : "upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
@@ -1699,7 +1763,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
             // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
-            const rows = [[next, retry], [keep, cancelAutoplay, back], [autoPlay], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+            const rows = [[next, pickAnother, retry], [keep, back], [autoPlay, stopShuffling], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
             const current = rows[row];
@@ -1708,8 +1772,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else if (key === "back") controls.keepWatching();
             else if (key === "enter") (current?.[column] ?? rows[0]?.[0])?.click();
             else if (current === undefined) rows[0]?.[0]?.focus();
-            // PlayerView.autoPlayToggle's onMoveCommand: Up returns to the preferred action, not the row above.
-            else if (layout === "up" && document.activeElement === autoPlay) rows[0]?.[0]?.focus();
+            // PlayerView.autoPlayToggle / stopShufflingButton onMoveCommand: Up returns to the preferred action, not the row above.
+            else if (layout === "up" && (document.activeElement === autoPlay || document.activeElement === stopShuffling)) rows[0]?.[0]?.focus();
             else if (layout === "left" || layout === "right") current[Math.max(0, Math.min(current.length - 1, column + (layout === "left" ? -1 : 1)))]?.focus();
             // With no row that way, focus stays where it is; a row change lands on that row's first button.
             else if (layout === "up" || layout === "down") rows[row + (layout === "up" ? -1 : 1)]?.[0]?.focus();
@@ -2019,6 +2083,8 @@ export function startPlayback(
     resolutionCap?: PlaybackDeps["resolutionCap"],
     diagnostics?: DiagnosticsCollector,
     onAutoReport?: () => void,
+    settingsFlusher?: PlayerSettingsFlusher,
+    stillWatchingThreshold?: () => number,
 ): PlayerScreen {
     const clock = platform.clock ?? systemClock;
     let screen: PlayerScreen | undefined;
@@ -2059,8 +2125,7 @@ export function startPlayback(
                 exits.onEnd(reason);
             },
             onError: (error) => {
-                const details = controller.diagnosticsDetails();
-                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error), details?.positionSeconds, details?.durationSeconds);
+                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error), controller.diagnosticsDetails());
                 if (isFatalAutoReportable(error)) onAutoReport?.();
                 finish();
                 exits.onError(error);
@@ -2069,14 +2134,24 @@ export function startPlayback(
         ...(spoilers === undefined ? {} : { spoilers }),
         ...(storage === undefined ? {} : { publicStorage: storage }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
+        ...(settingsFlusher === undefined ? {} : { settingsFlusher }),
+        ...(stillWatchingThreshold === undefined ? {} : { stillWatchingThreshold }),
     });
     if (diagnostics !== undefined) {
         diagnostics.beginPlaybackSession();
         let lastErrorKey: string | undefined;
+        let lastAvplayKey: string | undefined;
         let wasBuffering = false;
         stopDiagnostics = controller.subscribe(view => {
+            const details = controller.diagnosticsDetails();
+            if (details?.avplayError !== undefined) {
+                const avKey = `${details.avplayError}:${details.routeFallbacks ?? 0}`;
+                if (avKey !== lastAvplayKey) {
+                    lastAvplayKey = avKey;
+                    diagnostics.recordAvplayEvent(details.avplayError, details.routeFallbacks);
+                }
+            }
             if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
-                const details = controller.diagnosticsDetails();
                 diagnostics.recordPlaybackStats(view.hud.stats, details);
                 if (view.phase === "playing" && view.buffering && !wasBuffering) {
                     diagnostics.recordRebuffer();
@@ -2085,11 +2160,10 @@ export function startPlayback(
             } else if (view.phase === "error") {
                 wasBuffering = false;
                 const detail = playbackErrorText(view.error);
-                const key = `${view.error.kind}:${detail}`;
+                const key = `${view.error.kind}:${detail}:${details?.avplayError ?? ""}`;
                 if (key !== lastErrorKey) {
                     lastErrorKey = key;
-                    const details = controller.diagnosticsDetails();
-                    diagnostics.recordPlaybackError(view.error.kind, detail, details?.positionSeconds, details?.durationSeconds);
+                    diagnostics.recordPlaybackError(view.error.kind, detail, details);
                     if (isFatalAutoReportable(view.error)) onAutoReport?.();
                 }
             }

@@ -27,6 +27,17 @@
 .player-error.player-next-up .player-title { font-size: calc(42px * var(--silo-sf-cap-scale)); font-weight: 700; }
 .player-error.player-next-up .player-title.player-next-working { font-weight: 600; }
 .player-error.player-next-up .player-title.player-next-named { font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; }
+/* PlayerView.loadingContent (PlayerView.swift:1321-1333): 1.35× spoke spinner 14 pt before the 42 pt semibold label (#778). */
+.player-next-heading { display: flex; align-items: center; gap: 14px; }
+.player-next-spinner { display: inline-flex; flex: none; width: 42px; height: 42px; color: #ffffff; animation: player-spin 1s linear infinite; }
+.player-next-spinner[hidden] { display: none; }
+.player-next-spinner svg { display: block; width: 100%; height: 100%; }
+/* PlayerView.shuffleBadge (PlayerView.swift:1273-1281): captionSize semibold, white 0.78, 8×18 capsule at 10% white (#778). */
+.player-shuffle-badge { display: inline-flex; align-items: center; align-self: flex-start; margin: 0 0 12px; padding: 8px 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.78); font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 600; white-space: nowrap; }
+.player-shuffle-badge[hidden] { display: none; }
+/* PlayerView.shuffleActionErrorText (PlayerView.swift:1284-1290): captionSize medium, white 0.7 (#778). */
+.player-shuffle-error { margin: 12px 0 0; color: rgba(255, 255, 255, 0.7); font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 500; }
+.player-shuffle-error[hidden] { display: none; }
 .player-next-eyebrow { font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; text-transform: uppercase; opacity: .52; }
 /* :1385-1390: bodySize at 0.58, three lines at most, 620 wide. */
 .player-next-synopsis[hidden] { display: none; }
@@ -35,6 +46,7 @@
 .player-next-up .player-error-text { max-width: 560px; color: #ffffff; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .62; }
 /* actionRow (:1405-1470): Play Now at 30 semibold, Keep Watching and Close at 26 semibold. */
 .player-next-up .player-button[data-focus="play-next"] { font-size: calc(30px * var(--silo-sf-cap-scale)); }
+.player-next-up .player-button[data-focus="pick-another"],
 .player-next-up .player-button[data-focus="keep-watching"],
 .player-next-up .player-button[data-focus="back"] { font-size: calc(26px * var(--silo-sf-cap-scale)); }
 /* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
@@ -57,11 +69,18 @@
 .player-next-up .player-actions-row > .player-countdown { margin: 0; }
 .player-next-up .player-actions-row > .player-button { display: inline-flex; align-items: center; }
 .player-next-up .player-actions-row > [hidden] { display: none; }
-/* AutoPlayToggleButtonStyle (PlayerView.swift:1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
-   and a 1.04 scale when focused, 0.98 when pressed. */
+/* AutoPlayToggleButtonStyle (PlayerView.swift:1293-1318, 1755-1772): captionSize semibold, white 0.54 (0.92 focused) with a 1.5 pt capsule at 0.55
+   and a 1.04 scale when focused, 0.98 when pressed. Stop shuffling sits 12 px beside the toggle in the same row (#807). */
+.player-autoplay-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0 0;
+}
+.player-autoplay-footer[hidden] { display: none; }
 .player-autoplay-toggle {
     align-self: flex-start;
-    margin: 18px 0 0;
+    margin: 0;
     padding: 10px 22px;
     border: 0;
     border-radius: 999px;
@@ -77,8 +96,8 @@
 .player-autoplay-toggle:focus { color: rgba(255, 255, 255, .92); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); scale: 1.04; }
 .player-autoplay-toggle[data-pressed] { scale: .98; }
 .player-autoplay-toggle[hidden] { display: none; }
-/* The Label's symbol before its words: 26 px with 16 between, as Apple's 24-32 pt symbols at 16-18 spacing. */
-.player-button-symbol { display: inline-flex; flex: none; width: 26px; height: 26px; margin-inline-end: 16px; }
+/* The Label's symbol before its words: 26 px with 16 between by default; Up Next buttons set --player-symbol-size and --player-symbol-gap from PlayerView.actionRow (#809). */
+.player-button-symbol { display: inline-flex; flex: none; width: var(--player-symbol-size, 26px); height: var(--player-symbol-size, 26px); margin-inline-end: var(--player-symbol-gap, 16px); }
 .player-button-symbol svg { width: 100%; height: 100%; }
 .player-countdown svg { position: absolute; inset: 0; width: 58px; height: 58px; }
 .player-countdown circle { fill: none; stroke-width: 3; }
@@ -91,24 +110,22 @@
 .player-next-backdrop-art { position: absolute; inset: 0; background-size: cover; background-position: center; transform: scale(1.12); filter: blur(44px); opacity: 0.18; }
 .player-next-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.78); }
 .player-next-up .player-button { margin: 18px 0 0; margin-inline-end: 20px; }
+/* PlayerView.onDeckSection (#808): reuses Home's .home-section, .browse-section-title, .home-row-glyph, .skyline-continue and .skyline-progress styles. */
 .player-next-deck {
     margin: 34px 0 0;
     margin-inline-start: -800px;
-    display: flex;
-    gap: 40px;
-    overflow-x: auto;
-    padding: 20px;
 }
-.player-next-deck > h2 { position: absolute; margin-top: -24px; }
-.player-next-card { flex: 0 0 360px; display: flex; flex-direction: column; }
-.player-next-card img { width: 360px; aspect-ratio: 16 / 9; object-fit: cover; }
-.player-next-card .episode-spoiler-blur { display: block; width: 360px; aspect-ratio: 16 / 9; overflow: hidden; }
-.player-next-card .episode-spoiler-blur > .player-next-still {
-    filter: blur(24px);
-    width: calc(100% + 48px);
-    height: calc(100% + 48px);
-    max-width: none;
-    margin: -24px;
+.player-next-deck .browse-row {
+    display: flex;
+    overflow-x: auto;
+    margin-left: 0;
+    margin-inline-start: -40px;
+    padding: 34px 40px 14px;
+}
+.player-next-deck .browse-card {
+    flex: none;
+    margin: 0;
+    margin-inline-end: 40px;
 }
 .player-next-deck[hidden] { display: none; }
 
@@ -1586,7 +1603,8 @@
     .player-menu-column-rows {
         scroll-behavior: auto;
     }
-    .player-spinner-mark { animation: none; }
+    .player-spinner-mark,
+    .player-next-spinner { animation: none; }
 }
 
 /*

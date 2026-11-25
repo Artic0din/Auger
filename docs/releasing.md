@@ -17,7 +17,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 
 The largest bump wins.
 When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the Tizen SDK public distributor certificate (no personal Samsung TV certificates or DUIDs).
-It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and opens a pull request to record the release notes in `CHANGELOG.md`.
+It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and commits the release notes to `CHANGELOG.md` on `main`.
 A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
 
 Only tags with a published GitHub Release count as released.
@@ -53,8 +53,21 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 
 ## Release notes and the changelog
 
-`scripts/generate-changelog.py` writes each release's notes from the commits since the previous release, in plain language for people who use Auger.
-It reads commits with the same Conventional Commit rules as the version bump and groups them:
+`scripts/generate-changelog.py` writes two records of each release from the commits since the previous release.
+
+The GitHub Release body is for people who use Auger.
+For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` section.
+That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
+Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
+`None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
+A pull request without that section falls back to a legacy `Release note:` line, then to the commit itself.
+A pull request the workflow cannot read also falls back to its commit, so a GitHub API failure never blocks a release.
+The body opens with `Released: YYYY-MM-DD`, then Breaking Changes, Highlights, New, Improved, Security, and Fixed, without emojis.
+It ends with an **Install or update** section that points to the Apps2Samsung community catalog, and links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
+
+`CHANGELOG.md` is the technical record, written from the commits alone.
+The commits also fill the GitHub Release body for pull requests without notes.
+The generator reads commits with the same Conventional Commit rules as the version bump and groups them:
 
 | Section | Commits |
 | --- | --- |
@@ -70,7 +83,8 @@ Fixes read as plain sentences.
 A release with no user-facing commits reads `General maintenance and stability improvements.`
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
-After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes; commits pushed with `GITHUB_TOKEN` do not trigger downstream workflows).
+After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
+It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, a secret of the `changelog` environment that only `main` can deploy to, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
 A changelog that already has the version stays unchanged.
 If the changelog job fails after the release is published, use **Re-run failed jobs** to retry only the changelog update, or add the section locally with:
 
@@ -78,7 +92,7 @@ If the changelog job fails after the release is published, use **Re-run failed j
 python3 scripts/generate-changelog.py update --file CHANGELOG.md --version X.Y.Z --from vPREVIOUS --to vX.Y.Z
 ```
 
-Preview notes locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`.
+Preview the GitHub Release body locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`, adding `--pr-notes-file PR.json` (`{"123": "<pull request body>"}`) to include pull request notes.
 `.github/release.yml` groups only the notes from GitHub's **Generate release notes** button.
 
 ## Installing and updating with Apps2Samsung
