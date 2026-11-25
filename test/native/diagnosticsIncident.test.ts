@@ -53,10 +53,18 @@ test("an expected refusal and a retried success never file; a failure after reco
     assert.equal(refusal?.incident.out, "refused");
     assert.equal(refusal === undefined ? "none" : diagnostics.claimAutoReport(refusal), undefined);
 
-    assert.equal(diagnostics.recordPlaybackIncident(scope, trace({ seq: 2, stage: "playing", shown: true, resends: 2, steps: ["start:retry:http_503", "start:retry:http_503", "start:ok"] })), undefined, "a retried success is no incident");
+    const recovered = diagnostics.recordPlaybackIncident(scope, trace({
+        seq: 2, stage: "playing", shown: true, resends: 1, recovered: true,
+        first: { stage: "start", code: "http_503", buffering: false },
+        steps: ["start:retry:http_503", "start:ok", "playing:recovered"],
+    }));
+    assert.ok(recovered);
+    assert.equal(diagnostics.reportFor("playback"), recovered);
+    assert.equal(diagnostics.claimAutoReport(recovered), undefined);
+
 
     const exhausted = diagnostics.recordPlaybackIncident(scope, trace({
-        seq: 3, stage: "avplay_prepare", opened: true, fallbacks: 3,
+        seq: 3, stage: "avplay_prepare", opened: true, fallbacks: 3, exhausted: true,
         first: { stage: "avplay_prepare", code: "prepareAsync:UnknownError", buffering: false },
         firstAvplay: "prepareAsync:UnknownError", lastAvplay: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
     }), { kind: "playback_failed" });

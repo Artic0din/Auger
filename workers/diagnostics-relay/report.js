@@ -154,6 +154,8 @@ const screenRows = (record) => (record.screen === undefined ? [] : [["Screen bef
 
 function incidentRows(record, inc) {
   const recovery = inc.rec;
+  const firstHttp = /^http_([1-5]\d{2})$/.exec(inc.code ?? "")?.[1];
+  const separateHttp = firstHttp !== undefined && (inc.stage !== inc.fs || firstHttp !== String(inc.http));
   return [
     ["Category", CATEGORY_LABELS[inc.cat]],
     ["Submission source", sourceLabel(record)],
@@ -166,7 +168,8 @@ function incidentRows(record, inc) {
     ["Final code", codeCell(inc.fc) ?? "Not reported"],
     ["Last completed stage", inc.done === undefined ? "Not reported" : inc.done === "none" ? "None" : STAGE_LABELS[inc.done]],
     ...(inc.dec === undefined ? [] : [["Server decision", inc.dec]]),
-    ["HTTP status", inc.http === undefined ? "Not observed" : String(inc.http)],
+    ...(separateHttp ? [["First failure HTTP status", firstHttp]] : []),
+    [separateHttp ? "Final HTTP status" : "HTTP status", inc.http === undefined ? "Not observed" : String(inc.http)],
     ...(inc.rt === undefined ? [] : [["Retryable", yesNo(inc.rt)]]),
     ["First AVPlay error", inc.av?.f ?? "None observed"],
     ["Last AVPlay error", inc.av?.l ?? "None observed"],

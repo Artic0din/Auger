@@ -35,7 +35,7 @@ export const OPERATION_LABELS = {
 };
 
 export const OUTCOME_LABELS = {
-  failed: "Failed after recovery",
+  failed: "Failed",
   refused: "Refused (expected refusal)",
   interrupted: "Interrupted",
   recovered: "Recovered",

@@ -89,9 +89,9 @@ const sessionMissing = { ...missingSession404, code: "session_missing", fc: "ses
 
 /** Stale-attempt shape: a capped HLS attempt failing before player open, after an earlier Direct Play succeeded. */
 export const cappedHlsBeforeOpen = {
-  iv: 1, cat: "playback", out: "failed", kind: "server", op: "hls_playlist", stage: "playlist_check", code: "hls_playlist_unreadable",
-  fs: "playlist_check", fc: "server_error", done: "media_token", open: false, shown: false, rs: 0, rec: { n: 0, c: 0, r: "none" },
-  pl: { dl: "server_transcode_hls", pr: "hls", ct: "mpegts", q: "720p", kbps: 24000, vc: "hevc", res: "3840x2160", dr: "hdr10", pos: 0, at: 0 },
+  iv: 1, cat: "playback", out: "failed", kind: "playback_failed", op: "hls_playlist", stage: "playlist_check", code: "hls_playlist_unreadable",
+  fs: "playlist_check", fc: "hls_playlist_unreadable", done: "media_token", open: false, shown: false, rs: 0, rec: { n: 0, c: 0, r: "none" },
+  pl: { dl: "server_transcode_hls", pr: "hls", ct: "hls", q: "720p", kbps: 24000, vc: "hevc", res: "3840x2160", dr: "hdr10", pos: 0, at: 0 },
   set: { q: "720p", cap: 4000, hdr: false }, req: request, t: ["media_token:ok", "playlist_check:fail:hls_playlist_unreadable"],
 };
 
@@ -131,7 +131,7 @@ export const CASES = [
       for (const row of [
         "| Category | Playback failed |",
         "| Submission source | Automatic error report |",
-        "| Outcome | Failed after recovery |",
+        "| Outcome | Failed |",
         "| Error kind | terminal |",
         "| Operation | Start playback |",
         "| First failed stage | Playback start request |",
@@ -175,6 +175,11 @@ export const CASES = [
       includes(notFound.body, "| Position at failure | 12:34 |", "observed position");
       includes(missing.body, "| HTTP status | Not observed |", "no status invented");
       equal(gh.issues.length, 4, "four issues");
+      const reconnect = fakeGitHub();
+      await send(handleRequest, reconnect, report({ ...missingSession404, fs: "reconnect", fc: "terminal_error", http: undefined }, "manual"));
+      const body = reconnect.created()[0].body.body;
+      includes(body, "| First failure HTTP status | 404 |", "progress response retained");
+      includes(body, "| Final HTTP status | Not observed |", "no status invented for replacement refusal");
     },
   },
   {
@@ -190,6 +195,8 @@ export const CASES = [
         "| HDR setting | Off |",
         "| Plan | Server Transcode HLS |",
         "| Stream quality | 720p |",
+        "| Container | hls |",
+        "| Recovery | None attempted |",
         "| Position at failure | 0:00 |",
         "| AVPlay opened | No |",
         "| HDR panel capability | Not reported |",

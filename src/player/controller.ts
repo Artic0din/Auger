@@ -4242,11 +4242,14 @@ export class PlaybackController implements PlayerControls {
                 return await send();
             } catch (error) {
                 const delay = RESEND_DELAYS_MS[index];
-                if (!(error instanceof ApiError) || !error.transient || delay === undefined) {
+                if (!(error instanceof ApiError) || !error.transient) throw error;
+                if (delay === undefined) {
+                    if (attempt.trace.stage === "start") attempt.trace.exhausted = true;
                     throw error;
                 }
+                if (attempt.trace.stage === "start") traceFailure(attempt.trace, "retry", httpCode(error) ?? "no_response");
+                else traceStep(attempt.trace, "retry", httpCode(error));
                 attempt.trace.resends++;
-                traceStep(attempt.trace, "retry", httpCode(error));
                 await sleep(this.deps.clock, Math.max(delay, (error.retryAfterSeconds ?? 0) * 1000), attempt.signal, abortedError);
             }
         }
@@ -5059,6 +5062,12 @@ function reachedStage(trace: AttemptTrace, stage: PlaybackStage): void {
 /** Records the step and, once per chain, the first causally relevant failure. A recovery attempt clears the HTTP status, so only the ending failure's own status is final. */
 function traceFailure(trace: AttemptTrace, result: TraceStepResult, code?: string): void {
     nextChain(trace);
+    // A playable start response settled its retries. A later stage owns its own failure.
+    if (trace.first?.stage === "start" && trace.stage !== "start" && trace.resends > 0) {
+        trace.first = undefined;
+        trace.resends = 0;
+        trace.steps.length = 0;
+    }
     if (result === "fallback") trace.http = undefined;
     if (trace.first === undefined) trace.first = { stage: trace.stage, ...(result === "end" ? {} : { code }), buffering: trace.buffering };
     traceStep(trace, result, code);

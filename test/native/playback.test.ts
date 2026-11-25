@@ -4232,6 +4232,15 @@ test("a start resend honors Retry-After and keeps its operation identity", async
     const starts = bodies(r.h, "/start");
     assert.equal(starts.length, 2);
     assert.deepEqual(starts[1], starts[0]);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace);
+    const incident = playbackIncident(trace);
+    assert.equal(incident?.code, "http_503");
+    assert.equal(incident?.rs, 1);
+    assert.equal(incident?.out, "recovered");
+    r.controller.destroy();
 });
 
 test("an authority change aborts a Retry-After wait without resending", async () => {
@@ -5521,6 +5530,7 @@ test("a failed capped HLS attempt after a working Direct Play reports only its o
         const incident = record.incident;
         assert.equal(incident.out, "failed");
         assert.equal(incident.op, "hls_playlist");
+        assert.equal(incident.rec.r, "none");
         assert.equal(incident.stage, "playlist_check");
         assert.equal(incident.code, "hls_playlist_unreadable");
         assert.equal(incident.done, "media_token");

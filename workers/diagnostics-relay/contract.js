@@ -153,7 +153,7 @@ export function traceStep(raw) {
 
 // Plan and settings tokens: the client accepts any short lowercase token; the relay publishes known values only.
 export const PROTOCOLS = ["http", "http_progressive", "hls", "dash"];
-export const CONTAINERS = ["mkv", "matroska", "mp4", "m4v", "mov", "quicktime", "ts", "mpegts", "mpeg-ts", "m2ts", "avi", "webm", "fmp4"];
+export const CONTAINERS = ["mkv", "matroska", "mp4", "m4v", "mov", "quicktime", "ts", "mpegts", "mpeg-ts", "m2ts", "avi", "webm", "fmp4", "hls"];
 export const VIDEO_CODECS = ["h264", "avc", "avc1", "hevc", "h265", "hvc1", "hev1", "av1", "av01", "vp9", "vp09", "vp8", "mpeg2", "mpeg2video", "mpeg4", "vc1"];
 export const DYNAMIC_RANGES = ["sdr", "hdr10", "hdr10_plus", "hdr10+", "hlg", "dolby_vision"];
 const QUALITY_PATTERN = /^(?:\d{3,4}p|[48]k|original|auto|source|unknown)$/;

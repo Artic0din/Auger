@@ -277,9 +277,9 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
     // The route budget and the reconnect loop are per attempt, so either can be spent before this chain's first fallback.
     const recovery: IncidentRecovery = error === undefined
         ? "recovered"
-        : error.kind === "playback_failed" || trace.exhausted
+        : trace.exhausted
             ? "exhausted"
-            : fallbacks + reconnects === 0 ? "none" : "attempted";
+            : fallbacks + reconnects + trace.resends === 0 ? "none" : "attempted";
     const plan = trace.plan;
     const dl = plan === undefined ? undefined : DELIVERIES.has(plan.delivery) ? plan.delivery : "unknown";
     const pr = token(plan?.protocol, PROTOCOLS);
