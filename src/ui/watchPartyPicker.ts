@@ -9,6 +9,7 @@ import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { errorHeadline, errorMessage } from "./browseRoutes.ts";
 import { actionButton, artwork, cardItem, searchLoading, searchState, thumbnailProgress, zoneNode } from "./browseViews.ts";
+import { feedGrid } from "./catalogFeed.ts";
 import { defaultArtwork } from "./defaultArtwork.ts";
 import { episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { blurEpisodeStill, type EpisodeSpoilerSettings, hidesEpisodeListStill, hidesEpisodeOverview } from "./episodeSpoilers.ts";
@@ -134,22 +135,31 @@ export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInp
         body.appendChild(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
     } else {
         body.appendChild(el("p", "watch-party-search-count", translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) })));
-        const cards = search.results.map((card, index) => {
-            const item = cardItem(card, {
-                baseUrl, posterWidth: 220, seriesYears: true,
-                cardDestination: target => ({ kind: "item" as const, id: target.id, title: target.title }),
-                open: () => { open(hub, card, nextUpFor(hub, card.id), { kind: "search" }); },
-            });
-            if (item !== undefined && search.nextCursor !== undefined && index >= search.results.length - SEARCH_COLUMNS) {
-                item.element.addEventListener("focus", () => { void hub.loadMoreSearch(); });
-            }
-            return item;
-        }).filter((card): card is FocusItem => card !== undefined);
-        firstCard = cards[0];
-        if (cards.length > 0) {
-            const grid = zoneNode("browse-grid watch-party-search-grid", cards);
-            body.appendChild(grid);
-            zones.push({ id: "picker-search-grid", layout: "grid", columns: SEARCH_COLUMNS, items: cards });
+        const page = { items: search.results, nextCursor: search.nextCursor, total: search.total, totalExact: true };
+        const grid = feedGrid(
+            search.feedKey,
+            page,
+            {
+                baseUrl,
+                seriesYears: true,
+                open: destination => {
+                    if (destination.kind !== "item") return;
+                    const card = search.results.find(candidate => candidate.id === destination.id);
+                    if (card !== undefined) open(hub, card, nextUpFor(hub, card.id), { kind: "search" });
+                },
+            },
+            SEARCH_COLUMNS,
+            search.searching,
+            () => { void hub.loadMoreSearch(); },
+            SEARCH_COLUMNS,
+            220,
+        );
+        const gridZone = grid.zones[0];
+        firstCard = gridZone?.items[0];
+        if (gridZone !== undefined && gridZone.items.length > 0) {
+            grid.content[0]?.classList.add("watch-party-search-grid");
+            body.append(...grid.content);
+            zones.push({ ...gridZone, id: "picker-search-grid" });
         }
     }
     content.push(body);
@@ -159,7 +169,8 @@ export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInp
         if (event.keyCode !== IME_DONE && event.key !== "Enter") return;
         event.preventDefault();
         event.stopPropagation();
-        if (firstCard !== undefined && searchInput.value.trim() === search.query.trim() && search.hasSearched && !search.searching) {
+        const trimmed = searchInput.value.trim();
+        if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
             firstCard.element.focus();
             return;
         }
@@ -306,7 +317,7 @@ function episodeCard(series: Card, episode: Episode, baseUrl: string, spoilers: 
 const seasonLabel = (season: Season): string => season.isSpecials === true ? translate("detail.specials") : season.title;
 
 /** WatchPartyEpisodePicker on tvOS: series hero, season tabs, and 400-wide 16:9 episode rail. */
-export function episodesView({ hub, baseUrl, spoilers = NO_SPOILERS }: PickerContext, series: Card, season: Season | undefined, initialEpisodeId?: string): View {
+export function episodesView({ hub, baseUrl, spoilers = NO_SPOILERS }: PickerContext, series: Card, season: Season | undefined, from?: LobbyPage, initialEpisodeId?: string): View {
     const { seasons, episodes, browseLoading, browseError } = hub.state;
     const list = episodes ?? [];
     const initial = preferredResumeEpisode(list, initialEpisodeId);
@@ -320,7 +331,7 @@ export function episodesView({ hub, baseUrl, spoilers = NO_SPOILERS }: PickerCon
     const overviewNode = el("p", "watch-party-episodes-overview", episodeOverview(series, initial, spoilers));
     const cards = list.map(episode => episodeCard(
         series, episode, baseUrl, spoilers,
-        () => { hub.show({ kind: "choice", choice: choiceFromEpisode(series, episode), from: { kind: "episodes", series, season, initialEpisodeId: episode.id } }); },
+        () => { hub.show({ kind: "choice", choice: choiceFromEpisode(series, episode), from: { kind: "episodes", series, season, ...(from === undefined ? {} : { from }), initialEpisodeId: episode.id } }); },
         () => { lineNode.textContent = episodeLine(episode); overviewNode.textContent = episodeOverview(series, episode, spoilers); },
     ));
     const page = el("div", "watch-party-episodes watch-party-ui");

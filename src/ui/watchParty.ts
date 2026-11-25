@@ -49,7 +49,7 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "picker": return pickerView(context);
         case "search": return searchView(context, screen.searchInput);
         case "choice": return choiceView(context, page.choice, page.from);
-        case "episodes": return episodesView(context, page.series, page.season, page.initialEpisodeId);
+        case "episodes": return episodesView(context, page.series, page.season, page.from, page.initialEpisodeId);
         case "lobby": return lobbyView(context, room, back);
     }
 }
