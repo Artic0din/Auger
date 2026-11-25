@@ -482,6 +482,7 @@ interface Attempt {
         /** Skip Credits reached EOF: Up Next stays open over playing credits with a fixed 10 s countdown (#795). */
         credits: boolean;
         creditsCountdown: number | undefined;
+        creditsDeadline: number | undefined;
         cancelCreditsTimer: (() => void) | undefined;
         episodeLoading: boolean;
         deckLoading: boolean;
@@ -745,7 +746,7 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, creditsDeadline: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
@@ -921,6 +922,7 @@ export class PlaybackController implements PlayerControls {
             }
             if (!current(written) || saved === attempt.autoNext) return;
             attempt.autoNext = saved;
+            if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
             if (!attempt.live) this.completionAutoNextChanged(attempt);
         }, () => {
             // A refused write. Apple's writer keeps the local value and retries, and a refusal shows only in Settings
@@ -1059,10 +1061,11 @@ export class PlaybackController implements PlayerControls {
         return true;
     }
 
-    private cancelCreditsCountdown(attempt: Attempt): void {
+    private cancelCreditsCountdown(attempt: Attempt, clearDeadline = true): void {
         attempt.offer.cancelCreditsTimer?.();
         attempt.offer.cancelCreditsTimer = undefined;
         attempt.offer.creditsCountdown = undefined;
+        if (clearDeadline) attempt.offer.creditsDeadline = undefined;
     }
 
     /** PlayerViewModel.startNextUpCountdownIfNeeded for `.credits`: fixed 10 s countdown while credits keep playing. */
@@ -1083,6 +1086,7 @@ export class PlaybackController implements PlayerControls {
         }
         if (attempt.offer.cancelCreditsTimer !== undefined) return;
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        attempt.offer.creditsDeadline = deadline;
         const tick = (): void => {
             if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || attempt.promptDismissed || this.completion !== undefined) {
                 this.cancelCreditsCountdown(attempt);
@@ -3329,8 +3333,8 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
-        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>, seconds = AUTOPLAY_COUNTDOWN_SECONDS): void {
+        const deadline = this.deps.clock.now() + seconds * 1000;
         const tick = (): void => {
             const view = this.current;
             if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
@@ -3457,7 +3461,11 @@ export class PlaybackController implements PlayerControls {
                     if (current() && this.current.phase === "completion" && this.current.state === "ready") this.show({ ...this.current, deck });
                 }, () => undefined);
                 if (current() && attempt.autoNext && !attempt.promptDismissed) {
-                    if (attempt.prompt !== undefined) this.playNext();
+                    if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined) {
+                        const remaining = Math.max(0, Math.ceil((attempt.offer.creditsDeadline - this.deps.clock.now()) / 1000));
+                        if (remaining > 0) this.startAutoplay(completion, remaining);
+                        else this.playNext();
+                    } else if (attempt.prompt !== undefined) this.playNext();
                     else this.startAutoplay(completion);
                 }
                 return;
@@ -3494,7 +3502,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         attempt.live = false;
-        this.cancelCreditsCountdown(attempt);
+        this.cancelCreditsCountdown(attempt, false);
         attempt.bufferingQuality.destroy();
         this.clearThumbnails(attempt);
         attempt.cancelTimer?.();
