@@ -1168,7 +1168,13 @@ export class PlaybackController implements PlayerControls {
                     }
                 }
             }
-            if (moved) this.updatePrompt(attempt);
+            if (moved) {
+                if (attempt.offer.credits && markerAt((attempt.markers?.segments ?? []).filter(segment => segment.kind === "credits"), attempt.sourceSeconds) === undefined) {
+                    attempt.offer.credits = false;
+                    this.cancelCreditsCountdown(attempt);
+                }
+                this.updatePrompt(attempt);
+            }
             this.finishSkipSeek(attempt, moved);
             this.showPlayback(attempt);
             // A switch that settled while this seek held the controls left its queued subtitle choice for now (#738).
