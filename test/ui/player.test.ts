@@ -3892,7 +3892,26 @@ test("Appearance opens as a 720px floating dialog defaulting to Style with Apple
         await page.locator('[data-focus="subtitle-appearance"]').focus();
         await remote(page, ENTER);
         assert.equal(await focused(page), "subtitle-appearance:backgroundStyle", "default focus lands on Style");
-        assert.equal(await page.locator(".player-appearance-dialog").evaluate(node => node.getBoundingClientRect().width), 720);
+        const dialogGeometry = await page.evaluate(() => {
+            const dialog = document.querySelector(".player-appearance-dialog")!.getBoundingClientRect();
+            const tabs = document.querySelector(".player-tabs")!.getBoundingClientRect();
+            const menu = document.querySelector(".player-menu")!.getBoundingClientRect();
+            const rowsEl = document.querySelector(".player-appearance-rows")!;
+            return {
+                width: dialog.width,
+                height: dialog.height,
+                top: dialog.top,
+                bottom: dialog.bottom,
+                tabsBottom: tabs.bottom,
+                menuTop: menu.top,
+                menuBottom: menu.bottom,
+                scrolls: rowsEl.scrollHeight > rowsEl.clientHeight,
+            };
+        });
+        assert.equal(dialogGeometry.width, 720);
+        assert.ok(dialogGeometry.height <= 336.5, `dialog fits inside the 380px panel's 336px inner height: ${JSON.stringify(dialogGeometry)}`);
+        assert.ok(dialogGeometry.top >= dialogGeometry.tabsBottom && dialogGeometry.top >= dialogGeometry.menuTop && dialogGeometry.bottom <= dialogGeometry.menuBottom, `dialog sits below the tab rail and inside the HUD panel: ${JSON.stringify(dialogGeometry)}`);
+        assert.equal(dialogGeometry.scrolls, true, "10 appearance rows scroll inside the constrained dialog");
         assert.equal(await page.locator(".player-appearance-eyebrow").textContent(), "SUBTITLE APPEARANCE");
         assert.equal(await page.locator(".player-appearance-title").textContent(), "Style and colors");
         assert.equal(await page.locator(".player-appearance-close").evaluate(node => node.getBoundingClientRect().width), 46);
