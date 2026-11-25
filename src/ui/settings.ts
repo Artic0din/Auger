@@ -769,6 +769,9 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 if (last.subtitleDetail !== undefined) body.appendChild(info("Subtitle mode", last.subtitleDetail));
                 if (last.position !== undefined) body.appendChild(info("Position", last.position));
                 if (last.rebuffers !== undefined && last.rebuffers > 0) body.appendChild(info("Rebuffers", String(last.rebuffers)));
+                if (last.hdrEnabled !== undefined) body.appendChild(info("HDR setting", last.hdrEnabled ? "On" : "Off"));
+                if (last.routeFallbacks !== undefined && last.routeFallbacks > 0) body.appendChild(info("Route fallbacks", String(last.routeFallbacks)));
+                if (last.avplayError !== undefined) body.appendChild(info("AVPlay error", last.avplayError));
                 if (last.status !== undefined) body.appendChild(info("Status", last.status));
                 if (last.diagnostics !== undefined && last.diagnostics.length > 0) body.appendChild(info("Diagnostics", last.diagnostics.join(" · ")));
                 if (last.error !== undefined) body.appendChild(info("Last error", last.error));

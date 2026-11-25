@@ -10,6 +10,7 @@ import {
     DIAGNOSTICS_REPORT_URL,
     DiagnosticsCollector,
     diagnosticsFingerprint,
+    diagnosticsPayload,
     formatDiscordDiagnostics,
     readRuntimeEnvironment,
     redactDiagnosticText,
@@ -581,7 +582,7 @@ test("DiagnosticsCollector captures runtime memory, source/subtitle telemetry, d
     // Opt-in auto-reporting persists delivered fingerprints only after success and distinguishes distinct app errors.
     collector.setAutoReportEnabled(true);
     assert.equal(storage.getItem("auger.diagnostics.autoReport"), "1");
-    collector.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
+    collector.recordPlaybackError("terminal", "source_unreadable", { positionSeconds: 754, durationSeconds: 7200 });
     const playbackFp = diagnosticsFingerprint(collector.snapshot(), undefined, "playback");
     assert.equal(collector.canAutoReport(playbackFp), true);
     // Failed attempt triggers cooldown without permanently suppressing the fingerprint.
@@ -605,8 +606,217 @@ test("DiagnosticsCollector captures runtime memory, source/subtitle telemetry, d
     // A fresh collector backed by the same storage restores opt-in and remembers previously delivered fingerprints.
     const reloaded = new DiagnosticsCollector({ appVersion: "0.3.0", tvModel: "QE65S95C", firmware: "1650" }, clock, storage);
     assert.equal(reloaded.autoReportEnabled, true);
-    reloaded.recordPlaybackError("terminal", "source_unreadable", 754, 7200);
+    reloaded.recordPlaybackError("terminal", "source_unreadable", { positionSeconds: 754, durationSeconds: 7200 });
     assert.equal(reloaded.canAutoReport(diagnosticsFingerprint(reloaded.snapshot(), undefined, "playback")), false, "persisted fingerprint dedup survives app restarts");
+});
+
+test("playback failure diagnostics capture AVPlay error codes, route fallbacks, HDR setting, distinct fingerprints, and strict Worker allowlisting", async () => {
+    const clock = fakeClock(Date.UTC(2026, 10, 25, 3, 0, 0));
+    const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "QE65S95C", firmware: "1650" }, clock);
+    collector.recordPlaybackStats(
+        {
+            nowPlaying: [],
+            playback: [{ label: "Playback", value: "Direct play · MKV" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Original HTTP" }],
+        },
+        {
+            source: { container: "mkv", videoCodec: "hevc", width: 3840, height: 2160, frameRate: 23.976, dynamicRange: "hdr10", dolbyVisionProfile: undefined },
+            hdrEnabled: true,
+            avplayError: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+            routeFallbacks: 1,
+        },
+    );
+    collector.recordPlaybackError("playback_failed", "", {
+        hdrEnabled: true,
+        avplayError: "prepareAsync:NotSupportedError",
+        routeFallbacks: 2,
+        positionSeconds: 15,
+        durationSeconds: 3600,
+    });
+
+    const snap = collector.snapshot();
+    assert.equal(snap.lastPlayback?.hdrEnabled, true);
+    assert.equal(snap.lastPlayback?.routeFallbacks, 2);
+    assert.equal(snap.lastPlayback?.avplayError, "prepareAsync:NotSupportedError");
+    assert.ok(snap.events.some(event => event.text.includes("error playback_failed (prepareAsync:NotSupportedError)")));
+
+    const url = buildDiagnosticsReportUrl(snap);
+    const decoded = decodeDiagnosticsReportHash(url.slice(url.indexOf("#")));
+    assert.equal(decoded?.play?.hdr, true);
+    assert.equal(decoded?.play?.fb, 2);
+    assert.equal(decoded?.play?.av, "prepareAsync:NotSupportedError");
+    const discord = formatDiscordDiagnostics(decoded!);
+    assert.ok(discord.includes("HDR setting: On"));
+    assert.ok(discord.includes("Route fallbacks: 2"));
+    assert.ok(discord.includes("AVPlay error: prepareAsync:NotSupportedError"));
+    const github = new URL(buildGitHubBugReportUrl(decoded!));
+    assert.ok(github.searchParams.get("playback-details")?.includes("AVPlay error: prepareAsync:NotSupportedError"));
+
+    // Distinct AVPlay error codes under playback_failed produce distinct fingerprints.
+    const fpNotSupported = diagnosticsFingerprint(snap, "playback", "playback");
+    collector.recordPlaybackError("playback_failed", "", { avplayError: "startup_timeout", routeFallbacks: 2, hdrEnabled: true });
+    const fpTimeout = diagnosticsFingerprint(collector.snapshot(), "playback", "playback");
+    assert.notEqual(fpNotSupported, fpTimeout, "different AVPlay failure codes must not collapse into the same fingerprint");
+
+    // Starting a new playback session prevents a pre-stats failure from inheriting the previous session's AVPlay error or fallbacks.
+    collector.beginPlaybackSession();
+    collector.recordPlaybackError("playback_failed", "");
+    assert.equal(collector.snapshot().lastPlayback?.avplayError, undefined, "new playback session must not inherit previous AVPlay error");
+    assert.equal(collector.snapshot().lastPlayback?.routeFallbacks, undefined, "new playback session must not inherit previous fallback count");
+    assert.equal(collector.snapshot().lastPlayback?.playback, undefined, "new playback session must not inherit previous playback summary");
+
+    // Generic redactor keeps LONG_TOKEN_PATTERN unconditional (even for PLAYER_ERROR_-prefixed strings),
+    // while trusted recordAvplayEvent preserves only explicitly allowlisted Samsung AVPlayError constants.
+    const genericRedacted = redactDiagnosticText("secret PLAYER_ERROR_SECRET_TOKEN_1234567890 and PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.ok(!genericRedacted.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"), genericRedacted);
+    assert.ok(!genericRedacted.includes("PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), genericRedacted);
+    collector.recordAvplayEvent("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", 1);
+    collector.recordAvplayEvent("PLAYER_ERROR_SECRET_TOKEN_1234567890", 2);
+    const avEvents = collector.snapshot().events.map(event => event.text);
+    assert.ok(avEvents.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), JSON.stringify(avEvents));
+    assert.ok(!avEvents.some(text => text.includes("PLAYER_ERROR_SECRET_TOKEN")), JSON.stringify(avEvents));
+    const serialized = diagnosticsPayload(collector.snapshot());
+    assert.ok(
+        serialized.log?.some(entry => entry.endsWith("[playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)")),
+        JSON.stringify(serialized.log),
+    );
+    collector.recordPlaybackError("playback_failed", "", { avplayError: "open:SecretToken12345678901234567890" });
+    assert.equal(collector.snapshot().lastPlayback?.avplayError, "open:error");
+
+    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    const openIssues: { number: number; body: string; comments: number }[] = [];
+    let nextIssue = 910;
+    const fakeFetch = async (target: string, init?: RequestInit): Promise<Response> => {
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "GET" && target.includes("/issues?state=open&labels=diagnostics")) {
+            return new Response(JSON.stringify(openIssues), { status: 200 });
+        }
+        if (method === "GET" && target.includes("/comments?per_page=10")) {
+            return new Response(JSON.stringify([]), { status: 200 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        posted.push({ url: target, body });
+        if (method === "POST" && target.endsWith("/issues")) {
+            const num = nextIssue++;
+            openIssues.push({ number: num, body: String(body.body ?? ""), comments: 0 });
+            return new Response(JSON.stringify({ number: num }), { status: 201 });
+        }
+        return new Response(JSON.stringify({ id: 1 }), { status: 201 });
+    };
+    const env = { GITHUB_TOKEN: "test-secret-not-real", GITHUB_REPO: "Artic0din/Auger-Tizen" };
+
+    const first = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.1" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", hdr: true, fb: 2, av: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT" },
+                log: [
+                    "03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)",
+                    "03:00:01 [app] leak PLAYER_ERROR_SECRET_TOKEN_1234567890",
+                    "03:00:02 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #123456789012345678901234567890)",
+                ],
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(first.status, 201);
+    const firstBody = String(posted[0]?.body.body ?? "");
+    assert.ok(firstBody.includes("| HDR setting | On |"));
+    assert.ok(firstBody.includes("| Route fallbacks | 2 |"));
+    assert.ok(firstBody.includes("| AVPlay error | PLAYER_ERROR_NOT_SUPPORTED_FORMAT |"));
+    assert.ok(firstBody.includes("03:00:00 [playback] avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"));
+    assert.ok(!firstBody.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"));
+    assert.ok(!firstBody.includes("123456789012345678901234567890"), "overlong numeric fallback suffix must be redacted");
+
+    // Same AVPlay code with HDR toggled Off posts a diff comment on #910 showing HDR setting change.
+    const hdrDiff = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.2" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", hdr: false, fb: 2, av: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT" },
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(hdrDiff.status, 200);
+    assert.deepEqual(await hdrDiff.json(), { ok: true, status: "updated", issueNumber: 910, reportId: "AUG-910" });
+    assert.ok(String(posted[1]?.body.body ?? "").includes("**HDR setting:** `On` → `Off`"));
+
+    // A second valid AVPlay code (startup_timeout) opens a separate issue (#911) distinct from PLAYER_ERROR_NOT_SUPPORTED_FORMAT (#910).
+    const secondValid = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.3" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", hdr: true, fb: 3, av: "startup_timeout" },
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(secondValid.status, 201);
+    assert.deepEqual(await secondValid.json(), { ok: true, status: "created", issueNumber: 911, reportId: "AUG-911" });
+    const secondValidBody = String(posted[2]?.body.body ?? "");
+    assert.ok(secondValidBody.includes("| AVPlay error | startup_timeout |"));
+
+    // Unrecognized PLAYER_ERROR_-prefixed or token-like raw av values are dropped at the Worker boundary (#912).
+    const droppedToken = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.4" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", av: "PLAYER_ERROR_SECRET_TOKEN_1234567890" },
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(droppedToken.status, 201);
+    assert.deepEqual(await droppedToken.json(), { ok: true, status: "created", issueNumber: 912, reportId: "AUG-912" });
+    const droppedBody = String(posted[3]?.body.body ?? "");
+    assert.ok(!droppedBody.includes("PLAYER_ERROR_SECRET_TOKEN_1234567890"), "unrecognized PLAYER_ERROR_* token must be dropped");
+    assert.ok(!droppedBody.includes("| AVPlay error |"));
+
+    const stageFallback = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "198.51.100.5" },
+            body: JSON.stringify({
+                v: 1,
+                app: "0.4.0",
+                tv: "QE65S95C",
+                cat: "playback",
+                play: { e: "playback_failed", av: "open:SecretToken12345678901234567890" },
+            }),
+        }),
+        env,
+        { fetch: fakeFetch },
+    );
+    assert.equal(stageFallback.status, 201);
+    const stageBody = String(posted[4]?.body.body ?? "");
+    assert.ok(!stageBody.includes("SecretToken12345678901234567890"));
+    assert.ok(stageBody.includes("| AVPlay error | open:error |"));
 });
 
 test("readRuntimeEnvironment formats Chromium memory, device RAM, and screen when present and omits missing metrics", () => {

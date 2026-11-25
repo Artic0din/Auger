@@ -82,6 +82,76 @@ export function sanitize(raw, maxLength = 140) {
   return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+/** Documented Samsung Tizen AVPlayError enum names (explicit allowlist; no wildcard regex). */
+const ALLOWED_AVPLAY_ERROR_CODES = new Set([
+  "PLAYER_ERROR_NONE",
+  "PLAYER_ERROR_INVALID_PARAMETER",
+  "PLAYER_ERROR_NO_SUCH_FILE",
+  "PLAYER_ERROR_INVALID_OPERATION",
+  "PLAYER_ERROR_SEEK_FAILED",
+  "PLAYER_ERROR_INVALID_STATE",
+  "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+  "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+  "PLAYER_ERROR_INVALID_URI",
+  "PLAYER_ERROR_CONNECTION_FAILED",
+  "PLAYER_ERROR_GENEREIC",
+  "PLAYER_ERROR_GENERIC",
+  "PLAYER_ERROR_DRM_INFO_ERROR",
+  "PLAYER_ERROR_INVALID_BUFFER",
+  "PLAYER_ERROR_NOT_SUPPORTED_SUBTITLE",
+  "PLAYER_ERROR_OUT_OF_MEMORY",
+]);
+const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
+const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
+  ...ALLOWED_APP_ERRORS,
+  "WebAPIException",
+  "InvalidAccessError",
+  "InvalidValuesError",
+  "NotFoundError",
+  "UnknownError",
+  "OperationNotSupportedError",
+  "failed",
+  "error",
+]);
+
+function sanitizeAvplayError(raw) {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "startup_timeout" || ALLOWED_AVPLAY_ERROR_CODES.has(trimmed)) return trimmed;
+  const colon = trimmed.indexOf(":");
+  if (colon <= 0) return undefined;
+  const stage = trimmed.slice(0, colon);
+  if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
+  const name = trimmed.slice(colon + 1);
+  return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
+}
+
+const TRUSTED_AVPLAY_LOG_PATTERN = /^(\d{2}:\d{2}:\d{2} \[playback\] (?:avplay |error [A-Za-z0-9_.: -]+ \())(PLAYER_ERROR_[A-Z_]+)(?:(\))| \(fallback #(\d{1,2})\))?$/;
+
+function sanitizeLogEntry(raw) {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  const match = TRUSTED_AVPLAY_LOG_PATTERN.exec(trimmed);
+  const code = match?.[2];
+  if (match && code && ALLOWED_AVPLAY_ERROR_CODES.has(code)) {
+    const prefix = match[1] ?? "";
+    const closeParen = match[3] ?? "";
+    const fallbackDigits = match[4];
+    let suffix = closeParen;
+    if (fallbackDigits !== undefined) {
+      const count = Number(fallbackDigits);
+      if (!Number.isInteger(count) || count < 1 || count > 20) return sanitize(raw, 120);
+      suffix = ` (fallback #${count})`;
+    }
+    const safePrefix = sanitize(prefix.trimEnd(), 120);
+    if (!safePrefix) return undefined;
+    const spacer = prefix.endsWith(" ") ? " " : "";
+    const rebuilt = `${safePrefix}${spacer}${code}${suffix}`;
+    return rebuilt.length <= 120 ? rebuilt : `${rebuilt.slice(0, 119).trimEnd()}…`;
+  }
+  return sanitize(raw, 120);
+}
+
 function nonNegInt(raw, max) {
   return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= max ? raw : undefined;
 }
@@ -142,6 +212,9 @@ export function validatePayload(raw) {
       sub: sanitize(raw.play.sub, 80),
       pos: sanitize(raw.play.pos, 24),
       rb: nonNegInt(raw.play.rb, 10000),
+      hdr: typeof raw.play.hdr === "boolean" ? raw.play.hdr : undefined,
+      av: sanitizeAvplayError(raw.play.av),
+      fb: nonNegInt(raw.play.fb, 20),
       n: notes.length > 0 ? notes : undefined,
       e: sanitize(raw.play.e, 120),
     };
@@ -149,7 +222,7 @@ export function validatePayload(raw) {
   }
 
   const log = Array.isArray(raw.log)
-    ? raw.log.map((item) => sanitize(item, 120)).filter(Boolean).slice(0, 12)
+    ? raw.log.map((item) => sanitizeLogEntry(item)).filter(Boolean).slice(0, 12)
     : [];
 
   const cat = typeof raw.cat === "string" && Object.hasOwn(CATEGORY_LABELS, raw.cat) ? raw.cat : undefined;
@@ -179,9 +252,10 @@ export function validatePayload(raw) {
 /** Deterministic issue grouping fingerprint: same app version, TV model, and error/playback signature. */
 export function computeFingerprint(payload) {
   const play = payload.play;
+  const playErr = play?.e === undefined ? undefined : play.av && play.e === "playback_failed" ? `${play.e}:${play.av}` : play.e;
   const sig = payload.err
     ? `app:${payload.err}`
-    : play?.e ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
+    : playErr ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
   return fnv1aHex([payload.app, payload.tv, sig].join("\n"));
 }
 
@@ -204,6 +278,9 @@ function stableState(payload) {
     s: play?.s,
     sub: play?.sub,
     rb: play?.rb,
+    hdr: play?.hdr,
+    av: play?.av,
+    fb: play?.fb,
     n: play?.n,
     e: play?.e,
     log: (payload.log ?? []).map(stripLogTimestamp),
@@ -244,11 +321,15 @@ const DIFF_FIELDS = [
   ["s", "Subtitles"],
   ["sub", "Subtitle mode"],
   ["rb", "Rebuffers"],
+  ["hdr", "HDR setting"],
+  ["fb", "Route fallbacks"],
+  ["av", "AVPlay error"],
   ["e", "Last error"],
 ];
 
 function formatFieldValue(key, value) {
   if (value === undefined || value === null || value === "") return "none";
+  if (key === "hdr" && typeof value === "boolean") return value ? "On" : "Off";
   if (key === "cat" && typeof value === "string" && Object.hasOwn(CATEGORY_LABELS, value)) {
     return CATEGORY_LABELS[value];
   }
@@ -362,6 +443,9 @@ export function formatGitHubIssue(payload) {
       p.sub ? `| Subtitle mode | ${p.sub} |` : undefined,
       p.pos ? `| Position | ${p.pos} |` : undefined,
       typeof p.rb === "number" && p.rb > 0 ? `| Rebuffers | ${p.rb} |` : undefined,
+      typeof p.hdr === "boolean" ? `| HDR setting | ${p.hdr ? "On" : "Off"} |` : undefined,
+      typeof p.fb === "number" && p.fb > 0 ? `| Route fallbacks | ${p.fb} |` : undefined,
+      p.av ? `| AVPlay error | ${p.av} |` : undefined,
       p.st ? `| Status | ${p.st} |` : undefined,
       p.n ? `| Diagnostics | ${p.n.join(" · ")} |` : undefined,
       p.e ? `| Last error | ${p.e} |` : undefined,
