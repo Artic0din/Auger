@@ -2271,6 +2271,51 @@ test("automatic intro and mid-file credits skips do not reset the Still Watching
     r.controller.destroy();
 });
 
+test("manual audio and subtitle selection resets the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    for (const action of ["audio", "subtitle"] as const) {
+        const r = await episodeRig(undefined, undefined, () => 1);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const ep2View = last(r.views);
+        assert.ok(ep2View.phase === "playing");
+        if (action === "audio") {
+            assert.equal(ep2View.tracks.audio.state, "ready");
+            const otherAudio = ep2View.tracks.audio.choices[1];
+            assert.ok(otherAudio !== undefined);
+            r.controller.selectAudio(otherAudio.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        } else {
+            r.controller.selectSubtitle(ep2View.tracks.subtitles[0]?.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        }
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, `manual ${action} selection resets Still Watching`);
+        r.controller.destroy();
+    }
+});
+
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");

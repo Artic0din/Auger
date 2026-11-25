@@ -1215,7 +1215,7 @@ export class PlaybackController implements PlayerControls {
             const pending = attempt.pendingSubtitle;
             if (pending !== undefined && !attempt.busy && !attempt.reporting && attempt.change.state !== "changing") {
                 attempt.pendingSubtitle = undefined;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
             }
         };
         try {
@@ -1334,12 +1334,18 @@ export class PlaybackController implements PlayerControls {
         if (!audioChoices(attempt, plan).some((choice) => choice.id === trackId)) {
             return;
         }
+        this.stillWatching.recordViewerAction();
         // Omitting a subtitle from a track_change turns it off, so the shown one is named again.
         const subtitle = chosenTracks(attempt, plan).subtitle;
         this.changeTracks(attempt, plan, { audio: { id: trackId }, ...(subtitle === undefined ? {} : { subtitle }) });
     }
 
     selectSubtitle(trackId: string | undefined): void {
+        this.stillWatching.recordViewerAction();
+        this.applySubtitleSelection(trackId);
+    }
+
+    private applySubtitleSelection(trackId: string | undefined): void {
         const reporting = this.active();
         if (reporting?.reporting) {
             const plan = reporting.plan;
@@ -1484,7 +1490,7 @@ export class PlaybackController implements PlayerControls {
         const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
         if (track !== undefined) {
             if (!attempt.started || attempt.busy || track.unplayable === true) return false;
-            this.selectSubtitle(track.trackId);
+            this.applySubtitleSelection(track.trackId);
             return true;
         }
         if (!attempt.started || attempt.busy) return false;
@@ -2168,7 +2174,7 @@ export class PlaybackController implements PlayerControls {
                     return;
                 }
                 attempt.busy = false;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
                 return;
             }
             attempt.subtitleRestore = { id: selectedSubtitle(next) };
@@ -2370,7 +2376,7 @@ export class PlaybackController implements PlayerControls {
         } else if (attempt.pendingSubtitle !== undefined && !attempt.busy) {
             const pending = attempt.pendingSubtitle;
             attempt.pendingSubtitle = undefined;
-            this.selectSubtitle(pending.id);
+            this.applySubtitleSelection(pending.id);
         }
         if (failure === undefined && (resolveCompletedSubtitle || resolveDownloadedSubtitle) && attempt.plan !== undefined && !attempt.busy) {
             this.applyPreparedSubtitleChoices(attempt, attempt.plan);
@@ -2516,6 +2522,7 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.active();
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined || attempt.hidden || attempt.restoring) return;
+        this.stillWatching.recordViewerAction();
         if (trackId === undefined) {
             this.clearSecondary(attempt);
             this.showPlayback(attempt);
@@ -2979,19 +2986,19 @@ export class PlaybackController implements PlayerControls {
             const track = plan.subtitle.inventory.find(track => track.syncKey === `stored-${resultId}`);
             if (track === undefined) attempt.ai?.notice("The completed subtitle is not in the refreshed inventory. Playback continues; try selecting it later.");
             else if (track.unplayable === true) attempt.ai?.notice(STORED);
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.pendingDownloadId !== undefined) {
             const id = attempt.pendingDownloadId;
             attempt.pendingDownloadId = undefined;
             const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
             if (track === undefined || track.unplayable === true) attempt.search?.reportUnselected();
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.queuedSubtitle !== undefined) {
             const queued = attempt.queuedSubtitle;
             attempt.queuedSubtitle = undefined;
-            this.selectSubtitle(queued.id);
+            this.applySubtitleSelection(queued.id);
         }
     }
 
