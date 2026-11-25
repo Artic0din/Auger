@@ -244,6 +244,33 @@ export const CASES = [
     },
   },
   {
+    name: "a different source plan keeps its codec, range and resolution in the follow-up",
+    async run(handleRequest) {
+      const gh = fakeGitHub();
+      const prior = cappedHlsBeforeOpen;
+      await send(handleRequest, gh, report(prior, "auto"));
+      const pl = { ...prior.pl, vc: "h.264", res: "1920x1080", dr: "hdr10plus", pr: "https", ct: "mp4", q: "1080p", kbps: 12000 };
+      const next = report({ ...prior, pl }, "manual");
+      equal((await send(handleRequest, gh, next)).json.status, "updated", "source-only change");
+      const body = gh.comments()[0].body.body;
+      for (const [label, from, to] of [
+        ["Video codec", "hevc", "h.264"], ["Resolution", "3840x2160", "1920x1080"], ["Dynamic range", "hdr10", "hdr10plus"],
+        ["Protocol", "hls", "https"], ["Container", "hls", "mp4"], ["Stream quality", "720p", "1080p"], ["Source bitrate (kbps)", "24000", "12000"],
+      ]) includes(body, `**${label}:** \`${from}\` → \`${to}\``, label);
+      equal((await send(handleRequest, gh, next)).json.status, "duplicate", "same evidence");
+    },
+  },
+  {
+    name: "intermediate AVPlay exceptions retain the method and exception name",
+    async run(handleRequest) {
+      const gh = fakeGitHub();
+      const base = avplayAt("avplay_prepare", "PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+      const inc = { ...base, t: [...base.t, "avplay_prepare:fallback:prepareAsync:InvalidAccessError"] };
+      await send(handleRequest, gh, report(inc, "auto"));
+      includes(gh.created()[0].body.body, "fallback · prepareAsync:InvalidAccessError", "full exception in event sequence");
+    },
+  },
+  {
     name: "a changed device or server updates the same incident once",
     async run(handleRequest) {
       const gh = fakeGitHub();
@@ -624,6 +651,53 @@ export const CASES = [
 
       const bare = fakeGitHub([seed(606, { e: "session_expired" }, deployedLegacyFingerprint(APP, TV, "session_expired"))]);
       equal((await send(handleRequest, bare, report(sessionMissing, "auto"))).status, 201, "bare legacy session_expired stays separate");
+    },
+  },
+  {
+    name: "concurrent equivalent legacy and current reports create one issue",
+    async run(handleRequest) {
+      const legacy = { v: 1, app: APP, tv: TV, play: { e: "terminal: session_expired" } };
+      const current = report(sessionExpiredAtStart, "auto");
+      for (const pair of [[legacy, current], [current, legacy]]) {
+        const gh = fakeGitHub();
+        const results = await Promise.all(pair.map(payload => send(handleRequest, gh, payload)));
+        equal(gh.created().length, 1, "one creation");
+        equal(results[0].json.issueNumber, results[1].json.issueNumber, "same destination");
+      }
+    },
+  },
+  {
+    name: "an exact incident wins over a verified legacy match on an earlier page",
+    async run(handleRequest) {
+      const gh = fakeGitHub();
+      const current = report(sessionExpiredAtStart, "auto");
+      const legacy = { v: 1, app: APP, tv: TV, play: { e: "terminal: session_expired" } };
+      const legacyGh = fakeGitHub();
+      await send(handleRequest, legacyGh, legacy);
+      const created = await send(handleRequest, gh, current);
+      gh.issues.push({ ...legacyGh.issues[0], number: 901 });
+      let unavailable = false;
+      const destination = { fetch: async (url, init) => {
+        if (url.endsWith("&page=2")) {
+          return unavailable ? new Response(null, { status: 503 }) : new Response(JSON.stringify(gh.issues));
+        }
+        if (url.includes("?state=open")) {
+          return new Response(JSON.stringify([gh.issues.find(issue => issue.number === 901)]), {
+            headers: { Link: `<${url}&page=2>; rel="next"` },
+          });
+        }
+        return gh.fetch(url, init);
+      } };
+      const next = { ...current, fw: "1660" };
+      const updated = await send(handleRequest, destination, next);
+      equal(updated.json.status, "updated", "updated exact match");
+      equal(updated.json.issueNumber, created.json.issueNumber, "preferred current issue");
+      unavailable = true;
+      const fallback = await send(handleRequest, destination, { ...next, fw: "1670" });
+      equal(fallback.json.issueNumber, 901, "verified legacy issue used when the next page is unavailable");
+      equal(fallback.json.status, "updated", "follow-up reached the verified issue");
+      const noMatch = await send(handleRequest, destination, report(cappedHlsBeforeOpen, "auto"));
+      equal(noMatch.status, 502, "incomplete lookup without a verified match remains an error");
     },
   },
   {

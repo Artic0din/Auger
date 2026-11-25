@@ -166,21 +166,18 @@ function nextLinkUrl(linkHeader) {
 async function findMatchingOpenIssue(fetchFn, repo, token, candidates) {
   let nextUrl = `https://api.github.com/repos/${repo}/issues?state=open&labels=diagnostics&per_page=100`;
   let best;
+  const interrupted = (status) => best ? { ok: true, issue: best.issue } : { ok: false, status };
   for (let page = 0; page < MAX_ISSUE_LOOKUP_PAGES && nextUrl; page++) {
     let response;
-    try {
-      response = await fetchFn(nextUrl, { method: "GET", headers: githubHeaders(token) });
-    } catch {
-      return { ok: false, status: 502 };
-    }
-    if (!response.ok) return { ok: false, status: response.status };
     let issues;
     try {
+      response = await fetchFn(nextUrl, { method: "GET", headers: githubHeaders(token) });
+      if (!response.ok) return interrupted(response.status);
       issues = await response.json();
     } catch {
-      return { ok: false, status: 502 };
+      return interrupted(502);
     }
-    if (!Array.isArray(issues)) return { ok: false, status: 502 };
+    if (!Array.isArray(issues)) return interrupted(502);
     for (const entry of issues) {
       if (!entry || typeof entry !== "object" || entry.pull_request || typeof entry.body !== "string" || typeof entry.number !== "number") continue;
       const limit = best === undefined ? candidates.length : best.rank;
@@ -281,7 +278,7 @@ export async function handleRequest(request, env, deps = {}) {
   const issue = formatIssue(record);
   const candidates = lookupCandidates(record);
 
-  return serializeByFingerprint(candidates[0].marker, async () => {
+  const writeIssue = async () => {
     const lookup = await findMatchingOpenIssue(fetchFn, repo, env.GITHUB_TOKEN, candidates);
     if (!lookup.ok) {
       return jsonResponse({ ok: false, error: "github_error", status: lookup.status }, 502);
@@ -340,7 +337,10 @@ export async function handleRequest(request, env, deps = {}) {
       issueNumber,
       reportId: issueNumber !== undefined ? `AUG-${issueNumber}` : "AUG-SENT",
     }, 201);
-  });
+  };
+  // Within this isolate, take the preferred marker first and its legacy alias second.
+  return serializeByFingerprint(candidates[0].marker, () =>
+    candidates[1] ? serializeByFingerprint(candidates[1].marker, writeIssue) : writeIssue());
 }
 
 export default {

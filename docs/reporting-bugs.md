@@ -11,6 +11,7 @@ Problems that also happen in the web app usually belong in [silo-server](https:/
 ## Fastest way: send a Diagnostics report straight from Auger
 
 Auger can gather your TV model, firmware/Tizen version, JS heap memory and uptime, Auger version, Silo server version, source and transcoded playback stats (including subtitle mode and delivery, HDR setting, route fallback count, and native Samsung AVPlay error codes), rebuffer count, and recent redacted events automatically.
+A recovered playback report means the player’s clock advanced after the retry while playback was running.
 Server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
 
 1. Open your **Profile** icon (top-right of Auger) → **Settings** → **Diagnostics**.

@@ -33,6 +33,9 @@ The relay returns HTTP 422 `not_auto_reportable` for other automatic submissions
 
 Each marker hit is checked against the issue's embedded state before reuse, so a hash collision files a new issue.
 An incident reuses a legacy issue only when the legacy signature names one failure (a start refusal reason, or a stage-qualified AVPlay error with matching first and last codes) and that issue's recorded events agree.
+When both matches exist, the relay prefers the current incident marker.
+If a later GitHub page fails, it uses the best match already verified or returns an error if it has none.
+Concurrent requests in one Worker isolate share the legacy marker lock while matching and writing equivalent reports.
 Generic legacy signatures such as a bare `playback_failed` or `session_expired` never absorb a current incident.
 Existing titles and historical evidence are left untouched; reuse adds a comment.
 

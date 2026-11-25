@@ -1,3 +1,4 @@
+import { DISPLAY_CODECS, publicHudMethod, publicHudVideo, publicHudRange } from "../../shared/diagnostics-media.js";
 // v1 (installed-client) report intake. Old clients send redacted free text; the relay republishes only
 // values it recognizes field by field. Unrecognized text is discarded, never truncated into the issue.
 // The legacy grouping fingerprint is still computed exactly as before so old clients keep matching their open issues.
@@ -59,10 +60,9 @@ const tokens = (tests) => (raw) => {
 };
 
 const CONTAINER_TOKENS = ["MKV", "MATROSKA", "MP4", "M4V", "MOV", "QUICKTIME", "TS", "MPEGTS", "MPEG-TS", "M2TS", "AVI", "WEBM", "FMP4"];
-const CODEC_TOKENS = ["HEVC", "H265", "H.265", "HVC1", "HEV1", "H264", "H.264", "AVC", "AVC1", "AVC3", "AV1", "AV01", "VP9", "VP09", "VP8", "MPEG2", "MPEG-2", "MPEG2VIDEO", "MPEG4", "MPEG-4", "VC1", "VC-1"];
 const RANGE_TOKENS = ["SDR", "HDR10", "HDR10+", "HDR10_PLUS", "HDR10PLUS", "HLG", "DOLBY_VISION", "Dolby Vision"];
 const containerToken = oneOf(CONTAINER_TOKENS);
-const codecToken = oneOf(CODEC_TOKENS);
+const codecToken = oneOf(DISPLAY_CODECS);
 const rangeToken = (part) => oneOf(RANGE_TOKENS)(part) ?? anchored(/^(?:DV P\d{1,2}|Dolby Vision Profile \d{1,2})$/)(part);
 const bitrateToken = anchored(/^\d{1,6}(?:\.\d)? (?:Mbps|Kbps)$/);
 const clock = String.raw`\d{1,3}(?::\d{2}){1,2}`;
@@ -72,9 +72,7 @@ const sourceVideoToken = (part) => {
   if (!codecToken(codec)) return false;
   return rest.every((piece) => /^\d{2,5}x\d{2,5}$/.test(piece) || /^\d{1,3}(?:\.\d{1,2})?fps$/.test(piece));
 };
-const hudVideoToken = (part) => codecToken(part) || /^\d{2,5}[×x]\d{2,5}$/.test(part) || /^\d{1,3}(?:\.\d{1,3})? fps$/.test(part) || Boolean(bitrateToken(part));
 
-const RANGE_LABEL = String.raw`(?:SDR|HDR10\+?|HLG|Dolby Vision(?: Profile \d{1,2}(?:\.\d)?)?)`;
 
 /** Field-by-field allowlist for v1 values, shared by intake and by rendering values read back from older issues. */
 export const LEGACY_FIELD_CHECKS = {
@@ -87,11 +85,11 @@ export const LEGACY_FIELD_CHECKS = {
   scr: anchored(/^\d{3,5}x\d{3,5}$/),
   cat: oneOf(CATEGORY_IDS),
   err: oneOf(APP_ERROR_NAMES),
-  m: anchored(/^(?:Direct play|Direct Play|Direct stream|Remuxed|Remuxed by the server|Transcoded|Transcoded by the server)(?: · (?:MKV|MP4|M4V|MOV|MPEG-TS|TS|AVI|WEBM))?$/),
+  m: publicHudMethod,
   d: oneOf(["Original", "Original HTTP", "Server Remux", "Server Remux HLS", "Server Transcode HLS"]),
   st: oneOf(["Playing", "Paused", "Rebuffering", "Reconnecting", "Seeking", "Stalled", "Ended", "Error", "Failed"]),
-  dr: anchored(new RegExp(String.raw`^${RANGE_LABEL}(?: → (?:${RANGE_LABEL}|Profile 8\.1))?(?: \(unconfirmed\))?$`)),
-  v: tokens([hudVideoToken]),
+  dr: publicHudRange,
+  v: publicHudVideo,
   src: tokens([containerToken, sourceVideoToken, rangeToken, bitrateToken, durationToken]),
   tr: tokens([oneOf(["HTTP", "HLS", "DASH"]), containerToken, anchored(/^(?:\d{3,4}p|4K|Original|Auto)$/)]),
   sub: (raw) => {

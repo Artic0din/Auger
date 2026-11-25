@@ -40,6 +40,33 @@ test("redactDiagnosticText strips URLs, IPs, query strings, and token-like secre
     assert.ok(redacted.includes("<redacted>"), redacted);
 });
 
+test("source metadata is allowlisted before report submission and QR encoding", async () => {
+    const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "Samsung TV" }, fakeClock(0));
+    const privateText = "Family recital rehearsal";
+    const details = {
+        source: { container: privateText, videoCodec: privateText, width: 1920, height: 1080, frameRate: 24, dynamicRange: privateText, dolbyVisionProfile: undefined },
+        streamContainer: privateText, streamProtocol: privateText, activeQuality: privateText,
+    };
+    collector.recordPlaybackStats({ nowPlaying: [], stream: [], engine: [{ label: "Delivery", value: "Original HTTP" }],
+        playback: [{ label: "Playback", value: `Direct play · ${privateText}` }, { label: "Video", value: privateText }, { label: "Dynamic range", value: privateText }],
+    }, details);
+    assert.equal(collector.snapshot().lastPlayback?.playback, `Direct play · ${privateText}`, "the local HUD retains its display text");
+    collector.recordPlaybackError("playback_failed", "", details);
+    const snapshot = collector.snapshot();
+    for (const auto of [false, true]) {
+        let posted = "";
+        await sendDiagnosticsReport(snapshot, async (_url, init) => {
+            posted = String(init.body);
+            return new Response(JSON.stringify({ ok: true, status: "created", reportId: "AUG-1" }));
+        }, { category: "playback", auto });
+        assert.ok(posted.includes("1920x1080"));
+        assert.ok(!posted.toLowerCase().includes(privateText.toLowerCase()));
+    }
+    const qr = decodeDiagnosticsReportHash(new URL(buildDiagnosticsReportUrl(snapshot, DIAGNOSTICS_REPORT_URL, 4096)).hash);
+    assert.ok(qr);
+    assert.ok(!JSON.stringify(qr).toLowerCase().includes(privateText.toLowerCase()));
+});
+
 test("both submissions omit free-form HUD warnings from the complete outgoing body", async () => {
     const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "Samsung TV" }, fakeClock(42));
     const privateWarning = "Family recital rehearsal";

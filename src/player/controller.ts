@@ -910,7 +910,7 @@ export class PlaybackController implements PlayerControls {
                 videoCodec: plan.source.videoCodec,
                 width: plan.source.width,
                 height: plan.source.height,
-                dynamicRange: plan.source.dolbyVisionProfile !== undefined ? `dv_p${plan.source.dolbyVisionProfile}` : plan.source.dynamicRange,
+                dynamicRange: plan.source.dolbyVisionProfile !== undefined ? "dolby_vision" : plan.source.dynamicRange,
                 startSeconds: plan.timeline.sourceStartSeconds,
                 // Before adoption the position is the received plan's own start, not the plan it would replace.
                 atSeconds: attempt.plan === undefined ? plan.timeline.sourceStartSeconds : attempt.sourceSeconds,
@@ -2825,35 +2825,29 @@ export class PlaybackController implements PlayerControls {
             enterStage(attempt.trace, "media_token");
             try {
                 token = await this.deps.session.mediaToken(attempt.signal);
-                reachedStage(attempt.trace, "media_token");
             } catch (error) {
-                noteApiError(attempt.trace, error);
                 if (transport === this.transport && attempt.live) {
+                    noteApiError(attempt.trace, error);
                     this.fail(attempt, startFailure(error), true);
                 }
                 return;
             }
-            if (transport !== this.transport || !attempt.live) {
-                return;
-            }
-            url = `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
+            if (transport !== this.transport || !attempt.live) return;
+            reachedStage(attempt.trace, "media_token");
         }
         if (attempt.hidden || attempt.restoring) {
             attempt.deferredOpen = true;
             return;
         }
         enterStage(attempt.trace, "playlist_check");
-        if (await this.playlistUnreadable(attempt, plan, url)) {
-            if (transport === this.transport && attempt.live) {
-                traceFailure(attempt.trace, "fail", "hls_playlist_unreadable");
-                this.fail(attempt, { kind: "playback_failed" }, true);
-            }
+        const unreadable = await this.playlistUnreadable(attempt, plan, url);
+        if (transport !== this.transport || !attempt.live) return;
+        if (unreadable) {
+            traceFailure(attempt.trace, "fail", "hls_playlist_unreadable");
+            this.fail(attempt, { kind: "playback_failed" }, true);
             return;
         }
         reachedStage(attempt.trace, "playlist_check");
-        if (transport !== this.transport || !attempt.live) {
-            return;
-        }
         if (attempt.hidden || attempt.restoring) {
             attempt.deferredOpen = true;
             return;
@@ -2936,11 +2930,9 @@ export class PlaybackController implements PlayerControls {
             attempt.started = true;
             attempt.presented = true;
             attempt.resuming = false;
-            if (tracePlaying(attempt.trace)) {
-                // The recovered chain is published as it stood; later steps belong to the next chain.
-                attempt.trace.frozen = this.traceOf(attempt);
-                attempt.trace.steps.length = 0;
-            }
+            reachedStage(attempt.trace, "avplay_play");
+            enterStage(attempt.trace, "playing");
+            attempt.trace.buffering = false;
             this.finishSkipSeek(attempt, true);
             if (attempt.recovery?.active === true) attempt.recovery.recovered(this.deps.clock.now());
             if (attempt.cancelTimer === undefined) {
@@ -3006,6 +2998,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private listen(attempt: Attempt, transport: number): AVPlayListener {
+        let advanced = false;
         const current = (): boolean => transport === this.transport && attempt.live;
         return {
             onbufferingstart: () => {
@@ -3024,7 +3017,15 @@ export class PlaybackController implements PlayerControls {
             oncurrentplaytime: (milliseconds) => {
                 const plan = attempt.plan;
                 if (current() && attempt.started && (!attempt.busy || changeHoldsBusy(attempt) || attempt.reporting) && plan !== undefined) {
+                    const previousSeconds = attempt.sourceSeconds;
                     attempt.sourceSeconds = milliseconds / 1000 + plan.timeline.timelineOffsetSeconds;
+                    if (!advanced && !attempt.paused && this.pending.seek === undefined && attempt.trace.stage === "playing" && attempt.sourceSeconds > previousSeconds) {
+                        advanced = true;
+                        if (tracePlaying(attempt.trace)) {
+                            attempt.trace.frozen = this.traceOf(attempt);
+                            attempt.trace.steps.length = 0;
+                        }
+                    }
                     const marker = markerAt(attempt.markers?.segments ?? [], attempt.sourceSeconds);
                     if (!attempt.busy && marker !== undefined && !attempt.skippedMarkers.has(marker) && ((marker.kind === "intro" && attempt.introMode === "always") || (marker.kind === "credits" && attempt.skipCredits))) {
                         attempt.skippedMarkers.add(marker);

@@ -1,3 +1,4 @@
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES } from "../shared/diagnostics-media.js";
 import type { PlaybackError } from "./player/controller.ts";
 
 /** Ordered playback stages a single attempt passes through; recovery stages follow a failure. */
@@ -170,11 +171,7 @@ const FAILURE_CODES = new Set([
     "avplay_prepare_failed", "avplay_open_failed", "avplay_play_failed", "avplay_resume_seek_failed",
     "avplay_playback_error", "avplay_startup_timeout", "version_unavailable", "subtitle_selection_unavailable",
 ]);
-const PROTOCOLS = new Set(["http", "https", "hls", "http_progressive"]);
-const CONTAINERS = new Set(["mkv", "matroska", "webm", "mp4", "mov", "mpegts", "ts", "fmp4", "avi", "hls"]);
-const QUALITIES = new Set(["auto", "original", "2160p", "1080p", "720p", "480p", "360p"]);
-const VIDEO_CODECS = new Set(["h264", "h.264", "avc", "avc1", "h265", "h.265", "hevc", "av1", "vp9", "mpeg2video", "mpeg4"]);
-const DYNAMIC_RANGES = new Set(["sdr", "hdr", "hdr10", "hdr10plus", "hdr10+", "hlg", "dv", "dolby_vision"]);
+export const QUALITIES = ["auto", "original", "2160p", "1080p", "720p", "480p", "360p"];
 const MAX_STEPS = 16;
 const MAX_COUNT = 99;
 const DELIVERIES = new Set(["original_http", "server_remux_progressive", "server_remux_hls", "server_transcode_hls", "unknown"]);
@@ -188,10 +185,10 @@ export function cleanIncidentCode(raw: string | undefined): string | undefined {
     return FAILURE_CODES.has(raw) || /^http_[1-5]\d{2}$/.test(raw) ? raw : undefined;
 }
 
-function token(raw: string | undefined, allowed: ReadonlySet<string>): string | undefined {
+export function publicMediaToken(raw: string | undefined, allowed: readonly string[]): string | undefined {
     if (raw === undefined) return undefined;
     const lowered = raw.trim().toLowerCase();
-    return allowed.has(lowered) ? lowered : undefined;
+    return allowed.includes(lowered) ? lowered : undefined;
 }
 
 function count(value: number): number {
@@ -282,17 +279,17 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
             : fallbacks + reconnects + trace.resends === 0 ? "none" : "attempted";
     const plan = trace.plan;
     const dl = plan === undefined ? undefined : DELIVERIES.has(plan.delivery) ? plan.delivery : "unknown";
-    const pr = token(plan?.protocol, PROTOCOLS);
-    const ct = token(plan?.container, CONTAINERS);
-    const q = token(plan?.quality, QUALITIES);
+    const pr = publicMediaToken(plan?.protocol, PROTOCOLS);
+    const ct = publicMediaToken(plan?.container, CONTAINERS);
+    const q = publicMediaToken(plan?.quality, QUALITIES);
     const kbps = plan?.sourceKbps !== undefined && Number.isFinite(plan.sourceKbps) && plan.sourceKbps > 0 ? Math.min(Math.round(plan.sourceKbps), 1_000_000) : undefined;
-    const vc = token(plan?.videoCodec, VIDEO_CODECS);
+    const vc = publicMediaToken(plan?.videoCodec, VIDEO_CODECS);
     const res = plan?.width !== undefined && plan.height !== undefined && Number.isInteger(plan.width) && Number.isInteger(plan.height) && plan.width > 0 && plan.height > 0 && plan.width <= 16384 && plan.height <= 16384
         ? `${plan.width}x${plan.height}`
         : undefined;
-    const dr = token(plan?.dynamicRange, DYNAMIC_RANGES);
+    const dr = publicMediaToken(plan?.dynamicRange, DYNAMIC_RANGES);
     const settings = trace.settings;
-    const settingQuality = settings === undefined ? undefined : token(settings.quality, QUALITIES) ?? "unknown";
+    const settingQuality = settings === undefined ? undefined : publicMediaToken(settings.quality, QUALITIES) ?? "unknown";
     const cap = settings?.capKbps !== undefined && Number.isFinite(settings.capKbps) && settings.capKbps > 0 ? Math.min(Math.round(settings.capKbps), 1_000_000) : "none";
     const requestPos = seconds(trace.request.startSeconds);
     const steps = trace.steps.map(cleanTraceStep).filter((step): step is string => step !== undefined).slice(-MAX_STEPS);

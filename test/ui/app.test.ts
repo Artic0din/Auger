@@ -2567,6 +2567,42 @@ test("a secure-platform startup failure has a focused retry and can recover", as
     }
 });
 
+appTest("a new profile cannot send an incident recorded before the switch", async (tv, playback) => {
+    const reports: { inc?: { stage: string }; play?: { e?: string } }[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        reports.push(route.request().postDataJSON());
+        await route.fulfill({ json: { ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" } });
+    });
+    await signIn(tv);
+    playback.next.push({ terminal: "session_expired" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+
+    const sendFromSettings = async (): Promise<void> => {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
+        await tv.page.getByText(/AUG-902/).first().waitFor();
+    };
+    await sendFromSettings();
+    assert.equal(reports[0]?.inc?.stage, "start");
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await sendFromSettings();
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1]?.inc, undefined);
+    assert.equal(reports[1]?.play?.e, undefined);
+});
+
 appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
     const autoPayloads: string[] = [];
     await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
@@ -2614,8 +2650,11 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
     await tv.eventually(async () => autoPayloads.length === 1, "opt-in automatic error report posted");
-    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string } };
+    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string }; inc?: { stage: string; pl: unknown; open: boolean } };
     assert.equal(autoJson.auto, true);
+    assert.equal(autoJson.inc?.stage, "start");
+    assert.equal(autoJson.inc.pl, "not_reached");
+    assert.equal(autoJson.inc.open, false);
     assert.equal(autoJson.play?.e, "terminal: source_unreadable");
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();

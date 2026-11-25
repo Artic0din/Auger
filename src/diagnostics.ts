@@ -1,3 +1,4 @@
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, publicHudMethod, publicHudRange, publicHudVideo } from "../shared/diagnostics-media.js";
 import type { Clock } from "./api/clock.ts";
 import { systemClock } from "./api/clock.ts";
 import type { PlanSource } from "./contracts/v2/playback.ts";
@@ -7,6 +8,8 @@ import type { PlaybackError } from "./player/controller.ts";
 import {
     ALLOWED_AVPLAY_ERROR_CODES,
     cleanAvplayError,
+    publicMediaToken,
+    QUALITIES,
     type DiagnosticsIncidentPayload,
     type IncidentCategory,
     incidentAutoEligible,
@@ -324,15 +327,13 @@ function formatApproxSize(durationSeconds: number, bitrateKbps: number): string 
 function formatSourceSummary(details: DiagnosticsPlanDetails): string | undefined {
     const src = details.source;
     if (src === undefined) return undefined;
-    const container = src.container?.trim().toUpperCase();
-    const codec = src.videoCodec?.trim().toUpperCase();
+    const container = publicMediaToken(src.container, CONTAINERS)?.toUpperCase();
+    const codec = publicMediaToken(src.videoCodec, VIDEO_CODECS)?.toUpperCase();
     const res = src.width !== undefined && src.width > 0 && src.height !== undefined && src.height > 0 ? `${src.width}x${src.height}` : undefined;
     const fps = src.frameRate !== undefined && Number.isFinite(src.frameRate) && src.frameRate > 0 ? `${src.frameRate.toFixed(2).replace(/\.?0+$/, "")}fps` : undefined;
     const dr = src.dolbyVisionProfile !== undefined
         ? `DV P${src.dolbyVisionProfile}`
-        : src.dynamicRange !== undefined && src.dynamicRange.trim() !== ""
-            ? src.dynamicRange.trim().toUpperCase()
-            : undefined;
+        : publicMediaToken(src.dynamicRange, DYNAMIC_RANGES)?.toUpperCase();
     const bitrate = details.sourceBitrateKbps !== undefined && details.sourceBitrateKbps > 0 ? formatBitrate(details.sourceBitrateKbps) : undefined;
     const duration = details.durationSeconds !== undefined && details.durationSeconds > 0 ? formatClockTime(details.durationSeconds) : undefined;
     const approxSize = details.durationSeconds !== undefined && details.sourceBitrateKbps !== undefined
@@ -353,9 +354,9 @@ function formatStreamSummary(details: DiagnosticsPlanDetails): string | undefine
         ? "HTTP"
         : details.streamProtocol === "hls"
             ? "HLS"
-            : details.streamProtocol?.toUpperCase();
-    const container = details.streamContainer?.trim().toUpperCase();
-    const quality = details.activeQuality?.trim();
+            : publicMediaToken(details.streamProtocol, PROTOCOLS)?.toUpperCase();
+    const container = publicMediaToken(details.streamContainer, CONTAINERS)?.toUpperCase();
+    const quality = publicMediaToken(details.activeQuality, QUALITIES);
     const parts = [protocol, container, quality].filter((part): part is string => part !== undefined && part !== "");
     return parts.length === 0 ? undefined : cleanOptional(parts.join(" · "), 64);
 }
@@ -414,9 +415,9 @@ function payloadFromSnapshot(
         const notes = (lastPlayback.diagnostics ?? [])
             .filter(line => PUBLIC_PLAYBACK_NOTES.has(line))
             .slice(0, noteLimit);
-        const m = cleanOptional(lastPlayback.playback, 64);
-        const v = cleanOptional(lastPlayback.video, 72);
-        const dr = cleanOptional(lastPlayback.dynamicRange, 40);
+        const m = publicHudMethod(lastPlayback.playback);
+        const v = publicHudVideo(lastPlayback.video);
+        const dr = publicHudRange(lastPlayback.dynamicRange);
         const d = cleanOptional(lastPlayback.delivery, 48);
         const st = cleanOptional(lastPlayback.status, 32);
         const src = includeExtended ? cleanOptional(lastPlayback.source, 110) : undefined;
@@ -1126,7 +1127,7 @@ export class DiagnosticsCollector {
         this.sessionHasPlayback = true;
         if (planChanged) {
             this.lastPlanSignature = signature;
-            const summary = [next.playback, next.delivery === undefined ? undefined : `(${next.delivery})`, next.video].filter(Boolean).join(" ");
+            const summary = [publicHudMethod(next.playback), next.delivery === undefined ? undefined : `(${next.delivery})`, publicHudVideo(next.video)].filter(Boolean).join(" ");
             this.pushEvent("playback", `plan ${summary}`);
         }
         this.emit();

@@ -4237,6 +4237,8 @@ test("a start resend honors Retry-After and keeps its operation identity", async
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
     assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
     const trace = r.controller.incidentTrace();
     assert.ok(trace);
     const incident = playbackIncident(trace);
@@ -5584,6 +5586,36 @@ test("a playback start refused with session_expired reports the start decision w
     r.controller.destroy();
 });
 
+test("a replacement that fails before its playhead advances keeps the original incident", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    await finishReplacement(r);
+    r.avplay.tick(r.avplay.positionMs);
+    assert.equal(r.controller.incidentTrace()?.shown, false);
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    const trace = r.controller.incidentTrace();
+    assert.equal(trace?.first?.code, "prepareAsync:UnknownError");
+    assert.equal(trace?.recovered, false);
+    assert.equal(trace?.chain, 0);
+    r.controller.destroy();
+});
+
+test("a Dolby Vision profile keeps the source range in the serialized incident", async () => {
+    const r = await rig();
+    r.server.next.push({ dolbyVisionProfile: 8 });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace?.plan);
+    const plan = playbackIncident(trace, { kind: "playback_failed" })?.pl;
+    assert.ok(plan && plan !== "not_reached");
+    assert.equal(plan.dr, "dolby_vision");
+    r.controller.destroy();
+});
+
 test("an AVPlay prepare failure that a fallback route recovers keeps its first code and never files automatically", async () => {
     const r = await rig();
     r.controller.play(MOVIE);
@@ -5597,6 +5629,17 @@ test("an AVPlay prepare failure that a fallback route recovers keeps its first c
         await r.h.clock.advance(0);
     }
     assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.controller.setPaused(true);
+    r.controller.seekToSeconds(30);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.avplay.tick(30000);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "a paused seek is not playback progress");
+    r.controller.setPaused(false);
+    r.avplay.tick(30000);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "the seek target alone is not progress");
+    r.avplay.tick(r.avplay.positionMs + 1000);
     const trace = r.controller.incidentTrace();
     assert.ok(trace !== undefined);
     assert.equal(trace.recovered, true);
@@ -5652,6 +5695,8 @@ test("a progress 404 names the missing session as the first failure, and a later
     assert.equal(pending.reconnects, 1);
     await finishReplacement(r);
 
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
     const recovered = r.controller.incidentTrace();
     assert.ok(recovered !== undefined && recovered.recovered);
     const first = playbackIncident(recovered);
@@ -5693,6 +5738,8 @@ test("a progress 404 after an earlier recovery counts its replacement in the new
     r.avplay.finishPrepare("UnknownError");
     await r.h.clock.advance(0);
     await finishReplacement(r);
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
     const recovered = r.controller.incidentTrace();
     assert.ok(recovered !== undefined && recovered.recovered);
     assert.equal(recovered.chain, 0);
@@ -5708,6 +5755,8 @@ test("a progress 404 after an earlier recovery counts its replacement in the new
     assert.deepEqual(pending.first, { stage: "progress", code: "http_404", buffering: false });
     assert.equal(pending.reconnects, 1, "opening the chain does not erase its first replacement");
     await finishReplacement(r);
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
     const trace = r.controller.incidentTrace();
     assert.ok(trace !== undefined);
     assert.deepEqual(playbackIncident(trace)?.rec, { n: 0, c: 1, r: "recovered" });

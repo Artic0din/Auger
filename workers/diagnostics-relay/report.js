@@ -1,6 +1,6 @@
 // Issue bodies, follow-up comments and embedded metadata, built from validated records only.
 
-import { CATEGORY_LABELS, isPublishedCode } from "./contract.js";
+import { CATEGORY_LABELS, CONTAINERS, DYNAMIC_RANGES, PROTOCOLS, VIDEO_CODECS, isPublishedCode } from "./contract.js";
 import { codeCell, DELIVERY_LABELS, OPERATION_LABELS, OUTCOME_LABELS, RECOVERY_LABELS, SCREEN_LABELS, STAGE_LABELS } from "./labels.js";
 import { fnv1aHex, LEGACY_FIELD_CHECKS } from "./legacy.js";
 import { incidentTitle, legacyTitle } from "./titles.js";
@@ -184,7 +184,8 @@ function incidentRows(record, inc) {
 }
 
 function stepLine(step, index) {
-  const [stage, result, code] = step.split(":");
+  const [stage, result, ...rest] = step.split(":");
+  const code = rest.length ? rest.join(":") : undefined;
   const parts = [STAGE_LABELS[stage], result, code === undefined ? undefined : codeCell(code)].filter(Boolean);
   return `${index + 1}. ${parts.join(" · ")}`;
 }
@@ -384,6 +385,13 @@ const INCIDENT_DIFF_FIELDS = [
   ["set.cap", "Bitrate cap"],
   ["set.hdr", "HDR setting"],
   ["pl.dl", "Plan"],
+  ["pl.pr", "Protocol"],
+  ["pl.ct", "Container"],
+  ["pl.q", "Stream quality"],
+  ["pl.kbps", "Source bitrate (kbps)"],
+  ["pl.vc", "Video codec"],
+  ["pl.res", "Resolution"],
+  ["pl.dr", "Dynamic range"],
 ];
 
 function readPath(value, path) {
@@ -399,10 +407,11 @@ function safeScalar(value) {
   if (typeof value === "boolean" || (typeof value === "number" && Number.isInteger(value))) return String(value);
   if (typeof value !== "string") return "earlier value";
   if (isPublishedCode(value) || /^unlisted_[0-9a-f]{8}$/.test(value)) return value;
-  return STAGE_OR_ENUM.has(value) || /^(?:\d{3,4}p|[48]k)$/.test(value) ? value : "earlier value";
+  return STAGE_OR_ENUM.has(value) || /^(?:\d{3,4}p|[48]k|\d{1,5}x\d{1,5})$/.test(value) ? value : "earlier value";
 }
 
 const STAGE_OR_ENUM = new Set([
+  ...CONTAINERS, ...DYNAMIC_RANGES, ...PROTOCOLS, ...VIDEO_CODECS,
   ...Object.keys(STAGE_LABELS), ...Object.keys(OUTCOME_LABELS), ...Object.keys(RECOVERY_LABELS), ...Object.keys(DELIVERY_LABELS),
   "none", "not_reached", "adaptation_unavailable", "unknown", "auto", "original", "source",
 ]);
