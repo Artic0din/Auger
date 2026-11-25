@@ -1723,14 +1723,17 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         await tv.page.locator('[data-focus="send-diagnostics"]').waitFor();
         assert.equal(await tv.page.locator(".settings-blurb").textContent(), "Send a redacted bug report directly to GitHub, or share via QR code.");
 
-        // Empty session blocks blank manual reports with a clear hint instead of hitting the relay.
+        // A viewer can report a symptom even when the app has not detected an error.
         await tv.page.locator('[data-focus="send-diagnostics"]').click();
-        await tv.page.getByText("Play something or reproduce an issue first, or use Share via QR Code.", { exact: true }).waitFor();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').waitFor();
+        await tv.page.locator('[data-focus="cancel-send-diagnostics"]').click();
         assert.equal(sentPayloads.length, 0);
 
         // Automatic Error Reports defaults to Off and toggles On/Off cleanly.
         const autoRow = tv.page.locator('[data-focus="auto-diagnostics"]');
         assert.equal(await autoRow.getAttribute("aria-checked"), "false");
+        assert.match(await autoRow.ariaSnapshot(), /Automatic Error Reports/);
+        await tv.page.getByText("Turning this on sends redacted error reports from all profiles on this TV to public GitHub issues.", { exact: true }).waitFor();
         await autoRow.click();
         assert.equal(await autoRow.getAttribute("aria-checked"), "true");
         await autoRow.click();
@@ -1791,14 +1794,25 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
             await helperPage.goto(reportUrl);
             await helperPage.locator("#content").waitFor({ state: "visible" });
             assert.equal(await helperPage.locator("#empty").isVisible(), false);
+            const playbackRowsText = await helperPage.locator("#playback-rows").innerText();
+            assert.ok(playbackRowsText.includes("HDR setting") && playbackRowsText.includes("On"), playbackRowsText);
+            assert.ok(playbackRowsText.includes("Route fallbacks") && playbackRowsText.includes("2"), playbackRowsText);
+            assert.ok(playbackRowsText.includes("AVPlay error") && playbackRowsText.includes("PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), playbackRowsText);
             const rawText = await helperPage.locator("#raw-text").inputValue();
             assert.ok(rawText.includes("**Auger Bug Report**"));
             assert.ok(rawText.includes("Auger: 0.0.1"));
+            assert.ok(rawText.includes("HDR setting: On"), rawText);
+            assert.ok(rawText.includes("Route fallbacks: 2"), rawText);
+            assert.ok(rawText.includes("AVPlay error: PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), rawText);
             const githubHref = await helperPage.locator("#open-github").getAttribute("href") ?? "";
             const githubUrl = new URL(githubHref);
             assert.equal(githubUrl.searchParams.get("template"), "bug-report.yml");
             assert.equal(githubUrl.searchParams.get("app-version"), "0.0.1");
             assert.ok(githubUrl.searchParams.get("device-details")?.includes("Samsung TV"));
+            const githubPlayback = githubUrl.searchParams.get("playback-details") ?? "";
+            assert.ok(githubPlayback.includes("HDR setting: On"), githubPlayback);
+            assert.ok(githubPlayback.includes("Route fallbacks: 2"), githubPlayback);
+            assert.ok(githubPlayback.includes("AVPlay error: PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), githubPlayback);
         } finally { await helperPage.close(); }
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }

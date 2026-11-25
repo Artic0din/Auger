@@ -2567,6 +2567,42 @@ test("a secure-platform startup failure has a focused retry and can recover", as
     }
 });
 
+appTest("a new profile cannot send an incident recorded before the switch", async (tv, playback) => {
+    const reports: { inc?: { stage: string }; play?: { e?: string } }[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        reports.push(route.request().postDataJSON());
+        await route.fulfill({ json: { ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" } });
+    });
+    await signIn(tv);
+    playback.next.push({ terminal: "session_expired" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+
+    const sendFromSettings = async (): Promise<void> => {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
+        await tv.page.getByText(/AUG-902/).first().waitFor();
+    };
+    await sendFromSettings();
+    assert.equal(reports[0]?.inc?.stage, "start");
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await sendFromSettings();
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1]?.inc, undefined);
+    assert.equal(reports[1]?.play?.e, undefined);
+});
+
 appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
     const autoPayloads: string[] = [];
     await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
@@ -2574,14 +2610,18 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
         await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" }) });
     });
     await signIn(tv);
-    // Start real playback through AVPlay preparation so startPlayback's controller.subscribe populates the shared DiagnosticsCollector.
+    // Start real playback through AVPlay preparation, trigger an AVPlay codec error fallback, and confirm Diagnostics records it.
     await startMovie(tv);
+    await tv.page.evaluate(() => {
+        window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    });
+    await prepare(tv);
     await leavePlayer(tv);
     await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, and event appear.
+    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, AVPlay error, and fallback event appear.
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
@@ -2590,7 +2630,12 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.getByText("HTTP · MP4", { exact: true }).waitFor();
     await tv.page.getByText("Source file", { exact: true }).waitFor();
     await tv.page.getByText("Subtitle mode", { exact: true }).waitFor();
+    await tv.page.getByText("HDR setting", { exact: true }).waitFor();
+    await tv.page.getByText("Route fallbacks", { exact: true }).waitFor();
+    await tv.page.getByText("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", { exact: true }).waitFor();
     await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+    const initialPaneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(initialPaneText.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), initialPaneText);
 
     // Opt in to Automatic Error Reports so the upcoming terminal failure fires one redacted auto-report silently.
     await tv.page.locator('[data-focus="auto-diagnostics"]').click();
@@ -2605,8 +2650,11 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
     await tv.eventually(async () => autoPayloads.length === 1, "opt-in automatic error report posted");
-    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string } };
+    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string }; inc?: { stage: string; pl: unknown; open: boolean } };
     assert.equal(autoJson.auto, true);
+    assert.equal(autoJson.inc?.stage, "start");
+    assert.equal(autoJson.inc.pl, "not_reached");
+    assert.equal(autoJson.inc.open, false);
     assert.equal(autoJson.play?.e, "terminal: source_unreadable");
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();

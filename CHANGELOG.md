@@ -4,7 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Playback diagnostics identified which attempt failed and showed the operation and recovery details available on the TV.
+
 <!-- changelog:releases -->
+
+## [0.6.0] - 2026-11-25
+
+### ✨ New Features
+
+- **Diagnostics**: Capture AVPlay error codes, route fallbacks, and HDR setting
 
 ## [0.5.0] - 2026-11-25
 
