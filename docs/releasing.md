@@ -65,22 +65,24 @@ A pull request the workflow cannot read also falls back to its commit, so a GitH
 The body opens with `Released: YYYY-MM-DD`, then Breaking Changes, Highlights, New, Improved, Security, and Fixed, without emojis.
 It ends with an **Install or update** section that points to the Apps2Samsung community catalog, and links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
 
-`CHANGELOG.md` is the technical record, written from the commits alone.
-The commits also fill the GitHub Release body for pull requests without notes.
-The generator reads commits with the same Conventional Commit rules as the version bump and groups them:
+`CHANGELOG.md` is the full technical record, written from all non-bot commits in the release range without emojis.
+Each bullet links its pull request (`#123`) and short commit SHA (`a1b2c3d4`) and groups commits by technical category:
 
 | Section | Commits |
 | --- | --- |
-| ⚠️ Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
-| ✨ New Features | `feat` |
-| 🔧 Improvements | `perf` |
-| 🔒 Security | `fix` with the `security` or `sec` scope, or a subject naming a vulnerability, CVE, or secret leak |
-| 🐛 Fixes | `fix`, `revert`, or a `Revert "..."` subject |
+| Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
+| Features | `feat` |
+| Performance | `perf` |
+| Security | `fix` with the `security` or `sec` scope, or a subject naming a vulnerability, CVE, or secret leak |
+| Fixes | `fix` (including internal scopes), `revert`, or a `Revert "..."` subject |
+| Refactors & Maintenance | `refactor`, `chore`, `build`, `style` |
+| Tests | `test` |
+| Documentation | `docs` (excluding automated `docs(changelog): record vX.Y.Z release notes` commits) |
+| CI | `ci` |
+| Other Changes | other non-merge commits |
 
-It leaves out `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`, internal-scope fixes (`ci`, `docs`, `test`, `scripts`, `deps`, `build`), and merge commits unless they are breaking.
-Each bullet drops the type prefix and the `(#123)` suffix, starts with a capital, and leads with the scope's area, such as `- **Playback**: Add chapters` for `feat(player): add chapters (#12)`.
-Fixes read as plain sentences.
-A release with no user-facing commits reads `General maintenance and stability improvements.`
+It leaves out only automated `docs(changelog): record vX.Y.Z release notes` commits and merge commits unless they are breaking.
+A release with no commits in range reads `General maintenance and stability improvements.`
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
 After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
