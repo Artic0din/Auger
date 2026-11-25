@@ -1238,24 +1238,36 @@ test("Up Next's Auto-play toggle sits below the actions, names the setting and f
     } finally { await page.close(); }
 });
 
-test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
+test("finished-card countdown has no Cancel autoplay button, walks Close and Auto-play toggle, and keeps Play Now", async () => {
     const { page } = await open();
-    const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
+    const next = { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true as const };
+    const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 10 };
     try {
         await show(page, view);
+        assert.equal(await page.locator('[data-focus="cancel-autoplay"]').count(), 0, "Apple TV has no Cancel autoplay button");
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
         assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), "Playing next in 10 seconds", "the ring speaks Apple's upNext.playingNextIn");
         assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
-        assert.equal(await focused(page), "cancel-autoplay");
+        assert.equal(await focused(page), "back");
         await show(page, { ...view, countdown: 9 });
-        assert.equal(await focused(page), "cancel-autoplay");
+        assert.equal(await focused(page), "back");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["cancelAutoplay"]);
-        await show(page, { ...view, countdown: undefined });
+        assert.deepEqual(await commands(page), ["toggleAutoNext"]);
+        await show(page, { ...view, autoNext: false, countdown: undefined });
+        assert.equal(await focused(page), "auto-play");
+        await remote(page, UP);
         assert.equal(await focused(page), "play-next");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["cancelAutoplay", "playNext"]);
+        assert.deepEqual(await commands(page), ["toggleAutoNext", "playNext"]);
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 20, status: "Up Next" } });
+        assert.equal(await page.locator('[data-focus="cancel-autoplay"]').count(), 0);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "keep-watching");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "back");
     } finally { await page.close(); }
 });
 

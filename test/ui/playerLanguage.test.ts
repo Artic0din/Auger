@@ -262,7 +262,6 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 30 }));
             assert.equal(await page.locator(".player-countdown-seconds").textContent(), language === "ar" ? "٣٠" : "30", "the ring writes the seconds in the language's digits");
             assert.equal(await page.locator(".player-next-up .player-menu-heading").first().textContent(), text("upNext.onDeck", language));
-            assert.equal(await page.locator('[data-focus="cancel-autoplay"]').textContent(), "Cancel autoplay", "no Apple key: English");
             await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, countdown: 1 });
             assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), text("upNext.playingNextIn", language, { seconds: 1 }));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("upNext.close", language));

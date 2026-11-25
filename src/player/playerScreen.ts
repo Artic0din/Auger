@@ -600,10 +600,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     next.type = "button";
     next.setAttribute("data-focus", "play-next");
     next.addEventListener("click", () => controls.playNext());
-    const cancelAutoplay = el("button", "player-button", "Cancel autoplay");
-    cancelAutoplay.type = "button";
-    cancelAutoplay.setAttribute("data-focus", "cancel-autoplay");
-    cancelAutoplay.addEventListener("click", () => controls.cancelAutoplay());
     // PlayerView.autoPlayToggle: below the actions while there is a next item, it flips Auto-play next for this TV.
     const autoPlay = el("button", "player-autoplay-toggle");
     autoPlay.type = "button";
@@ -619,7 +615,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const primaryRow = el("div", "player-actions-row player-actions-primary");
     primaryRow.append(next, ring.element, retry);
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
-    secondaryRow.append(keep, cancelAutoplay, back);
+    secondaryRow.append(keep, back);
     actions.append(primaryRow, secondaryRow);
     failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlay, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
@@ -1024,7 +1020,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         eyebrow.hidden = view.phase !== "completion" && prompt === undefined;
         synopsis.hidden = eyebrow.hidden;
         deck.hidden = eyebrow.hidden;
-        cancelAutoplay.hidden = view.phase !== "completion" || view.countdown === undefined;
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
         nextSeries.hidden = true;
@@ -1100,7 +1095,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 next.hidden = loading || failed || candidate === undefined;
                 labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
                 retry.hidden = true;
-                cancelAutoplay.hidden = true;
                 showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext);
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
                 failureTitle.classList.toggle("player-next-working", loading);
@@ -1699,7 +1693,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
             // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
-            const rows = [[next, retry], [keep, cancelAutoplay, back], [autoPlay], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+            const rows = [[next, retry], [keep, back], [autoPlay], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
             const current = rows[row];
