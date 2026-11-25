@@ -61,7 +61,7 @@ const separatePlaybackFailure = {
 };
 
 /** As the client sends a captured record: the canonical category, the submission source and the frozen evidence. */
-function report(inc, source, bq = bufferingEvidence) {
+function report(inc, source, bq) {
   return { ...device, cat: inc.cat, ...(source === "auto" ? { auto: true } : {}), inc: { ...inc, src: source }, ...(bq === undefined ? {} : { bq }) };
 }
 
@@ -78,8 +78,8 @@ export const BUFFERING_CASES = [
     async run(handleRequest) {
       const manualOnly = fakeGitHub();
       const automaticOnly = fakeGitHub();
-      equal((await send(handleRequest, manualOnly, report(failedRecovery, "manual"))).status, 201, "manual created");
-      equal((await send(handleRequest, automaticOnly, report(failedRecovery, "auto"))).status, 201, "automatic created");
+      equal((await send(handleRequest, manualOnly, report(failedRecovery, "manual", bufferingEvidence))).status, 201, "manual created");
+      equal((await send(handleRequest, automaticOnly, report(failedRecovery, "auto", bufferingEvidence))).status, 201, "automatic created");
       const manual = manualOnly.created()[0].body;
       const automatic = automaticOnly.created()[0].body;
       equal(manual.title, "Playback stalled after a quality step-down: no server answer", "failed recovery title");
@@ -106,8 +106,8 @@ export const BUFFERING_CASES = [
       check(manual.body.indexOf("### Buffering and quality") < manual.body.indexOf("### Device"), "evidence renders before device context");
 
       const shared = fakeGitHub();
-      equal((await send(handleRequest, shared, report(failedRecovery, "auto"))).json.status, "created", "shared first");
-      equal((await send(handleRequest, shared, report(failedRecovery, "manual"))).json.status, "duplicate", "shared second");
+      equal((await send(handleRequest, shared, report(failedRecovery, "auto", bufferingEvidence))).json.status, "created", "shared first");
+      equal((await send(handleRequest, shared, report(failedRecovery, "manual", bufferingEvidence))).json.status, "duplicate", "shared second");
       equal(shared.issues.length, 1, "one issue");
       equal(shared.outbound.length, 1, "no follow-up noise");
     },
@@ -116,14 +116,14 @@ export const BUFFERING_CASES = [
     name: "one causal timeline: the failed replan precedes the terminal outcome, a later Playback failed selection groups, a separate playback failure files",
     async run(handleRequest) {
       const gh = fakeGitHub();
-      await send(handleRequest, gh, report(failedRecovery, "auto"));
+      await send(handleRequest, gh, report(failedRecovery, "auto", bufferingEvidence));
       const body = gh.created()[0].body.body;
       const failed = body.indexOf("2. Quality change · fail · no_answer");
       const terminal = body.indexOf("3. Reconnect · end · network");
       check(failed !== -1 && terminal !== -1 && failed < terminal, "failed replan, then terminal outcome, in one sequence");
       includes(body, "| Category | Buffering / Quality |", "canonical category");
       // The client sends the same frozen record when the viewer picks Playback failed.
-      equal((await send(handleRequest, gh, report(failedRecovery, "manual"))).json.status, "duplicate", "manual Playback failed selection joins");
+      equal((await send(handleRequest, gh, report(failedRecovery, "manual", bufferingEvidence))).json.status, "duplicate", "manual Playback failed selection joins");
       equal(gh.issues.length, 1, "one issue for the incident");
       equal((await send(handleRequest, gh, report(separatePlaybackFailure, "auto", undefined))).status, 201, "separate playback failure files");
       excludes(gh.created()[1].body.body, "### Buffering and quality", "a playback failure carries no buffering section");
@@ -136,7 +136,7 @@ export const BUFFERING_CASES = [
       const lowered = { ...bufferingEvidence, pk: 5600, ok: 5600, sd: [{ r: "auto", fq: "auto", fk: 8000, tq: "auto", tk: 5600, est: 5600, o: "adopted" }] };
       const stalls = { ...bufferingEvidence, md: "never", ll: "ignored", sd: [], st: { n: 3, d: [1000, 2000, 3000], lg: 3000 } };
       const forced = { ...stalls, md: "ask", ll: "server", q: "720p", mc: 4000 };
-      await send(handleRequest, gh, report(failedRecovery, "manual"));
+      await send(handleRequest, gh, report(failedRecovery, "manual", bufferingEvidence));
       await send(handleRequest, gh, observed(lowered, { precedingScreen: "details" }));
       await send(handleRequest, gh, observed(stalls, { precedingScreen: "home" }));
       await send(handleRequest, gh, observed(forced, { precedingScreen: "library" }));
@@ -224,7 +224,7 @@ export const BUFFERING_CASES = [
       const gh = fakeGitHub();
       equal((await send(handleRequest, gh, report(failedRecovery, "auto", undefined))).status, 201, "older client files");
       excludes(gh.created()[0].body.body, "### Buffering and quality", "no section without evidence");
-      equal((await send(handleRequest, gh, report(failedRecovery, "manual"))).json.issueNumber, gh.issues[0].number, "the current client's report joins the same issue");
+      equal((await send(handleRequest, gh, report(failedRecovery, "manual", bufferingEvidence))).json.issueNumber, gh.issues[0].number, "the current client's report joins the same issue");
       equal(gh.issues.length, 1, "one issue");
     },
   },
