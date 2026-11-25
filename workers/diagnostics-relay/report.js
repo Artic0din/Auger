@@ -1,5 +1,6 @@
 // Issue bodies, follow-up comments and embedded metadata, built from validated records only.
 
+import { bufferingSection } from "./buffering.js";
 import { CATEGORY_LABELS, CONTAINERS, DYNAMIC_RANGES, PROTOCOLS, VIDEO_CODECS, isPublishedCode } from "./contract.js";
 import { codeCell, DELIVERY_LABELS, OPERATION_LABELS, OUTCOME_LABELS, RECOVERY_LABELS, SCREEN_LABELS, STAGE_LABELS } from "./labels.js";
 import { fnv1aHex, LEGACY_FIELD_CHECKS } from "./legacy.js";
@@ -103,6 +104,7 @@ export function incidentStableState(record) {
     srv: record.srv,
     hdr: record.hdr,
     inc,
+    bq: record.bq,
     log: (record.log ?? []).map(stripLogTimestamp),
   };
 }
@@ -132,6 +134,7 @@ export function legacyStableState(record) {
     av: play.av,
     fb: play.fb,
     e: play.e,
+    bq: record.bq,
     log: (record.log ?? []).map(stripLogTimestamp),
     nav: record.nav,
   };
@@ -302,6 +305,7 @@ function incidentBody(record, hash) {
   const lines = ["## What happened", "", ...table(incidentRows(record, inc))];
   if (inc.t?.length > 0) lines.push("", "### Event sequence", "", ...inc.t.map(stepLine));
   lines.push("", "### This attempt", "", ...table([...settingRows(inc.set), ...requestRows(inc.req), ...planRows(inc.pl), panelRow(inc.hp)]));
+  lines.push(...bufferingSection(record.bq, table));
   // A plan-free attempt must not show player rows: they could only describe an earlier attempt.
   const playRows = inc.pl === "not_reached" || record.play === undefined ? [] : legacyPlayRows(record.play);
   if (playRows.length > 0) lines.push("", "### Player summary", "", ...table(playRows));
@@ -326,7 +330,7 @@ function legacyBody(record, hash) {
     ...(p.av ? [["AVPlay error", p.av]] : []),
     ...(typeof p.fb === "number" && p.fb > 0 ? [["Route fallbacks", String(p.fb)]] : []),
   ];
-  const lines = ["## What happened", "", ...table(summaryRows), ...navigationSection(record.nav, table)];
+  const lines = ["## What happened", "", ...table(summaryRows), ...navigationSection(record.nav, table), ...bufferingSection(record.bq, table)];
   if (record.log) lines.push("", "### Recent Events (Redacted)", "", "```text", ...record.log, "```");
   const playRows = legacyPlayRows(p);
   if (playRows.length > 0) lines.push("", "### Last Playback", "", ...table(playRows));

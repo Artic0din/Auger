@@ -223,6 +223,37 @@ export const INCIDENT_CONTRACT = Object.freeze({
   t: { kind: "steps", max: 16 },
 });
 
+export const BUFFERING_MODES = ["never", "ask", "always"];
+export const LEARNED_LIMIT_STATES = ["unsupported", "ignored", "server", "cleared"];
+export const NETWORK_TYPES = ["wifi", "ethernet", "cellular", "other", "unavailable"];
+export const CONNECTION_CLASSES = ["slow-2g", "2g", "3g", "4g", "unavailable"];
+export const SPEED_STATES = ["unsupported", "offline", "metered", "none"];
+export const STEP_DOWN_REASONS = ["auto", "prompt", "restore"];
+export const STEP_DOWN_OUTCOMES = ["pending", "adopted", "not_adopted", "not_sent"];
+const KBPS = int(1, 1_000_000);
+const STALL_MS = int(0, 600_000);
+const QUALITY = { kind: "pattern", re: QUALITY_PATTERN };
+const list = (of, max) => ({ kind: "list", of, max });
+
+/** The declared `bq` (bv 1) Buffering / Quality evidence, mirroring the client's src/diagnosticsBuffering.ts. */
+export const BUFFERING_CONTRACT = Object.freeze({
+  bv: required(literal(1)),
+  md: required(enumOf(BUFFERING_MODES)),
+  adv: bool,
+  q: QUALITY,
+  mc: either(KBPS, literal("none")),
+  ll: enumOf(LEARNED_LIMIT_STATES),
+  pq: QUALITY,
+  pk: KBPS,
+  sk: KBPS,
+  ok: KBPS,
+  est: KBPS,
+  net: object({ t: required(enumOf(NETWORK_TYPES)), ec: enumOf(CONNECTION_CLASSES), on: bool }),
+  spd: either(enumOf(SPEED_STATES), object({ kbps: required(KBPS), src: required(enumOf(["probe", "sample"])), age: required(int(0, 2_592_000)), fresh: required(bool) })),
+  st: object({ n: required(COUNT), d: list(STALL_MS, 8), lg: STALL_MS }),
+  sd: list(object({ r: required(enumOf(STEP_DOWN_REASONS)), fq: QUALITY, fk: KBPS, tq: QUALITY, tk: KBPS, est: KBPS, thr: KBPS, o: required(enumOf(STEP_DOWN_OUTCOMES)) }), 4),
+});
+
 function validateValue(spec, raw) {
   switch (spec.kind) {
     case "enum":
@@ -252,6 +283,8 @@ function validateValue(spec, raw) {
     }
     case "steps":
       return Array.isArray(raw) ? raw.slice(-spec.max).map(traceStep).filter((step) => step !== undefined) : undefined;
+    case "list":
+      return Array.isArray(raw) ? raw.slice(-spec.max).map((item) => validateValue(spec.of, item)).filter((item) => item !== undefined) : undefined;
     default:
       return undefined;
   }
@@ -282,6 +315,13 @@ export function validateIncident(raw) {
   const checked = validateFields(INCIDENT_CONTRACT, raw);
   if (checked.missing.length > 0) return { error: "invalid_payload", missing: checked.missing.map((key) => `inc.${key}`) };
   return { incident: checked.value };
+}
+
+/** Validated `bq`, or undefined when absent or invalid: the evidence is optional and never rejects a report. */
+export function validateBuffering(raw) {
+  if (!isPlainObject(raw)) return undefined;
+  const checked = validateFields(BUFFERING_CONTRACT, raw);
+  return checked.missing.length > 0 ? undefined : checked.value;
 }
 
 /** Client incidentAutoEligible: only a technical failure that ended playback after recovery files automatically. */

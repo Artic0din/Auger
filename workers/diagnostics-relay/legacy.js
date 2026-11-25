@@ -14,6 +14,7 @@ import {
   MODEL_PATTERN,
   PRECEDING_SCREENS,
   sanitizeAvplayError,
+  validateBuffering,
   validateIncident,
   VERSION_PATTERN,
 } from "./contract.js";
@@ -290,6 +291,11 @@ export function validateV1(raw) {
     const key = [sanitize(raw.app, 32), sanitize(raw.tv, 48), ...navKey];
     record.navGroupId = fnv1aHex(["nav1", ...key].join("\n"));
     record.navGuard = fnv1aHex(["guard", ...key].join("\n"));
+  }
+  // Buffering / Quality evidence describes only a buffering report; it never joins a grouping key.
+  if (record.cat === "buffering" || record.inc?.cat === "buffering") {
+    const bq = validateBuffering(raw.bq);
+    if (bq !== undefined) record.bq = bq;
   }
   return { record };
 }

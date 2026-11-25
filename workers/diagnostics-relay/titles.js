@@ -61,7 +61,17 @@ export function incidentTitle(inc) {
   return cap(`${base}${phrase === undefined ? "" : `: ${phrase}`}${http}${recovered}`);
 }
 
+/** A viewer-observed buffering symptom named by the recorded evidence; never a failed recovery, which carries an incident. */
+function observedBufferingTitle(bq) {
+  if (bq.sd?.some((step) => step.r !== "restore" && step.o === "adopted")) return "Viewer reported buffering after quality was lowered";
+  return (bq.st?.n ?? 0) > 0 ? "Viewer reported buffering during playback" : undefined;
+}
+
 function legacyCategoryTitle(record) {
+  if (record.cat === "buffering" && record.auto !== true && record.bq !== undefined) {
+    const title = observedBufferingTitle(record.bq);
+    if (title !== undefined) return title;
+  }
   if (record.cat !== undefined && record.auto !== true) {
     return `Viewer reported ${CATEGORY_PROBLEM[record.cat]}${record.screen === undefined ? "" : ` on ${SCREEN_LABELS[record.screen]}`}`;
   }

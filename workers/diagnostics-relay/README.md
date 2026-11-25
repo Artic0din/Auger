@@ -12,12 +12,13 @@ Unknown fields and unrecognized free text are discarded, never truncated into an
 
 | Module | Role |
 | --- | --- |
-| `contract.js` | `INCIDENT_CONTRACT`: the `inc` (iv 1) record a current client sends inside the v1 payload, mirroring `src/diagnosticsIncident.ts`. `iv`, `cat` and `out` are required; other invalid values are dropped. |
+| `contract.js` | `INCIDENT_CONTRACT`: the `inc` (iv 1) record a current client sends inside the v1 payload, mirroring `src/diagnosticsIncident.ts`. `iv`, `cat` and `out` are required; other invalid values are dropped. `BUFFERING_CONTRACT`: the optional `bq` (bv 1) Buffering / Quality evidence, mirroring `src/diagnosticsBuffering.ts`; invalid evidence is dropped and never rejects a report. |
 | `legacy.js` | Field-by-field allowlist for installed clients' v1 fields and log lines, and the deployed legacy fingerprint. |
 | `grouping.js` | When an incident may reuse an older issue, and the evidence checks that guard it. |
 | `titles.js`, `labels.js` | Fixed plain-language phrases; no bracketed prefix and no TV model in titles (140-character ceiling). |
 | `report.js` | Issue bodies, follow-up comments and `auger-state` metadata. |
 | `navigation.js` | The optional `nav` (nv 1) App / Navigation record from `src/diagnosticsNavigation.ts`, with vocabulary shared through `shared/diagnostics-navigation.js`. An invalid `nav` is dropped and the report still files. |
+| `buffering.js` | The Buffering and quality section rendered from validated `bq`. |
 
 Codes the client allows but the relay does not list still group, but render as "Unlisted code".
 Automatic submission requires a failed incident.
@@ -46,6 +47,7 @@ Existing titles and historical evidence are left untouched; reuse adds a comment
 `test/native/fixtures/diagnostics-relay/relayCases.js` holds the relay cases as a plain ES module with no Node imports, so a browser harness on the TV can import it with `worker.js` and call `runRelayCases(handleRequest)`.
 `test/native/diagnosticsRelay.test.ts` runs the same cases under `node:test`.
 `navigationCases.js` and `test/native/diagnosticsNavigationRelay.test.ts` do the same for `nav`.
+`bufferingCases.js` and `test/native/diagnosticsBufferingRelay.test.ts` do the same for Buffering / Quality reports with `runBufferingCases(handleRequest)`.
 
 ## Deploy
 
