@@ -33,7 +33,7 @@ An **App / Navigation** report also describes what happened just before it.
 It lists the screen and focus area and the last remote presses.
 It says whether each press moved focus, stayed put or lost focus.
 It shows how many elements were on screen and the slowest recent server request.
-Opening **Settings** keeps the screen you came from, so the report still describes that screen.
+Opening **Settings** from the profile menu keeps the preceding screen and the recent presses leading into the menu, including movement through Home rows and the top bar.
 It never includes item names, titles or server addresses.
 
 If Auger cannot open **Settings**, follow the manual steps below instead.
