@@ -121,13 +121,17 @@ export class SubtitleCaptions {
     private secondaryTiming = 0;
     private secondaryAbort: AbortController | undefined;
 
+    private readonly recordLoad: (load: "loaded" | "loading" | "not_needed") => void;
+
     constructor(
         session: NativeSession,
         clock: Clock,
         signal: AbortSignal,
         publicStorage: PublicStorage | undefined,
         onChanged: () => void,
+        recordLoad: SubtitleCaptions["recordLoad"],
     ) {
+        this.recordLoad = recordLoad;
         this.session = session;
         this.clock = clock;
         this.signal = signal;
@@ -137,6 +141,8 @@ export class SubtitleCaptions {
 
     get captionKey(): string | undefined { return this.key; }
     get captionNotice(): string { return this.notice; }
+    get cueCount(): number { return this.cues.length; }
+    get hasSecondary(): boolean { return this.secondaryId !== undefined; }
     get syncDelayMs(): number { return this.delayMs; }
     get displayView(): SubtitleDisplayView | undefined { return this.display?.view; }
 
@@ -223,7 +229,7 @@ export class SubtitleCaptions {
     readPrimary(
         plan: PlaybackPlan,
         timingVersionOf: (key: string | undefined) => number,
-        onPrimaryFailed: (loaded: PlaybackPlan) => boolean,
+        onPrimaryFailed: (loaded: PlaybackPlan, error: unknown) => boolean,
         refresh = false,
     ): void {
         const artifact = plan.subtitle.mode === "render" || plan.subtitle.mode === "convert" ? plan.subtitle.artifact : undefined;
@@ -243,6 +249,7 @@ export class SubtitleCaptions {
         if (!refresh) {
             this.cues = [];
             this.notice = "";
+            this.recordLoad(artifact === undefined ? "not_needed" : "loading");
         }
         if (artifact === undefined) return;
         if (!refresh) this.notice = CAPTION_LOADING;
@@ -267,9 +274,10 @@ export class SubtitleCaptions {
                     show,
                 );
                 if (!current()) return;
+                this.recordLoad("loaded");
                 this.cues = cues;
                 this.notice = "";
-            } catch {
+            } catch (error) {
                 if (!current()) return;
                 // Cues on screen are still the track's, at the older timing: keep them, and let the next timing change try again. With none loaded yet, fail as usual.
                 if (refresh && this.cues.length > 0) {
@@ -279,7 +287,7 @@ export class SubtitleCaptions {
                 this.key = undefined;
                 // SECONDARY needs a drawn primary: without it the list is gone, so its second line must go too.
                 this.clearSecondary();
-                if (onPrimaryFailed(plan)) {
+                if (onPrimaryFailed(plan, error)) {
                     this.onChanged();
                     return;
                 }
@@ -308,7 +316,7 @@ export class SubtitleCaptions {
         key: string,
         version: number,
         timingVersionOf: (syncKey: string | undefined) => number,
-        onPrimaryFailed: (loaded: PlaybackPlan) => boolean,
+        onPrimaryFailed: (loaded: PlaybackPlan, error: unknown) => boolean,
     ): void {
         const retimed = (trackId: string | undefined): boolean =>
             trackId !== undefined && plan.subtitle.inventory.find(track => track.trackId === trackId)?.syncKey === key;

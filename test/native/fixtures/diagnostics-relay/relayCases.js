@@ -5,54 +5,12 @@
 
 import { deployedLegacyFingerprint, encodeState, fakeGitHub, fnv, incidentGroupId, send } from "./fakeGitHub.js";
 
-class CaseFailure extends Error {}
-
-function check(condition, message) {
-  if (!condition) throw new CaseFailure(message);
-}
-
-function equal(actual, expected, message) {
-  check(actual === expected, `${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-}
-
-function includes(text, fragment, message) {
-  check(typeof text === "string" && text.includes(fragment), `${message}: missing ${JSON.stringify(fragment)}`);
-}
-
-function excludes(text, fragment, message) {
-  check(typeof text === "string" && !text.includes(fragment), `${message}: leaked ${JSON.stringify(fragment)}`);
-}
+import { assertNoSensitive, check, equal, excludes, includes } from "./assertions.js";
+import { MEDIA_CASES } from "./mediaCases.js";
 
 const APP = "0.5.0";
 const TV = "QE65S95C";
 const device = { v: 1, app: APP, tv: TV, fw: "1650", os: "Tizen 9.0", ua: "Chrome/120.0.6099.5", hdr: true, srv: "412" };
-
-// Synthetic sensitive markers; none may appear in any outbound title, body, comment or decoded metadata.
-const SENSITIVE = [
-  "synthetic.example.invalid",
-  "SYNTHTOKEN",
-  "SYNTH_TITLE",
-  "synth_title_the_movie",
-  "192.0.2.77",
-  "AA:BB:CC:DD:EE:FF",
-  "SYNTHSSID",
-  "synthssid",
-  "synth-nas.local",
-  "SYNTH_PROFILE",
-  "synth_profile",
-  "SYNTHBEARER",
-  "SYNTHSTACK",
-  "SYNTH_TRACK",
-  "SYNTH_SUBTITLE",
-  "SYNTHSERIAL",
-  "SYNTH_PATH",
-];
-
-function assertNoSensitive(destination, label) {
-  for (const text of destination.publishedText()) {
-    for (const value of SENSITIVE) excludes(text, value, label);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Incidents, shaped exactly as playbackIncident() serializes them
@@ -116,7 +74,7 @@ const withoutSourceRow = (body) => body.split("\n").filter((line) => !line.start
 // Cases
 // ---------------------------------------------------------------------------
 
-export const CASES = [
+const PLAYBACK_CASES = [
   {
     name: "#868 shape: plain refusal title, observed operation and decision, no invented HTTP status, sign-in claim or earlier plan",
     async run(handleRequest) {
@@ -727,6 +685,8 @@ export const CASES = [
     },
   },
 ];
+
+export const CASES = [...PLAYBACK_CASES, ...MEDIA_CASES];
 
 /** Runs every case (or the named subset) and returns per-case results; never throws. */
 export async function runRelayCases(handleRequest, names) {

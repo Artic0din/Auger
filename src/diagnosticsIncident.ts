@@ -1,23 +1,26 @@
-import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES } from "../shared/diagnostics-media.js";
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, AUDIO_CODECS, SUBTITLE_CODECS, LANGUAGE_PATTERN } from "../shared/diagnostics-media.js";
 import type { PlaybackError } from "./player/controller.ts";
+import type { BufferingEvidenceTrace } from "./player/bufferingEvidence.ts";
 
 /** Ordered playback stages a single attempt passes through; recovery stages follow a failure. */
 export const PLAYBACK_STAGES = [
     "capabilities", "settings", "start", "subtitles", "media_token", "playlist_check",
     "avplay_open", "avplay_prepare", "avplay_seek", "avplay_play", "playing",
     "recovery", "reconnect", "track_change", "quality_change", "seek_reanchor", "progress",
+    "caption_load", "audio_switch", "subtitle_switch",
 ] as const;
 export type PlaybackStage = (typeof PLAYBACK_STAGES)[number];
 
 export type PlaybackOperation =
     | "playback_capabilities" | "playback_defaults" | "start_playback" | "subtitle_preferences" | "media_token"
-    | "hls_playlist" | "avplay" | "replan_playback" | "progress_report";
+    | "hls_playlist" | "avplay" | "replan_playback" | "progress_report" | "subtitle_download";
 
 const STAGE_OPERATION: Readonly<Record<PlaybackStage, PlaybackOperation>> = {
     capabilities: "playback_capabilities", settings: "playback_defaults", start: "start_playback", subtitles: "subtitle_preferences",
     media_token: "media_token", playlist_check: "hls_playlist", avplay_open: "avplay", avplay_prepare: "avplay", avplay_seek: "avplay",
     avplay_play: "avplay", playing: "avplay", recovery: "replan_playback", reconnect: "start_playback", track_change: "replan_playback",
     quality_change: "replan_playback", seek_reanchor: "replan_playback", progress: "progress_report",
+    caption_load: "subtitle_download", audio_switch: "replan_playback", subtitle_switch: "replan_playback",
 };
 
 export type TraceStepResult = "ok" | "fail" | "retry" | "fallback" | "recovered" | "refused" | "end";
@@ -59,6 +62,8 @@ export interface PlaybackAttemptTrace {
     /** "unavailable" when the probe gave no usable answer; an object only for an observed answer. */
     readonly hdrPanel: { readonly hdr10: boolean; readonly hlg: boolean; readonly dolbyVision: boolean } | "unavailable";
     readonly request: { readonly startSeconds: number | undefined; readonly subtitle: "auto" | "off" | "track"; readonly audio: "default" | "track" };
+    /** Buffering and quality evidence; published only for a Buffering / Quality report. */
+    readonly quality?: BufferingEvidenceTrace | undefined;
     /** Undefined until this attempt received a plan; never an earlier attempt's plan. */
     readonly plan: {
         readonly delivery: string;
@@ -77,7 +82,7 @@ export interface PlaybackAttemptTrace {
 
 export type IncidentOutcome = "failed" | "refused" | "interrupted" | "recovered";
 export type IncidentSource = "manual" | "auto";
-export type IncidentCategory = "playback" | "buffering";
+export type IncidentCategory = "playback" | "buffering" | "audio_subtitles";
 export type IncidentRecovery = "none" | "recovered" | "attempted" | "exhausted";
 
 export interface DiagnosticsIncidentPlan {
@@ -170,7 +175,10 @@ const FAILURE_CODES = new Set([
     "client_upgrade_required", "routes_exhausted", "hls_playlist_unreadable", "audio_track_switch_failed",
     "avplay_prepare_failed", "avplay_open_failed", "avplay_play_failed", "avplay_resume_seek_failed",
     "avplay_playback_error", "avplay_startup_timeout", "version_unavailable", "subtitle_selection_unavailable",
+    "adaptation_unavailable", "caption_load_failed", "subtitle_track_switch_failed",
 ]);
+// The server's replan failure classification spells this one in camelCase.
+const CODE_ALIASES: ReadonlyMap<string, string> = new Map([["audioTrackSwitchFailed", "audio_track_switch_failed"]]);
 export const QUALITIES = ["auto", "original", "2160p", "1080p", "720p", "480p", "360p"];
 const MAX_STEPS = 16;
 const MAX_COUNT = 99;
@@ -182,6 +190,8 @@ export function cleanIncidentCode(raw: string | undefined): string | undefined {
     if (raw === undefined) return undefined;
     const avplay = cleanAvplayError(raw);
     if (avplay !== undefined) return avplay;
+    const alias = CODE_ALIASES.get(raw);
+    if (alias !== undefined) return alias;
     return FAILURE_CODES.has(raw) || /^http_[1-5]\d{2}$/.test(raw) ? raw : undefined;
 }
 
@@ -277,22 +287,6 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
         : trace.exhausted
             ? "exhausted"
             : fallbacks + reconnects + trace.resends === 0 ? "none" : "attempted";
-    const plan = trace.plan;
-    const dl = plan === undefined ? undefined : DELIVERIES.has(plan.delivery) ? plan.delivery : "unknown";
-    const pr = publicMediaToken(plan?.protocol, PROTOCOLS);
-    const ct = publicMediaToken(plan?.container, CONTAINERS);
-    const q = publicMediaToken(plan?.quality, QUALITIES);
-    const kbps = plan?.sourceKbps !== undefined && Number.isFinite(plan.sourceKbps) && plan.sourceKbps > 0 ? Math.min(Math.round(plan.sourceKbps), 1_000_000) : undefined;
-    const vc = publicMediaToken(plan?.videoCodec, VIDEO_CODECS);
-    const res = plan?.width !== undefined && plan.height !== undefined && Number.isInteger(plan.width) && Number.isInteger(plan.height) && plan.width > 0 && plan.height > 0 && plan.width <= 16384 && plan.height <= 16384
-        ? `${plan.width}x${plan.height}`
-        : undefined;
-    const dr = publicMediaToken(plan?.dynamicRange, DYNAMIC_RANGES);
-    const settings = trace.settings;
-    const settingQuality = settings === undefined ? undefined : publicMediaToken(settings.quality, QUALITIES) ?? "unknown";
-    const cap = settings?.capKbps !== undefined && Number.isFinite(settings.capKbps) && settings.capKbps > 0 ? Math.min(Math.round(settings.capKbps), 1_000_000) : "none";
-    const requestPos = seconds(trace.request.startSeconds);
-    const steps = trace.steps.map(cleanTraceStep).filter((step): step is string => step !== undefined).slice(-MAX_STEPS);
     return {
         iv: 1,
         cat: trace.first?.buffering === true ? "buffering" : "playback",
@@ -312,6 +306,29 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
         shown: trace.shown,
         rs: count(trace.resends),
         rec: { n: fallbacks, c: reconnects, r: recovery },
+        ...attemptContext(trace),
+    };
+}
+
+/** What the attempt had reached: settings, request, plan, panel capability and its validated event sequence. */
+function attemptContext(trace: PlaybackAttemptTrace): Pick<DiagnosticsIncidentPayload, "pl" | "set" | "hp" | "req" | "t"> {
+    const plan = trace.plan;
+    const dl = plan === undefined ? undefined : DELIVERIES.has(plan.delivery) ? plan.delivery : "unknown";
+    const pr = publicMediaToken(plan?.protocol, PROTOCOLS);
+    const ct = publicMediaToken(plan?.container, CONTAINERS);
+    const q = publicMediaToken(plan?.quality, QUALITIES);
+    const kbps = plan?.sourceKbps !== undefined && Number.isFinite(plan.sourceKbps) && plan.sourceKbps > 0 ? Math.min(Math.round(plan.sourceKbps), 1_000_000) : undefined;
+    const vc = publicMediaToken(plan?.videoCodec, VIDEO_CODECS);
+    const res = plan?.width !== undefined && plan.height !== undefined && Number.isInteger(plan.width) && Number.isInteger(plan.height) && plan.width > 0 && plan.height > 0 && plan.width <= 16384 && plan.height <= 16384
+        ? `${plan.width}x${plan.height}`
+        : undefined;
+    const dr = publicMediaToken(plan?.dynamicRange, DYNAMIC_RANGES);
+    const settings = trace.settings;
+    const settingQuality = settings === undefined ? undefined : publicMediaToken(settings.quality, QUALITIES) ?? "unknown";
+    const cap = settings?.capKbps !== undefined && Number.isFinite(settings.capKbps) && settings.capKbps > 0 ? Math.min(Math.round(settings.capKbps), 1_000_000) : "none";
+    const requestPos = seconds(trace.request.startSeconds);
+    const steps = trace.steps.map(cleanTraceStep).filter((step): step is string => step !== undefined).slice(-MAX_STEPS);
+    return {
         pl: plan === undefined || dl === undefined ? "not_reached" : {
             dl,
             ...(pr === undefined ? {} : { pr }),
@@ -328,6 +345,182 @@ export function playbackIncident(trace: PlaybackAttemptTrace, error?: PlaybackEr
         hp: trace.hdrPanel === "unavailable" ? "unavailable" : { h10: trace.hdrPanel.hdr10, hlg: trace.hdrPanel.hlg, dv: trace.hdrPanel.dolbyVision },
         req: { pos: requestPos ?? "none", sub: trace.request.subtitle, aud: trace.request.audio },
         t: steps,
+    };
+}
+
+// --- Audio and subtitles (#874) ---
+
+export type SubtitleDrawer = "overlay" | "avplay" | "burn_in" | "none";
+export type CaptionLoadState = "not_needed" | "loading" | "loaded" | "failed" | "fallback";
+export type MediaSwitchResult = "pending" | "ok" | "refused" | "failed" | "recovered";
+export type MediaFailureStage = "caption_load" | "audio_switch" | "subtitle_switch";
+
+export interface AudioFormatEvidence {
+    readonly codec: string | undefined;
+    readonly channels: number | undefined;
+}
+
+/** The latest audio or subtitle change the viewer asked for in this attempt and what became of it. */
+export interface MediaSwitchEvidence {
+    readonly kind: "audio" | "subtitle";
+    readonly result: MediaSwitchResult;
+    readonly code?: string | undefined;
+}
+
+/**
+ * The selected audio and subtitle as the player holds them, raw. Built from structured server fields and AVPlay's
+ * stream info only, never track names, labels or cue text; `publicMediaEvidence` validates every value.
+ */
+export interface MediaEvidence {
+    readonly audio: {
+        readonly language: string | undefined;
+        /** The selected track as the server probed the file; undefined when no row identifies it. */
+        readonly source: AudioFormatEvidence | undefined;
+        /** The plan's effective recipe: what the server planned to send, never what the TV decoded. */
+        readonly planned: AudioFormatEvidence | undefined;
+        /** AVPlay's current AUDIO stream info; undefined when AVPlay gave no usable answer. */
+        readonly observed: AudioFormatEvidence | undefined;
+    };
+    readonly subtitle: {
+        readonly mode: "off" | "render" | "convert" | "burn_in" | "unknown";
+        readonly track: {
+            readonly source: string;
+            readonly delivery: string;
+            readonly codec: string | undefined;
+            readonly language: string | undefined;
+            readonly forced: boolean;
+            readonly hearingImpaired: boolean;
+        } | undefined;
+        readonly drawnBy: SubtitleDrawer;
+        readonly load: CaptionLoadState;
+        readonly cues: number;
+        /** The profile delay the overlay applies, in milliseconds. */
+        readonly syncMs: number;
+        readonly secondary: boolean;
+    };
+    readonly switch: MediaSwitchEvidence | undefined;
+}
+
+/** A definite caption-load or requested-switch failure, numbered within its attempt (the number is never serialized). */
+export interface MediaFailure {
+    readonly n: number;
+    readonly stage: MediaFailureStage;
+    readonly out: "failed" | "refused" | "recovered";
+    readonly code: string | undefined;
+    readonly http: number | undefined;
+    /** The switch's answer was lost: a connectivity symptom, which never files automatically. */
+    readonly network: boolean;
+}
+
+export interface DiagnosticsAudioFormat {
+    readonly c?: string;
+    readonly ch?: number;
+}
+
+type AudioFormatField = DiagnosticsAudioFormat | "unavailable";
+
+/** Public audio/subtitle record (`md`, mv 1) carried in the v1 payload next to `play` and `inc`. */
+export interface DiagnosticsMediaPayload {
+    readonly mv: 1;
+    readonly a: { readonly lang?: string; readonly src: AudioFormatField; readonly pl: AudioFormatField; readonly obs: AudioFormatField };
+    readonly s: {
+        readonly mode: MediaEvidence["subtitle"]["mode"];
+        readonly src?: "external" | "embedded" | "downloaded" | "unknown";
+        readonly c?: string;
+        readonly dl?: "sidecar" | "burn_in_only" | "unknown";
+        readonly lang?: string;
+        readonly f?: boolean;
+        readonly hi?: boolean;
+        readonly via: SubtitleDrawer;
+        readonly ld: CaptionLoadState;
+        /** Present only once a load completed, so an observed zero differs from not loaded. */
+        readonly cues?: number;
+        /** Present only while the overlay draws, the one path the delay moves. */
+        readonly sync?: number;
+        readonly sec: boolean;
+    };
+    readonly sw?: { readonly k: "audio" | "subtitle"; readonly r: MediaSwitchResult; readonly code?: string };
+}
+
+const MAX_CUES = 100_000;
+const MAX_SYNC_MS = 600_000;
+const SUBTITLE_SOURCES = ["external", "embedded", "downloaded", "unknown"] as const;
+const SUBTITLE_DELIVERIES = ["sidecar", "burn_in_only", "unknown"] as const;
+
+export function publicLanguage(raw: string | undefined): string | undefined {
+    const lowered = raw?.trim().toLowerCase();
+    return lowered !== undefined && lowered.length <= 12 && LANGUAGE_PATTERN.test(lowered) ? lowered : undefined;
+}
+
+function oneOf<T extends string>(raw: string, values: readonly T[], fallback: T): T {
+    return values.find(value => value === raw) ?? fallback;
+}
+
+function audioFormat(raw: AudioFormatEvidence | undefined): AudioFormatField {
+    const c = publicMediaToken(raw?.codec, AUDIO_CODECS);
+    const ch = raw?.channels !== undefined && Number.isInteger(raw.channels) && raw.channels >= 1 && raw.channels <= 16 ? raw.channels : undefined;
+    return c === undefined && ch === undefined ? "unavailable" : { ...(c === undefined ? {} : { c }), ...(ch === undefined ? {} : { ch }) };
+}
+
+/** Validates the player's audio/subtitle evidence into the public record. Unknown tokens are dropped, never passed through. */
+export function publicMediaEvidence(raw: MediaEvidence): DiagnosticsMediaPayload {
+    const sub = raw.subtitle;
+    const track = sub.mode === "off" ? undefined : sub.track;
+    const c = publicMediaToken(track?.codec, SUBTITLE_CODECS);
+    const lang = publicLanguage(track?.language);
+    const audioLang = publicLanguage(raw.audio.language);
+    const cues = sub.load === "loaded" && Number.isInteger(sub.cues) && sub.cues >= 0 ? Math.min(sub.cues, MAX_CUES) : undefined;
+    const sync = sub.drawnBy === "overlay" && Number.isFinite(sub.syncMs) ? Math.max(-MAX_SYNC_MS, Math.min(MAX_SYNC_MS, Math.round(sub.syncMs))) : undefined;
+    const switched = raw.switch;
+    const switchCode = cleanIncidentCode(switched?.code);
+    return {
+        mv: 1,
+        a: { ...(audioLang === undefined ? {} : { lang: audioLang }), src: audioFormat(raw.audio.source), pl: audioFormat(raw.audio.planned), obs: audioFormat(raw.audio.observed) },
+        s: {
+            mode: sub.mode,
+            ...(track === undefined ? {} : {
+                src: oneOf(track.source, SUBTITLE_SOURCES, "unknown"),
+                dl: oneOf(track.delivery, SUBTITLE_DELIVERIES, "unknown"),
+                ...(c === undefined ? {} : { c }),
+                ...(lang === undefined ? {} : { lang }),
+                f: track.forced,
+                hi: track.hearingImpaired,
+            }),
+            via: sub.drawnBy,
+            ld: sub.load,
+            ...(cues === undefined ? {} : { cues }),
+            ...(sync === undefined ? {} : { sync }),
+            sec: sub.secondary,
+        },
+        ...(switched === undefined ? {} : { sw: { k: switched.kind, r: switched.result, ...(switchCode === undefined ? {} : { code: switchCode }) } }),
+    };
+}
+
+/**
+ * The incident for a definite audio/subtitle failure. Playback carried on, so the first and final stage are the
+ * failure's own; the attempt context comes from the live trace, never a frozen earlier chain.
+ */
+export function mediaIncident(trace: PlaybackAttemptTrace, failure: MediaFailure): DiagnosticsIncidentPayload {
+    const code = cleanIncidentCode(failure.code);
+    const http = httpStatus(failure.http);
+    const settled = failure.out !== "recovered";
+    return {
+        iv: 1,
+        cat: "audio_subtitles",
+        out: failure.out,
+        ...(failure.network ? { kind: "network" as const } : {}),
+        op: STAGE_OPERATION[failure.stage],
+        stage: failure.stage,
+        ...(code === undefined ? {} : { code }),
+        ...(settled ? { fs: failure.stage } : {}),
+        ...(settled && code !== undefined ? { fc: code } : {}),
+        done: trace.done ?? "none",
+        ...(http === undefined ? {} : { http }),
+        open: trace.opened,
+        shown: trace.shown,
+        rs: 0,
+        rec: { n: 0, c: 0, r: settled ? "none" : "recovered" },
+        ...attemptContext(trace),
     };
 }
 

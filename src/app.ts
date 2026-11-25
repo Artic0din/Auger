@@ -85,7 +85,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         triggerAutoReport();
     };
     const transient = new Map<string, string>();
-    let activeCore: SessionCoreDeps = { ...options.core, transientAccounts: {
+    let activeCore: SessionCoreDeps = { ...options.core, fetch: diagnostics.navigation.timedFetch(options.core.fetch), transientAccounts: {
         secrets: openSecretStore(undefined),
         storage: { getItem: key => transient.get(key) ?? null, setItem: (key, value) => { transient.set(key, value); }, removeItem: key => { transient.delete(key); } },
     } };

@@ -66,6 +66,12 @@ function lookupCandidates(record) {
     }
     return candidates;
   }
+  if (record.navGroupId) {
+    return [{
+      marker: `<!-- auger-group:nav1:${record.navGroupId} -->`,
+      accept: (previous) => previous === undefined || (previous.version === "legacy" && previous.state.ng === record.navGuard),
+    }];
+  }
   if (record.observedGroupId) {
     return [{
       marker: `<!-- auger-group:obs1:${record.observedGroupId} -->`,

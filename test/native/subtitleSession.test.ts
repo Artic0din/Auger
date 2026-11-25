@@ -42,6 +42,8 @@ interface ReplanAttempt {
 }
 
 class FakeSubtitleHost implements SubtitleHost {
+    recordSwitch(): void {}
+    recordCaption(): void {}
     live = true;
     plan: PlaybackPlan | undefined;
     started = true;

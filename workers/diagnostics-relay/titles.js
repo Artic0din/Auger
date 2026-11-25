@@ -2,6 +2,7 @@
 // Unknown or unlisted values never reach a title; missing evidence falls back to a category phrase.
 
 import { CATEGORY_PROBLEM, codePhrase, SCREEN_LABELS } from "./labels.js";
+import { navigationErrorTitle } from "./navigation.js";
 
 export const TITLE_MAX = 140;
 
@@ -25,7 +26,18 @@ const STAGE_PHRASES = {
   quality_change: "Quality change failed during playback",
   seek_reanchor: "Seek failed during playback",
   progress: "Playback progress report failed",
+  caption_load: "Subtitles failed to load during playback",
+  audio_switch: "Audio track switch failed during playback",
+  subtitle_switch: "Subtitle track switch failed during playback",
 };
+
+// Audio and subtitle failures leave playback running, so a refusal names the switch rather than playback.
+const MEDIA_REFUSED = {
+  audio_switch: "Audio track switch refused",
+  subtitle_switch: "Subtitle track switch refused",
+};
+// Generic codes that only restate the stage phrase.
+const STAGE_OWN_CODES = new Set(["caption_load_failed", "audio_track_switch_failed", "subtitle_track_switch_failed"]);
 
 const INTERRUPTED = {
   backgrounded: "Playback stopped when Auger was backgrounded",
@@ -44,23 +56,39 @@ function incidentBase(inc) {
   if (inc.out === "refused" && REFUSED_BY_KIND[inc.kind]) return REFUSED_BY_KIND[inc.kind];
   if (inc.stage === "start" && (inc.out === "refused" || inc.dec === "adaptation_unavailable")) return "Playback start refused";
   if (inc.cat === "buffering" && inc.stage === "quality_change") return "Playback stalled after a quality step-down";
+  if (inc.cat === "audio_subtitles" && inc.out === "refused" && MEDIA_REFUSED[inc.stage]) return MEDIA_REFUSED[inc.stage];
   const phrase = inc.stage === undefined ? undefined : STAGE_PHRASES[inc.stage];
   if (phrase === undefined) return undefined;
   return inc.out === "refused" ? `${phrase} (refused)` : phrase;
 }
 
+const FALLBACK_TITLES = {
+  buffering: "Buffering or quality problem reported",
+  audio_subtitles: "Audio or subtitle problem reported",
+};
+
 /** Title for a validated record that carries an incident. */
 export function incidentTitle(inc) {
   const base = incidentBase(inc);
-  if (base === undefined) return inc.cat === "buffering" ? "Buffering or quality problem reported" : "Playback problem reported";
+  if (base === undefined) return FALLBACK_TITLES[inc.cat] ?? "Playback problem reported";
   if (inc.out === "interrupted" || base === "Playback requires an Auger update") return base;
-  const phrase = inc.code === undefined ? undefined : codePhrase(inc.code);
+  const phrase = inc.code === undefined || STAGE_OWN_CODES.has(inc.code) ? undefined : codePhrase(inc.code);
   const http = inc.http !== undefined && !(inc.code ?? "").startsWith("http_") ? ` (HTTP ${inc.http})` : "";
   const recovered = inc.out === "recovered" ? ", then recovered" : "";
   return cap(`${base}${phrase === undefined ? "" : `: ${phrase}`}${http}${recovered}`);
 }
 
+/** A viewer-observed buffering symptom named by the recorded evidence; never a failed recovery, which carries an incident. */
+function observedBufferingTitle(bq) {
+  if (bq.sd?.some((step) => step.r !== "restore" && step.o === "adopted")) return "Viewer reported buffering after quality was lowered";
+  return (bq.st?.n ?? 0) > 0 ? "Viewer reported buffering during playback" : undefined;
+}
+
 function legacyCategoryTitle(record) {
+  if (record.cat === "buffering" && record.auto !== true && record.bq !== undefined) {
+    const title = observedBufferingTitle(record.bq);
+    if (title !== undefined) return title;
+  }
   if (record.cat !== undefined && record.auto !== true) {
     return `Viewer reported ${CATEGORY_PROBLEM[record.cat]}${record.screen === undefined ? "" : ` on ${SCREEN_LABELS[record.screen]}`}`;
   }
@@ -69,7 +97,7 @@ function legacyCategoryTitle(record) {
 
 /** Title for a record without an incident: older clients and user-observed symptoms. */
 export function legacyTitle(record) {
-  if (record.err) return cap(`Auger raised an uncaught ${record.err}`);
+  if (record.err) return cap(navigationErrorTitle(record) ?? `Auger raised an uncaught ${record.err}`);
   const e = record.play?.e;
   if (e !== undefined) {
     const [kind, detail] = e.split(": ");

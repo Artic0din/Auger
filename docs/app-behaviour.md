@@ -36,6 +36,7 @@ The TV interface follows the [Skyline design guide](https://github.com/Silo-Serv
 - `visibilitychange` suspends the active pipeline and revalidates Authority and media authorization before restoring it.
 - Mid-stream connection loss pauses playback and retries at the saved source position with bounded backoff, preserving playing or paused intent ([playback recovery](playback/playback-quality.md#lifecycle-and-connection-recovery), [#13](https://github.com/Artic0din/Auger-Tizen/issues/13)).
 - Cold launches use the normal Server resume flow and never restore an in-memory pipeline.
+- A refused playback start shows the catalog line for the problem's first field code or type, else "The server returned HTTP {status}." Unlike Apple TV, it never shows the problem's own detail or title, which can carry URLs, email addresses or credentials onto a shared screen; Diagnostics records the HTTP status.
 
 ## Validation limits
 

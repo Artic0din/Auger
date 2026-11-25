@@ -133,7 +133,7 @@ export class SubtitleSession {
         this.host = deps.host;
         this.request = request;
         this.signal = signal;
-        this.captions = new SubtitleCaptions(deps.session, deps.clock, signal, deps.publicStorage, () => this.notifyChanged());
+        this.captions = new SubtitleCaptions(deps.session, deps.clock, signal, deps.publicStorage, () => this.notifyChanged(), load => this.host.recordCaption(load));
         this.tools = new SubtitleTools(
             deps.session,
             deps.clock,
@@ -320,6 +320,10 @@ export class SubtitleSession {
     }
 
     diagnosticsSubtitle(plan: PlaybackPlan): {
+        readonly drawnBy: "overlay" | "avplay" | "burn_in" | "none";
+        readonly cues: number;
+        readonly syncMs: number;
+        readonly secondary: boolean;
         readonly subtitleMode: PlaybackPlan["subtitle"]["mode"];
         readonly subtitleTrack: PlaybackPlan["subtitle"]["inventory"][number] | undefined;
     } {
@@ -332,7 +336,8 @@ export class SubtitleSession {
             : this.activeNativeOverride() !== undefined
                 ? (subtitleTrack?.delivery === "burn_in_only" ? "burn_in" : "render")
                 : plan.subtitle.mode;
-        return { subtitleMode, subtitleTrack };
+        const drawnBy = shownId === undefined ? "none" : subtitleMode === "burn_in" ? "burn_in" : this.subtitleOverlay(plan) ? "overlay" : "avplay";
+        return { subtitleMode, subtitleTrack, drawnBy, cues: this.captions.cueCount, syncMs: this.captions.syncDelayMs, secondary: this.captions.hasSecondary };
     }
 
     trackViewSlice(plan: PlaybackPlan): SubtitleTrackViewSlice {
@@ -382,6 +387,7 @@ export class SubtitleSession {
             if (plan === undefined) return;
             const latest = this.state.pending !== undefined ? this.state.pending.id : this.shownSubtitleId(plan);
             if (trackId === latest || (trackId !== undefined && !selectableSubtitle(plan, trackId))) return;
+            this.host.recordSwitch("pending");
             const applied = !loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(plan, trackId);
             if (applied) this.state.appliedOverride = { id: trackId };
             this.state.pending = { id: trackId, applied };
@@ -399,10 +405,12 @@ export class SubtitleSession {
         if (!this.canStartTrackChange(snap) || plan === undefined || trackId === this.shownSubtitleId(plan)) return;
         if (trackId !== undefined && !selectableSubtitle(plan, trackId)) return;
 
+        this.host.recordSwitch("pending");
         const previous = this.shownSubtitleId(plan);
         if (!loadsEmbeddedFile(plan, trackId) && this.applyStreamSubtitle(plan, trackId)) {
             if (renditionSwitch(plan, trackId)) this.startHlsReport(plan, trackId, previous);
             else {
+                this.host.recordSwitch("ok");
                 this.state = { phase: "idle", nativeOverride: { id: trackId } };
                 this.notifyChanged();
             }
@@ -629,11 +637,13 @@ export class SubtitleSession {
                 ...(carriedStored === undefined ? {} : { pendingStored: carriedStored }),
                 outcome: { state: "failed" },
             };
+            this.host.recordSwitch("failed", "no_answer", error);
             this.host.recoverConnection();
             return;
         }
         if (error instanceof ApiError && !error.transient && error.failure.kind !== "invalid_response" && !sessionGone(error)) {
-            if (this.tryEmbeddedSwitchFallback(plan, selected)) return;
+            if (this.tryEmbeddedSwitchFallback(plan, selected, undefined, error)) return;
+            this.host.recordSwitch("failed", undefined, error);
             this.settleRefusedOrFailed(snap.plan, { state: "failed" });
             return;
         }
@@ -652,7 +662,8 @@ export class SubtitleSession {
             this.host.failFromDecision(decision, true);
             return;
         }
-        if (this.tryEmbeddedSwitchFallback(plan, selected)) return;
+        if (this.tryEmbeddedSwitchFallback(plan, selected, decision.terminal.reason)) return;
+        this.host.recordSwitch("refused", decision.terminal.reason);
         this.settleRefusedOrFailed(snap.plan, { state: "refused", message: decision.terminal.message });
     }
 
@@ -772,6 +783,7 @@ export class SubtitleSession {
             if (pendingPick !== undefined) this.state.queuedAfterReopen = pendingPick;
             if (keptStored !== undefined) this.state.pendingStored = keptStored;
         }
+        this.host.recordSwitch("ok");
         this.host.settleSwitch(keepBusyIfSeeking, postSettle);
         if (postSettle.kind !== "none") return;
 
@@ -811,7 +823,7 @@ export class SubtitleSession {
         return { id: restoreId };
     }
 
-    private tryEmbeddedSwitchFallback(plan: PlaybackPlan, selected: SelectedTracks): boolean {
+    private tryEmbeddedSwitchFallback(plan: PlaybackPlan, selected: SelectedTracks, code?: string, error?: unknown): boolean {
         if (this.state.phase !== "direct_embedded_switching") return false;
         const id = selected.subtitle?.id;
         const snap = this.host.snapshot();
@@ -822,6 +834,7 @@ export class SubtitleSession {
         const pendingPick = this.extractPendingPick();
         const postSettle = this.postSettleOf(prev);
         this.state = { phase: "idle", nativeOverride: { id } };
+        this.host.recordSwitch("recovered", code, error);
         this.finishSettlement(true, postSettle, pendingPick, undefined);
         return true;
     }
@@ -934,12 +947,13 @@ export class SubtitleSession {
 
     // --- Native text & sidecar fallback helpers ---
 
-    private applyStreamSubtitle(plan: PlaybackPlan, trackId: string | undefined): boolean {
+    private applyStreamSubtitle(plan: PlaybackPlan, trackId: string | undefined, captionFallback = false): boolean {
         const nativeText = this.host.nativeText;
         if (!nativeText.canSelectInStream) return false;
         if (trackId === undefined) {
             if (!renditionSwitch(plan, undefined) || !nativeText.setSilentSubtitle(true)) return false;
             this.captions.clearOverlay();
+            if (!captionFallback) this.host.recordCaption("not_needed");
             return true;
         }
         const row = plan.subtitle.inventory.find(entry => entry.trackId === trackId);
@@ -950,7 +964,18 @@ export class SubtitleSession {
         if (index === undefined || !nativeText.selectTextTrack(index)) return false;
         nativeText.setSilentSubtitle(false);
         this.captions.clearOverlay();
+        if (!captionFallback) this.host.recordCaption("not_needed");
         return true;
+    }
+
+    private fallbackCause: { http: number | undefined; network: boolean } | undefined;
+    private captionReadFailed(loaded: PlaybackPlan, error: unknown): boolean {
+        const http = error instanceof ApiError ? error.status : undefined;
+        const cause = { http, network: http === undefined && unanswered(error) };
+        this.fallbackCause = cause;
+        const fallback = this.nativeCaptionFallback(loaded);
+        this.host.recordCaption(fallback ? "fallback" : "failed", cause);
+        return fallback;
     }
 
     private nativeCaptionFallback(loaded: PlaybackPlan): boolean {
@@ -965,7 +990,7 @@ export class SubtitleSession {
         }
         const row = plan.subtitle.inventory.find(entry => entry.trackId === id);
         if (plan.delivery !== "original_http" || row === undefined || !inStreamCandidate(plan, row)) return false;
-        if (!this.applyStreamSubtitle(plan, id)) {
+        if (!this.applyStreamSubtitle(plan, id, true)) {
             if (snap.started) return false;
             this.captions.setCaptionFallback(id);
             return true;
@@ -977,8 +1002,12 @@ export class SubtitleSession {
     private applyCaptionFallback(plan: PlaybackPlan): void {
         const id = this.captions.consumeCaptionFallback();
         if (id === undefined || this.shownSubtitleId(plan) !== id) return;
-        if (this.applyStreamSubtitle(plan, id)) this.host.nativeText.setSilentSubtitle(false);
-        else this.captions.setNotice(CAPTION_FAILED);
+        if (this.applyStreamSubtitle(plan, id, true)) this.host.nativeText.setSilentSubtitle(false);
+        else {
+            this.captions.setNotice(CAPTION_FAILED);
+            this.host.recordCaption("failed", this.fallbackCause);
+        }
+        this.fallbackCause = undefined;
     }
 
     private restoreNativeVisibility(): void {
@@ -994,11 +1023,11 @@ export class SubtitleSession {
     private refetchCaptionsForSync(key: string): void {
         const plan = this.host.snapshot().plan;
         if (plan === undefined || this.destroyed) return;
-        this.captions.refetchForTiming(plan, key, this.tools.timingVersion(key), syncKey => this.tools.timingVersion(syncKey), loaded => this.nativeCaptionFallback(loaded));
+        this.captions.refetchForTiming(plan, key, this.tools.timingVersion(key), syncKey => this.tools.timingVersion(syncKey), (loaded, error) => this.captionReadFailed(loaded, error));
     }
 
     private readCaptionsFor(plan: PlaybackPlan): void {
-        this.captions.readPrimary(plan, key => this.tools.timingVersion(key), loaded => this.nativeCaptionFallback(loaded));
+        this.captions.readPrimary(plan, key => this.tools.timingVersion(key), (loaded, error) => this.captionReadFailed(loaded, error));
     }
 
     private attachDownloaded(id: string): boolean {

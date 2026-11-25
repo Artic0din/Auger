@@ -51,7 +51,7 @@ export function fakeGitHub(seed = []) {
 }
 
 function withDecodedMetadata(text) {
-  const decoded = [...text.matchAll(/<!--\s*auger-state:(?:v2:)?([A-Za-z0-9+/=]+)\s*-->/g)].map((match) => {
+  const decoded = [...text.matchAll(/<!--\s*auger-state:(?:v2:|inc1:)?([A-Za-z0-9+/=]+)\s*-->/g)].map((match) => {
     try {
       const binary = atob(match[1]);
       return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));

@@ -14,10 +14,13 @@ import {
   MODEL_PATTERN,
   PRECEDING_SCREENS,
   sanitizeAvplayError,
+  validateBuffering,
   validateIncident,
+  validateMedia,
   VERSION_PATTERN,
 } from "./contract.js";
 import { legacyEquivalent } from "./grouping.js";
+import { navigationErrorKey, validateNavigation } from "./navigation.js";
 import { fnv1aHex } from "./hash.js";
 
 export { fnv1aHex };
@@ -272,6 +275,11 @@ export function validateV1(raw) {
   if (log.length > 0) record.log = log;
   const screen = oneOf(PRECEDING_SCREENS)(raw.precedingScreen);
   if (screen !== undefined) record.screen = screen;
+  const nav = validateNavigation(raw.nav);
+  if (nav !== undefined) record.nav = nav;
+  const navKey = navigationErrorKey(record);
+  const md = validateMedia(raw.md);
+  if (md !== undefined) record.md = md;
   if (raw.inc !== undefined) {
     const failure = attachIncident(record, raw);
     if (failure) return failure;
@@ -280,6 +288,17 @@ export function validateV1(raw) {
     const key = [sanitize(raw.app, 32), sanitize(raw.tv, 48), record.cat ?? "", screen];
     record.observedGroupId = fnv1aHex(["obs1", ...key].join("\n"));
     record.observedGuard = fnv1aHex(["guard", ...key].join("\n"));
+  } else if (navKey !== undefined) {
+    // An app error with a known screen groups by screen and error name. A legacy `app:<name>` issue cannot name
+    // the screen, so it is never reused for this one.
+    const key = [sanitize(raw.app, 32), sanitize(raw.tv, 48), ...navKey];
+    record.navGroupId = fnv1aHex(["nav1", ...key].join("\n"));
+    record.navGuard = fnv1aHex(["guard", ...key].join("\n"));
+  }
+  // Buffering / Quality evidence describes only a buffering report; it never joins a grouping key.
+  if (record.cat === "buffering" || record.inc?.cat === "buffering") {
+    const bq = validateBuffering(raw.bq);
+    if (bq !== undefined) record.bq = bq;
   }
   return { record };
 }

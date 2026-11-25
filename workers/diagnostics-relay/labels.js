@@ -20,6 +20,9 @@ export const STAGE_LABELS = {
   quality_change: "Quality change",
   seek_reanchor: "Seek re-anchor",
   progress: "Progress report",
+  caption_load: "Subtitle file load",
+  audio_switch: "Audio track switch",
+  subtitle_switch: "Subtitle track switch",
 };
 
 export const OPERATION_LABELS = {
@@ -32,6 +35,7 @@ export const OPERATION_LABELS = {
   avplay: "AVPlay",
   replan_playback: "Replan playback",
   progress_report: "Progress report",
+  subtitle_download: "Subtitle download",
 };
 
 export const OUTCOME_LABELS = {
@@ -97,6 +101,32 @@ const CODE_PHRASES = {
   installation_changed: "server installation changed",
   revoked: "device access revoked",
   backgrounded: "app backgrounded",
+  caption_load_failed: "subtitle file did not load",
+  audio_track_switch_failed: "audio track switch failed",
+  subtitle_track_switch_failed: "subtitle track switch failed",
+};
+
+export const SUBTITLE_DRAWER_LABELS = {
+  overlay: "Auger caption overlay",
+  avplay: "AVPlay (TV player)",
+  burn_in: "Burned into the video by the server",
+  none: "Not shown",
+};
+
+export const CAPTION_LOAD_LABELS = {
+  not_needed: "Not needed (no subtitle file drawn by Auger)",
+  loading: "Loading",
+  loaded: "Loaded",
+  failed: "Failed",
+  fallback: "Failed; AVPlay drew the embedded track",
+};
+
+export const SWITCH_RESULT_LABELS = {
+  pending: "Waiting for the server",
+  ok: "Succeeded",
+  refused: "Refused (selection unavailable)",
+  failed: "Failed",
+  recovered: "Failed; AVPlay drew the track instead",
 };
 
 /** Phrase for a published code; undefined for codes the relay groups by but does not print. */

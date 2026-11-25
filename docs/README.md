@@ -59,3 +59,4 @@ Read the matching reference before changing its area.
 ## Simulator validation
 
 - [Samsung simulator guide](evidence/simulator-evidence.md) for simulator launch, signed `.wgt` asset verification, and Apple TV comparison steps.
+- [Navigation diagnostics protocol](evidence/navigation-sampling.md) for the sampling overhead gate and App / Navigation report checks on the S95C.
