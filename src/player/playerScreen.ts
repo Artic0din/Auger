@@ -918,7 +918,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                             ?? modalChoices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu))
                             ?? modalChoices[0]
                         : defaultSearchFocus(tracks, modalChoices));
-                modalTarget?.focus();
+                if (modalTarget !== undefined) {
+                    modalTarget.focus();
+                } else {
+                    const dialog = subtitleDialogHost.querySelector<HTMLElement>('[role="dialog"]') ?? subtitleDialogHost;
+                    dialog.tabIndex = -1;
+                    dialog.focus();
+                }
                 showPane(column, true);
                 return;
             }
