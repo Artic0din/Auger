@@ -405,8 +405,8 @@ export class PlayerSettingsFlusher {
                             const failedAttempts = write.failedAttempts + 1;
                             const isHeld = failedAttempts > this.retryPolicy.maximumAutomaticRetries;
                             const serverWait = retryAfterMs(error);
-                            const delayMs = Math.max(retryDelayMs(this.retryPolicy, failedAttempts), serverWait ?? 0);
-                            const retryNotBeforeMs = isHeld ? undefined : this.clock.now() + delayMs;
+                            const backoff = retryDelayMs(this.retryPolicy, failedAttempts);
+                            const retryNotBeforeMs = !isHeld && serverWait !== undefined && serverWait > backoff ? this.clock.now() + serverWait : undefined;
                             this.failedInDrain.set(key, {
                                 value: write.value,
                                 scope: write.scope,

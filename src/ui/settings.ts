@@ -130,7 +130,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         render(host.focused());
     }) ?? (() => undefined);
     const stopPlayerSettingsCommit = actions?.playerSettings?.onCommit(() => {
-        if (!torn && !heldBusy && !state.busy && state.loaded) void state.load();
+        if (!torn && !heldBusy && !state.busy && state.loaded && state.error === undefined) void state.load();
     }) ?? (() => undefined);
     const stopThemeMusic = themeMusic?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
     const stopDiagnostics = diagnosticsCollector.subscribe(() => { if (!torn && (category === "diagnostics" || diagnosticsQr)) render(host.focused()); });
