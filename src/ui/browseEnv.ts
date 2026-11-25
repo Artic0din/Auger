@@ -1,5 +1,6 @@
 import { type Clock, systemClock } from "../api/clock.ts";
 import type { FocusTarget } from "./browseFocus.ts";
+import type { BrowseSignal } from "./browseSignals.ts";
 
 export const SLOW_MS = 5000;
 
@@ -88,4 +89,5 @@ export interface RouteEntry {
     admissible?(): boolean;
     hasData(): boolean;
     markStale(): void;
+    onSignal?(signal: BrowseSignal, visible: boolean): void;
 }

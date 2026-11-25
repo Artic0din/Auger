@@ -25,7 +25,6 @@ import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMod
 import { collectionRowCards } from "./collectionCards.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
 import { personalView, type PersonalFilter, type PersonalSource, type PersonalListCapability } from "./personalLists.ts";
-import { personFilmographyView } from "./personFilmography.ts";
 import type { RecommendationRow } from "../contracts/v2/recommendations.ts";
 import { boxSetView } from "./boxSetView.ts";
 import type { BoxSetRowState } from "./boxSetRow.ts";
@@ -145,7 +144,6 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     const back = current.kind === "home" ? undefined : pop;
     const escape = back === undefined ? actionButton("profiles", translate("account.profiles"), handlers.chooseProfile) : actionButton("back", translate("common.back"), back);
     if (current.kind === "personal") return personalView(current, handlers);
-    if (current.kind === "person") return personFilmographyView(current.person, { context: handlers.context, gridColumns: handlers.gridColumns, back: handlers.pop, signIn: handlers.signIn });
     if (current.kind === "library") {
         if (current.library.type === "music") return statusView(`library:${current.library.id}`, translate("library.kind.music"), ["Music browsing is not available on this TV."], [escape], back);
         current.discovery ??= discoveryState();

@@ -8,6 +8,7 @@ import { translate } from "../i18n/translate.ts";
 import type { NativeSession } from "../session/session.ts";
 import { createForegroundRunner, idleFocusReader, type Arrival, type FocusReader, type ForegroundRunner, type ForegroundSlot, type Paint, type RouteEntry } from "./browseEnv.ts";
 import type { FocusTarget } from "./browseFocus.ts";
+import type { BrowseSignal } from "./browseSignals.ts";
 import { errorState, failureBody, failureText, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied, type ErrorState, type RequestWrite } from "./errorState.ts";
 import { orderRequests, requestProgress } from "./requestProgress.ts";
 
@@ -681,6 +682,12 @@ export function createRequests(options: RequestsOptions): RequestsModule {
 
             markStale() {
                 internal.stale = true;
+            },
+
+            onSignal(signal: BrowseSignal) {
+                if (signal.kind === "requests.changed" || signal.kind === "catalog.changed" || signal.kind === "playback.resumed" || (signal.kind === "title.notInterested" && signal.current !== handle)) {
+                    internal.stale = true;
+                }
             },
 
             snapshot(): RequestPageSnapshot {

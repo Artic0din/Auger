@@ -11,6 +11,7 @@ import type { RequestTitle } from "../contracts/v2/requests.ts";
 import type { NativeSession } from "../session/session.ts";
 import { createForegroundRunner, idleFocusReader, type Arrival, type FocusReader, type ForegroundRunner, type ForegroundSlot, type Paint, type RouteEntry } from "./browseEnv.ts";
 import type { FocusTarget } from "./browseFocus.ts";
+import type { BrowseSignal } from "./browseSignals.ts";
 import { searchScope, type SearchFilter } from "./browseModel.ts";
 import { errorState, failureBody, failureText, type ErrorState } from "./errorState.ts";
 
@@ -459,6 +460,17 @@ export function createSearch(options: SearchOptions): SearchModule {
 
         markStale() {
             stale = true;
+        },
+
+        onSignal(signal: BrowseSignal, visible: boolean) {
+            if (signal.kind === "requests.capability") {
+                if (!signal.enabled) module.clearRequests();
+                else if (signal.refreshSearch && visible) module.refreshRequestsIfEnabled();
+            } else if (signal.kind === "requests.changed") {
+                module.invalidateRequests(visible);
+            } else if (signal.kind === "catalog.changed" || signal.kind === "playback.resumed" || (signal.kind === "title.notInterested" && signal.current !== module)) {
+                stale = true;
+            }
         },
 
         snapshot(): SearchSnapshot {

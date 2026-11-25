@@ -8,6 +8,7 @@ import type { CatalogQueryRequest, MediaScope } from "../contracts/v2/discovery.
 import type { NativeSession } from "../session/session.ts";
 import { createForegroundRunner, idleFocusReader, type Arrival, type FocusReader, type ForegroundRunner, type ForegroundSlot, type Paint, type RouteEntry } from "./browseEnv.ts";
 import type { FocusTarget } from "./browseFocus.ts";
+import type { BrowseSignal } from "./browseSignals.ts";
 import { errorState, failureBody, failureText, type ErrorState } from "./errorState.ts";
 
 const PERSON_PAGE_SIZE = 60;
@@ -370,6 +371,12 @@ export function createPerson(options: PersonOptions): PersonModule {
 
         markStale() {
             stale = true;
+        },
+
+        onSignal(signal: BrowseSignal) {
+            if (signal.kind === "catalog.changed" || signal.kind === "playback.resumed" || (signal.kind === "title.notInterested" && signal.current !== module)) {
+                stale = true;
+            }
         },
 
         snapshot(): PersonSnapshot {
