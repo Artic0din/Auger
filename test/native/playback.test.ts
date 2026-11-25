@@ -4570,6 +4570,26 @@ test("the account token is never added to a media URL on another origin", async 
     assert.deepEqual(r.avplay.urls, [`https://node.example.test/stream/v3/${id}?st=node-signed`]);
 });
 
+// Synthetic signed query with percent-encoding the server signed byte-for-byte, then a fragment the HTTP request never carries.
+const FRAGMENT_QUERY = "st=fix%2Bture%20a";
+for (const site of ["same", "other"] as const) test(`a ${site}-origin media URL with a fragment opens with ${site === "same" ? "one token in its query" : "no account token"}`, async () => {
+    const r = await rig();
+    const origin = site === "same" ? "" : "https://node.example.test";
+    r.server.next.push({ url: (id) => `${origin}/api/v2/stream/${id}/video.mkv?${FRAGMENT_QUERY}#chapter` });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const id = only(sessionIds(r.server));
+    const token = only(playbackRequests(r.h).filter((request) => request.path === "/playback/start")).headers.authorization?.replace(/^Bearer /, "") ?? "";
+    assert.notEqual(token, "");
+    const opened = new URL(only(r.avplay.urls));
+    assert.equal(opened.origin, site === "same" ? r.h.fake.origin : "https://node.example.test");
+    assert.equal(opened.pathname, `/api/v2/stream/${id}/video.mkv`);
+    // `search` is what the HTTP request sends: the signed query unchanged, then exactly one credential on our own origin only.
+    assert.equal(opened.search, site === "same" ? `?${FRAGMENT_QUERY}&token=${encodeURIComponent(token)}` : `?${FRAGMENT_QUERY}`);
+    assert.deepEqual(opened.searchParams.getAll("token"), site === "same" ? [token] : []);
+    assert.equal(opened.hash, "#chapter");
+});
+
 const SEEK_ENDINGS: readonly ("back" | "destroy")[] = ["back", "destroy"];
 for (const ending of SEEK_ENDINGS) {
     test(`${ending} during a local seek waits for its callback before closing AVPlay`, async () => {
@@ -4675,16 +4695,17 @@ test("a newly mounted controller also waits for the previous controller's pendin
     assert.equal(r.avplay.state, "NONE");
 });
 
-// PlayerViewModel's start failure (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877) shows the error's own description:
-// APIv2Client words a problem by its detail, else its title, and a bare status as errors.apple.v2.httpStatus (#760).
-test("a refused start carries the server's own reason for the error page, as on Apple TV", async () => {
+// PlayerViewModel's start failure (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877) shows the error's own description,
+// which APIv2Client words from a problem's detail, else its title (#760). Auger keeps only the status and problem type: the
+// server's free text can carry private values onto a shared living-room screen (#887).
+test("a refused start keeps its status and problem type for the error page, never the server's text", async () => {
     const detailed = await rig();
     detailed.h.fake.script("/playback/start", { status: 400, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/validation_failed", title: "Rejected", status: 400, detail: "The file is offline." } });
     detailed.controller.play(MOVIE);
     await detailed.h.clock.advance(0);
     const withDetail = last(detailed.views);
     assert.ok(withDetail.phase === "error" && withDetail.error.kind === "server");
-    assert.deepEqual(withDetail.error.reason, { text: "The file is offline.", problemId: "validation_failed" });
+    assert.deepEqual(withDetail.error.reason, { status: 400, problemId: "validation_failed" });
     detailed.controller.destroy();
 
     const titled = await rig();
@@ -4693,8 +4714,21 @@ test("a refused start carries the server's own reason for the error page, as on 
     await titled.h.clock.advance(0);
     const withTitle = last(titled.views);
     assert.ok(withTitle.phase === "error" && withTitle.error.kind === "server");
-    assert.deepEqual(withTitle.error.reason, { text: "Rejected", problemId: "validation_failed" });
+    assert.deepEqual(withTitle.error.reason, { status: 400, problemId: "validation_failed" });
     titled.controller.destroy();
+
+    // Synthetic markers shaped like the private values the S95C showed: a URL, an email address and credentials.
+    const markers = ["https://private.example.test/media/SYNTH-URL-7f3a", "synthetic.viewer@example.test", "SYNTH-TOKEN-3b9c", "SYNTH-PASSWORD-51d2"];
+    const exposed = await rig();
+    exposed.h.fake.script("/playback/start", { status: 404, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/not_found", title: `Missing for ${markers[1]}`, status: 404, detail: `No media at ${markers[0]}?token=${markers[2]}&password=${markers[3]}` } });
+    exposed.controller.play(MOVIE);
+    await exposed.h.clock.advance(0);
+    const withMarkers = last(exposed.views);
+    assert.ok(withMarkers.phase === "error" && withMarkers.error.kind === "server");
+    assert.deepEqual(withMarkers.error.reason, { status: 404, problemId: "not_found" });
+    const published = JSON.stringify(exposed.views);
+    for (const marker of markers) assert.ok(!published.includes(marker), `${marker} never reaches a view`);
+    exposed.controller.destroy();
 
     const bare = await rig();
     bare.h.fake.script("/playback/start", { status: 400 });
@@ -4714,7 +4748,7 @@ test("a refused start keeps the problem's first field code for the error page", 
     await r.h.clock.advance(0);
     const view = last(r.views);
     assert.ok(view.phase === "error" && view.error.kind === "server");
-    assert.deepEqual(view.error.reason, { text: "Invalid", problemId: "validation_failed", fieldCode: "required" });
+    assert.deepEqual(view.error.reason, { status: 422, problemId: "validation_failed", fieldCode: "required" });
     r.controller.destroy();
 });
 
@@ -4725,8 +4759,8 @@ test("only a 410 client_upgrade_required start asks for an update, and its wall 
     const problem = (status: number, id: string): Record<string, unknown> => ({ type: `https://silo.example/problems/${id}`, title: "Update required", status, detail: "Update the app." });
     const cases = [
         { status: 410, id: "client_upgrade_required", reason: { update: true } },
-        { status: 400, id: "client_upgrade_required", reason: { text: "Update the app.", problemId: "client_upgrade_required" } },
-        { status: 410, id: "gone", reason: { text: "Update the app.", problemId: "gone" } },
+        { status: 400, id: "client_upgrade_required", reason: { status: 400, problemId: "client_upgrade_required" } },
+        { status: 410, id: "gone", reason: { status: 410, problemId: "gone" } },
     ];
     for (const { status, id, reason } of cases) {
         const r = await rig();
@@ -5345,12 +5379,14 @@ test("a timing reread keeps the shown cues until the new ones load, and a failed
     r.avplay.tick(12500);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "the cues stay while the reread is on its way");
     refresh.release();
     for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
     r.avplay.tick(12600);
     view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "a failed reread keeps the cues on screen");
     assert.notEqual(view.captions?.status, "failed");
     assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "and the secondary stays chosen");

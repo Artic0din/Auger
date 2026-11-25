@@ -1895,6 +1895,55 @@ appTest("saved server profile 15/45 reaches the composed controller and every re
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
 });
 
+// The Settings choice reaches the player only through startPlayback's threshold callback in src/app.ts. Without it the
+// controller falls back to 3, so the second episode would count down and start the third on its own.
+appTest("a Still watching prompt saved in Settings gates Auto-play after that many unattended episodes", async (tv, playback, catalog) => {
+    const settings = new FakeSettings(tv.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    for (const [id, file] of [["episode:s1e12", "42"], ["episode:s1e13", "43"], ["episode:s1e14", "42"]] as const) {
+        catalog.fileIds.set(id, file);
+        playback.items.set(id, [file]);
+    }
+    catalog.households.get("p-owner")?.sections[0]?.items.push("episode:s1e12");
+    await signIn(tv);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="playback"]').click();
+    await tv.page.locator('[data-focus="still-watching"]').click();
+    await tv.page.locator('[data-focus="still-watching:1"]').click();
+    await tv.page.locator('[data-focus="still-watching"] .settings-row-value', { hasText: "1 episode" }).waitFor();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "playback");
+    await tv.remote(10009);
+    await tv.page.locator(".settings").waitFor({ state: "detached" });
+
+    const starts = (): number => tv.fake.requests.filter(r => r.path === "/playback/start").length;
+    const countdown = tv.page.locator(".player-countdown");
+    await tv.page.locator('.skyline-continue[data-focus="episode:s1e12"]').first().focus();
+    await tv.remote(415);
+    await prepare(tv);
+    await settleUpNextLookup(tv);
+    // Unattended advance 1: the first episode ends and Auto-play counts down into the next.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await countdown.waitFor({ state: "visible" });
+    await tv.jump(10000);
+    await prepare(tv);
+    assert.equal(starts(), 2, "the countdown started the next episode with no key pressed");
+    assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").at(-1)?.body?.file_id, "43");
+    await settleUpNextLookup(tv);
+
+    // One unattended advance reached the saved threshold of 1: Up Next waits for the viewer.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "EOF reads settled");
+    assert.equal(await countdown.isHidden(), true, "the saved threshold gates the countdown");
+    await tv.jump(15000);
+    assert.equal(await countdown.isHidden(), true);
+    assert.equal(starts(), 2, "nothing plays until the viewer chooses");
+}, true);
+
 appTest("the composed app signs in, selects a profile, plays and returns to the same title", async (tv, playback) => {
     await signIn(tv);
     await startMovie(tv);
@@ -2666,18 +2715,26 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Trigger a server error with a free-form message containing a private title and account name; Diagnostics must not record the free-form text.
-    tv.fake.script("/playback/start", problem(422, "validation_failed", "Private Movie Title for alice cannot play"));
+    // Trigger a server error whose free-form title and detail carry a private title, an account name, a URL, an email address and
+    // credential-shaped values; neither the error wall nor Diagnostics may show the free-form text, and Diagnostics keeps the status.
+    const leaked = problem(422, "validation_failed", "Private Movie Title for alice cannot play");
+    const privateDetail = "See https://private.example.test/media/SYNTH-URL-7f3a?token=SYNTH-TOKEN-3b9c for synthetic.viewer@example.test, password SYNTH-PASSWORD-51d2";
+    tv.fake.script("/playback/start", { ...leaked, body: { ...(leaked.body as Record<string, unknown>), detail: privateDetail } });
     await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
+    assert.equal(await tv.page.locator(".player-error-text").textContent(), "Some values aren’t valid. Check them and try again.");
+    const wallText = await tv.page.locator(".player-error").innerText();
+    for (const marker of ["Private Movie Title", "alice", "private.example.test", "SYNTH-URL-7f3a", "synthetic.viewer@example.test", "SYNTH-TOKEN-3b9c", "SYNTH-PASSWORD-51d2"]) {
+        assert.ok(!wallText.includes(marker), `${marker} must never show on the error wall`);
+    }
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
-    await tv.page.getByText("server: server_error", { exact: true }).waitFor();
+    await tv.page.getByText("server: HTTP 422", { exact: true }).waitFor();
     assert.equal(autoPayloads.length, 1, "non-fatal server errors and cooldown must not send duplicate automatic reports");
     const paneText = await tv.page.locator(".settings-pane").innerText();
     assert.ok(!paneText.includes("Private Movie Title"), "free-form server movie title must never enter diagnostics");

@@ -52,7 +52,8 @@ import { createPerson } from "./person.ts";
 import { personFilmographyView } from "./personFilmography.ts";
 import { createSearch } from "./search.ts";
 import { mountSettings, type SettingsScreen } from "./settings.ts";
-import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
+import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsScreen, type DiagnosticsSendResult } from "../diagnostics.ts";
+import type { NavigationSource } from "../diagnosticsNavigation.ts";
 import { signOutRemovesServer } from "./signOutConfirmation.ts";
 import type { CardOverlayPrefs } from "./cardOverlays.ts";
 import { PresentationSettings } from "./presentationSettings.ts";
@@ -162,6 +163,16 @@ const rememberedLibraryTabs = new Map<string, UserLibrary[]>();
 
 /** Longest an episode read waits for the image-capability probe before asking for the one-size still. */
 const EPISODE_PROBE_WAIT_MILLISECONDS = 2000;
+
+/** The diagnostics screen a route belongs to: Details covers items, seasons and box sets. */
+function diagnosticsScreen(kind: Route["kind"] | undefined): DiagnosticsScreen | undefined {
+    switch (kind) {
+        case "item": case "season": case "boxSet": return "details";
+        case "homeSection": case "resume": return "home";
+        case "libraryResults": return "library";
+        default: return kind;
+    }
+}
 
 export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const server = options.server;
@@ -548,6 +559,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     document.addEventListener("focus", recordFocus, true);
 
     const top = (): Route | undefined => browseStack.top();
+    // Covered by the player or an overlay, browse owns no presses; Settings is reported as itself.
+    const navigationSource: NavigationSource = {
+        screen: () => torn || playing ? undefined : settingsScreen !== undefined ? "settings" : diagnosticsScreen(top()?.kind),
+        zone: () => settingsScreen === undefined ? host.focusedZone() : undefined,
+    };
     const themePrefs = new ThemeMusicPreferences(session);
     // The language the last answer left for this server and profile is shown from the first draw; the server's answer then confirms it.
     const languagePrefs = new AppLanguagePreferences(session, undefined, options.publicStorage === undefined ? undefined : { storage: options.publicStorage, scope: server.server.serverId });
@@ -886,6 +902,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             return;
         }
         torn = true;
+        options.diagnostics?.navigation.detach(navigationSource);
         translations.reset();
         presentation.stop();
         resolutionCap.stop();
@@ -2309,13 +2326,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         serverName: () => cachedBranding(options.publicStorage, context.baseUrl)?.serverName,
         settings: () => {
             const diagnostics = options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock, options.publicStorage);
-            const origin = top()?.kind;
-            switch (origin) {
-                case "item": case "season": case "boxSet": diagnostics.setPrecedingScreen("details"); break;
-                case "homeSection": case "resume": diagnostics.setPrecedingScreen("home"); break;
-                case "libraryResults": diagnostics.setPrecedingScreen("library"); break;
-                default: diagnostics.setPrecedingScreen(origin);
-            }
+            diagnostics.setPrecedingScreen(diagnosticsScreen(top()?.kind));
             const spoilersBeforeSettings = episodeSpoilers?.settings;
             shuffleGeneration++;
             stopDetails();
@@ -2434,6 +2445,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     void navigation.reload();
     void requests.probe();
     probeWatchParty();
+    options.diagnostics?.navigation.attach(navigationSource);
     host.listen();
     browseStack.start(undefined);
 

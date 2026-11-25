@@ -51,6 +51,36 @@ journey("Home retains cached rows after remount offline and refreshes on recover
     await jumpUntil(tv, 15000, () => tv.page.evaluate(() => !window.browseHarness.cacheOffline()), "recovered Home");
 });
 
+test("browse diagnostics follow the focused item when a view replaces its zones", async () => {
+    const page = await browser.newPage();
+    try {
+        const bundle = await build({ entryPoints: ["src/ui/browseFocus.ts"], bundle: true, format: "iife", globalName: "FocusFixture", target: "chrome108", write: false });
+        await page.addScriptTag({ content: bundle.outputFiles[0]?.text ?? "" });
+        const observed = await page.evaluate(() => {
+            const { FocusHost } = Reflect.get(window, "FocusFixture") as typeof import("../../src/ui/browseFocus.ts");
+            const container = document.body.appendChild(document.createElement("main"));
+            const host = new FocusHost(container);
+            host.listen();
+            const button = document.createElement("button");
+            const present = (zone: string, element: HTMLElement) => host.show({
+                name: "home", content: [element], focus: { zone, key: "card" }, back: undefined,
+                zones: [{ id: zone, layout: "row", items: [{ element, key: "card" }] }],
+            });
+            present("section", button);
+            const first = host.focusedZone();
+            present("grid", button);
+            const moved = host.focusedZone();
+            present("nav", document.createElement("button"));
+            const replacement = host.focusedZone();
+            document.body.appendChild(button).focus();
+            const removed = host.focusedZone();
+            host.destroy();
+            return [first, moved, replacement, removed ?? null];
+        });
+        assert.deepEqual(observed, ["section", "grid", "nav", null]);
+    } finally { await page.close(); }
+});
+
 test("Home's placeholder keeps the CSS backing and ThumbHash when a 2D canvas cannot be made", async () => {
     const page = await browser.newPage();
     try {

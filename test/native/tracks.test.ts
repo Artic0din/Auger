@@ -20,7 +20,7 @@ import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { FakePlayback } from "./support/fakePlayback.ts";
 import { fixture, problem, type RecordedRequest } from "./support/fakeSilo.ts";
 import { connected, type Harness, signIn } from "./support/harness.ts";
-import { playbackIncident } from "../../src/diagnosticsIncident.ts";
+import { incidentAutoEligible, mediaIncident, playbackIncident, publicMediaEvidence } from "../../src/diagnosticsIncident.ts";
 
 const MOVIE: PlayRequest = { contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: 12.5 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -772,6 +772,10 @@ test("three lost track-change answers reconcile before continuing with a fresh p
     assert.equal(view.phase === "loading" && view.detail, "reconnecting");
     assert.equal(r.avplay.state, "NONE");
     assert.equal(r.server.session(id).receipt, undefined, "the uncertain change joins recovery before teardown");
+    const captured = r.controller.mediaFailure();
+    assert.ok(captured);
+    assert.deepEqual([captured.failure.stage, captured.failure.code, captured.failure.network], ["audio_switch", "no_answer", true]);
+    assert.equal(incidentAutoEligible(mediaIncident(captured.trace, captured.failure)), false);
     r.controller.selectAudio("file:42:audio:2");
     r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
     await settle(r);
@@ -4352,4 +4356,127 @@ test("refreshView leaves a loading view alone: a restore in progress is not repl
         r.controller.refreshView();
         assert.equal(r.views.length, before, "nothing is sent while the stream is being restored");
     } finally { r.controller.destroy(); }
+});
+
+// --- #874: audio and subtitle evidence and failures ---
+
+/** Gives file 42's embedded subtitle a synthetic label and cue text that must never reach a report. */
+function taintSubtitleLabels(r: Rig): void {
+    const file = r.server.file("42");
+    r.server.files.set("42", { ...file, inventory: file.inventory.map(entry => ({ ...entry, label: "SYNTH_TRACK label" })) });
+}
+
+for (const lostAnswer of [false, true]) test(`a caption failure without a native fallback records ${lostAnswer ? "a connection loss" : "the HTTP status"}`, async () => {
+    const r = await rig();
+    taintSubtitleLabels(r);
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=gone`, format: "vtt", timing_origin_seconds: 0 } });
+    const path = "/captions?token=gone";
+    if (lostAnswer) r.h.fake.dropNextAnswer(path);
+    else r.h.fake.script(path, { status: 503, text: "unavailable" });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "fra" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        const captured = r.controller.mediaFailure();
+        assert.ok(captured !== undefined);
+        assert.deepEqual([captured.failure.stage, captured.failure.out, captured.failure.code], ["caption_load", "failed", "caption_load_failed"]);
+        const incident = mediaIncident(captured.trace, captured.failure);
+        assert.equal(incident.cat, "audio_subtitles");
+        assert.equal(incident.http, lostAnswer ? undefined : 503);
+        assert.equal(incident.kind, lostAnswer ? "network" : undefined);
+        assert.equal(incidentAutoEligible(incident), !lostAnswer);
+        assert.ok(incident.t.includes("caption_load:fail:caption_load_failed"), incident.t.join(", "));
+        const evidence = r.controller.mediaEvidence();
+        assert.ok(evidence !== undefined);
+        assert.deepEqual([evidence.subtitle.drawnBy, evidence.subtitle.load], ["overlay", "failed"]);
+        const record = publicMediaEvidence(evidence);
+        assert.equal("cues" in record.s, false, "a failed load reports no cue count");
+        assert.doesNotMatch(JSON.stringify({ record, incident }), /SYNTH_TRACK/, "track labels never enter the record");
+    } finally { r.controller.destroy(); }
+});
+
+test("#874 a caption file AVPlay stands in for is a recovered, manual-only caption-load incident", async () => {
+    const r = await rig();
+    r.server.next.push({ delivery: "original_http", subtitle: 1, subtitleArtifact: { url: `${r.h.fake.origin}/api/v2/captions?token=large`, format: "vtt", timing_origin_seconds: 0 } });
+    const held = r.h.fake.hold("/captions?token=large");
+    r.h.fake.script("/captions?token=large", { status: 200, text: "WEBVTT\n\n" + "x".repeat(4 * 1024 * 1024) });
+    r.avplay.tracks = [{ index: 4, type: "TEXT", extra_info: JSON.stringify({ track_lang: "eng" }) }];
+    try {
+        await playMovie(r, { ...MOVIE, startSeconds: 0 });
+        await settle(r);
+        held.release();
+        await settle(r);
+        const captured = r.controller.mediaFailure();
+        assert.ok(captured !== undefined);
+        assert.deepEqual([captured.failure.stage, captured.failure.out], ["caption_load", "recovered"]);
+        assert.equal(incidentAutoEligible(mediaIncident(captured.trace, captured.failure)), false);
+        const evidence = r.controller.mediaEvidence();
+        assert.deepEqual([evidence?.subtitle.drawnBy, evidence?.subtitle.load], ["avplay", "fallback"]);
+    } finally { r.controller.destroy(); }
+});
+
+test("#874 an embedded subtitle switch refused with 409 and drawn by AVPlay is a recovered switch carrying the observed status", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "conflict", "Conflict"));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        assertAVPlayDrawsFrench(r);
+        const captured = r.controller.mediaFailure();
+        assert.ok(captured !== undefined);
+        assert.deepEqual([captured.failure.stage, captured.failure.out, captured.failure.code, captured.failure.http], ["subtitle_switch", "recovered", "http_409", 409]);
+        assert.deepEqual(r.controller.mediaEvidence()?.switch, { kind: "subtitle", result: "recovered", code: "http_409" });
+        assert.equal(incidentAutoEligible(mediaIncident(captured.trace, captured.failure)), false, "AVPlay rescued it, so it stays manual");
+    } finally { r.controller.destroy(); }
+});
+
+test("#874 an unavailable subtitle selection is an expected refusal; the next switch that plays settles as succeeded", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.controller.selectSubtitle("file:42:subtitle:0");
+    await settle(r);
+    assert.equal(tracks(r).change.state, "refused");
+    const refused = r.controller.mediaFailure();
+    assert.ok(refused !== undefined);
+    // The server's own reason is not allowlisted, so the refusal is named by its decision.
+    assert.deepEqual([refused.failure.stage, refused.failure.out, refused.failure.code], ["subtitle_switch", "refused", "adaptation_unavailable"]);
+    assert.equal(incidentAutoEligible(mediaIncident(refused.trace, refused.failure)), false);
+
+    r.controller.selectSubtitle("file:42:subtitle:2");
+    await settle(r);
+    await playReplacement(r);
+    assert.deepEqual(r.controller.mediaEvidence()?.switch, { kind: "subtitle", result: "ok" });
+    assert.equal(r.controller.mediaFailure()?.failure.n, 1, "a success adds no failure");
+});
+
+test("#874 a successful audio change reports the source track and AVPlay's own audio row separately from the plan", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.controller.selectAudio("file:42:audio:1");
+    assert.deepEqual(r.controller.mediaEvidence()?.switch, { kind: "audio", result: "pending" });
+    await settle(r);
+    await playReplacement(r);
+    const evidence = r.controller.mediaEvidence();
+    assert.ok(evidence !== undefined);
+    assert.deepEqual(evidence.switch, { kind: "audio", result: "ok" });
+    assert.equal(r.controller.mediaFailure(), undefined);
+    // File 42's second audio_tracks row; the plan's ordinal names it.
+    assert.deepEqual([evidence.audio.language, evidence.audio.source], ["ja", { codec: "aac", channels: 2 }]);
+    // AVPlay's current AUDIO row in the fake: `audio/mpeg`, two channels.
+    assert.deepEqual(evidence.audio.observed, { codec: "mpeg", channels: 2 });
+    assert.deepEqual(publicMediaEvidence(evidence).a.obs, { c: "mpeg", ch: 2 });
+});
+
+test("#874 subtitles Off reports nothing drawn, no load and no cue count", async () => {
+    const r = await rig();
+    r.server.next.push({ subtitle: 1 });
+    await playMovie(r);
+    r.controller.selectSubtitle(undefined);
+    await settle(r);
+    await playReplacement(r);
+    const evidence = r.controller.mediaEvidence();
+    assert.ok(evidence !== undefined);
+    assert.deepEqual([evidence.subtitle.mode, evidence.subtitle.drawnBy, evidence.subtitle.load, evidence.switch], ["off", "none", "not_needed", { kind: "subtitle", result: "ok" }]);
+    const record = publicMediaEvidence(evidence);
+    assert.deepEqual(record.s, { mode: "off", via: "none", ld: "not_needed", sec: false });
 });

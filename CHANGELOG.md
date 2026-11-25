@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.7.0] - 2026-11-25
+
+### Features
+
+- **Diagnostics**: Explain track, buffering and navigation failures ([#894](https://github.com/Artic0din/Auger-Tizen/pull/894), [`fc8525e8`](https://github.com/Artic0din/Auger-Tizen/commit/fc8525e8))
+
+### Refactors & Maintenance
+
+- **Playback**: Deepen subtitle delivery and switching behind SubtitleSession ([#858](https://github.com/Artic0din/Auger-Tizen/pull/858), [`1853556b`](https://github.com/Artic0din/Auger-Tizen/commit/1853556b))
+
+### CI
+
+- **Changelog**: Record full technical commits without emojis and backfill v0.4.0 ([#893](https://github.com/Artic0din/Auger-Tizen/pull/893), [`44a9eddb`](https://github.com/Artic0din/Auger-Tizen/commit/44a9eddb))
+- **Releases**: Enforce user-facing PR release notes and accept singular heading ([#890](https://github.com/Artic0din/Auger-Tizen/pull/890), [`83309f22`](https://github.com/Artic0din/Auger-Tizen/commit/83309f22))
+- **Checks**: Rename pull request checks and document workflows ([#866](https://github.com/Artic0din/Auger-Tizen/pull/866), [`7b052394`](https://github.com/Artic0din/Auger-Tizen/commit/7b052394))
+
 ## [0.6.1] - 2026-11-25
 
 ### Fixes

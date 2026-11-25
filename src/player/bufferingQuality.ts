@@ -239,6 +239,8 @@ export class BufferingQualityController {
     arrivalLowerBoundKbps: () => number | null = () => null;
     /** What the link delivered, every reader included: what a lowering sends as `observed_throughput_kbps`. */
     linkThroughputKbps: () => number | null = () => null;
+    /** A stall of at least STALL_MIN_MS as it enters the plan summary, startup grace and outages excluded. For diagnostics only. */
+    onStallMeasured: ((measuredMs: number) => void) | null = null;
 
     private currentPill: Pill | null = null;
     /**
@@ -868,7 +870,7 @@ export class BufferingQualityController {
             return;
         }
         state.stall = null;
-        recordStall(state, stall.measuredFrom === null ? 0 : Math.max(0, now - stall.measuredFrom));
+        this.measureStall(state, stall.measuredFrom === null ? 0 : Math.max(0, now - stall.measuredFrom));
         if (stall.timedFrom !== null && !this.transportTrouble && now - stall.timedFrom >= STALL_MIN_MS) {
             if (resumed) {
                 state.endedStalls.push({ at: now, long: now - stall.timedFrom >= LONG_STALL_MS });
@@ -878,6 +880,11 @@ export class BufferingQualityController {
             }
         }
         this.cancelStallTimers();
+    }
+
+    private measureStall(state: PlanState, measuredMs: number): void {
+        recordStall(state, measuredMs);
+        if (measuredMs >= STALL_MIN_MS) this.onStallMeasured?.(measuredMs);
     }
 
     /** Prompt timeout, rearm, or a quality change: history clears with startup grace over, and a stall in progress is timed again from now. */
@@ -951,7 +958,7 @@ export class BufferingQualityController {
         }
         if (state.stall !== null) {
             // A stall still running when its plan ends ends with it, and counts if it reached STALL_MIN_MS outside trouble.
-            recordStall(state, state.stall.measuredFrom === null ? 0 : Math.max(0, now - state.stall.measuredFrom));
+            this.measureStall(state, state.stall.measuredFrom === null ? 0 : Math.max(0, now - state.stall.measuredFrom));
             if (!this.transportTrouble && state.stall.timedFrom !== null && now - state.stall.timedFrom >= STALL_MIN_MS) {
                 state.stallCount += 1;
             }

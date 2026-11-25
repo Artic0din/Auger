@@ -1,3 +1,4 @@
+import type { MediaSwitchResult, CaptionLoadState } from "../diagnosticsIncident.ts";
 import type { Clock } from "../api/clock.ts";
 import type { FileVersionTracks, PlaybackDecision, PlaybackPlan, SelectedTracks } from "../contracts/v2/playback.ts";
 import type { CatalogSubtitleTrack, SubtitleIntent } from "../contracts/v2/preplaySubtitles.ts";
@@ -89,6 +90,8 @@ export type SubtitleFailure =
 
 /** Narrow two-adapter host seam: implemented by PlaybackController in production and FakeSubtitleHost in tests. */
 export interface SubtitleHost {
+    recordSwitch(result: MediaSwitchResult, code?: string, error?: unknown): void;
+    recordCaption(load: CaptionLoadState, cause?: { http: number | undefined; network: boolean }): void;
     readonly nativeText: NativeTextPort;
     snapshot(): SubtitleTransportSnapshot;
     /** Live AVPlay media clock in ms, or undefined when unavailable/not started. */
