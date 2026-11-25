@@ -874,6 +874,14 @@ test("credits skip under an already-open pre-end prompt switches its countdown t
     assert.equal(manual.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "manual Skip Credits does not seek to EOF");
     assert.equal(manualView.upNext.countdown, 10);
     assert.equal(manualView.upNext.countdownTotal, 10);
+    // Natural EOF 5 s after Skip Credits preserves the remaining 5 s instead of advancing early.
+    await manual.h.clock.advance(5000);
+    manual.avplay.listener?.onstreamcompleted();
+    await manual.h.clock.advance(0);
+    assert.equal(bodies(manual.h, "/start").length, 1, "EOF after 5 s must not start next episode early");
+    assert.equal(completion(manual).countdown, 5, "remaining 5 s of the fixed 10 s credits countdown carry over");
+    await manual.h.clock.advance(5000);
+    assert.equal(bodies(manual.h, "/start").length, 2, "next episode starts once the full 10 s elapses");
     manual.controller.destroy();
 });
 
@@ -919,6 +927,27 @@ test("credits skip to EOF respects Auto-play off, Watch Party, and pending shuff
         assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "shuffle with pending part seeks as before");
         r.controller.destroy();
     }
+});
+
+test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Next, and reports the rewound position (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7140_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext?.countdown === 10, "credits countdown started");
+    r.controller.seekToSeconds(7020);
+    r.avplay.finishSeek();
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext === undefined, "rewinding out of credits closes Up Next");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 1, "cancelled credits countdown never starts the next episode");
+    const lastProgress = bodies(r.h, "/progress").at(-1);
+    assert.equal(lastProgress?.position, 7020, "progress reports the rewound position instead of duration");
+    r.controller.destroy();
 });
 
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
@@ -2159,6 +2188,47 @@ test("Still Watching gates auto-play after N unattended advances, resets on view
     await off.h.clock.advance(10_000);
     assert.equal(bodies(off.h, "/start").length, 3);
     off.controller.destroy();
+});
+
+test("automatic intro and mid-file credits skips do not reset the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const r = await episodeRig(undefined, undefined, () => 1);
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    settings.profile().set("playback.intro_skip_mode", "always");
+    settings.profile().set("playback.auto_skip_credits", true);
+    r.catalog.fileIds.set("episode:s1e11", "42");
+    r.catalog.fileIds.set("episode:s1e12", "43");
+    r.catalog.fileIds.set("episode:s1e13", "42");
+    r.server.items.set("episode:s1e11", ["42"]);
+    r.server.items.set("episode:s1e12", ["43"]);
+    r.server.items.set("episode:s1e13", ["42"]);
+    r.h.fake.scripted.set("/markers/files/43", [{ status: 200, body: { file_id: "43", marker_segments: [
+        { kind: "intro", start_seconds: 10, end_seconds: 90 },
+        { kind: "credits", start_seconds: 7000, end_seconds: 7060 },
+    ] } }]);
+    await playMovie(r, ep1);
+    // Unattended advance 1: ep1 -> ep2.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(10_000);
+    r.avplay.finishPrepare();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+    // Automatic intro skip and automatic mid-file credits skip on episode 2 must not count as viewer actions.
+    r.avplay.tick(15_000);
+    r.avplay.finishSeek();
+    r.avplay.tick(7010_000);
+    r.avplay.finishSeek();
+    // Finish episode 2: Still Watching must still gate at threshold 1.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).countdown, undefined, "automatic marker skips preserve the unattended streak");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 2, "gated episode still waits for Play Now");
+    r.controller.destroy();
 });
 
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {

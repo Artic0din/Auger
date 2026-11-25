@@ -246,3 +246,16 @@ test("the season row's still flag reaches the next episode, true or false", asyn
         assert.equal(result?.backdropIsEpisodeStill, flag);
     }
 });
+
+test("On Deck keeps fallback card progress out of authoritative spoiler watch state (#808)", async () => {
+    const other = "episode:other";
+    const bodies = new Map<string, unknown>([
+        [`/watch/${encodeURIComponent(CURRENT)}`, watch(CURRENT, 1, 1)],
+        [`/watch/${encodeURIComponent(other)}`, { content_id: other, type: "episode", title: "Pilot", series_id: "series:other", season_number: 1, episode_number: 1, user_data: { played: false, is_in_progress: false }, versions: [{ file_id: "f1", duration_seconds: 3600 }] }],
+        ["/home/sections", { sections: [{ id: "continue_watching", section_type: "continue_watching", title: "Continue Watching", items: [{ content_id: other, type: "episode", title: "Pilot", series_id: "series:other", position_seconds: 300, duration_seconds: 3600 }] }] }],
+    ]);
+    const read = async <T>(spec: RequestSpec<T>): Promise<T> => spec.decode(bodies.get(spec.path.split("?")[0] ?? ""));
+    const item = await onDeckPlay(read, CURRENT);
+    assert.deepEqual(item?.watch, { played: false, isInProgress: false });
+    assert.equal(item?.thumbnailPositionSeconds, undefined);
+});
