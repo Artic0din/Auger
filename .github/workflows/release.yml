@@ -313,10 +313,18 @@ jobs:
                 release_meta="$(gh release view "${TAG}" --json author,publishedAt)"
                 release_author="$(printf '%s\n' "${release_meta}" | jq -r '.author.login // empty')"
                 release_published_at="$(printf '%s\n' "${release_meta}" | jq -r '.publishedAt // empty')"
-                run_created="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
-                if [[ "${release_author}" == "github-actions[bot]" &&
-                      -n "${release_published_at}" && -n "${run_created}" &&
-                      "${release_published_at}" >= "${run_created}" ]]; then
+                published_this_run="false"
+                # Only bot-authored releases need the Actions run lookup. Bash has
+                # no >= inside [[ ]], so compare with > or ==.
+                if [[ "${release_author}" == "github-actions[bot]" ]]; then
+                  run_created="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
+                  if [[ -n "${release_published_at}" && -n "${run_created}" ]] &&
+                     { [[ "${release_published_at}" > "${run_created}" ]] ||
+                       [[ "${release_published_at}" == "${run_created}" ]]; }; then
+                    published_this_run="true"
+                  fi
+                fi
+                if [[ "${published_this_run}" == "true" ]]; then
                   echo "published=true" >> "${GITHUB_OUTPUT}"
                   echo "${TAG} was published earlier in this run for ${TARGET_SHA::9}; Discord can still be notified."
                 else
