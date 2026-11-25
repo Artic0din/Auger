@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Afspil nu",
  "upNext.playingNextIn": "{seconds, plural, one {Næste afspilles om # sekund} other {Næste afspilles om # sekunder}}",
  "upNext.shuffleDone": "Intet andet i den blandede afspilning kan afspilles.",
+ "upNext.stopShuffling": "Stop blanding",
  "update.appRequired": "Opdater Auger for at blive ved med at bruge denne server.",
  "watchParty.ballot.addCaption": "Alle kan tilføje en",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # stemme} other {{title}, # stemmer}}",

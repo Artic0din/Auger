@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Toista nyt",
  "upNext.playingNextIn": "{seconds, plural, one {Seuraava alkaa # sekunnin kuluttua} other {Seuraava alkaa # sekunnin kuluttua}}",
  "upNext.shuffleDone": "Tässä satunnaistoistossa ei ole enää mitään toistettavaa.",
+ "upNext.stopShuffling": "Lopeta satunnaistoisto",
  "update.appRequired": "Päivitä Auger, jotta voit jatkaa tämän palvelimen käyttöä.",
  "watchParty.ballot.addCaption": "Kuka tahansa voi lisätä",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # ääni} other {{title}, # ääntä}}",

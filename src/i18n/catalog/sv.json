@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Spela nu",
  "upNext.playingNextIn": "{seconds, plural, one {Nästa spelas om # sekund} other {Nästa spelas om # sekunder}}",
  "upNext.shuffleDone": "Inget mer i den slumpvisa uppspelningen kan spelas upp.",
+ "upNext.stopShuffling": "Sluta blanda",
  "update.appRequired": "Uppdatera Auger för att fortsätta använda den här servern.",
  "watchParty.ballot.addCaption": "Alla kan lägga till en",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # röst} other {{title}, # röster}}",

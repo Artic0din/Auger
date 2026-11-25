@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Смотреть сейчас",
  "upNext.playingNextIn": "{seconds, plural, one {Следующее начнётся через # секунду} few {Следующее начнётся через # секунды} many {Следующее начнётся через # секунд} other {Следующее начнётся через # секунды}}",
  "upNext.shuffleDone": "В этом случайном воспроизведении больше нечего показать.",
+ "upNext.stopShuffling": "Выключить перемешивание",
  "update.appRequired": "Обновите Auger, чтобы продолжить пользоваться этим сервером.",
  "watchParty.ballot.addCaption": "Добавить может любой участник",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # голос} few {{title}, # голоса} many {{title}, # голосов} other {{title}, # голоса}}",

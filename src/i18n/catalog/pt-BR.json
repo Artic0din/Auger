@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Reproduzir agora",
  "upNext.playingNextIn": "{seconds, plural, one {Reproduzindo o próximo em # segundo} many {Reproduzindo o próximo em # de segundos} other {Reproduzindo o próximo em # segundos}}",
  "upNext.shuffleDone": "Nada mais nesta reprodução aleatória pode ser reproduzido.",
+ "upNext.stopShuffling": "Desativar ordem aleatória",
  "update.appRequired": "Atualize o Auger para continuar usando este servidor.",
  "watchParty.ballot.addCaption": "Qualquer pessoa pode adicionar",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # voto} many {{title}, # de votos} other {{title}, # votos}}",

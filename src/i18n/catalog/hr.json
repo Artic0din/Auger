@@ -1175,6 +1175,7 @@
  "upNext.playNow": "Reproduciraj sad",
  "upNext.playingNextIn": "{seconds, plural, one {Sljedeće se reproducira za # sekundu} few {Sljedeće se reproducira za # sekunde} other {Sljedeće se reproducira za # sekundi}}",
  "upNext.shuffleDone": "U ovoj nasumičnoj reprodukciji nema više ničega što se može reproducirati.",
+ "upNext.stopShuffling": "Zaustavi nasumičnu reprodukciju",
  "update.appRequired": "Ažurirajte Auger da biste nastavili koristiti ovaj poslužitelj.",
  "watchParty.ballot.addCaption": "Svatko može dodati",
  "watchParty.ballot.candidate": "{count, plural, one {{title}, # glas} few {{title}, # glasa} other {{title}, # glasova}}",

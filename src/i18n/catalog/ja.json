@@ -1175,6 +1175,7 @@
  "upNext.playNow": "今すぐ再生",
  "upNext.playingNextIn": "{seconds, plural, other {#秒後に次を再生}}",
  "upNext.shuffleDone": "このシャッフルで再生できる作品はもうありません。",
+ "upNext.stopShuffling": "シャッフルを停止",
  "update.appRequired": "このサーバーを引き続き使用するには、Augerをアップデートしてください。",
  "watchParty.ballot.addCaption": "誰でも追加できます",
  "watchParty.ballot.candidate": "{count, plural, other {{title}、#票}}",
