@@ -360,6 +360,81 @@ class UserReleaseNotesTest(unittest.TestCase):
         )
         self.assertEqual({UserSection.NEW: ["Works on CRLF bodies."]}, user_sections("feat: crlf (#1)", bodies={1: body}))
 
+    def test_singular_release_note_heading_is_accepted(self):
+        body = pr_body("## Release note\n\nAdded Still Watching prompt under Settings > Playback.")
+        self.assertEqual(
+            {UserSection.NEW: ["Added Still Watching prompt under Settings > Playback."]},
+            user_sections("feat(player): add still watching (#886)", bodies={886: body}),
+        )
+
+
+class CheckPrReleaseNotesTest(unittest.TestCase):
+    def test_non_releasing_prs_pass_without_release_notes(self):
+        for title in (
+            "docs(releasing): clarify guide",
+            "chore(deps): bump actions/checkout",
+            "ci(release): update check",
+            "test(ui): stabilize focus test",
+            "refactor(player): simplify state",
+            "fix(ci): stop flaky check",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual([], changelog.check_pr_release_notes(title, ""))
+
+    def test_user_facing_prs_require_populated_release_notes(self):
+        for title in ("feat(player): add chapters", "fix: stop crash", "perf(home): faster rows", "revert: undo change", "feat!: drop Tizen 7"):
+            for body in ("", pr_body(""), pr_body("## Release Notes\n\n<!-- comment only -->"), pr_body("## Release Notes\n\n### New\n")):
+                with self.subTest(title=title, body=body[:30]):
+                    self.assertTrue(changelog.check_pr_release_notes(title, body))
+
+    def test_suppression_rules_and_quality_guards(self):
+        self.assertEqual([], changelog.check_pr_release_notes("fix(ui): internal tweak", pr_body("## Release Notes\n\nNone")))
+        self.assertTrue(changelog.check_pr_release_notes("feat!: drop Tizen 7", pr_body("## Release Notes\n\nNone")))
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): add still watching",
+                pr_body("## Release note\n\n### New\n\n- Pause Auto-play after 3 episodes. See [guide](https://example.com/docs#123)."),
+            ),
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add still watching",
+                pr_body("## Release Notes\n\n- Added prompt (#886)."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "fix(player): stop crash",
+                pr_body("## Release Notes\n\n- fix(player): stop crash"),
+            )
+        )
+
+    def test_check_pr_cli_and_workflow_step(self):
+        workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
+        self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
+        step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Check user-facing PR release notes")
+        with tempfile.TemporaryDirectory() as tmp_name:
+            runner_temp = Path(tmp_name)
+            env = {**os.environ, "RUNNER_TEMP": str(runner_temp)}
+            good = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=SCRIPT_DIR.parent,
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n- Jump to any chapter from the player.")},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, good.returncode, good.stderr)
+            missing = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=SCRIPT_DIR.parent,
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": "## Problem\n\nNo chapters."},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, missing.returncode)
+            self.assertIn("## Release Notes", missing.stderr)
+
 
 HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"
 
