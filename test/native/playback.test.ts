@@ -5379,12 +5379,14 @@ test("a timing reread keeps the shown cues until the new ones load, and a failed
     r.avplay.tick(12500);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "the cues stay while the reread is on its way");
     refresh.release();
     for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
     r.avplay.tick(12600);
     view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "a failed reread keeps the cues on screen");
     assert.notEqual(view.captions?.status, "failed");
     assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "and the secondary stays chosen");

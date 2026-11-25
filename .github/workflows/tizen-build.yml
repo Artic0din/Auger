@@ -21,9 +21,9 @@ concurrency:
 
 jobs:
   # The UI suite is most of the run (about 2,400 tests, each file with its own browser, two files at a time), so it is split across
-  # parallel shards instead of one job growing toward its time limit (#646). `test` keeps the check name the merge gate reads.
+  # parallel shards instead of one job growing toward its time limit (#646). `test` aggregates the shards into one gate check.
   checks:
-    name: Build and native tests
+    name: Typecheck, build, and native unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -40,7 +40,7 @@ jobs:
       - run: npm run test:native
 
   ui:
-    name: UI tests (${{ matrix.shard }}/3)
+    name: Playwright UI tests (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -63,21 +63,22 @@ jobs:
       - run: node --test --test-concurrency=2 --test-timeout=60000 --test-shard=${{ matrix.shard }}/3 "test/ui/*.test.ts"
 
   test:
+    name: All build and test checks
     needs: [checks, ui]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Every build, native and UI shard passed
+      - name: Verify build, native, and UI shards passed
         env:
           CHECKS: ${{ needs.checks.result }}
           UI: ${{ needs.ui.result }}
         run: |
-          echo "Build and native tests: ${CHECKS}; UI shards: ${UI}"
+          echo "Typecheck, build, and native unit tests: ${CHECKS}; Playwright UI shards: ${UI}"
           test "${CHECKS}" = success && test "${UI}" = success
 
   package:
-    name: Package .wgt
+    name: Package and sign .wgt
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

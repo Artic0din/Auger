@@ -14,14 +14,17 @@ Commits are grouped the way scripts/release-version.py bumps versions:
 
     generate-changelog.py release --version X.Y.Z [--date YYYY-MM-DD] [--from TAG] [--to HEAD] [--pr-notes-file PR.json]
     generate-changelog.py update --file CHANGELOG.md --version X.Y.Z [--date ...] [--from TAG] [--to HEAD]
+    generate-changelog.py check-pr --title TITLE --body-file PATH
 
 `release` prints the user-facing GitHub Release body. For each commit whose
 `(#123)` pull request body is in PR.json, it uses that body's `## Release Notes`
-section, then a legacy `Release note:` line, and otherwise the commit itself.
-PR.json is `{"123": "<body>"}` or `[{"number": 123, "body": "<body>"}]`.
+(or `## Release note`) section, then a legacy `Release note:` line, and otherwise
+the commit itself. PR.json is `{"123": "<body>"}` or `[{"number": 123, "body": "<body>"}]`.
 `update` adds the commit entry to a Keep a Changelog file below
 `<!-- changelog:releases -->`, and leaves the file alone when it already has a
 `## [X.Y.Z]` heading.
+`check-pr` verifies that user-facing pull requests (`feat`, `fix`, `perf`,
+`revert`, or breaking) include a populated `## Release Notes` section.
 """
 
 import argparse
@@ -448,55 +451,118 @@ def markdown_items(block: str, keep_bullets: bool = False) -> list[str]:
     return [f"- {' '.join(parts)}" if (keep_bullets and is_bullet) else " ".join(parts) for is_bullet, parts in items]
 
 
+RELEASE_NOTES_HEADINGS = {"release notes", "release note"}
+MARKDOWN_LINK_TARGET = re.compile(r"\]\([^)]*\)")
+RAW_TICKET_REF = re.compile(r"(?<![/\w&])#\d+\b")
+CONVENTIONAL_PREFIX = re.compile(
+    r"^(?:-\s+)?(?:feat|fix|perf|revert|chore|docs|ci|test|refactor|style|build)(?:\([^)]*\))?!?:\s+",
+    re.IGNORECASE,
+)
+
+
 def release_notes_section(body: str) -> Optional[str]:
     headings = list(HEADING.finditer(body))
     for index, heading in enumerate(headings):
         level = len(heading.group(1))
-        if level in (2, 3) and heading_key(heading.group(2)) == "release notes":
+        if level in (2, 3) and heading_key(heading.group(2)) in RELEASE_NOTES_HEADINGS:
             end = next((h.start() for h in headings[index + 1:] if len(h.group(1)) <= level), len(body))
             return body[heading.end():end]
     return None
 
 
+def parse_release_notes_section(section: Optional[str]) -> Optional[ParsedPrNotes]:
+    if section is None or not section.strip():
+        return None
+    if is_no_change(section):
+        return ParsedPrNotes(True, (), (), ())
+    highlights: list[str] = []
+    sectioned: dict[UserSection, list[str]] = {}
+    unsectioned: list[str] = []
+    saw_no_change = False
+
+    def keep(items: Iterable[str]) -> list[str]:
+        nonlocal saw_no_change
+        kept: list[str] = []
+        for item in items:
+            if is_no_change(item):
+                saw_no_change = True
+            else:
+                kept.append(item)
+        return kept
+
+    subheadings = list(HEADING.finditer(section))
+    unsectioned += keep(markdown_items(section[: subheadings[0].start()] if subheadings else section))
+    for index, heading in enumerate(subheadings):
+        end = subheadings[index + 1].start() if index + 1 < len(subheadings) else len(section)
+        block = section[heading.end():end]
+        key = heading_key(heading.group(2))
+        if key == "highlights":
+            highlights += keep(markdown_items(block, keep_bullets=True))
+        elif key in SUBHEADINGS:
+            sectioned.setdefault(SUBHEADINGS[key], []).extend(keep(markdown_items(block)))
+        else:
+            unsectioned += keep(markdown_items(block))
+    sectioned_tuple = tuple((section_name, tuple(items)) for section_name, items in sectioned.items() if items)
+    if highlights or sectioned_tuple or unsectioned:
+        return ParsedPrNotes(False, tuple(highlights), sectioned_tuple, tuple(unsectioned))
+    if saw_no_change:
+        return ParsedPrNotes(True, (), (), ())
+    return None
+
+
+def check_pr_release_notes(title: str, body: str) -> list[str]:
+    """Validate that a user-facing pull request supplies plain-language Release Notes."""
+    cleaned = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
+    entries = entries_for(CommitMessage(title, cleaned))
+    if not entries:
+        return []
+    parsed = parse_release_notes_section(release_notes_section(cleaned))
+    if parsed is None:
+        return [
+            "User-facing PRs (feat, fix, perf, revert, or breaking) must include a populated "
+            "`## Release Notes` section written in plain language for Samsung TV users "
+            "(optional subsections: `### Highlights`, `### Breaking Changes`, `### New`, "
+            "`### Improved`, `### Fixed`), or `None` for an internal-only fix."
+        ]
+    is_breaking = any(entry.category == Category.BREAKING for entry in entries)
+    allows_none = not is_breaking and all(entry.category == Category.FIXES for entry in entries)
+    if parsed.suppressed:
+        if is_breaking:
+            return [
+                "Breaking PRs cannot use `None` in `## Release Notes`; explain what breaks "
+                "and what users need to do."
+            ]
+        if not allows_none:
+            return [
+                "Only internal-only fixes can use `None` in `## Release Notes`; "
+                "describe the user-facing change in plain language."
+            ]
+        return []
+    errors: list[str] = []
+    items = [
+        *parsed.highlights,
+        *(item for _, section_items in parsed.sectioned for item in section_items),
+        *parsed.unsectioned,
+    ]
+    for item in items:
+        visible = MARKDOWN_LINK_TARGET.sub("]", item)
+        if RAW_TICKET_REF.search(visible):
+            errors.append(
+                f"Remove issue/PR numbers (`#123`) from `## Release Notes`: {item}"
+            )
+        if CONVENTIONAL_PREFIX.match(item):
+            errors.append(
+                f"Rewrite `## Release Notes` in plain user language without Conventional Commit prefixes: {item}"
+            )
+    return errors
+
+
 def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
     """A PR body's user-facing notes, or None when it has none to offer."""
     body = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
-    section = release_notes_section(body)
-    if section is not None and section.strip():
-        if is_no_change(section):
-            return ParsedPrNotes(True, (), (), ())
-        highlights: list[str] = []
-        sectioned: dict[UserSection, list[str]] = {}
-        unsectioned: list[str] = []
-        saw_no_change = False
-
-        def keep(items: Iterable[str]) -> list[str]:
-            nonlocal saw_no_change
-            kept: list[str] = []
-            for item in items:
-                if is_no_change(item):
-                    saw_no_change = True
-                else:
-                    kept.append(item)
-            return kept
-
-        subheadings = list(HEADING.finditer(section))
-        unsectioned += keep(markdown_items(section[: subheadings[0].start()] if subheadings else section))
-        for index, heading in enumerate(subheadings):
-            end = subheadings[index + 1].start() if index + 1 < len(subheadings) else len(section)
-            block = section[heading.end():end]
-            key = heading_key(heading.group(2))
-            if key == "highlights":
-                highlights += keep(markdown_items(block, keep_bullets=True))
-            elif key in SUBHEADINGS:
-                sectioned.setdefault(SUBHEADINGS[key], []).extend(keep(markdown_items(block)))
-            else:
-                unsectioned += keep(markdown_items(block))
-        sectioned_tuple = tuple((section_name, tuple(items)) for section_name, items in sectioned.items() if items)
-        if highlights or sectioned_tuple or unsectioned:
-            return ParsedPrNotes(False, tuple(highlights), sectioned_tuple, tuple(unsectioned))
-        if saw_no_change:
-            return ParsedPrNotes(True, (), (), ())
+    parsed = parse_release_notes_section(release_notes_section(body))
+    if parsed is not None:
+        return parsed
     legacy = [note.strip() for note in LEGACY_NOTE.findall(body)]
     if legacy:
         if all(is_no_change(note) for note in legacy):
@@ -739,9 +805,17 @@ def main(argv: list[str]) -> int:
         if name == "update":
             command.add_argument("--file", type=Path, required=True)
             command.add_argument("--repo", default=DEFAULT_REPO)
+    check_parser = commands.add_parser("check-pr")
+    check_parser.add_argument("--title", required=True)
+    check_parser.add_argument("--body-file", type=Path, required=True)
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "check-pr":
+            errors = check_pr_release_notes(args.title, args.body_file.read_text(encoding="utf-8"))
+            for error in errors:
+                print(f"::error::{error}", file=sys.stderr)
+            return 1 if errors else 0
         version = release.parse_version(args.version).text
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
             raise release.ReleaseError(f"Date must look like 2026-01-31, got {args.date!r}.")
