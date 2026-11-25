@@ -47,6 +47,7 @@ const SECRET_ASSIGN_PATTERN = /\b(?:bearer|token|api[_-]?key|password|passwd|sec
 const BEARER_PATTERN = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
 const LONG_TOKEN_PATTERN = /\b[A-Za-z0-9_-]{28,}\b/g;
+const PLAYER_ERROR_CODE_PATTERN = /^PLAYER_ERROR_[A-Z0-9_]{1,40}$/;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -74,12 +75,37 @@ export function sanitize(raw, maxLength = 140) {
     .replace(SECRET_ASSIGN_PATTERN, "<redacted>")
     .replace(IPV4_PATTERN, "<ip>")
     .replace(QUERY_PATTERN, "")
-    .replace(LONG_TOKEN_PATTERN, "<redacted>")
+    .replace(LONG_TOKEN_PATTERN, (match) => (PLAYER_ERROR_CODE_PATTERN.test(match) ? match : "<redacted>"))
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (cleaned === "") return undefined;
   return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+const ALLOWED_AVPLAY_STAGES = new Set(["prepareAsync", "open", "play", "seekTo"]);
+const ALLOWED_AVPLAY_EXCEPTIONS = new Set([
+  ...ALLOWED_APP_ERRORS,
+  "WebAPIException",
+  "InvalidAccessError",
+  "InvalidValuesError",
+  "NotFoundError",
+  "UnknownError",
+  "OperationNotSupportedError",
+  "failed",
+  "error",
+]);
+
+function sanitizeAvplayError(raw) {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "startup_timeout" || PLAYER_ERROR_CODE_PATTERN.test(trimmed)) return trimmed;
+  const colon = trimmed.indexOf(":");
+  if (colon <= 0) return undefined;
+  const stage = trimmed.slice(0, colon);
+  if (!ALLOWED_AVPLAY_STAGES.has(stage)) return undefined;
+  const name = trimmed.slice(colon + 1);
+  return ALLOWED_AVPLAY_EXCEPTIONS.has(name) ? `${stage}:${name}` : `${stage}:error`;
 }
 
 function nonNegInt(raw, max) {
@@ -142,6 +168,9 @@ export function validatePayload(raw) {
       sub: sanitize(raw.play.sub, 80),
       pos: sanitize(raw.play.pos, 24),
       rb: nonNegInt(raw.play.rb, 10000),
+      hdr: typeof raw.play.hdr === "boolean" ? raw.play.hdr : undefined,
+      av: sanitizeAvplayError(raw.play.av),
+      fb: nonNegInt(raw.play.fb, 20),
       n: notes.length > 0 ? notes : undefined,
       e: sanitize(raw.play.e, 120),
     };
@@ -179,9 +208,10 @@ export function validatePayload(raw) {
 /** Deterministic issue grouping fingerprint: same app version, TV model, and error/playback signature. */
 export function computeFingerprint(payload) {
   const play = payload.play;
+  const playErr = play?.e === undefined ? undefined : play.av && play.e === "playback_failed" ? `${play.e}:${play.av}` : play.e;
   const sig = payload.err
     ? `app:${payload.err}`
-    : play?.e ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
+    : playErr ?? [payload.cat ?? "", play?.m ?? "", play?.d ?? "", play?.src ?? "", play?.sub ?? ""].join("|");
   return fnv1aHex([payload.app, payload.tv, sig].join("\n"));
 }
 
@@ -204,6 +234,9 @@ function stableState(payload) {
     s: play?.s,
     sub: play?.sub,
     rb: play?.rb,
+    hdr: play?.hdr,
+    av: play?.av,
+    fb: play?.fb,
     n: play?.n,
     e: play?.e,
     log: (payload.log ?? []).map(stripLogTimestamp),
@@ -244,11 +277,15 @@ const DIFF_FIELDS = [
   ["s", "Subtitles"],
   ["sub", "Subtitle mode"],
   ["rb", "Rebuffers"],
+  ["hdr", "HDR setting"],
+  ["fb", "Route fallbacks"],
+  ["av", "AVPlay error"],
   ["e", "Last error"],
 ];
 
 function formatFieldValue(key, value) {
   if (value === undefined || value === null || value === "") return "none";
+  if (key === "hdr" && typeof value === "boolean") return value ? "On" : "Off";
   if (key === "cat" && typeof value === "string" && Object.hasOwn(CATEGORY_LABELS, value)) {
     return CATEGORY_LABELS[value];
   }
@@ -362,6 +399,9 @@ export function formatGitHubIssue(payload) {
       p.sub ? `| Subtitle mode | ${p.sub} |` : undefined,
       p.pos ? `| Position | ${p.pos} |` : undefined,
       typeof p.rb === "number" && p.rb > 0 ? `| Rebuffers | ${p.rb} |` : undefined,
+      typeof p.hdr === "boolean" ? `| HDR setting | ${p.hdr ? "On" : "Off"} |` : undefined,
+      typeof p.fb === "number" && p.fb > 0 ? `| Route fallbacks | ${p.fb} |` : undefined,
+      p.av ? `| AVPlay error | ${p.av} |` : undefined,
       p.st ? `| Status | ${p.st} |` : undefined,
       p.n ? `| Diagnostics | ${p.n.join(" · ")} |` : undefined,
       p.e ? `| Last error | ${p.e} |` : undefined,

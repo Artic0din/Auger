@@ -2059,8 +2059,7 @@ export function startPlayback(
                 exits.onEnd(reason);
             },
             onError: (error) => {
-                const details = controller.diagnosticsDetails();
-                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error), details?.positionSeconds, details?.durationSeconds);
+                diagnostics?.recordPlaybackError(error.kind, playbackErrorText(error), controller.diagnosticsDetails());
                 if (isFatalAutoReportable(error)) onAutoReport?.();
                 finish();
                 exits.onError(error);
@@ -2073,10 +2072,19 @@ export function startPlayback(
     if (diagnostics !== undefined) {
         diagnostics.beginPlaybackSession();
         let lastErrorKey: string | undefined;
+        let lastAvplayKey: string | undefined;
         let wasBuffering = false;
         stopDiagnostics = controller.subscribe(view => {
+            const details = controller.diagnosticsDetails();
+            if (details?.avplayError !== undefined) {
+                const avKey = `${details.avplayError}:${details.routeFallbacks ?? 0}`;
+                if (avKey !== lastAvplayKey) {
+                    lastAvplayKey = avKey;
+                    const fbText = details.routeFallbacks !== undefined && details.routeFallbacks > 0 ? ` (fallback #${details.routeFallbacks})` : "";
+                    diagnostics.recordEvent("playback", `avplay ${details.avplayError}${fbText}`);
+                }
+            }
             if ((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined) {
-                const details = controller.diagnosticsDetails();
                 diagnostics.recordPlaybackStats(view.hud.stats, details);
                 if (view.phase === "playing" && view.buffering && !wasBuffering) {
                     diagnostics.recordRebuffer();
@@ -2085,11 +2093,10 @@ export function startPlayback(
             } else if (view.phase === "error") {
                 wasBuffering = false;
                 const detail = playbackErrorText(view.error);
-                const key = `${view.error.kind}:${detail}`;
+                const key = `${view.error.kind}:${detail}:${details?.avplayError ?? ""}`;
                 if (key !== lastErrorKey) {
                     lastErrorKey = key;
-                    const details = controller.diagnosticsDetails();
-                    diagnostics.recordPlaybackError(view.error.kind, detail, details?.positionSeconds, details?.durationSeconds);
+                    diagnostics.recordPlaybackError(view.error.kind, detail, details);
                     if (isFatalAutoReportable(view.error)) onAutoReport?.();
                 }
             }

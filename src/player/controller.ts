@@ -566,6 +566,8 @@ interface Attempt {
     /** Apple's default is on. A failed read of an offered HDR key forces it off. */
     hdrEnabled: boolean;
     hdrPanel: HdrPanel;
+    /** Most recent native AVPlay error code or exception name recorded during this attempt. */
+    lastAvplayError: string | undefined;
     batchedSettings: boolean;
     serverFeatures: readonly string[];
     /** The capability response advertised `hls_subtitle_renditions_all_v1`. */
@@ -761,6 +763,7 @@ export class PlaybackController implements PlayerControls {
             seekIntervals: { backward: 10, forward: 10 },
             hdrEnabled: true,
             hdrPanel: { hdr10: false, hlg: false, dolbyVision: false },
+            lastAvplayError: undefined,
             batchedSettings: true,
             serverFeatures: [],
             renditionsAll: false,
@@ -855,6 +858,9 @@ export class PlaybackController implements PlayerControls {
                 ...(subtitleTrack.codec === undefined ? {} : { subtitleCodec: subtitleTrack.codec }),
             }),
             positionSeconds: attempt.sourceSeconds,
+            hdrEnabled: attempt.hdrEnabled,
+            ...(attempt.lastAvplayError === undefined ? {} : { avplayError: attempt.lastAvplayError }),
+            ...(attempt.recoveries > 0 ? { routeFallbacks: attempt.recoveries } : {}),
         };
     }
 
@@ -2777,6 +2783,7 @@ export class PlaybackController implements PlayerControls {
                     if (transport !== this.transport || !attempt.live) {
                         return;
                     }
+                    attempt.lastAvplayError = `prepareAsync:${error.name || "error"}`;
                     if (error.name === "InvalidAccessError") {
                         // An unplayed replacement may be unreachable even when the previous transport played.
                         if (attempt.presented) this.routeFailed(attempt, "avplay_prepare_failed");
@@ -2786,7 +2793,9 @@ export class PlaybackController implements PlayerControls {
                     }
                 },
             );
-        } catch {
+        } catch (error) {
+            const name = error instanceof Error && error.name ? error.name : "error";
+            attempt.lastAvplayError = `open:${name}`;
             this.routeFailed(attempt, "avplay_open_failed");
         }
     }
@@ -2816,7 +2825,9 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.paused) {
                     this.deps.avplay.pause();
                 }
-            } catch {
+            } catch (error) {
+                const name = error instanceof Error && error.name ? error.name : "error";
+                attempt.lastAvplayError = `play:${name}`;
                 this.routeFailed(attempt, "avplay_play_failed");
                 return;
             }
@@ -2848,10 +2859,13 @@ export class PlaybackController implements PlayerControls {
         try {
             this.seekTo(startMs, play, () => {
                 if (transport === this.transport && attempt.live) {
+                    attempt.lastAvplayError = "seekTo:failed";
                     this.routeFailed(attempt, "avplay_resume_seek_failed");
                 }
             });
-        } catch {
+        } catch (error) {
+            const name = error instanceof Error && error.name ? error.name : "error";
+            attempt.lastAvplayError = `seekTo:${name}`;
             this.routeFailed(attempt, "avplay_resume_seek_failed");
         }
     }
@@ -2936,6 +2950,7 @@ export class PlaybackController implements PlayerControls {
                 if (!current() || !attempt.started) {
                     return;
                 }
+                attempt.lastAvplayError = eventType;
                 if (eventType === "PLAYER_ERROR_CONNECTION_FAILED") {
                     attempt.bufferingQuality.noteMediaRequestFailed();
                     this.recoverConnection(attempt);
@@ -3494,6 +3509,7 @@ export class PlaybackController implements PlayerControls {
         this.cancelStartup = this.deps.clock.schedule(() => {
             this.startupDue = undefined;
             if (transport === this.transport && !attempt.started && !attempt.hidden && attempt.live) {
+                attempt.lastAvplayError = "startup_timeout";
                 this.routeFailed(attempt, "avplay_startup_timeout");
             }
         }, Math.max(0, deadline - this.deps.clock.now()));
