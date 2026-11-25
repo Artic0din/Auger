@@ -107,11 +107,11 @@ Five workflows in `.github/workflows/` run on `main` pushes, schedules, release 
 
 | Workflow | File | Trigger | What it does |
 | --- | --- | --- | --- |
-| `Release` | `.github/workflows/release.yml` | After `Tizen Builds` succeeds on `main`, or `workflow_dispatch` | Chooses the next `vX.Y.Z` tag, builds and signs `Auger.wgt`, publishes the GitHub Release, and commits release notes to `CHANGELOG.md` (see [Releasing](releasing.md)). |
+| `Release` | `.github/workflows/release.yml` | After `Tizen Builds` succeeds on `main`, or `workflow_dispatch` | Chooses the next `vX.Y.Z` tag, builds and signs `Auger.wgt`, publishes the GitHub Release, commits release notes to `CHANGELOG.md` (see [Releasing](releasing.md)), and calls `Discord Releases` after a successful publish (`github.token` cannot start another workflow on `release: published`). |
 | `Parity drift` | `.github/workflows/parity-drift.yml` | Weekly Monday 08:00/09:00 Melbourne (`0 22 * * 0` UTC), or `workflow_dispatch` | Runs `scripts/parity-drift.py check` against upstream `silo-apple` and `silo-android` and opens, updates, or closes the single `Parity drift` issue. |
 | `Deploy diagnostics Worker` | `.github/workflows/deploy-diagnostics-worker.yml` | Push to `main` touching `workers/diagnostics-relay/**`, or `workflow_dispatch` | Deploys `workers/diagnostics-relay/` to Cloudflare with pinned Wrangler. |
 | `Deploy Diagnostics Helper` | `.github/workflows/pages.yml` | Push to `main` touching `pages/**`, or `workflow_dispatch` | Publishes the static `pages/` diagnostics helper site to GitHub Pages. |
-| `Discord Releases` | `.github/workflows/discord-release.yml` | Published GitHub releases (including pre-releases; drafts never), or `workflow_dispatch` | Builds a rich embed from the release notes and posts it to the `#releases` Discord channel via `DISCORD_RELEASES_WEBHOOK`. Manual runs default to a dry run that prints the payload without posting. |
+| `Discord Releases` | `.github/workflows/discord-release.yml` | Published GitHub releases (including pre-releases; drafts never), `workflow_call` from `Release`, or `workflow_dispatch` | Builds a rich embed from the release notes and posts it to the `#releases` Discord channel via `DISCORD_RELEASES_WEBHOOK`. The `Release` workflow calls it after publishing because `github.token` cannot trigger `release: published`. Manual runs default to a dry run that prints the payload without posting. |
 
 ## Running checks locally
 

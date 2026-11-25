@@ -178,6 +178,81 @@ embed_n="${embed_n%% *}"
 [[ "$embed_n" -le 6000 ]] || fail "counts embed=$embed_n over 6000"
 ok "whole embed stays at or under 6000 characters ($c)"
 
+# --- unclosed code fence: close it so the Full notes link stays clickable ---
+python3 - "$tmp/fence.json" << 'PY'
+import json, sys
+body = "```json\n" + "\n".join(["A" * 60] * 80)
+json.dump({
+    "name": "Rel",
+    "tag_name": "v9.0.0",
+    "html_url": "https://example.com/r/v9.0.0",
+    "body": body,
+    "published_at": "2026-01-01T00:00:00Z",
+}, open(sys.argv[1], "w"))
+PY
+run "$tmp/fence.json" "$tmp/fence.out" "$tmp/fence.err"
+python3 - "$tmp/fence.out" << 'PY'
+import json, sys
+desc = json.load(open(sys.argv[1]))["embeds"][0]["description"]
+link = "[Full notes](https://example.com/r/v9.0.0)"
+assert desc.endswith(link), repr(desc[-80:])
+assert len(desc) <= 4096
+
+def open_fence_at_end(text):
+    open_fence = None
+    for line in text.split("\n"):
+        stripped = line.lstrip(" ")
+        if (len(line) - len(stripped)) > 3:
+            continue
+        char = None
+        if stripped.startswith("```"):
+            char = "`"
+        elif stripped.startswith("~~~"):
+            char = "~"
+        if char is None:
+            continue
+        n = 0
+        while n < len(stripped) and stripped[n] == char:
+            n += 1
+        if n < 3:
+            continue
+        rest = stripped[n:]
+        closes = rest.strip() == ""
+        if open_fence is None:
+            open_fence = (char, n)
+        elif closes and char == open_fence[0] and n >= open_fence[1]:
+            open_fence = None
+    return open_fence
+
+assert open_fence_at_end(desc) is None, "description ends with an open fence; link would be swallowed"
+assert "\n```\n\n[Full notes]" in desc
+PY
+grep -q 'truncated=true' "$tmp/fence.err" || fail "fenced body not marked truncated: $(cat "$tmp/fence.err")"
+ok "an unclosed truncated fence is closed before the Full notes link"
+
+# --- already-closed fences are left alone ---
+python3 - "$tmp/closed-fence.json" << 'PY'
+import json, sys
+body = "intro\n\n```\nshort\n```\n\n" + "\n".join(["B" * 60] * 80)
+json.dump({
+    "name": "Rel",
+    "tag_name": "v9.0.0",
+    "html_url": "https://example.com/r/v9.0.0",
+    "body": body,
+    "published_at": "2026-01-01T00:00:00Z",
+}, open(sys.argv[1], "w"))
+PY
+run "$tmp/closed-fence.json" "$tmp/closed-fence.out" "$tmp/closed-fence.err"
+python3 - "$tmp/closed-fence.out" << 'PY'
+import json, sys
+desc = json.load(open(sys.argv[1]))["embeds"][0]["description"]
+assert "```\nshort\n```\n" in desc
+assert "```\nshort\n```\n```" not in desc
+assert desc.endswith("[Full notes](https://example.com/r/v9.0.0)")
+assert len(desc) <= 4096
+PY
+ok "already-closed fences are not given an extra closer"
+
 # --- title longer than Discord's 256 cap ---
 jq -n --arg name "$(python3 -c 'print("N"*300)')" \
   '{tag_name:"v1", html_url:"https://example.com/r", name:$name, body:"Hi"}' >"$tmp/title.json"

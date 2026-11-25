@@ -446,3 +446,14 @@ jobs:
             fi
             echo "Push to main raced with another commit (attempt ${attempt}/3); retrying on latest main."
           done
+
+  discord:
+    name: Post the release to Discord
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.should_release == 'true'
+    uses: ./.github/workflows/discord-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      dry_run: false
+    secrets:
+      DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}

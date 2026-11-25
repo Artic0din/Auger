@@ -37,6 +37,30 @@ def truncate_clean($max):
 def clamp($max):
   if length <= $max then . else .[0:$max] end;
 
+def fence_line:
+  capture("^(?<indent> {0,3})(?<mark>`{3,}|~{3,})(?<rest>.*)$") // null
+  | if . == null then null
+    else . + {char: .mark[0:1], n: (.mark | length), closes: (.rest | test("^ *$"))}
+    end;
+
+def repeat_char($char; $n):
+  reduce range($n) as $_ (""; . + $char);
+
+# If truncation leaves an open fenced code block, close it so a following
+# Full notes link is not swallowed as code.
+def close_open_fence:
+  split("\n") as $lines
+  | (reduce $lines[] as $line (
+      {open: false, char: "", n: 0};
+      ($line | fence_line) as $m
+      | if $m == null then .
+        elif (.open | not) then {open: true, char: $m.char, n: $m.n}
+        elif ($m.closes and $m.char == .char and $m.n >= .n) then {open: false, char: "", n: 0}
+        else .
+        end
+    )) as $state
+  | if $state.open then . + "\n" + repeat_char($state.char; $state.n) else . end;
+
 . as $rel
 | ($rel | tag) as $tag
 | ($rel | release_url) as $url
@@ -57,9 +81,18 @@ def clamp($max):
     {text: $body, truncated: false}
   elif ($suffix | length) >= $desc_budget then
     # Pathological URL: keep a truncated body inside the budget, no suffix.
-    {text: ($body | truncate_clean($desc_budget)), truncated: true}
+    {text: ($body | truncate_clean($desc_budget) | close_open_fence), truncated: true}
   else
-    {text: (($body | truncate_clean($desc_budget - ($suffix | length))) + $suffix), truncated: true}
+    ($desc_budget - ($suffix | length)) as $body_budget
+    | ($body | truncate_clean($body_budget)) as $cut
+    | ($cut | close_open_fence) as $closed
+    | (if (($closed | length) + ($suffix | length)) <= $desc_budget then $closed
+       else
+         ($body
+          | truncate_clean($desc_budget - ($suffix | length) - (($closed | length) - ($cut | length)))
+          | close_open_fence)
+       end) as $text
+    | {text: ($text + $suffix), truncated: true}
   end) as $desc
 | {
     username: "GitHub Releases",

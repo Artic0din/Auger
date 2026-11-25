@@ -14,6 +14,22 @@ on:
         required: false
         type: boolean
         default: true
+  # Called from release.yml after it publishes with github.token. That token
+  # cannot start another workflow on release: published.
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to post, for example v0.7.0
+        required: true
+        type: string
+      dry_run:
+        description: Build and print the payload without posting to Discord
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      DISCORD_RELEASES_WEBHOOK:
+        required: true
 
 permissions:
   contents: read
@@ -42,7 +58,7 @@ jobs:
           # Never enable xtrace: it would print secrets if a later step added one.
           mkdir -p "$RUNNER_TEMP"
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "workflow_call" ]; then
             tag="${DISPATCH_TAG#refs/tags/}"
             case "$tag" in
               ''|*..*|/*|*[[:space:]]*)
@@ -74,7 +90,7 @@ jobs:
           jq . "$RUNNER_TEMP/payload.json"
 
       - name: Post to Discord
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        if: ${{ github.event_name == 'release' || ((github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch') && inputs.dry_run == false) }}
         env:
           DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
         run: |
@@ -90,6 +106,7 @@ jobs:
             curl -sS -o "$body" -w "%{http_code}" --max-time 30 \
               -X POST -H "Content-Type: application/json" \
               --data @"$RUNNER_TEMP/payload.json" \
+              --url-query "wait=true" \
               "${DISCORD_RELEASES_WEBHOOK}" \
               2>"$err"
           )"
