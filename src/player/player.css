@@ -9,6 +9,7 @@
 .player-info-value,
 .player-choice-label,
 .player-choice-detail,
+.player-search-result-title,
 .player-next-synopsis,
 .player-next-card,
 /* A cue reads in its own direction whatever the interface language is: Apple's subtitle Text takes its direction from its content, and the overlay is not under `.mediaLayoutDirection()`. */
