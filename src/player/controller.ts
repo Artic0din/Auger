@@ -48,7 +48,8 @@ import { nextEpisode, onDeckPlays, readOnDeck } from "./nextEpisode.ts";
 import type { ResolutionCap } from "../ui/resolutionCap.ts";
 import { NEXT_UP_KEY } from "../contracts/v2/settings.ts";
 import { BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
-import { nextShuffle, nextShufflePart, refreshShuffle, skipShuffle } from "./nextShuffle.ts";
+import { advanceShufflePick, nextShufflePart, refreshShuffle, shufflePick, skipShuffle } from "./nextShuffle.ts";
+import type { Shuffle } from "../contracts/v2/shuffle.ts";
 import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
 import { aiMenu, aiRoute, hasActionableSource, quotaText, relyOnTranscription, type AIInputs, type AIMenu } from "./subtitleAIRoute.ts";
 import { SubtitleSync, type SyncTimingView } from "./subtitleSync.ts";
@@ -706,7 +707,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt !== undefined) this.syncBuffering(attempt);
     };
     /** `autoplays`: the card's pick is one Apple counts down to (the next episode or a Shuffle pick), not an On Deck title. */
-    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean; pickingAnother: boolean; advancingShuffle: boolean; shuffleScopeLabel?: string | undefined } | undefined;
+    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean; pickingAnother: boolean; advancingShuffle: boolean; advancedShuffle?: Shuffle | undefined; advancedShuffleUnattended?: boolean | undefined; shuffleScopeLabel?: string | undefined } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
 
@@ -3316,15 +3317,26 @@ export class PlaybackController implements PlayerControls {
             completion.advancingShuffle = true;
             this.show({ ...view, countdown: undefined, shuffleActionError: undefined });
             const fromContentId = completion.attempt.request.contentId;
-            void this.pickQuality(completion.abort.signal).then(quality => nextShuffle(spec => {
+            void this.pickQuality(completion.abort.signal).then(quality => advanceShufflePick(spec => {
                 if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) throw abortedError();
                 return this.deps.session.call({ ...spec, profileScoped: true, signal: completion.abort.signal });
-            }, shuffleId, fromContentId, quality)).then(picked => {
+            }, shuffleId, fromContentId, quality)).then(result => {
                 if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) return;
                 completion.advancingShuffle = false;
+                const currentView = this.current;
+                if (result.kind === "lookup_failed") {
+                    completion.advancedShuffle = result.shuffle;
+                    completion.advancedShuffleUnattended = unattended;
+                    completion.autoplays = false;
+                    if (currentView.phase === "completion") {
+                        const retryable = !(result.cause instanceof ApiError && (result.cause.status === 401 || result.cause.status === 403 || result.cause.status === 410 || result.cause.problemId === "installation_changed"));
+                        this.show({ ...currentView, state: "failed", status: "upNext.headingFinished", next: undefined, retryable, countdown: undefined, shuffleActionError: undefined });
+                    }
+                    return;
+                }
+                const picked = result.next;
                 if (picked === undefined) {
                     completion.autoplays = false;
-                    const currentView = this.current;
                     if (currentView.phase === "completion") {
                         this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined });
                     }
@@ -3357,7 +3369,7 @@ export class PlaybackController implements PlayerControls {
     pickAnother(): void {
         const completion = this.completion;
         const view = this.current;
-        if (completion === undefined || view.phase !== "completion" || view.state !== "ready" || view.shuffle !== true || view.next === undefined || completion.pickingAnother || completion.advancingShuffle) return;
+        if (completion === undefined || view.phase !== "completion" || view.state !== "ready" || view.shuffle !== true || view.next === undefined || completion.pickingAnother || completion.advancingShuffle || completion.advancedShuffle !== undefined) return;
         const shuffleId = completion.attempt.request.shuffleId;
         if (shuffleId === undefined) return;
         this.stillWatching.recordViewerAction();
@@ -3572,6 +3584,24 @@ export class PlaybackController implements PlayerControls {
             const quality = await capRead;
             if (!current()) return;
             if (attempt.request.shuffleId !== undefined) {
+                if (completion.advancedShuffle !== undefined) {
+                    const promoted = completion.advancedShuffle;
+                    const picked = await shufflePick(spec => {
+                        if (!current()) throw abortedError();
+                        return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
+                    }, promoted, quality);
+                    if (!current()) return;
+                    if (picked === undefined) {
+                        completion.autoplays = false;
+                        show("ready", undefined, false, "upNext.headingFinished");
+                        return;
+                    }
+                    const unattended = completion.advancedShuffleUnattended === true;
+                    this.cancelCompletion();
+                    this.nextStart = picked;
+                    this.startPlay(picked, unattended);
+                    return;
+                }
                 const refreshed = await refreshShuffle(spec => {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });

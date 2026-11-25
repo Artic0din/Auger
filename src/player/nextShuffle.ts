@@ -10,12 +10,28 @@ import type { Shuffle } from "../contracts/v2/shuffle.ts";
 
 type Read = <T>(spec: RequestSpec<T>) => Promise<T>;
 
+export type AdvanceShuffleResult =
+    | { readonly kind: "ok"; readonly next: PlayRequest | undefined }
+    | { readonly kind: "lookup_failed"; readonly shuffle: Shuffle; readonly cause: unknown };
+
 /** Undefined when the shuffle has nothing else to play (its scope holds one playable item). */
 export async function nextShuffle(read: Read, shuffleId: string, finishedContentId: string, quality?: string): Promise<PlayRequest | undefined> {
     const shuffle = await read(operations.advanceShuffle(shuffleId, finishedContentId));
     if (shuffle.id !== shuffleId) throw new ApiError({ kind: "invalid_response", path: "shuffle.id" });
     if (shuffle.current.id === finishedContentId) return undefined;
     return shufflePick(read, shuffle, quality);
+}
+
+/** Advances the shuffle and distinguishes a failed /advance from a failed /watch/{current} lookup after /advance succeeded. */
+export async function advanceShufflePick(read: Read, shuffleId: string, finishedContentId: string, quality?: string): Promise<AdvanceShuffleResult> {
+    const shuffle = await read(operations.advanceShuffle(shuffleId, finishedContentId));
+    if (shuffle.id !== shuffleId) throw new ApiError({ kind: "invalid_response", path: "shuffle.id" });
+    if (shuffle.current.id === finishedContentId) return { kind: "ok", next: undefined };
+    try {
+        return { kind: "ok", next: await shufflePick(read, shuffle, quality) };
+    } catch (cause) {
+        return { kind: "lookup_failed", shuffle, cause };
+    }
 }
 
 /** Re-checks a shuffle via GET /shuffles/{id} and resolves its announced `next` pick (Apple refreshShufflePick). */

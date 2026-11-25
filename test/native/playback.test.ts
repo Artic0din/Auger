@@ -279,6 +279,36 @@ test("Pick Another failure shows upNext.pickAnotherFailed and restarts the count
     assert.equal(completion(partial).state, "ready");
     assert.equal(completion(partial).next?.contentId, "movie-3", "Retry refreshes GET /shuffles/{id} and offers the server's replacement pick");
     partial.controller.destroy();
+
+    // If /advance succeeds on the server but /watch/{current} fails, clear the card to a retryable failure (blocking Pick Another) and retry resolving the promoted pick directly.
+    const partialAdvance = await autoplayRig(true);
+    partialAdvance.settings.overrides.delete("playback.auto_play_next");
+    partialAdvance.settings.profile().set("playback.auto_play_next", true);
+    partialAdvance.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    partialAdvance.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-2" }, next: { content_id: "movie-3" } } });
+    scriptParts(partialAdvance, [{ file_id: "42", duration_seconds: 3000 }]);
+    partialAdvance.h.fake.script("/watch/movie-2",
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    partialAdvance.server.items.set("movie-2", ["43"]);
+    await playMovie(partialAdvance, { ...MOVIE, shuffleId: "sh1" });
+    partialAdvance.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    partialAdvance.controller.playNext();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(completion(partialAdvance).state, "failed", "partial advance failure hides Pick Another and enters retryable failure");
+    assert.equal(completion(partialAdvance).next, undefined);
+    assert.equal(completion(partialAdvance).retryable, true);
+    partialAdvance.controller.pickAnother();
+    await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip").length, 0, "Pick Another cannot run after /advance promoted the pick");
+    partialAdvance.controller.retryCompletion();
+    for (let step = 0; step < 8; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "Retry resolves the promoted pick without calling /advance again");
+    assert.equal(bodies(partialAdvance.h, "/start").length, 2, "Retry starts the promoted pick");
+    partialAdvance.controller.destroy();
 });
 
 test("the next Shuffle pick starts and reports progress from zero although it has a saved position", async () => {
