@@ -1,8 +1,43 @@
 # Auger Diagnostics Relay (Cloudflare Worker)
 
-Stateless Cloudflare Worker that accepts redacted v1 diagnostic reports from Auger (`Settings > Diagnostics > Send Diagnostics Report` and opt-in Automatic Error Reports) at `https://auger-diagnostics.plaintextlab.com/report`, validates and re-redacts every field, enforces a bounded 8 KiB streaming body limit and an atomic per-IP Cloudflare Workers Rate Limiting binding (`DIAGNOSTICS_RATE_LIMITER`, 1 report per 60 seconds), deduplicates against open `diagnostics` issues via deterministic fingerprints (appending compact diff comments up to 5 per issue instead of creating duplicate issues), and files new issues on `Artic0din/Auger-Tizen` labelled `diagnostics` and `needs-triage`.
+Stateless Cloudflare Worker that accepts redacted v1 diagnostic reports from Auger (`Settings > Diagnostics > Send Diagnostics Report` and opt-in Automatic Error Reports) at `https://auger-diagnostics.plaintextlab.com/report`.
+It enforces a bounded 8 KiB streaming body limit and an atomic per-IP Cloudflare Workers Rate Limiting binding (`DIAGNOSTICS_RATE_LIMITER`, 1 report per 60 seconds), and files issues on `Artic0din/Auger-Tizen` labelled `diagnostics` and `needs-triage`.
 
 No secrets are ever shipped inside Auger or committed to this repository.
+
+## What it publishes
+
+All public output (titles, bodies, follow-up comments and embedded metadata) is built from validated structured fields.
+Unknown fields and unrecognized free text are discarded, never truncated into an issue.
+
+| Module | Role |
+| --- | --- |
+| `contract.js` | `INCIDENT_CONTRACT`: the `inc` (iv 1) record a current client sends inside the v1 payload, mirroring `src/diagnosticsIncident.ts`. `iv`, `cat` and `out` are required; other invalid values are dropped. |
+| `legacy.js` | Field-by-field allowlist for installed clients' v1 fields and log lines, and the deployed legacy fingerprint. |
+| `grouping.js` | When an incident may reuse an older issue, and the evidence checks that guard it. |
+| `titles.js`, `labels.js` | Fixed plain-language phrases; no bracketed prefix and no TV model in titles (140-character ceiling). |
+| `report.js` | Issue bodies, follow-up comments and `auger-state` metadata. |
+
+Codes the client allows but the relay does not list still group, but render as "Unlisted code".
+An automatic report whose incident is not a terminal technical failure (`out` other than `failed`, or `kind` `network`) is rejected with HTTP 422 `not_auto_reportable`.
+
+## Grouping markers
+
+| Report | Marker | Groups by |
+| --- | --- | --- |
+| With `inc` | `auger-group:inc1:<hash>` | App version, TV model, incident category, first failed operation, stage and code (the client's `incidentGroupKey`). |
+| Viewer-observed, with an allowlisted `precedingScreen` | `auger-group:obs1:<hash>` | App version, TV model, selected category and screen. |
+| Anything else (installed clients) | `auger-fp:<hash>` | The deployed relay's legacy signature, so old clients keep finding their open issues after a title edit. |
+
+Each marker hit is checked against the issue's embedded state before reuse, so a hash collision files a new issue.
+An incident reuses a legacy issue only when the legacy signature names one failure (a start refusal reason, or a stage-qualified AVPlay error with matching first and last codes) and that issue's recorded events agree.
+Generic legacy signatures such as a bare `playback_failed` or `session_expired` never absorb a current incident.
+Existing titles and historical evidence are left untouched; reuse adds a comment.
+
+## Tests
+
+`test/native/fixtures/diagnostics-relay/relayCases.js` holds the relay cases as a plain ES module with no Node imports, so a browser harness on the TV can import it with `worker.js` and call `runRelayCases(handleRequest)`.
+`test/native/diagnosticsRelay.test.ts` runs the same cases under `node:test`.
 
 ## Deploy
 
@@ -21,5 +56,5 @@ No secrets are ever shipped inside Auger or committed to this repository.
    ```sh
    curl -i -X POST https://auger-diagnostics.plaintextlab.com/report \
      -H 'Content-Type: application/json' \
-     -d '{"v":1,"app":"0.2.1","tv":"SmokeTest"}'
+     -d '{"v":1,"app":"0.2.1","tv":"QE65S95C"}'
    ```
