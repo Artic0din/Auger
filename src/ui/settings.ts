@@ -1,6 +1,7 @@
 import type { NativeSession } from "../session/session.ts";
 import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
+import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import { FocusHost, type FocusItem, type FocusTarget } from "./browseFocus.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
@@ -54,7 +55,7 @@ const SKIP_PICKER_TITLES = { "seek-back": "settings.skipIntervals.picker.videoBa
 const pickerTitle = (picker: Picker): string => translate(picker in SKIP_PICKER_TITLES ? SKIP_PICKER_TITLES[picker as keyof typeof SKIP_PICKER_TITLES] : PICKER_LABELS[picker]);
 const onOffText = (on: boolean): string => translate(on ? "settings.on" : "settings.off");
 const BITRATE_CHOICES = [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500];
-export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly playerSettings?: PlayerSettingsFlusher; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
+export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly stillWatching?: StillWatchingPreference; readonly playerSettings?: PlayerSettingsFlusher; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
 export interface SettingsScreen { destroy(): void }
 
 function settingsChevron(): SVGSVGElement {
@@ -94,6 +95,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     let confirmingSignOut = false;
     let choosingLaunch = false;
     let choosingLanguage = false;
+    let choosingStillWatching = false;
     let languageRead = false;
     let torn = false;
     let heldBusy = false;
@@ -185,6 +187,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         else if (extraPicker !== undefined) { const key = extraPicker.id; extraPicker = undefined; render({ zone: "settings-rows", key }); }
         else if (choosingLaunch) { choosingLaunch = false; render({ zone: "settings-rows", key: "remember-profile" }); }
         else if (choosingLanguage) { choosingLanguage = false; render({ zone: "settings-rows", key: "app-language" }); }
+        else if (choosingStillWatching) { choosingStillWatching = false; render({ zone: "settings-rows", key: "still-watching" }); }
         else if (confirmingSignOut) { confirmingSignOut = false; render({ zone: "settings-categories", key: "settings-signout" }); }
         else if (acknowledging) { acknowledging = false; render(rowFocus()); }
         else if (picker !== undefined) { picker = undefined; render(rowFocus()); }
@@ -575,6 +578,23 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 return item;
             });
             showModal("settings:language", translate("settings.appLanguage.title"), [el("h1", "browse-title", translate("settings.appLanguage.title")), ...(busy ? [el("p", "browse-text", translate("settings.appLanguage.saving"))] : [])], controls, "settings-language");
+            return;
+        }
+        if (choosingStillWatching && actions?.stillWatching !== undefined) {
+            const pref = actions.stillWatching;
+            const selected = pref.value;
+            const title = translate("settingsManifest.player.passout_threshold.label");
+            const controls = STILL_WATCHING_CHOICES.map(count => {
+                const item = actionButton(`still-watching:${count}`, stillWatchingLabel(count), () => {
+                    pref.set(count);
+                    choosingStillWatching = false;
+                    render({ zone: "settings-rows", key: "still-watching" });
+                });
+                item.element.setAttribute("role", "radio");
+                item.element.setAttribute("aria-checked", String(selected === count));
+                return item;
+            });
+            showModal("settings:still-watching", title, [el("h1", "browse-title", title)], controls, "settings-still-watching");
             return;
         }
         if (choosingLaunch && launch !== undefined) {
@@ -988,6 +1008,20 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     rows.push(synced); body.appendChild(synced.element);
                 }
                 if (row.id === "poster-size") body.appendChild(el("p", "settings-value", translate("settings.general.posterSizeSyncsTv")));
+                if (category === "playback" && row.id === "auto-next" && actions?.stillWatching !== undefined) {
+                    const stillTitle = translate("settingsManifest.player.passout_threshold.label");
+                    const stillItem = button("still-watching", stillTitle, () => { choosingStillWatching = true; render(); });
+                    stillItem.element.replaceChildren(el("span", "settings-row-title", stillTitle), el("span", "settings-row-value", stillWatchingLabel(actions.stillWatching.value)), settingsChevron());
+                    rows.push(stillItem);
+                    body.appendChild(stillItem.element);
+                }
+            }
+            if (category === "playback" && actions?.stillWatching !== undefined && !rows.some(item => item.key === "still-watching")) {
+                const stillTitle = translate("settingsManifest.player.passout_threshold.label");
+                const stillItem = button("still-watching", stillTitle, () => { choosingStillWatching = true; render(); });
+                stillItem.element.replaceChildren(el("span", "settings-row-title", stillTitle), el("span", "settings-row-value", stillWatchingLabel(actions.stillWatching.value)), settingsChevron());
+                rows.push(stillItem);
+                body.appendChild(stillItem.element);
             }
             if (category === "playback") {
                 if (spoilers?.showsSettings === true) {

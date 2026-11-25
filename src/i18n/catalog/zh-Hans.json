@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "无偏好",
  "settingsManifest.playback.subtitle_language.unsetLabel": "无",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "仍在观看提示",
  "setup.advanced.hide": "隐藏高级选项",
  "setup.advanced.show": "高级选项",
  "setup.body": "输入你访问Silo时使用的地址。",

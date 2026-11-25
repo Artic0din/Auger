@@ -574,7 +574,7 @@ interface Rig {
     readonly views: PlaybackView[];
 }
 
-async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig> {
+async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig> {
     const spoilers = typeof hdrProbeScopeOrSpoilers === "function" ? hdrProbeScopeOrSpoilers as () => EpisodeSpoilerSettings : undefined;
     const hdrProbeScope = typeof hdrProbeScopeOrSpoilers === "function" ? undefined : hdrProbeScopeOrSpoilers;
     const clock = new ManualClock();
@@ -605,6 +605,7 @@ async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoile
         },
         ...(spoilers === undefined ? {} : { spoilers }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
+        ...(stillWatchingThreshold === undefined ? {} : { stillWatchingThreshold }),
     });
     const views: PlaybackView[] = [];
     controller.subscribe((view) => views.push(view));
@@ -1977,8 +1978,8 @@ const watchReads = (r: Rig): number => r.h.fake.requests.filter(q => q.path.star
 
 const EPISODE: PlayRequest = { contentId: "episode:s1e12", fileId: "42", title: "Harbor Lights chapter 1.2", startSeconds: 0, episode: true };
 
-async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig & { catalog: FakeCatalog }> {
-    const r = await rig("p-owner", undefined, spoilers, resolutionCap);
+async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog }> {
+    const r = await rig("p-owner", undefined, spoilers, resolutionCap, stillWatchingThreshold);
     const catalog = new FakeCatalog();
     catalog.fileIds.set(EPISODE.contentId, "42");
     catalog.fileIds.set("episode:s1e13", "43");
@@ -2024,8 +2025,8 @@ function completion(r: Rig): Extract<PlaybackView, { phase: "completion" }> {
     return view;
 }
 
-async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"]): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
-    const r = await episodeRig(spoilers);
+async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
+    const r = await episodeRig(spoilers, undefined, stillWatchingThreshold);
     const settings = new FakeSettings(r.h.fake);
     settings.overrides.set("playback.auto_play_next", enabled);
     const contract = fixture("settings_contract_ok");
@@ -2098,6 +2099,66 @@ test("a transient Auto-play save failure on the finished card keeps Off, keeps t
     await r.h.clock.advance(11000);
     assert.equal(bodies(r.h, "/start").length, 1, "nothing plays on its own");
     r.controller.destroy();
+});
+
+test("Still Watching gates auto-play after N unattended advances, resets on viewer actions, and never gates at 0 (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const run = async (threshold: number, viewerActionOnEp2: boolean) => {
+        const r = await episodeRig(undefined, undefined, () => threshold);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, "first episode counts down");
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+        if (viewerActionOnEp2) {
+            r.controller.setPaused(true);
+            r.controller.setPaused(false);
+        }
+        // Finish episode 2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        return r;
+    };
+
+    // Threshold 1 with no viewer action on episode 2: Up Next opens with no countdown and waits for Play Now.
+    const gated = await run(1, false);
+    assert.equal(completion(gated).state, "ready");
+    assert.equal(completion(gated).next?.contentId, "episode:s1e13");
+    assert.equal(completion(gated).countdown, undefined, "Still Watching gates the countdown after 1 unattended advance");
+    await gated.h.clock.advance(15_000);
+    assert.equal(bodies(gated.h, "/start").length, 2, "gated episode does not auto-play on its own");
+    // Pressing Play Now advances manually and resets the guard.
+    gated.controller.playNext();
+    await gated.h.clock.advance(0);
+    assert.equal(bodies(gated.h, "/start").length, 3, "Play Now still starts episode 3");
+    gated.controller.destroy();
+
+    // A viewer action (pause/play) on episode 2 resets the guard so episode 2 counts down normally.
+    const reset = await run(1, true);
+    assert.equal(completion(reset).countdown, 10, "viewer action reset the Still Watching count");
+    await reset.h.clock.advance(10_000);
+    assert.equal(bodies(reset.h, "/start").length, 3);
+    reset.controller.destroy();
+
+    // Threshold 0 (Off) never gates.
+    const off = await run(0, false);
+    assert.equal(completion(off).countdown, 10, "threshold 0 never gates");
+    await off.h.clock.advance(10_000);
+    assert.equal(bodies(off.h, "/start").length, 3);
+    off.controller.destroy();
 });
 
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {

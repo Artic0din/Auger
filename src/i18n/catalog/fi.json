@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Ei valintaa",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Ei mitään",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Katsotko vielä -kysymys",
  "setup.advanced.hide": "Piilota lisäasetukset",
  "setup.advanced.show": "Lisäasetukset",
  "setup.body": "Kirjoita osoite, jota käytät Silossa.",

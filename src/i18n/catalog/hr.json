@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Bez preferencije",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Nijedan",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Upit „Gledate li još?“",
  "setup.advanced.hide": "Sakrij napredne opcije",
  "setup.advanced.show": "Napredne opcije",
  "setup.body": "Upišite adresu koju koristite za Silo.",

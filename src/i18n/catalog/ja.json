@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "指定なし",
  "settingsManifest.playback.subtitle_language.unsetLabel": "なし",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "視聴継続の確認",
  "setup.advanced.hide": "詳細オプションを隠す",
  "setup.advanced.show": "詳細オプション",
  "setup.body": "Siloで使用しているアドレスを入力してください。",

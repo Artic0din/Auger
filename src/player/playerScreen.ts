@@ -2045,6 +2045,7 @@ export function startPlayback(
     diagnostics?: DiagnosticsCollector,
     onAutoReport?: () => void,
     settingsFlusher?: PlayerSettingsFlusher,
+    stillWatchingThreshold?: () => number,
 ): PlayerScreen {
     const clock = platform.clock ?? systemClock;
     let screen: PlayerScreen | undefined;
@@ -2096,6 +2097,7 @@ export function startPlayback(
         ...(storage === undefined ? {} : { publicStorage: storage }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
         ...(settingsFlusher === undefined ? {} : { settingsFlusher }),
+        ...(stillWatchingThreshold === undefined ? {} : { stillWatchingThreshold }),
     });
     if (diagnostics !== undefined) {
         diagnostics.beginPlaybackSession();

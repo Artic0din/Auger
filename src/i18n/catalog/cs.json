@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Bez preference",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Žádný",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Dotaz „Stále se díváte?“",
  "setup.advanced.hide": "Skrýt pokročilé možnosti",
  "setup.advanced.show": "Pokročilé možnosti",
  "setup.body": "Zadejte adresu, kterou pro Silo používáte.",

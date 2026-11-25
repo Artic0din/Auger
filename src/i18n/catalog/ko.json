@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "선호 언어 없음",
  "settingsManifest.playback.subtitle_language.unsetLabel": "없음",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "시청 중 확인",
  "setup.advanced.hide": "고급 옵션 숨기기",
  "setup.advanced.show": "고급 옵션",
  "setup.body": "Silo에 사용하는 주소를 입력하세요.",

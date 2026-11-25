@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Keine Vorgabe",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Keine",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Abfrage „Schaust du noch?“",
  "setup.advanced.hide": "Erweiterte Optionen ausblenden",
  "setup.advanced.show": "Erweiterte Optionen",
  "setup.body": "Gib die Adresse ein, die du für Silo verwendest.",

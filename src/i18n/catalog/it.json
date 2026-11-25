@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Nessuna preferenza",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Nessuna",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Richiesta “Stai ancora guardando?”",
  "setup.advanced.hide": "Nascondi opzioni avanzate",
  "setup.advanced.show": "Opzioni avanzate",
  "setup.body": "Digita l’indirizzo che usi per Silo.",

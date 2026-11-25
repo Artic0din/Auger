@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Tercih yok",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Yok",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Hâlâ izliyor musunuz sorusu",
  "setup.advanced.hide": "Gelişmiş seçenekleri gizle",
  "setup.advanced.show": "Gelişmiş seçenekler",
  "setup.body": "Silo için kullandığınız adresi yazın.",

@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "無偏好",
  "settingsManifest.playback.subtitle_language.unsetLabel": "無",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "「還在觀看嗎？」提示",
  "setup.advanced.hide": "隱藏進階選項",
  "setup.advanced.show": "進階選項",
  "setup.body": "輸入你用來連線 Silo 的位址。",

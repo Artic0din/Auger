@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "بلا تفضيل",
  "settingsManifest.playback.subtitle_language.unsetLabel": "بلا",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "سؤال «هل ما زلت تشاهد؟»",
  "setup.advanced.hide": "إخفاء الخيارات المتقدمة",
  "setup.advanced.show": "الخيارات المتقدمة",
  "setup.body": "اكتب العنوان الذي تستخدمه للوصول إلى Silo.",

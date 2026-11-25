@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Ingen preferanse",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Ingen",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Spørsmål om du fortsatt ser på",
  "setup.advanced.hide": "Skjul avanserte alternativer",
  "setup.advanced.show": "Avanserte alternativer",
  "setup.body": "Skriv inn adressen du bruker for Silo.",

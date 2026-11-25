@@ -1047,6 +1047,7 @@
  "settingsManifest.playback.audio_language.unsetLabel": "Geen voorkeur",
  "settingsManifest.playback.subtitle_language.unsetLabel": "Geen",
  "settingsManifest.player.hdr_enabled.label": "HDR",
+ "settingsManifest.player.passout_threshold.label": "Melding “Kijk je nog?”",
  "setup.advanced.hide": "Geavanceerde opties verbergen",
  "setup.advanced.show": "Geavanceerde opties",
  "setup.body": "Typ het adres dat je voor Silo gebruikt.",

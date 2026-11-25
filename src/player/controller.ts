@@ -66,6 +66,7 @@ import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "./playerSettingsFlusher.ts";
+import { DEFAULT_STILL_WATCHING_THRESHOLD, PlayerStillWatchingGuard } from "./stillWatchingGuard.ts";
 import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
 
 /** What browse hands over: one file of one catalog item. */
@@ -413,6 +414,8 @@ export interface PlaybackDeps {
     readonly resolutionCap?: Pick<ResolutionCap, "quality" | "ready">;
     /** Shared debounced, retried writer for player device settings (#810). */
     readonly settingsFlusher?: PlayerSettingsFlusher;
+    /** Local Still Watching threshold (0 = Off, 1..20 consecutive auto-advances; default 3) (#796). */
+    readonly stillWatchingThreshold?: () => number;
 }
 
 const PROGRESS_INTERVAL_MS = 10000;
@@ -671,6 +674,9 @@ export class PlaybackController implements PlayerControls {
     private readonly deps: PlaybackDeps;
     private readonly flusher: PlayerSettingsFlusher;
     private readonly ownsFlusher: boolean;
+    private readonly stillWatching = new PlayerStillWatchingGuard();
+    private readonly readStillWatchingThreshold: () => number;
+    private nextStartUnattended = false;
     private readonly pending: PendingTransport;
     private attempt: Attempt | undefined;
     /** Increases on every AVPlay open and teardown; callbacks of an older value are dropped. */
@@ -700,6 +706,7 @@ export class PlaybackController implements PlayerControls {
     constructor(deps: PlaybackDeps) {
         this.deps = deps;
         this.ownsFlusher = deps.settingsFlusher === undefined;
+        this.readStillWatchingThreshold = deps.stillWatchingThreshold ?? (() => DEFAULT_STILL_WATCHING_THRESHOLD);
         this.flusher = deps.settingsFlusher ?? new PlayerSettingsFlusher(sessionPlayerSettingsTransport(deps.session), deps.clock, {
             scopeId: () => deps.session.activeProfile?.id ?? "default",
             signal: () => deps.session.authoritySignal,
@@ -737,8 +744,19 @@ export class PlaybackController implements PlayerControls {
 
     /** Starts a new attempt; one already running is stopped and never plays. */
     play(request: PlayRequest): void {
+        this.startPlay(request, false);
+    }
+
+    private stillWatchingGated(): boolean {
+        return this.stillWatching.shouldGate(this.readStillWatchingThreshold());
+    }
+
+    private startPlay(request: PlayRequest, preserveGuard: boolean): void {
         if (this.completion !== undefined) return;
         const previous = this.attempt;
+        if (!preserveGuard && previous !== undefined && previous.request.contentId !== request.contentId) {
+            this.stillWatching.recordViewerAction();
+        }
         if (previous !== undefined) {
             this.leave(previous, "stop");
         }
@@ -882,6 +900,7 @@ export class PlaybackController implements PlayerControls {
     setVideo(kind: "speed" | "aspect", value: string): void {
         const attempt = this.active();
         if (attempt?.plan === undefined || attempt.busy || attempt.hidden || attempt.restoring) return;
+        this.stillWatching.recordViewerAction();
         attempt.hud.setVideo(this.deps.avplay, attempt.plan, kind, value);
         this.showPlayback(attempt);
     }
@@ -902,6 +921,7 @@ export class PlaybackController implements PlayerControls {
         // the local value changes and the countdown updates at once, while the flusher debounces, retries transient
         // failures, and holds exhausted writes for Settings without showing an error in the player.
         const enabled = !attempt.autoNext;
+        this.stillWatching.recordViewerAction();
         attempt.settingsEpoch += 1;
         attempt.autoNext = enabled;
         if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
@@ -927,6 +947,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt === undefined) {
             return;
         }
+        this.stillWatching.recordViewerAction();
         attempt.transportCommandCount++;
         // A seek reanchor replaces the transport; preparation must use the latest intent.
         if (!attempt.started) {
@@ -963,6 +984,7 @@ export class PlaybackController implements PlayerControls {
     seekBy(seconds: number): void {
         const attempt = this.active();
         if (attempt === undefined) return;
+        this.stillWatching.recordViewerAction();
         // PlayerViewModel.queueSkipDebounce (RelativeSeek.target(current:pending:delta:)): a skip pressed while a seek is in flight adds
         // to the target already asked for, the queued one first, never to the position from before that seek.
         const inFlight = attempt.busy && this.pending.seek !== undefined;
@@ -999,12 +1021,14 @@ export class PlaybackController implements PlayerControls {
     }
 
     seekToSeconds(seconds: number): void {
+        this.stillWatching.recordViewerAction();
         this.seekAbsolute(seconds);
     }
 
     skipCredits(seconds: number): void {
         const attempt = this.active();
         if (attempt === undefined || !attempt.started || attempt.busy) return;
+        this.stillWatching.recordViewerAction();
         this.performCreditsSkip(attempt, seconds);
     }
 
@@ -1045,6 +1069,7 @@ export class PlaybackController implements PlayerControls {
             && !prompt.fromDeck
             && prompt.next !== undefined
             && attempt.autoNext
+            && !this.stillWatchingGated()
             && !attempt.promptDismissed
             && this.completion === undefined;
         if (!canRun) {
@@ -1054,14 +1079,14 @@ export class PlaybackController implements PlayerControls {
         if (attempt.offer.cancelCreditsTimer !== undefined) return;
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
         const tick = (): void => {
-            if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || attempt.promptDismissed || this.completion !== undefined) {
+            if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated() || attempt.promptDismissed || this.completion !== undefined) {
                 this.cancelCreditsCountdown(attempt);
                 return;
             }
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
             if (remaining === 0) {
                 this.cancelCreditsCountdown(attempt);
-                this.playNext();
+                this.advanceNext(undefined, true);
                 return;
             }
             attempt.offer.creditsCountdown = remaining;
@@ -3020,8 +3045,9 @@ export class PlaybackController implements PlayerControls {
         attempt.endedDuringChange = false;
         this.leave(attempt, "abandon");
         this.nextStart = undefined;
+        this.nextStartUnattended = false;
         this.completion = { attempt, abort: new AbortController(), pending: false, autoplays: false };
-        this.retryCompletion();
+        this.runCompletion();
     }
 
     private closeTransport(): void {
@@ -3169,6 +3195,11 @@ export class PlaybackController implements PlayerControls {
     }
 
     retryCompletion(): void {
+        this.stillWatching.recordViewerAction();
+        this.runCompletion();
+    }
+
+    private runCompletion(): void {
         const completion = this.completion;
         if (completion === undefined) {
             const attempt = this.attempt;
@@ -3199,6 +3230,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt?.started !== true || attempt.plan === undefined || attempt.hidden || attempt.request.shuffleId !== undefined) return;
         // A hidden button opens nothing: a film with nothing to offer stays closed.
         if (!this.episodesVisible(attempt)) return;
+        this.stillWatching.recordViewerAction();
         attempt.offer.manual = true;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
         else {
@@ -3220,21 +3252,29 @@ export class PlaybackController implements PlayerControls {
     }
 
     playNext(selected?: PlayRequest): void {
+        this.advanceNext(selected, false);
+    }
+
+    private advanceNext(selected: PlayRequest | undefined, unattended: boolean): void {
+        if (!unattended) this.stillWatching.recordViewerAction();
         const view = this.current;
         const attempt = this.active();
         if ((view.phase === "playing" || view.phase === "paused") && attempt?.prompt !== undefined) {
             const request = this.liveNext(attempt, selected);
             if (request === undefined) return;
+            if (unattended) this.stillWatching.recordAutoAdvance();
             this.beginCompletion(attempt);
             this.nextStart = request;
+            this.nextStartUnattended = unattended;
             return;
         }
         if (view.phase !== "completion" || view.state !== "ready" || view.next === undefined || this.completion?.attempt.ended !== true) return;
         const request = selected ?? view.next;
         if (request !== view.next && !view.deck?.includes(request)) return;
+        if (unattended) this.stillWatching.recordAutoAdvance();
         this.cancelCompletion();
         this.nextStart = request;
-        this.play(request);
+        this.startPlay(request, unattended);
     }
 
     private cancelCompletion(): void {
@@ -3272,6 +3312,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     keepWatching(): void {
+        this.stillWatching.recordViewerAction();
         const attempt = this.attempt;
         if (attempt?.live === true) {
             this.cancelAutoplay();
@@ -3303,12 +3344,13 @@ export class PlaybackController implements PlayerControls {
     }
 
     private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
+        if (this.stillWatchingGated()) return;
         const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
         const tick = (): void => {
             const view = this.current;
-            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined || this.stillWatchingGated()) return;
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
-            if (remaining === 0) { this.playNext(); return; }
+            if (remaining === 0) { this.advanceNext(undefined, true); return; }
             this.show({ ...view, countdown: remaining });
             this.cancelAutoplayTimer = this.deps.clock.schedule(tick, 1000);
         };
@@ -3365,8 +3407,10 @@ export class PlaybackController implements PlayerControls {
             stage = "lookup";
             if (this.nextStart !== undefined) {
                 const request = this.nextStart;
+                const unattended = this.nextStartUnattended;
+                this.nextStartUnattended = false;
                 this.cancelCompletion();
-                this.play(request);
+                this.startPlay(request, unattended);
                 return;
             }
             if (attempt.request.shuffleId !== undefined) {
@@ -3383,7 +3427,7 @@ export class PlaybackController implements PlayerControls {
                 if (part !== undefined) {
                     this.cancelCompletion();
                     this.nextStart = part;
-                    this.play(part);
+                    this.startPlay(part, true);
                     return;
                 }
             }
@@ -3427,8 +3471,8 @@ export class PlaybackController implements PlayerControls {
                 }, attempt.request.contentId, undefined, quality).then(deck => {
                     if (current() && this.current.phase === "completion" && this.current.state === "ready") this.show({ ...this.current, deck });
                 }, () => undefined);
-                if (current() && attempt.autoNext && !attempt.promptDismissed) {
-                    if (attempt.prompt !== undefined) this.playNext();
+                if (current() && attempt.autoNext && !attempt.promptDismissed && !this.stillWatchingGated()) {
+                    if (attempt.prompt !== undefined) this.advanceNext(undefined, true);
                     else this.startAutoplay(completion);
                 }
                 return;
@@ -4271,7 +4315,7 @@ export class PlaybackController implements PlayerControls {
 
     private promptCountdown(attempt: Attempt, plan: { durationSeconds: number | undefined }): number | undefined {
         const prompt = attempt.prompt;
-        if (prompt === undefined || prompt.loading === true || prompt.failed === true || prompt.fromDeck || prompt.next === undefined || !attempt.autoNext) return undefined;
+        if (prompt === undefined || prompt.loading === true || prompt.failed === true || prompt.fromDeck || prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated()) return undefined;
         if (attempt.offer.credits) return attempt.offer.creditsCountdown;
         const remaining = (plan.durationSeconds ?? Infinity) - attempt.sourceSeconds;
         if (attempt.offer.manual && remaining >= MANUAL_COUNTDOWN_THRESHOLD_SECONDS) return undefined;
