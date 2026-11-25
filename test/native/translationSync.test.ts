@@ -3,8 +3,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHIPPED_LANGUAGES } from "../../src/i18n/language.ts";
-import { APP_NAME_KEYS, brandCatalog, buildCatalogs, languagesToSync, PLATFORM_EXCEPTIONS, scopeCatalog, usedKeys } from "../../scripts/sync-translations.ts";
-import { readFileSync } from "node:fs";
+import { APP_NAME_KEYS, brandCatalog, buildCatalogs, languagesToSync, main, PLATFORM_EXCEPTIONS, scopeCatalog, type SyncFetch, usedKeys } from "../../scripts/sync-translations.ts";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const arb = {
     "@@locale": "en",
@@ -134,4 +136,81 @@ test("every vendored language already has the rename the sync applies, so a fres
             assert.equal(brandCatalog({ [key]: text.replaceAll("Auger", "Silo") })[key], text, `${tag} ${key}`);
         }
     }
+});
+
+const FAKE_COMMIT = "0123456789abcdef0123456789abcdef01234567";
+
+function jsonResponse(body: unknown, status = 200): Pick<Response, "ok" | "status" | "json"> {
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+function fakeSyncFetch(routes: Readonly<Record<string, Pick<Response, "ok" | "status" | "json">>>): SyncFetch {
+    return async (url: string) => routes[url] ?? jsonResponse({ error: "not found" }, 404);
+}
+
+test("main downloads catalogs, renames app strings through buildCatalogs, writes SOURCE, and clears stale JSON (#804)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "auger-sync-translations-"));
+    try {
+        writeFileSync(join(dir, "stale.json"), "{\"old\":\"value\"}\n");
+        const englishArb = {
+            "@@locale": "en",
+            ...englishNames(),
+            "search.initial": "Search Silo",
+            "@search.initial": { description: "Search prompt" },
+            "error.server_unavailable": "The Silo server can't be reached",
+            "@error.server_unavailable": { description: "Server error" },
+        };
+        const germanArb = {
+            "@@locale": "de",
+            "search.initial": "Silo durchsuchen",
+            "error.server_unavailable": "Der Silo-Server ist nicht erreichbar",
+            "unused.key": "Silo",
+        };
+        const fakeFetch = fakeSyncFetch({
+            "https://api.github.com/repos/Silo-Server/silo-translations/commits/v1.0.0": jsonResponse({ sha: FAKE_COMMIT }),
+            [`https://raw.githubusercontent.com/Silo-Server/silo-translations/${FAKE_COMMIT}/catalog/en.arb`]: jsonResponse(englishArb),
+            [`https://raw.githubusercontent.com/Silo-Server/silo-translations/${FAKE_COMMIT}/catalog/de.arb`]: jsonResponse(germanArb),
+        });
+        await main({ argv: ["v1.0.0", "--languages", "en,de"], fetch: fakeFetch, destination: dir });
+        const en = JSON.parse(readFileSync(join(dir, "en.json"), "utf8")) as Record<string, string>;
+        const de = JSON.parse(readFileSync(join(dir, "de.json"), "utf8")) as Record<string, string>;
+        assert.equal(en["search.initial"], "Search Auger");
+        assert.equal(en["error.server_unavailable"], "The Silo server can't be reached");
+        assert.equal(de["search.initial"], "Auger durchsuchen");
+        assert.equal(de["error.server_unavailable"], "Der Silo-Server ist nicht erreichbar");
+        assert.equal("unused.key" in de, false, "unused keys stay out of translations");
+        assert.equal(readFileSync(join(dir, "SOURCE"), "utf8"), `${FAKE_COMMIT}\n`);
+        assert.equal(existsSync(join(dir, "stale.json")), false, "stale catalog JSON is removed");
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("main leaves the output directory untouched when any download fails (#804)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "auger-sync-translations-"));
+    try {
+        writeFileSync(join(dir, "en.json"), "{\"kept\":\"yes\"}\n");
+        writeFileSync(join(dir, "stale.json"), "{\"keep\":\"me\"}\n");
+        writeFileSync(join(dir, "SOURCE"), "previous-sha\n");
+        const fakeFetch = fakeSyncFetch({
+            "https://api.github.com/repos/Silo-Server/silo-translations/commits/v1.0.0": jsonResponse({ sha: FAKE_COMMIT }),
+            [`https://raw.githubusercontent.com/Silo-Server/silo-translations/${FAKE_COMMIT}/catalog/en.arb`]: jsonResponse(englishNames()),
+            [`https://raw.githubusercontent.com/Silo-Server/silo-translations/${FAKE_COMMIT}/catalog/de.arb`]: jsonResponse({}, 500),
+        });
+        await assert.rejects(() => main({ argv: ["v1.0.0", "--languages", "en,de"], fetch: fakeFetch, destination: dir }), /catalog\/de\.arb.*HTTP 500/);
+        assert.equal(readFileSync(join(dir, "en.json"), "utf8"), "{\"kept\":\"yes\"}\n");
+        assert.equal(readFileSync(join(dir, "stale.json"), "utf8"), "{\"keep\":\"me\"}\n");
+        assert.equal(readFileSync(join(dir, "SOURCE"), "utf8"), "previous-sha\n");
+        assert.equal(existsSync(join(dir, "de.json")), false);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("main preserves CLI usage errors before touching the network (#804)", async () => {
+    let called = false;
+    const fakeFetch: SyncFetch = async () => { called = true; return jsonResponse({}); };
+    await assert.rejects(() => main({ argv: [], fetch: fakeFetch }), /usage/);
+    await assert.rejects(() => main({ argv: ["--languages", "en"], fetch: fakeFetch }), /usage/);
+    assert.equal(called, false);
 });
