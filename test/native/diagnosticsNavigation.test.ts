@@ -6,7 +6,7 @@ import { NAV_SAMPLING_KEY, type NavigationEnvironment, NavigationRecorder, type 
 import { MemoryPublicStorage } from "./support/keyManager.ts";
 
 type KeyListener = (event: KeyboardEvent) => void;
-const KEY = { left: 37, up: 38, right: 39, down: 40, enter: 13 } as const;
+const KEY = { left: 37, up: 38, right: 39, down: 40, enter: 13, back: 10009 } as const;
 
 /** A TV without a page: remote presses, focus, frames and long tasks are all driven by the test. */
 function fakeTv(options: { longTasks?: boolean; dom?: boolean } = {}) {
@@ -233,6 +233,26 @@ test("Home row moves and top-bar focus survive the full remote path to a manual 
     collector.clear();
     collector.setPrecedingScreen("home");
     assert.deepEqual(collector.reportFor("app_ui").snapshot.navigation?.st, []);
+});
+
+test("a second profile-menu visit reports the navigation since the menu was dismissed", () => {
+    const tv = fakeTv();
+    const collector = new DiagnosticsCollector({ appVersion: "test", tvModel: "TV" }, clock, new MemoryPublicStorage(), () => ({}), () => tv.env);
+    collector.navigation.attach(source(tv));
+    tv.press(KEY.up, { zone: "nav" });
+    tv.press(KEY.enter, { zone: "selector" });
+    tv.press(KEY.down, { zone: "selector" });
+    tv.press(KEY.back, { zone: "nav" });
+    tv.press(KEY.left, { zone: "nav" });
+    tv.press(KEY.right, { zone: "nav" });
+    tv.press(KEY.enter, { zone: "selector" });
+    tv.press(KEY.down, { zone: "selector" });
+    tv.press(KEY.enter);
+    collector.setPrecedingScreen("home");
+    const { snapshot } = collector.reportFor("app_ui");
+    assert.deepEqual(diagnosticsPayload(snapshot, { category: "app_ui" }).nav?.st.slice(-3), [
+        "home:nav:left:moved", "home:nav:right:moved", "home:nav:enter:pressed",
+    ]);
 });
 
 test("opening Settings freezes the Home navigation, and an app error freezes its own for both submission paths", () => {
