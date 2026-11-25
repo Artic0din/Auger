@@ -48,7 +48,8 @@ import { nextEpisode, onDeckPlays, readOnDeck } from "./nextEpisode.ts";
 import type { ResolutionCap } from "../ui/resolutionCap.ts";
 import { NEXT_UP_KEY } from "../contracts/v2/settings.ts";
 import { BUFFERING_MODE_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
-import { nextShuffle, nextShufflePart } from "./nextShuffle.ts";
+import { advanceShufflePick, nextShufflePart, refreshShuffle, shufflePick, skipShuffle } from "./nextShuffle.ts";
+import type { Shuffle } from "../contracts/v2/shuffle.ts";
 import { SubtitleAI, type SubtitleAIView } from "./subtitleAI.ts";
 import { aiMenu, aiRoute, hasActionableSource, quotaText, relyOnTranscription, type AIInputs, type AIMenu } from "./subtitleAIRoute.ts";
 import { SubtitleSync, type SyncTimingView } from "./subtitleSync.ts";
@@ -65,6 +66,8 @@ import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "./playerSettingsFlusher.ts";
+import { DEFAULT_STILL_WATCHING_THRESHOLD, PlayerStillWatchingGuard } from "./stillWatchingGuard.ts";
 import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
 
 /** What browse hands over: one file of one catalog item. */
@@ -82,9 +85,14 @@ export interface PlayRequest {
     readonly seasonNumber?: number | undefined;
     readonly episodeNumber?: number | undefined;
     readonly shuffleId?: string;
+    readonly shuffleScopeLabel?: string | undefined;
     readonly episode?: true;
-    /** Watch progress for the Up Next synopsis. Absent means the episode has not started. */
+    /** Watch progress for the Up Next synopsis and On Deck progress bar. Absent means the item has not started. */
     readonly watch?: { readonly played: boolean; readonly isInProgress?: boolean; readonly positionSeconds?: number };
+    /** Cosmetic card fallback position for On Deck progress bars when watch detail carries none, kept separate from spoiler watch state. */
+    readonly thumbnailPositionSeconds?: number | undefined;
+    /** Media duration in seconds for On Deck thumbnail progress bars. */
+    readonly durationSeconds?: number | undefined;
     readonly audioTrackId?: string;
     readonly subtitle?: SubtitleIntent;
     /** Catalog rows used to name a subtitle before start. Absent when the version published none. */
@@ -92,6 +100,8 @@ export interface PlayRequest {
     /** Effective subtitle preferences already on the version, so Auto can be named before start. */
     readonly subtitlePreferences?: SubtitlePreferences;
     readonly allowAlternateVersions?: false;
+    /** Synchronized Watch Party playback keeps normal seek/EOF behavior for Skip Credits (#795). */
+    readonly watchParty?: true;
     readonly contentId: string;
     readonly fileId: string;
     readonly title: string;
@@ -302,7 +312,7 @@ export type PlaybackView =
      * `status` is the card's status line (Apple's statusLabel) as a catalog key, so a language change redraws it; `shuffle` words the card
      * for a Shuffle, as Apple's does; `failure: "session"` marks a failed state that came from ending the session, before any lookup.
      */
-    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly failure?: "session"; readonly autoNext?: boolean }
+    | { readonly phase: "completion"; readonly status: MessageKey; readonly state: "finalizing" | "resolving" | "ready" | "failed"; readonly next: PlayRequest | undefined; readonly retryable: boolean; readonly countdown?: number | undefined; readonly deck?: readonly PlayRequest[]; readonly shuffle?: true; readonly shuffleScopeLabel?: string | undefined; readonly shuffleActionError?: MessageKey | undefined; readonly failure?: "session"; readonly autoNext?: boolean }
     | ({ readonly phase: "loading"; readonly title: string; readonly detail?: "reconnecting" | "restoring"; /** A different file of a Shuffle pick follows: the screen forgets the last file's skip decisions. */ readonly nextPart?: true } & BufferingOverlay)
     | ({
           readonly phase: "playing" | "paused";
@@ -316,7 +326,7 @@ export type PlaybackView =
           readonly buffering: boolean;
           /** Apple's episodes icon: a next episode, On Deck row, in-flight read, or a failed read that can be tried again. */
           readonly episodes?: boolean;
-          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; /** The countdown's full length, for the ring (Apple's `nextUpCountdownTotalSeconds`). */ readonly countdownTotal?: number; readonly status: string; readonly loading?: boolean; readonly failed?: boolean };
+          readonly upNext?: { readonly next: PlayRequest | undefined; readonly deck: readonly PlayRequest[]; readonly countdown: number | undefined; /** The countdown's full length, for the ring (Apple's `nextUpCountdownTotalSeconds`). */ readonly countdownTotal?: number; readonly status: string; readonly loading?: boolean; readonly failed?: boolean; readonly shuffle?: true };
           readonly resumePending?: boolean;
           readonly transportCommandCount?: number;
           readonly tracks: TrackView;
@@ -342,6 +352,8 @@ export interface PlayerControls {
     /** Source seconds, negative to go back. */
     seekBy(seconds: number): void;
     seekToSeconds(seconds: number): void;
+    /** PlayerViewModel.performCreditsSkip: opens Up Next with a fixed 10 s countdown when credits reach EOF (#795). */
+    skipCredits(seconds: number): void;
     back(): void;
     /** Ends the attempt. Visibility uses suspend/restore instead. */
     background(): void;
@@ -361,6 +373,10 @@ export interface PlayerControls {
     /** Opens the manual Up Next panel. Apple tvOS `showNextUpNow`. */
     showUpNext(): void;
     cancelAutoplay(): void;
+    /** PlayerViewModel.stopShuffling: cancels countdown, fires DELETE /shuffles/{id} without awaiting, and closes the player (#807). */
+    stopShuffling(): void;
+    /** PlayerViewModel.pickAnotherShufflePick: replaces the announced shuffle pick via POST /shuffles/{id}/skip (#778). */
+    pickAnother(): void;
     keepWatching(): void;
     saveSeriesSubtitle(): void;
     /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
@@ -402,6 +418,10 @@ export interface PlaybackDeps {
     readonly publicStorage?: PublicStorage;
     /** The profile's Resolution cap. Absent reads as no cap. Next-episode, On Deck and shuffle picks rank files by it. */
     readonly resolutionCap?: Pick<ResolutionCap, "quality" | "ready">;
+    /** Shared debounced, retried writer for player device settings (#810). */
+    readonly settingsFlusher?: PlayerSettingsFlusher;
+    /** Local Still Watching threshold (0 = Off, 1..20 consecutive auto-advances; default 3) (#796). */
+    readonly stillWatchingThreshold?: () => number;
 }
 
 const PROGRESS_INTERVAL_MS = 10000;
@@ -469,6 +489,11 @@ interface Attempt {
     offer: {
         started: boolean;
         manual: boolean;
+        /** Skip Credits reached EOF: Up Next stays open over playing credits with a fixed 10 s countdown (#795). */
+        credits: boolean;
+        creditsCountdown: number | undefined;
+        creditsDeadline: number | undefined;
+        cancelCreditsTimer: (() => void) | undefined;
         episodeLoading: boolean;
         deckLoading: boolean;
         episodeSettled: boolean;
@@ -489,10 +514,8 @@ interface Attempt {
     };
     transportCommandCount: number;
     autoNext: boolean;
-    /** Confirmed Auto-play saves advance this so an older settings read cannot overwrite them. */
+    /** Auto-play toggles advance this so an older settings read cannot overwrite them. */
     settingsEpoch: number;
-    /** The in-flight Auto-play save. EOF waits for it before reading the effective value. */
-    autoNextSave: Promise<void> | undefined;
     introMode: "never" | "ask" | "always";
     skipCredits: boolean;
     skippedMarkers: Set<SkipMarker>;
@@ -656,6 +679,12 @@ function subtitleStart(request: PlayRequest): { subtitle_track_id: string } | Re
 
 export class PlaybackController implements PlayerControls {
     private readonly deps: PlaybackDeps;
+    private readonly flusher: PlayerSettingsFlusher;
+    private readonly ownsFlusher: boolean;
+    private readonly stillWatching = new PlayerStillWatchingGuard();
+    private readonly readStillWatchingThreshold: () => number;
+    private nextStartUnattended = false;
+    private readonly stopFlusherCommit: () => void;
     private readonly pending: PendingTransport;
     private attempt: Attempt | undefined;
     /** Increases on every AVPlay open and teardown; callbacks of an older value are dropped. */
@@ -678,12 +707,22 @@ export class PlaybackController implements PlayerControls {
         if (attempt !== undefined) this.syncBuffering(attempt);
     };
     /** `autoplays`: the card's pick is one Apple counts down to (the next episode or a Shuffle pick), not an On Deck title. */
-    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean } | undefined;
+    private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean; pickingAnother: boolean; advancingShuffle: boolean; advancedShuffle?: Shuffle | undefined; advancedShuffleUnattended?: boolean | undefined; shuffleScopeLabel?: string | undefined } | undefined;
     private cancelAutoplayTimer: (() => void) | undefined;
     private nextStart: PlayRequest | undefined;
 
     constructor(deps: PlaybackDeps) {
         this.deps = deps;
+        this.ownsFlusher = deps.settingsFlusher === undefined;
+        this.readStillWatchingThreshold = deps.stillWatchingThreshold ?? (() => DEFAULT_STILL_WATCHING_THRESHOLD);
+        this.flusher = deps.settingsFlusher ?? new PlayerSettingsFlusher(sessionPlayerSettingsTransport(deps.session), deps.clock, {
+            scopeId: () => deps.session.activeProfile?.id ?? "default",
+            signal: () => deps.session.authoritySignal,
+            ...(deps.publicStorage === undefined ? {} : { storage: deps.publicStorage }),
+        });
+        this.stopFlusherCommit = this.flusher.onCommit(key => {
+            if (key === AUTO_NEXT_KEY && this.attempt !== undefined) this.attempt.settingsEpoch += 1;
+        });
         const pending = pendingTransports.get(deps.avplay) ?? { seek: undefined, closing: undefined };
         pendingTransports.set(deps.avplay, pending);
         this.pending = pending;
@@ -716,8 +755,19 @@ export class PlaybackController implements PlayerControls {
 
     /** Starts a new attempt; one already running is stopped and never plays. */
     play(request: PlayRequest): void {
+        this.startPlay(request, false);
+    }
+
+    private stillWatchingGated(): boolean {
+        return this.stillWatching.shouldGate(this.readStillWatchingThreshold());
+    }
+
+    private startPlay(request: PlayRequest, preserveGuard: boolean): void {
         if (this.completion !== undefined) return;
         const previous = this.attempt;
+        if (!preserveGuard && previous !== undefined && previous.request.contentId !== request.contentId) {
+            this.stillWatching.recordViewerAction();
+        }
         if (previous !== undefined) {
             this.leave(previous, "stop");
         }
@@ -731,10 +781,10 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, creditsDeadline: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
-            autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
+            autoNext: false, settingsEpoch: 0,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
             appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, redrawSwitch: undefined, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
@@ -861,6 +911,7 @@ export class PlaybackController implements PlayerControls {
     setVideo(kind: "speed" | "aspect", value: string): void {
         const attempt = this.active();
         if (attempt?.plan === undefined || attempt.busy || attempt.hidden || attempt.restoring) return;
+        this.stillWatching.recordViewerAction();
         attempt.hud.setVideo(this.deps.avplay, attempt.plan, kind, value);
         this.showPlayback(attempt);
     }
@@ -876,59 +927,25 @@ export class PlaybackController implements PlayerControls {
         // The finished card's toggle (PlayerView.autoPlayToggle) acts on the ended attempt.
         const completion = this.completion;
         const attempt = this.active() ?? (completion !== undefined && completion.attempt === this.attempt && completion.attempt.ended ? completion.attempt : undefined);
-        if (attempt === undefined || !attempt.autoNextSupported || attempt.hud.autoBusy) return;
-        attempt.hud.autoBusy = true;
-        attempt.hud.message = "Saving Auto-play next";
-        // PlayerViewModel.setNextUpAutoPlayEnabled: the local value changes, and the countdown stops or starts, before the write goes out.
-        // The new epoch also keeps an older settings read from overwriting it.
-        const previous = attempt.autoNext;
-        const enabled = !previous;
+        if (attempt === undefined || !attempt.autoNextSupported) return;
+        // PlayerViewModel.setNextUpAutoPlayEnabled -> PlayerSettings.setAutoPlayNextEpisode -> PlayerSettingsFlusher:
+        // the local value changes and the countdown updates at once, while the flusher debounces, retries transient
+        // failures, and holds exhausted writes for Settings without showing an error in the player.
+        const enabled = !attempt.autoNext;
+        this.stillWatching.recordViewerAction();
         attempt.settingsEpoch += 1;
-        const epoch = attempt.settingsEpoch;
         attempt.autoNext = enabled;
+        if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
         this.showPlayback(attempt);
         if (!attempt.live) this.completionAutoNextChanged(attempt);
-        const current = (at: number): boolean => !attempt.signal.aborted && at === attempt.settingsEpoch && (attempt.live || this.completion?.attempt === attempt);
-        // Apple writes this TV's value from every Auto-play control (PlayerSettings.setAutoPlayNextEpisode → enqueueDeviceValue).
-        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled, "profile_device"), profileScoped: true, signal: attempt.signal }).then(async () => {
-            if (!current(epoch)) return;
-            // The write is in: a settings read started before now may answer with the old value, so it is set aside too.
-            attempt.settingsEpoch += 1;
-            const written = attempt.settingsEpoch;
-            if (attempt.live) attempt.hud.message = "";
-            let saved: boolean;
-            try {
-                const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
-                saved = values.get(AUTO_NEXT_KEY)?.value === true;
-            } catch {
-                // The server took the write; a confirmation that cannot be read leaves the written value in place.
-                return;
-            }
-            if (!current(written) || saved === attempt.autoNext) return;
-            attempt.autoNext = saved;
-            if (!attempt.live) this.completionAutoNextChanged(attempt);
-        }, () => {
-            // A refused write. Apple's writer keeps the local value and retries, and a refusal shows only in Settings
-            // (SettingsViewModel.swift:443). Nothing here retries (#810), so the toggle goes back to the saved value and the card acts on it again.
-            if (!current(epoch)) return;
-            attempt.settingsEpoch += 1;
-            attempt.autoNext = previous;
-            if (attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
-            else this.completionAutoNextChanged(attempt);
-        }).finally(() => {
-            attempt.hud.autoBusy = false;
-            if (attempt.live) this.showPlayback(attempt);
-        });
-        const settled = save.then(() => undefined, () => undefined);
-        attempt.autoNextSave = settled;
-        void settled.finally(() => {
-            if (attempt.autoNextSave === settled) attempt.autoNextSave = undefined;
-        });
+        this.flusher.enqueue(AUTO_NEXT_KEY, enabled, "profile_device");
     }
 
-    /** A settings read may apply Auto-play only if no press came after it started and no write is out: the write's own outcome decides. */
-    private readsAutoNext(attempt: Attempt, epoch: number): boolean {
-        return epoch === attempt.settingsEpoch && attempt.autoNextSave === undefined;
+    /** A settings read may apply Auto-play only if no press came after it started, and never over an unsettled local write. */
+    private applyAutoNextRead(attempt: Attempt, epoch: number, serverValue: boolean): void {
+        if (epoch !== attempt.settingsEpoch) return;
+        const unsettled = this.flusher.unsettledValue(AUTO_NEXT_KEY);
+        attempt.autoNext = typeof unsettled === "boolean" ? unsettled : serverValue;
     }
 
     togglePause(): void {
@@ -941,6 +958,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt === undefined) {
             return;
         }
+        this.stillWatching.recordViewerAction();
         attempt.transportCommandCount++;
         // A seek reanchor replaces the transport; preparation must use the latest intent.
         if (!attempt.started) {
@@ -977,6 +995,7 @@ export class PlaybackController implements PlayerControls {
     seekBy(seconds: number): void {
         const attempt = this.active();
         if (attempt === undefined) return;
+        this.stillWatching.recordViewerAction();
         // PlayerViewModel.queueSkipDebounce (RelativeSeek.target(current:pending:delta:)): a skip pressed while a seek is in flight adds
         // to the target already asked for, the queued one first, never to the position from before that seek.
         const inFlight = attempt.busy && this.pending.seek !== undefined;
@@ -1013,7 +1032,90 @@ export class PlaybackController implements PlayerControls {
     }
 
     seekToSeconds(seconds: number): void {
+        this.stillWatching.recordViewerAction();
         this.seekAbsolute(seconds);
+    }
+
+    skipCredits(seconds: number): void {
+        const attempt = this.active();
+        if (attempt === undefined || !attempt.started || attempt.busy) return;
+        this.stillWatching.recordViewerAction();
+        this.performCreditsSkip(attempt, seconds);
+    }
+
+    /** PlayerViewModel.performCreditsSkip (silo-apple d315ef9c): credits running to EOF open Up Next over playing credits. */
+    private performCreditsSkip(attempt: Attempt, targetSeconds: number): void {
+        const duration = attempt.plan?.durationSeconds;
+        if (duration !== undefined && Number.isFinite(duration) && duration > 0 && targetSeconds >= duration - 0.5) {
+            if (this.presentNextUpOverCredits(attempt)) return;
+        }
+        this.seekAbsolute(targetSeconds);
+        this.showPlayback(attempt);
+    }
+
+    /** PlayerViewModel.presentNextUpOverCredits: returns true when Up Next takes over instead of seeking to EOF. */
+    private presentNextUpOverCredits(attempt: Attempt): boolean {
+        if (attempt.request.watchParty === true || attempt.ended || this.completion !== undefined || attempt.hidden || attempt.busy || !attempt.started) return false;
+        if (!this.episodesVisible(attempt)) return false;
+        attempt.offer.credits = true;
+        attempt.promptDismissed = false;
+        if (!attempt.offer.started) this.beginDiscovery(attempt);
+        else {
+            const offer = attempt.offer;
+            if (offer.episodeFailed && !offer.episodeLoading && !offer.episodeManualRetried) { offer.episodeManualRetried = true; this.retryEpisode(attempt); }
+            if (offer.deckFailed && !offer.deckLoading && !offer.deckManualRetried) { offer.deckManualRetried = true; this.retryDeck(attempt); }
+        }
+        this.publishOffer(attempt);
+        return true;
+    }
+
+    private cancelCreditsCountdown(attempt: Attempt, clearDeadline = true): void {
+        attempt.offer.cancelCreditsTimer?.();
+        attempt.offer.cancelCreditsTimer = undefined;
+        attempt.offer.creditsCountdown = undefined;
+        if (clearDeadline) attempt.offer.creditsDeadline = undefined;
+    }
+
+    /** PlayerViewModel.startNextUpCountdownIfNeeded for `.credits`: fixed 10 s countdown while credits keep playing. */
+    private startCreditsCountdownIfNeeded(attempt: Attempt): void {
+        const prompt = attempt.prompt;
+        const canRun = attempt.offer.credits
+            && prompt !== undefined
+            && prompt.loading !== true
+            && prompt.failed !== true
+            && !prompt.fromDeck
+            && prompt.next !== undefined
+            && attempt.autoNext
+            && !this.stillWatchingGated()
+            && !attempt.promptDismissed
+            && this.completion === undefined;
+        if (!canRun) {
+            this.cancelCreditsCountdown(attempt);
+            return;
+        }
+        if (attempt.offer.cancelCreditsTimer !== undefined) return;
+        const deadline = attempt.offer.creditsDeadline ?? (this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000);
+        attempt.offer.creditsDeadline = deadline;
+        const tick = (): void => {
+            if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated() || attempt.promptDismissed || this.completion !== undefined) {
+                this.cancelCreditsCountdown(attempt);
+                return;
+            }
+            const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
+            if (remaining === 0) {
+                if (this.current.phase !== "playing" && this.current.phase !== "paused") {
+                    this.cancelCreditsCountdown(attempt, false);
+                    return;
+                }
+                this.cancelCreditsCountdown(attempt);
+                this.advanceNext(undefined, true);
+                return;
+            }
+            attempt.offer.creditsCountdown = remaining;
+            this.showPlayback(attempt);
+            attempt.offer.cancelCreditsTimer = this.deps.clock.schedule(tick, 1000);
+        };
+        tick();
     }
 
     private seekAbsolute(seconds: number, requestedPaused?: boolean): void {
@@ -1104,14 +1206,20 @@ export class PlaybackController implements PlayerControls {
                     }
                 }
             }
-            if (moved) this.updatePrompt(attempt);
+            if (moved) {
+                if (attempt.offer.credits && markerAt((attempt.markers?.segments ?? []).filter(segment => segment.kind === "credits"), attempt.sourceSeconds) === undefined) {
+                    attempt.offer.credits = false;
+                    this.cancelCreditsCountdown(attempt);
+                }
+                this.updatePrompt(attempt);
+            }
             this.finishSkipSeek(attempt, moved);
             this.showPlayback(attempt);
             // A switch that settled while this seek held the controls left its queued subtitle choice for now (#738).
             const pending = attempt.pendingSubtitle;
             if (pending !== undefined && !attempt.busy && !attempt.reporting && attempt.change.state !== "changing") {
                 attempt.pendingSubtitle = undefined;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
             }
         };
         try {
@@ -1230,12 +1338,18 @@ export class PlaybackController implements PlayerControls {
         if (!audioChoices(attempt, plan).some((choice) => choice.id === trackId)) {
             return;
         }
+        this.stillWatching.recordViewerAction();
         // Omitting a subtitle from a track_change turns it off, so the shown one is named again.
         const subtitle = chosenTracks(attempt, plan).subtitle;
         this.changeTracks(attempt, plan, { audio: { id: trackId }, ...(subtitle === undefined ? {} : { subtitle }) });
     }
 
     selectSubtitle(trackId: string | undefined): void {
+        this.stillWatching.recordViewerAction();
+        this.applySubtitleSelection(trackId);
+    }
+
+    private applySubtitleSelection(trackId: string | undefined): void {
         const reporting = this.active();
         if (reporting?.reporting) {
             const plan = reporting.plan;
@@ -1380,7 +1494,7 @@ export class PlaybackController implements PlayerControls {
         const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
         if (track !== undefined) {
             if (!attempt.started || attempt.busy || track.unplayable === true) return false;
-            this.selectSubtitle(track.trackId);
+            this.applySubtitleSelection(track.trackId);
             return true;
         }
         if (!attempt.started || attempt.busy) return false;
@@ -1451,6 +1565,8 @@ export class PlaybackController implements PlayerControls {
             this.leave(attempt, "stop");
         }
         this.attempt = undefined;
+        this.stopFlusherCommit();
+        if (this.ownsFlusher) this.flusher.destroy();
         this.stopAuthority();
         globalThis.removeEventListener?.("online", this.onConnectivity);
         globalThis.removeEventListener?.("offline", this.onConnectivity);
@@ -1508,11 +1624,13 @@ export class PlaybackController implements PlayerControls {
             }
             if (definitions.some(def => def.key === AUTO_NEXT_KEY)) {
                 attempt.autoNextSupported = true;
+                const unsettled = this.flusher.unsettledValue(AUTO_NEXT_KEY);
+                if (typeof unsettled === "boolean") attempt.autoNext = unsettled;
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await call(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                    if (attempt.live && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { /* Unavailable autoplay preferences leave Play next manual. */ }
+                    if (attempt.live) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                } catch { /* Unavailable autoplay preferences leave Play next manual unless an unsettled local choice stands. */ }
             }
             if (definitions.some(def => def.key === HDR_KEY)) {
                 try {
@@ -2060,7 +2178,7 @@ export class PlaybackController implements PlayerControls {
                     return;
                 }
                 attempt.busy = false;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
                 return;
             }
             attempt.subtitleRestore = { id: selectedSubtitle(next) };
@@ -2262,7 +2380,7 @@ export class PlaybackController implements PlayerControls {
         } else if (attempt.pendingSubtitle !== undefined && !attempt.busy) {
             const pending = attempt.pendingSubtitle;
             attempt.pendingSubtitle = undefined;
-            this.selectSubtitle(pending.id);
+            this.applySubtitleSelection(pending.id);
         }
         if (failure === undefined && (resolveCompletedSubtitle || resolveDownloadedSubtitle) && attempt.plan !== undefined && !attempt.busy) {
             this.applyPreparedSubtitleChoices(attempt, attempt.plan);
@@ -2408,6 +2526,7 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.active();
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined || attempt.hidden || attempt.restoring) return;
+        this.stillWatching.recordViewerAction();
         if (trackId === undefined) {
             this.clearSecondary(attempt);
             this.showPlayback(attempt);
@@ -2871,19 +2990,19 @@ export class PlaybackController implements PlayerControls {
             const track = plan.subtitle.inventory.find(track => track.syncKey === `stored-${resultId}`);
             if (track === undefined) attempt.ai?.notice("The completed subtitle is not in the refreshed inventory. Playback continues; try selecting it later.");
             else if (track.unplayable === true) attempt.ai?.notice(STORED);
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.pendingDownloadId !== undefined) {
             const id = attempt.pendingDownloadId;
             attempt.pendingDownloadId = undefined;
             const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
             if (track === undefined || track.unplayable === true) attempt.search?.reportUnselected();
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.queuedSubtitle !== undefined) {
             const queued = attempt.queuedSubtitle;
             attempt.queuedSubtitle = undefined;
-            this.selectSubtitle(queued.id);
+            this.applySubtitleSelection(queued.id);
         }
     }
 
@@ -2913,7 +3032,11 @@ export class PlaybackController implements PlayerControls {
                         attempt.undoSkip = undefined;
                         // Apple offers Watch Intro after an automatic intro skip and nothing after a credits skip.
                         attempt.pendingSkipUndo = marker.kind === "intro" ? marker.startSeconds : undefined;
-                        this.seekToSeconds(marker.endSeconds);
+                        if (marker.kind === "credits") {
+                            this.performCreditsSkip(attempt, marker.endSeconds);
+                            return;
+                        }
+                        this.seekAbsolute(marker.endSeconds);
                         // Apple arms Watch Intro's five seconds as it issues the skip, so the seek counts against them.
                         this.showPlayback(attempt);
                         return;
@@ -2958,8 +3081,9 @@ export class PlaybackController implements PlayerControls {
         attempt.endedDuringChange = false;
         this.leave(attempt, "abandon");
         this.nextStart = undefined;
-        this.completion = { attempt, abort: new AbortController(), pending: false, autoplays: false };
-        this.retryCompletion();
+        this.nextStartUnattended = false;
+        this.completion = { attempt, abort: new AbortController(), pending: false, autoplays: false, pickingAnother: false, advancingShuffle: false, shuffleScopeLabel: attempt.request.shuffleScopeLabel };
+        this.runCompletion();
     }
 
     private closeTransport(): void {
@@ -3107,6 +3231,11 @@ export class PlaybackController implements PlayerControls {
     }
 
     retryCompletion(): void {
+        this.stillWatching.recordViewerAction();
+        this.runCompletion();
+    }
+
+    private runCompletion(): void {
         const completion = this.completion;
         if (completion === undefined) {
             const attempt = this.attempt;
@@ -3137,6 +3266,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt?.started !== true || attempt.plan === undefined || attempt.hidden || attempt.request.shuffleId !== undefined) return;
         // A hidden button opens nothing: a film with nothing to offer stays closed.
         if (!this.episodesVisible(attempt)) return;
+        this.stillWatching.recordViewerAction();
         attempt.offer.manual = true;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
         else {
@@ -3158,21 +3288,132 @@ export class PlaybackController implements PlayerControls {
     }
 
     playNext(selected?: PlayRequest): void {
+        this.advanceNext(selected, false);
+    }
+
+    private advanceNext(selected: PlayRequest | undefined, unattended: boolean): void {
+        if (!unattended) this.stillWatching.recordViewerAction();
         const view = this.current;
         const attempt = this.active();
         if ((view.phase === "playing" || view.phase === "paused") && attempt?.prompt !== undefined) {
             const request = this.liveNext(attempt, selected);
             if (request === undefined) return;
+            if (unattended) this.stillWatching.recordAutoAdvance();
             this.beginCompletion(attempt);
             this.nextStart = request;
+            this.nextStartUnattended = unattended;
             return;
         }
         if (view.phase !== "completion" || view.state !== "ready" || view.next === undefined || this.completion?.attempt.ended !== true) return;
+        const completion = this.completion;
         const request = selected ?? view.next;
         if (request !== view.next && !view.deck?.includes(request)) return;
+        const shuffleId = completion.attempt.request.shuffleId;
+        if (shuffleId !== undefined && request === view.next) {
+            if (completion.advancingShuffle || completion.pickingAnother) return;
+            if (unattended) this.stillWatching.recordAutoAdvance();
+            this.cancelAutoplayTimer?.();
+            this.cancelAutoplayTimer = undefined;
+            completion.advancingShuffle = true;
+            this.show({ ...view, countdown: undefined, shuffleActionError: undefined });
+            const fromContentId = completion.attempt.request.contentId;
+            void this.pickQuality(completion.abort.signal).then(quality => advanceShufflePick(spec => {
+                if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) throw abortedError();
+                return this.deps.session.call({ ...spec, profileScoped: true, signal: completion.abort.signal });
+            }, shuffleId, fromContentId, quality)).then(result => {
+                if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) return;
+                completion.advancingShuffle = false;
+                const currentView = this.current;
+                if (result.kind === "lookup_failed") {
+                    completion.advancedShuffle = result.shuffle;
+                    completion.advancedShuffleUnattended = unattended;
+                    completion.autoplays = false;
+                    if (currentView.phase === "completion") {
+                        const retryable = !(result.cause instanceof ApiError && (result.cause.status === 401 || result.cause.status === 403 || result.cause.status === 410 || result.cause.problemId === "installation_changed"));
+                        this.show({ ...currentView, state: "failed", status: "upNext.headingFinished", next: undefined, retryable, countdown: undefined, shuffleActionError: undefined });
+                    }
+                    return;
+                }
+                const picked = result.next;
+                if (picked === undefined) {
+                    completion.autoplays = false;
+                    if (currentView.phase === "completion") {
+                        this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined });
+                    }
+                    return;
+                }
+                this.cancelCompletion();
+                this.nextStart = picked;
+                this.startPlay(picked, unattended);
+            }, (error: unknown) => {
+                if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) return;
+                completion.advancingShuffle = false;
+                completion.attempt.promptDismissed = true;
+                const currentView = this.current;
+                if (currentView.phase !== "completion") return;
+                if (error instanceof ApiError && error.status === 409) {
+                    completion.autoplays = false;
+                    this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined });
+                    return;
+                }
+                this.show({ ...currentView, countdown: undefined, shuffleActionError: "upNext.shuffleContinueFailed" });
+            });
+            return;
+        }
+        if (unattended) this.stillWatching.recordAutoAdvance();
         this.cancelCompletion();
         this.nextStart = request;
-        this.play(request);
+        this.startPlay(request, unattended);
+    }
+
+    pickAnother(): void {
+        const completion = this.completion;
+        const view = this.current;
+        if (completion === undefined || view.phase !== "completion" || view.state !== "ready" || view.shuffle !== true || view.next === undefined || completion.pickingAnother || completion.advancingShuffle || completion.advancedShuffle !== undefined) return;
+        const shuffleId = completion.attempt.request.shuffleId;
+        if (shuffleId === undefined) return;
+        this.stillWatching.recordViewerAction();
+        this.cancelAutoplayTimer?.();
+        this.cancelAutoplayTimer = undefined;
+        completion.pickingAnother = true;
+        const skippedContentId = view.next.contentId;
+        this.show({ ...view, countdown: undefined, shuffleActionError: undefined });
+        void this.pickQuality(completion.abort.signal).then(quality => skipShuffle(spec => {
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) throw abortedError();
+            return this.deps.session.call({ ...spec, profileScoped: true, signal: completion.abort.signal });
+        }, shuffleId, skippedContentId, quality)).then(result => {
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) return;
+            completion.pickingAnother = false;
+            if (result.scopeLabel !== undefined) completion.shuffleScopeLabel = result.scopeLabel;
+            const currentView = this.current;
+            if (currentView.phase !== "completion") return;
+            const scope = completion.shuffleScopeLabel;
+            if (result.kind === "lookup_failed") {
+                completion.autoplays = false;
+                const retryable = !(result.cause instanceof ApiError && (result.cause.status === 401 || result.cause.status === 403 || result.cause.status === 410 || result.cause.problemId === "installation_changed"));
+                this.show({ ...currentView, state: "failed", status: "upNext.headingFinished", next: undefined, retryable, countdown: undefined, shuffleActionError: undefined, ...(scope === undefined ? {} : { shuffleScopeLabel: scope }) });
+                return;
+            }
+            if (result.next === undefined) {
+                completion.autoplays = false;
+                this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined, ...(scope === undefined ? {} : { shuffleScopeLabel: scope }) });
+                return;
+            }
+            this.show({ ...currentView, status: "upNext.headingShuffle", next: this.shownNext(result.next), countdown: undefined, shuffleActionError: undefined, ...(scope === undefined ? {} : { shuffleScopeLabel: scope }) });
+            if (completion.attempt.autoNext && !this.stillWatchingGated()) this.startAutoplay(completion);
+        }, (error: unknown) => {
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted) return;
+            completion.pickingAnother = false;
+            const currentView = this.current;
+            if (currentView.phase !== "completion") return;
+            if (error instanceof ApiError && error.status === 409) {
+                completion.autoplays = false;
+                this.show({ ...currentView, status: "upNext.headingFinished", next: undefined, countdown: undefined, shuffleActionError: undefined });
+                return;
+            }
+            this.show({ ...currentView, countdown: undefined, shuffleActionError: "upNext.pickAnotherFailed" });
+            if (completion.attempt.autoNext && !this.stillWatchingGated()) this.startAutoplay(completion);
+        });
     }
 
     private cancelCompletion(): void {
@@ -3185,8 +3426,10 @@ export class PlaybackController implements PlayerControls {
     cancelAutoplay(): void {
         const attempt = this.active();
         if (attempt !== undefined) {
+            this.cancelCreditsCountdown(attempt);
             attempt.promptDismissed = true;
             attempt.offer.manual = false;
+            attempt.offer.credits = false;
             attempt.prompt = undefined;
             this.paintRect(attempt);
             this.showPlayback(attempt);
@@ -3196,7 +3439,19 @@ export class PlaybackController implements PlayerControls {
         if (this.current.phase === "completion" && this.current.countdown !== undefined) this.show({ ...this.current, countdown: undefined });
     }
 
+    stopShuffling(): void {
+        const attempt = this.completion?.attempt ?? this.attempt;
+        const shuffleId = attempt?.request.shuffleId;
+        if (shuffleId === undefined) return;
+        this.cancelAutoplay();
+        const signal = this.deps.session.authoritySignal;
+        // PlayerViewModel.stopShuffling: do not await delete; a failed delete leaves a shuffle the server cleans up.
+        void this.deps.session.call({ ...operations.deleteShuffle(shuffleId), profileScoped: true, signal }).catch(() => undefined);
+        this.back();
+    }
+
     keepWatching(): void {
+        this.stillWatching.recordViewerAction();
         const attempt = this.attempt;
         if (attempt?.live === true) {
             this.cancelAutoplay();
@@ -3221,19 +3476,20 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.show({ ...view, autoNext: true });
-        if (completion.autoplays && view.state === "ready" && view.next !== undefined && this.cancelAutoplayTimer === undefined) {
+        if (completion.autoplays && view.state === "ready" && view.next !== undefined && !completion.pickingAnother && !completion.advancingShuffle && this.cancelAutoplayTimer === undefined) {
             attempt.promptDismissed = false;
             this.startAutoplay(completion);
         }
     }
 
-    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>): void {
-        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+    private startAutoplay(completion: NonNullable<PlaybackController["completion"]>, seconds = AUTOPLAY_COUNTDOWN_SECONDS): void {
+        if (this.stillWatchingGated()) return;
+        const deadline = this.deps.clock.now() + seconds * 1000;
         const tick = (): void => {
             const view = this.current;
-            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined) return;
+            if (this.completion !== completion || completion.abort.signal.aborted || completion.attempt.signal.aborted || completion.attempt.signal !== this.deps.session.authoritySignal || !completion.attempt.ended || view.phase !== "completion" || view.state !== "ready" || view.next === undefined || completion.pickingAnother || completion.advancingShuffle || this.stillWatchingGated()) return;
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
-            if (remaining === 0) { this.playNext(); return; }
+            if (remaining === 0) { this.advanceNext(undefined, true); return; }
             this.show({ ...view, countdown: remaining });
             this.cancelAutoplayTimer = this.deps.clock.schedule(tick, 1000);
         };
@@ -3252,7 +3508,8 @@ export class PlaybackController implements PlayerControls {
         const autoNext = (): { autoNext?: boolean } => attempt.autoNextSupported ? { autoNext: attempt.autoNext } : {};
         const refused = (error: unknown): boolean => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 410 || error.problemId === "installation_changed");
         const show = (state: "finalizing" | "resolving" | "ready" | "failed", next?: PlayRequest, retryable = false, status: MessageKey = state === "finalizing" || state === "resolving" ? working : "upNext.headingFinished", deck?: readonly PlayRequest[]): void => {
-            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}), ...autoNext() });
+            const scope = completion.shuffleScopeLabel ?? attempt.request.shuffleScopeLabel;
+            if (current()) this.show({ phase: "completion", status, state, next: this.shownNext(next), retryable, ...(deck === undefined ? {} : { deck: deck.map(item => this.shownNext(item) ?? item) }), ...(shuffle ? { shuffle: true } : {}), ...(scope === undefined ? {} : { shuffleScopeLabel: scope }), ...(state === "failed" && stage === "session" ? { failure: "session" } : {}), ...autoNext() });
         };
         // Apple's playShufflePart loads the next part with a plain loading state, not the end screen.
         if (attempt.request.shuffleId === undefined) show("finalizing");
@@ -3290,8 +3547,10 @@ export class PlaybackController implements PlayerControls {
             stage = "lookup";
             if (this.nextStart !== undefined) {
                 const request = this.nextStart;
+                const unattended = this.nextStartUnattended;
+                this.nextStartUnattended = false;
                 this.cancelCompletion();
-                this.play(request);
+                this.startPlay(request, unattended);
                 return;
             }
             if (attempt.request.shuffleId !== undefined) {
@@ -3308,32 +3567,54 @@ export class PlaybackController implements PlayerControls {
                 if (part !== undefined) {
                     this.cancelCompletion();
                     this.nextStart = part;
-                    this.play(part);
+                    this.startPlay(part, true);
                     return;
                 }
             }
             const capRead = this.pickQuality(abort.signal);
             if (attempt.autoNextSupported) {
-                await attempt.autoNextSave;
-                if (!current()) return;
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: abort.signal });
-                    if (this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { if (current() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
+                    if (current()) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                } catch { if (current()) this.applyAutoNextRead(attempt, epoch, false); }
                 if (!current()) return;
             }
             show("resolving");
             const quality = await capRead;
             if (!current()) return;
             if (attempt.request.shuffleId !== undefined) {
-                const next = await nextShuffle(spec => {
+                if (completion.advancedShuffle !== undefined) {
+                    const promoted = completion.advancedShuffle;
+                    const picked = await shufflePick(spec => {
+                        if (!current()) throw abortedError();
+                        return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
+                    }, promoted, quality);
+                    if (!current()) return;
+                    if (picked === undefined) {
+                        completion.autoplays = false;
+                        show("ready", undefined, false, "upNext.headingFinished");
+                        return;
+                    }
+                    const unattended = completion.advancedShuffleUnattended === true;
+                    this.cancelCompletion();
+                    this.nextStart = picked;
+                    this.startPlay(picked, unattended);
+                    return;
+                }
+                const refreshed = await refreshShuffle(spec => {
                     if (!current()) throw abortedError();
                     return this.deps.session.call({ ...spec, profileScoped: true, signal: abort.signal });
-                }, attempt.request.shuffleId, attempt.request.contentId, quality);
+                }, attempt.request.shuffleId, quality).catch((error: unknown) => {
+                    if (error instanceof ApiError && error.status === 409) return { next: undefined, scopeLabel: attempt.request.shuffleScopeLabel };
+                    throw error;
+                });
+                if (!current()) return;
+                if (refreshed.scopeLabel !== undefined) completion.shuffleScopeLabel = refreshed.scopeLabel;
+                const next = refreshed.next;
                 completion.autoplays = next !== undefined;
                 show("ready", next, false, next === undefined ? "upNext.headingFinished" : "upNext.headingShuffle");
-                if (current() && next !== undefined && attempt.autoNext) this.startAutoplay(completion);
+                if (current() && next !== undefined && attempt.autoNext && !this.stillWatchingGated()) this.startAutoplay(completion);
                 return;
             }
             const fileId = attempt.plan?.effectiveMediaFileId;
@@ -3354,8 +3635,12 @@ export class PlaybackController implements PlayerControls {
                 }, attempt.request.contentId, undefined, quality).then(deck => {
                     if (current() && this.current.phase === "completion" && this.current.state === "ready") this.show({ ...this.current, deck });
                 }, () => undefined);
-                if (current() && attempt.autoNext && !attempt.promptDismissed) {
-                    if (attempt.prompt !== undefined) this.playNext();
+                if (current() && attempt.autoNext && !attempt.promptDismissed && !this.stillWatchingGated()) {
+                    if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined) {
+                        const remaining = Math.max(0, Math.ceil((attempt.offer.creditsDeadline - this.deps.clock.now()) / 1000));
+                        if (remaining > 0) this.startAutoplay(completion, remaining);
+                        else this.advanceNext(undefined, true);
+                    } else if (attempt.prompt !== undefined) this.advanceNext(undefined, true);
                     else this.startAutoplay(completion);
                 }
                 return;
@@ -3392,6 +3677,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         attempt.live = false;
+        this.cancelCreditsCountdown(attempt, false);
         attempt.bufferingQuality.destroy();
         this.clearThumbnails(attempt);
         attempt.cancelTimer?.();
@@ -4149,8 +4435,8 @@ export class PlaybackController implements PlayerControls {
             ...(attempt.prompt === undefined ? {} : { upNext: {
                 next: this.shownNext(attempt.prompt.next), deck: attempt.prompt.deck.map(item => this.shownNext(item) ?? item),
                 countdown: this.promptCountdown(attempt, plan),
-                // Apple's nextUpCountdownTotalSeconds: the HUD threshold when opened by hand, else the prompt's length.
-                countdownTotal: attempt.offer.manual ? MANUAL_COUNTDOWN_THRESHOLD_SECONDS : Math.max(1, attempt.promptSeconds),
+                // Apple's nextUpCountdownTotalSeconds: fixed 10 s over credits, HUD threshold when opened by hand, else the prompt's length.
+                countdownTotal: attempt.offer.credits ? AUTOPLAY_COUNTDOWN_SECONDS : attempt.offer.manual ? MANUAL_COUNTDOWN_THRESHOLD_SECONDS : Math.max(1, attempt.promptSeconds),
                 status: attempt.prompt.loading === true || attempt.prompt.next !== undefined ? translate("upNext.heading") : translate("upNext.headingNothing"),
                 ...(attempt.prompt.loading === true ? { loading: true as const } : {}),
                 ...(attempt.prompt.failed === true ? { failed: true as const } : {}),
@@ -4176,6 +4462,9 @@ export class PlaybackController implements PlayerControls {
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
+        if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined && attempt.offer.cancelCreditsTimer === undefined && attempt.offer.creditsDeadline <= this.deps.clock.now()) {
+            this.startCreditsCountdownIfNeeded(attempt);
+        }
     }
 
     private inPromptWindow(attempt: Attempt): boolean {
@@ -4197,7 +4486,8 @@ export class PlaybackController implements PlayerControls {
 
     private promptCountdown(attempt: Attempt, plan: { durationSeconds: number | undefined }): number | undefined {
         const prompt = attempt.prompt;
-        if (prompt === undefined || prompt.loading === true || prompt.failed === true || prompt.fromDeck || prompt.next === undefined || !attempt.autoNext) return undefined;
+        if (prompt === undefined || prompt.loading === true || prompt.failed === true || prompt.fromDeck || prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated()) return undefined;
+        if (attempt.offer.credits) return attempt.offer.creditsCountdown;
         const remaining = (plan.durationSeconds ?? Infinity) - attempt.sourceSeconds;
         if (attempt.offer.manual && remaining >= MANUAL_COUNTDOWN_THRESHOLD_SECONDS) return undefined;
         return Math.max(0, Math.ceil(remaining));
@@ -4207,7 +4497,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt.request.shuffleId !== undefined) return;
         if (!this.inPromptWindow(attempt)) {
             attempt.promptDismissed = false;
-            if (!attempt.offer.manual) this.clearPrompt(attempt);
+            if (!attempt.offer.manual && !attempt.offer.credits) this.clearPrompt(attempt);
             else this.paintRect(attempt);
             return;
         }
@@ -4252,7 +4542,7 @@ export class PlaybackController implements PlayerControls {
 
     private reportPosition(attempt: Attempt): number {
         const duration = attempt.plan?.durationSeconds;
-        return attempt.prompt !== undefined && duration !== undefined && attempt.promptSeconds > 0 && duration - attempt.sourceSeconds >= 0 && duration - attempt.sourceSeconds <= attempt.promptSeconds ? duration : attempt.sourceSeconds;
+        return attempt.prompt !== undefined && duration !== undefined && (attempt.offer.credits || (attempt.promptSeconds > 0 && duration - attempt.sourceSeconds >= 0 && duration - attempt.sourceSeconds <= attempt.promptSeconds)) ? duration : attempt.sourceSeconds;
     }
 
     /** The Resolution cap that ranks the next pick. A cap read still in flight is waited for; a failed one reads as no cap. */
@@ -4274,8 +4564,8 @@ export class PlaybackController implements PlayerControls {
                     const epoch = attempt.settingsEpoch;
                     try {
                         const values = await read(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                        if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                    } catch { if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
+                        if (live()) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                    } catch { if (live()) this.applyAutoNextRead(attempt, epoch, false); }
                 }
                 if (attempt.request.episode === true) {
                     const fileId = attempt.plan?.effectiveMediaFileId;
@@ -4333,8 +4623,9 @@ export class PlaybackController implements PlayerControls {
         if (this.active() !== attempt) return;
         const offer = attempt.offer;
         const showManual = offer.manual && !attempt.hidden;
-        const showAuto = !offer.manual && this.inPromptWindow(attempt) && !attempt.promptDismissed && !attempt.hidden && !attempt.busy;
-        if (!showManual && !showAuto) {
+        const showCredits = offer.credits && !attempt.promptDismissed && !attempt.hidden;
+        const showAuto = !offer.manual && !offer.credits && this.inPromptWindow(attempt) && !attempt.promptDismissed && !attempt.hidden && !attempt.busy;
+        if (!showManual && !showCredits && !showAuto) {
             this.clearPrompt(attempt);
             this.showPlayback(attempt);
             return;
@@ -4348,13 +4639,14 @@ export class PlaybackController implements PlayerControls {
         // upNext.noNext. Only a failed next-episode lookup shows the failure line: the series may still have a next episode.
         const failed = displayed === undefined && !loading && offer.episodeFailed;
         // An automatic prompt waits for a real choice. A loading or empty read must not shrink the video or move the reported position.
-        if (!showManual && displayed === undefined && offer.deck.length === 0) {
+        if (!showManual && !showCredits && displayed === undefined && offer.deck.length === 0) {
             this.clearPrompt(attempt);
             this.showPlayback(attempt);
             return;
         }
         attempt.prompt = { next: displayed, deck: offer.deckFailed ? [] : offer.deck, fromDeck, ...(loading ? { loading: true } : {}), ...(failed ? { failed: true } : {}) };
         this.paintRect(attempt);
+        if (offer.credits) this.startCreditsCountdownIfNeeded(attempt);
         this.showPlayback(attempt);
         if (displayed !== undefined && !fromDeck && attempt.offer.presentationFor !== displayed.contentId) {
             attempt.offer.presentationFor = displayed.contentId;
@@ -4368,7 +4660,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private clearPrompt(attempt: Attempt): void {
-        if (attempt.offer.manual) return;
+        if (attempt.offer.manual || attempt.offer.credits) return;
         if (attempt.prompt === undefined && !attempt.rectPending) return;
         attempt.prompt = undefined;
         this.paintRect(attempt);

@@ -74,7 +74,7 @@ test("the Auto-play toggle saves this TV's value, so the change always takes eff
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r);
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
     const writes = r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
     assert.deepEqual(writes.map(request => request.path), ["/settings/values/playback.auto_play_next?scope=profile_device"]);
     assert.deepEqual(writes[0]?.body, { value: false });
@@ -110,24 +110,34 @@ test("turning Auto-play off on the finished card stops its countdown, and on sta
     r.controller.destroy();
 });
 
-test("live autoplay saves once while pending and retains the old value on refusal", async () => {
+test("live autoplay debounces, retries transient failures, holds exhausted writes, and shows no player error (#810)", async () => {
     const r = await autoplayRig(false);
     await playMovie(r);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
-    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", ...Array.from({ length: 6 }, () => ({ status: 503, body: { error: "unavailable" } })));
+    // Rapid presses coalesce during the 750 ms debounce into one write of the latest value (true).
+    r.controller.toggleAutoNext();
     r.controller.toggleAutoNext();
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.equal(view.hud?.busy, true);
+    assert.equal(view.hud?.autoNext, true);
+    assert.equal(view.hud?.busy, false, "flusher writes never lock the player HUD");
+    assert.equal(view.hud?.message ?? "", "", "player HUD shows no saving or failure text");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 0);
+    // Initial debounced attempt (750 ms) + 5 automatic retries (1 s, 2 s, 4 s, 8 s, 16 s) = 6 PUTs.
+    await r.h.clock.advance(750);
     assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1);
-    hold.release();
-    await r.h.clock.advance(0);
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+        await r.h.clock.advance(delay);
+    }
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 6);
+    await r.h.clock.advance(60_000);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 6, "no more automatic retries once held");
     view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.equal(view.hud?.autoNext, false);
-    assert.match(view.hud?.message ?? "", /Could not save/);
+    assert.equal(view.hud?.autoNext, true, "local choice stays in effect while held");
+    assert.equal(view.hud?.message ?? "", "", "player still shows no error when held");
     r.controller.destroy();
 });
 
@@ -176,24 +186,185 @@ test("a discovery settings read started before a save cannot overwrite Auto-play
     r.controller.destroy();
 });
 
-test("a completed Shuffle item advances the same server session before offering its next pick", async () => {
-    const r = await rig();
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
-    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
-    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+test("a failed discovery settings read cannot turn Auto-play off while an Off-to-On save is pending (#816)", async () => {
+    const r = await autoplayRig(false);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", false);
+    const episodePart = "/catalog/series/series%3As1/seasons?image_size=small";
+    const autoNextRead = "/settings/values/effective?keys=playback.auto_play_next";
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, EPISODE, () => {
+        // Fail only the first-frame episode lookup so entering the Up Next window triggers a discovery retry during the held save.
+        r.h.fake.script(episodePart, unavailable);
+    });
+    await r.h.clock.advance(0);
+    const initial = last(r.views);
+    assert.ok(initial.phase === "playing" && initial.durationSeconds !== undefined);
+    assert.equal(initial.hud?.autoNext, false, "Auto-play starts Off");
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(750);
+    const pending = last(r.views);
+    assert.ok(pending.phase === "playing");
+    assert.equal(pending.hud?.autoNext, true, "Auto-play switches On while the save is held");
+    // Fail the discovery read started at the current settingsEpoch while the save is still pending.
+    const readsBefore = r.h.fake.requests.filter(request => request.path === autoNextRead).length;
+    r.h.fake.script(autoNextRead, unavailable);
+    r.avplay.tick((initial.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === autoNextRead).length, readsBefore + 1, "the discovery retry issued the failed Auto-play read");
+    const afterFailedRead = last(r.views);
+    assert.ok(afterFailedRead.phase === "playing");
+    assert.equal(afterFailedRead.hud?.autoNext, true, "the failed discovery read does not flip Auto-play back Off while the save is pending");
+    // Leave the early prompt window so EOF exercises the 10 s completion countdown rather than immediate prompt handoff.
+    r.avplay.tick(1000);
+    await r.h.clock.advance(0);
+    hold.release();
+    await r.h.clock.advance(0);
+    const confirmed = last(r.views);
+    assert.ok(confirmed.phase === "playing");
+    assert.equal(confirmed.hud?.autoNext, true, "Auto-play stays On after the save confirms");
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, 10, "countdown behaviour stays intact");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode autoplays");
+    r.controller.destroy();
+});
+
+test("a completed Shuffle item refreshes GET /shuffles/{id} before offering its next pick, skips via /skip, and advances via /advance (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-3" }, next: { content_id: "movie-4" } } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-3", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).next?.contentId, "movie-2");
+    assert.equal(completion(r).shuffleScopeLabel, "Movies");
+    assert.equal(completion(r).countdown, 10);
+    // Pick Another calls POST /shuffles/sh1/skip with next_content_id; Play Now is blocked while /skip is in flight.
+    const skipHold = r.h.fake.hold("/shuffles/sh1/skip");
+    r.controller.pickAnother();
+    await r.h.clock.advance(0);
+    r.controller.playNext();
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 0, "Play Now cannot race with an in-flight Pick Another");
+    skipHold.release();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const skips = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip");
+    assert.equal(skips.length, 1);
+    assert.deepEqual(skips[0]?.body, { next_content_id: "movie-2" });
+    assert.equal(completion(r).next?.contentId, "movie-3");
+    assert.equal(completion(r).countdown, 10);
+    // Playing the next pick calls POST /shuffles/sh1/advance with from_content_id.
+    r.controller.playNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
     assert.equal(advance.length, 1);
     assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
-    assert.equal(last(r.views).phase, "completion");
+    assert.equal(bodies(r.h, "/start").length, 2);
     r.controller.destroy();
+});
+
+test("Pick Another failure shows upNext.pickAnotherFailed and restarts the countdown (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "season", id: "s2", title: "Season 2", parent_title: "Breaking Bad" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", problem(500, "internal_error", "Unavailable"));
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).shuffleScopeLabel, "Breaking Bad · Season 2");
+    r.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).next?.contentId, "movie-2", "failed skip keeps the announced pick");
+    assert.equal(completion(r).shuffleActionError, "upNext.pickAnotherFailed");
+    assert.equal(completion(r).countdown, 10, "countdown restarts after failed Pick Another");
+    r.controller.destroy();
+
+    // If /skip succeeds on the server but /watch/{replacement} fails, do not advertise the skipped pick or auto-play it; offer Retry to refresh.
+    const partial = await autoplayRig(true);
+    partial.settings.overrides.delete("playback.auto_play_next");
+    partial.settings.profile().set("playback.auto_play_next", true);
+    partial.h.fake.script("/shuffles/sh1",
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } },
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } },
+    );
+    partial.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    scriptParts(partial, [{ file_id: "42", duration_seconds: 3000 }]);
+    partial.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    partial.h.fake.script("/watch/movie-3",
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    await playMovie(partial, { ...MOVIE, shuffleId: "sh1" });
+    partial.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    partial.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "failed", "partial skip failure clears the stale skipped pick");
+    assert.equal(completion(partial).next, undefined);
+    assert.equal(completion(partial).retryable, true);
+    assert.equal(completion(partial).countdown, undefined, "no countdown while the replacement pick is unresolved");
+    await partial.h.clock.advance(15_000);
+    assert.equal(bodies(partial.h, "/start").length, 1, "does not auto-play after a partial skip failure");
+    partial.controller.retryCompletion();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "ready");
+    assert.equal(completion(partial).next?.contentId, "movie-3", "Retry refreshes GET /shuffles/{id} and offers the server's replacement pick");
+    partial.controller.destroy();
+
+    // If /advance succeeds on the server but /watch/{current} fails, clear the card to a retryable failure (blocking Pick Another) and retry resolving the promoted pick directly.
+    const partialAdvance = await autoplayRig(true);
+    partialAdvance.settings.overrides.delete("playback.auto_play_next");
+    partialAdvance.settings.profile().set("playback.auto_play_next", true);
+    partialAdvance.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    partialAdvance.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-2" }, next: { content_id: "movie-3" } } });
+    scriptParts(partialAdvance, [{ file_id: "42", duration_seconds: 3000 }]);
+    partialAdvance.h.fake.script("/watch/movie-2",
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    partialAdvance.server.items.set("movie-2", ["43"]);
+    await playMovie(partialAdvance, { ...MOVIE, shuffleId: "sh1" });
+    partialAdvance.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    partialAdvance.controller.playNext();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(completion(partialAdvance).state, "failed", "partial advance failure hides Pick Another and enters retryable failure");
+    assert.equal(completion(partialAdvance).next, undefined);
+    assert.equal(completion(partialAdvance).retryable, true);
+    partialAdvance.controller.pickAnother();
+    await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip").length, 0, "Pick Another cannot run after /advance promoted the pick");
+    partialAdvance.controller.retryCompletion();
+    for (let step = 0; step < 8; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "Retry resolves the promoted pick without calling /advance again");
+    assert.equal(bodies(partialAdvance.h, "/start").length, 2, "Retry starts the promoted pick");
+    partialAdvance.controller.destroy();
 });
 
 test("the next Shuffle pick starts and reports progress from zero although it has a saved position", async () => {
     const r = await episodeRig();
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: EPISODE.contentId }, next: { content_id: "episode:s1e13" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "episode:s1e13" }, next: { content_id: "episode:s1e13" } } });
-    r.h.fake.script("/watch/episode%3As1e13", { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } });
+    const nextDetail = { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } };
+    r.h.fake.script("/watch/episode%3As1e13", nextDetail, nextDetail);
     await playMovie(r, { ...EPISODE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -201,7 +372,7 @@ test("the next Shuffle pick starts and reports progress from zero although it ha
     assert.equal(ready.state, "ready");
     assert.equal(ready.next?.startSeconds, 0);
     r.controller.playNext();
-    await r.h.clock.advance(0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     r.avplay.finishPrepare();
     await r.h.clock.advance(0);
     const starts = bodies(r.h, "/start");
@@ -239,10 +410,10 @@ test("a Shuffle pick's next part plays from its beginning after the finished par
     r.controller.destroy();
 });
 
-test("the last part of a Shuffle pick advances the Shuffle from the item once, after the earlier part", async () => {
+test("the last part of a Shuffle pick refreshes the Shuffle once, after the earlier part", async () => {
     const r = await rig();
     scriptParts(r);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -251,22 +422,21 @@ test("the last part of a Shuffle pick advances the Shuffle from the item once, a
     scriptParts(r);
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
-    assert.equal(advance.length, 1);
-    assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
+    const reads = r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1");
+    assert.equal(reads.length, 1);
     assert.equal(bodies(r.h, "/start").length, 2, "no third part");
     assert.equal(last(r.views).phase, "completion");
     r.controller.destroy();
 });
 
-test("a Shuffle pick with no later part advances the Shuffle", async () => {
+test("a Shuffle pick with no later part refreshes the Shuffle", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.equal(bodies(r.h, "/start").length, 1);
     r.controller.destroy();
 });
@@ -274,16 +444,16 @@ test("a Shuffle pick with no later part advances the Shuffle", async () => {
 test("a Shuffle working out its next pick reads Up Next at Random over Picking at random, from the controller", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    const advance = r.h.fake.hold("/shuffles/sh1/advance");
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    const refresh = r.h.fake.hold("/shuffles/sh1");
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "the next pick is being read");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1, "the next pick is being read");
     assert.equal(completion(r).state, "resolving");
     assert.equal(completion(r).status, "upNext.headingShuffle", "Apple's statusLabel for a Shuffle, not Playing Next");
     assert.equal(completion(r).shuffle, true, "so the title reads Picking at random");
-    advance.release();
+    refresh.release();
     r.controller.destroy();
 });
 
@@ -325,11 +495,11 @@ test("the screens between a Shuffle pick's parts never show the completion scree
 test("a missing item at the between-parts read moves the Shuffle on instead of offering a retry", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1", problem(404, "not_found", "Unavailable"));
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.notEqual(completion(r).state, "failed");
     r.controller.destroy();
 });
@@ -564,7 +734,7 @@ interface Rig {
     readonly views: PlaybackView[];
 }
 
-async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig> {
+async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig> {
     const spoilers = typeof hdrProbeScopeOrSpoilers === "function" ? hdrProbeScopeOrSpoilers as () => EpisodeSpoilerSettings : undefined;
     const hdrProbeScope = typeof hdrProbeScopeOrSpoilers === "function" ? undefined : hdrProbeScopeOrSpoilers;
     const clock = new ManualClock();
@@ -595,6 +765,7 @@ async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoile
         },
         ...(spoilers === undefined ? {} : { spoilers }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
+        ...(stillWatchingThreshold === undefined ? {} : { stillWatchingThreshold }),
     });
     const views: PlaybackView[] = [];
     controller.subscribe((view) => views.push(view));
@@ -798,6 +969,185 @@ test("an automatic credits skip offers no undo, as on Apple TV", async () => {
     assert.ok(view.phase === "playing");
     assert.equal(view.undoSkipSeconds, undefined);
     r.controller.destroy();
+});
+
+// #795: Skip Credits reaching within 0.5 s of EOF opens Up Next with a fixed 10 s countdown over playing credits
+// instead of seeking to EOF (silo-apple d315ef9c PlayerViewModel.performCreditsSkip / presentNextUpOverCredits).
+async function creditsAutoplayRig(enabled: boolean, autoSkipCredits = true) {
+    const r = await episodeRig();
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", enabled);
+    settings.profile().set("playback.auto_skip_credits", autoSkipCredits);
+    return { ...r, settings };
+}
+
+test("auto-skipping credits that run to EOF opens Up Next with a fixed 10 s countdown, does not seek to EOF, and plays next after 10 s (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const seeksBefore = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    r.avplay.tick(7140_000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing", "video keeps playing over credits");
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "no seek to EOF");
+    assert.equal(view.upNext?.countdown, 10);
+    assert.equal(view.upNext?.countdownTotal, 10);
+    await r.h.clock.advance(9000);
+    assert.equal(bodies(r.h, "/start").length, 1, "still counting down at 9 s");
+    await r.h.clock.advance(1000);
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode plays after 10 s");
+    r.controller.destroy();
+});
+
+test("credits skip under an already-open pre-end prompt switches its countdown to a fixed 10 s, and manual Skip Credits does too (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7175, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7172_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined, "pre-end prompt opens first");
+    assert.equal(view.upNext.countdown, 28);
+    assert.equal(view.upNext.countdownTotal, 30);
+    r.avplay.tick(7175_000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined);
+    assert.equal(view.upNext.countdown, 10, "switches open prompt to fixed 10 s countdown");
+    assert.equal(view.upNext.countdownTotal, 10);
+    r.controller.destroy();
+
+    // Manual Skip Credits pill reaching EOF opens Up Next with fixed 10 s countdown without seeking.
+    const manual = await creditsAutoplayRig(true, false);
+    await playMovie(manual, EPISODE);
+    for (let step = 0; step < 6; step++) await manual.h.clock.advance(0);
+    const seeksBefore = manual.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    manual.controller.skipCredits(7200);
+    const manualView = last(manual.views);
+    assert.ok(manualView.phase === "playing" && manualView.upNext !== undefined);
+    assert.equal(manual.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "manual Skip Credits does not seek to EOF");
+    assert.equal(manualView.upNext.countdown, 10);
+    assert.equal(manualView.upNext.countdownTotal, 10);
+    // Natural EOF 5 s after Skip Credits preserves the remaining 5 s instead of advancing early.
+    await manual.h.clock.advance(5000);
+    manual.avplay.listener?.onstreamcompleted();
+    await manual.h.clock.advance(0);
+    assert.equal(bodies(manual.h, "/start").length, 1, "EOF after 5 s must not start next episode early");
+    assert.equal(completion(manual).countdown, 5, "remaining 5 s of the fixed 10 s credits countdown carry over");
+    await manual.h.clock.advance(5000);
+    assert.equal(bodies(manual.h, "/start").length, 2, "next episode starts once the full 10 s elapses");
+    manual.controller.destroy();
+});
+
+test("credits skip to EOF respects Auto-play off, Watch Party, and pending shuffle parts (#795)", async () => {
+    // Auto-play off: Up Next opens over credits with no countdown and does not advance.
+    {
+        const r = await creditsAutoplayRig(false);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext !== undefined, "Up Next still opens with Auto-play off");
+        assert.equal(view.upNext.countdown, undefined, "no countdown when Auto-play is off");
+        await r.h.clock.advance(15_000);
+        assert.equal(bodies(r.h, "/start").length, 1, "never auto-plays with Auto-play off");
+        r.controller.destroy();
+    }
+    // Watch Party keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, { ...EPISODE, watchParty: true });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "Watch Party seeks as before");
+        r.controller.destroy();
+    }
+    // Shuffle (including multi-part) keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        scriptParts(r, [{ file_id: "42", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 1 }, { file_id: "43", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 2 }]);
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "shuffle with pending part seeks as before");
+        r.controller.destroy();
+    }
+});
+
+test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Next, and reports the rewound position (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7140_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext?.countdown === 10, "credits countdown started");
+    r.controller.seekToSeconds(7020);
+    r.avplay.finishSeek();
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext === undefined, "rewinding out of credits closes Up Next");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 1, "cancelled credits countdown never starts the next episode");
+    const lastProgress = bodies(r.h, "/progress").at(-1);
+    assert.equal(lastProgress?.position, 7020, "progress reports the rewound position instead of duration");
+    r.controller.destroy();
+});
+
+test("opening Up Next over credits retries failed first-frame discovery and preserves countdown expiry across connection recovery (#795)", async () => {
+    // 1. Failed first-frame next-episode lookup is retried when credits open Up Next.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        r.h.fake.script("/catalog/series/series-1/seasons", problem(503, "unavailable", "Busy"));
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext?.next !== undefined && view.upNext.countdown === 10, "credits open retries failed first-frame lookup and starts countdown");
+        await r.h.clock.advance(10_000);
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "retried credits discovery advances after 10 s");
+        r.controller.destroy();
+    }
+    // 2. Countdown expiry during connection recovery still starts the next episode once recovery resumes playback.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.ok(last(r.views).phase === "playing");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(12_000);
+        assert.equal(last(r.views).phase, "loading", "still recovering when credits countdown expires");
+        r.avplay.finishPrepare();
+        r.avplay.finishSeek();
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "recovery resumption honours the expired credits countdown");
+        r.controller.destroy();
+    }
 });
 
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
@@ -1857,8 +2207,8 @@ const watchReads = (r: Rig): number => r.h.fake.requests.filter(q => q.path.star
 
 const EPISODE: PlayRequest = { contentId: "episode:s1e12", fileId: "42", title: "Harbor Lights chapter 1.2", startSeconds: 0, episode: true };
 
-async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig & { catalog: FakeCatalog }> {
-    const r = await rig("p-owner", undefined, spoilers, resolutionCap);
+async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog }> {
+    const r = await rig("p-owner", undefined, spoilers, resolutionCap, stillWatchingThreshold);
     const catalog = new FakeCatalog();
     catalog.fileIds.set(EPISODE.contentId, "42");
     catalog.fileIds.set("episode:s1e13", "43");
@@ -1904,8 +2254,8 @@ function completion(r: Rig): Extract<PlaybackView, { phase: "completion" }> {
     return view;
 }
 
-async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"]): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
-    const r = await episodeRig(spoilers);
+async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
+    const r = await episodeRig(spoilers, undefined, stillWatchingThreshold);
     const settings = new FakeSettings(r.h.fake);
     settings.overrides.set("playback.auto_play_next", enabled);
     const contract = fixture("settings_contract_ok");
@@ -1958,23 +2308,172 @@ test("turning Auto-play off on the finished card stops the countdown at once, be
     r.controller.destroy();
 });
 
-// Apple keeps the local value and retries; a refusal shows only in Settings (SettingsViewModel.swift:443). Samsung has no retrying writer, so
-// a refused save puts the toggle back to On, and the card counts down again, as On means (#806 review).
-test("a refused Auto-play save on the finished card restores the toggle and its countdown (#806)", async () => {
+// Apple's PlayerSettingsFlusher keeps the local choice and retries transient failures on backoff (#810).
+test("a transient Auto-play save failure on the finished card keeps Off, keeps the countdown stopped, and retries until saved (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r, EPISODE);
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", { status: 503, body: { error: "unavailable" } });
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).autoNext, true, "the saved value is still On");
-    assert.equal(completion(r).countdown, 10, "so the countdown starts again from Apple's 10 seconds");
+    await r.h.clock.advance(750);
+    assert.equal(completion(r).autoNext, false, "local Off stays in effect after transient failure");
+    assert.equal(completion(r).countdown, undefined, "countdown stays stopped while retrying");
+    await r.h.clock.advance(1000);
+    const writes = r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
+    assert.equal(writes.length, 2, "retried after 1 s");
+    assert.deepEqual(writes[1]?.body, { value: false }, "retry committed Off to the server");
     await r.h.clock.advance(11000);
-    assert.equal(bodies(r.h, "/start").length, 2, "and the next episode plays");
+    assert.equal(bodies(r.h, "/start").length, 1, "nothing plays on its own");
     r.controller.destroy();
+});
+
+test("Still Watching gates auto-play after N unattended advances, resets on viewer actions, and never gates at 0 (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const run = async (threshold: number, viewerActionOnEp2: boolean) => {
+        const r = await episodeRig(undefined, undefined, () => threshold);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, "first episode counts down");
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+        if (viewerActionOnEp2) {
+            r.controller.setPaused(true);
+            r.controller.setPaused(false);
+        }
+        // Finish episode 2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        return r;
+    };
+
+    // Threshold 1 with no viewer action on episode 2: Up Next opens with no countdown and waits for Play Now.
+    const gated = await run(1, false);
+    assert.equal(completion(gated).state, "ready");
+    assert.equal(completion(gated).next?.contentId, "episode:s1e13");
+    assert.equal(completion(gated).countdown, undefined, "Still Watching gates the countdown after 1 unattended advance");
+    await gated.h.clock.advance(15_000);
+    assert.equal(bodies(gated.h, "/start").length, 2, "gated episode does not auto-play on its own");
+    // Pressing Play Now advances manually and resets the guard.
+    gated.controller.playNext();
+    await gated.h.clock.advance(0);
+    assert.equal(bodies(gated.h, "/start").length, 3, "Play Now still starts episode 3");
+    gated.controller.destroy();
+
+    // A viewer action (pause/play) on episode 2 resets the guard so episode 2 counts down normally.
+    const reset = await run(1, true);
+    assert.equal(completion(reset).countdown, 10, "viewer action reset the Still Watching count");
+    await reset.h.clock.advance(10_000);
+    assert.equal(bodies(reset.h, "/start").length, 3);
+    reset.controller.destroy();
+
+    // Threshold 0 (Off) never gates.
+    const off = await run(0, false);
+    assert.equal(completion(off).countdown, 10, "threshold 0 never gates");
+    await off.h.clock.advance(10_000);
+    assert.equal(bodies(off.h, "/start").length, 3);
+    off.controller.destroy();
+});
+
+test("automatic intro and mid-file credits skips do not reset the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const r = await episodeRig(undefined, undefined, () => 1);
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    settings.profile().set("playback.intro_skip_mode", "always");
+    settings.profile().set("playback.auto_skip_credits", true);
+    r.catalog.fileIds.set("episode:s1e11", "42");
+    r.catalog.fileIds.set("episode:s1e12", "43");
+    r.catalog.fileIds.set("episode:s1e13", "42");
+    r.server.items.set("episode:s1e11", ["42"]);
+    r.server.items.set("episode:s1e12", ["43"]);
+    r.server.items.set("episode:s1e13", ["42"]);
+    r.h.fake.scripted.set("/markers/files/43", [{ status: 200, body: { file_id: "43", marker_segments: [
+        { kind: "intro", start_seconds: 10, end_seconds: 90 },
+        { kind: "credits", start_seconds: 7000, end_seconds: 7060 },
+    ] } }]);
+    await playMovie(r, ep1);
+    // Unattended advance 1: ep1 -> ep2.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(10_000);
+    r.avplay.finishPrepare();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+    // Automatic intro skip and automatic mid-file credits skip on episode 2 must not count as viewer actions.
+    r.avplay.tick(15_000);
+    r.avplay.finishSeek();
+    r.avplay.tick(7010_000);
+    r.avplay.finishSeek();
+    // Finish episode 2: Still Watching must still gate at threshold 1.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).countdown, undefined, "automatic marker skips preserve the unattended streak");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 2, "gated episode still waits for Play Now");
+    r.controller.destroy();
+});
+
+test("manual audio and subtitle selection resets the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    for (const action of ["audio", "subtitle"] as const) {
+        const r = await episodeRig(undefined, undefined, () => 1);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const ep2View = last(r.views);
+        assert.ok(ep2View.phase === "playing");
+        if (action === "audio") {
+            assert.equal(ep2View.tracks.audio.state, "ready");
+            const otherAudio = ep2View.tracks.audio.choices[1];
+            assert.ok(otherAudio !== undefined);
+            r.controller.selectAudio(otherAudio.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        } else {
+            r.controller.selectSubtitle(ep2View.tracks.subtitles[0]?.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        }
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, `manual ${action} selection resets Still Watching`);
+        r.controller.destroy();
+    }
 });
 
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {
@@ -2028,9 +2527,11 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
-    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    const secondDetail = { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } };
+    r.h.fake.script("/watch/movie-2", secondDetail, secondDetail);
     r.server.items.set("movie-2", ["43"]);
     await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
@@ -2047,6 +2548,55 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     await r.h.clock.advance(11000);
     assert.equal(bodies(r.h, "/start").length, 2, "and the pick plays");
     r.controller.destroy();
+});
+
+test("stopShuffling cancels the countdown, sends one DELETE /shuffles/{id}, and closes the player (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 204 });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    r.controller.stopShuffling();
+    assert.equal(last(r.views).phase, "closed");
+    assert.deepEqual(r.exits, ["back"]);
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "countdown was cancelled and never started the next pick");
+    const deletes = r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1");
+    assert.equal(deletes.length, 1, "exactly one DELETE /shuffles/sh1");
+    r.controller.destroy();
+});
+
+test("stopShuffling still closes the player with no unhandled rejection when DELETE fails (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 500, body: { type: "about:blank", title: "Server error", status: 500 } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => { rejections.push(reason); };
+    process.on("unhandledRejection", onRejection);
+    try {
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.controller.stopShuffling();
+        assert.equal(last(r.views).phase, "closed");
+        assert.deepEqual(r.exits, ["back"]);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1").length, 1);
+        assert.deepEqual(rejections, [], "failed delete produces no unhandled rejection");
+    } finally {
+        process.off("unhandledRejection", onRejection);
+        r.controller.destroy();
+    }
 });
 
 // The contract decoder keeps Auto-play only as Apple's profile and profile_device row (src/contracts/v2/settings.ts), the scope this
@@ -2133,8 +2683,8 @@ test("a settings read that answers while Off is still saving cannot turn Auto-pl
     r.controller.destroy();
 });
 
-// #806 round 3: after a refused write restores On, a read that started during the write and then fails cannot set it Off.
-test("a read that started during a refused Off write and then fails leaves the restored On (#806)", async () => {
+// Unsettled flusher writes win over stale discovery reads that return or fail while the write is queued or retrying (#810).
+test("a stale discovery read during a queued or retrying Off write cannot restore On (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
@@ -2143,31 +2693,22 @@ test("a read that started during a refused Off write and then fails leaves the r
     await r.h.clock.advance(0);
     const view = last(r.views);
     assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
-    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", { status: 503, body: { error: "unavailable" } });
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
-    const failing = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
+    const staleRead = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
     r.avplay.tick((view.durationSeconds - 25) * 1000);
-    await r.h.clock.advance(0);
-    put.release();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
-    const refused = last(r.views);
-    assert.ok(refused.phase === "playing");
-    assert.equal(refused.hud?.autoNext, true, "the refused write restores On");
-    failing.release();
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
+    staleRead.release();
     await r.h.clock.advance(0);
     const after = last(r.views);
     assert.ok(after.phase === "playing");
-    assert.equal(after.hud?.autoNext, true, "and the read that failed afterwards leaves it On");
+    assert.equal(after.hud?.autoNext, false, "unsettled Off stays ahead of the stale On read");
     r.controller.destroy();
 });
 
-// #806 round 2: a write the server took stays, even when the read that confirms it fails.
-test("a failed confirmation read after a saved Off keeps Off and the countdown stopped (#806)", async () => {
+// #806/#810: a debounced Off write commits cleanly and keeps the countdown stopped.
+test("a debounced Off save on the finished card commits and keeps the countdown stopped (#806)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
@@ -2175,10 +2716,8 @@ test("a failed confirmation read after a saved Off keeps Off and the countdown s
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).countdown, 10);
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
     assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1, "the write went through");
     assert.equal(completion(r).autoNext, false, "Off stays");
     assert.equal(completion(r).countdown, undefined, "and the countdown does not restart");
@@ -2206,22 +2745,19 @@ test("turning Auto-play on on the finished card starts the countdown before the 
     r.controller.destroy();
 });
 
-test("a confirmation read that returns another saved value moves the toggle and countdown to it (#806)", async () => {
+test("a permanent 403 refusal on Auto-play drops the write without retrying or showing a player error (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r, EPISODE);
-    r.avplay.listener?.onstreamcompleted();
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).countdown, 10);
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile_device", definition_revision: 24 }] } });
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).autoNext, true, "the saved value is On, so the toggle reads On");
-    assert.equal(completion(r).countdown, 10, "and the countdown runs again");
-    await r.h.clock.advance(11000);
-    assert.equal(bodies(r.h, "/start").length, 2);
+    await r.h.clock.advance(750);
+    await r.h.clock.advance(60_000);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1, "permanent refusal is never retried");
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.hud?.message ?? "", "", "player shows no error on refusal");
     r.controller.destroy();
 });
 
