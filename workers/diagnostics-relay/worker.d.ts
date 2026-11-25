@@ -22,7 +22,7 @@ export function handleRequest(request: Request, env: RelayEnv, deps?: RelayDeps)
  */
 export interface RelayIncident {
     readonly iv: 1;
-    readonly cat: "playback" | "buffering";
+    readonly cat: "playback" | "buffering" | "audio_subtitles";
     readonly src?: "manual" | "auto";
     readonly out: "failed" | "refused" | "interrupted" | "recovered";
     readonly kind?: string;
@@ -56,6 +56,29 @@ export interface RelayIncident {
     readonly hp?: "unknown" | "unavailable" | { readonly h10?: boolean; readonly hlg?: boolean; readonly dv?: boolean };
     readonly req?: { readonly pos?: number | "none"; readonly sub?: "auto" | "off" | "track"; readonly aud?: "default" | "track" };
     readonly t?: readonly string[];
+}
+
+type RelayAudioFormat = "unavailable" | { readonly c?: string; readonly ch?: number };
+
+/** The `md` (mv 1) audio/subtitle record; mirrors the client's DiagnosticsMediaPayload. Values outside MEDIA_CONTRACT are dropped. */
+export interface RelayMedia {
+    readonly mv: 1;
+    readonly a?: { readonly lang?: string; readonly src?: RelayAudioFormat; readonly pl?: RelayAudioFormat; readonly obs?: RelayAudioFormat };
+    readonly s?: {
+        readonly mode: "off" | "render" | "convert" | "burn_in" | "unknown";
+        readonly src?: "external" | "embedded" | "downloaded" | "unknown";
+        readonly c?: string;
+        readonly dl?: "sidecar" | "burn_in_only" | "unknown";
+        readonly lang?: string;
+        readonly f?: boolean;
+        readonly hi?: boolean;
+        readonly via: "overlay" | "avplay" | "burn_in" | "none";
+        readonly ld: "not_needed" | "loading" | "loaded" | "failed" | "fallback";
+        readonly cues?: number;
+        readonly sync?: number;
+        readonly sec?: boolean;
+    };
+    readonly sw?: { readonly k: "audio" | "subtitle"; readonly r: "pending" | "ok" | "refused" | "failed" | "recovered"; readonly code?: string };
 }
 
 /** Runtime field declarations the relay validates `inc` against. */

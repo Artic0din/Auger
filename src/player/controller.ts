@@ -35,6 +35,7 @@ import type { AVPlay, AVPlayListener } from "./avplay.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
 import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, type HdrPanel, type HdrProbe } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
+import { storedSpeed, type BufferingEvidenceTrace, type SpeedEvidence } from "./bufferingEvidence.ts";
 import { AUTO_QUALITY, DEFAULT_BUFFERING_QUALITY_MODE, type BufferingQualityMode, type ReplanRequest } from "./bufferingQuality.ts";
 import type { BufferingSnapshot } from "./bufferingSignals.ts";
 import { SeekThumbnails, type ThumbnailSheetLoader } from "./seekThumbnails.ts";
@@ -65,7 +66,11 @@ import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playe
 import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "./playerSettingsFlusher.ts";
 import { DEFAULT_STILL_WATCHING_THRESHOLD, PlayerStillWatchingGuard } from "./stillWatchingGuard.ts";
 import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
-import type { PlaybackAttemptTrace, PlaybackStage, PlaybackTraceFailure, TraceStepResult } from "../diagnosticsIncident.ts";
+import {
+    type AudioFormatEvidence, type CaptionLoadState, cleanIncidentCode, type MediaEvidence, type MediaFailure, type MediaFailureStage,
+    type MediaSwitchEvidence, type MediaSwitchResult, type PlaybackAttemptTrace, type PlaybackStage, type PlaybackTraceFailure, type TraceStepResult,
+} from "../diagnosticsIncident.ts";
+import { readAvplayAudio } from "./mediaEvidence.ts";
 import {
     orderedInventory,
     parseAVPlayTextTracks,
@@ -143,12 +148,12 @@ export type PlaybackError =
     | { readonly kind: "server"; readonly reason?: ServerReason };
 
 /**
- * Why the server refused, kept as data so the error page words it in the shown language (APIv2Client.errorDescription):
- * a problem's detail, else its title; a bare HTTP status; or the update prompt for client_upgrade_required.
+ * Why the server refused, kept as data so the error page words it in the shown language: the HTTP status with the
+ * problem's type and first field code, or the update prompt for client_upgrade_required. A problem's detail and title
+ * are left out: they are server free text, which can carry URLs, addresses or credentials onto a shared screen.
  */
 export type ServerReason =
-    | { readonly text: string; readonly problemId?: string; readonly fieldCode?: string }
-    | { readonly status: number }
+    | { readonly status: number; readonly problemId?: string; readonly fieldCode?: string }
     | { readonly update: true };
 
 export interface PlaybackExits {
@@ -734,9 +739,65 @@ export class PlaybackController implements PlayerControls {
         return this.attempt === undefined ? undefined : this.traceOf(this.attempt);
     }
 
-    private traceOf(attempt: Attempt): PlaybackAttemptTrace {
+    /** The current attempt's live buffering evidence; a recovered chain's frozen trace keeps its own copy. */
+    bufferingTrace(): BufferingEvidenceTrace | undefined {
+        return this.attempt === undefined ? undefined : this.qualityOf(this.attempt);
+    }
+
+    private qualityOf(attempt: Attempt): BufferingEvidenceTrace {
+        return attempt.bufferingQuality.evidence.trace({
+            mode: attempt.bufferingMode, advertised: attempt.bufferingAdvertised, preference: attempt.qualityPreference, manualCapKbps: attempt.autoBandwidthCapKbps,
+        });
+    }
+
+    /** The current attempt's latest definite audio/subtitle failure, with the live trace: a frozen playback chain is older than it. */
+    mediaFailure(): { readonly trace: PlaybackAttemptTrace; readonly failure: MediaFailure } | undefined {
+        const attempt = this.attempt;
+        const failure = attempt?.trace.media.failure;
+        return attempt === undefined || failure === undefined ? undefined : { trace: this.traceOf(attempt, true), failure };
+    }
+
+    /** What the current attempt selected and delivered for audio and subtitles, without names or text. Undefined until it has a plan. */
+    mediaEvidence(): MediaEvidence | undefined {
+        const attempt = this.attempt;
+        const plan = attempt?.plan;
+        if (attempt === undefined || plan === undefined) return undefined;
+        const media = attempt.trace.media;
+        // AVPlay answers stream info only while playing or paused, and takes no call while a seek is out. Read once per transport.
+        if (attempt.started && !attempt.busy && !attempt.hidden && !attempt.restoring && !attempt.suspended && this.pending.seek === undefined && media.observedFor !== attempt.planAttemptId) {
+            media.observedFor = attempt.planAttemptId;
+            media.observed = readAvplayAudio(this.deps.avplay);
+        }
+        // Only the plan's ordinal names the source row; without it the source stays unknown rather than guessed.
+        const ordinal = plan.selectedTracks.audio?.index;
+        const version = attempt.tracks?.state === "ready" ? attempt.tracks.versions.find(candidate => candidate.fileId === plan.effectiveMediaFileId) : undefined;
+        const source = ordinal === undefined ? undefined : version?.audio[ordinal];
+        const { subtitleMode: mode, subtitleTrack: row, drawnBy, cues, syncMs, secondary } = attempt.subtitles.diagnosticsSubtitle(plan);
+        return {
+            audio: {
+                language: source?.language,
+                source: source === undefined ? undefined : { codec: source.codec, channels: source.channels },
+                planned: plan.recipe === undefined ? undefined : { codec: plan.recipe.audioCodec, channels: plan.recipe.audioChannels },
+                observed: media.observed,
+            },
+            subtitle: {
+                mode,
+                track: row === undefined ? undefined : { source: row.source, delivery: row.delivery, codec: row.codec, language: row.language, forced: row.forced, hearingImpaired: row.hearingImpaired },
+                drawnBy,
+                // AVPlay-drawn text has no file of Auger's to load, unless it stands in for one that failed.
+                load: drawnBy === "overlay" || (drawnBy === "avplay" && media.load === "fallback") ? media.load : "not_needed",
+                cues,
+                syncMs,
+                secondary,
+            },
+            switch: media.switch,
+        };
+    }
+
+    /** `live` skips the recovered chain's freeze, for evidence recorded after it. */
+    private traceOf(attempt: Attempt, live = false): PlaybackAttemptTrace {
         const trace = attempt.trace;
-        if (trace.frozen !== undefined) return trace.frozen;
+        if (!live && trace.frozen !== undefined) return trace.frozen;
         // A plan the server sent but this attempt refused before adopting it still describes the failure.
         const plan = attempt.plan ?? trace.received;
         const subtitle = attempt.request.subtitle?.kind ?? "auto";
@@ -761,6 +822,7 @@ export class PlaybackController implements PlayerControls {
             settings: trace.settingsRead ? { quality: attempt.qualityPreference, capKbps: attempt.bandwidthCapKbps, hdr: attempt.hdrEnabled } : undefined,
             hdrPanel: trace.hdrProbe === "unavailable" ? "unavailable" : { hdr10: attempt.hdrPanel.hdr10, hlg: attempt.hdrPanel.hlg, dolbyVision: attempt.hdrPanel.dolbyVision },
             request: { startSeconds: attempt.request.startSeconds, subtitle, audio: attempt.request.audioTrackId === undefined ? "default" : "track" },
+            quality: this.qualityOf(attempt),
             plan: plan === undefined ? undefined : {
                 delivery: plan.delivery,
                 protocol: plan.streamProtocol,
@@ -1207,6 +1269,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.stillWatching.recordViewerAction();
+        requestSwitch(attempt, "audio");
         // Omitting a subtitle from a track_change turns it off, so the shown one is named again.
         const subtitle = attempt.subtitles.chosenTracks(plan).subtitle;
         this.changeTracks(attempt, plan, { audio: { id: trackId }, ...(subtitle === undefined ? {} : { subtitle }) });
@@ -1511,15 +1574,15 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    private storedEstimateKbps(capabilities: PlaybackCapabilities): number | undefined {
-        if (!capabilities.features.includes(CONNECTION_SPEED_FEATURE) || capabilities.bandwidthProbeUrl === undefined) return undefined;
+    /** The estimate a start may send, and the newest stored reading as diagnostics evidence. */
+    private storedEstimate(capabilities: PlaybackCapabilities): { readonly kbps: number | undefined; readonly speed: SpeedEvidence } {
+        if (!capabilities.features.includes(CONNECTION_SPEED_FEATURE) || capabilities.bandwidthProbeUrl === undefined) return { kbps: undefined, speed: "unsupported" };
         const network = currentNetwork();
-        if (!network.online || network.metered) return undefined;
-        return bandwidthReadings.freshEstimateKbps(
-            readingsKey(this.deps.session.http.base.baseUrl, this.deps.session.account?.id, network.transport),
-            this.deps.clock.now(),
-            capabilities.bandwidthProbeMaxAgeSeconds ?? FALLBACK_MAX_AGE_SECONDS,
-        );
+        if (!network.online || network.metered) return { kbps: undefined, speed: network.online ? "metered" : "offline" };
+        const key = readingsKey(this.deps.session.http.base.baseUrl, this.deps.session.account?.id, network.transport);
+        const now = this.deps.clock.now();
+        const maxAgeSeconds = capabilities.bandwidthProbeMaxAgeSeconds ?? FALLBACK_MAX_AGE_SECONDS;
+        return { kbps: bandwidthReadings.freshEstimateKbps(key, now, maxAgeSeconds), speed: storedSpeed(bandwidthReadings.newest(key), now, maxAgeSeconds) };
     }
 
     private reportedPlayback(attempt: Attempt): Pick<StartPlaybackBody, "client_capabilities" | "client_playback_context"> {
@@ -1577,7 +1640,9 @@ export class PlaybackController implements PlayerControls {
             trace.settingsRead = true;
             reachedStage(trace, "settings");
             enterStage(trace, "start");
-            const estimateKbps = this.storedEstimateKbps(capabilities);
+            const stored = this.storedEstimate(capabilities);
+            const estimateKbps = stored.kbps;
+            attempt.bufferingQuality.evidence.startRead(stored.speed, estimateKbps);
             const start = operations.startPlayback({
                 installation_id: installationId,
                 protocol_version: 3,
@@ -1768,6 +1833,22 @@ export class PlaybackController implements PlayerControls {
                 }
                 this.adopt(attempt, plan, serverFeatures);
             },
+            recordSwitch: (result, code, error) => {
+                const attempt = currentAttempt();
+                if (attempt === undefined) return;
+                if (result === "pending") requestSwitch(attempt, "subtitle");
+                else {
+                    const failureCode = cleanIncidentCode(code) ?? httpCode(error) ?? (code === undefined && result !== "refused" ? undefined : "adaptation_unavailable");
+                    this.settleSwitch(attempt, result, failureCode, error, code === "no_answer");
+                }
+            },
+            recordCaption: (load, cause) => {
+                const attempt = currentAttempt();
+                if (attempt === undefined) return;
+                if (load === "failed" || load === "fallback") {
+                    captionLoadFailed(attempt, load, { http: cause?.http, network: cause?.network ?? false });
+                } else attempt.trace.media.load = load;
+            },
             settleSwitch: (keepBusyIfSeeking, postSettle: SubtitlePostSettle) => {
                 const attempt = currentAttempt();
                 if (attempt === undefined) return;
@@ -1910,6 +1991,7 @@ export class PlaybackController implements PlayerControls {
             }
             if ((operation === "track_change" || operation === "quality_change") && unanswered(error) && attempt.presented
                 && (attempt.recovery?.active === true || (error instanceof ApiError && error.transient))) {
+                if (operation === "track_change") this.settleSwitch(attempt, "failed", "no_answer", error, true);
                 attempt.change = { state: "failed" };
                 attempt.busy = false;
                 this.recoverConnection(attempt);
@@ -1917,6 +1999,7 @@ export class PlaybackController implements PlayerControls {
             }
             // A missing or unusable answer cannot prove that the server rolled the change back.
             if (operation === "track_change" && error instanceof ApiError && !error.transient && error.failure.kind !== "invalid_response" && !sessionGone(error)) {
+                this.settleSwitch(attempt, "failed", httpCode(error), error);
                 this.changeSettled(attempt, { state: "failed" });
                 return;
             }
@@ -1938,6 +2021,7 @@ export class PlaybackController implements PlayerControls {
                 this.keepPlaying(attempt);
                 return;
             }
+            if (operation === "track_change") this.settleSwitch(attempt, "refused", cleanIncidentCode(decision.terminal.reason) ?? "adaptation_unavailable");
             this.changeSettled(attempt, { state: "refused", message: decision.terminal.message });
             return;
         }
@@ -1957,7 +2041,7 @@ export class PlaybackController implements PlayerControls {
                     attempt.bufferingQuality.qualityChanged();
                 }
             }
-            this.adopt(attempt, decision.plan, decision.serverFeatures, buffering !== undefined);
+            this.adopt(attempt, decision.plan, decision.serverFeatures, buffering);
         } else {
             this.qualityUnsettled(attempt, buffering);
             if (buffering !== undefined) {
@@ -1981,7 +2065,7 @@ export class PlaybackController implements PlayerControls {
     /** A quality change did not become a plan: the controller hears that its own replan failed, or that the viewer's pick did. */
     private qualityUnsettled(attempt: Attempt, buffering: ReplanRequest | undefined): void {
         if (buffering === undefined) attempt.bufferingQuality.pickRefused();
-        else attempt.bufferingQuality.replanFailed();
+        else attempt.bufferingQuality.replanFailed(buffering);
     }
 
     /** A codec or route failure on this TV: the server picks the next route, a bounded number of times. */
@@ -2071,7 +2155,19 @@ export class PlaybackController implements PlayerControls {
         void this.replan(attempt, plan, "track_change", attempt.sourceSeconds, undefined, selected);
     }
 
+    /** Settles the viewer's pending switch once; anything but success also becomes the attempt's media failure. */
+    private settleSwitch(attempt: Attempt, result: Exclude<MediaSwitchResult, "pending">, code?: string, error?: unknown, network = false): void {
+        const pending = attempt.trace.media.switch;
+        if (pending?.result !== "pending") return;
+        const failureCode = result === "ok" ? undefined : code ?? (pending.kind === "audio" ? "audio_track_switch_failed" : "subtitle_track_switch_failed");
+        attempt.trace.media.switch = { kind: pending.kind, result, ...(failureCode === undefined ? {} : { code: failureCode }) };
+        if (result !== "ok") mediaFailed(attempt, pending.kind === "audio" ? "audio_switch" : "subtitle_switch", result, failureCode, error instanceof ApiError ? error.status : undefined, network);
+    }
+
     private changeSettled(attempt: Attempt, change: TrackChange): void {
+        // Paths with a known cause settle the switch first; this records the rest.
+        if (change.state === "idle") this.settleSwitch(attempt, "ok");
+        else if (change.state === "failed" || change.state === "refused") this.settleSwitch(attempt, change.state);
         attempt.busy = false;
         attempt.change = change;
         if (attempt.endedDuringChange) {
@@ -2111,7 +2207,7 @@ export class PlaybackController implements PlayerControls {
 
     // --- transport ---
 
-    private adopt(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[], bufferingReplan = false): void {
+    private adopt(attempt: Attempt, plan: PlaybackPlan, serverFeatures: readonly string[], bufferingReplan?: ReplanRequest): void {
         reachedStage(attempt.trace, attempt.trace.stage);
         this.clearThumbnails(attempt);
         attempt.plan = plan;
@@ -2186,7 +2282,7 @@ export class PlaybackController implements PlayerControls {
             }
             if (transport !== this.transport || !attempt.live) return;
             reachedStage(attempt.trace, "media_token");
-            url = `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
+            url = withMediaToken(published, token);
         }
         if (attempt.hidden || attempt.restoring) {
             attempt.deferredOpen = true;
@@ -2280,6 +2376,9 @@ export class PlaybackController implements PlayerControls {
                 this.routeFailed(attempt, AUDIO_TRACK_SWITCH_FAILED);
                 return;
             }
+            // The plan carrying the viewer's track plays; a route failure before this belongs to playback recovery.
+            // A subtitle switch still out over this stream is settled by its own answer.
+            if (!attempt.subtitles.subtitleSwitchOut) this.settleSwitch(attempt, "ok");
             attempt.started = true;
             attempt.presented = true;
             attempt.resuming = false;
@@ -3534,6 +3633,7 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.paused) {
                     this.deps.avplay.pause();
                 }
+                if (!attempt.subtitles.subtitleSwitchOut) this.settleSwitch(attempt, "ok");
                 attempt.started = true;
                 attempt.presented = true;
                 attempt.resuming = false;
@@ -3683,7 +3783,7 @@ export class PlaybackController implements PlayerControls {
         if (media.origin !== base.origin) {
             return published;
         }
-        return `${published}${published.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}`;
+        return withMediaToken(published, token);
     }
 
     private restartProgress(attempt: Attempt): void {
@@ -4181,6 +4281,17 @@ function startAt(plan: PlaybackPlan, seconds: number): PlaybackPlan | undefined 
     return { ...plan, timeline: { ...timeline, sourceStartSeconds: seconds, playerStartSeconds } };
 }
 
+/**
+ * Adds the media credential to the query, before any fragment, so the HTTP request carries it.
+ * The published URL stays byte-for-byte otherwise: reserializing would re-encode the signed `st`.
+ */
+function withMediaToken(published: string, token: string): string {
+    const hash = published.indexOf("#");
+    const head = hash === -1 ? published : published.slice(0, hash);
+    const fragment = hash === -1 ? "" : published.slice(hash);
+    return `${head}${head.indexOf("?") === -1 ? "?" : "&"}token=${encodeURIComponent(token)}${fragment}`;
+}
+
 function playbackWatch(watch: { readonly played: boolean; readonly isInProgress?: boolean; readonly positionSeconds?: number | undefined } | undefined): PlayRequest["watch"] {
     if (watch === undefined) return undefined;
     return {
@@ -4227,6 +4338,18 @@ interface AttemptTrace {
     /** A buffering-quality replan is in flight. */
     buffering: boolean;
     readonly steps: string[];
+    /** Audio and subtitle evidence (#874); a recovered chain's freeze never holds it. */
+    readonly media: MediaTrace;
+}
+
+interface MediaTrace {
+    load: CaptionLoadState;
+    switch: MediaSwitchEvidence | undefined;
+    failure: MediaFailure | undefined;
+    failures: number;
+    observed: AudioFormatEvidence | undefined;
+    /** The transport `observed` was read from. */
+    observedFor: string | undefined;
 }
 
 const MAX_TRACE_STEPS = 24;
@@ -4243,7 +4366,28 @@ function newTrace(seq: number): AttemptTrace {
         seq, chain: 0, frozen: undefined, stage: "capabilities", done: undefined, first: undefined, http: undefined, decision: undefined,
         firstAvplay: undefined, lastAvplay: undefined, resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false,
         exhausted: false, settingsRead: false, hdrProbe: "unavailable", received: undefined, buffering: false, steps: [],
+        media: { load: "not_needed", switch: undefined, failure: undefined, failures: 0, observed: undefined, observedFor: undefined },
     };
+}
+
+function requestSwitch(attempt: Attempt, kind: "audio" | "subtitle"): void {
+    attempt.trace.media.switch = { kind, result: "pending" };
+}
+
+/** Numbers a definite audio/subtitle failure and adds its step, leaving the playback stage and first failure alone. */
+function mediaFailed(attempt: Attempt, stage: MediaFailureStage, out: MediaFailure["out"], code: string | undefined, http: number | undefined, network: boolean): void {
+    const trace = attempt.trace;
+    trace.media.failures++;
+    trace.media.failure = { n: trace.media.failures, stage, out, code, http, network };
+    const result: TraceStepResult = out === "failed" ? "fail" : out === "refused" ? "refused" : "fallback";
+    trace.steps.push(code === undefined ? `${stage}:${result}` : `${stage}:${result}:${code}`);
+    if (trace.steps.length > MAX_TRACE_STEPS) trace.steps.splice(0, trace.steps.length - MAX_TRACE_STEPS);
+}
+
+/** `fallback`: the sidecar failed and AVPlay draws the embedded track instead. */
+function captionLoadFailed(attempt: Attempt, load: "failed" | "fallback", cause: Pick<MediaFailure, "http" | "network">): void {
+    attempt.trace.media.load = load;
+    mediaFailed(attempt, "caption_load", load === "failed" ? "failed" : "recovered", "caption_load_failed", cause.http, cause.network);
 }
 
 /** A failure after a recovery is independent of it: it opens the next chain, leaving the recovered one as published. */
@@ -4343,15 +4487,13 @@ function startFailure(error: unknown): PlaybackError {
         if (error.problemId === "installation_changed") {
             return { kind: "installation_changed" };
         }
-        // PlayerViewModel shows a start failure's own description, as APIv2Client words it.
+        // A start failure keeps its status, problem type and field code for the error page; never the server's free text.
         if (failure.kind === "http") return { kind: "server", reason: { status: failure.status } };
         if (failure.kind === "problem") {
-            const { status, id, title, detail, errors } = failure.problem;
+            const { status, id, errors } = failure.problem;
             if (status === 410 && id === "client_upgrade_required") return { kind: "server", reason: { update: true } };
-            const text = detail?.trim() ? detail : title;
             const fieldCode = errors[0]?.code;
-            if (text.trim() !== "") return { kind: "server", reason: fieldCode === undefined ? { text, problemId: id } : { text, problemId: id, fieldCode } };
-            return { kind: "server", reason: { status } };
+            return { kind: "server", reason: fieldCode === undefined ? { status, problemId: id } : { status, problemId: id, fieldCode } };
         }
     }
     return { kind: "server" };

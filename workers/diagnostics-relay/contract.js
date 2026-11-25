@@ -1,5 +1,5 @@
-import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES } from "../../shared/diagnostics-media.js";
-export { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES };
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, AUDIO_CODECS, SUBTITLE_CODECS, LANGUAGE_PATTERN } from "../../shared/diagnostics-media.js";
+export { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, AUDIO_CODECS, SUBTITLE_CODECS, LANGUAGE_PATTERN };
 
 // Declared incident contract (`inc`, iv 1) carried inside the v1 payload, mirroring the client's
 // src/diagnosticsIncident.ts. Every public value is an enum, bounded integer, boolean, allowlisted code or
@@ -89,17 +89,18 @@ export const PLAYBACK_STAGES = [
   "capabilities", "settings", "start", "subtitles", "media_token", "playlist_check",
   "avplay_open", "avplay_prepare", "avplay_seek", "avplay_play", "playing",
   "recovery", "reconnect", "track_change", "quality_change", "seek_reanchor", "progress",
+  "caption_load", "audio_switch", "subtitle_switch",
 ];
 
 /** Client PlaybackOperation. */
 export const PLAYBACK_OPERATIONS = [
   "playback_capabilities", "playback_defaults", "start_playback", "subtitle_preferences", "media_token",
-  "hls_playlist", "avplay", "replan_playback", "progress_report",
+  "hls_playlist", "avplay", "replan_playback", "progress_report", "subtitle_download",
 ];
 
 export const STEP_RESULTS = ["ok", "fail", "retry", "fallback", "recovered", "refused", "end"];
 export const INCIDENT_OUTCOMES = ["failed", "refused", "interrupted", "recovered"];
-export const INCIDENT_CATEGORIES = ["playback", "buffering"];
+export const INCIDENT_CATEGORIES = ["playback", "buffering", "audio_subtitles"];
 export const RECOVERY_STATES = ["none", "recovered", "attempted", "exhausted"];
 /** Client PlaybackError["kind"]. */
 export const ERROR_KINDS = [
@@ -122,6 +123,8 @@ export const PUBLISHED_CODES = [
   ...ERROR_KINDS,
   // Server terminal reasons seen by Auger.
   "session_expired", "adaptation_unavailable", "version_unavailable", "subtitle_selection_unavailable",
+  // Audio and subtitle failures (client mediaIncident).
+  "caption_load_failed", "audio_track_switch_failed", "subtitle_track_switch_failed",
 ];
 const PUBLISHED_CODE_SET = new Set(PUBLISHED_CODES);
 const CLIENT_CODE = /^[a-z0-9_]{1,48}$/;
@@ -223,6 +226,37 @@ export const INCIDENT_CONTRACT = Object.freeze({
   t: { kind: "steps", max: 16 },
 });
 
+export const BUFFERING_MODES = ["never", "ask", "always"];
+export const LEARNED_LIMIT_STATES = ["unsupported", "ignored", "server", "cleared"];
+export const NETWORK_TYPES = ["wifi", "ethernet", "cellular", "other", "unavailable"];
+export const CONNECTION_CLASSES = ["slow-2g", "2g", "3g", "4g", "unavailable"];
+export const SPEED_STATES = ["unsupported", "offline", "metered", "none"];
+export const STEP_DOWN_REASONS = ["auto", "prompt", "restore"];
+export const STEP_DOWN_OUTCOMES = ["pending", "adopted", "not_adopted", "not_sent"];
+const KBPS = int(1, 1_000_000);
+const STALL_MS = int(0, 600_000);
+const QUALITY = { kind: "pattern", re: QUALITY_PATTERN };
+const list = (of, max) => ({ kind: "list", of, max });
+
+/** The declared `bq` (bv 1) Buffering / Quality evidence, mirroring the client's src/diagnosticsBuffering.ts. */
+export const BUFFERING_CONTRACT = Object.freeze({
+  bv: required(literal(1)),
+  md: required(enumOf(BUFFERING_MODES)),
+  adv: bool,
+  q: QUALITY,
+  mc: either(KBPS, literal("none")),
+  ll: enumOf(LEARNED_LIMIT_STATES),
+  pq: QUALITY,
+  pk: KBPS,
+  sk: KBPS,
+  ok: KBPS,
+  est: KBPS,
+  net: object({ t: required(enumOf(NETWORK_TYPES)), ec: enumOf(CONNECTION_CLASSES), on: bool }),
+  spd: either(enumOf(SPEED_STATES), object({ kbps: required(KBPS), src: required(enumOf(["probe", "sample"])), age: required(int(0, 2_592_000)), fresh: required(bool) })),
+  st: object({ n: required(COUNT), d: list(STALL_MS, 8), lg: STALL_MS }),
+  sd: list(object({ r: required(enumOf(STEP_DOWN_REASONS)), fq: QUALITY, fk: KBPS, tq: QUALITY, tk: KBPS, est: KBPS, thr: KBPS, o: required(enumOf(STEP_DOWN_OUTCOMES)) }), 4),
+});
+
 function validateValue(spec, raw) {
   switch (spec.kind) {
     case "enum":
@@ -252,6 +286,8 @@ function validateValue(spec, raw) {
     }
     case "steps":
       return Array.isArray(raw) ? raw.slice(-spec.max).map(traceStep).filter((step) => step !== undefined) : undefined;
+    case "list":
+      return Array.isArray(raw) ? raw.slice(-spec.max).map((item) => validateValue(spec.of, item)).filter((item) => item !== undefined) : undefined;
     default:
       return undefined;
   }
@@ -276,12 +312,58 @@ export function validateFields(fields, raw) {
   return { value, missing };
 }
 
+// Declared audio/subtitle record (`md`, mv 1), mirroring the client's publicMediaEvidence. Never carries a track name,
+// label or cue text: tracks are described only by language code, codec, channels, enumerated flags, source and delivery.
+export const SUBTITLE_MODES = ["off", "render", "convert", "burn_in", "unknown"];
+export const SUBTITLE_SOURCES = ["external", "embedded", "downloaded", "unknown"];
+export const SUBTITLE_DELIVERIES = ["sidecar", "burn_in_only", "unknown"];
+export const SUBTITLE_DRAWERS = ["overlay", "avplay", "burn_in", "none"];
+export const CAPTION_LOAD_STATES = ["not_needed", "loading", "loaded", "failed", "fallback"];
+export const SWITCH_RESULTS = ["pending", "ok", "refused", "failed", "recovered"];
+const LANGUAGE = { kind: "pattern", re: LANGUAGE_PATTERN };
+const AUDIO_FORMAT = either(literal("unavailable"), object({ c: enumOf(AUDIO_CODECS), ch: int(1, 16) }));
+
+export const MEDIA_CONTRACT = Object.freeze({
+  mv: required(literal(1)),
+  a: object({ lang: LANGUAGE, src: AUDIO_FORMAT, pl: AUDIO_FORMAT, obs: AUDIO_FORMAT }),
+  s: object({
+    mode: required(enumOf(SUBTITLE_MODES)),
+    src: enumOf(SUBTITLE_SOURCES),
+    c: enumOf(SUBTITLE_CODECS),
+    dl: enumOf(SUBTITLE_DELIVERIES),
+    lang: LANGUAGE,
+    f: bool,
+    hi: bool,
+    via: required(enumOf(SUBTITLE_DRAWERS)),
+    ld: required(enumOf(CAPTION_LOAD_STATES)),
+    cues: int(0, 100_000),
+    sync: int(-600_000, 600_000),
+    sec: bool,
+  }),
+  sw: object({ k: required(enumOf(["audio", "subtitle"])), r: required(enumOf(SWITCH_RESULTS)), code: { kind: "code" } }),
+});
+
+/** Validates `md`; undefined when absent, malformed or carrying neither audio nor subtitle evidence. */
+export function validateMedia(raw) {
+  if (!isPlainObject(raw)) return undefined;
+  const checked = validateFields(MEDIA_CONTRACT, raw);
+  if (checked.missing.length > 0 || (checked.value.a === undefined && checked.value.s === undefined)) return undefined;
+  return checked.value;
+}
+
 /** Validates `inc`, returning `{ incident }` or `{ error, missing }`. */
 export function validateIncident(raw) {
   if (!isPlainObject(raw)) return { error: "invalid_payload", missing: ["inc"] };
   const checked = validateFields(INCIDENT_CONTRACT, raw);
   if (checked.missing.length > 0) return { error: "invalid_payload", missing: checked.missing.map((key) => `inc.${key}`) };
   return { incident: checked.value };
+}
+
+/** Validated `bq`, or undefined when absent or invalid: the evidence is optional and never rejects a report. */
+export function validateBuffering(raw) {
+  if (!isPlainObject(raw)) return undefined;
+  const checked = validateFields(BUFFERING_CONTRACT, raw);
+  return checked.missing.length > 0 ? undefined : checked.value;
 }
 
 /** Client incidentAutoEligible: only a technical failure that ended playback after recovery files automatically. */

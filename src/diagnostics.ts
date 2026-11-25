@@ -11,12 +11,20 @@ import {
     publicMediaToken,
     QUALITIES,
     type DiagnosticsIncidentPayload,
+    type DiagnosticsMediaPayload,
     type IncidentCategory,
     incidentAutoEligible,
     incidentGroupKey,
+    type MediaEvidence,
+    type MediaFailure,
+    mediaIncident,
     type PlaybackAttemptTrace,
     playbackIncident,
+    publicMediaEvidence,
 } from "./diagnosticsIncident.ts";
+import { browserNavigationEnvironment, NAV_SAMPLING_KEY, type NavigationEnvironment, type NavigationPayload, NavigationRecorder } from "./diagnosticsNavigation.ts";
+import { bufferingPayload, type DiagnosticsBufferingPayload } from "./diagnosticsBuffering.ts";
+import type { BufferingEvidenceTrace } from "./player/bufferingEvidence.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -122,7 +130,13 @@ export interface DiagnosticsSnapshot {
     readonly device: DiagnosticsDeviceInfo;
     readonly lastPlayback?: DiagnosticsPlayback | undefined;
     readonly lastAppError?: string | undefined;
+    /** The current attempt's validated audio and subtitle record. */
+    readonly media?: DiagnosticsMediaPayload | undefined;
     readonly events: readonly DiagnosticsEvent[];
+    /** Frozen App / Navigation evidence: at the app error, else when Settings opened. */
+    readonly navigation?: NavigationPayload | undefined;
+    /** Buffering / Quality evidence, frozen with a buffering incident or the latest attempt's for a user-observed report. */
+    readonly buffering?: DiagnosticsBufferingPayload | undefined;
 }
 
 export interface DiagnosticsPayloadPlayback {
@@ -162,7 +176,10 @@ export interface DiagnosticsPayloadV1 {
     readonly up?: number;
     readonly play?: DiagnosticsPayloadPlayback;
     readonly log?: readonly string[];
+    readonly md?: DiagnosticsMediaPayload;
     readonly inc?: DiagnosticsIncidentPayload;
+    readonly nav?: NavigationPayload;
+    readonly bq?: DiagnosticsBufferingPayload;
 }
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -397,6 +414,7 @@ function payloadFromSnapshot(
     noteLimit: number,
     includeExtended: boolean,
     options?: DiagnosticsPayloadOptions,
+    includeMedia = false,
 ): DiagnosticsPayloadV1 {
     const { device, lastPlayback, events } = snapshot;
     const fw = cleanOptional(device.firmware, 48);
@@ -477,12 +495,17 @@ function payloadFromSnapshot(
         ...(up === undefined ? {} : { up }),
         ...(play === undefined ? {} : { play }),
         ...(log.length === 0 ? {} : { log }),
+        ...(includeMedia && snapshot.media !== undefined ? { md: snapshot.media } : {}),
         ...(options?.incident === undefined ? {} : { inc: { ...options.incident, src: options.auto === true ? "auto" as const : "manual" as const } }),
+        ...(includeExtended && snapshot.navigation !== undefined ? { nav: snapshot.navigation } : {}),
+        // Only a Buffering / Quality report carries it; the QR link passes no category and stays short.
+        ...(snapshot.buffering !== undefined && (options?.category === "buffering" || options?.incident?.cat === "buffering") ? { bq: snapshot.buffering } : {}),
     };
 }
 
 export function diagnosticsPayload(snapshot: DiagnosticsSnapshot, options?: DiagnosticsPayloadOptions): DiagnosticsPayloadV1 {
-    return payloadFromSnapshot(snapshot, MAX_EVENTS, 4, true, options);
+    // The QR helper page cannot show `md`, so only the relay payload carries it.
+    return payloadFromSnapshot(snapshot, MAX_EVENTS, 4, true, options, true);
 }
 
 /** Stable failure fingerprint matching the Cloudflare Worker's grouping key. */
@@ -491,10 +514,12 @@ export function diagnosticsFingerprint(snapshot: DiagnosticsSnapshot, category?:
     const appErr = cleanOptional(snapshot.lastAppError, 64);
     const av = cleanAvplayError(play?.avplayError);
     const playErr = play?.error === undefined ? undefined : av !== undefined && play.error === "playback_failed" ? `${play.error}:${av}` : play.error;
+    const screen = snapshot.navigation?.sc;
+    const appSignature = screen === undefined || screen === "unknown" ? `app:${appErr}` : `app:${screen}:${appErr}`;
     const sig = source === "playback" && playErr !== undefined
         ? playErr
         : appErr !== undefined
-            ? `app:${appErr}`
+            ? appSignature
             : playErr ?? [category ?? "", play?.playback ?? "", play?.delivery ?? "", play?.source ?? "", play?.subtitleDetail ?? ""].join("|");
     const key = [
         cleanOptional(snapshot.device.appVersion, 32) ?? "unknown",
@@ -828,6 +853,8 @@ interface StoredIncident {
     readonly seq: number;
     readonly chain: number;
     readonly scope: number;
+    /** The attempt's media failure number for an audio/subtitle incident; undefined for a playback chain. */
+    readonly media: number | undefined;
     readonly record: DiagnosticsIncidentRecord;
     autoClaimed: boolean;
 }
@@ -842,6 +869,7 @@ export class DiagnosticsCollector {
     private readonly runtimeProbe: () => DiagnosticsRuntimeEnvironment;
     private lastPlayback: DiagnosticsPlayback | undefined;
     private lastAppError: string | undefined;
+    private media: DiagnosticsMediaPayload | undefined;
     private readonly events: StoredEvent[] = [];
     private eventSeq = 0;
     /** First event of the current playback attempt; an incident snapshot never includes earlier attempts' lines. */
@@ -853,18 +881,24 @@ export class DiagnosticsCollector {
     private lastPlanSignature: string | undefined;
     private sessionHasPlayback = false;
     private rebufferCount = 0;
+    /** The current attempt's buffering evidence, for a user-observed Buffering / Quality report. */
+    private lastBuffering: DiagnosticsBufferingPayload | undefined;
     private lastSentHash: string | undefined;
     private lastSentReportId: string | undefined;
     private autoReport: boolean;
     private lastAutoSendAt = -Infinity;
     private readonly autoSentKeys = new Set<string>();
     private readonly listeners = new Set<() => void>();
+    readonly navigation: NavigationRecorder;
+    private precedingNavigation: NavigationPayload | undefined;
+    private appErrorNavigation: NavigationPayload | undefined;
 
     constructor(
         device: DiagnosticsDeviceInfo,
         clock: Clock = systemClock,
         storage?: PublicStorage,
         runtimeProbe: () => DiagnosticsRuntimeEnvironment = readRuntimeEnvironment,
+        navigationEnvironment: () => NavigationEnvironment = browserNavigationEnvironment,
     ) {
         this.device = { ...device };
         this.clock = clock;
@@ -873,6 +907,7 @@ export class DiagnosticsCollector {
         this.runtimeProbe = runtimeProbe;
         this.autoReport = this.readStoredFlag(AUTO_REPORT_KEY);
         for (const key of this.readStoredKeys(AUTO_SENT_KEY)) this.autoSentKeys.add(key);
+        this.navigation = new NavigationRecorder(this.readStoredFlag(NAV_SAMPLING_KEY), navigationEnvironment);
     }
 
     get autoReportEnabled(): boolean {
@@ -892,7 +927,7 @@ export class DiagnosticsCollector {
     }
 
     hasReportableData(): boolean {
-        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.events.length > 0 || this.incidents.length > 0;
+        return this.lastPlayback !== undefined || this.lastAppError !== undefined || this.media !== undefined || this.events.length > 0 || this.incidents.length > 0;
     }
 
     /** The most recent incident in this profile session matching the chosen category. A buffering-owned failure that ended playback also matches Playback failed, keeping its canonical category. */
@@ -903,7 +938,8 @@ export class DiagnosticsCollector {
             if (stored === undefined) continue;
             const record = stored.record;
             if (record.category === category) return record;
-            if (category === "playback" && record.incident.out !== "recovered") return record;
+            // A failed track switch or caption load leaves playback running, so it never answers Playback failed.
+            if (category === "playback" && record.category === "buffering" && record.incident.out !== "recovered") return record;
         }
         return undefined;
     }
@@ -913,8 +949,13 @@ export class DiagnosticsCollector {
         const record = this.incidentFor(category);
         if (record !== undefined) return record;
         const snapshot = this.snapshot();
+        const buffering = category === "buffering" ? this.lastBuffering : undefined;
         return {
-            snapshot: this.precedingScreen === undefined ? snapshot : { ...snapshot, precedingScreen: this.precedingScreen },
+            snapshot: {
+                ...snapshot,
+                ...(this.precedingScreen === undefined ? {} : { precedingScreen: this.precedingScreen }),
+                ...(buffering === undefined ? {} : { buffering }),
+            },
             ...(category === undefined ? {} : { category }),
         };
     }
@@ -933,7 +974,9 @@ export class DiagnosticsCollector {
             srv: this.device.serverVersion,
             cat: category,
             precedingScreen: this.precedingScreen,
+            nav: this.currentNavigation()?.st,
             err: this.lastAppError,
+            md: this.media,
             play: play === undefined ? undefined : {
                 m: play.playback,
                 d: play.delivery,
@@ -952,6 +995,7 @@ export class DiagnosticsCollector {
                 e: play.error,
             },
             events: this.events.map(event => `${event.kind}:${event.text}`),
+            bq: category === "buffering" ? this.lastBuffering : undefined,
         }));
     }
 
@@ -1014,10 +1058,12 @@ export class DiagnosticsCollector {
 
     beginPlaybackSession(): number {
         this.rebufferCount = 0;
+        this.lastBuffering = undefined;
         this.lastPlanSignature = undefined;
         this.sessionHasPlayback = false;
         // An earlier attempt's plan, status and position never describe this one (#864).
         this.lastPlayback = undefined;
+        this.media = undefined;
         this.playbackEventFloor = this.eventSeq;
         return ++this.scope;
     }
@@ -1030,16 +1076,50 @@ export class DiagnosticsCollector {
         if (scope !== this.scope) return undefined;
         const incident = playbackIncident(trace, error);
         if (incident === undefined) return undefined;
-        const existing = this.incidents.find(entry => entry.scope === scope && entry.seq === trace.seq && entry.chain === trace.chain);
+        const existing = this.incidents.find(entry => entry.scope === scope && entry.media === undefined && entry.seq === trace.seq && entry.chain === trace.chain);
         if (existing !== undefined) return existing.record;
+        return this.storeIncident(scope, trace, undefined, incident);
+    }
+
+    /** Captures one definite caption-load or requested-switch failure once, frozen like a playback incident. */
+    recordMediaIncident(scope: number, trace: PlaybackAttemptTrace, failure: MediaFailure): DiagnosticsIncidentRecord | undefined {
+        if (scope !== this.scope) return undefined;
+        const existing = this.incidents.find(entry => entry.scope === scope && entry.seq === trace.seq && entry.media === failure.n);
+        if (existing !== undefined) return existing.record;
+        return this.storeIncident(scope, trace, failure.n, mediaIncident(trace, failure));
+    }
+
+    /** Keeps the current attempt's validated audio/subtitle record; a snapshot taken at capture freezes it with the incident. */
+    recordMediaEvidence(scope: number, evidence: MediaEvidence): void {
+        if (scope !== this.scope) return;
+        const next = publicMediaEvidence(evidence);
+        if (JSON.stringify(next) === JSON.stringify(this.media)) return;
+        this.media = next;
+        this.emit();
+    }
+
+    private storeIncident(scope: number, trace: PlaybackAttemptTrace, media: number | undefined, incident: DiagnosticsIncidentPayload): DiagnosticsIncidentRecord {
         const captured = this.captureSnapshot(this.playbackEventFloor);
         // An unrelated app error belongs to its own report, not to this attempt's evidence.
-        const snapshot: DiagnosticsSnapshot = { device: captured.device, events: captured.events, ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }) };
+        const buffering = incident.cat === "buffering" && trace.quality !== undefined ? bufferingPayload(trace.quality, this.clock.now()) : undefined;
+        const snapshot: DiagnosticsSnapshot = {
+            device: captured.device,
+            events: captured.events,
+            ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }),
+            ...(buffering === undefined ? {} : { buffering }),
+            ...(captured.media === undefined ? {} : { media: captured.media }),
+        };
         const record: DiagnosticsIncidentRecord = { snapshot, category: incident.cat, incident };
-        this.incidents.push({ seq: trace.seq, chain: trace.chain, scope, record, autoClaimed: false });
+        this.incidents.push({ seq: trace.seq, chain: trace.chain, scope, media, record, autoClaimed: false });
         if (this.incidents.length > MAX_INCIDENTS) this.incidents.shift();
         this.emit();
         return record;
+    }
+
+    /** Keeps the current attempt's buffering evidence for a manual report when no incident was detected. */
+    recordBufferingContext(scope: number, trace: BufferingEvidenceTrace | undefined): void {
+        if (scope !== this.scope) return;
+        this.lastBuffering = trace === undefined ? undefined : bufferingPayload(trace, this.clock.now());
     }
 
     recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
@@ -1053,6 +1133,7 @@ export class DiagnosticsCollector {
     recordAppError(code: string): void {
         const cleaned = /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(code) ? code : "Error";
         this.lastAppError = cleaned;
+        this.appErrorNavigation = this.navigation.capture();
         this.pushEvent("app", `error ${cleaned}`);
         this.emit();
     }
@@ -1169,17 +1250,24 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
+    /** Opening Settings freezes the navigation that led there, so a manual report still describes it. */
     setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
         this.precedingScreen = screen;
+        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture();
     }
 
     clear(): void {
         this.precedingScreen = undefined;
+        this.precedingNavigation = undefined;
+        this.appErrorNavigation = undefined;
+        this.navigation.reset();
         this.scope++;
         this.playbackEventFloor = this.eventSeq;
-        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
+        this.lastBuffering = undefined;
+        if (this.lastPlayback === undefined && this.lastAppError === undefined && this.media === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
         this.incidents.length = 0;
         this.lastPlayback = undefined;
+        this.media = undefined;
         this.lastAppError = undefined;
         this.events.length = 0;
         this.lastPlanSignature = undefined;
@@ -1191,7 +1279,13 @@ export class DiagnosticsCollector {
     }
 
     snapshot(): DiagnosticsSnapshot {
-        return this.captureSnapshot(0);
+        const navigation = this.currentNavigation();
+        return { ...this.captureSnapshot(0), ...(navigation === undefined ? {} : { navigation }) };
+    }
+
+    /** An app error's frozen evidence describes that error; otherwise the navigation before Settings opened. */
+    private currentNavigation(): NavigationPayload | undefined {
+        return this.lastAppError === undefined ? this.precedingNavigation : this.appErrorNavigation;
     }
 
     private captureSnapshot(eventFloor: number): DiagnosticsSnapshot {
@@ -1207,6 +1301,7 @@ export class DiagnosticsCollector {
             },
             ...(this.lastPlayback === undefined ? {} : { lastPlayback: { ...this.lastPlayback } }),
             ...(this.lastAppError === undefined ? {} : { lastAppError: this.lastAppError }),
+            ...(this.media === undefined ? {} : { media: this.media }),
             events: this.events.filter(event => event.n >= eventFloor).map(event => ({ at: event.at, kind: event.kind, text: event.text })),
         };
     }

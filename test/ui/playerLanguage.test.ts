@@ -284,12 +284,13 @@ for (const language of ["de", "ar"]) {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
             // problem.localized (APIv2Models.swift:357-365): the field code's line, else the problem type's, else the server's own text.
-            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "validation_failed" } }, retryable: true });
+            // Never the server's own text, which can carry private values: a problem type with no line reads Apple's HTTP status line.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 400, problemId: "validation_failed" } }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.validation_failed"]);
-            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "validation_failed", fieldCode: "required" } }, retryable: true });
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 422, problemId: "validation_failed", fieldCode: "required" } }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.field.required"]);
-            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "Rejected", problemId: "not_a_problem_we_know" } }, retryable: true });
-            assert.equal(await page.locator(".player-error-text").textContent(), "Rejected");
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 409, problemId: "not_a_problem_we_know" } }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("errors.apple.v2.httpStatus", language, { status: "409" }));
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network", noResponse: true }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.serverNoResponse", language));
             assert.equal(await page.locator('[data-focus="back"]').textContent(), text("player.goBack", language));

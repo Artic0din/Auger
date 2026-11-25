@@ -54,6 +54,11 @@ export function translate(key: MessageKey, args?: MessageArgs, language: string 
     return resolveMessage(catalogs, key, language, args);
 }
 
+/** The catalog line for a key the server named (a problem type or field code), or undefined when the catalog has none. */
+export function translateKnown(key: string, language: string = shownLanguage()): string | undefined {
+    return Object.prototype.hasOwnProperty.call(catalogs[SOURCE_LANGUAGE], key) ? resolveMessage(catalogs, key, language) : undefined;
+}
+
 /**
  * Text the server wrote (a Home section title), as `AppLanguage.serverText` shows it: the language's own
  * translation of the catalog key the server sent, else the server's text. English always shows the server's
