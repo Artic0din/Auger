@@ -4,17 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-
-- Playback diagnostics identified which attempt failed and showed the operation and recovery details available on the TV.
-
 <!-- changelog:releases -->
 
 ## [0.6.1] - 2026-11-25
 
-### 🐛 Fixes
+### Fixes
 
-- Report the playback attempt that failed
+- **Diagnostics**: Report the playback attempt that failed ([#889](https://github.com/Artic0din/Auger-Tizen/pull/889), [`2ef42710`](https://github.com/Artic0din/Auger-Tizen/commit/2ef42710))
 
 ## [0.6.0] - 2026-11-25
 
