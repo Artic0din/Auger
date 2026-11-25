@@ -3293,7 +3293,7 @@ export class PlaybackController implements PlayerControls {
         if (request !== view.next && !view.deck?.includes(request)) return;
         const shuffleId = completion.attempt.request.shuffleId;
         if (shuffleId !== undefined && request === view.next) {
-            if (completion.advancingShuffle) return;
+            if (completion.advancingShuffle || completion.pickingAnother) return;
             if (unattended) this.stillWatching.recordAutoAdvance();
             this.cancelAutoplayTimer?.();
             this.cancelAutoplayTimer = undefined;

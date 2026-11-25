@@ -4755,6 +4755,9 @@ test("Up Next shows a spinner while loading, Shuffling badge above eyebrow, and 
         assert.equal(await focused(page), "play-next");
         await remote(page, RIGHT);
         assert.equal(await focused(page), "pick-another");
+        // Countdown redraws must keep focus on Pick Another instead of dropping it back to Play Now.
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", countdown: 9, autoNext: true });
+        assert.equal(await focused(page), "pick-another");
         await remote(page, ENTER);
         assert.deepEqual(await commands(page), ["pickAnother"]);
 

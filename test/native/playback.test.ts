@@ -205,8 +205,14 @@ test("a completed Shuffle item refreshes GET /shuffles/{id} before offering its 
     assert.equal(completion(r).next?.contentId, "movie-2");
     assert.equal(completion(r).shuffleScopeLabel, "Movies");
     assert.equal(completion(r).countdown, 10);
-    // Pick Another calls POST /shuffles/sh1/skip with next_content_id and replaces the pick, restarting countdown.
+    // Pick Another calls POST /shuffles/sh1/skip with next_content_id; Play Now is blocked while /skip is in flight.
+    const skipHold = r.h.fake.hold("/shuffles/sh1/skip");
     r.controller.pickAnother();
+    await r.h.clock.advance(0);
+    r.controller.playNext();
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 0, "Play Now cannot race with an in-flight Pick Another");
+    skipHold.release();
     for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     const skips = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip");
     assert.equal(skips.length, 1);

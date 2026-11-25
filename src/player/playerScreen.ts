@@ -1064,11 +1064,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         hud.hidden = !menuOpen;
         tracksButton.setAttribute("aria-expanded", String(menuOpen));
         next.hidden = true;
-        // Up Next sets the toggle below; hiding it here first would drop its focus on every redraw.
+        // Up Next sets the toggle and Pick Another below; hiding or removing them first would drop their focus on every redraw.
         if (view.phase !== "completion" && prompt === undefined) {
             autoPlay.hidden = true;
             stopShuffling.hidden = true;
             autoPlayFooter.hidden = true;
+            showPickAnother(false);
         }
         keep.hidden = prompt === undefined;
         eyebrow.hidden = view.phase !== "completion" && prompt === undefined;
@@ -1078,7 +1079,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         failureTitle.hidden = view.phase === "error";
         nextSpinner.hidden = true;
         shuffleBadge.hidden = true;
-        showPickAnother(false);
         shuffleError.hidden = true;
         nextSeries.hidden = true;
         nextMeta.hidden = true;
