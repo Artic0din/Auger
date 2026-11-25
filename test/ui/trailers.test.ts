@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -212,11 +212,28 @@ trailerTest("a movie with only a YouTube video shows Trailers & More and leaves 
     assert.equal(metrics.captionWeight, "500");
     assert.equal(metrics.captionColor, "rgba(237, 237, 237, 0.6)");
     assert.equal(metrics.badge, 60);
+    // Wait for Details' opening reads—including the watchlist and favorites membership reads chained after personal capabilities—to settle before counting focus-move requests (#512).
+    let stableRequests = -1;
+    await tv.eventually(async () => {
+        const hasWatchlist = tv.fake.requests.some(request => request.path.startsWith("/watchlist/movie%3Am0001/membership"));
+        const hasFavorites = tv.fake.requests.some(request => request.path.startsWith("/favorites/movie%3Am0001/membership"));
+        const count = tv.fake.requests.length;
+        if (!hasWatchlist || !hasFavorites || tv.pendingReplies !== 0) {
+            stableRequests = -1;
+            return false;
+        }
+        if (stableRequests !== count) {
+            stableRequests = count;
+            return false;
+        }
+        return true;
+    }, "Details opening reads settled");
+    await afterPaint(tv);
     const before = tv.fake.requests.length;
     await tv.page.locator(".details-people [data-focus]").first().focus();
     await tv.remote(40);
     assert.equal(await tv.focused(), "remote:YouTube:abc_def-1");
-    assert.equal(tv.fake.requests.length, before, "moving onto the rail must not fetch");
+    assert.equal(tv.fake.requests.length, before, `moving onto the rail must not fetch (${JSON.stringify(tv.fake.requests.slice(before).map(r => r.path))})`);
     await tv.page.locator('[data-focus="remote:YouTube:abc_def-1"]').click();
     assert.equal(await tv.focused(), "remote:YouTube:abc_def-1");
     assert.equal(tv.fake.requests.filter(request => request.path.includes("/playback/") || request.path.includes("/versions")).length, 0);
