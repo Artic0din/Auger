@@ -835,12 +835,18 @@ export function formatDiscordDiagnostics(payload: DiagnosticsPayloadV1): string 
 export function buildGitHubBugReportUrl(payload: DiagnosticsPayloadV1, issueBaseUrl = GITHUB_BUG_REPORT_URL): string {
     const params = new URLSearchParams();
     params.set("template", "bug-report.yml");
-    params.set("device-details", formatDeviceDetails(payload));
+    params.set("device-details", payload.tv);
+    if (payload.fw) params.set("firmware-version", payload.fw);
+    if (payload.os) params.set("tizen-version", payload.os);
     params.set("app-version", payload.app);
     if (payload.srv !== undefined) params.set("server-version", payload.srv);
     const playback = formatPlaybackDetails(payload);
     if (playback !== "") params.set("playback-details", playback);
-    const notes = formatTechnicalNotes(payload);
+    const notes = [
+        payload.ua ? `Web engine: ${payload.ua}` : undefined,
+        payload.scr ? `Screen: ${payload.scr}` : undefined,
+        formatTechnicalNotes(payload),
+    ].filter(Boolean).join("\n");
     if (notes !== "") params.set("technical-notes", notes);
     return `${issueBaseUrl}?${params.toString()}`;
 }
@@ -1253,7 +1259,7 @@ export class DiagnosticsCollector {
     /** Opening Settings freezes the navigation that led there, so a manual report still describes it. */
     setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
         this.precedingScreen = screen;
-        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture();
+        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture("settings");
     }
 
     clear(): void {

@@ -223,7 +223,7 @@ function roomBackdrop(context: LobbyContext): HTMLElement {
     return backdrop(reference, context.baseUrl, item?.backdropUrl === undefined);
 }
 
-export function lobbyView(context: LobbyContext, room: Room): View {
+export function lobbyView(context: LobbyContext, room: Room, dismiss: () => void): View {
     const page = lobbyPage(context, room, true);
     const zones: Zone[] = [
         { id: "lobby-top", layout: "row", items: page.items.top },
@@ -231,7 +231,7 @@ export function lobbyView(context: LobbyContext, room: Room): View {
         { id: "lobby-seats", layout: "row", items: page.items.seats },
         ...(page.items.actions.length === 0 ? [] : [{ id: "lobby-actions", layout: "row" as const, items: page.items.actions }]),
     ];
-    return { name: "watchParty:lobby", content: [roomBackdrop(context), page.node], zones, focus: { zone: page.items.actions.length === 0 ? "lobby-top" : "lobby-actions", key: page.defaultKey }, back: () => context.hub.back() };
+    return { name: "watchParty:lobby", content: [roomBackdrop(context), page.node], zones, focus: { zone: page.items.actions.length === 0 ? "lobby-top" : "lobby-actions", key: page.defaultKey }, back: dismiss };
 }
 
 // --- Party options ---

@@ -619,21 +619,23 @@ test("shelves that arrive ask the next render to drop its carried focus, once", 
     assert.equal(hub.takeRefocus(), false);
 });
 
-test("Back walks the room's pages one at a time and only leaves the room from the lobby", async () => {
+test("Back walks the room's pages one at a time and from the lobby dismisses without leaving (#783)", async () => {
     const { hub, calls } = lobby();
     await hub.create("host_pick");
     const pageKind = (): string => hub.state.page.kind;
     hub.show({ kind: "options" });
-    hub.back();
+    assert.equal(hub.back(), true);
     assert.equal(pageKind(), "lobby");
     hub.show({ kind: "choice", choice: movie() });
-    hub.back();
+    assert.equal(hub.back(), true);
     assert.equal(pageKind(), "picker", "a choice returns to the shelves");
-    hub.back();
+    assert.equal(hub.back(), true);
     assert.equal(pageKind(), "lobby");
     assert.notEqual(hub.state.room, undefined);
-    hub.back();
-    assert.equal(hub.state.room, undefined, "Back from the lobby leaves");
+    assert.equal(hub.back(), false, "Back from the lobby returns false so the host dismisses without leaving");
+    assert.notEqual(hub.state.room, undefined, "Back from the lobby keeps the room open");
+    hub.leave();
+    assert.equal(hub.state.room, undefined, "Leave party leaves the room");
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.deepEqual(calls, [], "leaving is local: the host's room is not closed");
 });

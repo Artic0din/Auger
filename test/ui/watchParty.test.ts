@@ -121,6 +121,32 @@ test("turning the toggle off removes the entry again", async () => {
     } finally { await tv.page.context().close(); }
 });
 
+test("turning Watch Party off in Settings after dismissing an active lobby closes the room socket and does not restore the room (#783)", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = await start(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "entry offered");
+        await openHub(tv);
+        await button(tv, "create").click();
+        await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        await tv.eventually(async () => fake.sockets.length === 1, "room socket opens");
+        await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        assert.equal(fake.sockets[0]?.closed, false, "lobby dismiss keeps socket alive");
+        await openServerSettings(tv);
+        const row = tv.page.getByRole("switch", { name: "Watch Party", exact: true });
+        await row.click();
+        assert.equal(await row.getAttribute("aria-checked"), "false");
+        await leaveSettings(tv);
+        await tv.eventually(async () => fake.sockets[0]?.closed === true, "disabling Watch Party closes the active room socket");
+        await openServerSettings(tv);
+        await tv.page.getByRole("switch", { name: "Watch Party", exact: true }).click();
+        await leaveSettings(tv);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "re-enabling offers Watch Party, not Return to Watch Party");
+        assert.ok(!(await menuTitles(tv)).includes("Return to Watch Party"));
+    } finally { await tv.page.context().close(); }
+});
+
 test("the hub is a full-screen page with no top bar, Apple's copy, Host and Join sections, and focus on Start a party", async () => {
     const tv = await openTv(browser, { app: "browse" });
     try {
@@ -274,13 +300,27 @@ test("Start a party creates a host-pick room and shows the code and members the 
         assert.deepEqual(await tv.page.locator(".watch-party-seat:not(.watch-party-seat-invite) .watch-party-seat-name").allTextContents(), ["Owner", "Sam"]);
         assert.deepEqual(await tv.page.locator(".watch-party-seat-detail").allTextContents(), ["Host · You", "not ready"]);
         assert.equal(await tv.page.locator(".watch-party-presence").textContent(), "1 of 2 ready");
-        // Back before the ticket answer lands leaves no socket to close; wait until the room socket is open.
+        // Back from the lobby dismisses the Watch Party screen without leaving the room (#783).
         await tv.eventually(async () => fake.sockets.length === 1, "the room socket opens");
         await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        assert.equal(fake.sockets[0]?.closed, false, "Back from the lobby keeps the room socket open");
+        assert.deepEqual(fake.closedRooms, []);
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Return to Watch Party"), "top bar shows Return to Watch Party while in a room");
+        await button(tv, "watch-party").click();
+        await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        assert.equal(await tv.page.locator(".watch-party-code").textContent(), "K7M2QX");
+        // Leaving happens only through Party Options -> Leave party.
+        await button(tv, "options").click();
+        await tv.page.locator('.browse[data-view="watchParty:options"]').waitFor();
+        await button(tv, "leave").click();
         await tv.page.locator('.browse[data-view="watchParty:hub"]').waitFor();
-        assert.equal(await tv.focused(), "create", "Back returns to the entry on its first control");
-        await tv.eventually(async () => fake.sockets[0]?.closed === true, "host Back closes the room socket");
-        assert.deepEqual(fake.closedRooms, [], "Back leaves as Leave party does; only End party ends the room");
+        assert.equal(await tv.focused(), "create", "Leave party returns to the entry on its first control");
+        await tv.eventually(async () => fake.sockets[0]?.closed === true, "Leave party closes the room socket");
+        assert.deepEqual(fake.closedRooms, [], "Leave party does not end the room; only End party ends it");
+        await tv.remote(10009);
+        await tv.page.locator('.browse[data-view="home"]').waitFor();
+        await tv.eventually(async () => (await menuTitles(tv)).includes("Watch Party"), "top bar returns to Watch Party after leaving");
     } finally { await tv.page.context().close(); }
 });
 

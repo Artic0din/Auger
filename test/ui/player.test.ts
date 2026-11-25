@@ -915,6 +915,56 @@ test("episode footer shows series, title and episode tag without an empty status
     } finally { await page.close(); }
 });
 
+test("remaining time shows Ends clock at playback speed and ticks forward while paused (#777)", async () => {
+    const { page } = await open();
+    try {
+        const formatEnd = (remainingSeconds: number, speed: number): Promise<string> => page.evaluate(([left, rate]) => {
+            const end = new Date(Date.now() + (left / rate) * 1000);
+            return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", hourCycle: "h12" }).format(end);
+        }, [remainingSeconds, speed] as const);
+        await show(page, { ...playing(TRACKS), phase: "paused", positionSeconds: 754, durationSeconds: 7200, hud: { chapters: [], chapterState: "ready", stats: NO_STATS, speeds: [1, 2], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        const at1x = await formatEnd(6446, 1);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${at1x}`);
+        await show(page, { ...playing(TRACKS), phase: "paused", positionSeconds: 754, durationSeconds: 7200, hud: { chapters: [], chapterState: "ready", stats: NO_STATS, speeds: [1, 2], aspects: [], speed: 2, aspect: "Fit", autoNext: false, busy: false } });
+        const at2x = await formatEnd(6446, 2);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${at2x}`);
+        assert.notEqual(at2x, at1x);
+        await page.clock.runFor(60_000);
+        const ticked = await formatEnd(6446, 2);
+        assert.notEqual(ticked, at2x);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${ticked}`);
+    } finally { await page.close(); }
+});
+
+test("scrubber rate chip draws a directional arrow 7px before the rate and episode tags fall back to season or episode (#777)", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), title: "Going Green", seriesTitle: "The Series", seasonNumber: 3 });
+        assert.equal(await page.locator(".player-episode").textContent(), "S3");
+        await show(page, { ...playing(TRACKS), title: "Going Green", seriesTitle: "The Series", episodeNumber: 12 });
+        assert.equal(await page.locator(".player-episode").textContent(), "E12");
+        await openPanel(page);
+        assert.equal(await page.locator(".player-info-episode").textContent(), "E12");
+        await remote(page, BACK);
+        await holdKey(page, RIGHT);
+        await page.clock.fastForward(300);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "forward");
+        const forwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(forwardPath?.startsWith("M1.5 2.2"), `expected forward double-arrow glyph, got ${forwardPath}`);
+        assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
+        assert.equal(await page.locator(".player-rate").evaluate(node => getComputedStyle(node).columnGap), "7px");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
+        const backwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(backwardPath?.startsWith("M22.5 2.2"), `expected backward double-arrow glyph, got ${backwardPath}`);
+        assert.notEqual(backwardPath, forwardPath);
+        assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
+        assert.equal(await page.locator(".player-rate-value").textContent(), "2x");
+    } finally { await page.close(); }
+});
+
 test("Info panel measured placement and Up Down Menu focus", async () => {
     const { page } = await open();
     try {
@@ -948,7 +998,7 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
         await show(page, { ...playing(TRACKS), previewKey: undefined });
         await page.clock.runFor(1000);
         assert.equal(await page.locator(".player-time-elapsed").textContent(), "12:44");
-        assert.equal(await page.locator(".player-time-remaining").textContent(), "−1:47:16");
+        assert.match(await page.locator(".player-time-remaining").textContent() ?? "", /^−1:47:16 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         await remote(page, RIGHT);
         assert.equal(await page.getByRole("slider").getAttribute("aria-valuenow"), "774");
     } finally { await page.close(); }
@@ -1545,10 +1595,9 @@ test("Up Next captures remote input, preserves focus and exposes Keep Watching a
 test("Subtitles stays hidden without tracks or actionable sources like Apple TV", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...NO_TRACKS, seriesSubtitle: { busy: false, message: "" } }));
+        await show(page, playing(NO_TRACKS));
         await openAudio(page);
-        await nextTab(page, 1);
-        assert.equal(await page.getByRole("button", { name: "Keep subtitles off for this series", exact: true }).isVisible(), false);
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allInnerTexts(), ["Info", "Stats", "Video", "Audio"]);
     } finally { await page.close(); }
 });
 
@@ -1687,19 +1736,14 @@ test("captions paint above the overlay gradient but below its controls and the m
     } finally { await page.close(); }
 });
 
-test("series subtitle save stays focused while its write is pending", async () => {
+test("Subtitles TRACKS column lists Off and tracks only, without an extra series-save row (#780)", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: false, message: "" } }));
-        // Old path was Down then Right, from an Audio panel. Info is the first tab now.
+        await show(page, playing(TRACKS));
         await openAudio(page);
         await nextTab(page, 1);
-        for (let index = 0; index < TRACKS.subtitles.length + 1; index++) await remote(page, DOWN);
-        assert.equal(await focused(page), "series-subtitles");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["saveSeriesSubtitle"]);
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: true, message: "Saving…" } }));
-        assert.equal(await focused(page), "series-subtitles");
+        const ids = await page.locator(".player-menu-column-tracks [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        assert.deepEqual(ids, ["subtitles-off", ...TRACKS.subtitles.map(track => track.id)]);
     } finally { await page.close(); }
 });
 
@@ -3056,7 +3100,7 @@ test("loading, playing and paused are readable; the remote cancels a seek previe
         await show(page, { phase: "playing", title: "The Movie", positionSeconds: 754, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks: NO_TRACKS });
         // Old value was "12:34 / 2:00:00" (elapsed slash duration). Apple's time row is elapsed and a minus remaining.
         assert.equal(await page.locator(".player-time-elapsed").innerText(), "12:34");
-        assert.equal(await page.locator(".player-time-remaining").innerText(), "−1:47:26");
+        assert.match(await page.locator(".player-time-remaining").innerText(), /^−1:47:26 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         assert.equal(await page.locator(".player-overlay").getAttribute("class"), "player-overlay", "shown when playback starts");
         await page.clock.fastForward(5000);
         await show(page, { phase: "playing", title: "The Movie", positionSeconds: 759, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks: NO_TRACKS });
@@ -3241,7 +3285,7 @@ test("the open panel is Apple's 1100 by 380 tabbed HUD and the clock is elapsed 
         const elapsed = page.locator(".player-time-elapsed");
         const remaining = page.locator(".player-time-remaining");
         assert.equal(await elapsed.innerText(), "12:34");
-        assert.equal(await remaining.innerText(), "−1:47:26");
+        assert.match(await remaining.innerText(), /^−1:47:26 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         await page.locator(".player-bar").focus();
         const puck = await page.locator(".player-puck").evaluate((node) => {
             const style = getComputedStyle(node);

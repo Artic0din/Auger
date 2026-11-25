@@ -31,7 +31,7 @@ export function recommendationsView(current: Extract<Route, { kind: "for_you" }>
         const view = homeView([], rows, handlers.context, {
             canExpand: () => false,
             expand: () => undefined,
-            search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
+            search: handlers.openSearch,
             library: library => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
             chooseProfile: handlers.chooseProfile,
         });
