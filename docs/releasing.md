@@ -57,7 +57,7 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 
 The GitHub Release body is for people who use Auger.
 For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` (or `## Release note`) section.
-`CI scripts` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section without raw `#123` references or Conventional Commit prefixes (or explicit `None` for an internal-only fix).
+`CI Scripts and Guards` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section without raw `#123` references or Conventional Commit prefixes (or explicit `None` for an internal-only fix).
 That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
 Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
 `None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
