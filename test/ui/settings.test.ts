@@ -239,6 +239,16 @@ test("the subtitle preview draws sans-serif in the bundled semibold face", async
             await tv.eventually(async () => (await face()).family === family, `${label} preview face`);
             assert.deepEqual(await face(), { family, weight: "600" });
         }
+        // Selecting Drop Shadow scales the drop-shadow and outline offsets by the preview's 0.5 factor (#780).
+        await tv.page.getByRole("button", { name: /Background Style/ }).click();
+        await tv.page.getByRole("radio", { name: "Drop Shadow", exact: true }).click();
+        await tv.eventually(async () => (await preview.evaluate(node => getComputedStyle(node).textShadow)).includes("0.75px 1px 1.5px"), "scaled preview drop shadow");
+        const shadowOnly = await preview.evaluate(node => getComputedStyle(node).textShadow);
+        assert.equal(shadowOnly, "rgba(0, 0, 0, 0.85) 0.75px 1px 1.5px");
+        await tv.page.getByRole("switch", { name: /Text Outline/ }).click();
+        await tv.eventually(async () => (await preview.evaluate(node => getComputedStyle(node).textShadow)).includes("0.87px"), "scaled preview outline + drop shadow");
+        const outlineAndShadow = await preview.evaluate(node => getComputedStyle(node).textShadow);
+        assert.ok(outlineAndShadow.includes("0.87px 0.87px 0px") && outlineAndShadow.includes("0.75px 1px 1.5px"), outlineAndShadow);
     } finally { await tv.page.context().close(); }
 });
 
