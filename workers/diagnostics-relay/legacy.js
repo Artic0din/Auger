@@ -16,6 +16,7 @@ import {
   sanitizeAvplayError,
   validateBuffering,
   validateIncident,
+  validateMedia,
   VERSION_PATTERN,
 } from "./contract.js";
 import { legacyEquivalent } from "./grouping.js";
@@ -277,6 +278,8 @@ export function validateV1(raw) {
   const nav = validateNavigation(raw.nav);
   if (nav !== undefined) record.nav = nav;
   const navKey = navigationErrorKey(record);
+  const md = validateMedia(raw.md);
+  if (md !== undefined) record.md = md;
   if (raw.inc !== undefined) {
     const failure = attachIncident(record, raw);
     if (failure) return failure;

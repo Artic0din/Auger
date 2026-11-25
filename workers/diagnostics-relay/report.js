@@ -1,8 +1,14 @@
 // Issue bodies, follow-up comments and embedded metadata, built from validated records only.
 
 import { bufferingSection } from "./buffering.js";
-import { CATEGORY_LABELS, CONTAINERS, DYNAMIC_RANGES, PROTOCOLS, VIDEO_CODECS, isPublishedCode } from "./contract.js";
-import { codeCell, DELIVERY_LABELS, OPERATION_LABELS, OUTCOME_LABELS, RECOVERY_LABELS, SCREEN_LABELS, STAGE_LABELS } from "./labels.js";
+import {
+  AUDIO_CODECS, CAPTION_LOAD_STATES, CATEGORY_LABELS, CONTAINERS, DYNAMIC_RANGES, LANGUAGE_PATTERN, PROTOCOLS, SUBTITLE_CODECS, SUBTITLE_DELIVERIES,
+  SUBTITLE_DRAWERS, SUBTITLE_MODES, SUBTITLE_SOURCES, SWITCH_RESULTS, VIDEO_CODECS, isPublishedCode,
+} from "./contract.js";
+import {
+  CAPTION_LOAD_LABELS, codeCell, DELIVERY_LABELS, OPERATION_LABELS, OUTCOME_LABELS, RECOVERY_LABELS, SCREEN_LABELS, STAGE_LABELS,
+  SUBTITLE_DRAWER_LABELS, SWITCH_RESULT_LABELS,
+} from "./labels.js";
 import { fnv1aHex, LEGACY_FIELD_CHECKS } from "./legacy.js";
 import { incidentTitle, legacyTitle } from "./titles.js";
 import { navigationSection } from "./navigation.js";
@@ -43,6 +49,12 @@ export function publicIncident(inc) {
   if (inc.fc !== undefined) view.fc = publicCode(inc.fc);
   if (inc.t !== undefined) view.t = inc.t.map(publicStep);
   return view;
+}
+
+/** The audio/subtitle record as it may appear in public output: an unlisted switch code becomes a digest. */
+export function publicMedia(md) {
+  if (md?.sw?.code === undefined) return md;
+  return { ...md, sw: { ...md.sw, code: publicCode(md.sw.code) } };
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +117,7 @@ export function incidentStableState(record) {
     hdr: record.hdr,
     inc,
     bq: record.bq,
+    md: publicMedia(record.md),
     log: (record.log ?? []).map(stripLogTimestamp),
   };
 }
@@ -134,6 +147,7 @@ export function legacyStableState(record) {
     av: play.av,
     fb: play.fb,
     e: play.e,
+    md: publicMedia(record.md),
     bq: record.bq,
     log: (record.log ?? []).map(stripLogTimestamp),
     nav: record.nav,
@@ -282,6 +296,48 @@ function legacyPlayRows(play) {
   ].filter(Boolean);
 }
 
+const audioFormatCell = (format, unavailable) => {
+  if (format === undefined) return UNREPORTED;
+  if (format === "unavailable") return unavailable;
+  return [format.c, format.ch === undefined ? undefined : `${format.ch} ch`].filter(Boolean).join(" · ");
+};
+
+function mediaRows(md) {
+  const rows = [];
+  if (md.a !== undefined) {
+    rows.push(
+      ["Audio language", md.a.lang ?? UNREPORTED],
+      ["Audio source (file)", audioFormatCell(md.a.src, "Unknown: no source track identified")],
+      ["Audio output (planned by server)", audioFormatCell(md.a.pl, "Not stated in the plan")],
+      ["Audio output (reported by AVPlay)", audioFormatCell(md.a.obs, "Not reported by AVPlay")],
+    );
+  }
+  const sub = md.s;
+  if (sub !== undefined) {
+    const flags = [sub.f ? "forced" : undefined, sub.hi ? "SDH" : undefined].filter(Boolean).join(", ");
+    rows.push(["Subtitle mode (planned)", sub.mode]);
+    if (sub.mode !== "off") {
+      rows.push(["Subtitle track", [sub.src, sub.c, sub.dl, sub.lang, flags || undefined].filter(Boolean).join(" · ") || UNREPORTED]);
+    }
+    rows.push(
+      ["Subtitles drawn by", SUBTITLE_DRAWER_LABELS[sub.via]],
+      ["Subtitle file load", CAPTION_LOAD_LABELS[sub.ld]],
+      // Zero is an observed count; a load that never completed has none to report.
+      ["Subtitle cues loaded", sub.cues === undefined ? "Not observed" : String(sub.cues)],
+      ["Subtitle delay (applied)", sub.sync === undefined ? "Not applied" : `${sub.sync > 0 ? "+" : ""}${sub.sync} ms`],
+      ["Second subtitle line", sub.sec === undefined ? UNREPORTED : yesNo(sub.sec)],
+    );
+  }
+  const sw = md.sw;
+  rows.push(["Requested switch", sw === undefined ? "None this attempt" : [sw.k === "audio" ? "Audio" : "Subtitle", SWITCH_RESULT_LABELS[sw.r], codeCell(sw.code)].filter(Boolean).join(" · ")]);
+  return rows;
+}
+
+function mediaSection(record) {
+  if (record.md === undefined) return [];
+  return ["", "### Audio and subtitles", "", ...table(mediaRows(publicMedia(record.md)))];
+}
+
 function deviceRows(record) {
   const deviceLine = [record.tv, record.fw ? `Firmware ${record.fw}` : undefined, record.os, record.ua, record.scr].filter(Boolean).join(", ");
   return [
@@ -309,8 +365,12 @@ function incidentBody(record, hash) {
   // A plan-free attempt must not show player rows: they could only describe an earlier attempt.
   const playRows = inc.pl === "not_reached" || record.play === undefined ? [] : legacyPlayRows(record.play);
   if (playRows.length > 0) lines.push("", "### Player summary", "", ...table(playRows));
+  lines.push(...mediaSection(record));
   if (record.log) lines.push("", "### Recent Events (Redacted)", "", "```text", ...record.log, "```");
-  return finish(lines, record, "An Auger TV recorded what it was doing when playback went wrong and what happened next, without personal details.", [
+  const eli5 = inc.cat === "audio_subtitles"
+    ? "An Auger TV recorded which audio and subtitles were chosen, what the player delivered and what failed, without personal details."
+    : "An Auger TV recorded what it was doing when playback went wrong and what happened next, without personal details.";
+  return finish(lines, record, eli5, [
     marker("auger-group", `inc1:${record.groupId}`),
     ...(record.equivalent ? [marker("auger-fp", record.equivalent.fingerprint)] : []),
     marker("auger-hash", hash),
@@ -334,6 +394,7 @@ function legacyBody(record, hash) {
   if (record.log) lines.push("", "### Recent Events (Redacted)", "", "```text", ...record.log, "```");
   const playRows = legacyPlayRows(p);
   if (playRows.length > 0) lines.push("", "### Last Playback", "", ...table(playRows));
+  lines.push(...mediaSection(record));
   return finish(lines, record, "An Auger TV sent a redacted report; only values the relay recognizes are shown.", [
     ...(record.navGroupId
       ? [marker("auger-group", `nav1:${record.navGroupId}`)]
@@ -425,6 +486,35 @@ const INCIDENT_DIFF_FIELDS = [
   ["pl.dr", "Dynamic range"],
 ];
 
+const MEDIA_DIFF_FIELDS = [
+  ["a.lang", "Audio language"],
+  ["a.src.c", "Audio source codec"],
+  ["a.src.ch", "Audio source channels"],
+  ["a.pl.c", "Planned audio codec"],
+  ["a.pl.ch", "Planned audio channels"],
+  ["a.obs.c", "AVPlay audio codec"],
+  ["a.obs.ch", "AVPlay audio channels"],
+  ["s.mode", "Subtitle mode"],
+  ["s.src", "Subtitle source"],
+  ["s.c", "Subtitle codec"],
+  ["s.dl", "Subtitle delivery"],
+  ["s.lang", "Subtitle language"],
+  ["s.via", "Subtitles drawn by"],
+  ["s.ld", "Subtitle file load"],
+  ["s.cues", "Subtitle cues loaded"],
+  ["s.sync", "Subtitle delay (ms)"],
+  ["sw.k", "Requested switch"],
+  ["sw.r", "Switch result"],
+  ["sw.code", "Switch code"],
+];
+
+function mediaChanges(before, after) {
+  if (after === undefined) return [];
+  return MEDIA_DIFF_FIELDS
+    .filter(([path]) => readPath(after, path) !== undefined && JSON.stringify(readPath(after, path)) !== JSON.stringify(readPath(before, path)))
+    .map(([path, label]) => `- **${label}:** \`${safeScalar(readPath(before, path))}\` → \`${safeScalar(readPath(after, path))}\``);
+}
+
 function readPath(value, path) {
   return path.split(".").reduce((current, key) => (current !== null && typeof current === "object" ? current[key] : undefined), value);
 }
@@ -438,13 +528,14 @@ function safeScalar(value) {
   if (typeof value === "boolean" || (typeof value === "number" && Number.isInteger(value))) return String(value);
   if (typeof value !== "string") return "earlier value";
   if (isPublishedCode(value) || /^unlisted_[0-9a-f]{8}$/.test(value)) return value;
-  return STAGE_OR_ENUM.has(value) || /^(?:\d{3,4}p|[48]k|\d{1,5}x\d{1,5})$/.test(value) ? value : "earlier value";
+  return STAGE_OR_ENUM.has(value) || LANGUAGE_PATTERN.test(value) || /^(?:\d{3,4}p|[48]k|\d{1,5}x\d{1,5})$/.test(value) ? value : "earlier value";
 }
 
 const STAGE_OR_ENUM = new Set([
   ...CONTAINERS, ...DYNAMIC_RANGES, ...PROTOCOLS, ...VIDEO_CODECS,
   ...Object.keys(STAGE_LABELS), ...Object.keys(OUTCOME_LABELS), ...Object.keys(RECOVERY_LABELS), ...Object.keys(DELIVERY_LABELS),
-  "none", "not_reached", "adaptation_unavailable", "unknown", "auto", "original", "source",
+  ...AUDIO_CODECS, ...SUBTITLE_CODECS, ...SUBTITLE_MODES, ...SUBTITLE_SOURCES, ...SUBTITLE_DELIVERIES, ...SUBTITLE_DRAWERS, ...CAPTION_LOAD_STATES, ...SWITCH_RESULTS,
+  "none", "not_reached", "adaptation_unavailable", "unknown", "auto", "original", "source", "audio", "subtitle",
 ]);
 
 function followUpHeader(record) {
@@ -475,6 +566,7 @@ function incidentFollowUp(previous, record, hash) {
     .filter(([path]) => readPath(after, path) !== undefined && JSON.stringify(readPath(after, path)) !== JSON.stringify(readPath(before, path)))
     .map(([path, label]) => `- **${label}:** \`${safeScalar(readPath(before, path))}\` → \`${safeScalar(readPath(after, path))}\``);
   changed.push(...changedEvidence(DEVICE_DIFF_FIELDS, previous.state, record));
+  changed.push(...mediaChanges(previous.state.md, publicMedia(record.md)));
   const priorSteps = new Set(Array.isArray(before.t) ? before.t : []);
   const newSteps = (after.t ?? []).filter((step) => !priorSteps.has(step));
   if (changed.length === 0 && newSteps.length === 0) return null;
@@ -487,7 +579,7 @@ function incidentFollowUp(previous, record, hash) {
 function legacyFollowUp(previous, record, hash) {
   const current = legacyStableState(record);
   const prevState = previous?.version === "legacy" ? previous.state : undefined;
-  const changed = prevState ? changedEvidence(LEGACY_DIFF_FIELDS, prevState, current) : [];
+  const changed = prevState ? [...changedEvidence(LEGACY_DIFF_FIELDS, prevState, current), ...mediaChanges(prevState.md, current.md)] : [];
   const prevLogs = new Set(Array.isArray(prevState?.log) ? prevState.log : []);
   const newLogs = (record.log ?? []).filter((entry) => !prevLogs.has(stripLogTimestamp(entry)));
   if (prevState && changed.length === 0 && newLogs.length === 0) return null;

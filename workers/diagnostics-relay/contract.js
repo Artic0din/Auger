@@ -1,5 +1,5 @@
-import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES } from "../../shared/diagnostics-media.js";
-export { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES };
+import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, AUDIO_CODECS, SUBTITLE_CODECS, LANGUAGE_PATTERN } from "../../shared/diagnostics-media.js";
+export { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES, AUDIO_CODECS, SUBTITLE_CODECS, LANGUAGE_PATTERN };
 
 // Declared incident contract (`inc`, iv 1) carried inside the v1 payload, mirroring the client's
 // src/diagnosticsIncident.ts. Every public value is an enum, bounded integer, boolean, allowlisted code or
@@ -89,17 +89,18 @@ export const PLAYBACK_STAGES = [
   "capabilities", "settings", "start", "subtitles", "media_token", "playlist_check",
   "avplay_open", "avplay_prepare", "avplay_seek", "avplay_play", "playing",
   "recovery", "reconnect", "track_change", "quality_change", "seek_reanchor", "progress",
+  "caption_load", "audio_switch", "subtitle_switch",
 ];
 
 /** Client PlaybackOperation. */
 export const PLAYBACK_OPERATIONS = [
   "playback_capabilities", "playback_defaults", "start_playback", "subtitle_preferences", "media_token",
-  "hls_playlist", "avplay", "replan_playback", "progress_report",
+  "hls_playlist", "avplay", "replan_playback", "progress_report", "subtitle_download",
 ];
 
 export const STEP_RESULTS = ["ok", "fail", "retry", "fallback", "recovered", "refused", "end"];
 export const INCIDENT_OUTCOMES = ["failed", "refused", "interrupted", "recovered"];
-export const INCIDENT_CATEGORIES = ["playback", "buffering"];
+export const INCIDENT_CATEGORIES = ["playback", "buffering", "audio_subtitles"];
 export const RECOVERY_STATES = ["none", "recovered", "attempted", "exhausted"];
 /** Client PlaybackError["kind"]. */
 export const ERROR_KINDS = [
@@ -122,6 +123,8 @@ export const PUBLISHED_CODES = [
   ...ERROR_KINDS,
   // Server terminal reasons seen by Auger.
   "session_expired", "adaptation_unavailable", "version_unavailable", "subtitle_selection_unavailable",
+  // Audio and subtitle failures (client mediaIncident).
+  "caption_load_failed", "audio_track_switch_failed", "subtitle_track_switch_failed",
 ];
 const PUBLISHED_CODE_SET = new Set(PUBLISHED_CODES);
 const CLIENT_CODE = /^[a-z0-9_]{1,48}$/;
@@ -307,6 +310,45 @@ export function validateFields(fields, raw) {
     }
   }
   return { value, missing };
+}
+
+// Declared audio/subtitle record (`md`, mv 1), mirroring the client's publicMediaEvidence. Never carries a track name,
+// label or cue text: tracks are described only by language code, codec, channels, enumerated flags, source and delivery.
+export const SUBTITLE_MODES = ["off", "render", "convert", "burn_in", "unknown"];
+export const SUBTITLE_SOURCES = ["external", "embedded", "downloaded", "unknown"];
+export const SUBTITLE_DELIVERIES = ["sidecar", "burn_in_only", "unknown"];
+export const SUBTITLE_DRAWERS = ["overlay", "avplay", "burn_in", "none"];
+export const CAPTION_LOAD_STATES = ["not_needed", "loading", "loaded", "failed", "fallback"];
+export const SWITCH_RESULTS = ["pending", "ok", "refused", "failed", "recovered"];
+const LANGUAGE = { kind: "pattern", re: LANGUAGE_PATTERN };
+const AUDIO_FORMAT = either(literal("unavailable"), object({ c: enumOf(AUDIO_CODECS), ch: int(1, 16) }));
+
+export const MEDIA_CONTRACT = Object.freeze({
+  mv: required(literal(1)),
+  a: object({ lang: LANGUAGE, src: AUDIO_FORMAT, pl: AUDIO_FORMAT, obs: AUDIO_FORMAT }),
+  s: object({
+    mode: required(enumOf(SUBTITLE_MODES)),
+    src: enumOf(SUBTITLE_SOURCES),
+    c: enumOf(SUBTITLE_CODECS),
+    dl: enumOf(SUBTITLE_DELIVERIES),
+    lang: LANGUAGE,
+    f: bool,
+    hi: bool,
+    via: required(enumOf(SUBTITLE_DRAWERS)),
+    ld: required(enumOf(CAPTION_LOAD_STATES)),
+    cues: int(0, 100_000),
+    sync: int(-600_000, 600_000),
+    sec: bool,
+  }),
+  sw: object({ k: required(enumOf(["audio", "subtitle"])), r: required(enumOf(SWITCH_RESULTS)), code: { kind: "code" } }),
+});
+
+/** Validates `md`; undefined when absent, malformed or carrying neither audio nor subtitle evidence. */
+export function validateMedia(raw) {
+  if (!isPlainObject(raw)) return undefined;
+  const checked = validateFields(MEDIA_CONTRACT, raw);
+  if (checked.missing.length > 0 || (checked.value.a === undefined && checked.value.s === undefined)) return undefined;
+  return checked.value;
 }
 
 /** Validates `inc`, returning `{ incident }` or `{ error, missing }`. */
