@@ -1000,6 +1000,46 @@ test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Ne
     r.controller.destroy();
 });
 
+test("opening Up Next over credits retries failed first-frame discovery and preserves countdown expiry across connection recovery (#795)", async () => {
+    // 1. Failed first-frame next-episode lookup is retried when credits open Up Next.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        r.h.fake.script("/catalog/series/series-1/seasons", problem(503, "unavailable", "Busy"));
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext?.next !== undefined && view.upNext.countdown === 10, "credits open retries failed first-frame lookup and starts countdown");
+        await r.h.clock.advance(10_000);
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "retried credits discovery advances after 10 s");
+        r.controller.destroy();
+    }
+    // 2. Countdown expiry during connection recovery still starts the next episode once recovery resumes playback.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.ok(last(r.views).phase === "playing");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(12_000);
+        assert.equal(last(r.views).phase, "loading", "still recovering when credits countdown expires");
+        r.avplay.finishPrepare();
+        r.avplay.finishSeek();
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "recovery resumption honours the expired credits countdown");
+        r.controller.destroy();
+    }
+});
+
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
     const r = await rig();
     const settings = new FakeSettings(r.h.fake);
@@ -2279,6 +2319,51 @@ test("automatic intro and mid-file credits skips do not reset the Still Watching
     await r.h.clock.advance(15_000);
     assert.equal(bodies(r.h, "/start").length, 2, "gated episode still waits for Play Now");
     r.controller.destroy();
+});
+
+test("manual audio and subtitle selection resets the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    for (const action of ["audio", "subtitle"] as const) {
+        const r = await episodeRig(undefined, undefined, () => 1);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const ep2View = last(r.views);
+        assert.ok(ep2View.phase === "playing");
+        if (action === "audio") {
+            assert.equal(ep2View.tracks.audio.state, "ready");
+            const otherAudio = ep2View.tracks.audio.choices[1];
+            assert.ok(otherAudio !== undefined);
+            r.controller.selectAudio(otherAudio.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        } else {
+            r.controller.selectSubtitle(ep2View.tracks.subtitles[0]?.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        }
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, `manual ${action} selection resets Still Watching`);
+        r.controller.destroy();
+    }
 });
 
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {

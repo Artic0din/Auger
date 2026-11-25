@@ -201,3 +201,62 @@ test("restored non-held journal entries resume delivery and clearKey supersedes 
     flusher.destroy();
     restored.destroy();
 });
+
+test("aborted writes stay in their original profile journal on scope switch and 429 Retry-After delays retries (#810)", async () => {
+    const clock = new ManualClock();
+    const storage = fakeStorage();
+    let currentScope = "server:profile-a";
+    const controller = new AbortController();
+    let rejectInFlight: ((error: unknown) => void) | undefined;
+    const flusher = new PlayerSettingsFlusher({
+        putValue: async () => new Promise<void>((_resolve, reject) => { rejectInFlight = reject; }),
+        effectiveValues: async () => new Map(),
+    }, clock, {
+        storage,
+        scopeId: () => currentScope,
+        signal: () => controller.signal,
+    });
+    flusher.enqueue(AUTO_PLAY, false);
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    // Profile switch changes scope before aborting the old authority signal and destroying the flusher.
+    currentScope = "server:profile-b";
+    controller.abort();
+    flusher.destroy();
+    rejectInFlight?.(new ApiError({ kind: "aborted" }));
+    await clock.advance(0);
+    // Returning to profile-a restores and delivers the unsaved write.
+    const delivered: SettingValue[] = [];
+    const returned = new PlayerSettingsFlusher({
+        putValue: async (_key, _scope, value) => { delivered.push(value); },
+        effectiveValues: async () => new Map(),
+    }, clock, { storage, scopeId: () => "server:profile-a" });
+    assert.equal(returned.unsettledValue(AUTO_PLAY), false, "aborted write survived profile switch in original partition");
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    assert.deepEqual(delivered, [false]);
+    returned.destroy();
+
+    // HTTP 429 with Retry-After: 60 s waits the full 60 s before retrying instead of burning retries in 31 s.
+    let throttleAttempts = 0;
+    const throttled = new PlayerSettingsFlusher({
+        putValue: async () => {
+            throttleAttempts += 1;
+            if (throttleAttempts === 1) {
+                throw new ApiError({
+                    kind: "problem",
+                    problem: { id: "rate_limited", status: 429, title: "Too Many Requests", detail: "Slow down", instance: "", errors: [] },
+                    retryAfterSeconds: 60,
+                });
+            }
+        },
+        effectiveValues: async () => new Map(),
+    }, clock);
+    throttled.enqueue(AUTO_PLAY, false);
+    await clock.advance(DEFAULT_DEBOUNCE_MS);
+    assert.equal(throttleAttempts, 1);
+    await clock.advance(59_999);
+    assert.equal(throttleAttempts, 1, "does not retry before server Retry-After deadline");
+    await clock.advance(1);
+    assert.equal(throttleAttempts, 2, "retries once Retry-After elapses and saves cleanly");
+    assert.deepEqual(throttled.heldKeys, []);
+    throttled.destroy();
+});

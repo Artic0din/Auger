@@ -1059,6 +1059,11 @@ export class PlaybackController implements PlayerControls {
         attempt.offer.credits = true;
         attempt.promptDismissed = false;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
+        else {
+            const offer = attempt.offer;
+            if (offer.episodeFailed && !offer.episodeLoading && !offer.episodeManualRetried) { offer.episodeManualRetried = true; this.retryEpisode(attempt); }
+            if (offer.deckFailed && !offer.deckLoading && !offer.deckManualRetried) { offer.deckManualRetried = true; this.retryDeck(attempt); }
+        }
         this.publishOffer(attempt);
         return true;
     }
@@ -1088,7 +1093,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (attempt.offer.cancelCreditsTimer !== undefined) return;
-        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        const deadline = attempt.offer.creditsDeadline ?? (this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000);
         attempt.offer.creditsDeadline = deadline;
         const tick = (): void => {
             if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || this.stillWatchingGated() || attempt.promptDismissed || this.completion !== undefined) {
@@ -1097,6 +1102,10 @@ export class PlaybackController implements PlayerControls {
             }
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
             if (remaining === 0) {
+                if (this.current.phase !== "playing" && this.current.phase !== "paused") {
+                    this.cancelCreditsCountdown(attempt, false);
+                    return;
+                }
                 this.cancelCreditsCountdown(attempt);
                 this.advanceNext(undefined, true);
                 return;
@@ -1209,7 +1218,7 @@ export class PlaybackController implements PlayerControls {
             const pending = attempt.pendingSubtitle;
             if (pending !== undefined && !attempt.busy && !attempt.reporting && attempt.change.state !== "changing") {
                 attempt.pendingSubtitle = undefined;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
             }
         };
         try {
@@ -1328,12 +1337,18 @@ export class PlaybackController implements PlayerControls {
         if (!audioChoices(attempt, plan).some((choice) => choice.id === trackId)) {
             return;
         }
+        this.stillWatching.recordViewerAction();
         // Omitting a subtitle from a track_change turns it off, so the shown one is named again.
         const subtitle = chosenTracks(attempt, plan).subtitle;
         this.changeTracks(attempt, plan, { audio: { id: trackId }, ...(subtitle === undefined ? {} : { subtitle }) });
     }
 
     selectSubtitle(trackId: string | undefined): void {
+        this.stillWatching.recordViewerAction();
+        this.applySubtitleSelection(trackId);
+    }
+
+    private applySubtitleSelection(trackId: string | undefined): void {
         const reporting = this.active();
         if (reporting?.reporting) {
             const plan = reporting.plan;
@@ -1478,7 +1493,7 @@ export class PlaybackController implements PlayerControls {
         const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
         if (track !== undefined) {
             if (!attempt.started || attempt.busy || track.unplayable === true) return false;
-            this.selectSubtitle(track.trackId);
+            this.applySubtitleSelection(track.trackId);
             return true;
         }
         if (!attempt.started || attempt.busy) return false;
@@ -2162,7 +2177,7 @@ export class PlaybackController implements PlayerControls {
                     return;
                 }
                 attempt.busy = false;
-                this.selectSubtitle(pending.id);
+                this.applySubtitleSelection(pending.id);
                 return;
             }
             attempt.subtitleRestore = { id: selectedSubtitle(next) };
@@ -2364,7 +2379,7 @@ export class PlaybackController implements PlayerControls {
         } else if (attempt.pendingSubtitle !== undefined && !attempt.busy) {
             const pending = attempt.pendingSubtitle;
             attempt.pendingSubtitle = undefined;
-            this.selectSubtitle(pending.id);
+            this.applySubtitleSelection(pending.id);
         }
         if (failure === undefined && (resolveCompletedSubtitle || resolveDownloadedSubtitle) && attempt.plan !== undefined && !attempt.busy) {
             this.applyPreparedSubtitleChoices(attempt, attempt.plan);
@@ -2510,6 +2525,7 @@ export class PlaybackController implements PlayerControls {
         const attempt = this.active();
         const plan = attempt?.plan;
         if (attempt === undefined || plan === undefined || attempt.hidden || attempt.restoring) return;
+        this.stillWatching.recordViewerAction();
         if (trackId === undefined) {
             this.clearSecondary(attempt);
             this.showPlayback(attempt);
@@ -2973,19 +2989,19 @@ export class PlaybackController implements PlayerControls {
             const track = plan.subtitle.inventory.find(track => track.syncKey === `stored-${resultId}`);
             if (track === undefined) attempt.ai?.notice("The completed subtitle is not in the refreshed inventory. Playback continues; try selecting it later.");
             else if (track.unplayable === true) attempt.ai?.notice(STORED);
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.pendingDownloadId !== undefined) {
             const id = attempt.pendingDownloadId;
             attempt.pendingDownloadId = undefined;
             const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${id}`);
             if (track === undefined || track.unplayable === true) attempt.search?.reportUnselected();
-            else this.selectSubtitle(track.trackId);
+            else this.applySubtitleSelection(track.trackId);
         }
         if (attempt.queuedSubtitle !== undefined) {
             const queued = attempt.queuedSubtitle;
             attempt.queuedSubtitle = undefined;
-            this.selectSubtitle(queued.id);
+            this.applySubtitleSelection(queued.id);
         }
     }
 
@@ -4410,6 +4426,9 @@ export class PlaybackController implements PlayerControls {
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
+        if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined && attempt.offer.cancelCreditsTimer === undefined && attempt.offer.creditsDeadline <= this.deps.clock.now()) {
+            this.startCreditsCountdownIfNeeded(attempt);
+        }
     }
 
     private inPromptWindow(attempt: Attempt): boolean {

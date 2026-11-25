@@ -65,6 +65,7 @@ interface PendingSettingWrite {
     readonly generation: number;
     failedAttempts: number;
     isHeld: boolean;
+    retryNotBeforeMs?: number;
 }
 
 export interface PlayerSettingsFlusherOptions {
@@ -92,6 +93,13 @@ function classifyFailure(error: unknown): "aborted" | "transient" | "permanent" 
     }
     if (error instanceof Error && error.name === "AbortError") return "aborted";
     return "transient";
+}
+
+function retryAfterMs(error: unknown): number | undefined {
+    if (error instanceof ApiError && error.retryAfterSeconds !== undefined && Number.isFinite(error.retryAfterSeconds) && error.retryAfterSeconds > 0) {
+        return Math.ceil(error.retryAfterSeconds * 1000);
+    }
+    return undefined;
 }
 
 /**
@@ -226,7 +234,7 @@ export class PlayerSettingsFlusher {
         let changed = false;
         for (const [key, write] of this.pending) {
             if (!write.isHeld) continue;
-            this.pending.set(key, { ...write, failedAttempts: 0, isHeld: false });
+            this.pending.set(key, { value: write.value, scope: write.scope, scopeId: write.scopeId, generation: write.generation, failedAttempts: 0, isHeld: false });
             changed = true;
         }
         if (changed) {
@@ -300,20 +308,28 @@ export class PlayerSettingsFlusher {
 
     private scheduleRestoredWrites(): void {
         if (this.destroyed) return;
+        const now = this.clock.now();
         let hasFresh = false;
-        let minRetryingAttempt: number | undefined;
+        let minRetryDelayMs: number | undefined;
         for (const write of this.pending.values()) {
             if (write.isHeld) continue;
-            if (write.failedAttempts === 0) hasFresh = true;
-            else minRetryingAttempt = minRetryingAttempt === undefined ? write.failedAttempts : Math.min(minRetryingAttempt, write.failedAttempts);
+            if (write.failedAttempts === 0 && (write.retryNotBeforeMs === undefined || write.retryNotBeforeMs <= now)) {
+                hasFresh = true;
+            } else {
+                const waitMs = write.retryNotBeforeMs !== undefined
+                    ? Math.max(0, write.retryNotBeforeMs - now)
+                    : retryDelayMs(this.retryPolicy, Math.max(1, write.failedAttempts));
+                minRetryDelayMs = minRetryDelayMs === undefined ? waitMs : Math.min(minRetryDelayMs, waitMs);
+            }
         }
         if (hasFresh) this.armDebounce();
-        else if (minRetryingAttempt !== undefined) this.armRetry(minRetryingAttempt);
+        else if (minRetryDelayMs !== undefined) this.armRetryDelay(minRetryDelayMs);
     }
 
     private hasSendableWrites(): boolean {
+        const now = this.clock.now();
         for (const write of this.pending.values()) {
-            if (!write.isHeld) return true;
+            if (!write.isHeld && (write.retryNotBeforeMs === undefined || write.retryNotBeforeMs <= now)) return true;
         }
         return false;
     }
@@ -331,13 +347,12 @@ export class PlayerSettingsFlusher {
         this.cancelDebounce = undefined;
     }
 
-    private armRetry(attempt: number): void {
+    private armRetryDelay(delayMs: number): void {
         this.clearRetryTimer();
-        const delay = retryDelayMs(this.retryPolicy, attempt);
         this.cancelRetry = this.clock.schedule(() => {
             this.cancelRetry = undefined;
             if (!this.destroyed) void this.flushNow();
-        }, delay);
+        }, Math.max(0, delayMs));
     }
 
     private clearRetryTimer(): void {
@@ -350,9 +365,11 @@ export class PlayerSettingsFlusher {
         const rejected: SettingsKey[] = [];
         try {
             while (!this.destroyed) {
+                const now = this.clock.now();
                 const snapshot = new Map<SettingsKey, PendingSettingWrite>();
                 for (const [key, write] of this.pending) {
                     if (write.isHeld) continue;
+                    if (write.retryNotBeforeMs !== undefined && write.retryNotBeforeMs > now) continue;
                     snapshot.set(key, write);
                     this.pending.delete(key);
                 }
@@ -364,8 +381,8 @@ export class PlayerSettingsFlusher {
                     const write = snapshot.get(key);
                     if (write === undefined || this.destroyed) continue;
                     if (this.readScopeId() !== write.scopeId) {
-                        this.inFlight.delete(key);
-                        this.failedInDrain.delete(key);
+                        if (this.inFlight.get(key) === write) this.inFlight.delete(key);
+                        if (this.isCurrent(key, write)) this.failedInDrain.set(key, write);
                         continue;
                     }
                     try {
@@ -387,31 +404,69 @@ export class PlayerSettingsFlusher {
                         } else {
                             const failedAttempts = write.failedAttempts + 1;
                             const isHeld = failedAttempts > this.retryPolicy.maximumAutomaticRetries;
-                            this.failedInDrain.set(key, { ...write, failedAttempts, isHeld });
+                            const serverWait = retryAfterMs(error);
+                            const delayMs = Math.max(retryDelayMs(this.retryPolicy, failedAttempts), serverWait ?? 0);
+                            const retryNotBeforeMs = isHeld ? undefined : this.clock.now() + delayMs;
+                            this.failedInDrain.set(key, {
+                                value: write.value,
+                                scope: write.scope,
+                                scopeId: write.scopeId,
+                                generation: write.generation,
+                                failedAttempts,
+                                isHeld,
+                                ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
+                            });
                         }
                     }
-                    this.persistJournal();
+                    if (this.readScopeId() === this.activeScopeId) this.persistJournal();
                 }
             }
         } finally {
             const currentScope = this.readScopeId();
-            let minRetryingAttempt: number | undefined;
+            const now = this.clock.now();
+            const preservedByScope = new Map<string, Map<SettingsKey, PendingSettingWrite>>();
+            const preserveOffScope = (key: SettingsKey, write: PendingSettingWrite): void => {
+                if (write.scopeId === currentScope || !this.isCurrent(key, write)) return;
+                let bucket = preservedByScope.get(write.scopeId);
+                if (bucket === undefined) {
+                    bucket = new Map();
+                    preservedByScope.set(write.scopeId, bucket);
+                }
+                bucket.set(key, write);
+            };
+            for (const [key, write] of this.inFlight) preserveOffScope(key, write);
             for (const [key, write] of this.failedInDrain) {
                 if (write.scopeId === currentScope && this.isCurrent(key, write) && !this.pending.has(key)) {
                     this.pending.set(key, write);
-                    if (!write.isHeld && write.failedAttempts > 0) {
-                        minRetryingAttempt = minRetryingAttempt === undefined ? write.failedAttempts : Math.min(minRetryingAttempt, write.failedAttempts);
-                    }
+                } else {
+                    preserveOffScope(key, write);
                 }
+            }
+            for (const [scopeId, entries] of preservedByScope) {
+                this.persistPreservedScope(scopeId, entries);
             }
             this.inFlight.clear();
             this.failedInDrain.clear();
-            this.persistJournal();
+            if (currentScope === this.activeScopeId) {
+                this.persistJournal();
+            } else if (!this.destroyed) {
+                this.syncScope();
+            }
+            let minRetryDelayMs: number | undefined;
+            for (const write of this.pending.values()) {
+                if (write.isHeld) continue;
+                if (write.failedAttempts > 0 || (write.retryNotBeforeMs !== undefined && write.retryNotBeforeMs > now)) {
+                    const waitMs = write.retryNotBeforeMs !== undefined
+                        ? Math.max(0, write.retryNotBeforeMs - now)
+                        : retryDelayMs(this.retryPolicy, Math.max(1, write.failedAttempts));
+                    minRetryDelayMs = minRetryDelayMs === undefined ? waitMs : Math.min(minRetryDelayMs, waitMs);
+                }
+            }
             this.draining = false;
             const queued = this.waiters.splice(0);
             for (const resolve of queued) resolve();
-            if (!this.destroyed && minRetryingAttempt !== undefined) {
-                this.armRetry(minRetryingAttempt);
+            if (!this.destroyed && minRetryDelayMs !== undefined) {
+                this.armRetryDelay(minRetryDelayMs);
             }
             this.notify();
             for (const key of rejected) this.onRejected?.(key);
@@ -420,6 +475,25 @@ export class PlayerSettingsFlusher {
 
     private notify(): void {
         for (const listener of [...this.listeners]) listener();
+    }
+
+    private persistPreservedScope(scopeId: string, entries: ReadonlyMap<SettingsKey, PendingSettingWrite>): void {
+        if (this.storage === undefined || entries.size === 0) return;
+        const storageKey = `${JOURNAL_PREFIX}${scopeId}`;
+        const merged: Record<string, PendingSettingWrite> = {};
+        try {
+            const raw = this.storage.getItem(storageKey);
+            if (raw !== null) {
+                const parsed = JSON.parse(raw) as unknown;
+                if (typeof parsed === "object" && parsed !== null) {
+                    Object.assign(merged, parsed as Record<string, PendingSettingWrite>);
+                }
+            }
+            for (const [key, write] of entries) merged[key] = write;
+            this.storage.setItem(storageKey, JSON.stringify(merged));
+        } catch {
+            // Public storage errors must not break playback or settings edits.
+        }
     }
 
     private persistJournal(): void {
@@ -452,6 +526,7 @@ export class PlayerSettingsFlusher {
                 const scope = record.scope === "profile" ? "profile" : "profile_device";
                 const failedAttempts = typeof record.failedAttempts === "number" && Number.isInteger(record.failedAttempts) && record.failedAttempts >= 0 ? record.failedAttempts : 0;
                 const isHeld = record.isHeld === true;
+                const retryNotBeforeMs = typeof record.retryNotBeforeMs === "number" && Number.isFinite(record.retryNotBeforeMs) ? record.retryNotBeforeMs : undefined;
                 if (!("value" in record)) continue;
                 this.pending.set(key as SettingsKey, {
                     value: record.value as SettingValue,
@@ -460,6 +535,7 @@ export class PlayerSettingsFlusher {
                     generation: this.bumpGeneration(key as SettingsKey),
                     failedAttempts,
                     isHeld,
+                    ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
                 });
             }
         } catch {
