@@ -254,6 +254,9 @@
             sub: readStr(parsed.play, "sub"),
             pos: readStr(parsed.play, "pos"),
             rb: readInt(parsed.play, "rb"),
+            hdr: typeof parsed.play.hdr === "boolean" ? parsed.play.hdr : undefined,
+            av: readStr(parsed.play, "av"),
+            fb: readInt(parsed.play, "fb"),
             n: readStrList(parsed.play, "n"),
             e: readStr(parsed.play, "e"),
           };
@@ -296,6 +299,9 @@
         if (play.sub) lines.push("Subtitle mode: " + play.sub);
         if (play.pos) lines.push("Position: " + play.pos);
         if (typeof play.rb === "number" && play.rb > 0) lines.push("Rebuffers: " + play.rb);
+        if (typeof play.hdr === "boolean") lines.push("HDR setting: " + (play.hdr ? "On" : "Off"));
+        if (typeof play.fb === "number" && play.fb > 0) lines.push("Route fallbacks: " + play.fb);
+        if (play.av) lines.push("AVPlay error: " + play.av);
         if (play.st) lines.push("Status: " + play.st);
         if (play.n) {
           play.n.forEach(function (note, idx) {
@@ -383,6 +389,9 @@
         addRow(playList, "Dynamic Range", payload.play.dr);
         addRow(playList, "Audio", payload.play.a);
         addRow(playList, "Subtitles", payload.play.s);
+        addRow(playList, "HDR setting", typeof payload.play.hdr === "boolean" ? (payload.play.hdr ? "On" : "Off") : undefined);
+        addRow(playList, "Route fallbacks", typeof payload.play.fb === "number" && payload.play.fb > 0 ? String(payload.play.fb) : undefined);
+        addRow(playList, "AVPlay error", payload.play.av);
         addRow(playList, "Status", payload.play.st);
         if (payload.play.n) addRow(playList, "Diagnostics", payload.play.n.join(" | "));
         addRow(playList, "Last Error", payload.play.e);
