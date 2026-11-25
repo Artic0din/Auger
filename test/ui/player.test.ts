@@ -920,18 +920,24 @@ test("loading spinner waits 500ms before showing, stays for 500ms minimum, fades
     const { page } = await open();
     try {
         // Short initial load (< 500ms) never flashes the spinner.
+        const opacity = (): Promise<string> => page.locator(".player-spinner").evaluate(node => {
+            for (const animation of node.getAnimations()) animation.finish();
+            return getComputedStyle(node).opacity;
+        });
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
         await page.clock.runFor(499);
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
         await page.clock.runFor(1);
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
+        assert.equal(await opacity(), "1");
         const fade = await page.locator(".player-spinner").evaluate(node => {
             const style = getComputedStyle(node);
             return { property: style.transitionProperty.split(", ")[0], duration: style.transitionDuration.split(", ")[0], timing: style.transitionTimingFunction.split(", ")[0] };
         });
         assert.deepEqual(fade, { property: "opacity", duration: "0.2s", timing: "ease-out" });
 
-        // Ending playback stall 100ms after spinner appears holds it for the remaining 400ms.
+        // Ending playback stall 100ms after spinner appears holds it for the remaining 400ms, then fades opacity to 0.
         await page.clock.runFor(100);
         await show(page, playing(TRACKS));
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
@@ -939,8 +945,24 @@ test("loading spinner waits 500ms before showing, stays for 500ms minimum, fades
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
         await page.clock.runFor(1);
         assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
 
-        // With the options panel open during buffering, the spinner sits below playerMenuPanelBottom (560px).
+        // Transitioning to error before the 500ms show delay expires cancels the pending spinner.
+        await show(page, { phase: "loading", title: "The Movie" });
+        await page.clock.runFor(250);
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
+        await page.clock.runFor(600);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
+
+        // With the options panel open during buffering, alerts snap below the panel immediately and the spinner clears it too.
+        await show(page, { ...playing(TRACKS), buffering: true });
+        await page.clock.runFor(500);
+        await openPanel(page);
+        assert.equal(await page.locator(".player-alerts").evaluate(node => getComputedStyle(node).transitionProperty), "none", "alerts snap below the open HUD without sliding across it");
+        // When Up Next closes the options panel, the alert stack clears player-alerts-hud immediately.
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true }, deck: [], countdown: 30, status: "Up Next" } });
+        assert.equal(await page.locator(".player-alerts").evaluate(node => node.classList.contains("player-alerts-hud")), false);
         await show(page, { ...playing(TRACKS), buffering: true });
         await page.clock.runFor(500);
         await openPanel(page);

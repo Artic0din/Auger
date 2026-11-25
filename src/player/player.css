@@ -420,6 +420,8 @@
 /* PlayerView.playerMenuPanelBottom (PlayerView.swift:339, 928): below the open options panel so alerts never cover it. */
 .player-alerts.player-alerts-hud {
     top: 560px;
+    /* Snap below the panel on the first frame instead of sliding across it at z-index 3. */
+    transition: none;
 }
 
 .player-alert {

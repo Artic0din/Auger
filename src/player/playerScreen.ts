@@ -1094,6 +1094,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             cancelScrub();
             closeMenu();
             hud.hidden = true;
+            alerts.classList.remove("player-alerts-hud");
+            spinner.classList.remove("player-spinner-hud");
             skip.hidden = true;
             const candidate = view.phase === "completion" ? view.next : prompt?.next;
             const cards = view.phase === "completion" ? view.deck ?? [] : prompt?.deck ?? [];
