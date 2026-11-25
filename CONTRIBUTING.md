@@ -8,7 +8,9 @@
 ## Write a useful issue
 
 Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) for problems
-in the Samsung TV app. Server and API problems belong in the upstream
+in the Samsung TV app. See [docs/reporting-bugs.md](docs/reporting-bugs.md) for
+where to find your TV model, Auger version, and the player's **Stats** tab. Server
+and API problems belong in the upstream
 [`silo-server`](https://github.com/Silo-Server/silo-server/issues/new/choose)
 repository. Search first; if an issue already covers the problem, add what's
 new there.
@@ -32,15 +34,12 @@ the repository's Security tab, not in a public issue.
 
 ## Pull requests
 
-Pull requests are welcome when accompanied by an issue. 
+Pull requests are welcome when accompanied by an issue.
 The rest of this guide applies to those pull requests.
 
 ## Before you start
 
-Open an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before
-implementing a feature, navigation or behavior change, large refactor, or work
-that changes the shared server contract. Documentation, narrow fixes, and
-well-scoped parity corrections can go straight to a pull request.
+Open or link an [issue](https://github.com/Artic0din/Auger-Tizen/issues) before opening a pull request so changes stay scoped and tracked.
 
 This repository owns Auger, a third-party Samsung TV (Tizen) client for Silo.
 Server/API work belongs in the upstream
@@ -58,14 +57,13 @@ A running Silo Server is required for live sign-in, browsing, and playback valid
 
 ## Validate your change
 
-Run focused tests while iterating. Before opening a pull request, run the main local checks:
+Run focused tests while iterating. Before opening a pull request, run the full test suite and any matching script checks from `.github/workflows/ci-scripts.yml`:
 
 ```sh
 npm test
-python3 scripts/test-release-version.py
 ```
 
-`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs `scripts/ci/check-no-api-v1.sh`, `scripts/ci/check-no-api-v1.test.sh`, repository baseline and PR hygiene and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and compare it with Apple TV following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
+`npm test` runs strict type checks, the production build, native tests, and Playwright screen tests. CI also runs all script and guard tests in `.github/workflows/ci-scripts.yml`, repository baseline checks, and parity-drift checks. For user-visible changes, package `dist/Auger.wgt` and compare it with Apple TV following [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Desktop Chromium and the Samsung TV simulator do not prove TV rendering, AVPlay playback, or physical remote behavior.
 
 ## Open the pull request
 
@@ -74,6 +72,8 @@ which surfaces are affected, paste the actual validation results, and call out
 any server, Apple or Android compatibility concerns. Fill in the template's
 AI Disclosure section: the harness, tools, and models used, the level of AI
 involvement, and any adversarial review, or "none" and "No AI used".
+Write the template's `## Release Notes` section for people using Auger, or
+"None" for an internal-only change, because it becomes the GitHub Release notes.
 
 ## Licensing of contributions
 

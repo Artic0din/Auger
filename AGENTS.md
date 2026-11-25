@@ -4,74 +4,44 @@
 
 Read the matching reference before editing a branch of the codebase.
 
-- **Domain terms and entity rules.** Read [GLOSSARY.md](GLOSSARY.md) and [docs/domain-model.md](docs/domain-model.md), plus `docs/adr/` when present.
-- **Navigation, menus, grids, dialogs, or custom controls.** Read [docs/tv-focus.md](docs/tv-focus.md).
-- **API v2 operations, auth, retries, or error decoding.** Read [docs/native-api-v2.md](docs/native-api-v2.md) and [src/contracts/v2/README.md](src/contracts/v2/README.md).
-- **Porting a feature from Apple TV or Android TV.** Read [docs/upstream-design-notes.md](docs/upstream-design-notes.md).
-- **Settings keys and AVPlay exclusions.** Read [docs/settings.md](docs/settings.md).
-- **Simulator launch, signed `.wgt` capture, and Apple TV comparison.** Read [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md).
-- **Feature, playback, HUD, offline, and translation specs.** Use the index in [docs/README.md](docs/README.md).
+- **Domain terms and entity rules.** Read [GLOSSARY.md](GLOSSARY.md) and [docs/domain-model.md](docs/domain-model.md).
+- **Runtime overview and hardware proof status.** Read [docs/app-behaviour.md](docs/app-behaviour.md) and [FEATURES.md](FEATURES.md).
+- **TV focus, menus, grids, dialogs, or remote keys.** Read [docs/tv-focus.md](docs/tv-focus.md).
+- **API v2 transport, auth, retries, or contract fixtures.** Read [docs/native-api-v2.md](docs/native-api-v2.md) and [src/contracts/v2/README.md](src/contracts/v2/README.md).
+- **Settings keys, scopes, and AVPlay exclusions.** Read [docs/settings.md](docs/settings.md).
+- **Translations, string catalog, and Arabic RTL.** Read [docs/translation.md](docs/translation.md) and [src/i18n/catalog/README.md](src/i18n/catalog/README.md).
+- **Offline cache, KeyManager artwork, and cold-start restore.** Read [docs/offline-browse.md](docs/offline-browse.md).
+- **Player options HUD, playback quality, autoplay, trickplay, or subtitles.** Read [docs/player-hud.md](docs/player-hud.md) and the playback specs in [docs/README.md](docs/README.md#playback).
+- **Browse, Details, Search, Person, Requests, Accounts, or Watch Party.** Use the feature specs in [docs/README.md](docs/README.md#features).
+- **Porting from Apple TV or Android TV.** Read [docs/upstream-design-notes.md](docs/upstream-design-notes.md).
 - **Tests, fake clocks, and flake hunting.** Read [test/README.md](test/README.md).
+- **Simulator capture, signed `.wgt` verification, and Apple TV comparison.** Read [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md).
 - **Releases, sideloading, and Apps2Samsung.** Read [docs/releasing.md](docs/releasing.md).
-- **Pull request conventions and AI disclosure.** Read [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md).
+- **Fonts and third-party marks.** Read [app/fonts/README.md](app/fonts/README.md) and [app/third-party/README.md](app/third-party/README.md).
+- **Pull requests and AI disclosure.** Read [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md).
 
-## Workspace and module boundaries
+## Workspace and upstream boundaries
 
-This repository owns Auger, a third-party Samsung TV client for Silo, a plain Tizen web app (`.wgt`) targeting Tizen 8.0 or later (Chromium 108).
+Auger is a third-party Samsung TV client for Silo packaged as a Tizen web app (`.wgt`) targeting Tizen 8.0 or later (Chromium 108).
 
-- `app/` holds the package manifest (`config.xml`), HTML entry, icons, fonts, and third-party marks.
-- `src/api/`, `src/session/`, and `src/contracts/v2/` own `/api/v2` transport, sessions, active Profile Authority, and contract decoders.
+- `app/` holds `config.xml`, HTML entry, icons, fonts, and third-party marks.
+- `src/api/`, `src/session/`, and `src/contracts/v2/` own `/api/v2` transport, sessions, active Profile Authority, and decoders.
 - `src/ui/` owns screens and remote focus; `src/player/` owns AVPlay playback.
-- `test/native/` holds `node:test` suites; `test/ui/` holds Playwright screen tests; `scripts/` holds build, packaging, and release scripts; `docs/` holds specs and validation notes.
-
-Silo's own repositories are read-only upstream references.
-
-- Treat `silo-server` as read-only upstream. Keep all code edits and GitHub issues inside `Artic0din/Auger-Tizen`.
-- Use `silo-apple` (tvOS) as the TV behavior and layout reference, and compare `silo-android` for shared TV behavior.
-- Port code only from `silo-apple` and `silo-android` (same AGPL license), keeping ports minimal and idiomatic for TypeScript on Tizen. Never copy from `jellyfin-web` or `jellyfin-tizen`.
-- Check compatibility with upstream `silo-server` when touching auth, API models, playback, browsing, or metadata. Server issues belong in upstream `silo-server`; keep server concerns out of this repository.
+- `test/native/` holds `node:test` suites; `test/ui/` holds Playwright screen tests; `scripts/` holds build, packaging, and CI scripts; `docs/` holds specs.
+- Keep all edits and issues inside `Artic0din/Auger-Tizen`; treat `silo-server`, `silo-apple` (tvOS layout and behavior reference), and `silo-android` (shared TV reference) as read-only upstream repositories.
+- Port client behavior exclusively from `silo-apple` and `silo-android` (shared AGPL license) in idiomatic TypeScript for Tizen.
 
 ## Parity delivery gates
 
-### Before editing UI or behavior
-
-1. Read the affected Apple TV Swift source in `silo-apple`, including for integration fixes. Record the source revision separately from any installed Apple build.
-2. Compare the complete experience: layout, typography, color, spacing, copy, focus, motion, remote keys, and loading, failure, Retry, offline, empty, and artwork-fallback states.
-3. Inspect existing Tizen owners (shell, artwork, cards, focus, scrolling, dialogs, paging, session) and fix shared causes at their owner instead of rebuilding them per screen.
-
-### Before merging user-facing parity changes
-
-1. Demonstrate parity with a same-state Apple TV and Samsung comparison on the signed `.wgt` before merging, using identical content, selection, focus, scroll, matching logical viewports with each capture's actual pixel dimensions recorded, and verified installed asset hashes (see [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md)). Repeat installed asset hash verification against the updated signed `.wgt` and recapture affected comparisons after any subsequent parity-affecting change. Add a recording when focus, motion, or timing matters. Passing tests, source review, or CI do not substitute for native comparison.
-2. Fix implementation differences. For a demonstrated platform constraint, ship the closest practical substitute, document why, and attach the comparison. Waivers apply only to the explicitly accepted gap.
-3. Preserve focus, cancellation, authority, paging, and request-count regression assertions during test migrations. Diagnose failures rather than relaxing checks or assuming a later pass proves a flake.
-
-### Runtime ownership and parallel work
-
-- Run at most one Apple TV simulator and one Samsung TV simulator concurrently, with one input owner per simulator.
-- Test the authorized SDK debugging interface before reporting a blocker. A locked desktop or missing generic device listing does not establish unavailability.
-- Keep physical-TV validation deferred until simulator parity completes.
-
-## Commands and proof bar
-
-See `package.json` for standard scripts (`npm ci`, `npm run build`, `npm test`, `npm run typecheck`; requires Node.js 26+ and `npx playwright install chromium`). Only one screen-test suite runs per machine; a second `npm run test:ui` waits for the first.
-
-- `python3 scripts/test-release-version.py` tests the release version script.
-- `SILO_SERVER_REPO=/path/to/silo-server scripts/sync-apiv2-fixtures.sh <server-commit>` re-vendors API v2 fixtures. Regenerate with this script instead of hand-editing `src/contracts/v2/fixtures/`.
-- `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh` packages and signs `dist/Auger.wgt`.
-- `tizen install -n dist/Auger.wgt -t <device>` and `tizen run -p AugerTv001.Auger -t <device>` install and launch on a Developer Mode TV.
-
-The proof bar requires a built signed `.wgt` and passing simulator parity gates, with physical-TV validation as the final hardware gate. Desktop Chromium proves behavior, not Chromium 108 rendering or AVPlay. The Samsung simulator launches with `--disable-web-security`, so simulator requests do not prove browser CORS, LAN discovery, pinned local certificates, or physical-TV acceptance.
+1. **Before editing UI or behavior:** read the affected Apple TV Swift source in `silo-apple` (recording its commit SHA separately from any installed build), compare all states (layout, typography, focus, motion, keys, loading, error, Retry, offline, empty, artwork fallback), and inspect existing Tizen owners (shell, artwork, cards, focus, scrolling, dialogs, paging, session) to fix shared causes at their owner.
+2. **Before merging user-facing parity changes:** demonstrate same-state Apple TV and Samsung parity on the signed `.wgt` with verified installed asset hashes and recorded pixel dimensions per [docs/evidence/simulator-evidence.md](docs/evidence/simulator-evidence.md). Re-verify hashes and recapture after any parity-affecting change, and add a recording when focus, motion, or timing matters. Passing tests, source review, or CI do not substitute for native comparison. For a demonstrated platform limit, ship the closest substitute, document why, and attach the comparison; waivers apply only to the explicitly accepted gap.
+3. **Runtime ownership:** run at most one Apple TV simulator and one Samsung TV simulator concurrently, with one input owner per simulator; test the authorized SDK debugging interface before reporting a blocker; defer physical-TV checks until simulator parity completes.
 
 ## Platform invariants
 
-- **API v2 and session.** Call only `/api/v2` (`scripts/ci/check-no-api-v1.sh` enforces this in CI). Keep server operations and decoders in `src/api/` and `src/contracts/v2/`, and route UI and player calls through the session transport and active Profile Authority. Generate `DeviceId` once per install independent of Server URL or Account. Store credentials only in the protected vault or explicit session-only fallback. Sign-in uses device-code approval (with password fallback) followed by Household Profile selection and PIN verification when required. Check Server CORS and origin rules on the target runtime being claimed.
-- **Playback.** Use AVPlay for primary video playback; the Server plans Direct Play, Remux, or HLS (MPEG-TS segments) Transcode from the TV's capabilities and quality limits, with no DTS Direct Play and no client ABR logic. Report start, progress every 10 s, and stop through the adapter. Pass stream auth as a query parameter because AVPlay cannot send HTTP headers. Suspend and restore AVPlay on `visibilitychange`, rebuilding the stream URL on restore. Resume from stored seconds and skip resume within 5 s of the end.
-- **Package and artwork.** Target the Samsung S95C with supported installed firmware and validate its actual OS and AVPlay capabilities rather than assuming from model year. Keep `$WEBAPIS/webapis/webapis.js` in `app/index.html`, `<object type="application/avplayer">` in `src/player/playerScreen.ts`, and only the `internet`, `tv.inputdevice`, and `productinfo` privileges (plus `object-src 'self'`) in `app/config.xml` unless proven necessary (AVPlay needs no privilege). Render artwork with plain `<img>` elements pointing at Server image URLs.
-- **TV focus.** Give each screen zone one focus owner, handle D-pad `keydown` moves in app code (Samsung remotes deliver plain `keydown` events and have no Tab key), restore focus by zone id and item id, move focus programmatically only when the focused item disappears, and avoid fetching on focus moves outside the six named exceptions in [docs/tv-focus.md](docs/tv-focus.md) (`filter`, `season-pill`, `episode-detail`, `outer-edge`, `featured-card`, `marquee-rest`).
-
-## Code, writing, pull requests, and security
-
-- **Code.** Write strict TypeScript with no `any`, explicit `.ts` import extensions, and Skyline design tokens in `src/theme.css`. Keep changes MVP, YAGNI, and KISS, with focused regression tests for changed behavior and rendered checks for visual changes.
-- **Writing.** Run a readability pass on every human-facing issue, pull request, document, and status update. Lead with the outcome in concrete active English, cut filler and repetition, and keep exact quotations, commands, logs, identifiers, API names, and contractual language verbatim.
-- **Pull requests.** Work on a feature branch and open one non-draft pull request per concern with a Conventional Commit title. Put `Fixes #N` or `Closes #N` in the pull request body only, never in commit messages. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) for the required AI disclosure. Scrub private details including DUIDs from media and keep PR-only assets out of Git.
-- **Security.** Run `gitleaks git --staged --redact` before every commit and scan the outgoing commit range before every push. Keep certificates, `.p12` files, security profiles, passwords, server URLs, tokens, and DUIDs out of Git. CI signs public packages with the Tizen SDK public distributor certificate so no personal Samsung TV certificate or DUID appears in CI artifacts or GitHub Releases; local TV sideloading signs with your own local Tizen Studio profile. `npm ci` installs a pre-commit hook from `.githooks/` that runs the staged scan and the type check, and the Secrets workflow scans every pull request's commits.
+- **API v2 and session:** call `/api/v2` exclusively (`scripts/ci/check-no-api-v1.sh` enforces this in CI), keep operations and decoders in `src/api/` and `src/contracts/v2/`, route UI/player requests through `NativeSession` and active Profile Authority, and store credentials only in Tizen KeyManager or explicit session-only memory.
+- **Playback:** use AVPlay (`<object type="application/avplayer">` in `src/player/playerScreen.ts`) for primary video playback under server-planned Direct Play, Remux, or HLS Transcode (no DTS Direct Play, no client ABR). Pass stream auth via query parameter, report start/10 s progress/stop through the adapter, and suspend/restore AVPlay on `visibilitychange`.
+- **Package and artwork:** validate capabilities on the target hardware (Samsung S95C baseline) rather than model year; keep `$WEBAPIS/webapis/webapis.js` in `app/index.html`, limit `app/config.xml` privileges to `internet`, `tv.inputdevice`, and `productinfo` while retaining `object-src 'self'` in its CSP, and render artwork with plain `<img>` elements.
+- **TV focus:** give each screen zone one focus owner, handle D-pad `keydown` moves in app code, restore focus by `{ zone, key }`, move focus programmatically only when the focused item disappears, and limit focus-move fetches to the six named exceptions in [docs/tv-focus.md](docs/tv-focus.md).
+- **Code and tests:** write strict TypeScript (no `any`, explicit `.ts` imports, Skyline tokens in `src/theme.css`). Run scripts from `package.json` (`npm test` requires Node 26+ and Playwright Chromium) and CI script checks in `.github/workflows/ci-scripts.yml`; preserve focus, cancellation, authority, paging, and request-count assertions when editing tests, and diagnose failures rather than relaxing checks or assuming a later pass proves a flake.
+- **Security and PRs:** run `gitleaks git --staged --redact` before every commit and scan the outgoing range before pushing; keep certificates, `.p12` files, security profiles, passwords, server URLs, tokens, DUIDs, and PR-only media out of Git. Open one non-draft Conventional Commit PR per concern following [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md), placing `Closes #N` in the PR body only. For every user-facing PR (`feat`, `fix`, `perf`, `revert`, or breaking), fill in `## Release Notes` in plain language for Samsung TV users (what changed, why it matters, and where to find it; no internal symbols, no "match Apple TV" phrasing, and no `#123` references; `None` only for internal-only fixes), which `CI scripts / test` enforces before merge.

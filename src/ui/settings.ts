@@ -1,5 +1,7 @@
 import type { NativeSession } from "../session/session.ts";
-import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
+import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import { FocusHost, type FocusItem, type FocusTarget } from "./browseFocus.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
@@ -27,12 +29,15 @@ import { EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ExperimentalFeatu
 import { applyLayoutDirection } from "../i18n/direction.ts";
 import { translate, translateTv, type MessageKey } from "../i18n/translate.ts";
 import { heldSelect } from "./selectRelease.ts";
+import { buildDiagnosticsReportUrl, DIAGNOSTICS_CATEGORIES, type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult, formatDeviceDetails, sendDiagnosticsReportFor } from "../diagnostics.ts";
 
-type Category = "general" | "playback" | "subtitles" | "server";
-const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
-const CATEGORY_DETAILS = { general: "settings.rail.general", playback: "settings.railDescription.playback", subtitles: "settings.rail.subtitles", server: "settings.rail.server" } as const satisfies Record<Category, MessageKey>;
-const CATEGORY_ICONS = { general: "gearshape", playback: "playback", subtitles: "subtitles", server: "switch-server" } as const;
-const CATEGORY_BLURBS = { general: "settings.blurb.generalAppleTv", playback: "settings.blurb.playbackAppleTv", subtitles: "settings.blurb.subtitles", server: "settings.blurb.serverAppleTv" } as const satisfies Record<Category, MessageKey>;
+type Category = "general" | "playback" | "subtitles" | "diagnostics" | "server";
+const CATEGORY_LABELS = { general: "settings.general", playback: "settings.playback", subtitles: "settings.subtitles", diagnostics: "player.settings.diagnostics", server: "settings.category.server" } as const satisfies Record<Category, MessageKey>;
+const CATEGORY_DETAILS = { general: "settings.rail.general", playback: "settings.railDescription.playback", subtitles: "settings.rail.subtitles", server: "settings.rail.server" } as const;
+const CATEGORY_ICONS = { general: "gearshape", playback: "playback", subtitles: "subtitles", diagnostics: "diagnostics", server: "switch-server" } as const;
+const CATEGORY_BLURBS = { general: "settings.blurb.generalAppleTv", playback: "settings.blurb.playbackAppleTv", subtitles: "settings.blurb.subtitles", server: "settings.blurb.serverAppleTv" } as const;
+const DIAGNOSTICS_DETAIL = "Reports and support";
+const DIAGNOSTICS_BLURB = "Send a redacted bug report directly to GitHub, or share via QR code.";
 const FEATURE_TITLES = { watchParty: "settings.experimental.watchParty" } as const satisfies Record<ExperimentalFeature, MessageKey>;
 /** First sentence of SettingsViewModel.hdrFooterText (136-143), without "without Dolby Vision". The tvOS original-file sentence is omitted; see docs/settings.md. */
 // After STREAMING, as TVPlaybackSettingsView.swift:248. The Lossless and TrueHD sentences at 251-257 are not on this pane.
@@ -50,7 +55,7 @@ const SKIP_PICKER_TITLES = { "seek-back": "settings.skipIntervals.picker.videoBa
 const pickerTitle = (picker: Picker): string => translate(picker in SKIP_PICKER_TITLES ? SKIP_PICKER_TITLES[picker as keyof typeof SKIP_PICKER_TITLES] : PICKER_LABELS[picker]);
 const onOffText = (on: boolean): string => translate(on ? "settings.on" : "settings.off");
 const BITRATE_CHOICES = [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500];
-export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
+export interface SettingsActions { readonly showAudiobooks?: ShowAudiobooks; readonly stillWatching?: StillWatchingPreference; readonly playerSettings?: PlayerSettingsFlusher; readonly profileName: string; readonly profileAvatarUrl?: string | undefined; readonly profileAvatarText?: string | undefined; readonly accountName?: string | undefined; readonly switchProfile: () => void; readonly signOut?: () => void; readonly serverName?: string | undefined; readonly switchServer?: (back: () => void) => void; /** True when this sign-out removes the saved server. Unreadable account lists return false. */ readonly removesServer?: () => boolean }
 export interface SettingsScreen { destroy(): void }
 
 function settingsChevron(): SVGSVGElement {
@@ -63,28 +68,38 @@ function settingsChevron(): SVGSVGElement {
     return icon;
 }
 
-export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences): SettingsScreen {
+export function mountSettings(root: HTMLElement, session: NativeSession, close: (hiddenChanged: boolean, titleArt?: boolean) => void, launch?: ProfileLaunch, actions?: SettingsActions, accounts?: (back: () => void) => void, spoilers?: EpisodeSpoilerPreferences, experimental?: ExperimentalFeatures, themeMusic?: ThemeMusicPreferences, appLanguage?: AppLanguagePreferences, diagnostics?: DiagnosticsCollector, sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal, category?: DiagnosticsCategory) => Promise<DiagnosticsSendResult>): SettingsScreen {
     const container = el("section", "browse settings");
     container.setAttribute("aria-label", translate("settings.title"));
     root.appendChild(container);
     const host = new FocusHost(container);
+    const diagnosticsCollector = diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
+    const submitDiagnostics = sendDiagnostics ?? ((collector, signal, category) => sendDiagnosticsReportFor(collector.reportFor(category), (url, init) => window.fetch(url, init), { signal }));
     let category: Category = "general";
     let picker: Picker | undefined;
     let extraPicker: SettingsRow | undefined;
     let confirmingPlaybackReset = false;
     let pendingPlaybackReset: SettingsKey[] = [];
     let privacy = false;
+    let diagnosticsQr = false;
+    let confirmingDiagnosticsSend = false;
+    let diagnosticsSending = false;
+    let diagnosticsStatus: { readonly kind: "ok" | "error"; readonly text: string } | undefined;
+    const diagnosticsSendController = new AbortController();
     let paneSnapshot: HTMLElement | undefined;
     let activeModal: string | undefined;
     let modalPaneTop = 0;
     let confirmingAppearanceReset = false;
-    let returnRow: Picker | "acknowledgements" | "subtitle-forced" = "acknowledgements";
+    let returnRow: Picker | "acknowledgements" | "subtitle-forced" | "send-diagnostics" | "share-diagnostics" = "acknowledgements";
     let acknowledging = false;
     let confirmingSignOut = false;
     let choosingLaunch = false;
     let choosingLanguage = false;
+    let choosingStillWatching = false;
     let languageRead = false;
     let torn = false;
+    let heldBusy = false;
+    let heldDiscardFailed = false;
     let launchPending = false;
     let launchError = false;
     let launchTarget: LaunchBehavior = "askEveryLaunch";
@@ -111,7 +126,16 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const state = new SettingsState(session, () => render());
     const connection = new ConnectionSpeed(session, () => { if (!torn) render(host.focused()); });
     const stopSpoilers = spoilers?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
+    const stopPlayerSettings = actions?.playerSettings?.subscribe(() => {
+        if (torn) return;
+        if ((actions.playerSettings?.heldKeys.length ?? 0) === 0) heldDiscardFailed = false;
+        render(host.focused());
+    }) ?? (() => undefined);
+    const stopPlayerSettingsCommit = actions?.playerSettings?.onCommit(() => {
+        if (!torn && !heldBusy && !state.busy && state.loaded && state.error === undefined) void state.load();
+    }) ?? (() => undefined);
     const stopThemeMusic = themeMusic?.subscribe(() => { if (!torn) render(host.focused()); }) ?? (() => undefined);
+    const stopDiagnostics = diagnosticsCollector.subscribe(() => { if (!torn && (category === "diagnostics" || diagnosticsQr)) render(host.focused()); });
     // A language change repaints Settings, but not under a held Select: it waits for the release, as Browse's reconcileLanguage does.
     let repaintAfterRelease = false;
     const stopAppLanguage = appLanguage?.subscribe(() => {
@@ -136,8 +160,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         torn = true;
         connection.stop();
         stopSpoilers();
+        stopPlayerSettings();
+        stopPlayerSettingsCommit();
         stopThemeMusic();
         stopAppLanguage();
+        stopDiagnostics();
+        diagnosticsSendController.abort();
         document.removeEventListener("keyup", onKeyUp);
         launchController.abort();
         stopAuthority();
@@ -158,9 +186,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (confirmingPlaybackReset) { if (state.busy) return; confirmingPlaybackReset = false; pendingPlaybackReset = []; render({ zone: "settings-rows", key: "reset-playback" }); }
         else if (confirmingAppearanceReset) { confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
         else if (privacy) { privacy = false; render({ zone: "settings-rows", key: "privacy" }); }
+        else if (confirmingDiagnosticsSend) { if (diagnosticsSending) return; confirmingDiagnosticsSend = false; render({ zone: "settings-rows", key: "send-diagnostics" }); }
+        else if (diagnosticsQr) { diagnosticsQr = false; render({ zone: "settings-rows", key: "share-diagnostics" }); }
         else if (extraPicker !== undefined) { const key = extraPicker.id; extraPicker = undefined; render({ zone: "settings-rows", key }); }
         else if (choosingLaunch) { choosingLaunch = false; render({ zone: "settings-rows", key: "remember-profile" }); }
         else if (choosingLanguage) { choosingLanguage = false; render({ zone: "settings-rows", key: "app-language" }); }
+        else if (choosingStillWatching) { choosingStillWatching = false; render({ zone: "settings-rows", key: "still-watching" }); }
         else if (confirmingSignOut) { confirmingSignOut = false; render({ zone: "settings-categories", key: "settings-signout" }); }
         else if (acknowledging) { acknowledging = false; render(rowFocus()); }
         else if (picker !== undefined) { picker = undefined; render(rowFocus()); }
@@ -240,18 +271,27 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (state.error !== undefined) { const error = el("p", "browse-text browse-error settings-warning", state.error); error.setAttribute("role", "alert"); nodes.push(error); }
         return nodes;
     };
-    const retryButton = (): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void state.retry(); })];
+    const serializePlayerSetting = <T>(key: SettingsKey, work: () => Promise<T>): Promise<T> =>
+        actions?.playerSettings === undefined ? work() : actions.playerSettings.runSerialized(key, work);
+    const retryButton = (onSuccess?: () => void, serializeKey?: SettingsKey): FocusItem[] => state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
+        const run = (): Promise<void> => state.retry();
+        void (serializeKey === undefined ? run() : serializePlayerSetting(serializeKey, run)).then(() => {
+            if (!torn && state.error === undefined) onSuccess?.();
+        });
+    })];
     const resetPlayback = async (retry = false): Promise<void> => {
         if (state.busy) return;
         if (retry) {
-            await state.retry();
+            const firstKey = pendingPlaybackReset[0];
+            await (firstKey === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.retry()) : state.retry());
             if (torn || state.error !== undefined) return;
         }
         while (pendingPlaybackReset.length > 0) {
             const key = pendingPlaybackReset[0];
             if (torn || !confirmingPlaybackReset || key === undefined) return;
-            await state.reset(key);
+            await (key === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.reset(key)) : state.reset(key));
             if (torn || state.error !== undefined) return;
+            if (key === AUTO_NEXT_KEY) actions?.playerSettings?.clearKey(key);
             pendingPlaybackReset.shift();
         }
         if (!torn) back();
@@ -272,7 +312,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
         }
         card.append(...content);
-        if (name !== "settings:privacy") {
+        if (name !== "settings:privacy" && name !== "settings:diagnostics-qr") {
             const hint = el("span", "settings-picker-hint");
             const icon = el("span", "settings-back-icon", "↩"); icon.setAttribute("aria-hidden", "true");
             hint.append(icon, el("span", "", translate("settings.picker.menuToClose")));
@@ -405,6 +445,86 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             host.show({ name: "settings:reset-appearance", content: [el("h1", "browse-title", translate("settings.subtitles.resetTitleApple")), el("p", "settings-value", state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile")), ...feedback(), zoneNode("settings-controls", controls)], zones: [{ id: "settings-picker", layout: "column", items: controls }], focus: { zone: "settings-picker", key: "cancel" }, back });
             return;
         }
+        if (confirmingDiagnosticsSend) {
+            const runSend = (chosen: DiagnosticsCategory): void => {
+                if (diagnosticsSending) return;
+                const existingId = diagnosticsCollector.duplicateSendReportId(chosen);
+                if (existingId !== undefined) {
+                    confirmingDiagnosticsSend = false;
+                    diagnosticsStatus = { kind: "ok", text: `Already sent as ${existingId}. Play or reproduce a new issue to send another.` };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                    return;
+                }
+                // Snapshot the hash before submitting so events arriving mid-request are not swallowed as already sent.
+                const submittedHash = diagnosticsCollector.stableSnapshotHash(chosen);
+                diagnosticsSending = true;
+                diagnosticsStatus = undefined;
+                render();
+                void submitDiagnostics(diagnosticsCollector, diagnosticsSendController.signal, chosen).then(result => {
+                    if (torn) return;
+                    diagnosticsSending = false;
+                    confirmingDiagnosticsSend = false;
+                    if (result.ok) {
+                        diagnosticsCollector.markManualSent(chosen, result.reportId, submittedHash);
+                        const okText = result.status === "duplicate"
+                            ? `Already tracked (${result.reportId}). Thanks for confirming.`
+                            : result.status === "updated"
+                                ? `Added to existing report (${result.reportId}).`
+                                : result.issueNumber !== undefined
+                                    ? `Report sent — GitHub issue #${result.issueNumber} (${result.reportId}).`
+                                    : `Report sent — Reference ${result.reportId}.`;
+                        diagnosticsStatus = { kind: "ok", text: okText };
+                    } else {
+                        diagnosticsStatus = { kind: "error", text: result.message };
+                    }
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                }, () => {
+                    if (torn) return;
+                    diagnosticsSending = false;
+                    confirmingDiagnosticsSend = false;
+                    diagnosticsStatus = { kind: "error", text: "Could not send report. Try again or use Share via QR Code." };
+                    render({ zone: "settings-rows", key: "send-diagnostics" });
+                });
+            };
+            const categoryButtons = DIAGNOSTICS_CATEGORIES.map(entry => {
+                const item = actionButton(`send-diagnostics-${entry.id}`, diagnosticsSending ? "Sending…" : entry.label, () => runSend(entry.id));
+                item.element.setAttribute("aria-disabled", String(diagnosticsSending));
+                return item;
+            });
+            const cancelButton = actionButton("cancel-send-diagnostics", translate("common.cancel"), back);
+            cancelButton.element.setAttribute("aria-disabled", String(diagnosticsSending));
+            showModal(
+                "settings:send-diagnostics",
+                "Send Diagnostics Report",
+                [
+                    el("h1", "browse-title", "Send Diagnostics Report"),
+                    el("p", "settings-value", "Choose the problem you noticed. The redacted report will be posted to a public GitHub issue."),
+                    el("p", "settings-value", "Server addresses, account names, tokens, and media titles are never included."),
+                    ...(diagnosticsSending ? [el("p", "browse-text", "Sending diagnostics report…")] : []),
+                ],
+                [...categoryButtons, cancelButton],
+            );
+            return;
+        }
+        if (diagnosticsQr) {
+            const done = actionButton("back", translate("common.done"), back);
+            const reportUrl = buildDiagnosticsReportUrl(diagnosticsCollector.snapshot());
+            const code = qrCode(reportUrl, "Diagnostics Report QR code", "L");
+            const image = el("div", "settings-privacy-qr");
+            if (code !== undefined) { code.style.width = "360px"; code.style.height = "360px"; image.appendChild(code); }
+            const copy = el("div", "settings-privacy-copy");
+            copy.append(
+                el("h1", "browse-title", "Share Diagnostics"),
+                el("p", "settings-value", "Scan this QR code with your phone camera to copy a report for Discord or open a pre-filled GitHub bug report."),
+                el("p", "settings-value", "All details stay inside the link fragment and are never sent to a server."),
+            );
+            const handoff = el("div", "settings-privacy-card");
+            handoff.dataset.reportUrl = reportUrl;
+            handoff.append(image, copy);
+            copy.prepend(navigationIcon("diagnostics"));
+            showModal("settings:diagnostics-qr", "Share Diagnostics", [handoff], [done]);
+            return;
+        }
         if (privacy) {
             const done = actionButton("back", translate("common.done"), back);
             const code = qrCode("https://siloserver.org/privacy", "Privacy Policy QR code");
@@ -420,23 +540,39 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         }
         if (extraPicker !== undefined) {
             const row = extraPicker;
-            const current = rowValue(row, state);
+            const unsettled = row.member === undefined ? actions?.playerSettings?.unsettledValue(row.key) : undefined;
+            const current = unsettled !== undefined ? unsettled : rowValue(row, state);
             const controls = [...row.choices.map(([value, text]) => {
                 const item = button(`choice:${String(value)}`, text, () => {
-                    void state.save(row.key, rowEdit(row, value, state)).then(() => { if (!torn && extraPicker === row && state.error === undefined) back(); });
+                    void serializePlayerSetting(row.key, () => state.save(row.key, rowEdit(row, value, state))).then(() => {
+                        if (!torn && state.error === undefined) {
+                            actions?.playerSettings?.clearKey(row.key);
+                            if (extraPicker === row) back();
+                        }
+                    });
                 });
                 item.element.setAttribute("role", "radio");
                 item.element.setAttribute("aria-checked", String(current === value));
                 return item;
             })];
-            const reset = button("reset-row", row.key === "ui.card_presentation" ? translate("settings.cards.useProfileDefault") : state.scope(row.key) === "profile_device" ? translate("settings.profileSettings.useRow") : "Use inherited default", () => { void state.reset(row.key).then(() => { if (!torn && extraPicker === row && state.error === undefined) back(); }); });
+            const reset = button("reset-row", row.key === "ui.card_presentation" ? translate("settings.cards.useProfileDefault") : state.scope(row.key) === "profile_device" ? translate("settings.profileSettings.useRow") : "Use inherited default", () => {
+                void serializePlayerSetting(row.key, () => state.reset(row.key)).then(() => {
+                    if (!torn && state.error === undefined) {
+                        actions?.playerSettings?.clearKey(row.key);
+                        if (extraPicker === row) back();
+                    }
+                });
+            });
             if (row.member === undefined && state.scope(row.key) === "profile_device") {
-                const inherited = state.stored(row.key)?.isSet !== true;
+                const inherited = unsettled === undefined && state.stored(row.key)?.isSet !== true;
                 reset.element.setAttribute("aria-checked", String(inherited));
                 if (inherited) for (const item of controls) item.element.setAttribute("aria-checked", "false");
             }
             if (row.member === undefined && state.scope(row.key) === "profile_device") controls.unshift(reset);
-            controls.push(...retryButton());
+            controls.push(...retryButton(() => {
+                actions?.playerSettings?.clearKey(row.key);
+                if (extraPicker === row) back();
+            }, row.key));
             showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback()], controls);
             return;
         }
@@ -457,6 +593,23 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 return item;
             });
             showModal("settings:language", translate("settings.appLanguage.title"), [el("h1", "browse-title", translate("settings.appLanguage.title")), ...(busy ? [el("p", "browse-text", translate("settings.appLanguage.saving"))] : [])], controls, "settings-language");
+            return;
+        }
+        if (choosingStillWatching && actions?.stillWatching !== undefined) {
+            const pref = actions.stillWatching;
+            const selected = pref.value;
+            const title = translate("settingsManifest.player.passout_threshold.label");
+            const controls = STILL_WATCHING_CHOICES.map(count => {
+                const item = actionButton(`still-watching:${count}`, stillWatchingLabel(count), () => {
+                    pref.set(count);
+                    choosingStillWatching = false;
+                    render({ zone: "settings-rows", key: "still-watching" });
+                });
+                item.element.setAttribute("role", "radio");
+                item.element.setAttribute("aria-checked", String(selected === count));
+                return item;
+            });
+            showModal("settings:still-watching", title, [el("h1", "browse-title", title)], controls, "settings-still-watching");
             return;
         }
         if (choosingLaunch && launch !== undefined) {
@@ -494,14 +647,15 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (acknowledging) { renderAcknowledgements(); return; }
         if (picker !== undefined) { renderPicker(); return; }
         activeModal = undefined;
-        const categories = (["general", "playback", "subtitles", "server"] as const).map(id => {
-            const item = actionButton(id, translate(CATEGORY_LABELS[id]), () => { category = id; returnRow = id === "general" ? "acknowledgements" : id === "playback" ? "quality" : id === "subtitles" ? subtitleEntry() : "acknowledgements"; render(rowFocus()); });
+        const categories = (["general", "playback", "subtitles", "diagnostics", "server"] as const).map(id => {
+            const item = actionButton(id, translate(CATEGORY_LABELS[id]), () => { category = id; returnRow = id === "general" ? "acknowledgements" : id === "playback" ? "quality" : id === "subtitles" ? subtitleEntry() : id === "diagnostics" ? "send-diagnostics" : "acknowledgements"; render(rowFocus()); });
             const icon = el("span", "settings-category-icon");
             icon.append(navigationIcon(CATEGORY_ICONS[id]));
+            const detail = id === "diagnostics" ? DIAGNOSTICS_DETAIL : translate(CATEGORY_DETAILS[id]);
             const copy = el("span", "settings-category-copy");
-            copy.append(el("span", "settings-category-title", translate(CATEGORY_LABELS[id])), el("span", "settings-category-detail", translate(CATEGORY_DETAILS[id])));
+            copy.append(el("span", "settings-category-title", translate(CATEGORY_LABELS[id])), el("span", "settings-category-detail", detail));
             item.element.replaceChildren(icon, copy);
-            item.element.setAttribute("aria-label", `${translate(CATEGORY_LABELS[id])}, ${translate(CATEGORY_DETAILS[id])}`);
+            item.element.setAttribute("aria-label", `${translate(CATEGORY_LABELS[id])}, ${detail}`);
             item.element.setAttribute("aria-current", id === category ? "page" : "false");
             item.element.addEventListener("focus", () => { if (category !== id) { category = id; render({ zone: "settings-categories", key: id }); } });
             return item;
@@ -528,16 +682,109 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         body.dataset.scrollKey = `settings-pane:${category}`;
         const header = el("div", "settings-pane-header");
         const tile = el("span", "settings-header-icon"); tile.append(navigationIcon(CATEGORY_ICONS[category]));
-        const headerCopy = el("div", ""); headerCopy.append(el("h2", "browse-section-title", translate(CATEGORY_LABELS[category])), el("p", "settings-blurb", translateTv(CATEGORY_BLURBS[category])));
+        const headerCopy = el("div", ""); headerCopy.append(el("h2", "browse-section-title", translate(CATEGORY_LABELS[category])), el("p", "settings-blurb", category === "diagnostics" ? DIAGNOSTICS_BLURB : translateTv(CATEGORY_BLURBS[category])));
         header.append(tile, headerCopy);
         body.append(header, ...feedback());
         if (category === "playback") connection.watch();
         else connection.unwatch();
         const pickers: readonly Picker[] = category === "playback" ? ["quality", "bitrate", "audio", "seek-back", "seek-forward"] : [];
+        const info = (title: string, value: string): HTMLElement => {
+            const row = el("div", "settings-info-row"); row.append(el("span", "", title), el("span", "settings-row-value", value)); return row;
+        };
+        if (category === "diagnostics") {
+            const snapshot = diagnosticsCollector.snapshot();
+            const send = actionButton("send-diagnostics", "Send Diagnostics Report", () => {
+                confirmingDiagnosticsSend = true;
+                render();
+            });
+            send.element.classList.add("settings-server-action");
+            send.element.prepend(navigationIcon("requests"));
+            send.element.appendChild(navigationIcon("chevron-right"));
+            const share = actionButton("share-diagnostics", "Share via QR Code", () => { diagnosticsQr = true; render(); });
+            share.element.classList.add("settings-server-action");
+            share.element.prepend(navigationIcon("diagnostics"));
+            share.element.appendChild(navigationIcon("qr"));
+            const autoOn = diagnosticsCollector.autoReportEnabled;
+            const autoToggle = button("auto-diagnostics", "Automatic Error Reports", () => {
+                diagnosticsCollector.setAutoReportEnabled(!diagnosticsCollector.autoReportEnabled);
+                render({ zone: "settings-rows", key: "auto-diagnostics" });
+            });
+            autoToggle.element.appendChild(el("span", "settings-row-value", onOffText(autoOn)));
+            autoToggle.element.setAttribute("role", "switch");
+            autoToggle.element.setAttribute("aria-label", "Automatic Error Reports");
+            autoToggle.element.setAttribute("aria-checked", String(autoOn));
+            const disclosure = el("p", "settings-value", "Turning this on sends redacted error reports from all profiles on this TV to public GitHub issues.");
+            disclosure.id = "automatic-reports-disclosure";
+            autoToggle.element.setAttribute("aria-describedby", disclosure.id);
+            const clear = actionButton("clear-diagnostics", "Clear Session Log", () => { diagnosticsCollector.clear(); diagnosticsStatus = { kind: "ok", text: "Session log cleared." }; render({ zone: "settings-rows", key: "send-diagnostics" }); });
+            clear.element.classList.add("settings-server-action");
+            clear.element.prepend(navigationIcon("reset"));
+            rows.push(send, share, autoToggle, clear);
+            body.append(
+                send.element,
+                share.element,
+                autoToggle.element,
+                disclosure,
+                clear.element,
+            );
+            if (diagnosticsStatus !== undefined) {
+                const note = el("p", diagnosticsStatus.kind === "error" ? "browse-text browse-error settings-warning" : "settings-value", diagnosticsStatus.text);
+                note.setAttribute("role", diagnosticsStatus.kind === "error" ? "alert" : "status");
+                body.appendChild(note);
+            }
+            const deviceText = formatDeviceDetails({
+                v: 1,
+                app: snapshot.device.appVersion,
+                tv: snapshot.device.tvModel,
+                ...(snapshot.device.firmware === undefined ? {} : { fw: snapshot.device.firmware }),
+                ...(snapshot.device.tizenVersion === undefined ? {} : { os: snapshot.device.tizenVersion }),
+                ...(snapshot.device.browser === undefined ? {} : { ua: snapshot.device.browser }),
+                ...(snapshot.device.screen === undefined ? {} : { scr: snapshot.device.screen }),
+            });
+            body.append(
+                el("h3", "settings-section-header", "DEVICE"),
+                info("TV", deviceText),
+                info("Auger Version", snapshot.device.appVersion),
+                ...(snapshot.device.serverVersion === undefined ? [] : [info("Silo Server", snapshot.device.serverVersion)]),
+                ...(snapshot.device.hdrSupported === undefined ? [] : [info("HDR Support", snapshot.device.hdrSupported ? "Yes" : "No")]),
+                ...(snapshot.device.memory === undefined ? [] : [info("JS Heap", snapshot.device.memory)]),
+                ...(snapshot.device.deviceRam === undefined ? [] : [info("Device RAM", snapshot.device.deviceRam)]),
+                ...(snapshot.device.uptimeMinutes === undefined ? [] : [info("Uptime", `${snapshot.device.uptimeMinutes}m`)]),
+            );
+            body.append(el("h3", "settings-section-header", "LAST PLAYBACK"));
+            const last = snapshot.lastPlayback;
+            if (last === undefined) {
+                body.appendChild(el("p", "settings-value", "No playback recorded yet in this session."));
+            } else {
+                if (last.playback !== undefined) body.appendChild(info("Playback", last.playback));
+                if (last.delivery !== undefined) body.appendChild(info("Delivery", last.delivery));
+                if (last.stream !== undefined) body.appendChild(info("Stream", last.stream));
+                if (last.source !== undefined) body.appendChild(info("Source file", last.source));
+                if (last.video !== undefined) body.appendChild(info("Video", last.video));
+                if (last.dynamicRange !== undefined) body.appendChild(info("Dynamic range", last.dynamicRange));
+                if (last.audio !== undefined) body.appendChild(info("Audio", last.audio));
+                if (last.subtitles !== undefined) body.appendChild(info("Subtitles", last.subtitles));
+                if (last.subtitleDetail !== undefined) body.appendChild(info("Subtitle mode", last.subtitleDetail));
+                if (last.position !== undefined) body.appendChild(info("Position", last.position));
+                if (last.rebuffers !== undefined && last.rebuffers > 0) body.appendChild(info("Rebuffers", String(last.rebuffers)));
+                if (last.hdrEnabled !== undefined) body.appendChild(info("HDR setting", last.hdrEnabled ? "On" : "Off"));
+                if (last.routeFallbacks !== undefined && last.routeFallbacks > 0) body.appendChild(info("Route fallbacks", String(last.routeFallbacks)));
+                if (last.avplayError !== undefined) body.appendChild(info("AVPlay error", last.avplayError));
+                if (last.status !== undefined) body.appendChild(info("Status", last.status));
+                if (last.diagnostics !== undefined && last.diagnostics.length > 0) body.appendChild(info("Diagnostics", last.diagnostics.join(" · ")));
+                if (last.error !== undefined) body.appendChild(info("Last error", last.error));
+            }
+            body.append(el("h3", "settings-section-header", "SESSION LOG"));
+            if (snapshot.events.length === 0) {
+                body.appendChild(el("p", "settings-value", "No events recorded yet."));
+            } else {
+                body.appendChild(info("Recorded events", String(snapshot.events.length)));
+                for (const event of snapshot.events.slice(-4)) {
+                    body.appendChild(el("p", "settings-value", `${event.at} [${event.kind}] ${event.text}`));
+                }
+            }
+        }
         if (category === "server") {
-            const info = (title: string, value: string): HTMLElement => {
-                const row = el("div", "settings-info-row"); row.append(el("span", "", title), el("span", "settings-row-value", value)); return row;
-            };
             body.append(el("h3", "settings-section-header", translate("settings.activeServer.headerTv")), info(translate("settings.activeServer.server"), actions?.serverName ?? session.http.base.baseUrl));
             // TVSettingsView.swift:514-517: Address only when the Server row shows a name, not the URL itself.
             const address = session.http.base.baseUrl;
@@ -752,7 +999,8 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
             for (const row of settingsRows(category, state).filter(row => row.id !== BUFFERING_ROW_ID)) {
                 if (row.id === "metadata-language") body.appendChild(el("h3", "settings-section-header", translate("settings.subtitles.tvHeader.metadata")));
-                const value = rowValue(row, state);
+                const unsettled = row.member === undefined ? actions?.playerSettings?.unsettledValue(row.key) : undefined;
+                const value = unsettled !== undefined ? unsettled : rowValue(row, state);
                 const item = button(row.id, row.title, () => {
                     if (row.id === "poster-size" && state.effective.get(row.key)?.source === "profile_device") return;
                     if (row.id === "advisory-age" || row.member === "textOutline") { void state.save(row.key, rowEdit(row, value !== true, state)); return; }
@@ -776,6 +1024,20 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                     rows.push(synced); body.appendChild(synced.element);
                 }
                 if (row.id === "poster-size") body.appendChild(el("p", "settings-value", translate("settings.general.posterSizeSyncsTv")));
+                if (category === "playback" && row.id === "auto-next" && actions?.stillWatching !== undefined) {
+                    const stillTitle = translate("settingsManifest.player.passout_threshold.label");
+                    const stillItem = button("still-watching", stillTitle, () => { choosingStillWatching = true; render(); });
+                    stillItem.element.replaceChildren(el("span", "settings-row-title", stillTitle), el("span", "settings-row-value", stillWatchingLabel(actions.stillWatching.value)), settingsChevron());
+                    rows.push(stillItem);
+                    body.appendChild(stillItem.element);
+                }
+            }
+            if (category === "playback" && actions?.stillWatching !== undefined && !rows.some(item => item.key === "still-watching")) {
+                const stillTitle = translate("settingsManifest.player.passout_threshold.label");
+                const stillItem = button("still-watching", stillTitle, () => { choosingStillWatching = true; render(); });
+                stillItem.element.replaceChildren(el("span", "settings-row-title", stillTitle), el("span", "settings-row-value", stillWatchingLabel(actions.stillWatching.value)), settingsChevron());
+                rows.push(stillItem);
+                body.appendChild(stillItem.element);
             }
             if (category === "playback") {
                 if (spoilers?.showsSettings === true) {
@@ -795,6 +1057,46 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                         body.appendChild(item.element);
                     }
                     body.appendChild(el("p", "settings-value", spoilers.footer));
+                }
+                const playerSettings = actions?.playerSettings;
+                if (playerSettings !== undefined && playerSettings.heldKeys.length > 0) {
+                    const retryHeld = actionButton("held-retry", translate("settings.heldChange.tryAgain"), () => {
+                        if (heldBusy || state.busy) return;
+                        heldBusy = true;
+                        heldDiscardFailed = false;
+                        render({ zone: "settings-rows", key: "held-retry" });
+                        void playerSettings.retryHeldChanges().then(() => {
+                            if (torn) return;
+                            heldBusy = false;
+                            if (playerSettings.heldKeys.length === 0) void state.load();
+                            else render({ zone: "settings-rows", key: "held-retry" });
+                        });
+                    });
+                    retryHeld.element.classList.add("settings-held-action");
+                    retryHeld.element.prepend(navigationIcon("reset"));
+                    const discardHeld = actionButton("held-discard", translate("settings.heldChange.discard"), () => {
+                        if (heldBusy || state.busy) return;
+                        heldBusy = true;
+                        heldDiscardFailed = false;
+                        render({ zone: "settings-rows", key: "held-discard" });
+                        void playerSettings.discardHeldChanges().then(discarded => {
+                            if (torn) return;
+                            heldBusy = false;
+                            heldDiscardFailed = !discarded;
+                            if (discarded) void state.load();
+                            else render({ zone: "settings-rows", key: "held-discard" });
+                        });
+                    });
+                    discardHeld.element.classList.add("settings-destructive");
+                    discardHeld.element.prepend(navigationIcon("xmark-circle"));
+                    if (heldBusy || state.busy) {
+                        retryHeld.element.setAttribute("aria-disabled", "true");
+                        discardHeld.element.setAttribute("aria-disabled", "true");
+                    }
+                    const warning = el("p", "browse-text browse-error settings-warning", heldDiscardFailed ? HELD_DISCARD_NEEDS_SERVER_MESSAGE : HELD_CHANGE_MESSAGE);
+                    warning.setAttribute("role", "alert");
+                    rows.push(retryHeld, discardHeld);
+                    body.append(el("h3", "settings-section-header", translate("settings.heldChange.headerTv")), retryHeld.element, discardHeld.element, warning);
                 }
                 // Apple TVPlaybackSettingsView: a Video group, then an Audiobooks group, each offered only with its pair. The Video help line is Android TV's
                 // `footerVideo`, not Apple TV's `footerVideoAppleTv`, which names the Siri Remote that a Samsung TV does not have.

@@ -60,7 +60,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Skyline top bar (saved TV menu order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
+| Skyline top bar (fixed `visibleRoots` order, centred roots, anchored menus, profile avatar) | ✅ | ✅ | ✅ | `src/ui/navigation.ts`. Focus and card styling parity open (#97). Android: `TvTopMenuBar` |
 | Home rows in server order, Continue Watching resume, Explore all, 20-card cap | ✅ | ✅ | ✅ | Resume goes straight to the player. First-load wait tracked in #78. Android: `TvHomeScreen` |
 | Home marquee (logo, meta chips, scores, aired date, cast) | ✅ | ✅ | ✅ | Apple: `TVFocusMarquee`. Sharper backdrops open (#88). Android: `TvFocusMarquee` |
 | Poster badges, watched checks, poster size (Compact/Standard/Large) | ✅ | ✅ | ✅ | Size is set in Settings › General. Android: `TvMediaCard` overlays and watched badge, Poster Size setting |
@@ -77,6 +77,7 @@ File pointers are repository-relative.
 | Browse grid: sort, filters, A–Z rail, remembered choices | ✅ | ✅ | ✅ | 100 cards per read. Apple: `TVLibraryGridView`, `TVBrowseFilterUI`. Android: `TvFilterSheet`, `TvAlphabetRail` |
 | Expanded section grid (60-card reads) | ✅ | ✅ | ✅ | Apple: `SectionCatalogView`. Android: `TvSectionBrowseScreen` |
 | Collections (fan-card grid, personal collections) | ✅ | ✅ | ✅ | Layout parity open (#100). Android: `TvCollectionsScreen` |
+| Rows of collections on Home and library pages | ✅ | ✅ | ? | `collection_posters` sections decoded into `SectionCollectionCard`s and drawn as rows on Home and library pages (#676; `docs/features/library-discovery.md`). Layout parity tracked in #100 and #765. Apple: `TVCollectionsRow`. Android TV not checked |
 | Library Shuffle | ✅ | ✅ | ✅ | Server-owned; hidden in mixed-library scope. Apple: `ShuffleFeatureStore`. Android: no mixed-library screen on TV |
 | Music | 🚧 | ✅ | 🟡 | Blocked on the server parity contract (#56). Android: Music tab browses the library (`TvLibraryTabType.Music`); no music player found in `androidTvApp` |
 | Audiobooks | 🚧 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has the tab, library, cards, detail and Apple's loading frame; audiobook playback is not built |
@@ -108,7 +109,7 @@ File pointers are repository-relative.
 |---|:---:|:---:|:---:|---|
 | Watchlist, Favorites, History pages | ✅ | ✅ | ✅ | Tizen and Apple: Watchlist and Favorites under For You, History in the profile menu (`src/ui/skyline.ts`). Grid parity open (#105). Android: `TvPersonalScreens` |
 | Watched / favourite / watchlist actions on details | ✅ | ✅ | ✅ | Server-confirmed readback, never auto-replayed. Rating write reconcile open (#84). Android: `TvHeroToggleIconButton`. Apple: hero Watchlist button (`TVDetailActions`), Favorite/Watched in the More menu |
-| Personal star rating (1–5) | ➖ | ➖ | ✅ | Removed to match tvOS, which shows external scores only (`docs/features/details-actions.md`) |
+| Personal star rating (1–5) | ➖ | ✅ | ✅ | Previously removed from Tizen when tvOS showed external scores only (`docs/features/details-actions.md`). Apple TV has since added half-star ratings on Details (`TVRatingActionButton`, `TVRatingEditor`); Tizen parity falls under #106 |
 | External scores (IMDb, TMDB) | ✅ | ✅ | ✅ | TMDB logo and notice in Acknowledgements. Android: `TvDetailMetadata` and `TvFocusMarqueeModel` |
 | Title art switch (this TV or all devices) | ✅ | ✅ | ✅ | Android: `TitleArtStore`, Settings → General |
 
@@ -163,7 +164,7 @@ File pointers are repository-relative.
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
 | In-player audio track switch | ✅ | ✅ | ✅ | Server replans. On direct play the server keeps the original file and AVPlay switches the track (`client_selected_audio_track_v1`, #507). Audible change not confirmed on a TV (#11) |
-| Preplay audio and file-version picker | ✅ | ✅ | ✅ | Tizen choice lasts one attempt; Apple persists per title or series. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow` |
+| Preplay audio and file-version picker | ✅ | ✅ | ✅ | Tizen persists explicit audio picks per title or series (`PUT`/`DELETE /audio-prefs/{key}`); version picks stay visit-only. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow` |
 | Preplay subtitle picker (including Off) | ✅ | ✅ | ✅ | Tizen offers catalog tracks, Auto and Off, resolved against the authoritative playback inventory. Saved series preferences gate every cached episode until confirmed; sidecars without a stream index remain visit-only. Downloaded choices use the in-player menu. Native comparison remains pending. Apple: `TVPlaybackSelectorRow`. Android: `TvPlaybackSelectorRow`; Auto policy not rechecked here |
 | Text subtitles (VTT/SRT, ASS dialogue) in an app overlay | ✅ | ✅ | ✅ | Captions not yet verified on a TV or simulator (#80). Android: Media3 `SubtitleManager` |
 | Embedded subtitle burn-in | ✅ | ✅ | ✅ | Server burns in when transcoding is allowed. Android: server plans render, convert or burn-in. Apple: server burn-in (`needsBurnIn`) |
@@ -180,7 +181,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Settings categories | 🟡 | ✅ | ✅ | Tizen: General, Playback, Subtitles, Server; Diagnostics is owned by #137. Android: General, Playback, Subtitles, Diagnostics, Server (`TvSettingsCategory`) |
+| Settings categories | ✅ | ✅ | ✅ | Tizen: General, Playback, Subtitles, Diagnostics, Server (#847). Android: General, Playback, Subtitles, Diagnostics, Server (`TvSettingsCategory`) |
 | Hidden libraries | ✅ | ✅ | ✅ | Apple: `HiddenLibraryPreference` applied in `TVMainTabView`; no tvOS editor. Android: `TvMainShell` leaves hidden libraries out |
 | Preferred audio, quality, maximum bitrate, seek intervals | ✅ | ✅ | ✅ | Server-confirmed writes |
 | Autoplay, Next Up, Skip Intros, Skip Credits switches | ✅ | ✅ | ✅ | Playback Settings has Auto-Play Next Episode, Show Next Up, Skip Intros and Skip Credits, saved to the server and drawn only when the server defines the key. Apple: `TVPlaybackSettingsView`. Android: `TvSettingsScreen` |
@@ -197,7 +198,7 @@ File pointers are repository-relative.
 
 | Feature | Tizen | Apple TV | Android TV | Notes |
 |---|:---:|:---:|:---:|---|
-| Diagnostics reports | 🚧 | ✅ | ✅ | #137, blocked by #138 (server does not accept a Tizen diagnostics platform). Android: `TvDiagnosticsReportScreen` |
+| Diagnostics reports | ✅ | ✅ | ✅ | Tizen: 1-click **Send Diagnostics Report** (Cloudflare Worker relay → GitHub issue) plus zero-backend **Share via QR Code** backup (#847); first-party server upload is not used for third-party clients (#138). Android: `TvDiagnosticsReportScreen` |
 | Notifications inbox | ➖ | ➖ | ✅ | No inbox screen found in the Apple tree. Android: `TvInboxScreen` |
 
 ## Platform & release
@@ -215,7 +216,7 @@ File pointers are repository-relative.
 ## Platform summary
 
 **Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests and AVPlay playback with audio, text subtitles and AI subtitles.
-It has no music browsing, audiobook playback, diagnostics, Smart Hub row or sleep timer.
+It has no music browsing, audiobook playback, Smart Hub row or sleep timer.
 Its playback speed is limited to 1× and 2× on direct-file plans.
 Watch Party is partly built and off by default: the lobby, Ready and voting work, and synchronized playback waits on #13 ([Watch Party](docs/features/watch-party.md)).
 

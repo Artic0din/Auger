@@ -1,209 +1,49 @@
 # Details actions
 
-Apple reference: `Silo-Server/silo-apple` at `7baff3ef657757cc0a69202e86dd4bd5c7fcb585`.
-All paths below are relative to `iosApp/iosApp/`.
+Canonical specification for movie, series, season, and episode Details hero entry, action row, popovers, inline episode rail, and directional scrolling (`src/ui/browseDetails.ts`, `src/ui/detailsState.ts`, `src/ui/detailsActions.ts`).
+For preplay audio/subtitle persistence and fresh resume resolution, see [Skyline browse shell: Preplay audio, subtitles and resume](skyline-browse-shell.md#preplay-audio-subtitles-and-resume).
 
 ## Entry loading
 
-Series entry holds focus on the passive hero while its initial episode list loads or Play has no resolved episode label.
-The unresolved-target check uses the same state that disables Play, including the first cached-detail paint before loaders start and an empty episode response before playback detail arrives.
-Select during that wait does nothing, and Play takes entry focus when the passive target disappears.
-This prevents disabled Play from making Watchlist the automatic entry target.
-Loading failures and empty lists leave the ordinary recovery and action targets available.
+- Series entry holds focus on the passive hero while the initial episode list loads or Play has no resolved episode label (including cached-detail first paint and empty episode responses before playback detail lands). Select is a no-op during that wait; once the label resolves, the passive target disappears and Play takes focus rather than falling back to Watchlist.
+- Explicit navigation to a season or action during loading preserves the viewer's focus. Failures and empty lists keep ordinary recovery targets reachable.
+- Each Details route presentation carries a distinct `View.visitKey`, so pushing a fresh Details route opens on its primary action at scroll zero without clearing an ancestor's snapshot, while returning from an episode page retains the selected season.
 
-The reported same-title Apple tvOS simulator observation shows Play S1:E1 on the first Details frame, then focuses Play without intermediate Watchlist focus.
-At Apple source `08ff656ff2c35bca13f40901cfe9ed83b8f84d7e`, [`TVSeriesDetailView.swift:1076-1089`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L1076) derives the playback episode from loaded episode summaries, and [`:567-580`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L567) derives the Play/Resume season-and-episode title from that episode.
-The Series page itself requests Play through [`TVSeriesDetailView.swift:304-306`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L304).
-The tvOS-only route seed carries card artwork and metadata, not a series episode title ([`Route.swift:126-169,235-242`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Navigation/Route.swift#L126)).
-The tvOS page eagerly resolves its cached view model ([`TVItemDetailView.swift:69-94`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVItemDetailView.swift#L69)); the tvOS load path starts a known series hierarchy refresh alongside catalog detail ([`ItemDetailViewModel.swift:312-327`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/Screens/Detail/ItemDetailViewModel.swift#L312)).
-The card-to-provisional-detail seeding at `ItemDetailViewModel.swift:708-731` is guarded by `#if !os(tvOS)` and is not an Apple TV playback-title source.
-Apple still has a Watchlist fallback when Play has no title ([`TVDetailActions.swift:490-510,602-610`](https://github.com/Silo-Server/silo-apple/blob/08ff656ff2c35bca13f40901cfe9ed83b8f84d7e/iosApp/iosApp/tvOS/Screens/Detail/TVDetailActions.swift#L490)); its existence does not mean the reported Apple journey reaches that state.
-Samsung retains its Loading episodes… label until a summary or playback detail supplies the title and keeps entry passive throughout that window.
-This is the bounded focus correction; immediate title availability remains a difference from the reported Apple capture.
-The new candidate still requires signed Samsung comparison; desktop tests do not establish native acceptance.
+## Actions and popovers
 
-## Actions
+- **Action row:** Play/Resume, Start Over (when available, 76×76 circle with `backward.end.fill`, label shown on focus), Version, Audio, Subtitles, Watchlist, and More. Unfocused Play shares the circles' 10% white fill.
+- **Popover surface (`TVActionPopoverMenu`):** Version, Audio, Subtitles, and More share one 560 px popover (black 45% translucent substitute for Liquid Glass, 1 px white 10% inner lip, 22 px radius, monospaced 14 px header, 54 px title-only rows in More, 76 px two-line rows in pickers, scaling from 0.96 over 180 ms). Lists over 7 rows scroll inside 504 px centered on the initial selection. Selection, Back, Left, and Right dismiss the popover and restore its trigger.
+- **Audio and subtitle rows:** Audio leads with language and moves track title before codec/layout/Default/Preferred on the detail line. Embedded subtitles without a codec read `Unsupported format` and sidecars without a stream index read `Available in player` (both dimmed at 40% and unfocusable).
+- **More menu order:**
+  - Movies: Favorites, Mark as Watched/Unwatched, Find Trailers (when remote trailers can display), Translate Description (capability/language gated), Not Interested (`user_state.not_interested` gated), Watch Party (experimental opt-in + server capability).
+  - Series: Shuffle Series / Shuffle Season (when capability supports the scope and at least two playable episodes exist), Show Series Info (only when an episode owns the hero), Favorites, Mark Series Watched/Unwatched, Mark Season Watched/Unwatched (hidden if season watch state is absent), Find Trailers, Translate Description, Not Interested, Watch Party.
+- **Find Trailers:** profile-scoped non-retryable `POST /api/v2/catalog/items/{id}/trailers/refresh` (never replayed after token refresh), polling item detail every 3 s (at least 60 s before five unchanged polls settle, 120 s max). Leaving pauses observation; returning resumes without another POST; Authority changes discard it.
+- **Not Interested:** writes `PUT`/`DELETE /not-interested/{id}` (idempotent), updates state optimistically, removes the title from Home recommendation rows and every For You row via `notInterestedStore.ts`, and rolls back with `Couldn't Update Item` on failure.
+- **Failure alerts (`MediaActionFeedback`):** definite write refusals show `Couldn't Update Item` (`Couldn't Update Watched Status` for seasons; `Couldn't Shuffle` for shuffle with Apple's 409/404/default copy). Unanswered network/timeout writes hold the change (`Change Not Confirmed` with `Discard Held Change`) and reconcile by reading state rather than auto-replaying.
+- **Removed controls (tvOS parity):** Read synopsis (synopsis is a non-focusable 3-line clamp at 92% white), Season details button (season tabs drive the inline rail), and personal 1–5 star ratings (removed when tvOS showed external scores only; tvOS has since added half-star ratings via `TVRatingActionButton` / `TVRatingEditor`, tracked under #106).
 
-More reuses the Versions, Audio and Subtitles popover.
-Movies offer Add to Favorites / Remove from Favorites, then Mark as Watched / Mark as Unwatched (`tvOS/Screens/Detail/TVMovieDetailView.swift:210-265`).
-Series add Show Series Info only while an episode is active, then Favorites, Mark Series Watched / Unwatched and the selected season's Mark Season Watched / Unwatched (`TVSeriesDetailView.swift:942-1037` in the same directory).
-Actions retain confirmed-state loading and explicit reconciliation before retry; a failure is an alert, not a relabelled button (see below).
-The season Watched action stays hidden if the season response omits watch state.
-Selection closes a popover and restores its trigger; Back, Left and Right also dismiss Version, Audio, Subtitles and More.
-Apple's popover width is 560, and its initial target is the first selected enabled option or the first enabled option (`TVActionPopoverMenu.swift:33-76`).
+## Series seasons and episode rail
 
-Find Trailers queues discovery and polls refreshed item detail; it does not play an existing trailer (`Screens/Detail/ItemDetailViewModel.swift:753-815`).
-tvOS offers it only when remote trailers can be displayed (`TVItemDetailView.swift:317-324,481-488`).
-The pinned native contract includes `POST /api/v2/catalog/items/{id}/trailers/refresh`.
-Samsung's existing rail displays remote cards, so movies and series offer Find Trailers after the watched actions and before Translate Description.
-Discovery does not add a YouTube playback handoff: remote cards still have that existing platform limitation.
-The request is profile-scoped, non-retryable and never replayed after authentication refresh.
-Queued requests poll detail every 3 seconds, observing at least 60 seconds before five unchanged polls may settle, with a 120-second window.
-Only new supported-video identities or local extra IDs finish discovery; existing trailers do not count as a new result.
-Cooldown, disabled, exhausted, transport failure and rate limit use Apple's status copy, dismissed after three seconds.
-Leaving Details cancels observation; returning resumes an interrupted run without another POST, while an authority change discards it.
-The found payload updates the rail without resetting the selected season or overwriting newer watch state.
+- **Initial season and episode selection:** follows Apple's rollup order: requested/cached season, in-progress season, partially watched season, first unplayed numbered season, Specials, then first numbered season; within a season, in-progress (`user_data.is_in_progress`), first unwatched, then first episode.
+- **Season pills and episode dwell:** borderless capsules (100 px horizontal inset, 24 px padding, 12 px gap, 20% selected / 5% unselected fill). Resting 70 ms on a missing season pill reads that season once; resting 120 ms on an uncached episode card reads missing full catalog detail (max 4 concurrent reads, 16 retained playback owners per route; see [tv-focus.md](../tv-focus.md#never-fetch-on-focus)).
+- **Windowing and captions:** joins contiguous loaded seasons, warms at least 8 episodes per side on initial load/season change, and clamps terminal scroll at Compact/Standard/Large poster sizes without extra clearance. Anchored episode captions use 20 pt semibold single-line tail truncation.
+- **Failures:** selected-season failures stay on their season and retry only via explicit Retry (never automatically on reconnect); failed edge neighbors show `Couldn't load more episodes. Move away and back to retry.`
 
-**Not Interested** (`silo-apple` `29c0dd43`, `TVMovieDetailView` and `TVSeriesDetailView` More menus) follows Translate Description and precedes Watch Party:
+## Scroll and layout parity
 
-- Shown only for a movie or series from a Server sending `user_state.not_interested`; reads `Not Interested` or `Show in Recommendations`.
-- Pressing updates the displayed state at once and sends `PUT` or `DELETE /not-interested/{id}`. A new mark removes the title from Home recommendation rows and every For You row, so Back lands on the replacement card. Refused or unanswered writes roll back and show the update-failed alert (idempotent write, safe to retry).
-- `notInterestedStore.ts` shares one per-title session record across the card menu and Details (serializing writes, preserving answered state against reads started earlier, letting reads started later replace it, and notifying subscribed open views on settlement).
+- **Supporting sections order:** Cast & Crew (unclipped right scroll inset), Trailers & More (local extras play from zero; YouTube cards stay on card), Related Movies / Recommended Series, then Details facts table (one focusable block, 140 px page bottom padding). Down at the final section holds focus.
+- **Directional reveal (`SkylineScroll`):** hero actions, season pills, and episode rail stay at scroll zero (`450 ms` ease-in-out on movies, `550 ms` cubic-bezier on series); Down centers the target supporting section (scaling Related headings with Poster Size: Compact 547/321, Standard 500.8/297.9, Large 434.8/264.9); Up resets to zero when the heading and focused artwork fit there.
+- **Metadata:** outlined content-rating chip, inline external rating artwork, and optional advisory-age chip (`advisoryAgeBadgeLabel` when Show Advisory Age is on).
 
-Watch Party ends More while the experimental switch is on and the server can host a party, as `WatchPartyEntry.isAvailable` requires; it pushes the lobby over Details and creates a host-pick room holding the title ([Watch Party](watch-party.md)).
-Shuffle Series leads More when the capability supports series and the hierarchy has at least two episodes.
-It creates a series-scoped shuffle and uses the existing shuffle pick and player continuation owners (`TVSeriesDetailView.swift:923-928,954-966,1016-1021`).
-Shuffle Season leads More when the capability supports seasons, an episode or the season pill owns the hero, and that season has two episodes with files (`TVSeriesDetailView.swift:944-951`).
-Translate Description follows the existing server and language gates.
-The trailers rail and episode row are unchanged here.
+## Accepted differences
 
-Start Over follows Resume and precedes playback selectors.
-It uses the `backward.end.fill` silhouette and the existing circle's 76 by 76 footprint, 38-point icon slot and 26-point focused label (`TVDetailActions.swift:327-385,491-502`).
-The label appears on focus; it is icon-only at rest.
+1. **Movie hero height:** Apple fixes Movie hero height at 690 px and clips long text (which can clip focused Play). Tizen uses `min-height: 690px` and expands so focused Play stays visible per [tv-focus.md](../tv-focus.md).
+2. **Series readout without values:** Tizen hides empty Version/Audio/Subtitles readout bars once loading finishes with no known values (preserving vertical space), because playback detail loads lazily for the focused/next-up episode.
+3. **Scroll back to hero:** Tizen animates scroll directly without tvOS's focus-engine scroll-lock polling.
+4. **Update Required alert:** omitted because Tizen has no server update-requirement classification.
+5. **Visual substitutes:** translucent black fill substitutes for Liquid Glass, and bundled `Inter` substitutes for SF Pro.
 
-Removed Read synopsis and its expanded view because the tvOS hero synopsis is deliberately non-focusable (`TVHeroSynopsis.swift:4-35`).
-Removed #66's Rate title control and personal star editor because neither is reachable on tvOS.
-External rating data, including TMDB scores, remains visible.
-Removed Season details: tvOS season tabs select the inline episode rail and expose only a watched context action (`TVSeriesDetailView.swift:608-647`).
-Supporting focus follows Cast, Trailers, Similar, then the Details table (`TVSeriesDetailView.swift:282-289,1114-1180`).
-Down at the final available section keeps its current focus; no empty supporting-control zone remains.
+## References
 
-For series rewatch, Apple chooses the requested season, an in-progress season, a partially watched season, the first unplayed numbered season, Specials, or the first numbered season.
-It then chooses an in-progress episode, the first unwatched episode, or the first episode (`Networking/Models.swift:874-909`, `Screens/Detail/ItemDetailViewModel.swift:1115-1125`, `TVItemDetailView.swift:786-795`).
-Samsung's season selection already uses the same rollup fields.
-Episode progress now reads `user_data.is_in_progress`, matching Apple's `LeafItemUserData` projection (`Networking/APIv2/APIv2CatalogReadProjection.swift:203-210`), instead of the aggregate `in_progress_count`.
-The hero now uses that rail suggestion instead of the catalog's separate `play_content_id`.
-The signed same-state comparison on 5 November 2026 at `3262f8b` reproduced a known difference: Apple opened Highway Patrol on S13:E1 and Running Point on S2:E1, while Samsung opened both on S1:E1.
-The tvOS view obtains a cached view model (`TVItemDetailView.swift:60-69`), preserves its selected season as `initialResumeSeasonNumber` (`:150-167`), and prefers that request (`ItemDetailViewModel.swift:1119-1125`).
-Fresh hierarchy selection uses the same preference (`:590-615,980-1010`).
-With no requested or cached selection, zero in-progress counts, watched counts equal to episode counts, and every numbered season played, each predicate fails and `regular.first` returns Season 1 (`Models.swift:878-900`).
-The episode fallback then returns the first episode (`:904-909`); the watch projection maps `isInProgress` directly and does not choose a season (`APIv2CatalogReadProjection.swift:203-210`).
-This source explains how a cached later selection survives, but does not establish that cache caused the observed states or prove a last-played/newest-season rule.
-Samsung retains its current server-seeded season selection; no rule was guessed from the two samples.
-
-Validation uses fakes and desktop Chromium only.
-The signed comparison above predates these follow-up fixes; no new live server, simulator, television or signed package run was used for their implementation.
-More now uses three round six-pixel dots at rest and focus, title-only 54px rows with 56px pitch, and the existing below/above/bottom-pinned placement rule (`TVActionPopoverMenu.swift:237-258`).
-The 76px picker rows retain their second-line detail space.
-The shorter gated Samsung menu can fit below where Apple's six-item menu opens above; direction is based on available space, not item type.
-Unfocused Play now shares the circles' 10% white fill (`TVDetailActions.swift:356-360,701-707`), allowing the existing backdrop to show through without a filter.
-Synthetic warm, neutral and cool underlays verify the supplied sRGB targets within two levels; actual title backdrops still need a signed comparison.
-The season pill row now uses `TVDetailLayout.horizontalInset` (100 points) rather than the surrounding section's 88px inset.
-
-The signed 5 November season comparison at `93a39b3` confirmed pill focus selection and the loaded-season window.
-Later fixes keep the pill selection authoritative over stale episode callbacks, use the loaded first-episode summary for the hero and Play label, and restore a retained Series visit on Play with the series overview.
-The row reuses the continuous rail's terminal clamp (`TVEpisodeRail.swift:400-414`), including loaded predecessors for a short final season.
-Without a loaded neighbour it shows the available episodes; it does not fetch solely to fill empty space.
-Season focus and explicit Retry each make at most one season read, without transport retries or neighbour warming after selection.
-Episode focus paints its summary immediately and reads missing full detail after Apple's 120ms dwell; playback and version/audio/subtitle activation can resolve it immediately.
-Apple uses cached season pages (`ItemDetailViewModel.swift:1143-1156`), guards stale selections (`SeriesSeasonSelection.swift:16-30`), paints episode summaries (`TVSeriesDetailView.swift:448-464,1046-1055`), and skips per-card personal refresh for tvOS Series (`ItemDetailViewModel.swift:1397-1406`).
-The shared abbreviated date formatter matches Apple's medium date style (`DetailDateFormatting.swift:77-82`), including English `Sep`.
-These follow-up fixes have fake-server and Chromium validation only; the signed comparison predates them.
-
-The signed 6 November re-check at `b2f34a2` superseded the loaded-predecessor spacing assumption.
-Fresh opens and pill moves use no extra 40px clearance; the general offset has been removed.
-Apple's measured retained-title reopen offset remains a known difference: Samsung retains the season number without retaining Apple's view-model and rail lifecycle.
-The existing terminal clamp is unchanged.
-Season pills use Swift's 24px horizontal padding, 12px gap, medium unselected text and semibold selected text.
-Cached playback details supply hero readouts; summary-only episodes omit unavailable values instead of leaving permanent skeleton bars.
-Loaded-season moves perform no season-page reads.
-At Apple source `df891d2e`, `TVSeriesDetailView.swift:879-906` activates the focused episode and `TVItemDetailView.swift:805-858` reads playback metadata after 120ms.
-Samsung now uses the same dwell for missing catalog detail, reusing the existing version/track owners and four-worker queue.
-Leaving a card cancels its dwell and superseded queued focus reads; explicit requests survive cancellation, whether requested before or after the dwell.
-Retained episode owners do not reread on focus and failures require explicit Retry.
-Tizen keeps 16 recent settled playback owners per route, excluding owners protected by current playback selection, pending reads/panels or unfinished user work.
-Evicted episodes reload on a later dwell.
-Apple's `ResponseCache.swift:6-12,24-34` at `df891d2e` deliberately has no TTL or LRU and clears item data on memory warnings.
-Tizen uses a small route-local window because its cached entries also own preference state and authority listeners; there is no Apple numeric capacity to copy.
-AGENTS.md names this episode-detail dwell as an approved no-focus-fetch exception for Apple TV parity; see [TV focus](../tv-focus.md).
-Full version duration drives the hero runtime, while the card retains the episode-list runtime (`TVDetailHero.swift:721-734`, `SelectedMediaRuntime.swift:4-28` at that SHA).
-This change has fake-server and desktop Chromium proof; same-state Apple/Samsung comparison and signed simulator journeys remain pending on the other Mac.
-Selected-season failures stay with their failed season rather than appearing below a loaded neighbour.
-Connectivity returning alone does not retry the row: `TVSeriesDetailView.swift:734-737,805` calls `retryHierarchy` only from Retry buttons, and `TVItemDetailView.swift:308` forwards that action to `retrySeriesHierarchy`.
-Explicit Retry reads the failed season once.
-
-Each Details route presentation has its own focus-host visit key, so a fresh presentation opens on its primary action at scroll zero without deleting an ancestor's snapshot.
-The key is assigned where all item routes render, including available-to-request Search results that push a route directly.
-This does not clear route-owned selected-season state when returning from an episode information page or repainting the current page.
-
-The #247 scroll audit at the Apple SHA above found these distinct owners, all under `tvOS/Screens/Detail/`:
-
-- `TVMovieDetailView.swift:102-131` gives the hero an id and attaches `detailFocusScroll`; `TVDetailFocusScroll.swift:70-81,94-105` pins actions to the hero's top and centers the complete focused poster section.
-- `TVSeriesDetailView.swift:153-177` computes the supporting anchor's midpoint minus half the viewport height, clamped to the content range; `:1105-1166` centers the first available supporting section (Cast, otherwise Trailers, otherwise Recommended).
-- `TVTrailersRail.swift:27-33,50-56` groups heading and rail with 14-point spacing, pads the rail vertically by 12 and gives its first card default focus; it specifies no vertical scroll offset.
-- `TVDetailFactsSection.swift:14-22,24-61` makes the whole table one passive focus target with a 14-point vertical highlight bleed; it specifies no explicit scroll anchor.
-- `TVDetailHero.swift:18` supplies 140 points of bottom content padding; both page bodies apply it (`TVMovieDetailView.swift:120`, `TVSeriesDetailView.swift:292`).
-
-`SkylineScroll` owns the heading-based reveal rule; the focus host passes the previous focus to distinguish Up from Down.
-The settled running Apple app at `7baff3e` on 6 November 2026 supplies Down heading targets Cast 546, Trailers 501 and Series posters 547, and Up heading 111.
-Apple's trailer image starts 69px below its heading, matching Samsung's 69.2px; its focused frame includes about 44px of padding above the image and is not comparable to Samsung's card frame.
-Movie Related uses heading 321 and Series Cast uses 367 in both directions because the local complete section heights differ from Swift's centered anchors.
-The poster headings were measured at Compact Poster Size; Apple scales poster art by Poster Size (`MediaCard.swift:149-158`, `UICustomizationPreferences.swift:24-30`).
-Each point of extra poster height raises the Series Related Down heading by one point, because the native reveal keeps the card's bottom edge, and the Movie Related heading by half a point, because `scrollTo(id, anchor: .center)` (`TVDetailFocusScroll.swift:81,94-103`) centres the whole section.
-At Standard the headings are 500.8 and 297.9; at Large 434.8 and 264.9.
-Up resets to zero when the heading and focused artwork are fully visible there, including Movie Cast at heading 690.
-Horizontal moves preserve the section's vertical position; hero actions, season pills and episode rows stay at scroll zero.
-Details scrolls to `scrollHeight - clientHeight`, with 140px of total bottom padding from `TVDetailLayout.pageBottomPadding` and no duplicate facts margin.
-This removes 540px of duplicated Series bottom space; the earlier approximate 516px page-height difference also includes content/layout differences.
-With representative five-row Movie and six-row Series fake tables, Details headings are 528.61 and 457.41: residuals +4.61 and +5.41 against Apple's 524 and 452.
-The fake page heights are 2664 and 3171, so their absolute page maxima do not substitute for the captured titles' maxima.
-Tests assert directional headings within three pixels, the movie stack 291/334/450/492/556, top resets, page-end arithmetic and the stated Details residuals.
-The route-isolation and scroll changes need a new signed same-state re-check.
-No simulator, TV, live server or signed package was used for this follow-up.
-
-Metadata includes the outlined rating chip, rating artwork (`TVDetailHero.swift:360-446`), and the optional advisory-age chip (`advisoryAgeBadgeLabel` in `src/ui/browseDetails.ts`, controlled by Show Advisory Age in General Settings). Related Movies and Recommended Series match (`TVMovieDetailView.swift:289`, `TVSeriesDetailView.swift:1117`).
-See [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed comparison gates.
-
-The later comparison must cover Movie and Series fresh opening and reopening after Cast/table scroll; Up through every hero action; return from episode information with Season 2 selected; focused middle and terminal Details tables; first and subsequent trailers with and without Cast; Related Movies and Recommended Series; rated metadata with advisory preference off/on; and the rest hero including the movie stack y291/334/450/492/556.
-Repeat Series rail entry, horizontal terminal clamp and Up return at Compact, Standard and Large to protect #246.
-
-## Remaining hero appearance (#274)
-
-Source: [silo-apple b3d08d44](https://github.com/Silo-Server/silo-apple/tree/b3d08d444b75dc078d3047730db72e0c4456e79b/iosApp/iosApp/tvOS/Screens/Detail).
-`TVDetailCastRail.swift:39` disables scroll clipping; the Samsung Cast viewport now extends through the right page inset while retaining horizontal scrolling.
-`TVEpisodeRail.swift:693-725` uses a 20pt semibold single-line anchored caption at the full card width, with tail truncation for titles that still exceed it.
-Samsung removes its inherited caption inset and medium-weight override rather than wrapping beyond Apple's single-line limit.
-`TVSeriesDetailView.swift:467-494` and `TVDetailHero.swift` place episode date/runtime before ratings and Season/Episode after ratings.
-`TVSeriesDetailView.swift:1221-1245` uses borderless season capsules, with white fills of 20% when selected and 5% otherwise.
-`TVHeroSynopsis.swift:21` uses white at 92% opacity for the overview.
-`TVActionPopoverMenu.swift:50` uses Liquid Glass with black at 45% opacity.
-Samsung uses that translucent tint as the substitute; it does not reproduce Apple's Liquid Glass sampling and refraction.
-Desktop Chromium fake-server checks establish CSS values and ordering only.
-Signed Samsung and same-state Apple TV acceptance remain outstanding on the other Mac.
-
-## Popovers and failure alerts (#397)
-
-Source: silo-apple `7e478b2`, `tvOS/Screens/Detail/TVActionPopoverMenu.swift`, `DetailPlaybackFormatting.swift`, `Components/MediaActionFeedback.swift` and `Screens/Shuffle/ShuffleLauncher.swift`.
-Version, Audio, Subtitles and More share one surface: black 45% glass, a 1px white 10% inner lip, a black 45% shadow at y18 r32, radius 22 and a monospaced 14px header with 3.64px tracking.
-Rows have radius 14, 13px vertical padding, 22pt semibold titles, a 70% detail line and a 26px checkmark slot at 18, with text starting at 58.
-A popover opens on the selected enabled row, otherwise the first enabled row, and scales from 0.96 at the edge nearest its trigger over 180ms.
-More than seven rows scroll inside a 504px list that opens with the initial row centred.
-Audio rows lead with the language; a track's own title moves to the detail line before codec, layout, Default and Preferred.
-Embedded subtitles without a codec read "Unsupported format" and sidecars without a stream index read "Available in player"; both stay dimmed at 40% and take no focus.
-A failed favourite, watched or watchlist change is the "Couldn't Update Item" alert; a write with no answer (timeout or network failure) is "Change Not Confirmed" with Discard Held Change, which reloads that state and never re-sends.
-Tizen cannot tell an unsent request from a lost answer, so every network failure on a write is held.
-A failed season watched change is "Couldn't Update Watched Status"; a failed shuffle is "Couldn't Shuffle" with Apple's 409, 404 and default messages.
-Find Trailers keeps Apple's movie-and-series gate; Samsung's rail already displays remote cards, which is the tvOS YouTube-app condition.
-The pill sits 24 under a movie's action row and 14 under a series' episode rail.
-Apple's "Update Required" alert is not built: Tizen has no update-requirement classification.
-Validation is fake-server and desktop Chromium only; signed Samsung and same-state Apple TV captures are pending.
-
-## Hero, meta lines and screen states (#395)
-
-Source: silo-apple `5780c84`, tvOS.
-The audited hero, loading, error, synopsis and rating views are unchanged from the audit's `85679e7`.
-#405 fixed 15 of the 18 items, and #388 had already fixed the 401, 403 and 404 error pages.
-Three Apple behaviours stay different on purpose.
-
-- **Movie hero height.**
-  Apple fixes the movie hero at 690 and clips it ([`TVDetailHero.swift:11, 149-152, 166`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVDetailHero.swift#L149-L166)).
-  The title, subtitle and synopsis all keep their full height ([`TVDetailHero.swift:491-501`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVDetailHero.swift#L491-L501), [`TVHeroSynopsis.swift:22-23`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVHeroSynopsis.swift#L22-L23)), and the stack is top-aligned ([`TVDetailHero.swift:216-221`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVDetailHero.swift#L216-L221)).
-  When a long text title makes the stack taller than 690, the clip cuts off the action row, including the focused Play button.
-  Samsung's movie hero is also 690 whenever the stack fits, but grows instead of clipping, so Play stays visible.
-  An invisible focused button would break the [TV focus](../tv-focus.md) rule.
-- **Series readout without values.**
-  Apple keeps the Version, Audio and Subtitles bars whenever the hero has an episode ([`TVSeriesDetailView.swift:396`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVSeriesDetailView.swift#L396)), because it reads playback detail for that episode.
-  Samsung reads it only for the next-up episode, so it hides the readout, keeping its space, once nothing is loading and no value is known.
-- **Scroll back to the hero.**
-  Samsung uses Apple's 450 ms ease-in-out on a movie and 550 ms cubic-bezier(0.4, 0, 0.2, 1) on a series ([`TVDetailFocusScroll.swift:57`](https://github.com/Silo-Server/silo-apple/blob/5780c84f4a9c1e2bff006e653dd787e01ca24480/iosApp/iosApp/tvOS/Screens/Detail/TVDetailFocusScroll.swift#L57)).
-  Apple's repeated focus checks and scroll lock correct the tvOS focus engine's own scrolling, which Samsung does not have.
+- Apple TV (`silo-apple`, tvOS paths under `iosApp/iosApp/`): `7baff3ef`, `b3d08d44`, `df891d2e`, `5780c84`, `7e478b2`, `08ff656f`, `29c0dd43` (`TVDetailHero.swift`, `TVMovieDetailView.swift`, `TVSeriesDetailView.swift`, `TVDetailActions.swift`, `TVActionPopoverMenu.swift`, `TVEpisodeRail.swift`, `TVDetailFocusScroll.swift`, `TVTrailersRail.swift`).
+- Verification: desktop Chromium tests cover synthetic behavior only; follow [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt` verification and same-state Apple TV comparisons.

@@ -190,7 +190,7 @@ test("picking German shows Settings in German, and Match Device reads back in En
         await tv.eventually(async () => await panes.locator("h1.browse-title").innerText() === de("settings.title"), "the rail title is German");
         assert.equal(settings.profile().get(APP_LANGUAGE_KEY), "de");
         assert.equal(await panes.locator("h1.browse-title").innerText(), "Einstellungen");
-        assert.deepEqual(await panes.locator(".settings-category-title").allInnerTexts(), ["settings.general", "settings.playback", "settings.subtitles", "settings.category.server"].map(key => de(key as Parameters<typeof de>[0])));
+        assert.deepEqual(await panes.locator(".settings-category-title").allInnerTexts(), ["settings.general", "settings.playback", "settings.subtitles", "player.settings.diagnostics", "settings.category.server"].map(key => de(key as Parameters<typeof de>[0])));
         assert.equal(await panes.locator("h2.browse-section-title").innerText(), "Allgemein");
         assert.equal(await panes.locator(".settings-blurb").innerText(), deTv("settings.blurb.generalAppleTv"));
         // The cards section is drawn once its settings answer lands, so wait for each header instead of reading the list once.

@@ -252,18 +252,13 @@ export function mountProfiles(root: HTMLElement, options: ProfileOptions): Profi
         const showLoading = (): void => { redrawer = showLoading; message("profiles-loading", title(), ["Loading profiles."], [signOutButton(showLoading)], resume(), "info", "signout"); };
         showLoading();
         const deliver = (apply: () => void): void => hold(token, apply);
-        server.profiles.list(controller.signal).then(
-            (list) => deliver(() => {
+        server.profiles.listCollection(controller.signal).then(
+            (collection) => deliver(() => {
                 if (token !== view) return;
                 pending = undefined;
                 // The loading screen is over; whatever `then` draws registers its own redraw, and a screen that does not has none.
                 redrawer = undefined;
-                const id = server.accounts.localAccountId;
-                if (id) {
-                    try { server.accounts.directory.update(id, { profileCount: list.length }); }
-                    catch { /* The count is a display cache; the profile response remains usable. */ }
-                }
-                then(list);
+                then(collection.items);
             }),
             (error: unknown) => deliver(() => {
                 if (token !== view) return;

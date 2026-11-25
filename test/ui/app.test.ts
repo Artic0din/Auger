@@ -7,12 +7,13 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { DIAGNOSTICS_RELAY_URL } from "../../src/diagnostics.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { leavePlayer } from "./support/leavePlayer.ts";
-import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
 
@@ -92,6 +93,47 @@ appTest("cold reconciliation refreshes remembered profile artwork without remoun
     const source = await tv.page.locator('[data-focus="profiles"] img').getAttribute("src") ?? "";
     assert.match(source, /\/avatars\/presets\/fox\.png/);
 });
+
+for (const offline of [false, true]) {
+    for (const [previous, next] of [[undefined, 1], [1, 5], [1, undefined]] as const) {
+        appTest(`${offline ? "offline-then-online" : "remembered-profile cold start"} reconciliation refreshes profile limit ${previous} to ${next}`, async tv => {
+            if (previous === undefined) delete tv.fake.profiles.max_profiles;
+            else tv.fake.profiles.max_profiles = previous;
+            await signIn(tv, true);
+            const owner = profileItems(tv).find(item => item.id === "p-owner");
+            assert.ok(owner);
+            tv.fake.profiles = { ...tv.fake.profiles, items: [owner] };
+            if (next === undefined) delete tv.fake.profiles.max_profiles;
+            else tv.fake.profiles.max_profiles = next;
+            const hold = tv.fake.hold("/profiles");
+            const reads = tv.fake.requests.filter(request => request.path === "/profiles").length;
+            tv.offline = offline;
+            await tv.page.evaluate(() => window.appHarness.mount());
+            await tv.page.locator('[data-view="home"] .browse-card').first().waitFor({ timeout: 5000 });
+            assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0, "remembered launch skips the picker");
+            if (offline) {
+                const blocked = tv.blocked;
+                await jumpUntil(tv, 15000, async () => tv.blocked > blocked, "reconciliation tried while offline");
+                tv.offline = false;
+                await jumpUntil(tv, 15000, async () => tv.fake.requests.filter(request => request.path === "/profiles").length > reads, "reconciliation reads the profile collection");
+            }
+            await tv.eventually(async () => tv.fake.requests.filter(request => request.path === "/profiles").length > reads, "reconciliation reads the profile collection");
+            hold.release();
+            await tv.eventually(async () => await tv.page.locator('[data-focus="profiles"] img').count() === 1, "reconciliation applies the fresh profile");
+            const account = await tv.page.evaluate(() => {
+                const saved = JSON.parse(window.appHarness.storage.getItem("silo.native.accounts.v1")!) as {
+                    accounts: { id: string; profileCount: number; maxProfiles?: number }[]; selected: string;
+                };
+                return saved.accounts.find(row => row.id === saved.selected);
+            });
+            assert.ok(account);
+            assert.equal(account.maxProfiles, next, "reconciliation saves or clears the account limit");
+            assert.equal(account.profileCount, 1, "reconciliation saves the fresh count too");
+            await tv.page.locator('[data-focus="profiles"]').click();
+            assert.equal(await tv.page.getByRole("menuitem", { name: "Add Profile", exact: true }).count(), next === 1 ? 0 : 1);
+        });
+    }
+}
 
 appTest("cold reconciliation removes a deleted profile from Home", async tv => {
     await signIn(tv, true);
@@ -431,6 +473,7 @@ async function signInWithOneProfile(tv: Tv): Promise<Record<string, unknown>[]> 
 }
 
 appTest("an account with one profile offers Add Profile in Switch Profile's place, and it opens profile creation", async tv => {
+    delete tv.fake.profiles.max_profiles;
     await signInWithOneProfile(tv);
     await tv.page.locator('[data-focus="profiles"]').click();
     assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(), ["History", "Settings", "Add Profile", "Change Account", "Sign Out"]);
@@ -438,6 +481,25 @@ appTest("an account with one profile offers Add Profile in Switch Profile's plac
     await tv.page.locator('[data-screen="profile-create"]').waitFor();
     assert.equal(await tv.page.locator(".browse").count(), 0, "Browse has left the screen");
 });
+
+for (const limit of [0, 1, 2]) {
+    appTest(`a single-profile account with limit ${limit} ${limit <= 1 ? "hides" : "offers"} Add Profile`, async tv => {
+        tv.fake.profiles = { ...tv.fake.profiles, max_profiles: limit };
+        await signInWithOneProfile(tv);
+        await tv.page.locator('[data-focus="profiles"]').click();
+        assert.deepEqual(await tv.page.locator('.skyline-selector [role="menuitem"]').allTextContents(),
+            ["History", "Settings", ...(limit <= 1 ? [] : ["Add Profile"]), "Change Account", "Sign Out"]);
+        const account = await tv.page.evaluate(() => {
+            const saved = JSON.parse(window.appHarness.storage.getItem("silo.native.accounts.v1")!) as {
+                accounts: { id: string; profileCount: number; maxProfiles?: number }[]; selected: string;
+            };
+            return saved.accounts.find(row => row.id === saved.selected);
+        });
+        assert.ok(account);
+        assert.equal(account.profileCount, 1);
+        assert.equal(account.maxProfiles, limit, "the limit is saved on the open account");
+    });
+}
 
 async function moviesProfileMenu(tv: Tv, mode: "Recommended" | "Browse" = "Recommended"): Promise<void> {
     await tv.page.locator('[data-focus="movies"]').click();
@@ -2503,4 +2565,148 @@ test("a secure-platform startup failure has a focused retry and can recover", as
     } finally {
         await tv.page.context().close();
     }
+});
+
+appTest("a new profile cannot send an incident recorded before the switch", async (tv, playback) => {
+    const reports: { inc?: { stage: string }; play?: { e?: string } }[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        reports.push(route.request().postDataJSON());
+        await route.fulfill({ json: { ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" } });
+    });
+    await signIn(tv);
+    playback.next.push({ terminal: "session_expired" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+
+    const sendFromSettings = async (): Promise<void> => {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
+        await tv.page.getByText(/AUG-902/).first().waitFor();
+    };
+    await sendFromSettings();
+    assert.equal(reports[0]?.inc?.stage, "start");
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await sendFromSettings();
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1]?.inc, undefined);
+    assert.equal(reports[1]?.play?.e, undefined);
+});
+
+appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
+    const autoPayloads: string[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        autoPayloads.push(route.request().postData() ?? "");
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" }) });
+    });
+    await signIn(tv);
+    // Start real playback through AVPlay preparation, trigger an AVPlay codec error fallback, and confirm Diagnostics records it.
+    await startMovie(tv);
+    await tv.page.evaluate(() => {
+        window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    });
+    await prepare(tv);
+    await leavePlayer(tv);
+    await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, AVPlay error, and fallback event appear.
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("Direct play · MP4", { exact: true }).waitFor();
+    await tv.page.getByText("Original HTTP", { exact: true }).waitFor();
+    await tv.page.getByText("HTTP · MP4", { exact: true }).waitFor();
+    await tv.page.getByText("Source file", { exact: true }).waitFor();
+    await tv.page.getByText("Subtitle mode", { exact: true }).waitFor();
+    await tv.page.getByText("HDR setting", { exact: true }).waitFor();
+    await tv.page.getByText("Route fallbacks", { exact: true }).waitFor();
+    await tv.page.getByText("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", { exact: true }).waitFor();
+    await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+    const initialPaneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(initialPaneText.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), initialPaneText);
+
+    // Opt in to Automatic Error Reports so the upcoming terminal failure fires one redacted auto-report silently.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Trigger a structured terminal failure; Diagnostics records the structured code and fires one opt-in auto-report.
+    playback.next.push({ terminal: "source_unreadable" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.eventually(async () => autoPayloads.length === 1, "opt-in automatic error report posted");
+    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string }; inc?: { stage: string; pl: unknown; open: boolean } };
+    assert.equal(autoJson.auto, true);
+    assert.equal(autoJson.inc?.stage, "start");
+    assert.equal(autoJson.inc.pl, "not_reached");
+    assert.equal(autoJson.inc.open, false);
+    assert.equal(autoJson.play?.e, "terminal: source_unreadable");
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("terminal: source_unreadable", { exact: true }).waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    // Trigger a server error with a free-form message containing a private title and account name; Diagnostics must not record the free-form text.
+    tv.fake.script("/playback/start", problem(422, "validation_failed", "Private Movie Title for alice cannot play"));
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="diagnostics"]').click();
+    await tv.page.getByText("server: server_error", { exact: true }).waitFor();
+    assert.equal(autoPayloads.length, 1, "non-fatal server errors and cooldown must not send duplicate automatic reports");
+    const paneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(!paneText.includes("Private Movie Title"), "free-form server movie title must never enter diagnostics");
+    assert.ok(!paneText.includes("alice"), "free-form server account name must never enter diagnostics");
+
+    // Clear Session Log removes both playback and event history.
+    await tv.page.locator('[data-focus="clear-diagnostics"]').click();
+    await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
+    await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+
+    // Uncaught window error and unhandled rejection stay silent when auto-report is Off, and send safe error class names (never free-form messages) when On.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "false");
+    await tv.page.evaluate(() => {
+        window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("Secret Movie for alice"), message: "Secret Movie for alice" }));
+    });
+    assert.equal(autoPayloads.length, 1, "disabled auto-report must not post on uncaught window errors");
+
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.jump(16 * 60 * 1000);
+    await tv.page.evaluate(() => {
+        const rejection = new Event("unhandledrejection") as Event & { reason?: unknown };
+        rejection.reason = new RangeError("Private Title for bob");
+        window.dispatchEvent(rejection);
+    });
+    await tv.eventually(async () => autoPayloads.length === 2, "enabled auto-report posts safe error class on unhandled rejection");
+    const crashJson = JSON.parse(autoPayloads[1]!) as { auto?: boolean; err?: string };
+    assert.equal(crashJson.auto, true);
+    assert.equal(crashJson.err, "RangeError");
+    assert.ok(!autoPayloads[1]!.includes("Private Title") && !autoPayloads[1]!.includes("bob"), "uncaught error messages must never leave the TV");
 });

@@ -9,9 +9,11 @@ import { type Browse, mountBrowse, type PlayRequest } from "../../src/ui/browse.
 import { browseCache, clearBrowseCache } from "../../src/session/browseCache.ts";
 import { operations } from "../../src/api/operations.ts";
 import type { ThemeAudioOutput } from "../../src/ui/themeMusic.ts";
+import type { SettingValue, SettingsKey } from "../../src/contracts/v2/settings.ts";
 import { ExperimentalFeatures, type ExperimentalFeature } from "../../src/session/experimentalFeatures.ts";
 import { appLanguageCacheKey } from "../../src/ui/appLanguagePreferences.ts";
 import { storeBranding } from "../../src/ui/brandingCache.ts";
+import { DiagnosticsCollector } from "../../src/diagnostics.ts";
 import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManager.ts";
 
 export interface BrowseHarness {
@@ -37,6 +39,14 @@ export interface BrowseHarness {
     seedAppLanguage(choice: string): void;
     /** Keeps a branding answer naming this server, as an earlier launch's branding read left it. */
     seedServerName(name: string): void;
+    /** Seeds a playback snapshot and event into the shared Diagnostics collector. */
+    seedDiagnostics(): void;
+    /** Enqueues a player device setting write through browse's shared PlayerSettingsFlusher (#810). */
+    enqueuePlayerSetting(key: SettingsKey, value: SettingValue): void;
+    /** Returns keys currently held on this TV by browse's shared PlayerSettingsFlusher (#810). */
+    heldPlayerSettings(): readonly SettingsKey[];
+    /** Monotonic count of PlayerSettingsFlusher state notifications (incremented after drain schedules retries). */
+    playerSettingsNotificationCount(): number;
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -70,6 +80,9 @@ if (root === null) {
 let server: ConnectedServer | undefined;
 let profileName: string | undefined;
 let browse: Browse | undefined;
+let playerSettingsNotifications = 0;
+let stopPlayerSettingsWatch: (() => void) | undefined;
+let diagnostics: DiagnosticsCollector | undefined;
 const publicStorage = new MemoryPublicStorage();
 
 function connected(): ConnectedServer {
@@ -147,8 +160,10 @@ const harness: BrowseHarness = {
     },
     mount(offerSignOut = false) {
         document.getElementById("successor")?.remove();
+        diagnostics ??= new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: connected().server.serverVersion });
         browse = mountBrowse(root, {
             server: connected(),
+            diagnostics,
             ...(profileName === undefined ? {} : { profileName }),
             publicStorage,
             themeOutput: grant => recordingTheme(grant.url),
@@ -162,11 +177,16 @@ const harness: BrowseHarness = {
             ...(offerSignOut ? { onSignOut: () => { harness.signOutCalls++; } } : {}),
             ...(harness.offerSwitchServer ? { onSwitchServer: (back: () => void) => { harness.coverBack = back; } } : {}),
         });
+        stopPlayerSettingsWatch?.();
+        playerSettingsNotifications = 0;
+        stopPlayerSettingsWatch = browse.playerSettings().subscribe(() => { playerSettingsNotifications += 1; });
     },
     resume() {
         browse?.resumeAfterPlayback();
     },
     destroy() {
+        stopPlayerSettingsWatch?.();
+        stopPlayerSettingsWatch = undefined;
         browse?.destroy();
     },
     clearResponseCache() { clearBrowseCache(publicStorage); },
@@ -177,6 +197,35 @@ const harness: BrowseHarness = {
     },
     seedServerName(name) {
         storeBranding(publicStorage, connected().session.http.base.baseUrl, { serverName: name, markUrl: undefined, accentColor: undefined });
+    },
+    seedDiagnostics() {
+        diagnostics ??= new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV" });
+        diagnostics.recordPlaybackStats(
+            {
+                nowPlaying: [],
+                playback: [
+                    { label: "Playback", value: "Remuxed · MKV" },
+                    { label: "Video", value: "HEVC · 3840×2160 · 23.976 fps" },
+                ],
+                stream: [{ label: "Playback status", value: "Playing" }],
+                engine: [{ label: "Delivery", value: "Server Remux HLS" }, { label: "Source", value: "silo.example.test" }],
+            },
+            {
+                hdrEnabled: true,
+                routeFallbacks: 2,
+                avplayError: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT",
+            },
+        );
+        diagnostics.recordEvent("app", "seeded test event");
+    },
+    enqueuePlayerSetting(key, value) {
+        browse?.playerSettings().enqueue(key, value, "profile_device");
+    },
+    heldPlayerSettings() {
+        return browse?.playerSettings().heldKeys ?? [];
+    },
+    playerSettingsNotificationCount() {
+        return playerSettingsNotifications;
     },
     cacheOffline(route = "home") {
         const server = connected();

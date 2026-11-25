@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CLIENT_CAPABILITIES, clientCapabilities, hdrDetails, playbackContext, probeHdrPanel, type HdrReport } from "../../src/player/capabilities.ts";
+import { CLIENT_CAPABILITIES, clientCapabilities, hdrDetails, playbackContext, probeHdr, probeHdrPanel, type HdrReport } from "../../src/player/capabilities.ts";
 
 const OFF: HdrReport = { panel: { hdr10: false, hlg: false, dolbyVision: false }, preference: { hdrEnabled: false } };
 
@@ -79,4 +79,13 @@ test("HDR on claims HDR10 only, and leaves HDR10+, HLG and Dolby Vision unclaime
     const hlgOnly = { hdr10: false, hdr10_plus: false, hlg: true, dolby_vision_profiles: [] as readonly number[] };
     const named = playbackContext("S95C", "0.1.0", { panel: { hdr10: false, hlg: true, dolbyVision: false }, preference: { hdrEnabled: true } });
     assert.deepEqual(named.output.hdr_details, hlgOnly);
+});
+
+test("the HDR probe tells an observed answer from no usable answer", () => {
+    assert.equal(probeHdr({}), "unavailable");
+    assert.equal(probeHdr({ webapis: { avinfo: {} } }), "unavailable");
+    assert.equal(probeHdr({ webapis: { avinfo: { isHdrTvSupport: () => "true" } } }), "unavailable");
+    assert.equal(probeHdr({ webapis: { avinfo: { isHdrTvSupport: () => { throw new Error("NotSupportedError"); } } } }), "unavailable");
+    assert.equal(probeHdr({ webapis: { avinfo: { isHdrTvSupport: () => false } } }), "sdr");
+    assert.equal(probeHdr({ webapis: { avinfo: { isHdrTvSupport: () => true } } }), "hdr");
 });

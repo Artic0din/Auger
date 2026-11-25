@@ -319,6 +319,22 @@ export class SubtitleSession {
         return entry === undefined ? undefined : { entry, generated: this.tools.generatedLabel(entry.syncKey) };
     }
 
+    diagnosticsSubtitle(plan: PlaybackPlan): {
+        readonly subtitleMode: PlaybackPlan["subtitle"]["mode"];
+        readonly subtitleTrack: PlaybackPlan["subtitle"]["inventory"][number] | undefined;
+    } {
+        const shownId = this.shownSubtitleId(plan);
+        const subtitleTrack = shownId === undefined
+            ? undefined
+            : plan.subtitle.inventory.find(entry => entry.trackId === shownId);
+        const subtitleMode = shownId === undefined
+            ? "off"
+            : this.activeNativeOverride() !== undefined
+                ? (subtitleTrack?.delivery === "burn_in_only" ? "burn_in" : "render")
+                : plan.subtitle.mode;
+        return { subtitleMode, subtitleTrack };
+    }
+
     trackViewSlice(plan: PlaybackPlan): SubtitleTrackViewSlice {
         const sync = this.tools.syncView;
         const search = this.tools.searchView;

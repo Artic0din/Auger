@@ -14,6 +14,7 @@ const PATHS = {
     privacy: "M8 12V4A2 2 0 0 1 12 4V10A2 2 0 0 1 16 9V12A2 2 0 0 1 20 11V17C20 24 10 24 7 19L3 13A2 2 0 0 1 6 11L8 14Z",
     playback: "M3 5H21V19H3ZM10 9 16 12 10 15Z",
     subtitles: "M3 4H21V18H8L3 22ZM6 9H10M14 9H18M6 13H10M14 13H18",
+    diagnostics: "M3 12H7L10 4L14 20L17 12H21",
     "chevron-right": "M9 5 16 12 9 19",
     Recommended: "M10 5 12 11 18 13 12 15 10 21 8 15 2 13 8 11ZM19 2 20 5 23 6 20 7 19 10 18 7 15 6 18 5Z",
     Collections: "M2 8 12 3 22 8 12 13ZM2 13 12 18 22 13M2 18 12 23 22 18",
@@ -33,6 +34,7 @@ const PATHS = {
     "switch-server": "M3 3H21V10H3ZM3 14H21V21H3ZM7 6H8M7 17H8",
     signout: "M10 3H3V21H10M8 12H22M17 7 22 12 17 17",
     reset: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
+    "xmark-circle": "M12 2A10 10 0 1 1 12 22A10 10 0 1 1 12 2ZM9 9 15 15M15 9 9 15",
 } as const;
 
 /**

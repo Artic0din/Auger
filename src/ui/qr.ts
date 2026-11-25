@@ -6,11 +6,11 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 /** The four-module light margin the QR specification requires around the symbol. */
 const QUIET_ZONE = 4;
 
-export function qrCode(text: string, label: string): SVGSVGElement | undefined {
-    // Medium error correction still reads when glare or a camera angle hides part of the code.
+export function qrCode(text: string, label: string, ecc: "L" | "M" = "M"): SVGSVGElement | undefined {
+    // Medium error correction still reads when glare or a camera angle hides part of the code; callers with longer payloads can pass "L".
     let qr: ReturnType<typeof encode>;
     try {
-        qr = encode(text, { ecc: "M", border: QUIET_ZONE });
+        qr = encode(text, { ecc, border: QUIET_ZONE });
     } catch {
         return undefined;
     }

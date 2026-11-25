@@ -53,7 +53,7 @@
 .settings-scope { margin: -12px 0 40px; color: var(--silo-secondary); font-size: 26px; }
 .browse.settings { overflow: hidden; height: 100vh; box-sizing: border-box; padding: 108px 164px 44px; }
 .settings-panes { display: flex; align-items: stretch; gap: 52px; height: 100%; min-height: 0; }
-.settings-categories { width: 490px; flex-shrink: 0; display: flex; flex-direction: column; padding: 24px 0 100px; }
+.settings-categories { width: 490px; flex-shrink: 0; display: flex; flex-direction: column; padding: 24px 0 24px; }
 .settings-pane { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 22px 64px; }
 .settings-pane-header { display: flex; align-items: center; gap: 20px; padding: 0 24px; margin: 0 0 10px; }
 .settings-header-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; background: #ffffff12; flex-shrink: 0; }
@@ -96,7 +96,7 @@
 .settings-profile-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .settings-controls .browse-button,
 .settings-categories .browse-button { display: block; width: 100%; margin: 0 0 8px; border-radius: 14px; text-align: start; }
-.settings-categories .browse-button { display: flex; align-items: center; gap: 16px; box-sizing: border-box; height: 82px; padding: 15px 20px; margin-bottom: 6px; }
+.settings-categories .browse-button { display: flex; align-items: center; flex-shrink: 0; gap: 16px; box-sizing: border-box; height: 82px; padding: 15px 20px; margin-bottom: 6px; }
 /* TVSettingsRailRowStyle (TVSettingsComponents.swift:183-220): clear fill and no stroke at rest, selected fill when current, white platter on focus. */
 .settings-categories .browse-button:not(.settings-signout) { border: 0; background: transparent; box-shadow: none; }
 .settings-categories .settings-profile { height: 98px; margin-bottom: 28px; gap: 18px; }
@@ -1309,19 +1309,20 @@ svg.library-empty-icon { width: auto; }
 .browse-row[data-detail-section="related"] .browse-card { --card-caption-gap: 16px; }
 .browse-row[data-detail-section="related"] .browse-card-title { margin-top: 16px; padding-right: 0; padding-left: 0; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 29px; text-align: center; }
 .browse-row[data-detail-section="related"] .browse-card-subtitle { padding-right: 0; padding-left: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 24px; text-align: center; }
-.browse .browse-card:focus { transform: none; border-color: transparent; box-shadow: none; }
-.browse .browse-card .browse-art { transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out, outline-color var(--silo-fast) ease-out; outline: 4px solid transparent; outline-offset: -2px; }
-.browse .browse-card:is(:focus, [aria-current="true"]) .browse-art { outline-color: rgba(255,255,255,.7); }
+:is(.browse, .player-next-deck) .browse-card:focus { transform: none; border-color: transparent; box-shadow: none; }
+:is(.browse, .player-next-deck) .browse-card .browse-art { transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out, outline-color var(--silo-fast) ease-out; outline: 4px solid transparent; outline-offset: -2px; }
+:is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) .browse-art { outline-color: rgba(255,255,255,.7); }
 /* CSS box-shadow blur is twice the SwiftUI Gaussian radius. */
-.browse .browse-card:focus .browse-art { --card-focus-scale: 1.05; transform: scale(var(--card-focus-scale)); box-shadow: 0 8px 36px rgba(0,0,0,.45); }
-/* Continue Watching adds EpisodeThumbCard's focused shadow on top of the shared lift. */
-.browse .home-section .skyline-continue:not(.skyline-explore):focus .browse-art { box-shadow: 0 8px 36px rgba(0,0,0,.45), 0 10px 40px rgba(0,0,0,.5); }
+:is(.browse, .player-next-deck) .browse-card:focus .browse-art { --card-focus-scale: 1.05; transform: scale(var(--card-focus-scale)); box-shadow: 0 8px 36px rgba(0,0,0,.45); }
+/* Continue Watching and Up Next On Deck add EpisodeThumbCard's focused shadow on top of the shared lift. */
+.browse .home-section .skyline-continue:not(.skyline-explore):focus .browse-art,
+.player-next-deck.home-section .skyline-continue:not(.skyline-explore):focus .browse-art { box-shadow: 0 8px 36px rgba(0,0,0,.45), 0 10px 40px rgba(0,0,0,.5); }
 /* TVCardFocusStyle.swift:150-153: Select scales the lifted card by 0.97. Reduce Motion keeps it unscaled. */
-.browse .browse-card:focus[data-pressed] .browse-art { transform: scale(calc(var(--card-focus-scale) * .97)); }
-.browse .browse-card-title, .browse .browse-card-subtitle { transition: color var(--silo-fast) ease-out, transform var(--silo-fast) ease-out, text-shadow var(--silo-fast) ease-out; }
-.browse .browse-card:is(:focus, [aria-current="true"]) .browse-card-title { color: #fff; }
-.browse .browse-card:is(:focus, [aria-current="true"]) .browse-card-subtitle { color: rgba(255,255,255,.92); }
-.browse .browse-card:is(:focus, [aria-current="true"]) :is(.browse-card-title, .browse-card-subtitle) { transform: translateY(max(0px, calc(var(--card-art-height) * .025 + 8px - var(--card-caption-gap)))); text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
+:is(.browse, .player-next-deck) .browse-card:focus[data-pressed] .browse-art { transform: scale(calc(var(--card-focus-scale) * .97)); }
+:is(.browse, .player-next-deck) .browse-card-title, :is(.browse, .player-next-deck) .browse-card-subtitle { transition: color var(--silo-fast) ease-out, transform var(--silo-fast) ease-out, text-shadow var(--silo-fast) ease-out; }
+:is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) .browse-card-title { color: #fff; }
+:is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) .browse-card-subtitle { color: rgba(255,255,255,.92); }
+:is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) :is(.browse-card-title, .browse-card-subtitle) { transform: translateY(max(0px, calc(var(--card-art-height) * .025 + 8px - var(--card-caption-gap)))); text-shadow: 0 0 8px rgba(255,255,255,.22), 0 0 3px rgba(255,255,255,.12); }
 /* CastCardLabel sits inside the scaled SwiftUI button, including its captions. */
 .browse .details-person:focus { transform: scale(1.05); }
 .browse .details-person:focus .browse-art { transform: none; box-shadow: 0 6px 28px rgba(0,0,0,.35); }
@@ -1350,12 +1351,12 @@ svg.library-empty-icon { width: auto; }
 /* Collection tiles contain the collage and caption, so the tile owns focus. */
 .browse .discovery-collection:not(.collection-poster):focus { transform: scale(1.05); outline: 4px solid rgba(255,255,255,.7); outline-offset: -2px; box-shadow: 0 8px 36px rgba(0,0,0,.45); }
 @media (prefers-reduced-motion: reduce) {
-    .browse .browse-card:focus .browse-art { --card-focus-scale: 1; }
-    .browse .browse-card:is(:focus, [aria-current="true"]) .browse-art,
-    .browse .browse-card:is(:focus, [aria-current="true"]) :is(.browse-card-title, .browse-card-subtitle),
+    :is(.browse, .player-next-deck) .browse-card:focus .browse-art { --card-focus-scale: 1; }
+    :is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) .browse-art,
+    :is(.browse, .player-next-deck) .browse-card:is(:focus, [aria-current="true"]) :is(.browse-card-title, .browse-card-subtitle),
     .browse .details-person:focus,
     .browse .discovery-collection:not(.collection-poster):focus,
-    .browse .browse-card:focus[data-pressed] .browse-art { transform: none; }
+    :is(.browse, .player-next-deck) .browse-card:focus[data-pressed] .browse-art { transform: none; }
 }
 /* Keep the file-bound picker over Details, using Skyline's existing glass and focus grammar. */
 .details-audio-picker { position: fixed; left: 88px; top: 420px; width: 620px; max-height: 560px; overflow-y: auto; z-index: 12; }
@@ -1986,6 +1987,8 @@ svg.library-empty-icon { width: auto; }
 .settings-subtitle-preview { display: flex; justify-content: center; align-items: flex-end; box-sizing: border-box; height: 150px; min-height: 150px; flex-shrink: 0; margin: 0 24px 8px; padding: 12px 16px; border-radius: 18px; background: linear-gradient(98.9deg, #525252, #0f0f0f); overflow: hidden; }
 .settings-subtitle-preview span { text-align: center; font-weight: 600; line-height: 1.2; }
 /* TVSettingsPaneRowStyle isDestructive (TVSettingsComponents.swift:273-276): #B00020 at rest, #D22F3F on the white platter. */
+.settings-pane .settings-held-action { display: flex; align-items: center; gap: 16px; }
+.settings-pane .settings-held-action .skyline-menu-icon { width: 22px; height: 22px; margin: 0; }
 .settings-pane .settings-destructive { display: flex; align-items: center; gap: 16px; color: #b00020; }
 .settings-pane .settings-destructive .skyline-menu-icon { width: 22px; height: 22px; margin: 0; }
 .settings .settings-pane .browse-button.settings-destructive:focus { color: #d22f3f; background: #ededed; border-color: transparent; }

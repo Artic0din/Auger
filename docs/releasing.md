@@ -17,7 +17,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 
 The largest bump wins.
 When the workflow releases, it writes `X.Y.Z` into `app/config.xml` and signs the `.wgt` with the Tizen SDK public distributor certificate (no personal Samsung TV certificates or DUIDs).
-It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and opens a pull request to record the release notes in `CHANGELOG.md`.
+It then reserves the `vX.Y.Z` tag on the commit, publishes the release on that tag, and commits the release notes to `CHANGELOG.md` on `main`.
 A commit that is already at or behind the latest published `vX.Y.Z` release never releases again, so re-runs are safe.
 
 Only tags with a published GitHub Release count as released.
@@ -53,49 +53,66 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 
 ## Release notes and the changelog
 
-`scripts/generate-changelog.py` writes each release's notes from the commits since the previous release, in plain language for people who use Auger.
-It reads commits with the same Conventional Commit rules as the version bump and groups them:
+`scripts/generate-changelog.py` writes two records of each release from the commits since the previous release.
+
+The GitHub Release body is for people who use Auger.
+For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` (or `## Release note`) section.
+`CI scripts` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section without raw `#123` references or Conventional Commit prefixes (or explicit `None` for an internal-only fix).
+That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
+Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
+`None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
+A pull request without that section falls back to a legacy `Release note:` line, then to the commit itself.
+A pull request the workflow cannot read also falls back to its commit, so a GitHub API failure never blocks a release.
+The body opens with `Released: YYYY-MM-DD`, then Breaking Changes, Highlights, New, Improved, Security, and Fixed, without emojis.
+It ends with an **Install or update** section that points to the Apps2Samsung community catalog, and links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
+
+`CHANGELOG.md` is the full technical record, written from all non-bot commits in the release range without emojis.
+Each bullet links its pull request (`#123`) and short commit SHA (`a1b2c3d4`) and groups commits by technical category:
 
 | Section | Commits |
 | --- | --- |
-| ⚠️ Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
-| ✨ New Features | `feat` |
-| 🔧 Improvements | `perf` |
-| 🔒 Security | `fix` with the `security` or `sec` scope, or a subject naming a vulnerability, CVE, or secret leak |
-| 🐛 Fixes | `fix`, `revert`, or a `Revert "..."` subject |
+| Breaking Changes | any type with `!`, or a `BREAKING CHANGE:` footer, whose text it uses when present |
+| Features | `feat` |
+| Performance | `perf` |
+| Security | `fix` with the `security` or `sec` scope, or a subject naming a vulnerability, CVE, or secret leak |
+| Fixes | `fix` (including internal scopes), `revert`, or a `Revert "..."` subject |
+| Refactors & Maintenance | `refactor`, `chore`, `build`, `style` |
+| Tests | `test` |
+| Documentation | `docs` (excluding automated `docs(changelog): record vX.Y.Z release notes` commits) |
+| CI | `ci` |
+| Other Changes | other non-merge commits |
 
-It leaves out `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`, internal-scope fixes (`ci`, `docs`, `test`, `scripts`, `deps`, `build`), and merge commits unless they are breaking.
-Each bullet drops the type prefix and the `(#123)` suffix, starts with a capital, and leads with the scope's area, such as `- **Playback**: Add chapters` for `feat(player): add chapters (#12)`.
-Fixes read as plain sentences.
-A release with no user-facing commits reads `General maintenance and stability improvements.`
+It leaves out only automated `docs(changelog): record vX.Y.Z release notes` commits and merge commits unless they are breaking.
+A release with no commits in range reads `General maintenance and stability improvements.`
 
 The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
-After publishing, a separate **Open CHANGELOG.md pull request** job pushes a `docs/changelog-vX.Y.Z` branch inserting `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and opens a pull request against `main` (never pushing bot commits directly to `main`, and leaving any already-open changelog PR untouched).
-Pull requests opened with `GITHUB_TOKEN` do not trigger workflows automatically; close and reopen the pull request (or push a commit to its branch) so checks queue before merging.
+After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
+It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, a secret of the `changelog` environment that only `main` can deploy to, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
 A changelog that already has the version stays unchanged.
-If the changelog job fails after the release is published, use **Re-run failed jobs** to retry only the changelog PR, or add the section locally with:
+If the changelog job fails after the release is published, use **Re-run failed jobs** to retry only the changelog update, or add the section locally with:
 
 ```sh
 python3 scripts/generate-changelog.py update --file CHANGELOG.md --version X.Y.Z --from vPREVIOUS --to vX.Y.Z
 ```
 
-Preview notes locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`.
+Preview the GitHub Release body locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`, adding `--pr-notes-file PR.json` (`{"123": "<pull request body>"}`) to include pull request notes.
 `.github/release.yml` groups only the notes from GitHub's **Generate release notes** button.
 
 ## Installing and updating with Apps2Samsung
 
-1. Add this repository as a source: run `apps2samsung-cli sources add github.com/Artic0din/Auger-Tizen`, or use **Settings > Installing > Your sources** in the app.
-2. Install Auger from that source.
+Auger is listed in the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages/blob/main/packages/Artic0din__Auger-Tizen.json), which automatically tracks each new `vX.Y.Z` GitHub Release.
+
+1. Open Apps2Samsung and find **Auger** under **Media servers & players**.
+2. Install Auger directly from the catalog.
    Apps2Samsung re-signs the `.wgt` with your own Samsung certificate, so it installs straight onto your TV.
 3. Update with one click.
    Every release raises `X.Y.Z` in `app/config.xml`, so Apps2Samsung's updater sees every release.
 
+Do not add `github.com/Artic0din/Auger-Tizen` as a custom source unless you are testing an unlisted build.
+Adding it alongside the community catalog creates a duplicate `Unverified · Auger-Tizen` entry, which can be removed in Apps2Samsung under **Settings > Installing > Your sources**.
+
 Upgrading from a `0.1.0-beta.*` build requires uninstalling the older build first, because the package ID is now `AugerTv001.Auger` and Tizen treats a new package ID as a separate app.
 Uninstalling removes saved sign-in data, so you sign in again once; subsequent builds with `AugerTv001.Auger` update in place within the same install method (Apps2Samsung or sideloading).
-
-### Community catalog
-
-Auger is listed in the [Apps2Samsung community catalog](https://github.com/Apps2Samsung/tizen-community-packages/blob/main/packages/Artic0din__Auger-Tizen.json), which automatically tracks each new `vX.Y.Z` GitHub Release.
 
 ## Sideloading a build
 

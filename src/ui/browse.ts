@@ -50,6 +50,7 @@ import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
 import { personQuery } from "./personFilmography.ts";
 import { PersonMetadataRefresh } from "./personMetadataRefresh.ts";
 import { mountSettings, type SettingsScreen } from "./settings.ts";
+import { type DiagnosticsCategory, DiagnosticsCollector, type DiagnosticsSendResult } from "../diagnostics.ts";
 import { signOutRemovesServer } from "./signOutConfirmation.ts";
 import type { CardOverlayPrefs } from "./cardOverlays.ts";
 import { PresentationSettings } from "./presentationSettings.ts";
@@ -75,6 +76,8 @@ import { stopFeed, waitForFeedEnd } from "./catalogFeed.ts";
 import { leavePanel } from "./libraryBrowseViews.ts";
 import type { BrowseChange, DiscoveryState } from "./libraryDiscovery.ts";
 import { shufflePick } from "../player/nextShuffle.ts";
+import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "../player/playerSettingsFlusher.ts";
+import { StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
 import { avatarReference, avatarText } from "./profilePicker.ts";
 import { ExperimentalFeatures } from "../session/experimentalFeatures.ts";
@@ -101,6 +104,8 @@ export interface BrowseOptions {
     readonly profileAvatarUrl?: string;
     readonly profileAvatarText?: string;
     readonly clock?: Clock;
+    readonly diagnostics?: DiagnosticsCollector;
+    readonly sendDiagnostics?: (collector: DiagnosticsCollector, signal: AbortSignal, category?: DiagnosticsCategory) => Promise<DiagnosticsSendResult>;
     readonly publicStorage?: PublicStorage;
     /** Protected storage for the Home and For You snapshot artwork, which is signed. */
     readonly keyManager?: TizenKeyManager;
@@ -119,6 +124,10 @@ export interface Browse {
     spoilers(): EpisodeSpoilerSettings;
     /** The profile's Resolution cap, which ranks the files that next-episode, On Deck and shuffle picks start. */
     resolutionCap(): Pick<ResolutionCap, "quality" | "ready">;
+    /** Shared debounced, retried writer for player device settings (#810). */
+    playerSettings(): PlayerSettingsFlusher;
+    /** Local Still Watching threshold for the active profile (#796). */
+    stillWatchingThreshold(): number;
 }
 
 /** SearchViewModel.onQueryChanged and RequestSearchSectionViewModel.onQueryChanged both wait 300 ms. */
@@ -196,6 +205,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     let activePersonal: object | undefined;
     const personalSnapshots = new WeakMap<Extract<Route, { kind: "personal" }>, SectionSnapshot>();
     const showAudiobooks = new ShowAudiobooks(options.publicStorage, `silo.nav.showAudiobooks:${JSON.stringify([server.server.serverId, session.account?.id ?? "", session.activeProfile.id])}`);
+    const stillWatching = new StillWatchingPreference(options.publicStorage, `silo.player.stillWatchingThreshold:${JSON.stringify([server.server.serverId, session.account?.id ?? "", session.activeProfile.id])}`);
+    const playerSettings = new PlayerSettingsFlusher(sessionPlayerSettingsTransport(session), clock, {
+        scopeId: () => JSON.stringify([server.server.serverId, session.account?.id ?? "", session.activeProfile?.id ?? ""]),
+        signal: () => session.authoritySignal,
+        ...(options.publicStorage === undefined ? {} : { storage: options.publicStorage }),
+    });
     const browsePrefs = new BrowsePrefs(options.publicStorage, `silo.browse:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`);
     const navigation = new NavigationSettings((spec, signal) => session.call({ ...spec, profileScoped: true, signal }), () => {
         if (torn) return;
@@ -898,6 +913,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         stopSearchSupplement();
         presentation.stop();
         resolutionCap.stop();
+        playerSettings.destroy();
         episodeSpoilers?.stop();
         document.removeEventListener("visibilitychange", themeVisibility);
         window.visualViewport?.removeEventListener("resize", keyboardUp);
@@ -2960,6 +2976,14 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         name: profileName,
         serverName: () => cachedBranding(options.publicStorage, context.baseUrl)?.serverName,
         settings: () => {
+            const diagnostics = options.diagnostics ?? new DiagnosticsCollector({ appVersion: APP_VERSION, tvModel: "Samsung TV", serverVersion: server.server.serverVersion }, clock, options.publicStorage);
+            const origin = top()?.kind;
+            switch (origin) {
+                case "item": case "season": case "boxSet": diagnostics.setPrecedingScreen("details"); break;
+                case "homeSection": case "resume": diagnostics.setPrecedingScreen("home"); break;
+                case "libraryResults": diagnostics.setPrecedingScreen("library"); break;
+                default: diagnostics.setPrecedingScreen(origin);
+            }
             const spoilersBeforeSettings = episodeSpoilers?.settings;
             stopSearchSupplement();
             shuffleGeneration++;
@@ -3009,6 +3033,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 probeWatchParty();
             }, server.profileLaunch, {
                 showAudiobooks,
+                stillWatching,
+                playerSettings,
                 profileName,
                 profileAvatarUrl,
                 profileAvatarText,
@@ -3018,7 +3044,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 removesServer: () => signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
                 ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
                 ...(options.onSwitchServer === undefined ? {} : { switchServer: options.onSwitchServer }),
-            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs);
+            }, options.onAccounts, episodeSpoilers, experimental, themePrefs, languagePrefs, diagnostics, options.sendDiagnostics);
             syncThemeMusic();
         },
         personal: (source, anchor = "profiles") => {
@@ -3040,6 +3066,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         profileCount: () => {
             try { return server.accounts.directory.list().find(row => row.id === server.accounts.localAccountId)?.profileCount ?? 0; }
             catch { return 0; } // An unreadable account list is a list not read yet: Switch Profile.
+        },
+        profileLimit: () => {
+            try { return server.accounts.directory.list().find(row => row.id === server.accounts.localAccountId)?.maxProfiles; }
+            catch { return undefined; }
         },
         ...(options.onSwitchServer === undefined ? {} : { switchServer: () => coverBrowse(back => options.onSwitchServer?.(back)) }),
         ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
@@ -3114,6 +3144,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         destroy: teardown,
         spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false },
         resolutionCap: () => resolutionCap,
+        playerSettings: () => playerSettings,
+        stillWatchingThreshold: () => stillWatching.value,
     };
 }
 

@@ -83,6 +83,7 @@ export interface PlanShape {
     /** Replaces the default `/api/v2/stream/<session>?st=<signed>` URL. */
     readonly url?: (sessionId: string) => string;
     readonly durationSeconds?: number;
+    readonly dolbyVisionProfile?: number;
     /** `stream.protocol`, when the plan is HLS (`hls`) rather than the fixture's progressive URL. */
     readonly protocol?: string;
     readonly container?: string;
@@ -431,7 +432,7 @@ export class FakePlayback {
                         ...(shape.container === undefined ? {} : { container: shape.container }),
                     },
                     timeline: { ...toRecord(plan.timeline), ...shape.timeline },
-                    source: { ...source, duration_seconds: shape.durationSeconds ?? source.duration_seconds },
+                    source: { ...source, duration_seconds: shape.durationSeconds ?? source.duration_seconds, ...(shape.dolbyVisionProfile === undefined ? {} : { dolby_vision_profile: shape.dolbyVisionProfile }) },
                     effective_media_file_id: file.id,
                     selected_tracks: {
                         audio: { id: `file:${file.id}:audio:${session.audioIndex}`, ...(shape.omitAudioIndex === true ? {} : { index: session.audioIndex }) },
