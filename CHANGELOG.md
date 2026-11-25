@@ -10,6 +10,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.5.0] - 2026-11-25
+
+### ✨ New Features
+
+- **Playback**: Land Up Next, Auto-play, Shuffle, and Still Watching stack
+
 ## [0.3.0] - 2026-11-24
 
 ### ✨ New Features

@@ -201,7 +201,6 @@ AVPlay quotes below are from Samsung's [AVPlay API](https://developer.samsung.co
 | Deinterlacing, Deinterlacing Field Rate | AVPlay exposes `ScanType` read-only with no deinterlacer or cadence setter. This client claims H.264/HEVC only so the server converts MPEG-2/VC-1. |
 | Lossless Multichannel Audio | AVPlay has no client-side lossless bridge decoder; Samsung TVs lack TrueHD and dropped DTS in Tizen 7.0+; `tvaudiocontrol.getOutputMode()` cannot attest lossless sink support; server transcode targets are `copy`, `opus`, `eac3`, `ac3`, `aac`. |
 | TrueHD Atmos and DTS:X | Hidden in Apple's own Silo build (`AetherLoadSpec.swift:660-666`), and Samsung lists neither codec. |
-| Still Watching prompt | Apple's EPISODES row limits consecutive autoplay episodes (`TVPlaybackSettingsView.swift:275-279`); Samsung has no guard yet ([#796](https://github.com/Artic0din/Auger-Tizen/issues/796)). |
 | Use Device Settings (captions) | Samsung exposes no TV-wide caption-style API for the app subtitle overlay. |
 | Diagnostics (Silo server upload) | Auger is a third-party client and does not upload to Silo's first-party diagnostics endpoint (#138). Instead, **Settings > Diagnostics** provides a 4-category **Send Diagnostics Report** picker (deduplicated through the Auger Cloudflare Worker relay to `diagnostics` GitHub Issues), a TV-wide **Automatic Error Reports** toggle for public GitHub issues (off by default), and a zero-backend **Share via QR Code** backup (#847). |
 

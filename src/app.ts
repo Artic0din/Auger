@@ -308,7 +308,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         };
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
-            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, record => triggerAutoReport(record));
+            : startPlayback(root, server, request, { onBack: resume, onEnd: resume, onError: resume }, options.player, () => content.spoilers(), activeCore.publicStorage, content.resolutionCap(), diagnostics, record => triggerAutoReport(record), content.playerSettings(), () => content.stillWatchingThreshold());
     };
 
     const onBack = (event: KeyboardEvent): void => {

@@ -53,6 +53,8 @@ Existing titles and historical evidence are left untouched; reuse adds a comment
    npx wrangler login
    npx wrangler secret put GITHUB_TOKEN
    ```
+   In the Cloudflare dashboard, add it as type **Secret**, not **Text**: every deploy replaces Text variables with the `[vars]` in `wrangler.toml`, and the Worker then answers each report with HTTP 503 `relay_not_configured`.
+   The deploy workflow checks for the secret first and skips the deploy when it is missing.
 3. Deploy the Worker and custom domain route:
    ```sh
    npx wrangler deploy

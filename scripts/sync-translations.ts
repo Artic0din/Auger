@@ -138,14 +138,22 @@ function readSources(directory: string): string[] {
     return readdirSync(directory, { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".ts")).map(name => readFileSync(join(directory, name), "utf8"));
 }
 
-async function download(path: string, commit: string): Promise<Record<string, ArbEntry>> {
-    const response = await fetch(`https://raw.githubusercontent.com/${REPOSITORY}/${commit}/${path}`);
+export type SyncFetch = (input: string, init?: RequestInit) => Promise<Pick<Response, "ok" | "status" | "json">>;
+
+export interface SyncOptions {
+    readonly argv?: readonly string[];
+    readonly fetch?: SyncFetch;
+    readonly destination?: string;
+}
+
+async function download(path: string, commit: string, fetchFn: SyncFetch): Promise<Record<string, ArbEntry>> {
+    const response = await fetchFn(`https://raw.githubusercontent.com/${REPOSITORY}/${commit}/${path}`);
     if (!response.ok) throw new Error(`${path} at ${commit}: HTTP ${response.status}`);
     return await response.json() as Record<string, ArbEntry>;
 }
 
-async function resolveCommit(ref: string): Promise<string> {
-    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/commits/${encodeURIComponent(ref)}`, { headers: { Accept: "application/vnd.github+json" } });
+async function resolveCommit(ref: string, fetchFn: SyncFetch): Promise<string> {
+    const response = await fetchFn(`https://api.github.com/repos/${REPOSITORY}/commits/${encodeURIComponent(ref)}`, { headers: { Accept: "application/vnd.github+json" } });
     if (!response.ok) throw new Error(`${ref}: HTTP ${response.status}`);
     const { sha } = await response.json() as { sha: string };
     return sha;
@@ -160,18 +168,19 @@ export function languagesToSync(options: readonly string[]): string[] {
     return languages;
 }
 
-async function main(): Promise<void> {
-    const [ref, ...options] = process.argv.slice(2);
+export async function main(opts: SyncOptions = {}): Promise<void> {
+    const [ref, ...options] = opts.argv ?? process.argv.slice(2);
     if (ref === undefined || ref.startsWith("--")) throw new Error(USAGE);
+    const fetchFn = opts.fetch ?? fetch;
     const languages = languagesToSync(options);
-    const commit = await resolveCommit(ref);
+    const commit = await resolveCommit(ref, fetchFn);
     const root = join(dirname(fileURLToPath(import.meta.url)), "..");
     // Everything is downloaded and checked before any vendored file changes.
-    const englishArb = await download("catalog/en.arb", commit);
+    const englishArb = await download("catalog/en.arb", commit, fetchFn);
     const translationArbs = new Map<string, Record<string, ArbEntry>>();
-    for (const tag of languages) if (tag !== "en") translationArbs.set(tag, await download(`catalog/${tag}.arb`, commit));
+    for (const tag of languages) if (tag !== "en") translationArbs.set(tag, await download(`catalog/${tag}.arb`, commit, fetchFn));
     const catalogs = buildCatalogs(englishArb, translationArbs, readSources(join(root, "src")), languages);
-    const destination = join(root, "src", "i18n", "catalog");
+    const destination = opts.destination ?? join(root, "src", "i18n", "catalog");
     mkdirSync(destination, { recursive: true });
     for (const stale of readdirSync(destination)) if (stale.endsWith(".json")) rmSync(join(destination, stale));
     for (const [tag, messages] of catalogs) {

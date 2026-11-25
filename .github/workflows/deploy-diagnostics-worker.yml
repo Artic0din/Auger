@@ -57,5 +57,10 @@ jobs:
             echo '::error::Set the CLOUDFLARE_ACCOUNT_ID repository variable and CLOUDFLARE_API_TOKEN repository secret.'
             exit 1
           fi
-          # GITHUB_TOKEN is an existing Worker secret, not a GitHub Actions input.
+          # Check before deploying: a deploy replaces dashboard Text variables with [vars], so the token only survives as a Secret.
+          secrets="$(npx --yes wrangler@4.168.0 secret list --format json)"
+          if ! jq -e 'any(.[]; .name == "GITHUB_TOKEN" and .type == "secret_text")' <<<"$secrets" >/dev/null; then
+            echo '::error::The Worker has no GITHUB_TOKEN secret, so every report would get HTTP 503. Run npx wrangler secret put GITHUB_TOKEN in workers/diagnostics-relay, or add it in the dashboard as type Secret (not Text), then rerun this workflow.'
+            exit 1
+          fi
           npx --yes wrangler@4.168.0 deploy

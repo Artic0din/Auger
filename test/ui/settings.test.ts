@@ -1546,7 +1546,7 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         const hdr = order.indexOf("hdr");
         assert.equal(order.includes("dolby-vision"), false, order.join(","));
         assert.equal(await tv.page.getByRole("switch", { name: "Dolby Vision", exact: true }).count(), 0);
-        assert.ok(audio >= 0 && audio < hdr && order[hdr + 1] === "spoiler-images", order.join(","));
+        assert.ok(audio >= 0 && audio < hdr && order[hdr + 1] === "still-watching", order.join(","));
         assert.deepEqual(await tv.page.locator(".settings-section-header").allTextContents(), ["QUALITY", "STREAMING", "EPISODES", "SPOILERS", "VIDEO", "AUDIOBOOKS", "RESET"]);
         assert.equal(await tv.page.locator('[data-focus="hdr"] .settings-row-value').innerText(), "On");
         assert.equal(await tv.page.getByRole("switch", { name: "HDR", exact: true }).getAttribute("aria-checked"), "true");
@@ -1576,7 +1576,7 @@ test("Playback shows HDR after the Streaming rows and never shows or writes Dolb
         assert.equal(tv.fake.requests.some(request => request.path.includes(DOLBY_VISION_KEY)), false);
         await tv.page.locator('[data-focus="hdr"]').focus();
         await tv.remote(40);
-        assert.equal(await tv.focused(), "spoiler-images");
+        assert.equal(await tv.focused(), "still-watching");
     } finally { await tv.page.context().close(); }
 });
 
@@ -1589,7 +1589,7 @@ test("Playback offers no Streaming row AVPlay cannot honour, even when the serve
         await openSettings(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         const order = await tv.page.locator(".settings-pane [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
-        assert.deepEqual(order.slice(order.indexOf("audio"), order.indexOf("spoiler-images")), ["audio", "hdr"]);
+        assert.deepEqual(order.slice(order.indexOf("audio"), order.indexOf("still-watching")), ["audio", "hdr"]);
         const text = await tv.page.locator(".settings-pane").innerText();
         for (const name of ["Seek Cache", "Buffer Ahead", "Lossless", "TrueHD", "DTS:X", "Deinterlacing"]) assert.equal(text.includes(name), false, name);
         assert.equal(await tv.page.getByRole("switch", { name: /Seek Cache|Lossless|TrueHD/ }).count(), 0);
@@ -1814,6 +1814,81 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
             assert.ok(githubPlayback.includes("Route fallbacks: 2"), githubPlayback);
             assert.ok(githubPlayback.includes("AVPlay error: PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), githubPlayback);
         } finally { await helperPage.close(); }
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings Playback shows NOT SAVED with Try Again and Discard Held Change when Auto-play retries run out (#810)", async () => {
+    const { tv, settings } = await setup(true);
+    try {
+        settings.remainingRows = true;
+        settings.profile().set("playback.auto_play_next", true);
+        // Script 6 transient 503 replies (initial debounced PUT + 5 automatic retries) so the write becomes held.
+        tv.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", ...Array.from({ length: 6 }, () => ({ status: 503, body: { error: "unavailable" } })));
+        await tv.page.evaluate(() => window.browseHarness.enqueuePlayerSetting("playback.auto_play_next", false));
+        const putCount = (): number => tv.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length;
+        for (const [index, delay] of [750, 1000, 2000, 4000, 8000, 16000].entries()) {
+            const before = await tv.page.evaluate(() => window.browseHarness.playerSettingsNotificationCount());
+            await tv.jump(delay);
+            await tv.eventually(
+                async () => putCount() >= index + 1 && (await tv.page.evaluate(() => window.browseHarness.playerSettingsNotificationCount())) > before,
+                `auto_play_next attempt ${index + 1} settled`,
+            );
+        }
+        await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.heldPlayerSettings())).includes("playback.auto_play_next"), "auto_play_next held");
+
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator('[data-focus="held-retry"]').waitFor();
+        await tv.page.locator('[data-focus="held-discard"]').waitFor();
+        await tv.page.getByText("NOT SAVED", { exact: true }).waitFor();
+        await tv.page.getByText("A change couldn't be saved to the server. It stays on this device until you try again or discard it.", { exact: true }).waitFor();
+        // Auto-play row reflects the unsettled local value (Off) while held.
+        assert.equal(await tv.page.locator('[data-focus="auto-next"] .settings-row-value').textContent(), "Off");
+
+        // Discard while server cannot be reached keeps the held change and shows the offline discard message.
+        tv.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 503, body: { error: "unavailable" } });
+        await tv.page.locator('[data-focus="held-discard"]').click();
+        await tv.page.getByText("Couldn't reach the server to discard this change. It stays on this device until the server can be reached.", { exact: true }).waitFor();
+        assert.equal(await tv.page.locator('[data-focus="held-discard"]').count(), 1);
+
+        // Once the server answers again, Try Again commits the held value and removes the NOT SAVED section.
+        await tv.page.locator('[data-focus="held-retry"]').click();
+        await tv.eventually(async () => await tv.page.locator('[data-focus="held-retry"]').count() === 0, "NOT SAVED cleared after retry");
+        const puts = tv.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
+        assert.deepEqual(puts.at(-1)?.body, { value: false });
+        assert.equal(await tv.page.locator('[data-focus="auto-next"] .settings-row-value').textContent(), "Off");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Settings Playback shows Still watching prompt after Auto-play next, defaults to 3 episodes, and persists locally (#796)", async () => {
+    const { tv, settings } = await setup(true);
+    try {
+        settings.remainingRows = true;
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator('[data-focus="still-watching"]').waitFor();
+        const episodeRows = await tv.page.locator(".settings-pane [data-focus]").evaluateAll(nodes =>
+            nodes.map(node => node.getAttribute("data-focus")).filter(id => ["auto-next", "still-watching", "next-up", "skip-intros", "skip-credits"].includes(id ?? "")));
+        assert.deepEqual(episodeRows, ["auto-next", "still-watching", "next-up", "skip-intros", "skip-credits"]);
+        assert.equal(await tv.page.locator('[data-focus="still-watching"] .settings-row-title').textContent(), "Still watching prompt");
+        assert.equal(await tv.page.locator('[data-focus="still-watching"] .settings-row-value').textContent(), "3 episodes");
+
+        const writesBefore = tv.fake.requests.filter(request => request.method !== "GET").length;
+        await tv.page.locator('[data-focus="still-watching"]').click();
+        await tv.page.locator('[data-focus="still-watching:0"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus^="still-watching:"]').count(), 21);
+        assert.equal(await tv.page.locator('[data-focus="still-watching:0"]').textContent(), "Off");
+        assert.equal(await tv.page.locator('[data-focus="still-watching:1"]').textContent(), "1 episode");
+        assert.equal(await tv.page.locator('[data-focus="still-watching:3"]').getAttribute("aria-checked"), "true");
+        assert.equal(await tv.page.locator('[data-focus="still-watching:20"]').textContent(), "20 episodes");
+
+        await tv.page.locator('[data-focus="still-watching:0"]').click();
+        await tv.page.locator('[data-focus="still-watching"]').waitFor();
+        assert.equal(await tv.focused(), "still-watching");
+        assert.equal(await tv.page.locator('[data-focus="still-watching"] .settings-row-value').textContent(), "Off");
+        assert.equal(tv.fake.requests.filter(request => request.method !== "GET").length, writesBefore, "Still watching prompt is client-local and never writes to the server");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
