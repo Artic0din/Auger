@@ -1032,6 +1032,11 @@ export class PlaybackController implements PlayerControls {
         attempt.offer.credits = true;
         attempt.promptDismissed = false;
         if (!attempt.offer.started) this.beginDiscovery(attempt);
+        else {
+            const offer = attempt.offer;
+            if (offer.episodeFailed && !offer.episodeLoading && !offer.episodeManualRetried) { offer.episodeManualRetried = true; this.retryEpisode(attempt); }
+            if (offer.deckFailed && !offer.deckLoading && !offer.deckManualRetried) { offer.deckManualRetried = true; this.retryDeck(attempt); }
+        }
         this.publishOffer(attempt);
         return true;
     }
@@ -1060,7 +1065,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         if (attempt.offer.cancelCreditsTimer !== undefined) return;
-        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        const deadline = attempt.offer.creditsDeadline ?? (this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000);
         attempt.offer.creditsDeadline = deadline;
         const tick = (): void => {
             if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || attempt.promptDismissed || this.completion !== undefined) {
@@ -1069,6 +1074,10 @@ export class PlaybackController implements PlayerControls {
             }
             const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
             if (remaining === 0) {
+                if (this.current.phase !== "playing" && this.current.phase !== "paused") {
+                    this.cancelCreditsCountdown(attempt, false);
+                    return;
+                }
                 this.cancelCreditsCountdown(attempt);
                 this.playNext();
                 return;
@@ -4270,6 +4279,9 @@ export class PlaybackController implements PlayerControls {
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
+        if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined && attempt.offer.cancelCreditsTimer === undefined && attempt.offer.creditsDeadline <= this.deps.clock.now()) {
+            this.startCreditsCountdownIfNeeded(attempt);
+        }
     }
 
     private inPromptWindow(attempt: Attempt): boolean {

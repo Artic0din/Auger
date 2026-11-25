@@ -949,6 +949,46 @@ test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Ne
     r.controller.destroy();
 });
 
+test("opening Up Next over credits retries failed first-frame discovery and preserves countdown expiry across connection recovery (#795)", async () => {
+    // 1. Failed first-frame next-episode lookup is retried when credits open Up Next.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        r.h.fake.script("/catalog/series/series-1/seasons", problem(503, "unavailable", "Busy"));
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext?.next !== undefined && view.upNext.countdown === 10, "credits open retries failed first-frame lookup and starts countdown");
+        await r.h.clock.advance(10_000);
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "retried credits discovery advances after 10 s");
+        r.controller.destroy();
+    }
+    // 2. Countdown expiry during connection recovery still starts the next episode once recovery resumes playback.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.ok(last(r.views).phase === "playing");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(12_000);
+        assert.equal(last(r.views).phase, "loading", "still recovering when credits countdown expires");
+        r.avplay.finishPrepare();
+        r.avplay.finishSeek();
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "recovery resumption honours the expired credits countdown");
+        r.controller.destroy();
+    }
+});
+
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
     const r = await rig();
     const settings = new FakeSettings(r.h.fake);
