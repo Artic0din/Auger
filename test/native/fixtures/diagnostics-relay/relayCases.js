@@ -244,6 +244,21 @@ export const CASES = [
     },
   },
   {
+    name: "a changed device or server updates the same incident once",
+    async run(handleRequest) {
+      const gh = fakeGitHub();
+      await send(handleRequest, gh, report(sessionExpiredAtStart, "auto"));
+      const next = report(sessionExpiredAtStart, "manual", { fw: "1660", srv: "413" });
+      equal((await send(handleRequest, gh, next)).json.status, "updated", "environment-only change");
+      const comment = gh.comments()[0].body.body;
+      includes(comment, "**Firmware:** `1650` → `1660`", "firmware change");
+      includes(comment, "**Silo server:** `412` → `413`", "server change");
+      equal((await send(handleRequest, gh, next)).json.status, "duplicate", "repeat delivery");
+      equal(gh.issues.length, 1, "same issue");
+      equal(gh.comments().length, 1, "one follow-up");
+    },
+  },
+  {
     name: "recovered, refused, interrupted and network outcomes stay manual: automatic sends are rejected without touching GitHub",
     async run(handleRequest) {
       const recovered = { ...avplayAt("avplay_prepare", "PLAYER_ERROR_CONNECTION_FAILED"), out: "recovered", kind: undefined, fs: undefined, fc: undefined, rec: { n: 1, c: 0, r: "recovered" } };

@@ -851,6 +851,17 @@ test("a profile change during a pending change aborts it and acts no further", a
     assert.deepEqual(r.exits, ["end:authority_changed"]);
 });
 
+test("a player error after a refused subtitle switch belongs to the playing stream", async () => {
+    const r = await rig();
+    await playMovie(r);
+    r.controller.selectSubtitle("file:42:subtitle:0");
+    await settle(r);
+    assert.equal(tracks(r).change.state, "refused");
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.equal(r.controller.incidentTrace()?.first?.stage, "playing");
+    r.controller.destroy();
+});
+
 test("a failed route during a refused change is recovered once the change settles", async () => {
     const r = await rig();
     const id = await playMovie(r);
@@ -3955,6 +3966,8 @@ test("an embedded SRT sidecar on the same direct-play URL switches without reope
     view = last(r.views);
     assert.equal(view.phase, "playing");
     if (view.phase === "playing") assert.equal(view.captions?.text ?? "", "");
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    assert.equal(r.controller.incidentTrace()?.first?.stage, "playing");
     r.controller.destroy();
 });
 

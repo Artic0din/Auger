@@ -2339,6 +2339,9 @@ export class PlaybackController implements PlayerControls {
             this.beginCompletion(attempt);
             return;
         }
+        if (attempt.started && (attempt.trace.stage === "track_change" || attempt.trace.stage === "quality_change")) {
+            enterStage(attempt.trace, "playing");
+        }
         this.showPlayback(attempt);
         const failure = attempt.changeFailure;
         attempt.changeFailure = undefined;

@@ -322,10 +322,16 @@ export function formatIssue(record) {
 // Follow-up comments
 // ---------------------------------------------------------------------------
 
-const LEGACY_DIFF_FIELDS = [
+const VERSION_DIFF_FIELDS = [
   ["fw", "Firmware"],
   ["os", "Tizen OS"],
   ["srv", "Silo server"],
+];
+
+const DEVICE_DIFF_FIELDS = [...VERSION_DIFF_FIELDS, ["ua", "Browser"], ["hdr", "HDR TV support"]];
+
+const LEGACY_DIFF_FIELDS = [
+  ...VERSION_DIFF_FIELDS,
   ["cat", "Category"],
   ["err", "App error"],
   ["m", "Playback"],
@@ -351,6 +357,12 @@ function safeLegacyValue(key, value) {
   if (key === "hdr") return safe ? "On" : "Off";
   if (key === "cat") return CATEGORY_LABELS[safe];
   return String(safe);
+}
+
+function changedEvidence(fields, before, after) {
+  return fields
+    .filter(([key]) => after[key] !== undefined && before[key] !== after[key])
+    .map(([key, label]) => `- **${label}:** \`${safeLegacyValue(key, before[key])}\` → \`${safeLegacyValue(key, after[key])}\``);
 }
 
 const INCIDENT_DIFF_FIELDS = [
@@ -418,10 +430,11 @@ function incidentFollowUp(previous, record, hash) {
     return lines.join("\n");
   }
   const before = previous.state.inc ?? {};
-  const after = incidentStableState(record).inc;
+  const after = inc;
   const changed = INCIDENT_DIFF_FIELDS
     .filter(([path]) => readPath(after, path) !== undefined && JSON.stringify(readPath(after, path)) !== JSON.stringify(readPath(before, path)))
     .map(([path, label]) => `- **${label}:** \`${safeScalar(readPath(before, path))}\` → \`${safeScalar(readPath(after, path))}\``);
+  changed.push(...changedEvidence(DEVICE_DIFF_FIELDS, previous.state, record));
   const priorSteps = new Set(Array.isArray(before.t) ? before.t : []);
   const newSteps = (after.t ?? []).filter((step) => !priorSteps.has(step));
   if (changed.length === 0 && newSteps.length === 0) return null;
@@ -434,14 +447,7 @@ function incidentFollowUp(previous, record, hash) {
 function legacyFollowUp(previous, record, hash) {
   const current = legacyStableState(record);
   const prevState = previous?.version === "legacy" ? previous.state : undefined;
-  const changed = [];
-  if (prevState) {
-    for (const [key, label] of LEGACY_DIFF_FIELDS) {
-      if (current[key] !== undefined && prevState[key] !== current[key]) {
-        changed.push(`- **${label}:** \`${safeLegacyValue(key, prevState[key])}\` → \`${safeLegacyValue(key, current[key])}\``);
-      }
-    }
-  }
+  const changed = prevState ? changedEvidence(LEGACY_DIFF_FIELDS, prevState, current) : [];
   const prevLogs = new Set(Array.isArray(prevState?.log) ? prevState.log : []);
   const newLogs = (record.log ?? []).filter((entry) => !prevLogs.has(stripLogTimestamp(entry)));
   if (prevState && changed.length === 0 && newLogs.length === 0) return null;
