@@ -3447,6 +3447,9 @@ test("the menu hides Audio until tracks exist and shows track changes, refusals 
 
         await show(page, playing({ ...TRACKS, audio: { state: "failed" } }));
         assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Subtitles"], "Audio tab stays hidden on audio load failure");
+        await remote(page, BACK);
+        await openPanel(page);
+        assert.deepEqual(await commands(page), ["retryTrackInfo"], "reopening Options retries a failed audio inventory read without adding non-Apple UI");
 
         await show(page, playing(TRACKS));
         assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Audio", "Subtitles"], "Audio tab appears once tracks exist");

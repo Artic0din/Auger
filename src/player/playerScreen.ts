@@ -1697,6 +1697,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (timeline) cancelScrub(true);
+        if (view.tracks.audio.state === "failed") controls.retryTrackInfo();
         menuOpen = true;
         render();
         if (entry === "video") {
