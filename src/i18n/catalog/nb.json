@@ -629,6 +629,8 @@
  "player.hud.tracks": "Spor",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Intro hoppet over. Se intro",
+ "player.notice.reconnectingBody": "Tilkoblingen til serveren ble brutt. Avspillingen fortsetter der du slapp.",
+ "player.notice.reconnectingTitle": "Kobler til igjen …",
  "player.seekInterval.choice": "{seconds, plural, one {# sekund} other {# sekunder}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Kunne ikke lagre intervallet for spoling fremover i lydbøker. Sjekk tilkoblingen og prøv igjen.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Kunne ikke lagre intervallet for spoling bakover i lydbøker. Sjekk tilkoblingen og prøv igjen.",

@@ -629,6 +629,8 @@
  "player.hud.tracks": "Spuren",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Intro übersprungen. Intro ansehen",
+ "player.notice.reconnectingBody": "Die Verbindung zum Server wurde unterbrochen. Die Wiedergabe wird dort fortgesetzt, wo du aufgehört hast.",
+ "player.notice.reconnectingTitle": "Verbindung wird wiederhergestellt…",
  "player.seekInterval.choice": "{seconds, plural, one {# Sekunde} other {# Sekunden}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Das Vorspulintervall für Hörbücher konnte nicht gespeichert werden. Prüfe die Verbindung und versuche es erneut.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Das Zurückspulintervall für Hörbücher konnte nicht gespeichert werden. Prüfe die Verbindung und versuche es erneut.",

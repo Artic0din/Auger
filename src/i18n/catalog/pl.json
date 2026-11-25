@@ -629,6 +629,8 @@
  "player.hud.tracks": "Ścieżki",
  "player.hud.video": "Wideo",
  "player.introSkip.undoAccessibility": "Pominięto czołówkę. Obejrzyj czołówkę",
+ "player.notice.reconnectingBody": "Utracono połączenie z serwerem. Odtwarzanie będzie kontynuowane od miejsca, w którym przerwano.",
+ "player.notice.reconnectingTitle": "Ponowne łączenie…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunda} few {# sekundy} many {# sekund} other {# sekundy}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Nie udało się zapisać interwału przewijania audiobooka do przodu. Sprawdź połączenie i spróbuj ponownie.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Nie udało się zapisać interwału przewijania audiobooka do tyłu. Sprawdź połączenie i spróbuj ponownie.",

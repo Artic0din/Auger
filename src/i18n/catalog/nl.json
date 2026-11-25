@@ -629,6 +629,8 @@
  "player.hud.tracks": "Sporen",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Intro overgeslagen. Intro bekijken",
+ "player.notice.reconnectingBody": "De verbinding met de server is verbroken. Het afspelen gaat verder waar je gebleven was.",
+ "player.notice.reconnectingTitle": "Opnieuw verbinden…",
  "player.seekInterval.choice": "{seconds, plural, one {# seconde} other {# seconden}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Kan het vooruitspoelinterval voor luisterboeken niet opslaan. Controleer de verbinding en probeer het opnieuw.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Kan het terugspoelinterval voor luisterboeken niet opslaan. Controleer de verbinding en probeer het opnieuw.",

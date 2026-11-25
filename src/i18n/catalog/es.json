@@ -629,6 +629,8 @@
  "player.hud.tracks": "Pistas",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Introducción omitida. Ver introducción",
+ "player.notice.reconnectingBody": "Se perdió la conexión con el servidor. La reproducción continuará donde la dejaste.",
+ "player.notice.reconnectingTitle": "Reconectando…",
  "player.seekInterval.choice": "{seconds, plural, one {# segundo} many {# de segundos} other {# segundos}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "No se pudo guardar el intervalo de avance rápido del audiolibro. Comprueba la conexión y vuelve a intentarlo.",
  "player.seekInterval.saveConnectionAudiobookRewind": "No se pudo guardar el intervalo de retroceso del audiolibro. Comprueba la conexión y vuelve a intentarlo.",

@@ -629,6 +629,8 @@
  "player.hud.tracks": "Spår",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Introt hoppades över. Se introt",
+ "player.notice.reconnectingBody": "Anslutningen till servern bröts. Uppspelningen fortsätter där du slutade.",
+ "player.notice.reconnectingTitle": "Återansluter…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekund} other {# sekunder}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Det gick inte att spara intervallet för att spola framåt i ljudböcker. Kontrollera anslutningen och försök igen.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Det gick inte att spara intervallet för att spola bakåt i ljudböcker. Kontrollera anslutningen och försök igen.",

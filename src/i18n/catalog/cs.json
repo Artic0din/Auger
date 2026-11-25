@@ -629,6 +629,8 @@
  "player.hud.tracks": "Stopy",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Úvod přeskočen. Sledovat úvod",
+ "player.notice.reconnectingBody": "Připojení k serveru bylo ztraceno. Přehrávání bude pokračovat tam, kde skončilo.",
+ "player.notice.reconnectingTitle": "Obnovování připojení…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunda} few {# sekundy} many {# sekundy} other {# sekund}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Interval přetáčení vpřed u audioknih se nepodařilo uložit. Zkontrolujte připojení a zkuste to znovu.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Interval přetáčení vzad u audioknih se nepodařilo uložit. Zkontrolujte připojení a zkuste to znovu.",

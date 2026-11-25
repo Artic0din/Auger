@@ -629,6 +629,8 @@
  "player.hud.tracks": "Zapisi",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Uvod je preskočen. Pogledaj uvod",
+ "player.notice.reconnectingBody": "Veza s poslužiteljem je prekinuta. Reprodukcija će se nastaviti ondje gdje ste stali.",
+ "player.notice.reconnectingTitle": "Ponovno povezivanje…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekunda} few {# sekunde} other {# sekundi}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Nije moguće spremiti interval premotavanja unaprijed za audioknjige. Provjerite vezu i pokušajte ponovno.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Nije moguće spremiti interval premotavanja unatrag za audioknjige. Provjerite vezu i pokušajte ponovno.",

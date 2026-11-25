@@ -629,6 +629,8 @@
  "player.hud.tracks": "轨道",
  "player.hud.video": "视频",
  "player.introSkip.undoAccessibility": "已跳过片头。观看片头",
+ "player.notice.reconnectingBody": "与服务器的连接已断开。播放将从你上次停止的位置继续。",
+ "player.notice.reconnectingTitle": "正在重新连接……",
  "player.seekInterval.choice": "{seconds, plural, other {#秒}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "无法保存有声书快进间隔。请检查网络连接，然后重试。",
  "player.seekInterval.saveConnectionAudiobookRewind": "无法保存有声书快退间隔。请检查网络连接，然后重试。",

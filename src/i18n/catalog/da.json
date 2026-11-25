@@ -629,6 +629,8 @@
  "player.hud.tracks": "Spor",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Intro sprunget over. Se intro",
+ "player.notice.reconnectingBody": "Forbindelsen til serveren blev afbrudt. Afspilningen fortsætter, hvor du slap.",
+ "player.notice.reconnectingTitle": "Genopretter forbindelse…",
  "player.seekInterval.choice": "{seconds, plural, one {# sekund} other {# sekunder}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Kunne ikke gemme intervallet for spol frem i lydbøger. Tjek forbindelsen, og prøv igen.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Kunne ikke gemme intervallet for spol tilbage i lydbøger. Tjek forbindelsen, og prøv igen.",

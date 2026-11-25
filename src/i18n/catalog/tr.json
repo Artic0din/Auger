@@ -629,6 +629,8 @@
  "player.hud.tracks": "Parçalar",
  "player.hud.video": "Video",
  "player.introSkip.undoAccessibility": "Giriş atlandı. Girişi izle",
+ "player.notice.reconnectingBody": "Sunucu bağlantısı kesildi. Oynatma kaldığınız yerden devam edecek.",
+ "player.notice.reconnectingTitle": "Yeniden bağlanılıyor…",
  "player.seekInterval.choice": "{seconds, plural, one {# saniye} other {# saniye}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Sesli kitap ileri sarma aralığı kaydedilemedi. Bağlantıyı denetleyip tekrar deneyin.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Sesli kitap geri sarma aralığı kaydedilemedi. Bağlantıyı denetleyip tekrar deneyin.",

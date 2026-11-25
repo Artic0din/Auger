@@ -629,6 +629,8 @@
  "player.hud.tracks": "Faixas",
  "player.hud.video": "Vídeo",
  "player.introSkip.undoAccessibility": "Abertura pulada. Assistir à abertura",
+ "player.notice.reconnectingBody": "A conexão com o servidor foi perdida. A reprodução continuará de onde você parou.",
+ "player.notice.reconnectingTitle": "Reconectando…",
  "player.seekInterval.choice": "{seconds, plural, one {# segundo} many {# de segundos} other {# segundos}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Não foi possível salvar o intervalo de avanço do audiolivro. Verifique a conexão e tente novamente.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Não foi possível salvar o intervalo de retrocesso do audiolivro. Verifique a conexão e tente novamente.",

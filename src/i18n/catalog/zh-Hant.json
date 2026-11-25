@@ -629,6 +629,8 @@
  "player.hud.tracks": "軌道",
  "player.hud.video": "影片",
  "player.introSkip.undoAccessibility": "已略過片頭。觀看片頭",
+ "player.notice.reconnectingBody": "與伺服器的連線已中斷。播放將從你上次停止的位置繼續。",
+ "player.notice.reconnectingTitle": "正在重新連線……",
  "player.seekInterval.choice": "{seconds, plural, other {# 秒}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "無法儲存有聲書快轉間隔。請檢查連線，然後再試一次。",
  "player.seekInterval.saveConnectionAudiobookRewind": "無法儲存有聲書倒轉間隔。請檢查連線，然後再試一次。",

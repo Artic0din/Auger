@@ -629,6 +629,8 @@
  "player.hud.tracks": "المسارات",
  "player.hud.video": "الفيديو",
  "player.introSkip.undoAccessibility": "تم تخطي المقدمة. مشاهدة المقدمة",
+ "player.notice.reconnectingBody": "انقطع الاتصال بالخادم. سيُستأنف التشغيل من حيث توقفت.",
+ "player.notice.reconnectingTitle": "جارٍ إعادة الاتصال…",
  "player.seekInterval.choice": "{seconds, plural, zero {# ثانية} one {ثانية واحدة} two {ثانيتان} few {# ثوانٍ} many {# ثانية} other {# ثانية}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "تعذّر حفظ فاصل التقديم للكتاب الصوتي. تحقق من الاتصال وحاول مرة أخرى.",
  "player.seekInterval.saveConnectionAudiobookRewind": "تعذّر حفظ فاصل الرجوع للكتاب الصوتي. تحقق من الاتصال وحاول مرة أخرى.",

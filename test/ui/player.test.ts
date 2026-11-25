@@ -3033,10 +3033,14 @@ test("the video plane stays clear once a frame can show, including replan, recon
         assert.equal(await backdrop.isVisible(), false, "a later load must not cover a picture that already showed");
         await show(page, { phase: "loading", title: "The Movie", detail: "reconnecting" });
         await assertClear("reconnect");
-        assert.equal(await page.locator(".player-status").innerText(), "Reconnecting");
+        assert.equal(await page.locator(".player-status").isVisible(), false);
+        assert.equal(await page.locator(".player-alert-notice .player-alert-title").innerText(), "Reconnecting…");
+        assert.equal(await page.locator(".player-alert-notice .player-alert-detail").innerText(), "The connection to the server was lost. Playback will continue where you left off.");
         await show(page, { phase: "loading", title: "The Movie", detail: "restoring" });
         await assertClear("restore");
-        assert.equal(await page.locator(".player-status").innerText(), "Restoring");
+        assert.equal(await page.locator(".player-status").isVisible(), false);
+        assert.equal(await page.locator(".player-alert-notice .player-alert-title").innerText(), "Reconnecting…");
+        assert.equal(await page.locator(".player-alert-notice .player-alert-detail").innerText(), "The connection to the server was lost. Playback will continue where you left off.");
         assert.deepEqual(logs, []);
     } finally {
         await page.close();
@@ -3575,16 +3579,20 @@ test("hiding suspends playback and showing restores it, without a restart notice
         // Old focus was "player". Playback focus stays on the scrubber across suspend.
         assert.equal(await focused(page), "position");
         await show(page, { phase: "loading", title: "The Movie", detail: "restoring" });
-        assert.equal(await text(page, ".player-status"), "Restoring");
+        assert.equal(await page.locator(".player-status").isVisible(), false);
+        assert.equal(await text(page, ".player-alert-notice .player-alert-title"), "Reconnecting…");
+        assert.equal(await text(page, ".player-alert-notice .player-alert-detail"), "The connection to the server was lost. Playback will continue where you left off.");
         await hold();
         await capture(page, "player-restoring");
         await show(page, { phase: "loading", title: "The Movie", detail: "reconnecting" });
-        assert.equal(await text(page, ".player-status"), "Reconnecting");
+        assert.equal(await page.locator(".player-status").isVisible(), false);
+        assert.equal(await text(page, ".player-alert-notice .player-alert-title"), "Reconnecting…");
+        assert.equal(await text(page, ".player-alert-notice .player-alert-detail"), "The connection to the server was lost. Playback will continue where you left off.");
         await hold();
         await capture(page, "player-reconnecting");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
         assert.equal(await text(page, ".player-error-text"), CONNECTION_LOST);
-        assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).isVisible(), true);
+        assert.equal(await page.getByRole("button", { name: "Try again", exact: true }).isVisible(), true);
         await hold();
         await capture(page, "player-connection-lost");
         await page.evaluate(() => {

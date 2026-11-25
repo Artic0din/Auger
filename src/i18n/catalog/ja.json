@@ -629,6 +629,8 @@
  "player.hud.tracks": "トラック",
  "player.hud.video": "ビデオ",
  "player.introSkip.undoAccessibility": "イントロをスキップしました。イントロを見る",
+ "player.notice.reconnectingBody": "サーバーとの接続が切れました。中断したところから再生を続けます。",
+ "player.notice.reconnectingTitle": "再接続中…",
  "player.seekInterval.choice": "{seconds, plural, other {#秒}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "オーディオブックの早送り間隔を保存できませんでした。接続を確認して、もう一度お試しください。",
  "player.seekInterval.saveConnectionAudiobookRewind": "オーディオブックの巻き戻し間隔を保存できませんでした。接続を確認して、もう一度お試しください。",

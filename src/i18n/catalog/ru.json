@@ -629,6 +629,8 @@
  "player.hud.tracks": "Дорожки",
  "player.hud.video": "Видео",
  "player.introSkip.undoAccessibility": "Заставка пропущена. Смотреть заставку",
+ "player.notice.reconnectingBody": "Соединение с сервером потеряно. Воспроизведение продолжится с того же места.",
+ "player.notice.reconnectingTitle": "Повторное подключение…",
  "player.seekInterval.choice": "{seconds, plural, one {# секунда} few {# секунды} many {# секунд} other {# секунды}}",
  "player.seekInterval.saveConnectionAudiobookFastForward": "Не удалось сохранить интервал перемотки вперёд для аудиокниг. Проверьте подключение и повторите попытку.",
  "player.seekInterval.saveConnectionAudiobookRewind": "Не удалось сохранить интервал перемотки назад для аудиокниг. Проверьте подключение и повторите попытку.",
