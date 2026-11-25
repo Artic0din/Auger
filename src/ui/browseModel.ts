@@ -26,6 +26,7 @@ export interface PlayRequest {
     /** Effective subtitle preferences already on the version, so Auto can be named before start. */
     readonly subtitlePreferences?: SubtitlePreferences;
     readonly allowAlternateVersions?: false;
+    readonly watchParty?: true;
     /** Source seconds; zero starts over, omission lets the server resume. */
     readonly startSeconds: number | undefined;
 }

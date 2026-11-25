@@ -54,6 +54,7 @@ const controls: PlayerControls = {
     setPaused: (paused) => commands.push(`setPaused ${paused}`),
     seekBy: (seconds) => commands.push(`seekBy ${seconds}`),
     seekToSeconds: (seconds) => commands.push(`seekToSeconds ${seconds}`),
+    skipCredits: (seconds) => commands.push(`skipCredits ${seconds}`),
     back: () => commands.push("back"),
     background: () => {
         commands.push("background");

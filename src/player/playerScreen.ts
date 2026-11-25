@@ -448,7 +448,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (seekPreview !== undefined) cancelScrub();
         decideSkip();
         pendingSkipTarget = target;
-        controls.seekToSeconds(target);
+        if (skipKind === "credits") controls.skipCredits(target);
+        else controls.seekToSeconds(target);
         // The options panel keeps its focus.
         if (!menuOpen) {
             overlay.focus();

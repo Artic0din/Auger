@@ -94,6 +94,8 @@ export interface PlayRequest {
     /** Effective subtitle preferences already on the version, so Auto can be named before start. */
     readonly subtitlePreferences?: SubtitlePreferences;
     readonly allowAlternateVersions?: false;
+    /** Synchronized Watch Party playback keeps normal seek/EOF behavior for Skip Credits (#795). */
+    readonly watchParty?: true;
     readonly contentId: string;
     readonly fileId: string;
     readonly title: string;
@@ -344,6 +346,8 @@ export interface PlayerControls {
     /** Source seconds, negative to go back. */
     seekBy(seconds: number): void;
     seekToSeconds(seconds: number): void;
+    /** PlayerViewModel.performCreditsSkip: opens Up Next with a fixed 10 s countdown when credits reach EOF (#795). */
+    skipCredits(seconds: number): void;
     back(): void;
     /** Ends the attempt. Visibility uses suspend/restore instead. */
     background(): void;
@@ -473,6 +477,10 @@ interface Attempt {
     offer: {
         started: boolean;
         manual: boolean;
+        /** Skip Credits reached EOF: Up Next stays open over playing credits with a fixed 10 s countdown (#795). */
+        credits: boolean;
+        creditsCountdown: number | undefined;
+        cancelCreditsTimer: (() => void) | undefined;
         episodeLoading: boolean;
         deckLoading: boolean;
         episodeSettled: boolean;
@@ -735,7 +743,7 @@ export class PlaybackController implements PlayerControls {
             bufferingQuality, bufferingMode: this.lastBufferingMode ?? DEFAULT_BUFFERING_QUALITY_MODE, bufferingAdvertised: false, bufferingRestore: undefined, skipPillShown: false,
             autoNextSupported: false,
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
-            offer: { started: false, manual: false, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
+            offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
@@ -890,6 +898,7 @@ export class PlaybackController implements PlayerControls {
         attempt.settingsEpoch += 1;
         const epoch = attempt.settingsEpoch;
         attempt.autoNext = enabled;
+        if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
         this.showPlayback(attempt);
         if (!attempt.live) this.completionAutoNextChanged(attempt);
         const current = (at: number): boolean => !attempt.signal.aborted && at === attempt.settingsEpoch && (attempt.live || this.completion?.attempt === attempt);
@@ -917,6 +926,7 @@ export class PlaybackController implements PlayerControls {
             if (!current(epoch)) return;
             attempt.settingsEpoch += 1;
             attempt.autoNext = previous;
+            if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
             if (attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
             else this.completionAutoNextChanged(attempt);
         }).finally(() => {
@@ -1018,6 +1028,75 @@ export class PlaybackController implements PlayerControls {
 
     seekToSeconds(seconds: number): void {
         this.seekAbsolute(seconds);
+    }
+
+    skipCredits(seconds: number): void {
+        const attempt = this.active();
+        if (attempt === undefined || !attempt.started || attempt.busy) return;
+        this.performCreditsSkip(attempt, seconds);
+    }
+
+    /** PlayerViewModel.performCreditsSkip (silo-apple d315ef9c): credits running to EOF open Up Next over playing credits. */
+    private performCreditsSkip(attempt: Attempt, targetSeconds: number): void {
+        const duration = attempt.plan?.durationSeconds;
+        if (duration !== undefined && Number.isFinite(duration) && duration > 0 && targetSeconds >= duration - 0.5) {
+            if (this.presentNextUpOverCredits(attempt)) return;
+        }
+        this.seekToSeconds(targetSeconds);
+        this.showPlayback(attempt);
+    }
+
+    /** PlayerViewModel.presentNextUpOverCredits: returns true when Up Next takes over instead of seeking to EOF. */
+    private presentNextUpOverCredits(attempt: Attempt): boolean {
+        if (attempt.request.watchParty === true || attempt.ended || this.completion !== undefined || attempt.hidden || attempt.busy || !attempt.started) return false;
+        if (!this.episodesVisible(attempt)) return false;
+        attempt.offer.credits = true;
+        attempt.promptDismissed = false;
+        if (!attempt.offer.started) this.beginDiscovery(attempt);
+        this.publishOffer(attempt);
+        return true;
+    }
+
+    private cancelCreditsCountdown(attempt: Attempt): void {
+        attempt.offer.cancelCreditsTimer?.();
+        attempt.offer.cancelCreditsTimer = undefined;
+        attempt.offer.creditsCountdown = undefined;
+    }
+
+    /** PlayerViewModel.startNextUpCountdownIfNeeded for `.credits`: fixed 10 s countdown while credits keep playing. */
+    private startCreditsCountdownIfNeeded(attempt: Attempt): void {
+        const prompt = attempt.prompt;
+        const canRun = attempt.offer.credits
+            && prompt !== undefined
+            && prompt.loading !== true
+            && prompt.failed !== true
+            && !prompt.fromDeck
+            && prompt.next !== undefined
+            && attempt.autoNext
+            && !attempt.promptDismissed
+            && this.completion === undefined;
+        if (!canRun) {
+            this.cancelCreditsCountdown(attempt);
+            return;
+        }
+        if (attempt.offer.cancelCreditsTimer !== undefined) return;
+        const deadline = this.deps.clock.now() + AUTOPLAY_COUNTDOWN_SECONDS * 1000;
+        const tick = (): void => {
+            if (this.active() !== attempt || !attempt.offer.credits || attempt.prompt === undefined || attempt.prompt.next === undefined || !attempt.autoNext || attempt.promptDismissed || this.completion !== undefined) {
+                this.cancelCreditsCountdown(attempt);
+                return;
+            }
+            const remaining = Math.max(0, Math.ceil((deadline - this.deps.clock.now()) / 1000));
+            if (remaining === 0) {
+                this.cancelCreditsCountdown(attempt);
+                this.playNext();
+                return;
+            }
+            attempt.offer.creditsCountdown = remaining;
+            this.showPlayback(attempt);
+            attempt.offer.cancelCreditsTimer = this.deps.clock.schedule(tick, 1000);
+        };
+        tick();
     }
 
     private seekAbsolute(seconds: number, requestedPaused?: boolean): void {
@@ -2917,6 +2996,10 @@ export class PlaybackController implements PlayerControls {
                         attempt.undoSkip = undefined;
                         // Apple offers Watch Intro after an automatic intro skip and nothing after a credits skip.
                         attempt.pendingSkipUndo = marker.kind === "intro" ? marker.startSeconds : undefined;
+                        if (marker.kind === "credits") {
+                            this.performCreditsSkip(attempt, marker.endSeconds);
+                            return;
+                        }
                         this.seekToSeconds(marker.endSeconds);
                         // Apple arms Watch Intro's five seconds as it issues the skip, so the seek counts against them.
                         this.showPlayback(attempt);
@@ -3189,8 +3272,10 @@ export class PlaybackController implements PlayerControls {
     cancelAutoplay(): void {
         const attempt = this.active();
         if (attempt !== undefined) {
+            this.cancelCreditsCountdown(attempt);
             attempt.promptDismissed = true;
             attempt.offer.manual = false;
+            attempt.offer.credits = false;
             attempt.prompt = undefined;
             this.paintRect(attempt);
             this.showPlayback(attempt);
@@ -3407,6 +3492,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         attempt.live = false;
+        this.cancelCreditsCountdown(attempt);
         attempt.bufferingQuality.destroy();
         this.clearThumbnails(attempt);
         attempt.cancelTimer?.();
@@ -4164,8 +4250,8 @@ export class PlaybackController implements PlayerControls {
             ...(attempt.prompt === undefined ? {} : { upNext: {
                 next: this.shownNext(attempt.prompt.next), deck: attempt.prompt.deck.map(item => this.shownNext(item) ?? item),
                 countdown: this.promptCountdown(attempt, plan),
-                // Apple's nextUpCountdownTotalSeconds: the HUD threshold when opened by hand, else the prompt's length.
-                countdownTotal: attempt.offer.manual ? MANUAL_COUNTDOWN_THRESHOLD_SECONDS : Math.max(1, attempt.promptSeconds),
+                // Apple's nextUpCountdownTotalSeconds: fixed 10 s over credits, HUD threshold when opened by hand, else the prompt's length.
+                countdownTotal: attempt.offer.credits ? AUTOPLAY_COUNTDOWN_SECONDS : attempt.offer.manual ? MANUAL_COUNTDOWN_THRESHOLD_SECONDS : Math.max(1, attempt.promptSeconds),
                 status: attempt.prompt.loading === true || attempt.prompt.next !== undefined ? translate("upNext.heading") : translate("upNext.headingNothing"),
                 ...(attempt.prompt.loading === true ? { loading: true as const } : {}),
                 ...(attempt.prompt.failed === true ? { failed: true as const } : {}),
@@ -4213,6 +4299,7 @@ export class PlaybackController implements PlayerControls {
     private promptCountdown(attempt: Attempt, plan: { durationSeconds: number | undefined }): number | undefined {
         const prompt = attempt.prompt;
         if (prompt === undefined || prompt.loading === true || prompt.failed === true || prompt.fromDeck || prompt.next === undefined || !attempt.autoNext) return undefined;
+        if (attempt.offer.credits) return attempt.offer.creditsCountdown;
         const remaining = (plan.durationSeconds ?? Infinity) - attempt.sourceSeconds;
         if (attempt.offer.manual && remaining >= MANUAL_COUNTDOWN_THRESHOLD_SECONDS) return undefined;
         return Math.max(0, Math.ceil(remaining));
@@ -4222,7 +4309,7 @@ export class PlaybackController implements PlayerControls {
         if (attempt.request.shuffleId !== undefined) return;
         if (!this.inPromptWindow(attempt)) {
             attempt.promptDismissed = false;
-            if (!attempt.offer.manual) this.clearPrompt(attempt);
+            if (!attempt.offer.manual && !attempt.offer.credits) this.clearPrompt(attempt);
             else this.paintRect(attempt);
             return;
         }
@@ -4267,7 +4354,7 @@ export class PlaybackController implements PlayerControls {
 
     private reportPosition(attempt: Attempt): number {
         const duration = attempt.plan?.durationSeconds;
-        return attempt.prompt !== undefined && duration !== undefined && attempt.promptSeconds > 0 && duration - attempt.sourceSeconds >= 0 && duration - attempt.sourceSeconds <= attempt.promptSeconds ? duration : attempt.sourceSeconds;
+        return attempt.prompt !== undefined && duration !== undefined && (attempt.offer.credits || (attempt.promptSeconds > 0 && duration - attempt.sourceSeconds >= 0 && duration - attempt.sourceSeconds <= attempt.promptSeconds)) ? duration : attempt.sourceSeconds;
     }
 
     /** The Resolution cap that ranks the next pick. A cap read still in flight is waited for; a failed one reads as no cap. */
@@ -4348,8 +4435,9 @@ export class PlaybackController implements PlayerControls {
         if (this.active() !== attempt) return;
         const offer = attempt.offer;
         const showManual = offer.manual && !attempt.hidden;
-        const showAuto = !offer.manual && this.inPromptWindow(attempt) && !attempt.promptDismissed && !attempt.hidden && !attempt.busy;
-        if (!showManual && !showAuto) {
+        const showCredits = offer.credits && !attempt.promptDismissed && !attempt.hidden;
+        const showAuto = !offer.manual && !offer.credits && this.inPromptWindow(attempt) && !attempt.promptDismissed && !attempt.hidden && !attempt.busy;
+        if (!showManual && !showCredits && !showAuto) {
             this.clearPrompt(attempt);
             this.showPlayback(attempt);
             return;
@@ -4363,13 +4451,14 @@ export class PlaybackController implements PlayerControls {
         // upNext.noNext. Only a failed next-episode lookup shows the failure line: the series may still have a next episode.
         const failed = displayed === undefined && !loading && offer.episodeFailed;
         // An automatic prompt waits for a real choice. A loading or empty read must not shrink the video or move the reported position.
-        if (!showManual && displayed === undefined && offer.deck.length === 0) {
+        if (!showManual && !showCredits && displayed === undefined && offer.deck.length === 0) {
             this.clearPrompt(attempt);
             this.showPlayback(attempt);
             return;
         }
         attempt.prompt = { next: displayed, deck: offer.deckFailed ? [] : offer.deck, fromDeck, ...(loading ? { loading: true } : {}), ...(failed ? { failed: true } : {}) };
         this.paintRect(attempt);
+        if (offer.credits) this.startCreditsCountdownIfNeeded(attempt);
         this.showPlayback(attempt);
         if (displayed !== undefined && !fromDeck && attempt.offer.presentationFor !== displayed.contentId) {
             attempt.offer.presentationFor = displayed.contentId;
@@ -4383,7 +4472,7 @@ export class PlaybackController implements PlayerControls {
     }
 
     private clearPrompt(attempt: Attempt): void {
-        if (attempt.offer.manual) return;
+        if (attempt.offer.manual || attempt.offer.credits) return;
         if (attempt.prompt === undefined && !attempt.rectPending) return;
         attempt.prompt = undefined;
         this.paintRect(attempt);

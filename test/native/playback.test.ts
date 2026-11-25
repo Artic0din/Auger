@@ -800,6 +800,116 @@ test("an automatic credits skip offers no undo, as on Apple TV", async () => {
     r.controller.destroy();
 });
 
+// #795: Skip Credits reaching within 0.5 s of EOF opens Up Next with a fixed 10 s countdown over playing credits
+// instead of seeking to EOF (silo-apple d315ef9c PlayerViewModel.performCreditsSkip / presentNextUpOverCredits).
+async function creditsAutoplayRig(enabled: boolean, autoSkipCredits = true) {
+    const r = await episodeRig();
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", enabled);
+    settings.profile().set("playback.auto_skip_credits", autoSkipCredits);
+    return { ...r, settings };
+}
+
+test("auto-skipping credits that run to EOF opens Up Next with a fixed 10 s countdown, does not seek to EOF, and plays next after 10 s (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const seeksBefore = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    r.avplay.tick(7140_000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing", "video keeps playing over credits");
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "no seek to EOF");
+    assert.equal(view.upNext?.countdown, 10);
+    assert.equal(view.upNext?.countdownTotal, 10);
+    await r.h.clock.advance(9000);
+    assert.equal(bodies(r.h, "/start").length, 1, "still counting down at 9 s");
+    await r.h.clock.advance(1000);
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode plays after 10 s");
+    r.controller.destroy();
+});
+
+test("credits skip under an already-open pre-end prompt switches its countdown to a fixed 10 s, and manual Skip Credits does too (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7175, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7172_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined, "pre-end prompt opens first");
+    assert.equal(view.upNext.countdown, 28);
+    assert.equal(view.upNext.countdownTotal, 30);
+    r.avplay.tick(7175_000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined);
+    assert.equal(view.upNext.countdown, 10, "switches open prompt to fixed 10 s countdown");
+    assert.equal(view.upNext.countdownTotal, 10);
+    r.controller.destroy();
+
+    // Manual Skip Credits pill reaching EOF opens Up Next with fixed 10 s countdown without seeking.
+    const manual = await creditsAutoplayRig(true, false);
+    await playMovie(manual, EPISODE);
+    for (let step = 0; step < 6; step++) await manual.h.clock.advance(0);
+    const seeksBefore = manual.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    manual.controller.skipCredits(7200);
+    const manualView = last(manual.views);
+    assert.ok(manualView.phase === "playing" && manualView.upNext !== undefined);
+    assert.equal(manual.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "manual Skip Credits does not seek to EOF");
+    assert.equal(manualView.upNext.countdown, 10);
+    assert.equal(manualView.upNext.countdownTotal, 10);
+    manual.controller.destroy();
+});
+
+test("credits skip to EOF respects Auto-play off, Watch Party, and pending shuffle parts (#795)", async () => {
+    // Auto-play off: Up Next opens over credits with no countdown and does not advance.
+    {
+        const r = await creditsAutoplayRig(false);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext !== undefined, "Up Next still opens with Auto-play off");
+        assert.equal(view.upNext.countdown, undefined, "no countdown when Auto-play is off");
+        await r.h.clock.advance(15_000);
+        assert.equal(bodies(r.h, "/start").length, 1, "never auto-plays with Auto-play off");
+        r.controller.destroy();
+    }
+    // Watch Party keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, { ...EPISODE, watchParty: true });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "Watch Party seeks as before");
+        r.controller.destroy();
+    }
+    // Shuffle (including multi-part) keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        scriptParts(r, [{ file_id: "42", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 1 }, { file_id: "43", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 2 }]);
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "shuffle with pending part seeks as before");
+        r.controller.destroy();
+    }
+});
+
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
     const r = await rig();
     const settings = new FakeSettings(r.h.fake);
