@@ -35,6 +35,7 @@ import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
+import { LoadingSpinnerTimer } from "./loadingSpinner.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
@@ -700,6 +701,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     let skipTarget: number | undefined;
     let drawnFill = -1;
     const skipPrompt = new SkipPrompt(clock, () => render());
+    const spinnerTimer = new LoadingSpinnerTimer(clock, (visible) => { spinner.hidden = !visible; });
     /** Select entered timeline scrub. Left/Right move the preview until Select or Menu. */
     let timeline = false;
     let timelineMoved = false;
@@ -1060,6 +1062,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             closeMenu();
         }
         hud.hidden = !menuOpen;
+        alerts.classList.toggle("player-alerts-hud", menuOpen);
+        spinner.classList.toggle("player-spinner-hud", menuOpen);
         tracksButton.setAttribute("aria-expanded", String(menuOpen));
         next.hidden = true;
         // Up Next sets the toggle and Pick Another below; hiding or removing them first would drop their focus on every redraw.
@@ -1159,6 +1163,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
                 ring.set(loading || failed || candidate === undefined ? undefined : seconds, prompt?.countdownTotal);
                 if (!failure.contains(document.activeElement)) (next.hidden ? keep : next).focus();
+                spinnerTimer.reset();
                 spinner.hidden = true;
                 status.hidden = true;
                 return;
@@ -1189,6 +1194,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (!failure.contains(document.activeElement) || (document.activeElement as HTMLElement).hidden) {
                 (!next.hidden ? next : !retry.hidden ? retry : back).focus();
             }
+            spinnerTimer.reset();
             spinner.hidden = true;
             status.hidden = true;
             return;
@@ -1201,11 +1207,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (document.activeElement !== back && document.activeElement !== retry) {
                 (retry.hidden ? back : retry).focus();
             }
+            spinnerTimer.reset();
             spinner.hidden = true;
             status.hidden = true;
             return;
         }
         if (view.phase === "closed") {
+            spinnerTimer.reset();
             spinner.hidden = true;
             status.hidden = true;
             return;
@@ -1224,7 +1232,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         footerSlot.hidden = conceal;
         bar.hidden = conceal;
         time.hidden = conceal;
-        spinner.hidden = !(view.phase === "loading" || (active && view.buffering));
+        spinnerTimer.setActive(view.phase === "loading" || (active && view.buffering));
+        spinner.hidden = !spinnerTimer.visible;
         if (view.phase === "loading") {
             elapsed.textContent = "";
             remaining.hidden = true;
@@ -2037,6 +2046,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             cancelScrub();
             thumbnail.clear();
             skipPrompt.reset();
+            spinnerTimer.reset();
             unsubscribe();
             stopCatalog();
             late.clear();

@@ -414,6 +414,12 @@
     gap: 16px;
     max-width: 760px;
     pointer-events: none;
+    transition: top var(--silo-fast) ease-out;
+}
+
+/* PlayerView.playerMenuPanelBottom (PlayerView.swift:339, 928): below the open options panel so alerts never cover it. */
+.player-alerts.player-alerts-hud {
+    top: 560px;
 }
 
 .player-alert {
@@ -602,13 +608,35 @@
     position: absolute;
     inset: 0;
     z-index: 1;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 200ms ease-out, visibility 0s linear 0s, padding-top var(--silo-fast) ease-out;
 }
 
-.player-spinner[hidden] { display: none; }
+/* PlayerView.loadingSpinner (PlayerView.swift:798-805, 928): centered below the open options panel. */
+.player-spinner.player-spinner-hud {
+    padding-top: 560px;
+}
+
+.player-spinner[hidden] {
+    display: flex;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 200ms ease-out, visibility 0s linear 200ms, padding-top var(--silo-fast) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-alerts,
+    .player-spinner,
+    .player-spinner[hidden] {
+        transition: none;
+    }
+}
 
 .player-spinner-mark {
     width: 80px;
