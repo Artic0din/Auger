@@ -514,14 +514,39 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
         )
         self.assertTrue(
             changelog.check_pr_release_notes(
+                "feat(diagnostics): explain track and buffering failures",
+                pr_body("## Release Notes\n\n- Audio reports now show tracks.\n- Playback error screens use local text."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### Highlights\n\nChapters arrive in the player."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat!: drop Tizen 7",
+                pr_body("## Release Notes\n\n### New\n\n- Requires Tizen 8 or later."),
+            )
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat!: drop Tizen 7",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8 or later."),
+            ),
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
                 "feat(player): add still watching",
-                pr_body("## Release Notes\n\n- Added prompt (#886)."),
+                pr_body("## Release Notes\n\n### New\n\n- Added prompt (#886)."),
             )
         )
         self.assertTrue(
             changelog.check_pr_release_notes(
                 "fix(player): stop crash",
-                pr_body("## Release Notes\n\n- fix(player): stop crash"),
+                pr_body("## Release Notes\n\n### Fixed\n\n- fix(player): stop crash"),
             )
         )
 
@@ -537,7 +562,7 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             good = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", step_script],
                 cwd=SCRIPT_DIR.parent,
-                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n- Jump to any chapter from the player.")},
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player.")},
                 capture_output=True,
                 text=True,
             )
