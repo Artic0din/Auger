@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Buffering / Quality diagnostics reports showed the stalls, quality step-downs, bitrates and stored connection speed behind a quality change or a failed buffering recovery.
+- Audio / Subtitles diagnostics reports showed the selected and delivered audio and subtitles, subtitle loading, and the result of the last track change, and opt-in automatic reports covered failed subtitle loads and track changes.
 
 ### Fixed
 
