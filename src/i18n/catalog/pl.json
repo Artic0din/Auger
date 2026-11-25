@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Zakończono Watch Party.",
  "watchParty.ended.expired": "Połączenie z Watch Party wygasło lub nie jest już dostępne. Dołącz ponownie, aby kontynuować.",
  "watchParty.ended.replaced": "Ten profil dołączył do Watch Party na innym urządzeniu. Dołącz ponownie tutaj, aby przejąć odtwarzanie.",
+ "watchParty.entry.suggest": "Zaproponuj w Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · O{episode}",
  "watchParty.episodes.loading": "Ładowanie odcinków",
  "watchParty.episodes.noneBody": "W tym sezonie nie ma nic do odtworzenia.",

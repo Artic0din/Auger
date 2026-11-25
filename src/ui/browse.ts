@@ -288,7 +288,15 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if (current.kind === "homeSection" || current.kind === "personal") current.pendingIndex = undefined;
         menuOrigin = { route: current, focus: host.focused() };
         cardActions.open(card, options);
-    }, watchParty: { offered: () => watchPartyOffered, open: choice => openWatchParty(choice) } };
+    }, watchParty: {
+        offered: () => watchPartyOffered,
+        label: () => {
+            const room = watchPartyHub?.state.room;
+            if (room === undefined) return translate("watchParty.entry.watchParty");
+            return translate(room.selfCanManageRoom && room.selectionMode === "host_pick" ? "watchParty.entry.watchParty" : "watchParty.entry.suggest");
+        },
+        open: choice => openWatchParty(choice),
+    } };
     const input = el("input", "browse-input");
     input.id = "browse-search";
     input.type = "search";
@@ -2184,7 +2192,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         const origin = top();
         const anchor = origin === undefined || choice !== undefined ? undefined : tabFocus(origin).key;
         const hub = ensureWatchPartyHub();
-        if (choice !== undefined) void hub.createWithChoice(choice);
+        if (choice !== undefined) {
+            const room = hub.state.room;
+            if (room === undefined) void hub.createWithChoice(choice);
+            else if (room.selfCanManageRoom && room.selectionMode === "host_pick") void hub.stage(choice);
+            else void hub.suggest(choice);
+        }
         const route = newRoute({ kind: "watchParty", watchParty: watchPartyScreen(hub), ...(anchor === undefined ? {} : { anchor }) });
         push(route);
         if (origin !== undefined && anchor !== undefined) origin.focus = { zone: "nav", key: anchor };

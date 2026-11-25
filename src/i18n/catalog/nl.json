@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Deze party is afgelopen.",
  "watchParty.ended.expired": "De verbinding met de party is verlopen of niet meer beschikbaar. Neem opnieuw deel om verder te gaan.",
  "watchParty.ended.replaced": "Dit profiel neemt op een ander apparaat deel aan de party. Neem hier opnieuw deel om het afspelen over te nemen.",
+ "watchParty.entry.suggest": "Voorstellen aan party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Afleveringen laden",
  "watchParty.episodes.noneBody": "Niets in dit seizoen kan worden afgespeeld.",

@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Ovaj party je završio.",
  "watchParty.ended.expired": "Veza s partyjem je istekla ili više nije dostupna. Ponovno se pridružite da biste nastavili.",
  "watchParty.ended.replaced": "Ovaj se profil pridružio partyju na drugom uređaju. Ponovno se pridružite ovdje da biste preuzeli reprodukciju.",
+ "watchParty.entry.suggest": "Predloži partyju",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "Učitavanje epizoda",
  "watchParty.episodes.noneBody": "Ništa u ovoj sezoni nije dostupno za reprodukciju.",

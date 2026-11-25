@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Tato Watch Party skončila.",
  "watchParty.ended.expired": "Připojení k Watch Party vypršelo nebo už není k dispozici. Chcete-li pokračovat, připojte se znovu.",
  "watchParty.ended.replaced": "Tento profil se připojil k Watch Party na jiném zařízení. Chcete-li převzít přehrávání, připojte se znovu zde.",
+ "watchParty.entry.suggest": "Navrhnout do Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "Ř{season} · D{episode}",
  "watchParty.episodes.loading": "Načítání dílů",
  "watchParty.episodes.noneBody": "V této řadě není nic k přehrání.",

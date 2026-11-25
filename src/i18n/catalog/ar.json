@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "انتهت Watch Party هذه.",
  "watchParty.ended.expired": "انتهت صلاحية الاتصال بـ Watch Party أو لم تعد متاحة. انضم مرة أخرى للمتابعة.",
  "watchParty.ended.replaced": "انضم هذا الملف الشخصي إلى Watch Party على جهاز آخر. انضم مجددًا هنا لتولي التشغيل.",
+ "watchParty.entry.suggest": "اقتراح على Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "م{season} · ح{episode}",
  "watchParty.episodes.loading": "جارٍ تحميل الحلقات",
  "watchParty.episodes.noneBody": "لا شيء في هذا الموسم متاح للتشغيل.",

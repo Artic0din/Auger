@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Цю Watch Party завершено.",
  "watchParty.ended.expired": "Термін з’єднання з Watch Party минув, або вона більше недоступна. Приєднайтеся ще раз, щоб продовжити.",
  "watchParty.ended.replaced": "Цей профіль приєднався до Watch Party на іншому пристрої. Приєднайтеся знову тут, щоб перейняти відтворення.",
+ "watchParty.entry.suggest": "Запропонувати для Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "С{season} · Е{episode}",
  "watchParty.episodes.loading": "Завантаження епізодів",
  "watchParty.episodes.noneBody": "У цьому сезоні немає нічого доступного для відтворення.",

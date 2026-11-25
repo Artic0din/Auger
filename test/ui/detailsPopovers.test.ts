@@ -466,6 +466,27 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await tv.remote(10009);
             await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
             assert.equal(fake.sockets[0]?.closed, false, "Back from the lobby keeps the room socket open");
+
+            // While engaged as host in a host-pick room: Details More keeps "Watch Party" and picks into the existing room (#783).
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').textContent(), "Watch Party");
+            await panel.locator('[data-focus="watch-party"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            assert.equal(fake.createdRooms.length, 1, "picks into the current room without creating a second one");
+
+            // Switch room to vote mode and dismiss back to Details: More now says "Suggest to Party" and adds to the ballot (#783).
+            await tv.page.locator('[data-focus="options"]').click();
+            await tv.page.locator('[data-focus="mode"]').click();
+            await tv.page.locator('[data-focus="close"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            await tv.remote(10009);
+            await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').textContent(), "Suggest to Party");
+            await panel.locator('[data-focus="watch-party"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            assert.equal(fake.createdRooms.length, 1, "suggesting does not create a second room");
+            await tv.eventually(async () => fake.suggestions.some(s => s.contentId === "movie:m0001"), "movie added to the ballot");
         } finally { await tv.page.context().close(); }
     }
 });

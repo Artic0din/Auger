@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Bu parti sona erdi.",
  "watchParty.ended.expired": "Parti bağlantısının süresi doldu veya parti artık kullanılamıyor. Devam etmek için tekrar katılın.",
  "watchParty.ended.replaced": "Bu profil partiye başka bir cihazda katıldı. Oynatmayı devralmak için buradan yeniden katılın.",
+ "watchParty.entry.suggest": "Partiye öner",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · B{episode}",
  "watchParty.episodes.loading": "Bölümler yükleniyor",
  "watchParty.episodes.noneBody": "Bu sezonda oynatılabilecek bir şey yok.",

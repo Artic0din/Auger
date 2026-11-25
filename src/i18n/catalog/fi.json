@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Tämä Watch Party on päättynyt.",
  "watchParty.ended.expired": "Watch Party -yhteys vanheni tai ei ole enää käytettävissä. Jatka liittymällä uudelleen.",
  "watchParty.ended.replaced": "Tämä profiili liittyi Watch Partyyn toisella laitteella. Siirrä toisto tähän laitteeseen liittymällä uudelleen.",
+ "watchParty.entry.suggest": "Ehdota Watch Partylle",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "K{season} · J{episode}",
  "watchParty.episodes.loading": "Ladataan jaksoja…",
  "watchParty.episodes.noneBody": "Mitään tämän kauden jaksoa ei voi toistaa.",

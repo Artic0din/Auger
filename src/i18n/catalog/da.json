@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Denne fest er afsluttet.",
  "watchParty.ended.expired": "Forbindelsen til festen er udløbet eller ikke længere tilgængelig. Deltag igen for at fortsætte.",
  "watchParty.ended.replaced": "Denne profil deltager nu i festen på en anden enhed. Deltag igen her for at overtage afspilningen.",
+ "watchParty.entry.suggest": "Foreslå til festen",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Indlæser afsnit",
  "watchParty.episodes.noneBody": "Intet i denne sæson kan afspilles.",

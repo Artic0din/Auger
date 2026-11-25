@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Эта Watch Party завершена.",
  "watchParty.ended.expired": "Подключение к Watch Party истекло или больше недоступно. Присоединитесь снова, чтобы продолжить.",
  "watchParty.ended.replaced": "Этот профиль подключился к Watch Party на другом устройстве. Подключитесь снова здесь, чтобы продолжить просмотр на этом устройстве.",
+ "watchParty.entry.suggest": "Предложить в Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "Загрузка серий",
  "watchParty.episodes.noneBody": "В этом сезоне нет серий, доступных для воспроизведения.",

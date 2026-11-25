@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "이 Watch Party는 종료됐어요.",
  "watchParty.ended.expired": "Watch Party 연결이 만료됐거나 더 이상 사용할 수 없어요. 계속하려면 다시 참여하세요.",
  "watchParty.ended.replaced": "이 프로필이 다른 기기에서 Watch Party에 참여했어요. 여기서 재생하려면 다시 참여하세요.",
+ "watchParty.entry.suggest": "Watch Party에 제안",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "에피소드 불러오는 중",
  "watchParty.episodes.noneBody": "이 시즌에는 재생할 수 있는 콘텐츠가 없어요.",

@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "這場 Watch Party 已結束。",
  "watchParty.ended.expired": "Watch Party 連線已過期或無法再使用。請重新加入以繼續。",
  "watchParty.ended.replaced": "這個個人檔案已在其他裝置上加入 Watch Party。在這裡重新加入即可接手播放。",
+ "watchParty.entry.suggest": "推薦給 Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "正在載入集數",
  "watchParty.episodes.noneBody": "這一季沒有可播放的內容。",

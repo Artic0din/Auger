@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Den här Watch Partyn har avslutats.",
  "watchParty.ended.expired": "Anslutningen till Watch Partyn har gått ut eller är inte längre tillgänglig. Gå med igen för att fortsätta.",
  "watchParty.ended.replaced": "Den här profilen gick med i Watch Partyn på en annan enhet. Gå med igen här för att ta över uppspelningen.",
+ "watchParty.entry.suggest": "Föreslå för Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Läser in avsnitt",
  "watchParty.episodes.noneBody": "Inget i den här säsongen kan spelas upp.",

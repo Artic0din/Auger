@@ -1226,6 +1226,8 @@
  "watchParty.ended.ended": "Cette Watch Party est terminée.",
  "watchParty.ended.expired": "La connexion à la Watch Party a expiré ou n’est plus disponible. Rejoignez-la à nouveau pour continuer.",
  "watchParty.ended.replaced": "Ce profil a rejoint la Watch Party sur un autre appareil. Rejoignez-la ici pour reprendre la lecture.",
+ "watchParty.entry.suggest": "Suggérer à la Watch Party",
+ "watchParty.entry.watchParty": "Watch Party",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "Chargement des épisodes",
  "watchParty.episodes.noneBody": "Aucun élément de cette saison ne peut être lu.",
