@@ -102,7 +102,6 @@ function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
 }
 
 const OFF = "subtitles-off";
-const SERIES_SUBTITLE = "series-subtitles";
 const RETRY = "audio-retry";
 /** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
 const AI_JOB_ACTIONS: readonly string[] = ["ai-cancel", "ai-dismiss", "ai-discard"];
@@ -232,11 +231,6 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
             if (track.unavailable === true) { row.setAttribute("data-unavailable", "true"); row.setAttribute("data-focus-skip", "true"); }
             trackColumn.rows.appendChild(row);
         }
-    }
-    if (tracks.seriesSubtitle !== undefined) {
-        const save = choice(SERIES_SUBTITLE, tracks.selectedSubtitleId === undefined ? "Keep subtitles off for this series" : "Use this subtitle choice for this series", false);
-        save.setAttribute("aria-disabled", String(tracks.seriesSubtitle.busy));
-        trackColumn.rows.appendChild(save);
     }
     if (ai !== undefined) {
         for (const result of ai.results) {
@@ -852,19 +846,19 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
                     const downloading = tracks.subtitleTools?.search.downloadingKey;
                     const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
-                    const subtitlePick = name === "Subtitles" && id !== SERIES_SUBTITLE && !id.startsWith("ai-");
+                    const subtitlePick = name === "Subtitles" && !id.startsWith("ai-");
                     // Picker options act for the row that opened them: a subtitle setting, or Video's quality, speed or aspect.
                     const picker = name === "Video" ? videoPicker : subtitlePicker;
                     const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
                     const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
-                    const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
+                    const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id.startsWith("ai-"));
                     // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
                     const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
-                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
+                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
                     button.setAttribute("aria-disabled", String(blocked));
                 }
             }
-            menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
+            menuStatus.textContent = [changeText(tracks), tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
             const choices = buttons(column);
             // SubtitlesPane hands a vanished Sync or Reset row's focus to a neighbour: the other timing row, then Delay.
             const timingNeighbour = keep === "subtitle-sync" || keep === "subtitle-reset-timing" ? ["subtitle-sync", "subtitle-reset-timing", "subtitle-delay"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) : undefined;
@@ -1604,8 +1598,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 controls.selectSecondarySubtitle(id.slice("secondary:".length));
             } else if (id === OFF) {
                 controls.selectSubtitle(undefined);
-            } else if (id === SERIES_SUBTITLE) {
-                controls.saveSeriesSubtitle();
             } else if (id === "ai-menu") {
                 aiLanguages = true;
                 controls.subtitleAIAction("open");

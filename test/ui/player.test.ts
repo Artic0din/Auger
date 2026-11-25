@@ -1545,10 +1545,9 @@ test("Up Next captures remote input, preserves focus and exposes Keep Watching a
 test("Subtitles stays hidden without tracks or actionable sources like Apple TV", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...NO_TRACKS, seriesSubtitle: { busy: false, message: "" } }));
+        await show(page, playing(NO_TRACKS));
         await openAudio(page);
-        await nextTab(page, 1);
-        assert.equal(await page.getByRole("button", { name: "Keep subtitles off for this series", exact: true }).isVisible(), false);
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allInnerTexts(), ["Info", "Stats", "Video", "Audio"]);
     } finally { await page.close(); }
 });
 
@@ -1687,19 +1686,14 @@ test("captions paint above the overlay gradient but below its controls and the m
     } finally { await page.close(); }
 });
 
-test("series subtitle save stays focused while its write is pending", async () => {
+test("Subtitles TRACKS column lists Off and tracks only, without an extra series-save row (#780)", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: false, message: "" } }));
-        // Old path was Down then Right, from an Audio panel. Info is the first tab now.
+        await show(page, playing(TRACKS));
         await openAudio(page);
         await nextTab(page, 1);
-        for (let index = 0; index < TRACKS.subtitles.length + 1; index++) await remote(page, DOWN);
-        assert.equal(await focused(page), "series-subtitles");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["saveSeriesSubtitle"]);
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: true, message: "Saving…" } }));
-        assert.equal(await focused(page), "series-subtitles");
+        const ids = await page.locator(".player-menu-column-tracks [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        assert.deepEqual(ids, ["subtitles-off", ...TRACKS.subtitles.map(track => track.id)]);
     } finally { await page.close(); }
 });
 
