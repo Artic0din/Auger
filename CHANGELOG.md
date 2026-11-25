@@ -6,6 +6,22 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.7.2] - 2026-11-25
+
+### Fixes
+
+- **Playback**: Localize scrubber rate chip, end time, and episode captions ([#896](https://github.com/Artic0din/Auger-Tizen/pull/896), [`754aa2c7`](https://github.com/Artic0din/Auger-Tizen/commit/754aa2c7))
+
+### Refactors & Maintenance
+
+- **Github**: Simplify issue forms ([`f29c91a7`](https://github.com/Artic0din/Auger-Tizen/commit/f29c91a7))
+- **Dependencies**: Bump actions/checkout from 6.1.0 to 7.0.1 ([#856](https://github.com/Artic0din/Auger-Tizen/pull/856), [`335ef556`](https://github.com/Artic0din/Auger-Tizen/commit/335ef556))
+- **Dependencies**: Bump actions/setup-node from 6.5.0 to 7.1.0 ([#857](https://github.com/Artic0din/Auger-Tizen/pull/857), [`f9c8eb58`](https://github.com/Artic0din/Auger-Tizen/commit/f9c8eb58))
+
+### Documentation
+
+- **Github**: Clarify bug report device setup ([`a67ada0f`](https://github.com/Artic0din/Auger-Tizen/commit/a67ada0f))
+
 ## [0.7.1] - 2026-11-25
 
 ### Fixes
