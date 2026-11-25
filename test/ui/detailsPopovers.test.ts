@@ -487,6 +487,15 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             assert.equal(fake.createdRooms.length, 1, "suggesting does not create a second room");
             await tv.eventually(async () => fake.suggestions.some(s => s.contentId === "movie:m0001"), "movie added to the ballot");
+
+            // While the vote room is playing, Details More hides Suggest to Party (ballot edits require lobby phase).
+            fake.phase = "playing";
+            fake.snapshot();
+            await tv.eventually(async () => await tv.page.locator('[data-focus="resume"]').count() === 1, "playing phase arrives");
+            await tv.remote(10009);
+            await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').count(), 0, "Suggest to Party is omitted while playing");
         } finally { await tv.page.context().close(); }
     }
 });

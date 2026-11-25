@@ -289,7 +289,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         menuOrigin = { route: current, focus: host.focused() };
         cardActions.open(card, options);
     }, watchParty: {
-        offered: () => watchPartyOffered,
+        offered: () => {
+            if (!watchPartyOffered) return false;
+            const room = watchPartyHub?.state.room;
+            if (room === undefined) return true;
+            return room.phase === "lobby" || (room.selfCanManageRoom && room.selectionMode === "host_pick");
+        },
         label: () => {
             const room = watchPartyHub?.state.room;
             if (room === undefined) return translate("watchParty.entry.watchParty");
