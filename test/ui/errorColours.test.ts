@@ -45,7 +45,7 @@ test("every error line Settings builds carries settings-warning", () => {
     // The surfaces above use hand-written markup; this ties the Settings ones to what mountSettings really emits.
     const settings = readFileSync(new URL("../../src/ui/settings.ts", import.meta.url), "utf8");
     const errors = settings.match(/"[^"]*\bbrowse-error\b[^"]*"/g) ?? [];
-    assert.equal(errors.length, 6);
+    assert.equal(errors.length, 7);
     for (const classes of errors) assert.match(classes, /\bsettings-warning\b/);
 });
 
