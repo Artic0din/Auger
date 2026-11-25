@@ -30,7 +30,7 @@ import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
-import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
+import { fillSubtitleTools, optionColumn, overlayAppearance, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
@@ -208,7 +208,7 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         return;
     }
     const searching = tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed";
-    if (pane.kind !== "tracks" || searching) {
+    if (searching) {
         fillSubtitleTools(list, tracks, pane);
         return;
     }
@@ -828,7 +828,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 if (name === "Info") fillInfo(list);
                 else if (name === "Audio") fillAudio(list, tracks);
                 else if (name === "Subtitles") {
-                    fillSubtitles(list, tracks, aiLanguages, subtitlePicker === undefined ? subtitlePane : { kind: subtitlePicker.origin.pane === "appearance" ? "appearance" : "tracks" });
+                    fillSubtitles(list, tracks, aiLanguages, { kind: "tracks" });
+                    if (subtitlePane.kind === "appearance" || subtitlePicker?.origin.pane === "appearance") {
+                        overlayAppearance(list, tracks);
+                    }
                     if (subtitlePicker !== undefined) overlayPicker(list, subtitlePicker);
                 } else if (name === "Video") {
                     fillVideoPane(list, hud, tracks);
@@ -1553,8 +1556,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const pane = lists[column];
         if (scrollPane && pane !== undefined && (key === "up" || key === "down") && pageScrollPane(pane, key)) return;
         if (key === "up" && at <= 0) {
-            // An open picker takes the rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1709-1712).
-            if (openPicker() === undefined) tabs[column]?.focus();
+            // An open picker or Appearance dialog takes the tab rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1640-1644).
+            const modalOverlay = openPicker() !== undefined || (tabNames[column] === "Subtitles" && subtitlePane.kind === "appearance");
+            if (!modalOverlay) tabs[column]?.focus();
             return;
         }
         if (atTab >= 0) {
@@ -1653,13 +1657,20 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 }
             } else if (id === "subtitle-appearance") {
                 subtitlePane = { kind: "appearance" };
-            } else if (id === "subtitle-appearance-back") {
+                // SubtitleAppearanceDialog.defaultFocus($focusedField, .style) (TVPlayerInfoHUD.swift:1418).
+                menuRestoreFocus = "subtitle-appearance:backgroundStyle";
+            } else if (id === "subtitle-appearance-close") {
                 subtitlePane = { kind: "tracks" };
                 menuRestoreFocus = "subtitle-appearance";
             } else if (id?.startsWith("subtitle-appearance:")) {
                 const field = id.slice("subtitle-appearance:".length);
-                const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, field) : undefined;
-                if (next !== undefined) subtitlePane = { ...next, origin: { pane: "appearance", focusId: id } };
+                if (field === "textOutline") {
+                    const current = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.display?.appearance.textOutline === true : false;
+                    controls.subtitleTool({ kind: "appearance", member: "textOutline", value: !current });
+                } else {
+                    const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, field) : undefined;
+                    if (next !== undefined) subtitlePane = { ...next, origin: { pane: "appearance", focusId: id } };
+                }
             } else if (id?.startsWith("subtitle-picker:") && picker !== undefined) {
                 const value = id.slice("subtitle-picker:".length);
                 const field = picker.field;

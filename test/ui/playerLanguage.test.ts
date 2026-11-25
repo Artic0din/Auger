@@ -200,6 +200,13 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-setting-label').textContent(), text("player.hud.subtitleAppearance", language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-device"] .player-setting-label').textContent(), translateTv("player.hud.onlyOnThisAppleTv", undefined, language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-choice-detail').textContent(), [text("player.subtitles.size.large", language), text("player.subtitles.background.box", language), text("player.subtitles.position.bottom", language)].join(" · "));
+            await page.locator('[data-focus="subtitle-appearance"]').focus();
+            await remote(page, ENTER);
+            assert.equal(await page.locator(".player-appearance-eyebrow").textContent(), text("player.hud.appearanceEyebrow", language));
+            assert.equal(await page.locator(".player-appearance-title").textContent(), text("player.hud.styleAndColors", language));
+            assert.equal(await label(page, "subtitle-appearance-close"), text("player.hud.closeAppearance", language));
+            assert.deepEqual(await texts(page, ".player-appearance-dialog .player-setting-label"), (["player.subtitles.style.backgroundStyle", "player.subtitles.style.font", "player.subtitles.style.size", "player.hud.appearanceText", "player.subtitles.style.textOpacityLabel", "player.subtitles.style.textOutline", "player.hud.subtitleOutline", "player.subtitles.style.background", "player.subtitles.style.opacity", "player.subtitles.style.position"] as const).map(key => text(key, language)));
+            await remote(page, 10009);
             // SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main 9dabb62): Sync to Audio, its progress and Reset Timing.
             const timing = { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: false, forbidden: undefined, progress: undefined, note: undefined };
             assert.notEqual(text("player.tracks.syncToAudioButton", language), "Sync to Audio", `the ${language} file carries the sync keys`);
