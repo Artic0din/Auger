@@ -599,6 +599,8 @@
  "player.controls.scrubber": "Barra di avanzamento",
  "player.controls.showUpNext": "Mostra A seguire",
  "player.error.connectionLost": "Connessione persa\nImpossibile riconnettersi al server. Controlla la connessione, poi riprova per continuare da dove avevi interrotto.",
+ "player.error.couldNotStart": "Auger non riesce ad avviare questo video. Torna indietro e sceglilo di nuovo.",
+ "player.error.couldNotStartRetry": "Auger non riesce ad avviare questo video. Riprova, oppure torna indietro e sceglilo di nuovo.",
  "player.error.serverNoResponse": "Il server non ha risposto in tempo.",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Torna indietro",

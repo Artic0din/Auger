@@ -599,6 +599,8 @@
  "player.controls.scrubber": "Barre de lecture",
  "player.controls.showUpNext": "Afficher À suivre",
  "player.error.connectionLost": "Connexion perdue\nAuger n’a pas pu se reconnecter au serveur. Vérifiez votre connexion, puis réessayez pour reprendre là où vous vous étiez arrêté.",
+ "player.error.couldNotStart": "Auger n’a pas pu lancer cette vidéo. Revenez en arrière et sélectionnez-la de nouveau.",
+ "player.error.couldNotStartRetry": "Auger n’a pas pu lancer cette vidéo. Réessayez, ou revenez en arrière et sélectionnez-la de nouveau.",
  "player.error.serverNoResponse": "Le serveur n’a pas répondu à temps.",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Revenir",

@@ -599,6 +599,8 @@
  "player.controls.scrubber": "Tidslinje",
  "player.controls.showUpNext": "Vis Næste",
  "player.error.connectionLost": "Forbindelsen blev afbrudt\nAuger kunne ikke genoprette forbindelsen til serveren. Tjek din forbindelse, og prøv så igen for at fortsætte, hvor du slap.",
+ "player.error.couldNotStart": "Auger kunne ikke starte denne video. Gå tilbage, og vælg den igen.",
+ "player.error.couldNotStartRetry": "Auger kunne ikke starte denne video. Prøv igen, eller gå tilbage og vælg den igen.",
  "player.error.serverNoResponse": "Serveren svarede ikke i tide.",
  "player.eyebrow.episode": "S{season}:A{episode}",
  "player.goBack": "Gå tilbage",

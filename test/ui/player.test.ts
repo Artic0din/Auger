@@ -3146,7 +3146,7 @@ test("a retryable start failure focuses Retry, moves to Back, and only Retry sta
     const { page, logs } = await open();
     try {
         await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
-        assert.equal(await text(page, ".player-error-text"), "The server couldn't start playback. Try again.");
+        assert.equal(await text(page, ".player-error-text"), "Auger couldn’t start this video. Try again, or go back and choose it again.");
         assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).isVisible(), true);
         assert.equal(await page.getByRole("button", { name: "Go Back", exact: true }).isVisible(), true);
         assert.equal(await focused(page), "settings-retry");

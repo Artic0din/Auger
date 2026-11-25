@@ -599,6 +599,8 @@
  "player.controls.scrubber": "Tidslinje",
  "player.controls.showUpNext": "Visa Härnäst",
  "player.error.connectionLost": "Anslutningen bröts\nAuger kunde inte återansluta till servern. Kontrollera anslutningen och försök sedan igen för att fortsätta där du slutade.",
+ "player.error.couldNotStart": "Auger kunde inte starta den här videon. Gå tillbaka och välj den igen.",
+ "player.error.couldNotStartRetry": "Auger kunde inte starta den här videon. Försök igen, eller gå tillbaka och välj den igen.",
  "player.error.serverNoResponse": "Servern svarade inte i tid.",
  "player.eyebrow.episode": "S{season}:A{episode}",
  "player.goBack": "Gå tillbaka",

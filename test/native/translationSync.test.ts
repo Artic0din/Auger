@@ -67,9 +67,10 @@ test("a refresh with no --languages keeps every shipped language, so the imports
     assert.throws(() => languagesToSync(["--nope"]), /usage/);
 });
 
-/** The 16 keys whose text names the TV app, written out so the list in the script is checked, not echoed. */
+/** The 18 keys whose text names the TV app, written out so the list in the script is checked, not echoed. */
 const APP_NAMING_KEYS = [
-    "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
+    "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.error.couldNotStart", "player.error.couldNotStartRetry",
+    "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
     "profiles.rememberOffer.bodyAppleTv", "search.initial", "settings.about.trademarkNotice", "settings.appLanguage.footer",
     "settings.appLanguage.unshippedFooter", "settings.bufferingQuality.description", "settings.general.pairingShared",
     "settings.general.pairingSharedAskEveryTime", "settings.profileLaunch.afterOneHour.detail", "settings.profileLaunch.afterTwelveHours.detail",

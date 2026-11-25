@@ -599,6 +599,8 @@
  "player.controls.scrubber": "Zeitleiste",
  "player.controls.showUpNext": "Als Nächstes anzeigen",
  "player.error.connectionLost": "Verbindung verloren\nAuger konnte keine neue Verbindung zum Server herstellen. Prüfe deine Verbindung und versuche es dann erneut, um dort weiterzuschauen, wo du aufgehört hast.",
+ "player.error.couldNotStart": "Auger konnte dieses Video nicht starten. Geh zurück und wähle es erneut aus.",
+ "player.error.couldNotStartRetry": "Auger konnte dieses Video nicht starten. Versuche es erneut, oder geh zurück und wähle es noch einmal aus.",
  "player.error.serverNoResponse": "Der Server hat nicht rechtzeitig geantwortet.",
  "player.eyebrow.episode": "S{season}:F{episode}",
  "player.goBack": "Zurück",

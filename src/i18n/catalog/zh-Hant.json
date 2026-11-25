@@ -599,6 +599,8 @@
  "player.controls.scrubber": "時間軸",
  "player.controls.showUpNext": "顯示即將播放",
  "player.error.connectionLost": "連線中斷\nAuger 無法重新連線至伺服器。請檢查你的連線，然後再試一次，從上次中斷的地方繼續觀看。",
+ "player.error.couldNotStart": "Auger 無法開始播放此影片。請返回並重新選擇。",
+ "player.error.couldNotStartRetry": "Auger 無法開始播放此影片。請再試一次，或返回並重新選擇。",
  "player.error.serverNoResponse": "伺服器未及時回應。",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "返回",
