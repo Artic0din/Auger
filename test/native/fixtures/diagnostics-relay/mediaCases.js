@@ -211,6 +211,26 @@ export const MEDIA_CASES = [
     },
   },
   {
+    name: "#874 a change to a subtitle flag alone updates an observed report or incident once",
+    async run(handleRequest) {
+      const media = overlayLoaded(12);
+      const incident = (md) => report(subtitleSwitchFailed, "manual", md);
+      for (const makeReport of [observed, incident]) {
+        for (const [flag, label] of [["sec", "Second subtitle line"], ["f", "Forced subtitle track"], ["hi", "Hearing-impaired subtitle track"]]) {
+          const gh = fakeGitHub();
+          const initial = await send(handleRequest, gh, makeReport(media));
+          const payload = makeReport({ ...media, s: { ...media.s, [flag]: true } });
+          const update = await send(handleRequest, gh, payload);
+          equal(update.json.status, "updated", label);
+          equal(update.json.issueNumber, initial.json.issueNumber, "same issue");
+          includes(gh.comments()[0].body.body, "**" + label + ":** `false` → `true`", "changed flag");
+          equal((await send(handleRequest, gh, payload)).json.status, "duplicate", "repeat delivery");
+          equal(gh.comments().length, 1, "one follow-up");
+        }
+      }
+    },
+  },
+  {
     name: "#874 track labels, cue text, unknown codecs and invalid languages never reach a title, body, comment or metadata",
     async run(handleRequest) {
       const gh = fakeGitHub();
