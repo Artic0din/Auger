@@ -2113,6 +2113,8 @@ export function startPlayback(
         const key = `${trace?.seq ?? 0}:${trace?.chain ?? 0}:${error.kind}:${detail}:${details?.avplayError ?? ""}`;
         if (key === lastErrorKey) return;
         lastErrorKey = key;
+        const media = controller.mediaEvidence();
+        if (media !== undefined) diagnostics.recordMediaEvidence(scope, media);
         diagnostics.recordPlaybackError(error.kind, detail, details);
         const record = trace === undefined ? undefined : diagnostics.recordPlaybackIncident(scope, trace, error);
         if (record !== undefined) onIncident?.(record);
@@ -2150,6 +2152,7 @@ export function startPlayback(
         let wasBuffering = false;
         let bufferingRevision: number | undefined;
         let previousAttempt: number | undefined;
+        let lastMediaFailure: number | undefined;
         stopDiagnostics = controller.subscribe(view => {
             if (scope === undefined || !diagnostics.isCurrentPlaybackSession(scope)) return;
             const trace = controller.incidentTrace();
@@ -2160,6 +2163,7 @@ export function startPlayback(
                 recoveredKey = undefined;
                 wasBuffering = false;
                 bufferingRevision = undefined;
+                lastMediaFailure = undefined;
             }
             if (sequence !== undefined) previousAttempt = sequence;
             // Stalls and step-downs stay available for a manual Buffering / Quality report after the player closes.
@@ -2167,6 +2171,16 @@ export function startPlayback(
             if (quality !== undefined && quality.revision !== bufferingRevision) {
                 bufferingRevision = quality.revision;
                 diagnostics.recordBufferingContext(scope, quality);
+            }
+            // Evidence first, so an incident captured below freezes the record as it stood at the failure.
+            const media = controller.mediaEvidence();
+            if (media !== undefined) diagnostics.recordMediaEvidence(scope, media);
+            const mediaFailure = controller.mediaFailure();
+            if (mediaFailure !== undefined && mediaFailure.failure.n !== lastMediaFailure) {
+                lastMediaFailure = mediaFailure.failure.n;
+                const record = diagnostics.recordMediaIncident(scope, mediaFailure.trace, mediaFailure.failure);
+                // Only a definite failure qualifies; the collector refuses the rest and anything while reporting is off.
+                if (record !== undefined) onIncident?.(record);
             }
             const details = controller.diagnosticsDetails();
             if (details?.avplayError !== undefined) {
