@@ -868,13 +868,9 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             )
             self.assertNotIn("- Old bug", notes_text)
             self.assertNotIn("Initial feature", notes_text)
-            self.assertIn(
-                "## Install or update\n\n- **Apps2Samsung (recommended).** Open Apps2Samsung, find **Auger** under "
-                "**Media servers & players**, and install or update in one click. Do not add this repository as a custom source.\n",
-                notes_text,
-            )
-            self.assertNotIn("as a source,", notes_text)
-            self.assertNotIn("github.com/Artic0din/Auger-Tizen` as", notes_text)
+            self.assertNotIn("## Install", notes_text)
+            self.assertNotIn("Apps2Samsung", notes_text)
+            self.assertNotIn("Sideload with Tizen Studio", notes_text)
             self.assertTrue(
                 notes_text.endswith(
                     "\n\nFull technical details in [CHANGELOG.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CHANGELOG.md). "

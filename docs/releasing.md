@@ -64,7 +64,7 @@ Text outside a subheading goes to the section the commit type implies, or to Imp
 A pull request without that section falls back to a legacy `Release note:` line, then to the commit itself.
 A pull request the workflow cannot read also falls back to its commit, so a GitHub API failure never blocks a release.
 The body opens with `Released: YYYY-MM-DD`, then Breaking Changes, Highlights, New, Improved, Security, and Fixed, without emojis.
-It ends with an **Install or update** section that points to the Apps2Samsung community catalog, and links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
+It ends with links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
 
 `CHANGELOG.md` is the full technical record, written from all non-bot commits in the release range without emojis.
 Each bullet links its pull request (`#123`) and short commit SHA (`a1b2c3d4`) and groups commits by technical category:
@@ -85,7 +85,7 @@ Each bullet links its pull request (`#123`) and short commit SHA (`a1b2c3d4`) an
 It leaves out only automated `docs(changelog): record vX.Y.Z release notes` commits and merge commits unless they are breaking.
 A release with no commits in range reads `General maintenance and stability improvements.`
 
-The Release workflow uses the notes as the GitHub Release body, followed by an Install section (including the one-time reinstall note when upgrading from `0.1.0-beta.*`).
+The Release workflow uses the user-facing notes as the GitHub Release body.
 After publishing, a separate **Update CHANGELOG.md on main** job inserts `## [X.Y.Z] - YYYY-MM-DD` in descending version order below `<!-- changelog:releases -->` in `CHANGELOG.md` and pushes the `docs(changelog): record vX.Y.Z release notes` commit directly to `main` (retrying on concurrent pushes).
 It pushes with the `CHANGELOG_DEPLOY_KEY` write deploy key, a secret of the `changelog` environment that only `main` can deploy to, the only actor besides repository admins that bypasses the `main` ruleset, and marks the commit `[skip ci]` so it never starts Tizen Builds or another release.
 A changelog that already has the version stays unchanged.
