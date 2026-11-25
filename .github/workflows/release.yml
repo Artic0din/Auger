@@ -217,6 +217,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write # create the tag and release
+      pull-requests: read # read each merged PR's Release Notes section
     outputs:
       release_date: ${{ steps.notes.outputs.release_date }}
       previous_sha: ${{ steps.notes.outputs.previous_sha }}
@@ -250,7 +251,7 @@ jobs:
           release_date="$(date -u +%Y-%m-%d)"
           if gh release view "${TAG}" > /dev/null 2>&1; then
             body_date="$(gh release view "${TAG}" --json isDraft,body \
-              --jq 'if .isDraft then "" else ((.body // "") | capture("^# Updates - Auger v[^ ]+ \\((?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})\\)")? .d // "") end')"
+              --jq 'if .isDraft then "" else ((.body // "") | [capture("^Released: (?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})"), (capture("^# Updates - Auger v[^ ]+ \\((?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})\\)")) | .d] | first // "") end')"
             if [[ "${body_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
               release_date="${body_date}"
             else
@@ -266,17 +267,35 @@ jobs:
             previous_sha="$(git rev-parse --verify "${PREVIOUS_TAG}^{commit}")"
           fi
           echo "previous_sha=${previous_sha}" >> "${GITHUB_OUTPUT}"
+
+          # Each merged PR's body supplies its user-facing Release Notes. A PR that cannot be
+          # read falls back to its commit subject, so a GitHub API hiccup never blocks a release.
+          pr_notes="${RUNNER_TEMP}/pr-notes.json"
+          echo '{}' > "${pr_notes}"
+          pr_numbers="$(git log --format=%s "${previous_sha:+${previous_sha}..}${TARGET_SHA}" \
+            | sed -nE 's/.*\(#([0-9]+)\)[[:space:]]*$/\1/p' | sort -un)"
+          for pr_number in ${pr_numbers}; do
+            if pr_body="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" --jq '.body // ""')"; then
+              jq --arg number "${pr_number}" --arg body "${pr_body}" '. + {($number): $body}' "${pr_notes}" > "${pr_notes}.next"
+              mv "${pr_notes}.next" "${pr_notes}"
+            else
+              echo "::warning::Could not read PR #${pr_number}; its release notes fall back to the commit subject."
+            fi
+          done
+
           {
             python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
-              ${previous_sha:+--from "${previous_sha}"} --to "${TARGET_SHA}"
+              ${previous_sha:+--from "${previous_sha}"} --to "${TARGET_SHA}" --pr-notes-file "${pr_notes}"
             echo
-            echo "## Install"
+            echo "## Install or update"
             echo
-            echo "- **Apps2Samsung (recommended):** add \`github.com/${GH_REPO}\` as a source, then install or update Auger from it. Apps2Samsung re-signs \`Auger.wgt\` with your own Samsung certificate."
-            echo "- **Sideload with Tizen Studio:** public releases use the Tizen SDK public certificate (no personal TV DUIDs), so direct \`tizen install\` requires building and signing locally with your own Samsung certificate (\`./scripts/build-wgt.sh\`)."
+            echo "- **Apps2Samsung (recommended).** Open Apps2Samsung, find **Auger** under **Media servers & players**, and install or update in one click. Do not add this repository as a custom source."
+            echo "- **Sideload with Tizen Studio.** Public releases use the Tizen SDK public certificate (no personal TV DUIDs), so direct \`tizen install\` requires building and signing locally with your own Samsung certificate (\`./scripts/build-wgt.sh\`)."
             if [[ "${PREVIOUS_TAG}" == *-beta.* ]]; then
               echo "- **Upgrading from \`0.1.0-beta.*\`:** uninstall the older build first, because the Tizen package ID changed to \`AugerTv001.Auger\`. Uninstalling clears saved sign-in data, so you sign in again once; subsequent \`AugerTv001.Auger\` releases update in place within the same install method."
             fi
+            echo
+            echo "Full technical details in [CHANGELOG.md](https://github.com/${GH_REPO}/blob/main/CHANGELOG.md). Need help? See [Reporting Bugs](https://github.com/${GH_REPO}/blob/main/docs/reporting-bugs.md)."
           } > "${RUNNER_TEMP}/notes.md"
           cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
 

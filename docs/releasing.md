@@ -53,8 +53,21 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 
 ## Release notes and the changelog
 
-`scripts/generate-changelog.py` writes each release's notes from the commits since the previous release, in plain language for people who use Auger.
-It reads commits with the same Conventional Commit rules as the version bump and groups them:
+`scripts/generate-changelog.py` writes two records of each release from the commits since the previous release.
+
+The GitHub Release body is for people who use Auger.
+For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` section.
+That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
+Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
+`None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
+A pull request without that section falls back to a legacy `Release note:` line, then to the commit itself.
+A pull request the workflow cannot read also falls back to its commit, so a GitHub API failure never blocks a release.
+The body opens with `Released: YYYY-MM-DD`, then Breaking Changes, Highlights, New, Improved, Security, and Fixed, without emojis.
+It ends with an **Install or update** section that points to the Apps2Samsung community catalog, and links to `CHANGELOG.md` and [Reporting bugs](reporting-bugs.md).
+
+`CHANGELOG.md` is the technical record, written from the commits alone.
+The commits also fill the GitHub Release body for pull requests without notes.
+The generator reads commits with the same Conventional Commit rules as the version bump and groups them:
 
 | Section | Commits |
 | --- | --- |
@@ -79,7 +92,7 @@ If the changelog job fails after the release is published, use **Re-run failed j
 python3 scripts/generate-changelog.py update --file CHANGELOG.md --version X.Y.Z --from vPREVIOUS --to vX.Y.Z
 ```
 
-Preview notes locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`.
+Preview the GitHub Release body locally with `python3 scripts/generate-changelog.py release --version X.Y.Z --from <tag>`, adding `--pr-notes-file PR.json` (`{"123": "<pull request body>"}`) to include pull request notes.
 `.github/release.yml` groups only the notes from GitHub's **Generate release notes** button.
 
 ## Installing and updating with Apps2Samsung
