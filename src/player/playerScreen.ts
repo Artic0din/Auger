@@ -2148,6 +2148,7 @@ export function startPlayback(
         let lastAvplayKey: string | undefined;
         let recoveredKey: string | undefined;
         let wasBuffering = false;
+        let bufferingRevision: number | undefined;
         let previousAttempt: number | undefined;
         stopDiagnostics = controller.subscribe(view => {
             if (scope === undefined || !diagnostics.isCurrentPlaybackSession(scope)) return;
@@ -2158,8 +2159,15 @@ export function startPlayback(
                 lastAvplayKey = undefined;
                 recoveredKey = undefined;
                 wasBuffering = false;
+                bufferingRevision = undefined;
             }
             if (sequence !== undefined) previousAttempt = sequence;
+            // Stalls and step-downs stay available for a manual Buffering / Quality report after the player closes.
+            const quality = controller.bufferingTrace();
+            if (quality !== undefined && quality.revision !== bufferingRevision) {
+                bufferingRevision = quality.revision;
+                diagnostics.recordBufferingContext(scope, quality);
+            }
             const details = controller.diagnosticsDetails();
             if (details?.avplayError !== undefined) {
                 const avKey = `${details.avplayError}:${details.routeFallbacks ?? 0}`;

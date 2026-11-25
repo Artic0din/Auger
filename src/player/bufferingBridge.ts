@@ -19,6 +19,7 @@ import {
     type ReplanRequest,
 } from "./bufferingQuality.ts";
 import { BufferingSignalMapper, type BufferingCall, type BufferingSnapshot } from "./bufferingSignals.ts";
+import { BufferingEvidence, type StepDownReason } from "./bufferingEvidence.ts";
 
 /** How long the lowered and cannot-lower notices stay up. */
 export const NOTICE_MS = 5000;
@@ -51,6 +52,8 @@ export interface BufferingNoticeView {
 
 export class BufferingBridge {
     readonly controller: BufferingQualityController;
+    /** This attempt's stalls and step-downs, for Buffering / Quality reports. */
+    readonly evidence = new BufferingEvidence();
     private readonly signals = new BufferingSignalMapper();
     private readonly origin: number;
     private planRevision = 0;
@@ -66,6 +69,8 @@ export class BufferingBridge {
     private canShow = true;
     /** The replan being asked for is Restore quality, the viewer's answer, which the player must not drop. */
     private restoring = false;
+    /** The replan being asked for is the viewer's Lower quality on the prompt. */
+    private prompting = false;
 
     private readonly clock: Clock;
     private readonly host: BufferingHost;
@@ -80,6 +85,7 @@ export class BufferingBridge {
             schedule: (fn, ms) => clock.schedule(fn, ms),
         });
         this.controller.onOutput = (output) => this.handle(output);
+        this.controller.onStallMeasured = (ms) => this.evidence.stallMeasured(ms);
         this.controller.onPillChange = () => {
             this.pillRevision++;
             host.changed();
@@ -126,6 +132,7 @@ export class BufferingBridge {
             qualityReductionUnavailable: plan.warnings.some((warning) => warning.code === QUALITY_REDUCTION_UNAVAILABLE),
         };
         this.controller.planAdopted(buffering, controllerInitiated);
+        this.evidence.planAdopted({ quality: buffering.activeQuality ?? named, plannedKbps: buffering.deliveredKbps ?? undefined, sourceKbps: plan.sourceBitrateKbps, outputKbps: plan.recipe?.bitrateKbps }, controllerInitiated);
         this.signals.planAdopted();
     }
 
@@ -178,6 +185,7 @@ export class BufferingBridge {
 
     /** The replan this controller sent failed. */
     replanFailed(): void {
+        this.evidence.stepEnded("not_adopted");
         this.controller.replanFailed();
     }
 
@@ -189,7 +197,9 @@ export class BufferingBridge {
 
     selectPrimary(): void {
         if (this.controller.pill?.kind === "prompt") {
+            this.prompting = true;
             this.controller.selectLower();
+            this.prompting = false;
         } else {
             this.restoring = true;
             this.controller.selectRestore();
@@ -224,6 +234,7 @@ export class BufferingBridge {
         this.cancelReplan = undefined;
         this.controller.onOutput = null;
         this.controller.onPillChange = null;
+        this.controller.onStallMeasured = null;
         this.controller.reset();
     }
 
@@ -243,11 +254,18 @@ export class BufferingBridge {
                 const request = output.request;
                 const restore = this.restoring;
                 const epoch = this.replanEpoch;
+                const reason: StepDownReason = restore ? "restore" : this.prompting ? "prompt" : "auto";
+                // A replan still waiting to go out is replaced by this one.
+                if (this.cancelReplan !== undefined) this.evidence.stepEnded("not_sent");
+                this.evidence.stepSent(reason, request.bandwidthEstimateKbps, request.observedThroughputKbps, request.learnedLimit === "clear");
                 this.cancelReplan?.();
                 this.cancelReplan = this.clock.schedule(() => {
                     this.cancelReplan = undefined;
                     // Restore quality is the viewer's answer and outlives a plan change; any other request was decided against a plan or pick that has since been replaced.
-                    if ((epoch !== this.replanEpoch && !restore) || !this.host.issueReplan(request, restore)) this.controller.replanRefused();
+                    if ((epoch !== this.replanEpoch && !restore) || !this.host.issueReplan(request, restore)) {
+                        this.evidence.stepEnded("not_sent");
+                        this.controller.replanRefused();
+                    }
                 }, 0);
                 break;
             }

@@ -36,6 +36,7 @@ import type { AVPlay, AVPlayListener, AVPlayTrackInfo } from "./avplay.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
 import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, type HdrPanel, type HdrProbe } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
+import { storedSpeed, type BufferingEvidenceTrace, type SpeedEvidence } from "./bufferingEvidence.ts";
 import { AUTO_QUALITY, DEFAULT_BUFFERING_QUALITY_MODE, type BufferingQualityMode, type ReplanRequest } from "./bufferingQuality.ts";
 import type { BufferingSnapshot } from "./bufferingSignals.ts";
 import { SeekThumbnails, type ThumbnailSheetLoader } from "./seekThumbnails.ts";
@@ -924,6 +925,17 @@ export class PlaybackController implements PlayerControls {
         return this.attempt === undefined ? undefined : this.traceOf(this.attempt);
     }
 
+    /** The current attempt's live buffering evidence; a recovered chain's frozen trace keeps its own copy. */
+    bufferingTrace(): BufferingEvidenceTrace | undefined {
+        return this.attempt === undefined ? undefined : this.qualityOf(this.attempt);
+    }
+
+    private qualityOf(attempt: Attempt): BufferingEvidenceTrace {
+        return attempt.bufferingQuality.evidence.trace({
+            mode: attempt.bufferingMode, advertised: attempt.bufferingAdvertised, preference: attempt.qualityPreference, manualCapKbps: attempt.autoBandwidthCapKbps,
+        });
+    }
+
     private traceOf(attempt: Attempt): PlaybackAttemptTrace {
         const trace = attempt.trace;
         if (trace.frozen !== undefined) return trace.frozen;
@@ -951,6 +963,7 @@ export class PlaybackController implements PlayerControls {
             settings: trace.settingsRead ? { quality: attempt.qualityPreference, capKbps: attempt.bandwidthCapKbps, hdr: attempt.hdrEnabled } : undefined,
             hdrPanel: trace.hdrProbe === "unavailable" ? "unavailable" : { hdr10: attempt.hdrPanel.hdr10, hlg: attempt.hdrPanel.hlg, dolbyVision: attempt.hdrPanel.dolbyVision },
             request: { startSeconds: attempt.request.startSeconds, subtitle, audio: attempt.request.audioTrackId === undefined ? "default" : "track" },
+            quality: this.qualityOf(attempt),
             plan: plan === undefined ? undefined : {
                 delivery: plan.delivery,
                 protocol: plan.streamProtocol,
@@ -1813,15 +1826,15 @@ export class PlaybackController implements PlayerControls {
         }
     }
 
-    private storedEstimateKbps(capabilities: PlaybackCapabilities): number | undefined {
-        if (!capabilities.features.includes(CONNECTION_SPEED_FEATURE) || capabilities.bandwidthProbeUrl === undefined) return undefined;
+    /** The estimate a start may send, and the newest stored reading as diagnostics evidence. */
+    private storedEstimate(capabilities: PlaybackCapabilities): { readonly kbps: number | undefined; readonly speed: SpeedEvidence } {
+        if (!capabilities.features.includes(CONNECTION_SPEED_FEATURE) || capabilities.bandwidthProbeUrl === undefined) return { kbps: undefined, speed: "unsupported" };
         const network = currentNetwork();
-        if (!network.online || network.metered) return undefined;
-        return bandwidthReadings.freshEstimateKbps(
-            readingsKey(this.deps.session.http.base.baseUrl, this.deps.session.account?.id, network.transport),
-            this.deps.clock.now(),
-            capabilities.bandwidthProbeMaxAgeSeconds ?? FALLBACK_MAX_AGE_SECONDS,
-        );
+        if (!network.online || network.metered) return { kbps: undefined, speed: network.online ? "metered" : "offline" };
+        const key = readingsKey(this.deps.session.http.base.baseUrl, this.deps.session.account?.id, network.transport);
+        const now = this.deps.clock.now();
+        const maxAgeSeconds = capabilities.bandwidthProbeMaxAgeSeconds ?? FALLBACK_MAX_AGE_SECONDS;
+        return { kbps: bandwidthReadings.freshEstimateKbps(key, now, maxAgeSeconds), speed: storedSpeed(bandwidthReadings.newest(key), now, maxAgeSeconds) };
     }
 
     private reportedPlayback(attempt: Attempt): Pick<StartPlaybackBody, "client_capabilities" | "client_playback_context"> {
@@ -1879,7 +1892,9 @@ export class PlaybackController implements PlayerControls {
             trace.settingsRead = true;
             reachedStage(trace, "settings");
             enterStage(trace, "start");
-            const estimateKbps = this.storedEstimateKbps(capabilities);
+            const stored = this.storedEstimate(capabilities);
+            const estimateKbps = stored.kbps;
+            attempt.bufferingQuality.evidence.startRead(stored.speed, estimateKbps);
             const start = operations.startPlayback({
                 installation_id: installationId,
                 protocol_version: 3,

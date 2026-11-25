@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Buffering / Quality diagnostics reports showed the stalls, quality step-downs, bitrates and stored connection speed behind a quality change or a failed buffering recovery.
+
 ### Fixed
 
 - Playback diagnostics identified which attempt failed and showed the operation and recovery details available on the TV.

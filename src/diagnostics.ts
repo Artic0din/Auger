@@ -18,6 +18,8 @@ import {
     playbackIncident,
 } from "./diagnosticsIncident.ts";
 import { browserNavigationEnvironment, NAV_SAMPLING_KEY, type NavigationEnvironment, type NavigationPayload, NavigationRecorder } from "./diagnosticsNavigation.ts";
+import { bufferingPayload, type DiagnosticsBufferingPayload } from "./diagnosticsBuffering.ts";
+import type { BufferingEvidenceTrace } from "./player/bufferingEvidence.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -126,6 +128,8 @@ export interface DiagnosticsSnapshot {
     readonly events: readonly DiagnosticsEvent[];
     /** Frozen App / Navigation evidence: at the app error, else when Settings opened. */
     readonly navigation?: NavigationPayload | undefined;
+    /** Buffering / Quality evidence, frozen with a buffering incident or the latest attempt's for a user-observed report. */
+    readonly buffering?: DiagnosticsBufferingPayload | undefined;
 }
 
 export interface DiagnosticsPayloadPlayback {
@@ -167,6 +171,7 @@ export interface DiagnosticsPayloadV1 {
     readonly log?: readonly string[];
     readonly inc?: DiagnosticsIncidentPayload;
     readonly nav?: NavigationPayload;
+    readonly bq?: DiagnosticsBufferingPayload;
 }
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -483,6 +488,8 @@ function payloadFromSnapshot(
         ...(log.length === 0 ? {} : { log }),
         ...(options?.incident === undefined ? {} : { inc: { ...options.incident, src: options.auto === true ? "auto" as const : "manual" as const } }),
         ...(includeExtended && snapshot.navigation !== undefined ? { nav: snapshot.navigation } : {}),
+        // Only a Buffering / Quality report carries it; the QR link passes no category and stays short.
+        ...(snapshot.buffering !== undefined && (options?.category === "buffering" || options?.incident?.cat === "buffering") ? { bq: snapshot.buffering } : {}),
     };
 }
 
@@ -858,6 +865,8 @@ export class DiagnosticsCollector {
     private lastPlanSignature: string | undefined;
     private sessionHasPlayback = false;
     private rebufferCount = 0;
+    /** The current attempt's buffering evidence, for a user-observed Buffering / Quality report. */
+    private lastBuffering: DiagnosticsBufferingPayload | undefined;
     private lastSentHash: string | undefined;
     private lastSentReportId: string | undefined;
     private autoReport: boolean;
@@ -923,8 +932,13 @@ export class DiagnosticsCollector {
         const record = this.incidentFor(category);
         if (record !== undefined) return record;
         const snapshot = this.snapshot();
+        const buffering = category === "buffering" ? this.lastBuffering : undefined;
         return {
-            snapshot: this.precedingScreen === undefined ? snapshot : { ...snapshot, precedingScreen: this.precedingScreen },
+            snapshot: {
+                ...snapshot,
+                ...(this.precedingScreen === undefined ? {} : { precedingScreen: this.precedingScreen }),
+                ...(buffering === undefined ? {} : { buffering }),
+            },
             ...(category === undefined ? {} : { category }),
         };
     }
@@ -963,6 +977,7 @@ export class DiagnosticsCollector {
                 e: play.error,
             },
             events: this.events.map(event => `${event.kind}:${event.text}`),
+            bq: category === "buffering" ? this.lastBuffering : undefined,
         }));
     }
 
@@ -1025,6 +1040,7 @@ export class DiagnosticsCollector {
 
     beginPlaybackSession(): number {
         this.rebufferCount = 0;
+        this.lastBuffering = undefined;
         this.lastPlanSignature = undefined;
         this.sessionHasPlayback = false;
         // An earlier attempt's plan, status and position never describe this one (#864).
@@ -1045,12 +1061,24 @@ export class DiagnosticsCollector {
         if (existing !== undefined) return existing.record;
         const captured = this.captureSnapshot(this.playbackEventFloor);
         // An unrelated app error belongs to its own report, not to this attempt's evidence.
-        const snapshot: DiagnosticsSnapshot = { device: captured.device, events: captured.events, ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }) };
+        const buffering = incident.cat === "buffering" && trace.quality !== undefined ? bufferingPayload(trace.quality, this.clock.now()) : undefined;
+        const snapshot: DiagnosticsSnapshot = {
+            device: captured.device,
+            events: captured.events,
+            ...(captured.lastPlayback === undefined ? {} : { lastPlayback: captured.lastPlayback }),
+            ...(buffering === undefined ? {} : { buffering }),
+        };
         const record: DiagnosticsIncidentRecord = { snapshot, category: incident.cat, incident };
         this.incidents.push({ seq: trace.seq, chain: trace.chain, scope, record, autoClaimed: false });
         if (this.incidents.length > MAX_INCIDENTS) this.incidents.shift();
         this.emit();
         return record;
+    }
+
+    /** Keeps the current attempt's buffering evidence for a manual report when no incident was detected. */
+    recordBufferingContext(scope: number, trace: BufferingEvidenceTrace | undefined): void {
+        if (scope !== this.scope) return;
+        this.lastBuffering = trace === undefined ? undefined : bufferingPayload(trace, this.clock.now());
     }
 
     recordAvplayEvent(avplayError: string, routeFallbacks?: number): void {
@@ -1194,6 +1222,7 @@ export class DiagnosticsCollector {
         this.navigation.reset();
         this.scope++;
         this.playbackEventFloor = this.eventSeq;
+        this.lastBuffering = undefined;
         if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
         this.incidents.length = 0;
         this.lastPlayback = undefined;

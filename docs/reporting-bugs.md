@@ -12,6 +12,8 @@ Problems that also happen in the web app usually belong in [silo-server](https:/
 
 Auger can gather your TV model, firmware/Tizen version, JS heap memory and uptime, Auger version, Silo server version, source and transcoded playback stats (including subtitle mode and delivery, HDR setting, route fallback count, and native Samsung AVPlay error codes), rebuffer count, and recent redacted events automatically.
 A recovered playback report means the player’s clock advanced after the retry while playback was running.
+A **Buffering / Quality** report adds the quality preference, Settings bitrate cap, how the learned connection limit applied, the playing plan’s planned, source and output bitrates, the network type and browser connection class, the newest stored speed reading with its age, recent durations of stalls lasting a second or more, and each quality step-down with its reason and outcome.
+Only a step-down or buffering recovery that fails and ends playback is reported automatically; ordinary stalls and a successful step-down are reported only when you send them.
 Server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
 
 1. Open your **Profile** icon (top-right of Auger) → **Settings** → **Diagnostics**.

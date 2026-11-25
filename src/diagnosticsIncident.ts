@@ -1,5 +1,6 @@
 import { PROTOCOLS, CONTAINERS, VIDEO_CODECS, DYNAMIC_RANGES } from "../shared/diagnostics-media.js";
 import type { PlaybackError } from "./player/controller.ts";
+import type { BufferingEvidenceTrace } from "./player/bufferingEvidence.ts";
 
 /** Ordered playback stages a single attempt passes through; recovery stages follow a failure. */
 export const PLAYBACK_STAGES = [
@@ -59,6 +60,8 @@ export interface PlaybackAttemptTrace {
     /** "unavailable" when the probe gave no usable answer; an object only for an observed answer. */
     readonly hdrPanel: { readonly hdr10: boolean; readonly hlg: boolean; readonly dolbyVision: boolean } | "unavailable";
     readonly request: { readonly startSeconds: number | undefined; readonly subtitle: "auto" | "off" | "track"; readonly audio: "default" | "track" };
+    /** Buffering and quality evidence; published only for a Buffering / Quality report. */
+    readonly quality?: BufferingEvidenceTrace | undefined;
     /** Undefined until this attempt received a plan; never an earlier attempt's plan. */
     readonly plan: {
         readonly delivery: string;
