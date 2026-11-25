@@ -520,9 +520,9 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
     if parsed is None:
         return [
             "User-facing PRs (feat, fix, perf, revert, or breaking) must include a populated "
-            "`## Release Notes` section written in plain language for Samsung TV users "
-            "(optional subsections: `### Highlights`, `### Breaking Changes`, `### New`, "
-            "`### Improved`, `### Fixed`), or `None` for an internal-only fix."
+            "`## Release Notes` section with explicit category subheadings (`### Breaking Changes`, "
+            "`### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) "
+            "written in plain language for Samsung TV users, or `None` for an internal-only fix."
         ]
     is_breaking = any(entry.category == Category.BREAKING for entry in entries)
     allows_none = not is_breaking and all(entry.category == Category.FIXES for entry in entries)
@@ -539,6 +539,16 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
             ]
         return []
     errors: list[str] = []
+    if parsed.unsectioned or not parsed.sectioned:
+        errors.append(
+            "Group every bullet in `## Release Notes` under an explicit category subheading "
+            "(`### Breaking Changes`, `### New`, `### Improved`, `### Security`, or `### Fixed`) "
+            "so improvements and bug fixes are not misfiled under `## New`."
+        )
+    if is_breaking and not any(section == UserSection.BREAKING for section, _ in parsed.sectioned):
+        errors.append(
+            "Breaking PRs must include a `### Breaking Changes` subsection inside `## Release Notes`."
+        )
     items = [
         *parsed.highlights,
         *(item for _, section_items in parsed.sectioned for item in section_items),

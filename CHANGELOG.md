@@ -4,17 +4,6 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- Buffering / Quality diagnostics reports showed the stalls, quality step-downs, bitrates and stored connection speed behind a quality change or a failed buffering recovery.
-- Audio / Subtitles diagnostics reports showed the selected and delivered audio and subtitles, subtitle loading, and the result of the last track change, and opt-in automatic reports covered failed subtitle loads and track changes.
-- App / Navigation reports described the screen, remote presses and focus changes before the problem, and uncaught app errors were titled by the screen they happened on.
-
-### Fixed
-
-- Videos whose stream link ended in a `#` bookmark started and resumed with their playback sign-in.
-- Playback errors no longer showed the server's own message, which could include web addresses, email addresses or sign-in details; the screen explained the problem without them.
-
 <!-- changelog:releases -->
 
 ## [0.7.0] - 2026-11-25

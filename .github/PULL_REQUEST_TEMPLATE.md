@@ -25,9 +25,10 @@ a reviewer would ask about it.
 feat, fix, perf, revert, and breaking PRs). Write for people using Auger on a Samsung TV:
 plain language, no internal symbols, no "match Apple TV" phrasing, and no #123 issue or PR
 numbers. Explain what changed, why it matters, and where to find it or what to do next; for
-bundled PRs, cover every user-visible feature or fix. Optionally group bullets under
-### Highlights, ### Breaking Changes, ### New, ### Improved, or ### Fixed. Write "None" for
-an internal-only change. -->
+bundled PRs, cover every user-visible change. Group every bullet under an explicit subheading:
+### Breaking Changes, ### New (brand-new feature), ### Improved (enhancement to an existing
+feature), ### Security, or ### Fixed (bug fix), with optional ### Highlights. Write "None"
+only for an internal-only fix or non-user-facing PR. -->
 
 ## Validation
 

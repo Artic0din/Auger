@@ -289,14 +289,6 @@ jobs:
             python3 scripts/generate-changelog.py release --version "${VERSION}" --date "${release_date}" \
               ${previous_sha:+--from "${previous_sha}"} --to "${TARGET_SHA}" --pr-notes-file "${pr_notes}"
             echo
-            echo "## Install or update"
-            echo
-            echo "- **Apps2Samsung (recommended).** Open Apps2Samsung, find **Auger** under **Media servers & players**, and install or update in one click. Do not add this repository as a custom source."
-            echo "- **Sideload with Tizen Studio.** Public releases use the Tizen SDK public certificate (no personal TV DUIDs), so direct \`tizen install\` requires building and signing locally with your own Samsung certificate (\`./scripts/build-wgt.sh\`)."
-            if [[ "${PREVIOUS_TAG}" == *-beta.* ]]; then
-              echo "- **Upgrading from \`0.1.0-beta.*\`:** uninstall the older build first, because the Tizen package ID changed to \`AugerTv001.Auger\`. Uninstalling clears saved sign-in data, so you sign in again once; subsequent \`AugerTv001.Auger\` releases update in place within the same install method."
-            fi
-            echo
             echo "Full technical details in [CHANGELOG.md](https://github.com/${GH_REPO}/blob/main/CHANGELOG.md). Need help? See [Reporting Bugs](https://github.com/${GH_REPO}/blob/main/docs/reporting-bugs.md)."
           } > "${RUNNER_TEMP}/notes.md"
           cat "${RUNNER_TEMP}/notes.md" >> "${GITHUB_STEP_SUMMARY}"
