@@ -322,8 +322,11 @@ jobs:
                   attempts="${GITHUB_RUN_ATTEMPT:-1}"
                   if [[ "${attempts}" -gt 1 ]]; then
                     for ((attempt=1; attempt<attempts; attempt++)); do
-                      job_json="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/attempts/${attempt}/jobs" \
-                        --jq '[.jobs[] | select(.name == "Publish the GitHub Release")][0] // empty')"
+                      if ! job_json="$(gh api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/attempts/${attempt}/jobs" \
+                        --jq '[.jobs[] | select(.name == "Publish the GitHub Release")][0] // empty')"; then
+                        echo "::warning::Could not list jobs for publish attempt ${attempt}; will not attribute the existing release to that attempt."
+                        continue
+                      fi
                       if [[ -z "${job_json}" ]]; then
                         continue
                       fi
