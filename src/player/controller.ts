@@ -130,12 +130,12 @@ export type PlaybackError =
     | { readonly kind: "server"; readonly reason?: ServerReason };
 
 /**
- * Why the server refused, kept as data so the error page words it in the shown language (APIv2Client.errorDescription):
- * a problem's detail, else its title; a bare HTTP status; or the update prompt for client_upgrade_required.
+ * Why the server refused, kept as data so the error page words it in the shown language: the HTTP status with the
+ * problem's type and first field code, or the update prompt for client_upgrade_required. A problem's detail and title
+ * are left out: they are server free text, which can carry URLs, addresses or credentials onto a shared screen.
  */
 export type ServerReason =
-    | { readonly text: string; readonly problemId?: string; readonly fieldCode?: string }
-    | { readonly status: number }
+    | { readonly status: number; readonly problemId?: string; readonly fieldCode?: string }
     | { readonly update: true };
 
 export interface PlaybackExits {
@@ -5433,15 +5433,13 @@ function startFailure(error: unknown): PlaybackError {
         if (error.problemId === "installation_changed") {
             return { kind: "installation_changed" };
         }
-        // PlayerViewModel shows a start failure's own description, as APIv2Client words it.
+        // A start failure keeps its status, problem type and field code for the error page; never the server's free text.
         if (failure.kind === "http") return { kind: "server", reason: { status: failure.status } };
         if (failure.kind === "problem") {
-            const { status, id, title, detail, errors } = failure.problem;
+            const { status, id, errors } = failure.problem;
             if (status === 410 && id === "client_upgrade_required") return { kind: "server", reason: { update: true } };
-            const text = detail?.trim() ? detail : title;
             const fieldCode = errors[0]?.code;
-            if (text.trim() !== "") return { kind: "server", reason: fieldCode === undefined ? { text, problemId: id } : { text, problemId: id, fieldCode } };
-            return { kind: "server", reason: { status } };
+            return { kind: "server", reason: fieldCode === undefined ? { status, problemId: id } : { status, problemId: id, fieldCode } };
         }
     }
     return { kind: "server" };

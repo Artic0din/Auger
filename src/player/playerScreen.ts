@@ -14,7 +14,7 @@ import type { DiagnosticsCollector, DiagnosticsIncidentRecord } from "../diagnos
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
-import { onCatalogLoaded, type MessageKey, serverText, translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, type MessageKey, translate, translateKnown } from "../i18n/translate.ts";
 import { systemClock } from "../api/clock.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
@@ -74,16 +74,14 @@ export function errorText(error: PlaybackError): string {
         case "backgrounded":
             return "Playback stopped when you left Auger. Go back and select the title to play again.";
         case "server": {
-            // APIv2Client.errorDescription, as Apple's player shows it; a failure the server did not word keeps the TV's own line.
             const reason = error.reason;
             if (reason === undefined) return "The server couldn't start playback. Try again.";
-            if ("text" in reason) {
-                // problem.localized: the field code's line, else the problem type's, else the server's own text.
-                const byType = reason.problemId === undefined ? reason.text : serverText(reason.text, `error.${reason.problemId}`);
-                return serverText(byType, reason.fieldCode === undefined ? undefined : `error.field.${reason.fieldCode}`);
-            }
             if ("update" in reason) return translate("update.appRequired");
-            return translate("errors.apple.v2.httpStatus", { status: String(reason.status) });
+            // problem.localized's catalog lines (the field code's, else the problem type's), else Apple's HTTP status line.
+            // Unlike Apple, never the problem's detail or title: server free text can carry private values onto a shared screen.
+            return (reason.fieldCode === undefined ? undefined : translateKnown(`error.field.${reason.fieldCode}`))
+                ?? (reason.problemId === undefined ? undefined : translateKnown(`error.${reason.problemId}`))
+                ?? translate("errors.apple.v2.httpStatus", { status: String(reason.status) });
         }
     }
 }
@@ -2100,13 +2098,8 @@ export function startPlayback(
         if (error.kind === "terminal") return /^[a-z0-9_.-]{1,48}$/i.test(error.reason) ? error.reason : "terminal_error";
         if (error.kind !== "server" || error.reason === undefined) return "";
         const reason = error.reason;
-        if ("text" in reason) return "server_error";
-        if ("status" in reason) {
-            return typeof reason.status === "number" && Number.isInteger(reason.status) && reason.status >= 100 && reason.status <= 599
-                ? `HTTP ${reason.status}`
-                : "server_error";
-        }
-        return "app_update_required";
+        if ("update" in reason) return "app_update_required";
+        return Number.isInteger(reason.status) && reason.status >= 100 && reason.status <= 599 ? `HTTP ${reason.status}` : "server_error";
     };
     // The scope ties this attempt's evidence to the profile session it started in; a cleared session ignores it.
     let scope = diagnostics?.beginPlaybackSession();
