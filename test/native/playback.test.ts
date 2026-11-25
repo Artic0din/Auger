@@ -918,6 +918,27 @@ test("credits skip to EOF respects Auto-play off, Watch Party, and pending shuff
     }
 });
 
+test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Next, and reports the rewound position (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7140_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext?.countdown === 10, "credits countdown started");
+    r.controller.seekToSeconds(7020);
+    r.avplay.finishSeek();
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext === undefined, "rewinding out of credits closes Up Next");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 1, "cancelled credits countdown never starts the next episode");
+    const lastProgress = bodies(r.h, "/progress").at(-1);
+    assert.equal(lastProgress?.position, 7020, "progress reports the rewound position instead of duration");
+    r.controller.destroy();
+});
+
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
     const r = await rig();
     const settings = new FakeSettings(r.h.fake);
