@@ -44,9 +44,9 @@ export function warningTriangleIcon(): string {
     return svg(`<path fill="currentColor" d="M10.3 3.6a2 2 0 0 1 3.4 0l8.2 14.3a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 9.5v4.5m0 3v.1"/>`);
 }
 
-/** `rectangle.inset.filled`: Up Next's Keep Watching symbol, a picture frame with the picture inset. */
+/** `rectangle.inset.filled`: Up Next's Keep Watching symbol, a picture frame with the picture inset (semibold stroke). */
 export function rectangleInsetFilledIcon(): string {
-    return svg(`<rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="5.5" y="8" width="13" height="8" rx="1" fill="currentColor"/>`);
+    return svg(`<rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="none" stroke="currentColor" stroke-width="2.2"/><rect x="5.5" y="8" width="13" height="8" rx="1" fill="currentColor"/>`);
 }
 
 /** `rectangle.stack.fill`: the tvOS Show Up Next episodes icon. */

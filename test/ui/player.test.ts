@@ -1180,6 +1180,50 @@ test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on 
     } finally { await page.close(); }
 });
 
+// #809: Up Next button symbols use Apple's point sizes times --silo-sf-cap-scale and HStack gaps (silo-apple d315ef9c PlayerView.swift:1405-1470).
+test("Up Next sizes each button symbol at Apple's points times the cap scale with its HStack gap (#809)", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 };
+        const measure = (selector: string): Promise<{ width: number; height: number; gap: number; cap: number; stroke: string | null }> => page.evaluate(sel => {
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const node = document.querySelector<HTMLElement>(`${sel} .player-button-symbol`)!;
+            const rect = node.getBoundingClientRect();
+            const css = getComputedStyle(node);
+            const stroked = node.querySelector("svg [stroke]");
+            return { width: rect.width, height: rect.height, gap: parseFloat(css.marginInlineEnd), cap, stroke: stroked?.getAttribute("stroke-width") ?? null };
+        }, selector);
+        const assertBox = (label: string, got: { width: number; height: number; gap: number; cap: number }, points: number, gap: number): void => {
+            const expected = points * got.cap;
+            assert.ok(Math.abs(got.width - expected) < 0.1, `${label} width ${got.width} != ${expected}`);
+            assert.ok(Math.abs(got.height - expected) < 0.1, `${label} height ${got.height} != ${expected}`);
+            assert.equal(got.gap, gap, `${label} gap`);
+        };
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        assertBox("Play Now (prompt)", await measure('[data-focus="play-next"]'), 32, 18);
+        const keepBox = await measure('[data-focus="keep-watching"]');
+        assertBox("Keep Watching", keepBox, 25, 16);
+        assert.equal(keepBox.stroke, "2.2", "Keep Watching uses semibold stroke");
+        const closeBox = await measure('[data-focus="back"]');
+        assertBox("Close (prompt)", closeBox, 24, 16);
+        assert.equal(closeBox.stroke, "2.2", "Close uses semibold stroke");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 9 });
+        assertBox("Play Now (finished)", await measure('[data-focus="play-next"]'), 32, 18);
+        assertBox("Close (finished)", await measure('[data-focus="back"]'), 24, 16);
+        // Symbols outside Up Next that use the base .player-button-symbol class keep the 26x26 / 16px default.
+        const fallback = await page.evaluate(() => {
+            const probe = document.createElement("span");
+            probe.className = "player-button-symbol";
+            document.body.appendChild(probe);
+            const rect = probe.getBoundingClientRect();
+            const gap = parseFloat(getComputedStyle(probe).marginInlineEnd);
+            probe.remove();
+            return { width: rect.width, height: rect.height, gap };
+        });
+        assert.deepEqual(fallback, { width: 26, height: 26, gap: 16 });
+    } finally { await page.close(); }
+});
+
 // PlayerView.autoPlayFooter and autoPlayToggle (silo-apple 449ba47 PlayerView.swift:1263-1270, 1293-1300, 1544-1556, 1640-1652,
 // 1755-1772): below the actions, "Auto-play is On/Off" at 19 pt semibold, white 0.54 (0.92 focused, with a 1.5 pt capsule at 0.55 and
 // a 1.04 scale). Down from the actions reaches it, Up returns to the preferred action, and Up from On Deck comes back to it (#759).

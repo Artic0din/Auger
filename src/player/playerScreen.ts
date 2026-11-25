@@ -286,14 +286,26 @@ export function clockText(seconds: number): string {
     return hours > 0 ? `${hours}:${two(minutes)}:${two(secs)}` : `${minutes}:${two(secs)}`;
 }
 
+interface SymbolMetrics {
+    /** Apple point size, scaled by `--silo-sf-cap-scale`. */
+    readonly size: number;
+    /** Space between the symbol and the label in pixels (Apple HStack spacing). */
+    readonly gap?: number;
+}
+
 /** A button drawn as Apple's Label: its symbol, then its words. The symbol is hidden from assistive technology, so the name is the words. */
-function labelWithSymbol(button: HTMLButtonElement, symbol: string, label: string): void {
+function labelWithSymbol(button: HTMLButtonElement, symbol: string, label: string, metrics?: SymbolMetrics): void {
+    const cacheKey = `${label}|${metrics?.size ?? ""}|${metrics?.gap ?? ""}`;
     // The card redraws on every playback tick: leave an unchanged label alone.
-    if (button.dataset.symbolLabel === label && button.querySelector(".player-button-symbol") !== null) return;
+    if (button.dataset.symbolLabel === cacheKey && button.querySelector(".player-button-symbol") !== null) return;
     const glyph = el("span", "player-button-symbol");
+    if (metrics !== undefined) {
+        glyph.style.setProperty("--player-symbol-size", `calc(${metrics.size}px * var(--silo-sf-cap-scale))`);
+        if (metrics.gap !== undefined) glyph.style.setProperty("--player-symbol-gap", `${metrics.gap}px`);
+    }
     glyph.innerHTML = symbol;
     button.replaceChildren(glyph, document.createTextNode(label));
-    button.dataset.symbolLabel = label;
+    button.dataset.symbolLabel = cacheKey;
 }
 
 const RING_RADIUS = 27.5;
@@ -626,7 +638,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         tracksButton.setAttribute("aria-label", translate("player.audio.options"));
         closeButton.setAttribute("aria-label", translate("player.audio.close"));
         for (const [index, tab] of tabs.entries()) tab.textContent = translate(TAB_KEYS[tabNames[index] ?? "Info"]);
-        labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"));
+        labelWithSymbol(keep, rectangleInsetFilledIcon(), translate("upNext.keepWatching"), { size: 25, gap: 16 });
         retry.textContent = translate("common.retry");
     };
     labelStatics();
@@ -1029,7 +1041,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         ring.set(undefined, undefined);
         mark.hidden = view.phase !== "error";
         if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
-        else labelWithSymbol(back, closeIcon(), translate("upNext.close"));
+        else labelWithSymbol(back, closeIcon(), translate("upNext.close"), { size: 24, gap: 16 });
         if (view.phase === "completion" || prompt !== undefined) {
             cancelScrub();
             closeMenu();
@@ -1093,7 +1105,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const loading = prompt?.loading === true;
                 const failed = prompt?.failed === true;
                 next.hidden = loading || failed || candidate === undefined;
-                labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
+                labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
                 retry.hidden = true;
                 showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext);
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
@@ -1106,7 +1118,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 return;
             }
             next.hidden = view.state !== "ready" || view.next === undefined;
-            labelWithSymbol(next, playIcon(), translate("upNext.playNow"));
+            labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
             retry.hidden = view.state !== "failed" || !view.retryable;
             showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows

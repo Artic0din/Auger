@@ -77,8 +77,8 @@
 .player-autoplay-toggle:focus { color: rgba(255, 255, 255, .92); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); scale: 1.04; }
 .player-autoplay-toggle[data-pressed] { scale: .98; }
 .player-autoplay-toggle[hidden] { display: none; }
-/* The Label's symbol before its words: 26 px with 16 between, as Apple's 24-32 pt symbols at 16-18 spacing. */
-.player-button-symbol { display: inline-flex; flex: none; width: 26px; height: 26px; margin-inline-end: 16px; }
+/* The Label's symbol before its words: 26 px with 16 between by default; Up Next buttons set --player-symbol-size and --player-symbol-gap from PlayerView.actionRow (#809). */
+.player-button-symbol { display: inline-flex; flex: none; width: var(--player-symbol-size, 26px); height: var(--player-symbol-size, 26px); margin-inline-end: var(--player-symbol-gap, 16px); }
 .player-button-symbol svg { width: 100%; height: 100%; }
 .player-countdown svg { position: absolute; inset: 0; width: 58px; height: 58px; }
 .player-countdown circle { fill: none; stroke-width: 3; }
