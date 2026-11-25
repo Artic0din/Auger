@@ -3080,6 +3080,26 @@ test("a reconnect that replaces the transport is not ended by the old switch's d
     } finally { r.controller.destroy(); }
 });
 
+test("a reconnect still awaiting its replacement plan is not ended by the old switch's deadline (#750)", async () => {
+    const { r, id } = await embeddedSwitchRig();
+    try {
+        r.h.fake.script(`/playback/${id}/replan`, problem(409, "replan_in_progress", "In progress", { "Retry-After": "120" }), ...Array.from({ length: 5 }, () => problem(503, "service_unavailable", "Unavailable", { "Retry-After": "40" })));
+        r.controller.selectSubtitle("file:42:subtitle:5");
+        await settle(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+        await settle(r);
+        // Reconnect closes the old transport while its replacement replan is delayed past the old switch's 30 s deadline.
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await settle(r);
+        await r.h.clock.advance(30000);
+        await settle(r);
+        const view = last(r.views);
+        assert.notEqual(view.phase, "error", JSON.stringify(view.phase === "error" ? view.error : view.phase));
+        assert.equal(view.phase === "loading" ? view.detail : view.phase, "reconnecting");
+        assert.deepEqual(r.exits, []);
+    } finally { r.controller.destroy(); }
+});
+
 test("a route failure facing 100 quick 503s sends one woken replay, not a flood (#750, Codex repro)", async () => {
     const { r, id } = await embeddedSwitchRig();
     try {
