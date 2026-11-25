@@ -919,3 +919,25 @@ test("ballot cards open a long-press menu with Start this one and Remove suggest
         await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.plays.length)) === 1, "Start this one opens playback");
     } finally { await tv.page.context().close(); }
 });
+
+test("guests in a host-pick lobby can focus and scroll other members' suggestions without queue or remove permissions (#783)", async () => {
+    const { tv, fake } = await inLobby("guest", fake => {
+        fake.suggest("m0004", "Movie 0004");
+        fake.suggestions.push({
+            id: "owner-pick", contentId: "movie:m0005", contentType: "movie", title: "Movie 0005", subtitle: "", posterUrl: "/art/m0005.svg",
+            suggesterProfileId: "p-owner", createdAt: "2026-11-10T01:02:00.000Z", voters: new Set(),
+        });
+    });
+    try {
+        await jumpUntil(tv, 250, async () => await tv.page.locator(".watch-party-lobby-suggestions").count() === 1, "guest sees suggestions strip");
+        assert.equal(await tv.page.locator(".watch-party-strip-subtitle").textContent(), "The host decides what plays.");
+        const other = button(tv, "host-suggestion:owner-pick");
+        await other.focus();
+        assert.equal(await tv.focused(), "host-suggestion:owner-pick", "another member's card stays focusable for scrolling");
+        assert.equal(await other.getAttribute("aria-disabled"), "true");
+        await other.click({ force: true });
+        await other.click({ button: "right", force: true });
+        assert.equal(await view(tv, "watchParty:suggestionMenu").count(), 0, "cannot open remove menu on another member's suggestion");
+        assert.deepEqual(fake.roomChanges, [], "cannot queue as a guest");
+    } finally { await tv.page.context().close(); }
+});

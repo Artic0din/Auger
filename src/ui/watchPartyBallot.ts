@@ -105,30 +105,26 @@ export function hostPickSuggestions(hub: WatchPartyHub, room: Room, baseUrl: str
         const queued = suggestion.contentId === room.selectedContentId;
         const canQueue = canHostAct && !queued;
         const canRemove = hub.canRemoveSuggestion(suggestion);
+        const safePoster = serverPoster(suggestion.posterUrl, baseUrl);
         const poster = el("span", "watch-party-strip-poster");
-        poster.appendChild(artwork("watch-party-strip-art", serverPoster(suggestion.posterUrl, baseUrl), baseUrl, ""));
+        poster.appendChild(artwork("watch-party-strip-art", safePoster, baseUrl, ""));
         const title = el("span", "watch-party-strip-title", suggestion.title);
-        if (canQueue || canRemove) {
-            const button = actionButton(`host-suggestion:${suggestion.id}`, "", () => { if (canQueue) void hub.queueSuggestion(suggestion); });
-            button.element.classList.add("watch-party-strip-card");
-            button.element.setAttribute("aria-label", canQueue
-                ? translate(queuesSelection ? "watchParty.suggestion.queueTitle" : "watchParty.suggestion.playTitle", { title: isolated(suggestion.title) })
-                : suggestion.title);
-            button.element.append(poster, title);
-            if (canRemove) {
-                const quickAction = (): void => { hub.show({ kind: "suggestionMenu", suggestion }); };
-                button.element.addEventListener("contextmenu", event => { event.preventDefault(); button.element.focus({ preventScroll: true }); quickAction(); });
-                items.push({ ...button, quickAction });
-            } else {
-                items.push(button);
-            }
-            strip.appendChild(button.element);
+        // Every card stays focusable so guests can scroll across overflow suggestions; read-only cards are aria-disabled and ignore presses.
+        const button = actionButton(`host-suggestion:${suggestion.id}`, "", () => { if (canQueue) void hub.queueSuggestion(suggestion, safePoster); });
+        button.element.classList.add("watch-party-strip-card");
+        if (!canQueue && !canRemove) button.element.setAttribute("aria-disabled", "true");
+        button.element.setAttribute("aria-label", canQueue
+            ? translate(queuesSelection ? "watchParty.suggestion.queueTitle" : "watchParty.suggestion.playTitle", { title: isolated(suggestion.title) })
+            : suggestion.title);
+        button.element.append(poster, title);
+        if (canRemove) {
+            const quickAction = (): void => { hub.show({ kind: "suggestionMenu", suggestion }); };
+            button.element.addEventListener("contextmenu", event => { event.preventDefault(); button.element.focus({ preventScroll: true }); quickAction(); });
+            items.push({ ...button, quickAction });
         } else {
-            const passive = el("div", "watch-party-strip-card watch-party-strip-card-passive");
-            passive.setAttribute("aria-label", suggestion.title);
-            passive.append(poster, title);
-            strip.appendChild(passive);
+            items.push(button);
         }
+        strip.appendChild(button.element);
     }
     const node = el("div", "watch-party-lobby-suggestions");
     node.append(head, strip);

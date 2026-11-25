@@ -226,9 +226,9 @@ export class WatchPartyHub {
         return this.changeBallot(async (roomId, signal) => { await deleteSuggestion(roomId, this.roomToken, id, signal); });
     }
 
-    /** WatchPartyLobbySuggestions.queue: in a host-pick lobby, stages (or selects) a guest suggestion. */
-    async queueSuggestion(suggestion: Suggestion): Promise<boolean> {
-        const posterUrl = suggestion.posterUrl === "" ? undefined : suggestion.posterUrl;
+    /** WatchPartyLobbySuggestions.queue: in a host-pick lobby, stages (or selects) a guest suggestion using only same-origin artwork. */
+    async queueSuggestion(suggestion: Suggestion, safePosterUrl?: string): Promise<boolean> {
+        const posterUrl = safePosterUrl === undefined || safePosterUrl === "" ? undefined : safePosterUrl;
         const subtitle = suggestion.subtitle === "" ? undefined : suggestion.subtitle;
         return this.stage({
             contentId: suggestion.contentId,

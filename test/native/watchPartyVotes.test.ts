@@ -453,3 +453,20 @@ test("promoteSuggestion honors voteHostOverride in vote rooms and starts playbac
     assert.equal(r.hub.state.room?.phase, "playing");
     r.hub.leave();
 });
+
+test("queueSuggestion never seeds the lobby with an unsanitized external posterUrl (#783)", async () => {
+    let stagedPoster: string | undefined = "sentinel";
+    const external = row("ext", { poster_url: "https://evil.example/track.png" });
+    const r = await voteRoom([page([external])], { selection_mode: "host_pick" }, {
+        stageSelection: async () => {
+            stagedPoster = r.hub.state.selected?.posterUrl;
+            return roomAccess({ selection_mode: "host_pick", selected_content_id: "movie:ext", generation: 2 });
+        },
+        item: async () => { throw new Error("optional"); },
+    }, { staged_selection: true });
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(await r.hub.queueSuggestion(r.hub.state.votes.rows[0]!), true);
+    assert.equal(stagedPoster, undefined, "external guest artwork is never copied into optimistic lobby selection");
+    r.hub.leave();
+});
