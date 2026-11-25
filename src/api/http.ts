@@ -158,8 +158,12 @@ export class NativeHttp {
             timeout = this.clock.schedule(cancel, SUBTITLE_IDLE_TIMEOUT_MS);
         };
         try {
-            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", headers: { "Accept-Language": shownLanguage() }, ...(fresh ? { cache: "reload" as const } : {}) });
-            if (!response.ok || Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle download failed");
+            const response = await this.fetch(address.href, { signal: abort.signal, credentials: "omit", redirect: "error", headers: { "Accept-Language": shownLanguage() }, ...(fresh ? { cache: "reload" as const } : {}) }).catch(() => {
+                if (signal.aborted) throw abortedError();
+                throw new ApiError({ kind: abort.signal.aborted ? "timeout" : "network" });
+            });
+            if (!response.ok) throw new ApiError({ kind: "http", status: response.status, retryAfterSeconds: undefined });
+            if (Number(response.headers.get("Content-Length")) > SUBTITLE_MAX_BYTES) throw new Error("Subtitle file too large");
             if (response.body === null) return "";
             const reader = response.body.getReader();
             const decoder = new TextDecoder();

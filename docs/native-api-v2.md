@@ -29,7 +29,7 @@ The public sign-in reads (branding and auth providers) call `NativeHttp.send` di
 - **Timeout.** The default is 15 s (`DEFAULT_TIMEOUT_MS`). Callers may override it per request.
   Subtitle files (`NativeHttp.subtitleText`) have no total limit and fail after 60 s with no bytes, Apple's `sidecarIdleTimeout`: the server streams an embedded-track extract as it demuxes, which takes minutes on a large remux.
   They stop at 4 MiB.
-  A body the origin breaks off, or leaves quiet for 60 s, after the answer began is `SubtitleTruncated` and carries the text that arrived. `downloadSubtitle` (`src/player/subtitleRefetch.ts`) shows those cues and fetches again after 2, 5, 10, 10 and 10 s, Apple's `sidecarTruncationRetryDelaysSeconds`, keeping the largest partial; a refetch that fails outright is retried too, but a first fetch that never got going fails as before.
+  A body the origin breaks off, or leaves quiet for 60 s, after the answer began is `SubtitleTruncated` and carries the text that arrived. `downloadSubtitle` (`src/player/subtitleCaptions.ts`) shows those cues and fetches again after 2, 5, 10, 10 and 10 s, Apple's `sidecarTruncationRetryDelaysSeconds`, keeping the largest partial; a refetch that fails outright is retried too, but a first fetch that never got going fails as before.
 - **Headers on every request.**
   - `Accept: application/json, application/problem+json`
   - `X-Silo-Device-Id`
@@ -478,7 +478,7 @@ Other progress failures are ignored, because the next sample is newer.
 Progress samples are due every 10 s (`PROGRESS_INTERVAL_MS`, `src/player/controller.ts`).
 
 Stream URL authentication: AVPlay cannot send headers.
-When the plan's `stream.url` has the API origin (root-relative URLs are resolved below `baseUrl`), the controller appends `token=<access token>` from `mediaToken`.
+When the plan's `stream.url` has the API origin (root-relative URLs are resolved below `baseUrl`), the controller appends `token=<access token>` from `mediaToken` to the query, before any `#fragment`, leaving the signed query byte-for-byte.
 The token is never added to a URL on another origin.
 URLs failing `isPermittedUrl` fail the playback.
 The code comment calls this a "Gate C candidate" from silo-server's `docs/playback-api.md` (at the commit in `src/contracts/v2/SOURCE`), so the server's acceptance of the `token` query on stream and subtitle URLs is not marked final.

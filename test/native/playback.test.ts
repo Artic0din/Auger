@@ -14,7 +14,9 @@ import { FakeSettings } from "./support/fakeSettings.ts";
 import { SettingsState } from "../../src/ui/settingsState.ts";
 import { NEXT_UP_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeCatalog } from "./support/fakeCatalog.ts";
-import { HDR_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS } from "../../src/contracts/v2/settings.ts";
+import { BITRATE_KEY, HDR_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS } from "../../src/contracts/v2/settings.ts";
+import { DiagnosticsCollector } from "../../src/diagnostics.ts";
+import { incidentAutoEligible, playbackIncident } from "../../src/diagnosticsIncident.ts";
 import { clientCapabilities, playbackContext } from "../../src/player/capabilities.ts";
 import { operations } from "../../src/api/operations.ts";
 import { setAppLanguage } from "../../src/i18n/language.ts";
@@ -74,7 +76,7 @@ test("the Auto-play toggle saves this TV's value, so the change always takes eff
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r);
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
     const writes = r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
     assert.deepEqual(writes.map(request => request.path), ["/settings/values/playback.auto_play_next?scope=profile_device"]);
     assert.deepEqual(writes[0]?.body, { value: false });
@@ -110,24 +112,34 @@ test("turning Auto-play off on the finished card stops its countdown, and on sta
     r.controller.destroy();
 });
 
-test("live autoplay saves once while pending and retains the old value on refusal", async () => {
+test("live autoplay debounces, retries transient failures, holds exhausted writes, and shows no player error (#810)", async () => {
     const r = await autoplayRig(false);
     await playMovie(r);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
-    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", ...Array.from({ length: 6 }, () => ({ status: 503, body: { error: "unavailable" } })));
+    // Rapid presses coalesce during the 750 ms debounce into one write of the latest value (true).
+    r.controller.toggleAutoNext();
     r.controller.toggleAutoNext();
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.equal(view.hud?.busy, true);
+    assert.equal(view.hud?.autoNext, true);
+    assert.equal(view.hud?.busy, false, "flusher writes never lock the player HUD");
+    assert.equal(view.hud?.message ?? "", "", "player HUD shows no saving or failure text");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 0);
+    // Initial debounced attempt (750 ms) + 5 automatic retries (1 s, 2 s, 4 s, 8 s, 16 s) = 6 PUTs.
+    await r.h.clock.advance(750);
     assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1);
-    hold.release();
-    await r.h.clock.advance(0);
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+        await r.h.clock.advance(delay);
+    }
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 6);
+    await r.h.clock.advance(60_000);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 6, "no more automatic retries once held");
     view = last(r.views);
     assert.ok(view.phase === "playing");
-    assert.equal(view.hud?.autoNext, false);
-    assert.match(view.hud?.message ?? "", /Could not save/);
+    assert.equal(view.hud?.autoNext, true, "local choice stays in effect while held");
+    assert.equal(view.hud?.message ?? "", "", "player still shows no error when held");
     r.controller.destroy();
 });
 
@@ -176,24 +188,185 @@ test("a discovery settings read started before a save cannot overwrite Auto-play
     r.controller.destroy();
 });
 
-test("a completed Shuffle item advances the same server session before offering its next pick", async () => {
-    const r = await rig();
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
-    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
-    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+test("a failed discovery settings read cannot turn Auto-play off while an Off-to-On save is pending (#816)", async () => {
+    const r = await autoplayRig(false);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", false);
+    const episodePart = "/catalog/series/series%3As1/seasons?image_size=small";
+    const autoNextRead = "/settings/values/effective?keys=playback.auto_play_next";
+    const unavailable = problem(500, "internal_error", "Unavailable");
+    await playMovieWith(r, EPISODE, () => {
+        // Fail only the first-frame episode lookup so entering the Up Next window triggers a discovery retry during the held save.
+        r.h.fake.script(episodePart, unavailable);
+    });
+    await r.h.clock.advance(0);
+    const initial = last(r.views);
+    assert.ok(initial.phase === "playing" && initial.durationSeconds !== undefined);
+    assert.equal(initial.hud?.autoNext, false, "Auto-play starts Off");
+    const hold = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.controller.toggleAutoNext();
+    await r.h.clock.advance(750);
+    const pending = last(r.views);
+    assert.ok(pending.phase === "playing");
+    assert.equal(pending.hud?.autoNext, true, "Auto-play switches On while the save is held");
+    // Fail the discovery read started at the current settingsEpoch while the save is still pending.
+    const readsBefore = r.h.fake.requests.filter(request => request.path === autoNextRead).length;
+    r.h.fake.script(autoNextRead, unavailable);
+    r.avplay.tick((initial.durationSeconds - 25) * 1000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === autoNextRead).length, readsBefore + 1, "the discovery retry issued the failed Auto-play read");
+    const afterFailedRead = last(r.views);
+    assert.ok(afterFailedRead.phase === "playing");
+    assert.equal(afterFailedRead.hud?.autoNext, true, "the failed discovery read does not flip Auto-play back Off while the save is pending");
+    // Leave the early prompt window so EOF exercises the 10 s completion countdown rather than immediate prompt handoff.
+    r.avplay.tick(1000);
+    await r.h.clock.advance(0);
+    hold.release();
+    await r.h.clock.advance(0);
+    const confirmed = last(r.views);
+    assert.ok(confirmed.phase === "playing");
+    assert.equal(confirmed.hud?.autoNext, true, "Auto-play stays On after the save confirms");
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
+    assert.equal(completion(r).autoNext, true);
+    assert.equal(completion(r).countdown, 10, "countdown behaviour stays intact");
+    await r.h.clock.advance(11000);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode autoplays");
+    r.controller.destroy();
+});
+
+test("a completed Shuffle item refreshes GET /shuffles/{id} before offering its next pick, skips via /skip, and advances via /advance (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-3" }, next: { content_id: "movie-4" } } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-3", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).next?.contentId, "movie-2");
+    assert.equal(completion(r).shuffleScopeLabel, "Movies");
+    assert.equal(completion(r).countdown, 10);
+    // Pick Another calls POST /shuffles/sh1/skip with next_content_id; Play Now is blocked while /skip is in flight.
+    const skipHold = r.h.fake.hold("/shuffles/sh1/skip");
+    r.controller.pickAnother();
+    await r.h.clock.advance(0);
+    r.controller.playNext();
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 0, "Play Now cannot race with an in-flight Pick Another");
+    skipHold.release();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const skips = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip");
+    assert.equal(skips.length, 1);
+    assert.deepEqual(skips[0]?.body, { next_content_id: "movie-2" });
+    assert.equal(completion(r).next?.contentId, "movie-3");
+    assert.equal(completion(r).countdown, 10);
+    // Playing the next pick calls POST /shuffles/sh1/advance with from_content_id.
+    r.controller.playNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
     assert.equal(advance.length, 1);
     assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
-    assert.equal(last(r.views).phase, "completion");
+    assert.equal(bodies(r.h, "/start").length, 2);
     r.controller.destroy();
+});
+
+test("Pick Another failure shows upNext.pickAnotherFailed and restarts the countdown (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "season", id: "s2", title: "Season 2", parent_title: "Breaking Bad" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", problem(500, "internal_error", "Unavailable"));
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).shuffleScopeLabel, "Breaking Bad · Season 2");
+    r.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).next?.contentId, "movie-2", "failed skip keeps the announced pick");
+    assert.equal(completion(r).shuffleActionError, "upNext.pickAnotherFailed");
+    assert.equal(completion(r).countdown, 10, "countdown restarts after failed Pick Another");
+    r.controller.destroy();
+
+    // If /skip succeeds on the server but /watch/{replacement} fails, do not advertise the skipped pick or auto-play it; offer Retry to refresh.
+    const partial = await autoplayRig(true);
+    partial.settings.overrides.delete("playback.auto_play_next");
+    partial.settings.profile().set("playback.auto_play_next", true);
+    partial.h.fake.script("/shuffles/sh1",
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } },
+        { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } },
+    );
+    partial.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    scriptParts(partial, [{ file_id: "42", duration_seconds: 3000 }]);
+    partial.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    partial.h.fake.script("/watch/movie-3",
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    await playMovie(partial, { ...MOVIE, shuffleId: "sh1" });
+    partial.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    partial.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "failed", "partial skip failure clears the stale skipped pick");
+    assert.equal(completion(partial).next, undefined);
+    assert.equal(completion(partial).retryable, true);
+    assert.equal(completion(partial).countdown, undefined, "no countdown while the replacement pick is unresolved");
+    await partial.h.clock.advance(15_000);
+    assert.equal(bodies(partial.h, "/start").length, 1, "does not auto-play after a partial skip failure");
+    partial.controller.retryCompletion();
+    for (let step = 0; step < 6; step++) await partial.h.clock.advance(0);
+    assert.equal(completion(partial).state, "ready");
+    assert.equal(completion(partial).next?.contentId, "movie-3", "Retry refreshes GET /shuffles/{id} and offers the server's replacement pick");
+    partial.controller.destroy();
+
+    // If /advance succeeds on the server but /watch/{current} fails, clear the card to a retryable failure (blocking Pick Another) and retry resolving the promoted pick directly.
+    const partialAdvance = await autoplayRig(true);
+    partialAdvance.settings.overrides.delete("playback.auto_play_next");
+    partialAdvance.settings.profile().set("playback.auto_play_next", true);
+    partialAdvance.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    partialAdvance.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-2" }, next: { content_id: "movie-3" } } });
+    scriptParts(partialAdvance, [{ file_id: "42", duration_seconds: 3000 }]);
+    partialAdvance.h.fake.script("/watch/movie-2",
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+        problem(500, "internal_error", "Unavailable"),
+        { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } },
+    );
+    partialAdvance.server.items.set("movie-2", ["43"]);
+    await playMovie(partialAdvance, { ...MOVIE, shuffleId: "sh1" });
+    partialAdvance.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    partialAdvance.controller.playNext();
+    for (let step = 0; step < 6; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(completion(partialAdvance).state, "failed", "partial advance failure hides Pick Another and enters retryable failure");
+    assert.equal(completion(partialAdvance).next, undefined);
+    assert.equal(completion(partialAdvance).retryable, true);
+    partialAdvance.controller.pickAnother();
+    await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip").length, 0, "Pick Another cannot run after /advance promoted the pick");
+    partialAdvance.controller.retryCompletion();
+    for (let step = 0; step < 8; step++) await partialAdvance.h.clock.advance(0);
+    assert.equal(partialAdvance.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "Retry resolves the promoted pick without calling /advance again");
+    assert.equal(bodies(partialAdvance.h, "/start").length, 2, "Retry starts the promoted pick");
+    partialAdvance.controller.destroy();
 });
 
 test("the next Shuffle pick starts and reports progress from zero although it has a saved position", async () => {
     const r = await episodeRig();
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: EPISODE.contentId }, next: { content_id: "episode:s1e13" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "episode:s1e13" }, next: { content_id: "episode:s1e13" } } });
-    r.h.fake.script("/watch/episode%3As1e13", { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } });
+    const nextDetail = { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } };
+    r.h.fake.script("/watch/episode%3As1e13", nextDetail, nextDetail);
     await playMovie(r, { ...EPISODE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -201,7 +374,7 @@ test("the next Shuffle pick starts and reports progress from zero although it ha
     assert.equal(ready.state, "ready");
     assert.equal(ready.next?.startSeconds, 0);
     r.controller.playNext();
-    await r.h.clock.advance(0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     r.avplay.finishPrepare();
     await r.h.clock.advance(0);
     const starts = bodies(r.h, "/start");
@@ -239,10 +412,10 @@ test("a Shuffle pick's next part plays from its beginning after the finished par
     r.controller.destroy();
 });
 
-test("the last part of a Shuffle pick advances the Shuffle from the item once, after the earlier part", async () => {
+test("the last part of a Shuffle pick refreshes the Shuffle once, after the earlier part", async () => {
     const r = await rig();
     scriptParts(r);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -251,22 +424,21 @@ test("the last part of a Shuffle pick advances the Shuffle from the item once, a
     scriptParts(r);
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
-    assert.equal(advance.length, 1);
-    assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
+    const reads = r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1");
+    assert.equal(reads.length, 1);
     assert.equal(bodies(r.h, "/start").length, 2, "no third part");
     assert.equal(last(r.views).phase, "completion");
     r.controller.destroy();
 });
 
-test("a Shuffle pick with no later part advances the Shuffle", async () => {
+test("a Shuffle pick with no later part refreshes the Shuffle", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.equal(bodies(r.h, "/start").length, 1);
     r.controller.destroy();
 });
@@ -274,16 +446,16 @@ test("a Shuffle pick with no later part advances the Shuffle", async () => {
 test("a Shuffle working out its next pick reads Up Next at Random over Picking at random, from the controller", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    const advance = r.h.fake.hold("/shuffles/sh1/advance");
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    const refresh = r.h.fake.hold("/shuffles/sh1");
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "the next pick is being read");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1, "the next pick is being read");
     assert.equal(completion(r).state, "resolving");
     assert.equal(completion(r).status, "upNext.headingShuffle", "Apple's statusLabel for a Shuffle, not Playing Next");
     assert.equal(completion(r).shuffle, true, "so the title reads Picking at random");
-    advance.release();
+    refresh.release();
     r.controller.destroy();
 });
 
@@ -325,11 +497,11 @@ test("the screens between a Shuffle pick's parts never show the completion scree
 test("a missing item at the between-parts read moves the Shuffle on instead of offering a retry", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1", problem(404, "not_found", "Unavailable"));
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.notEqual(completion(r).state, "failed");
     r.controller.destroy();
 });
@@ -564,7 +736,7 @@ interface Rig {
     readonly views: PlaybackView[];
 }
 
-async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig> {
+async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig> {
     const spoilers = typeof hdrProbeScopeOrSpoilers === "function" ? hdrProbeScopeOrSpoilers as () => EpisodeSpoilerSettings : undefined;
     const hdrProbeScope = typeof hdrProbeScopeOrSpoilers === "function" ? undefined : hdrProbeScopeOrSpoilers;
     const clock = new ManualClock();
@@ -595,6 +767,7 @@ async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoile
         },
         ...(spoilers === undefined ? {} : { spoilers }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
+        ...(stillWatchingThreshold === undefined ? {} : { stillWatchingThreshold }),
     });
     const views: PlaybackView[] = [];
     controller.subscribe((view) => views.push(view));
@@ -798,6 +971,185 @@ test("an automatic credits skip offers no undo, as on Apple TV", async () => {
     assert.ok(view.phase === "playing");
     assert.equal(view.undoSkipSeconds, undefined);
     r.controller.destroy();
+});
+
+// #795: Skip Credits reaching within 0.5 s of EOF opens Up Next with a fixed 10 s countdown over playing credits
+// instead of seeking to EOF (silo-apple d315ef9c PlayerViewModel.performCreditsSkip / presentNextUpOverCredits).
+async function creditsAutoplayRig(enabled: boolean, autoSkipCredits = true) {
+    const r = await episodeRig();
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", enabled);
+    settings.profile().set("playback.auto_skip_credits", autoSkipCredits);
+    return { ...r, settings };
+}
+
+test("auto-skipping credits that run to EOF opens Up Next with a fixed 10 s countdown, does not seek to EOF, and plays next after 10 s (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const seeksBefore = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    r.avplay.tick(7140_000);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing", "video keeps playing over credits");
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "no seek to EOF");
+    assert.equal(view.upNext?.countdown, 10);
+    assert.equal(view.upNext?.countdownTotal, 10);
+    await r.h.clock.advance(9000);
+    assert.equal(bodies(r.h, "/start").length, 1, "still counting down at 9 s");
+    await r.h.clock.advance(1000);
+    for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "next episode plays after 10 s");
+    r.controller.destroy();
+});
+
+test("credits skip under an already-open pre-end prompt switches its countdown to a fixed 10 s, and manual Skip Credits does too (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7175, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7172_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined, "pre-end prompt opens first");
+    assert.equal(view.upNext.countdown, 28);
+    assert.equal(view.upNext.countdownTotal, 30);
+    r.avplay.tick(7175_000);
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext !== undefined);
+    assert.equal(view.upNext.countdown, 10, "switches open prompt to fixed 10 s countdown");
+    assert.equal(view.upNext.countdownTotal, 10);
+    r.controller.destroy();
+
+    // Manual Skip Credits pill reaching EOF opens Up Next with fixed 10 s countdown without seeking.
+    const manual = await creditsAutoplayRig(true, false);
+    await playMovie(manual, EPISODE);
+    for (let step = 0; step < 6; step++) await manual.h.clock.advance(0);
+    const seeksBefore = manual.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+    manual.controller.skipCredits(7200);
+    const manualView = last(manual.views);
+    assert.ok(manualView.phase === "playing" && manualView.upNext !== undefined);
+    assert.equal(manual.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "manual Skip Credits does not seek to EOF");
+    assert.equal(manualView.upNext.countdown, 10);
+    assert.equal(manualView.upNext.countdownTotal, 10);
+    // Natural EOF 5 s after Skip Credits preserves the remaining 5 s instead of advancing early.
+    await manual.h.clock.advance(5000);
+    manual.avplay.listener?.onstreamcompleted();
+    await manual.h.clock.advance(0);
+    assert.equal(bodies(manual.h, "/start").length, 1, "EOF after 5 s must not start next episode early");
+    assert.equal(completion(manual).countdown, 5, "remaining 5 s of the fixed 10 s credits countdown carry over");
+    await manual.h.clock.advance(5000);
+    assert.equal(bodies(manual.h, "/start").length, 2, "next episode starts once the full 10 s elapses");
+    manual.controller.destroy();
+});
+
+test("credits skip to EOF respects Auto-play off, Watch Party, and pending shuffle parts (#795)", async () => {
+    // Auto-play off: Up Next opens over credits with no countdown and does not advance.
+    {
+        const r = await creditsAutoplayRig(false);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext !== undefined, "Up Next still opens with Auto-play off");
+        assert.equal(view.upNext.countdown, undefined, "no countdown when Auto-play is off");
+        await r.h.clock.advance(15_000);
+        assert.equal(bodies(r.h, "/start").length, 1, "never auto-plays with Auto-play off");
+        r.controller.destroy();
+    }
+    // Watch Party keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, { ...EPISODE, watchParty: true });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "Watch Party seeks as before");
+        r.controller.destroy();
+    }
+    // Shuffle (including multi-part) keeps today's seek path.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        scriptParts(r, [{ file_id: "42", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 1 }, { file_id: "43", duration_seconds: 7200, presentation_group_key: "g", presentation_part_index: 2 }]);
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.equal(r.avplay.calls.at(-1), "seekTo 7200000", "shuffle with pending part seeks as before");
+        r.controller.destroy();
+    }
+});
+
+test("seeking back out of credits cancels the fixed 10 s countdown, closes Up Next, and reports the rewound position (#795)", async () => {
+    const r = await creditsAutoplayRig(true);
+    r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+        { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+    ] } }]);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.avplay.tick(7140_000);
+    let view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext?.countdown === 10, "credits countdown started");
+    r.controller.seekToSeconds(7020);
+    r.avplay.finishSeek();
+    view = last(r.views);
+    assert.ok(view.phase === "playing" && view.upNext === undefined, "rewinding out of credits closes Up Next");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 1, "cancelled credits countdown never starts the next episode");
+    const lastProgress = bodies(r.h, "/progress").at(-1);
+    assert.equal(lastProgress?.position, 7020, "progress reports the rewound position instead of duration");
+    r.controller.destroy();
+});
+
+test("opening Up Next over credits retries failed first-frame discovery and preserves countdown expiry across connection recovery (#795)", async () => {
+    // 1. Failed first-frame next-episode lookup is retried when credits open Up Next.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        r.h.fake.script("/catalog/series/series-1/seasons", problem(503, "unavailable", "Busy"));
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const view = last(r.views);
+        assert.ok(view.phase === "playing" && view.upNext?.next !== undefined && view.upNext.countdown === 10, "credits open retries failed first-frame lookup and starts countdown");
+        await r.h.clock.advance(10_000);
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "retried credits discovery advances after 10 s");
+        r.controller.destroy();
+    }
+    // 2. Countdown expiry during connection recovery still starts the next episode once recovery resumes playback.
+    {
+        const r = await creditsAutoplayRig(true);
+        r.h.fake.scripted.set("/markers/files/42", [{ status: 200, body: { file_id: "42", marker_segments: [
+            { kind: "credits", start_seconds: 7140, end_seconds: 7200 },
+        ] } }]);
+        await playMovie(r, EPISODE);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.avplay.tick(7140_000);
+        assert.ok(last(r.views).phase === "playing");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(12_000);
+        assert.equal(last(r.views).phase, "loading", "still recovering when credits countdown expires");
+        r.avplay.finishPrepare();
+        r.avplay.finishSeek();
+        for (let step = 0; step < 8; step++) await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "recovery resumption honours the expired credits countdown");
+        r.controller.destroy();
+    }
 });
 
 test("Skip automatically never offers Skip Intro, even after Watch Intro returns to the intro", async () => {
@@ -1319,6 +1671,8 @@ test("a prepare that hangs is a failed route after 15 s, before the TV gives up 
     assert.equal(bodies(r.h, "/replan").length, 0);
     await r.h.clock.advance(1);
     assert.deepEqual(only(bodies(r.h, "/replan")).failure, { classification: "avplay_startup_timeout" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "startup_timeout");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 1);
     assert.equal(r.avplay.urls.length, 2);
     const opened = r.avplay.calls.length;
 
@@ -1346,6 +1700,8 @@ test("prepares that hang end in the playback error page within a bounded time, w
     const view = last(r.views);
     assert.equal(view.phase, "error");
     assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "startup_timeout");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 3);
     assert.equal(r.avplay.state, "NONE", "AVPlay is closed, not left in its half-open state");
     assert.equal(r.avplay.calls.filter((call) => call.startsWith("open ")).length, 4, "one open per route tried");
     assert.equal(r.avplay.calls.filter((call) => call === "close").length >= 4, true, "every hung route was closed");
@@ -1376,6 +1732,8 @@ test("failure replans are bounded; then playback ends with an error and a stop",
     const view = last(r.views);
     assert.equal(view.phase, "error");
     assert.deepEqual(view.phase === "error" ? view.error : undefined, { kind: "playback_failed" });
+    assert.equal(r.controller.diagnosticsDetails()?.avplayError, "prepareAsync:UnknownError");
+    assert.equal(r.controller.diagnosticsDetails()?.routeFallbacks, 3);
     assert.equal(r.avplay.state, "NONE");
     assert.equal(ops(r.h)[ops(r.h).length - 1], "DELETE /playback/S1");
     assert.deepEqual(r.exits, []);
@@ -1857,8 +2215,8 @@ const watchReads = (r: Rig): number => r.h.fake.requests.filter(q => q.path.star
 
 const EPISODE: PlayRequest = { contentId: "episode:s1e12", fileId: "42", title: "Harbor Lights chapter 1.2", startSeconds: 0, episode: true };
 
-async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"]): Promise<Rig & { catalog: FakeCatalog }> {
-    const r = await rig("p-owner", undefined, spoilers, resolutionCap);
+async function episodeRig(spoilers?: () => EpisodeSpoilerSettings, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog }> {
+    const r = await rig("p-owner", undefined, spoilers, resolutionCap, stillWatchingThreshold);
     const catalog = new FakeCatalog();
     catalog.fileIds.set(EPISODE.contentId, "42");
     catalog.fileIds.set("episode:s1e13", "43");
@@ -1904,8 +2262,8 @@ function completion(r: Rig): Extract<PlaybackView, { phase: "completion" }> {
     return view;
 }
 
-async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"]): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
-    const r = await episodeRig(spoilers);
+async function autoplayRig(enabled: boolean, promptSeconds?: number, spoilers?: () => EpisodeSpoilerSettings, autoNextScopes: readonly string[] = ["profile", "profile_device"], stillWatchingThreshold?: () => number): Promise<Rig & { catalog: FakeCatalog; settings: FakeSettings }> {
+    const r = await episodeRig(spoilers, undefined, stillWatchingThreshold);
     const settings = new FakeSettings(r.h.fake);
     settings.overrides.set("playback.auto_play_next", enabled);
     const contract = fixture("settings_contract_ok");
@@ -1958,23 +2316,172 @@ test("turning Auto-play off on the finished card stops the countdown at once, be
     r.controller.destroy();
 });
 
-// Apple keeps the local value and retries; a refusal shows only in Settings (SettingsViewModel.swift:443). Samsung has no retrying writer, so
-// a refused save puts the toggle back to On, and the card counts down again, as On means (#806 review).
-test("a refused Auto-play save on the finished card restores the toggle and its countdown (#806)", async () => {
+// Apple's PlayerSettingsFlusher keeps the local choice and retries transient failures on backoff (#810).
+test("a transient Auto-play save failure on the finished card keeps Off, keeps the countdown stopped, and retries until saved (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r, EPISODE);
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", { status: 503, body: { error: "unavailable" } });
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).autoNext, true, "the saved value is still On");
-    assert.equal(completion(r).countdown, 10, "so the countdown starts again from Apple's 10 seconds");
+    await r.h.clock.advance(750);
+    assert.equal(completion(r).autoNext, false, "local Off stays in effect after transient failure");
+    assert.equal(completion(r).countdown, undefined, "countdown stays stopped while retrying");
+    await r.h.clock.advance(1000);
+    const writes = r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
+    assert.equal(writes.length, 2, "retried after 1 s");
+    assert.deepEqual(writes[1]?.body, { value: false }, "retry committed Off to the server");
     await r.h.clock.advance(11000);
-    assert.equal(bodies(r.h, "/start").length, 2, "and the next episode plays");
+    assert.equal(bodies(r.h, "/start").length, 1, "nothing plays on its own");
     r.controller.destroy();
+});
+
+test("Still Watching gates auto-play after N unattended advances, resets on viewer actions, and never gates at 0 (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const run = async (threshold: number, viewerActionOnEp2: boolean) => {
+        const r = await episodeRig(undefined, undefined, () => threshold);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, "first episode counts down");
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        await r.h.clock.advance(0);
+        assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+        if (viewerActionOnEp2) {
+            r.controller.setPaused(true);
+            r.controller.setPaused(false);
+        }
+        // Finish episode 2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        return r;
+    };
+
+    // Threshold 1 with no viewer action on episode 2: Up Next opens with no countdown and waits for Play Now.
+    const gated = await run(1, false);
+    assert.equal(completion(gated).state, "ready");
+    assert.equal(completion(gated).next?.contentId, "episode:s1e13");
+    assert.equal(completion(gated).countdown, undefined, "Still Watching gates the countdown after 1 unattended advance");
+    await gated.h.clock.advance(15_000);
+    assert.equal(bodies(gated.h, "/start").length, 2, "gated episode does not auto-play on its own");
+    // Pressing Play Now advances manually and resets the guard.
+    gated.controller.playNext();
+    await gated.h.clock.advance(0);
+    assert.equal(bodies(gated.h, "/start").length, 3, "Play Now still starts episode 3");
+    gated.controller.destroy();
+
+    // A viewer action (pause/play) on episode 2 resets the guard so episode 2 counts down normally.
+    const reset = await run(1, true);
+    assert.equal(completion(reset).countdown, 10, "viewer action reset the Still Watching count");
+    await reset.h.clock.advance(10_000);
+    assert.equal(bodies(reset.h, "/start").length, 3);
+    reset.controller.destroy();
+
+    // Threshold 0 (Off) never gates.
+    const off = await run(0, false);
+    assert.equal(completion(off).countdown, 10, "threshold 0 never gates");
+    await off.h.clock.advance(10_000);
+    assert.equal(bodies(off.h, "/start").length, 3);
+    off.controller.destroy();
+});
+
+test("automatic intro and mid-file credits skips do not reset the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    const r = await episodeRig(undefined, undefined, () => 1);
+    const settings = new FakeSettings(r.h.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    settings.profile().set("playback.intro_skip_mode", "always");
+    settings.profile().set("playback.auto_skip_credits", true);
+    r.catalog.fileIds.set("episode:s1e11", "42");
+    r.catalog.fileIds.set("episode:s1e12", "43");
+    r.catalog.fileIds.set("episode:s1e13", "42");
+    r.server.items.set("episode:s1e11", ["42"]);
+    r.server.items.set("episode:s1e12", ["43"]);
+    r.server.items.set("episode:s1e13", ["42"]);
+    r.h.fake.scripted.set("/markers/files/43", [{ status: 200, body: { file_id: "43", marker_segments: [
+        { kind: "intro", start_seconds: 10, end_seconds: 90 },
+        { kind: "credits", start_seconds: 7000, end_seconds: 7060 },
+    ] } }]);
+    await playMovie(r, ep1);
+    // Unattended advance 1: ep1 -> ep2.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(10_000);
+    r.avplay.finishPrepare();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "unattended advance started episode 2");
+    // Automatic intro skip and automatic mid-file credits skip on episode 2 must not count as viewer actions.
+    r.avplay.tick(15_000);
+    r.avplay.finishSeek();
+    r.avplay.tick(7010_000);
+    r.avplay.finishSeek();
+    // Finish episode 2: Still Watching must still gate at threshold 1.
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).countdown, undefined, "automatic marker skips preserve the unattended streak");
+    await r.h.clock.advance(15_000);
+    assert.equal(bodies(r.h, "/start").length, 2, "gated episode still waits for Play Now");
+    r.controller.destroy();
+});
+
+test("manual audio and subtitle selection resets the Still Watching unattended streak (#796)", async () => {
+    const ep1: PlayRequest = { contentId: "episode:s1e11", fileId: "42", title: "Harbor Lights chapter 1.1", startSeconds: 0, episode: true };
+    for (const action of ["audio", "subtitle"] as const) {
+        const r = await episodeRig(undefined, undefined, () => 1);
+        const settings = new FakeSettings(r.h.fake);
+        settings.remainingRows = true;
+        settings.overrides.set("playback.auto_play_next", true);
+        r.catalog.fileIds.set("episode:s1e11", "42");
+        r.catalog.fileIds.set("episode:s1e12", "43");
+        r.catalog.fileIds.set("episode:s1e13", "42");
+        r.server.items.set("episode:s1e11", ["42"]);
+        r.server.items.set("episode:s1e12", ["43"]);
+        r.server.items.set("episode:s1e13", ["42"]);
+        await playMovie(r, ep1);
+        // Unattended advance 1: ep1 -> ep2.
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        await r.h.clock.advance(10_000);
+        r.avplay.finishPrepare();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        const ep2View = last(r.views);
+        assert.ok(ep2View.phase === "playing");
+        if (action === "audio") {
+            assert.equal(ep2View.tracks.audio.state, "ready");
+            const otherAudio = ep2View.tracks.audio.choices[1];
+            assert.ok(otherAudio !== undefined);
+            r.controller.selectAudio(otherAudio.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        } else {
+            r.controller.selectSubtitle(ep2View.tracks.subtitles[0]?.id);
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+            if (r.avplay.pendingPrepares > 0) r.avplay.finishPrepare();
+            if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) r.avplay.finishSeek();
+            for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
+        }
+        r.avplay.listener?.onstreamcompleted();
+        await r.h.clock.advance(0);
+        assert.equal(completion(r).countdown, 10, `manual ${action} selection resets Still Watching`);
+        r.controller.destroy();
+    }
 });
 
 test("a countdown that would have run out while Off is still saving plays nothing (#806)", async () => {
@@ -2028,9 +2535,11 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
-    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    const secondDetail = { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } };
+    r.h.fake.script("/watch/movie-2", secondDetail, secondDetail);
     r.server.items.set("movie-2", ["43"]);
     await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
@@ -2047,6 +2556,55 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     await r.h.clock.advance(11000);
     assert.equal(bodies(r.h, "/start").length, 2, "and the pick plays");
     r.controller.destroy();
+});
+
+test("stopShuffling cancels the countdown, sends one DELETE /shuffles/{id}, and closes the player (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 204 });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).countdown, 10);
+    r.controller.stopShuffling();
+    assert.equal(last(r.views).phase, "closed");
+    assert.deepEqual(r.exits, ["back"]);
+    await r.h.clock.advance(15000);
+    assert.equal(bodies(r.h, "/start").length, 1, "countdown was cancelled and never started the next pick");
+    const deletes = r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1");
+    assert.equal(deletes.length, 1, "exactly one DELETE /shuffles/sh1");
+    r.controller.destroy();
+});
+
+test("stopShuffling still closes the player with no unhandled rejection when DELETE fails (#807)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 500, body: { type: "about:blank", title: "Server error", status: 500 } });
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-2", ["43"]);
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => { rejections.push(reason); };
+    process.on("unhandledRejection", onRejection);
+    try {
+        await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+        r.avplay.listener?.onstreamcompleted();
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        r.controller.stopShuffling();
+        assert.equal(last(r.views).phase, "closed");
+        assert.deepEqual(r.exits, ["back"]);
+        for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+        assert.equal(r.h.fake.requests.filter(request => request.method === "DELETE" && request.path === "/shuffles/sh1").length, 1);
+        assert.deepEqual(rejections, [], "failed delete produces no unhandled rejection");
+    } finally {
+        process.off("unhandledRejection", onRejection);
+        r.controller.destroy();
+    }
 });
 
 // The contract decoder keeps Auto-play only as Apple's profile and profile_device row (src/contracts/v2/settings.ts), the scope this
@@ -2133,8 +2691,8 @@ test("a settings read that answers while Off is still saving cannot turn Auto-pl
     r.controller.destroy();
 });
 
-// #806 round 3: after a refused write restores On, a read that started during the write and then fails cannot set it Off.
-test("a read that started during a refused Off write and then fails leaves the restored On (#806)", async () => {
+// Unsettled flusher writes win over stale discovery reads that return or fail while the write is queued or retrying (#810).
+test("a stale discovery read during a queued or retrying Off write cannot restore On (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
@@ -2143,31 +2701,22 @@ test("a read that started during a refused Off write and then fails leaves the r
     await r.h.clock.advance(0);
     const view = last(r.views);
     assert.ok(view.phase === "playing" && view.durationSeconds !== undefined);
-    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
-    const put = r.h.fake.hold("/settings/values/playback.auto_play_next?scope=profile_device");
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", { status: 503, body: { error: "unavailable" } });
     r.controller.toggleAutoNext();
     await r.h.clock.advance(0);
-    const failing = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
+    const staleRead = r.h.fake.hold("/settings/values/effective?keys=playback.auto_play_next");
     r.avplay.tick((view.durationSeconds - 25) * 1000);
-    await r.h.clock.advance(0);
-    put.release();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
-    const refused = last(r.views);
-    assert.ok(refused.phase === "playing");
-    assert.equal(refused.hud?.autoNext, true, "the refused write restores On");
-    failing.release();
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
+    staleRead.release();
     await r.h.clock.advance(0);
     const after = last(r.views);
     assert.ok(after.phase === "playing");
-    assert.equal(after.hud?.autoNext, true, "and the read that failed afterwards leaves it On");
+    assert.equal(after.hud?.autoNext, false, "unsettled Off stays ahead of the stale On read");
     r.controller.destroy();
 });
 
-// #806 round 2: a write the server took stays, even when the read that confirms it fails.
-test("a failed confirmation read after a saved Off keeps Off and the countdown stopped (#806)", async () => {
+// #806/#810: a debounced Off write commits cleanly and keeps the countdown stopped.
+test("a debounced Off save on the finished card commits and keeps the countdown stopped (#806)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
@@ -2175,10 +2724,8 @@ test("a failed confirmation read after a saved Off keeps Off and the countdown s
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
     assert.equal(completion(r).countdown, 10);
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", problem(500, "internal_error", "Unavailable"));
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
+    await r.h.clock.advance(750);
     assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1, "the write went through");
     assert.equal(completion(r).autoNext, false, "Off stays");
     assert.equal(completion(r).countdown, undefined, "and the countdown does not restart");
@@ -2206,22 +2753,19 @@ test("turning Auto-play on on the finished card starts the countdown before the 
     r.controller.destroy();
 });
 
-test("a confirmation read that returns another saved value moves the toggle and countdown to it (#806)", async () => {
+test("a permanent 403 refusal on Auto-play drops the write without retrying or showing a player error (#810)", async () => {
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
     await playMovie(r, EPISODE);
-    r.avplay.listener?.onstreamcompleted();
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).countdown, 10);
-    r.h.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 200, body: { revision: 24, items: [{ key: "playback.auto_play_next", value: true, source: "profile_device", definition_revision: 24 }] } });
+    r.h.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", problem(403, "forbidden", "Unavailable"));
     r.controller.toggleAutoNext();
-    await r.h.clock.advance(0);
-    await r.h.clock.advance(0);
-    assert.equal(completion(r).autoNext, true, "the saved value is On, so the toggle reads On");
-    assert.equal(completion(r).countdown, 10, "and the countdown runs again");
-    await r.h.clock.advance(11000);
-    assert.equal(bodies(r.h, "/start").length, 2);
+    await r.h.clock.advance(750);
+    await r.h.clock.advance(60_000);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length, 1, "permanent refusal is never retried");
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    assert.equal(view.hud?.message ?? "", "", "player shows no error on refusal");
     r.controller.destroy();
 });
 
@@ -4026,6 +4570,26 @@ test("the account token is never added to a media URL on another origin", async 
     assert.deepEqual(r.avplay.urls, [`https://node.example.test/stream/v3/${id}?st=node-signed`]);
 });
 
+// Synthetic signed query with percent-encoding the server signed byte-for-byte, then a fragment the HTTP request never carries.
+const FRAGMENT_QUERY = "st=fix%2Bture%20a";
+for (const site of ["same", "other"] as const) test(`a ${site}-origin media URL with a fragment opens with ${site === "same" ? "one token in its query" : "no account token"}`, async () => {
+    const r = await rig();
+    const origin = site === "same" ? "" : "https://node.example.test";
+    r.server.next.push({ url: (id) => `${origin}/api/v2/stream/${id}/video.mkv?${FRAGMENT_QUERY}#chapter` });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const id = only(sessionIds(r.server));
+    const token = only(playbackRequests(r.h).filter((request) => request.path === "/playback/start")).headers.authorization?.replace(/^Bearer /, "") ?? "";
+    assert.notEqual(token, "");
+    const opened = new URL(only(r.avplay.urls));
+    assert.equal(opened.origin, site === "same" ? r.h.fake.origin : "https://node.example.test");
+    assert.equal(opened.pathname, `/api/v2/stream/${id}/video.mkv`);
+    // `search` is what the HTTP request sends: the signed query unchanged, then exactly one credential on our own origin only.
+    assert.equal(opened.search, site === "same" ? `?${FRAGMENT_QUERY}&token=${encodeURIComponent(token)}` : `?${FRAGMENT_QUERY}`);
+    assert.deepEqual(opened.searchParams.getAll("token"), site === "same" ? [token] : []);
+    assert.equal(opened.hash, "#chapter");
+});
+
 const SEEK_ENDINGS: readonly ("back" | "destroy")[] = ["back", "destroy"];
 for (const ending of SEEK_ENDINGS) {
     test(`${ending} during a local seek waits for its callback before closing AVPlay`, async () => {
@@ -4131,16 +4695,17 @@ test("a newly mounted controller also waits for the previous controller's pendin
     assert.equal(r.avplay.state, "NONE");
 });
 
-// PlayerViewModel's start failure (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877) shows the error's own description:
-// APIv2Client words a problem by its detail, else its title, and a bare status as errors.apple.v2.httpStatus (#760).
-test("a refused start carries the server's own reason for the error page, as on Apple TV", async () => {
+// PlayerViewModel's start failure (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877) shows the error's own description,
+// which APIv2Client words from a problem's detail, else its title (#760). Auger keeps only the status and problem type: the
+// server's free text can carry private values onto a shared living-room screen (#887).
+test("a refused start keeps its status and problem type for the error page, never the server's text", async () => {
     const detailed = await rig();
     detailed.h.fake.script("/playback/start", { status: 400, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/validation_failed", title: "Rejected", status: 400, detail: "The file is offline." } });
     detailed.controller.play(MOVIE);
     await detailed.h.clock.advance(0);
     const withDetail = last(detailed.views);
     assert.ok(withDetail.phase === "error" && withDetail.error.kind === "server");
-    assert.deepEqual(withDetail.error.reason, { text: "The file is offline.", problemId: "validation_failed" });
+    assert.deepEqual(withDetail.error.reason, { status: 400, problemId: "validation_failed" });
     detailed.controller.destroy();
 
     const titled = await rig();
@@ -4149,8 +4714,21 @@ test("a refused start carries the server's own reason for the error page, as on 
     await titled.h.clock.advance(0);
     const withTitle = last(titled.views);
     assert.ok(withTitle.phase === "error" && withTitle.error.kind === "server");
-    assert.deepEqual(withTitle.error.reason, { text: "Rejected", problemId: "validation_failed" });
+    assert.deepEqual(withTitle.error.reason, { status: 400, problemId: "validation_failed" });
     titled.controller.destroy();
+
+    // Synthetic markers shaped like the private values the S95C showed: a URL, an email address and credentials.
+    const markers = ["https://private.example.test/media/SYNTH-URL-7f3a", "synthetic.viewer@example.test", "SYNTH-TOKEN-3b9c", "SYNTH-PASSWORD-51d2"];
+    const exposed = await rig();
+    exposed.h.fake.script("/playback/start", { status: 404, headers: { "Content-Type": "application/problem+json" }, body: { type: "https://silo.example/problems/not_found", title: `Missing for ${markers[1]}`, status: 404, detail: `No media at ${markers[0]}?token=${markers[2]}&password=${markers[3]}` } });
+    exposed.controller.play(MOVIE);
+    await exposed.h.clock.advance(0);
+    const withMarkers = last(exposed.views);
+    assert.ok(withMarkers.phase === "error" && withMarkers.error.kind === "server");
+    assert.deepEqual(withMarkers.error.reason, { status: 404, problemId: "not_found" });
+    const published = JSON.stringify(exposed.views);
+    for (const marker of markers) assert.ok(!published.includes(marker), `${marker} never reaches a view`);
+    exposed.controller.destroy();
 
     const bare = await rig();
     bare.h.fake.script("/playback/start", { status: 400 });
@@ -4170,7 +4748,7 @@ test("a refused start keeps the problem's first field code for the error page", 
     await r.h.clock.advance(0);
     const view = last(r.views);
     assert.ok(view.phase === "error" && view.error.kind === "server");
-    assert.deepEqual(view.error.reason, { text: "Invalid", problemId: "validation_failed", fieldCode: "required" });
+    assert.deepEqual(view.error.reason, { status: 422, problemId: "validation_failed", fieldCode: "required" });
     r.controller.destroy();
 });
 
@@ -4181,8 +4759,8 @@ test("only a 410 client_upgrade_required start asks for an update, and its wall 
     const problem = (status: number, id: string): Record<string, unknown> => ({ type: `https://silo.example/problems/${id}`, title: "Update required", status, detail: "Update the app." });
     const cases = [
         { status: 410, id: "client_upgrade_required", reason: { update: true } },
-        { status: 400, id: "client_upgrade_required", reason: { text: "Update the app.", problemId: "client_upgrade_required" } },
-        { status: 410, id: "gone", reason: { text: "Update the app.", problemId: "gone" } },
+        { status: 400, id: "client_upgrade_required", reason: { status: 400, problemId: "client_upgrade_required" } },
+        { status: 410, id: "gone", reason: { status: 410, problemId: "gone" } },
     ];
     for (const { status, id, reason } of cases) {
         const r = await rig();
@@ -4224,6 +4802,20 @@ test("a start resend honors Retry-After and keeps its operation identity", async
     const starts = bodies(r.h, "/start");
     assert.equal(starts.length, 2);
     assert.deepEqual(starts[1], starts[0]);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace);
+    const incident = playbackIncident(trace);
+    assert.equal(incident?.code, "http_503");
+    assert.equal(incident?.rs, 1);
+    assert.equal(incident?.out, "recovered");
+    r.controller.destroy();
 });
 
 test("an authority change aborts a Retry-After wait without resending", async () => {
@@ -4787,12 +5379,14 @@ test("a timing reread keeps the shown cues until the new ones load, and a failed
     r.avplay.tick(12500);
     let view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "the cues stay while the reread is on its way");
     refresh.release();
     for (let step = 0; step < 8; step++) await r.h.clock.advance(5000);
     r.avplay.tick(12600);
     view = last(r.views);
     assert.ok(view.phase === "playing");
+    assert.equal(r.controller.mediaEvidence()?.subtitle.load, "loaded");
     assert.equal(view.captions?.text, "Shown cues", "a failed reread keeps the cues on screen");
     assert.notEqual(view.captions?.status, "failed");
     assert.equal(view.tracks.secondary?.selectedId, "file:42:subtitle:4", "and the secondary stays chosen");
@@ -5377,6 +5971,34 @@ test("direct play reads no playlist (#650)", async () => {
     r.controller.destroy();
 });
 
+test("a late HLS playlist check cannot change its replacement transport's incident trace", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    const held = r.h.fake.hold(`/stream/${id}`, true);
+    r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
+    r.server.next.push({ delivery: "server_transcode_hls", protocol: "hls" });
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    await r.h.clock.advance(0);
+    const pending = r.controller.incidentTrace();
+    assert.equal(pending?.stage, "playlist_check");
+    assert.ok(r.h.fake.requests.some(request => request.path.startsWith(`/stream/${id}`)));
+
+    r.server.next.push({ delivery: "original_http", protocol: "http_progressive" });
+    r.controller.suspend();
+    r.h.fake.script("/playback/capabilities", { status: 503, headers: { "Retry-After": "30" } });
+    r.controller.restore();
+    await r.h.clock.advance(1000);
+    const replacement = r.controller.incidentTrace();
+    assert.equal(replacement?.seq, pending.seq);
+    assert.equal(replacement.stage, "avplay_prepare");
+    assert.equal(replacement.done, "avplay_open");
+    assert.equal(replacement.first?.code, "PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    held.release();
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.controller.incidentTrace(), replacement);
+    r.controller.destroy();
+});
+
 test("leaving while the playlist is being read opens nothing (#650)", async () => {
     const r = await rig();
     r.h.fake.streamPlaylist = PLAYLIST_REPLY(PLAIN_PLAYLIST);
@@ -5467,4 +6089,336 @@ test("the master and the variant share one five-second budget (#650)", async () 
     await r.h.clock.advance(1);
     assert.equal(opens(r).length, 1, "five seconds in all, then AVPlay gets it");
     r.controller.destroy();
+});
+
+// --- Incident capture (#873): the report follows the failed attempt from Play through recovery ---
+
+test("a failed capped HLS attempt after a working Direct Play reports only its own plan, settings, stage and position (#864)", async () => {
+    const warnings = mock.method(console, "warn", () => undefined);
+    try {
+        const r = await rig();
+        const collector = new DiagnosticsCollector({ appVersion: "0.4.0", tvModel: "QA77S95CAWXXY" }, r.h.clock);
+        const firstScope = collector.beginPlaybackSession();
+        await playMovie(r);
+        r.avplay.tick(r.avplay.positionMs + 1000);
+        const firstTrace = r.controller.incidentTrace();
+        assert.ok(firstTrace !== undefined);
+        assert.ok(firstTrace.plan !== undefined && firstTrace.plan.delivery !== "server_transcode_hls");
+        assert.equal(firstTrace.shown, true);
+        assert.equal(collector.recordPlaybackIncident(firstScope, firstTrace), undefined, "a clean Direct Play is no incident");
+        collector.recordPlaybackStats({
+            nowPlaying: [],
+            playback: [{ label: "Playback", value: "Direct play · MKV" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Original HTTP" }],
+        }, r.controller.diagnosticsDetails());
+        r.controller.back();
+        await r.h.clock.advance(0);
+
+        const settings = new FakeSettings(r.h.fake);
+        settings.overrides.set(BITRATE_KEY, 4000);
+        r.h.fake.streamPlaylist = PLAYLIST_REPLY(DEFINE_PLAYLIST);
+        const scope = collector.beginPlaybackSession();
+        await playHls(r);
+        const view = last(r.views);
+        assert.ok(view.phase === "error" && view.error.kind === "playback_failed");
+        assert.equal(only(bodies(r.h, "/start").slice(-1)).bandwidth_cap_kbps, 4000);
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.seq !== firstTrace.seq, "a new attempt has its own trace");
+        assert.equal(trace.plan?.delivery, "server_transcode_hls");
+        assert.equal(trace.settings?.capKbps, 4000);
+        assert.equal(trace.opened, false, "AVPlay never opened the failed attempt");
+        assert.equal(trace.shown, false);
+        assert.equal(trace.lastAvplay, undefined, "no AVPlay code is invented");
+
+        const record = collector.recordPlaybackIncident(scope, trace, view.error);
+        assert.ok(record !== undefined);
+        const incident = record.incident;
+        assert.equal(incident.out, "failed");
+        assert.equal(incident.op, "hls_playlist");
+        assert.equal(incident.rec.r, "none");
+        assert.equal(incident.stage, "playlist_check");
+        assert.equal(incident.code, "hls_playlist_unreadable");
+        assert.equal(incident.done, "media_token");
+        assert.equal(incident.open, false);
+        assert.equal(incident.http, undefined);
+        assert.equal(incident.av, undefined);
+        assert.ok(incident.pl !== "not_reached");
+        assert.equal(incident.pl.dl, "server_transcode_hls");
+        assert.equal(incident.pl.pr, "hls");
+        assert.ok(incident.set !== "not_reached");
+        assert.equal(incident.set.cap, 4000);
+        assert.equal(incident.req.pos, 12);
+        const serialized = JSON.stringify(record.snapshot);
+        assert.ok(!serialized.includes("Direct play"), serialized);
+        assert.ok(!serialized.includes("Original HTTP"), serialized);
+        assert.ok(incidentAutoEligible(incident));
+        r.controller.destroy();
+    } finally {
+        warnings.mock.restore();
+    }
+});
+
+test("a playback start refused with session_expired reports the start decision without an invented HTTP status or AVPlay state (#868)", async () => {
+    const r = await rig();
+    r.server.next.push({ terminal: "session_expired", retryable: true });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "terminal");
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.equal(trace.decision, "adaptation_unavailable");
+    assert.equal(trace.http, undefined, "the terminal reason supplies no HTTP status");
+    assert.equal(trace.opened, false);
+    assert.equal(trace.plan, undefined);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.op, "start_playback");
+    assert.equal(incident.stage, "start");
+    assert.equal(incident.done, "settings");
+    assert.equal(incident.code, "session_expired");
+    assert.equal(incident.dec, "adaptation_unavailable");
+    assert.equal(incident.rt, true);
+    assert.equal(incident.http, undefined);
+    assert.equal(incident.open, false);
+    assert.equal(incident.pl, "not_reached");
+    assert.deepEqual(incident.rec, { n: 0, c: 0, r: "none" });
+    r.controller.destroy();
+});
+
+test("a replacement that fails before its playhead advances keeps the original incident", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    await finishReplacement(r);
+    r.avplay.tick(r.avplay.positionMs);
+    assert.equal(r.controller.incidentTrace()?.shown, false);
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    const trace = r.controller.incidentTrace();
+    assert.equal(trace?.first?.code, "prepareAsync:UnknownError");
+    assert.equal(trace?.recovered, false);
+    assert.equal(trace?.chain, 0);
+    r.controller.destroy();
+});
+
+test("a Dolby Vision profile keeps the source range in the serialized incident", async () => {
+    const r = await rig();
+    r.server.next.push({ dolbyVisionProfile: 8 });
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace?.plan);
+    const plan = playbackIncident(trace, { kind: "playback_failed" })?.pl;
+    assert.ok(plan && plan !== "not_reached");
+    assert.equal(plan.dr, "dolby_vision");
+    r.controller.destroy();
+});
+
+test("an AVPlay prepare failure that a fallback route recovers keeps its first code and never files automatically", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls[r.avplay.calls.length - 1]?.startsWith("seekTo") === true) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.controller.seekToSeconds(24);
+    r.avplay.tick(23500);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "a forward callback during an unpaused seek is not recovery");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.avplay.tick(24000);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "landing at the seek target is not playback progress");
+    r.controller.setPaused(true);
+    r.controller.seekToSeconds(30);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.avplay.tick(30000);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "a paused seek is not playback progress");
+    r.controller.setPaused(false);
+    r.avplay.tick(30000);
+    assert.equal(r.controller.incidentTrace()?.recovered, false, "the seek target alone is not progress");
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.equal(trace.recovered, true);
+    assert.deepEqual(trace.first, { stage: "avplay_prepare", code: "prepareAsync:UnknownError", buffering: false });
+    const incident = playbackIncident(trace);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.out, "recovered");
+    assert.equal(incident.code, "prepareAsync:UnknownError");
+    assert.deepEqual(incident.rec, { n: 1, c: 0, r: "recovered" });
+    assert.equal(incidentAutoEligible(incident), false);
+    r.controller.destroy();
+});
+
+test("AVPlay prepare failures that exhaust every route report first and last codes and a terminal outcome", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    for (let failure = 0; failure < 4; failure++) {
+        r.avplay.finishPrepare("UnknownError");
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.ok(view.phase === "error");
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.equal(incident.out, "failed");
+    assert.equal(incident.kind, "playback_failed");
+    assert.equal(incident.stage, "avplay_prepare");
+    assert.equal(incident.code, "prepareAsync:UnknownError");
+    assert.equal(incident.fc, "prepareAsync:UnknownError");
+    assert.deepEqual(incident.av, { f: "prepareAsync:UnknownError", l: "prepareAsync:UnknownError" });
+    assert.equal(incident.open, true);
+    assert.deepEqual(incident.rec, { n: 3, c: 0, r: "exhausted" });
+    assert.ok(incident.t.includes("avplay_prepare:fallback:prepareAsync:UnknownError"), JSON.stringify(incident.t));
+    assert.ok(incidentAutoEligible(incident));
+    r.controller.destroy();
+});
+
+test("a progress 404 names the missing session as the first failure, and a later failure in the same attempt opens its own chain (#873)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    r.avplay.tick(20000);
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "one replacement start");
+    const pending = r.controller.incidentTrace();
+    assert.ok(pending !== undefined);
+    assert.deepEqual(pending.first, { stage: "progress", code: "http_404", buffering: false }, "captured before the replacement start");
+    assert.equal(pending.http, undefined, "the 404 is the cause, not a final status");
+    assert.equal(pending.reconnects, 1);
+    await finishReplacement(r);
+
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    const recovered = r.controller.incidentTrace();
+    assert.ok(recovered !== undefined && recovered.recovered);
+    const first = playbackIncident(recovered);
+    assert.ok(first !== undefined);
+    assert.deepEqual([first.out, first.op, first.stage, first.code, first.http], ["recovered", "progress_report", "progress", "http_404", undefined]);
+    assert.deepEqual(first.rec, { n: 0, c: 1, r: "recovered" });
+    assert.ok(first.t.includes("progress:fallback:http_404"), JSON.stringify(first.t));
+    r.avplay.tick(40000);
+    await r.h.clock.advance(10000);
+    assert.equal(r.controller.incidentTrace(), recovered, "the recovered chain stays frozen while playback continues");
+
+    r.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    await r.h.clock.advance(0);
+    for (let failure = 0; failure < 3; failure++) {
+        r.avplay.finishPrepare("UnknownError");
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "playback_failed");
+    const later = r.controller.incidentTrace();
+    assert.ok(later !== undefined);
+    assert.equal(later.seq, recovered.seq, "the same playback attempt");
+    assert.equal(later.chain, recovered.chain + 1, "an independent failure has its own identity");
+    const second = playbackIncident(later, view.error);
+    assert.ok(second !== undefined);
+    assert.deepEqual([second.out, second.op, second.stage, second.code, second.http], ["failed", "avplay", "playing", "PLAYER_ERROR_NOT_SUPPORTED_FORMAT", undefined]);
+    assert.deepEqual(second.rec, { n: 3, c: 0, r: "exhausted" });
+    assert.deepEqual(second.av, { f: "PLAYER_ERROR_NOT_SUPPORTED_FORMAT", l: "prepareAsync:UnknownError" });
+    assert.ok(!second.t.some(step => step.startsWith("progress:")), JSON.stringify(second.t));
+    assert.ok(incidentAutoEligible(second));
+    assert.deepEqual(playbackIncident(recovered), first, "the earlier chain's incident is unchanged");
+    r.controller.destroy();
+});
+
+test("a progress 404 after an earlier recovery counts its replacement in the new chain (#873)", async () => {
+    const r = await rig();
+    r.controller.play(MOVIE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare("UnknownError");
+    await r.h.clock.advance(0);
+    await finishReplacement(r);
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    const recovered = r.controller.incidentTrace();
+    assert.ok(recovered !== undefined && recovered.recovered);
+    assert.equal(recovered.chain, 0);
+    const id = sessionIds(r.server).pop();
+    assert.ok(id !== undefined);
+    r.avplay.tick(20000);
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    const pending = r.controller.incidentTrace();
+    assert.ok(pending !== undefined);
+    assert.equal(pending.chain, 1);
+    assert.deepEqual(pending.first, { stage: "progress", code: "http_404", buffering: false });
+    assert.equal(pending.reconnects, 1, "opening the chain does not erase its first replacement");
+    await finishReplacement(r);
+    assert.equal(r.controller.incidentTrace()?.recovered, false);
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.deepEqual(playbackIncident(trace)?.rec, { n: 0, c: 1, r: "recovered" });
+    r.controller.destroy();
+});
+
+test("a replacement start refused after a progress 404 ends as exhausted recovery without an invented HTTP status (#873)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    r.avplay.tick(20000);
+    r.h.fake.script("/playback/start", problem(400, "validation_failed", "Rejected"));
+    r.server.sessions.delete(id);
+    await r.h.clock.advance(10000);
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(bodies(r.h, "/start").length, 2, "one replacement start");
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "network", JSON.stringify(view));
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.op, incident.stage, incident.code, incident.fs, incident.fc, incident.http], ["progress_report", "progress", "http_404", "reconnect", "network_unreachable", undefined]);
+    assert.deepEqual(incident.rec, { n: 0, c: 1, r: "exhausted" });
+    assert.ok(incidentAutoEligible(incident), "recovery ran out, so this is not ordinary connectivity");
+    r.controller.destroy();
+});
+
+test("a plan refused before adoption still describes the failed start (#873)", async () => {
+    const r = await rig();
+    r.h.fake.script("/watch/movie-1?file_id=42", problem(404, "not_found", "Unavailable"));
+    r.controller.play({ ...MOVIE, subtitle: { kind: "auto" } });
+    await r.h.clock.advance(0);
+    const view = last(r.views);
+    assert.ok(view.phase === "error" && view.error.kind === "terminal" && view.error.reason === "subtitle_selection_unavailable", JSON.stringify(view));
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined);
+    assert.ok(trace.plan !== undefined, "the received plan is recorded before the preference read");
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined && incident.pl !== "not_reached");
+    assert.deepEqual([incident.out, incident.stage, incident.done], ["refused", "subtitles", "start"]);
+    assert.equal(incident.pl.pos, 12);
+    r.controller.destroy();
+});
+
+test("an unavailable HDR probe reaches the incident apart from an observed SDR answer and declares SDR either way (#873)", async () => {
+    for (const [scope, expected] of [[{ webapis: {} }, "unavailable"], [hdrPanel(false), { hdr10: false, hlg: false, dolbyVision: false }]] as const) {
+        const r = await rig("p-owner", undefined, scope);
+        r.server.next.push({ terminal: "session_expired", retryable: true });
+        r.controller.play(MOVIE);
+        await r.h.clock.advance(0);
+        assert.deepEqual(r.controller.incidentTrace()?.hdrPanel, expected);
+        const start = only(bodies(r.h, "/playback/start"));
+        assert.deepEqual(start.client_capabilities, clientCapabilities());
+        r.controller.destroy();
+    }
 });

@@ -13,7 +13,7 @@ import { decodeItemDetail, type ItemDetail } from "../../src/contracts/v2/catalo
 import { readLive } from "./support/tv.ts";
 
 const ORIGIN = "https://tv.example.test";
-const CSS = ["theme.css", "app.css", "player/player.css"].map((name) => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
+const CSS = ["theme.css", "app.css", "ui/browse.css", "player/player.css"].map((name) => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8")).join("\n");
 const HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Silo</title>
 <link rel="stylesheet" href="player.css">
 <style>#sibling { position: absolute; inset: 0; background: #000; }</style></head>
@@ -1006,9 +1006,11 @@ test("Up Next draws its text at Apple's points times the cap scale, in every sta
         await page.route("**/images/bright-still.svg", route => route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ffffff"/></svg>' }));
         const brightDeck = [{ contentId: "movie:bright", fileId: "9", title: "Bright", startSeconds: 0, backdropUrl: "/images/bright-still.svg" }];
         await show(page, { phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, deck: brightDeck });
-        await check("with nothing to follow", [
+        await check("with nothing to follow and On Deck", [
             [".player-next-up .player-title", 42, "700", ":1337-1338 titleSize, bold"],
             [".player-next-up .player-error-text", 22, "500", ":1340-1342 bodySize, medium"],
+            [".player-next-deck .browse-section-title", 36, "600", "Components/MediaRow.swift:438; Theme/Typography.swift:14"],
+            [".player-next-deck .browse-card-title", 24, "500", "tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
         ]);
         // finishedContent (:1340-1343) draws finishedMessage, which is also the failed lookup's sentence (:1613-1630), white at 0.62 and
         // 560 wide. Over a rendered bright white still behind Up Next's dimming layers, contrast must stay above 4.5:1.
@@ -1180,6 +1182,50 @@ test("Up Next puts Play Now and the ring on one row, Keep Watching and Close on 
     } finally { await page.close(); }
 });
 
+// #809: Up Next button symbols use Apple's point sizes times --silo-sf-cap-scale and HStack gaps (silo-apple d315ef9c PlayerView.swift:1405-1470).
+test("Up Next sizes each button symbol at Apple's points times the cap scale with its HStack gap (#809)", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "episode:s1e13", fileId: "43", title: "Chapter 1.3", startSeconds: 0, episode: true as const, seriesTitle: "Harbor Lights", seasonNumber: 1, episodeNumber: 3 };
+        const measure = (selector: string): Promise<{ width: number; height: number; gap: number; cap: number; stroke: string | null }> => page.evaluate(sel => {
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const node = document.querySelector<HTMLElement>(`${sel} .player-button-symbol`)!;
+            const rect = node.getBoundingClientRect();
+            const css = getComputedStyle(node);
+            const stroked = node.querySelector("svg [stroke]");
+            return { width: rect.width, height: rect.height, gap: parseFloat(css.marginInlineEnd), cap, stroke: stroked?.getAttribute("stroke-width") ?? null };
+        }, selector);
+        const assertBox = (label: string, got: { width: number; height: number; gap: number; cap: number }, points: number, gap: number): void => {
+            const expected = points * got.cap;
+            assert.ok(Math.abs(got.width - expected) < 0.1, `${label} width ${got.width} != ${expected}`);
+            assert.ok(Math.abs(got.height - expected) < 0.1, `${label} height ${got.height} != ${expected}`);
+            assert.equal(got.gap, gap, `${label} gap`);
+        };
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 12, countdownTotal: 30, status: "Up Next" } });
+        assertBox("Play Now (prompt)", await measure('[data-focus="play-next"]'), 32, 18);
+        const keepBox = await measure('[data-focus="keep-watching"]');
+        assertBox("Keep Watching", keepBox, 25, 16);
+        assert.equal(keepBox.stroke, "2.2", "Keep Watching uses semibold stroke");
+        const closeBox = await measure('[data-focus="back"]');
+        assertBox("Close (prompt)", closeBox, 24, 16);
+        assert.equal(closeBox.stroke, "2.2", "Close uses semibold stroke");
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 9 });
+        assertBox("Play Now (finished)", await measure('[data-focus="play-next"]'), 32, 18);
+        assertBox("Close (finished)", await measure('[data-focus="back"]'), 24, 16);
+        // Symbols outside Up Next that use the base .player-button-symbol class keep the 26x26 / 16px default.
+        const fallback = await page.evaluate(() => {
+            const probe = document.createElement("span");
+            probe.className = "player-button-symbol";
+            document.body.appendChild(probe);
+            const rect = probe.getBoundingClientRect();
+            const gap = parseFloat(getComputedStyle(probe).marginInlineEnd);
+            probe.remove();
+            return { width: rect.width, height: rect.height, gap };
+        });
+        assert.deepEqual(fallback, { width: 26, height: 26, gap: 16 });
+    } finally { await page.close(); }
+});
+
 // PlayerView.autoPlayFooter and autoPlayToggle (silo-apple 449ba47 PlayerView.swift:1263-1270, 1293-1300, 1544-1556, 1640-1652,
 // 1755-1772): below the actions, "Auto-play is On/Off" at 19 pt semibold, white 0.54 (0.92 focused, with a 1.5 pt capsule at 0.55 and
 // a 1.04 scale). Down from the actions reaches it, Up returns to the preferred action, and Up from On Deck comes back to it (#759).
@@ -1238,24 +1284,84 @@ test("Up Next's Auto-play toggle sits below the actions, names the setting and f
     } finally { await page.close(); }
 });
 
-test("autoplay countdown and Cancel are remote-operable without losing manual Play next", async () => {
+// PlayerView.autoPlayFooter / stopShufflingButton (silo-apple d315ef9c PlayerView.swift:1293-1318): during a shuffle,
+// Stop shuffling sits 12 px to the right of the Auto-play toggle in the same style. Right reaches it, Up returns to
+// Play Now, Down enters On Deck, and Enter triggers stopShuffling (#807).
+test("Up Next shows Stop shuffling beside Auto-play during a shuffle only, and wires remote focus and command (#807)", async () => {
     const { page } = await open();
-    const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next: { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true }, countdown: 10 };
+    try {
+        const next = { contentId: "movie:2", fileId: "43", title: "Random Pick", startSeconds: 0 };
+        const card = { contentId: "movie:other", fileId: "9", title: "Other", startSeconds: 0 };
+        const stop = page.locator('[data-focus="stop-shuffling"]');
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, deck: [card], autoNext: true, countdown: 9 });
+        assert.equal(await stop.isHidden(), true, "hidden outside a shuffle");
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", retryable: false, next, deck: [card], shuffle: true, autoNext: true, countdown: 9 });
+        assert.equal(await stop.isHidden(), false, "shown during a shuffle");
+        assert.equal(await stop.innerText(), "Stop shuffling");
+        const layout = await page.evaluate(() => {
+            const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
+            const toggle = document.querySelector<HTMLElement>('[data-focus="auto-play"]')!;
+            const btn = document.querySelector<HTMLElement>('[data-focus="stop-shuffling"]')!;
+            const tBox = toggle.getBoundingClientRect();
+            const bBox = btn.getBoundingClientRect();
+            const css = getComputedStyle(btn);
+            return { gap: Math.round(bBox.left - tBox.right), sameRow: Math.abs(tBox.top - bBox.top) < 1, size: parseFloat(css.fontSize) / cap, weight: css.fontWeight };
+        });
+        assert.equal(layout.sameRow, true, "same row as Auto-play toggle");
+        assert.equal(layout.gap, 12, "12 px gap from Auto-play toggle");
+        assert.ok(Math.abs(layout.size - 19) < 0.02 && layout.weight === "600", `captionSize semibold: ${JSON.stringify(layout)}`);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "back");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next", "Up from Stop shuffling returns to Play Now");
+        await remote(page, DOWN);
+        await remote(page, DOWN);
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "deck:movie:other", "Down from Stop shuffling enters On Deck");
+        await remote(page, UP);
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "stop-shuffling");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["stopShuffling"]);
+    } finally { await page.close(); }
+});
+
+test("finished-card countdown has no Cancel autoplay button, walks Close and Auto-play toggle, and keeps Play Now", async () => {
+    const { page } = await open();
+    const next = { contentId: "next", fileId: "43", title: "Next episode", startSeconds: 0, episode: true as const };
+    const view: PlaybackView = { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, autoNext: true, countdown: 10 };
     try {
         await show(page, view);
+        assert.equal(await page.locator('[data-focus="cancel-autoplay"]').count(), 0, "Apple TV has no Cancel autoplay button");
         assert.equal(await page.locator('[data-focus="play-next"]').innerText(), "Play Now");
         assert.equal(await page.locator(".player-countdown").getAttribute("aria-label"), "Playing next in 10 seconds", "the ring speaks Apple's upNext.playingNextIn");
         assert.equal(await page.locator('[data-focus="back"]').innerText(), "Close", "Apple's upNext.close");
         await remote(page, DOWN);
-        assert.equal(await focused(page), "cancel-autoplay");
+        assert.equal(await focused(page), "back");
         await show(page, { ...view, countdown: 9 });
-        assert.equal(await focused(page), "cancel-autoplay");
+        assert.equal(await focused(page), "back");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "auto-play");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["cancelAutoplay"]);
-        await show(page, { ...view, countdown: undefined });
+        assert.deepEqual(await commands(page), ["toggleAutoNext"]);
+        await show(page, { ...view, autoNext: false, countdown: undefined });
+        assert.equal(await focused(page), "auto-play");
+        await remote(page, UP);
         assert.equal(await focused(page), "play-next");
         await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["cancelAutoplay", "playNext"]);
+        assert.deepEqual(await commands(page), ["toggleAutoNext", "playNext"]);
+        await show(page, { ...playing(TRACKS), upNext: { next, deck: [], countdown: 20, status: "Up Next" } });
+        assert.equal(await page.locator('[data-focus="cancel-autoplay"]').count(), 0);
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "keep-watching");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "back");
     } finally { await page.close(); }
 });
 
@@ -1321,6 +1427,23 @@ test("Up Next hides a seek preview moved with Left or Right the moment it appear
     } finally { await page.close(); }
 });
 
+test("On Deck draws Home's media row: header icon, 360x200 thumbnail artwork, and watch-progress bar (#808)", async () => {
+    const { page } = await open();
+    try {
+        const next = { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true as const };
+        const inProgress = { contentId: "movie:half", fileId: "50", title: "Quarter Watched", startSeconds: 900, durationSeconds: 3600, watch: { played: false, positionSeconds: 900 } };
+        const unstarted = { contentId: "movie:fresh", fileId: "51", title: "Fresh Movie", startSeconds: 0, durationSeconds: 3600, watch: { played: false } };
+        await show(page, { phase: "completion", status: "upNext.headingEnded", state: "ready", retryable: false, next, deck: [inProgress, unstarted], autoNext: true, countdown: 9 });
+        assert.equal(await page.locator(".player-next-deck .browse-section-title .home-row-glyph").count(), 1, "play.circle.fill stand-in header icon");
+        assert.equal(await page.locator(".player-next-deck .browse-section-title").innerText(), "On Deck");
+        const artBox = await page.locator('[data-focus="deck:movie:half"] .browse-art').boundingBox();
+        assert.ok(artBox !== null && Math.abs(artBox.width - 360) < 0.5 && Math.abs(artBox.height - 200) < 0.5, `thumbnail art box: ${JSON.stringify(artBox)}`);
+        assert.equal(await page.locator('[data-focus="deck:movie:half"] .skyline-progress .skyline-progress-fill').count(), 1, "in-progress card shows progress bar");
+        assert.equal(await page.locator('[data-focus="deck:movie:half"] .skyline-progress-fill').evaluate(node => (node as HTMLElement).style.width), "25%");
+        assert.equal(await page.locator('[data-focus="deck:movie:fresh"] .skyline-progress').count(), 0, "unstarted card hides progress bar");
+    } finally { await page.close(); }
+});
+
 test("On Deck resolves relative artwork against the connected server", async () => {
     const { page } = await open();
     try {
@@ -1338,9 +1461,9 @@ test("On Deck blurs an unwatched episode still and leaves other artwork sharp", 
         const still = { contentId: "still", fileId: "43", title: "Secret", startSeconds: 0, episode: true as const, backdropUrl: "/api/v2/images/still", hideBackdrop: true as const };
         const series = { contentId: "series-art", fileId: "44", title: "Key art", startSeconds: 0, episode: true as const, backdropUrl: "/api/v2/images/series" };
         await show(page, { ...playing(TRACKS), upNext: { next: still, deck: [still, series], countdown: undefined, status: "Up Next" } });
-        assert.equal(await page.locator(".player-next-card .episode-spoiler-blur .player-next-still").count(), 1);
-        assert.match(await page.locator(".player-next-still").evaluate(node => getComputedStyle(node).filter), /blur\(24px\)/);
-        assert.equal(await page.locator(".player-next-card > img").count(), 1);
+        assert.equal(await page.locator(".player-next-card .browse-art.episode-spoiler-blur .browse-art-image").count(), 1);
+        assert.match(await page.locator(".player-next-card .browse-art.episode-spoiler-blur .browse-art-image").evaluate(node => getComputedStyle(node).filter), /blur\(24px\)/);
+        assert.equal(await page.locator(".player-next-card .browse-art:not(.episode-spoiler-blur) .browse-art-image").count(), 1);
     } finally { await page.close(); }
 });
 
@@ -2981,11 +3104,14 @@ test("an error is shown in words with Back focused; Back or Enter dismisses it, 
 });
 
 // Apple shows the start failure's own description (silo-apple main 449ba476, PlayerViewModel.swift:6866-6877, APIv2Client.swift:66-70) (#760).
-test("a start failure shows the server's reason, or Apple's HTTP status line, in place of a fixed sentence", async () => {
+// Auger words it from the problem type's catalog line, else Apple's HTTP status line, never the server's free text (#887).
+test("a start failure shows its problem type's line, or Apple's HTTP status line, in place of a fixed sentence", async () => {
     const { page } = await open();
     try {
-        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: "The file is offline." } }, retryable: true });
-        assert.equal(await text(page, ".player-error-text"), "The file is offline.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 404, problemId: "not_found" } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "That couldn’t be found. It may have been removed.");
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 409, problemId: "not_a_problem_we_know" } }, retryable: true });
+        assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 409.");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 503 } }, retryable: true });
         assert.equal(await text(page, ".player-error-text"), "The server returned HTTP 503.");
         await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { update: true } }, retryable: true });
@@ -3002,7 +3128,8 @@ test("a long server message keeps Retry and Back on screen", async () => {
     const { page } = await open();
     try {
         const detail = "The server could not prepare this file because its source is unavailable. ".repeat(80).trim();
-        await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { text: detail } }, retryable: true });
+        // A terminal refusal is the server's own sentence, so it is the long message the wall can still receive.
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "terminal", reason: "source_unreadable", message: detail, retryable: true }, retryable: true });
         const box = (selector: string) => page.locator(selector).evaluate(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; });
         const message = await box(".player-error-text");
         for (const selector of ['[data-focus="settings-retry"]', '[data-focus="back"]']) {
@@ -4606,5 +4733,42 @@ test("the player takes its layout from the language it shows, not from a page th
         assert.equal(await focused(page), "info");
         await page.locator('[data-focus="info"]').focus();
         assert.ok(await page.locator(".player-menu-info").isVisible(), "the Options panel opened on Info");
+    } finally { await page.close(); }
+});
+
+test("Up Next shows a spinner while loading, Shuffling badge above eyebrow, and Pick Another beside Play Now (#778)", async () => {
+    const { page, logs } = await open();
+    try {
+        // Loading state: spoke spinner sits beside "Finding the next episode" / "Picking at random".
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "resolving", next: undefined, retryable: false, shuffle: true, shuffleScopeLabel: "Movies" });
+        assert.equal(await page.locator(".player-next-spinner").isVisible(), true);
+        assert.equal(await text(page, ".player-error .player-title"), "Picking at random");
+        assert.equal(await page.locator(".player-shuffle-badge").isVisible(), true);
+        assert.equal(await text(page, ".player-shuffle-badge"), "Shuffling Movies");
+        assert.equal(await page.locator('[data-focus="pick-another"]').isVisible(), false);
+
+        // Ready state: spinner hides, Pick Another sits beside Play Now and Right moves to it.
+        const nextPick = { contentId: "movie-2", fileId: "43", title: "Second", startSeconds: 0, shuffleId: "sh1", shuffleScopeLabel: "Breaking Bad · Season 2" };
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", countdown: 10, autoNext: true });
+        assert.equal(await page.locator(".player-next-spinner").isVisible(), false);
+        assert.equal(await text(page, ".player-shuffle-badge"), "Shuffling Breaking Bad · Season 2");
+        assert.equal(await page.locator('[data-focus="pick-another"]').isVisible(), true);
+        assert.equal(await text(page, '[data-focus="pick-another"]'), "Pick Another");
+        // Focus stayed on Close during resolving; Up moves to Play Now, Right to Pick Another.
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "pick-another");
+        // Countdown redraws must keep focus on Pick Another instead of dropping it back to Play Now.
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", countdown: 9, autoNext: true });
+        assert.equal(await focused(page), "pick-another");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["pickAnother"]);
+
+        // Error line appears below the action row when Pick Another fails.
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", shuffleActionError: "upNext.pickAnotherFailed", countdown: 10, autoNext: true });
+        assert.equal(await page.locator(".player-shuffle-error").isVisible(), true);
+        assert.equal(await text(page, ".player-shuffle-error"), "Couldn't pick another.");
+        assert.deepEqual(logs, []);
     } finally { await page.close(); }
 });

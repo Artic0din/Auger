@@ -1,7 +1,8 @@
-name: CI scripts
+name: CI Scripts and Guards
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]
   push:
     branches: [main]
   workflow_dispatch:
@@ -11,6 +12,7 @@ permissions:
 
 jobs:
   test:
+    name: API v2 guard and automation script tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -41,3 +43,13 @@ jobs:
             echo "::error::set-wgt-version.sh accepted 1.2"
             exit 1
           fi
+      - name: Test Discord release embed payload
+        run: bash .github/scripts/discord-release-embed.test.sh
+      - name: Check user-facing PR release notes
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "${PR_BODY}" > "${RUNNER_TEMP}/pr-body.md"
+          python3 scripts/generate-changelog.py check-pr --title "${PR_TITLE}" --body-file "${RUNNER_TEMP}/pr-body.md"

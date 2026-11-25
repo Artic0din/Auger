@@ -1,23 +1,26 @@
 import type { CatalogPage } from "../contracts/v2/catalog.ts";
-import type { CatalogQueryRequest, MediaScope } from "../contracts/v2/discovery.ts";
 import type { View, Zone } from "./browseFocus.ts";
-import { type Route, type RouteHandlers } from "./browseRoutes.ts";
-import { actionButton, errorView, FAILURE_ICON, failureError, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
+import { actionButton, errorView, FAILURE_ICON, failureError, recoveryActions, searchState, zoneNode, type ViewContext } from "./browseViews.ts";
 import { feedGrid } from "./catalogFeed.ts";
 import { personHero } from "./browseDetails.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage } from "./errorState.ts";
 import { el } from "./screen.ts";
+import { personQuery, type PersonModule } from "./person.ts";
 
-const PERSON_PAGE_SIZE = 60;
+export { personQuery };
+
 const LOAD_MORE_ROWS = 8;
 const MIN_FILMOGRAPHY_HEIGHT_PX = 420;
 /** SF Symbol film.stack: a film frame with sprocket strips and a centre divider, two cards stacked behind it. */
 const FILM_STACK_ICON = '<svg viewBox="0 0 48 44"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"><path d="M12 1.5h24M7 7.5h34"/><rect x="1.5" y="13.5" width="45" height="29" rx="4"/><path d="M11 28h26"/></g><path fill="currentColor" fill-rule="evenodd" d="M1.5 17.5a4 4 0 0 1 4-4H11v29H5.5a4 4 0 0 1-4-4ZM37 13.5h5.5a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H37ZM5 16.5h3.5V20H5ZM5 23h3.5v3.5H5ZM5 29.5h3.5V33H5ZM5 36h3.5v3.5H5ZM39.5 16.5H43V20h-3.5ZM39.5 23H43v3.5h-3.5ZM39.5 29.5H43V33h-3.5ZM39.5 36H43v3.5h-3.5Z"/></svg>';
 
-export function personQuery(id: string, filter: MediaScope, cursor?: string): CatalogQueryRequest {
-    return { source: "person", person_id: id, type: filter, sort: "year", order: "desc", limit: PERSON_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) };
+export interface PersonViewNav {
+    readonly context: ViewContext;
+    readonly gridColumns: number;
+    readonly back: () => void;
+    readonly signIn: (() => void) | undefined;
 }
 
 /** Apple's `library.titleCount` for an exact total. An estimate keeps "About N titles": Apple writes "N+ titles" there, which is not the text shown today. */
@@ -26,46 +29,47 @@ function titleCount(page: CatalogPage): string {
     return page.totalExact ? translate("library.titleCount", { count: total, count_text: integerText(total) }) : `About ${total} ${total === 1 ? "title" : "titles"}`;
 }
 
-export function personFilmographyView(route: Extract<Route, { kind: "person" }>, handlers: RouteHandlers): View {
+export function personFilmographyView(module: PersonModule, nav: PersonViewNav): View {
+    const snapshot = module.snapshot();
     // Apple rootContent (PersonDetailView.swift:358-359): with no person, the failed read is the whole page's ErrorView.
-    if (route.data === undefined && route.metadataFailure !== undefined) {
-        return errorView(`person:${route.id}`, failureError(route.metadataFailure, route.metadataError), () => handlers.retry(route), handlers.pop, handlers.signIn);
+    if (snapshot.person === undefined && snapshot.metadataFailure !== undefined) {
+        return errorView(`person:${snapshot.id}`, failureError(snapshot.metadataFailure, snapshot.metadataError), () => module.retry(), nav.back, nav.signIn);
     }
-    const empty = (route.pages.page?.items.length ?? 0) === 0;
-    const filters = (route.availableFilters ?? ["video", "movie", "series"] as const).map(filter => {
-        const item = actionButton(`filter:${filter}`, translate(filter === "video" ? "person.filter.all" : filter === "movie" ? "person.filter.movies" : "person.filter.series"), () => handlers.personFilter(route, filter));
-        item.element.setAttribute("aria-pressed", String(route.filter === filter));
+    const empty = (snapshot.page?.items.length ?? 0) === 0;
+    const filters = snapshot.availableFilters.map(filter => {
+        const item = actionButton(`filter:${filter}`, translate(filter === "video" ? "person.filter.all" : filter === "movie" ? "person.filter.movies" : "person.filter.series"), () => module.setFilter(filter));
+        item.element.setAttribute("aria-pressed", String(snapshot.filter === filter));
         return item;
     });
     const title = el("div", "person-filmography-heading");
     title.appendChild(el("h2", "browse-section-title", translate("person.filmography")));
-    const page = route.pages.page;
+    const page = snapshot.page;
     if (page !== undefined) title.appendChild(el("span", "person-title-count", titleCount(page)));
-    const person = route.data?.person ?? { id: route.id, name: route.title, bio: undefined, photoUrl: undefined, photoThumbhash: undefined, birthDate: undefined, deathDate: undefined, birthplace: undefined };
-    const content = [personHero(person, handlers.context.baseUrl, route.metadataLoading === true || route.metadataRefresh?.refreshing === true || route.data === undefined), title, zoneNode("skyline-pills person-filmography-filters", filters)];
+    const person = snapshot.person ?? { id: snapshot.id, name: snapshot.title, bio: undefined, photoUrl: undefined, photoThumbhash: undefined, birthDate: undefined, deathDate: undefined, birthplace: undefined };
+    const content = [personHero(person, nav.context.baseUrl, snapshot.heroLoading), title, zoneNode("skyline-pills person-filmography-filters", filters)];
     const zones: Zone[] = [{ id: "filters", layout: "row", spatial: "aligned", items: filters }];
-    if (route.failure !== undefined && empty) {
+    if (snapshot.failure !== undefined && empty) {
         // Apple ErrorView(state:onRetry:) in the Filmography area, at least 420pt tall (PersonDetailView.swift:414-416).
-        const error = failureError(route.failure, route.error);
+        const error = failureError(snapshot.failure, snapshot.error);
         const state = searchState(errorHeadline(error), errorMessage(error), "details-failure person-filmography-failure", FAILURE_ICON);
         state.setAttribute("role", "alert");
         state.style.minHeight = `${MIN_FILMOGRAPHY_HEIGHT_PX}px`;
-        const actions = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), () => handlers.retry(route)), actionButton("go-back", translate("player.goBack"), handlers.pop),
-            handlers.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), handlers.signIn));
+        const actions = recoveryActions(error, actionButton("retry", translate("shell.errorView.tryAgain"), () => module.retry()), actionButton("go-back", translate("player.goBack"), nav.back),
+            nav.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), nav.signIn));
         state.appendChild(zoneNode("browse-actions", actions));
         content.push(state);
         zones.push({ id: "status", layout: "column", items: actions });
     }
     if (page !== undefined) {
-        const columns = handlers.gridColumns;
-        if (page.items.length === 0 && route.failure === undefined) {
+        const columns = nav.gridColumns;
+        if (page.items.length === 0 && snapshot.failure === undefined) {
             // Apple EmptyStateView(icon: "film.stack"), at least 420pt tall (PersonDetailView.swift:417-423).
             const state = searchState(translate("person.empty"), translate("person.emptyBody"), "person-filmography-empty", FILM_STACK_ICON);
             state.style.minHeight = `${MIN_FILMOGRAPHY_HEIGHT_PX}px`;
             content.push(state);
         }
-        const grid = feedGrid(route.pages, page, { ...handlers.context, seriesYears: true }, LOAD_MORE_ROWS * columns, handlers.busy, () => handlers.morePerson(route), columns);
-        const scale = handlers.context.posterScale?.() ?? 1;
+        const grid = feedGrid(snapshot.feedKey, page, { ...nav.context, seriesYears: true }, LOAD_MORE_ROWS * columns, snapshot.busy, () => module.loadMore(), columns);
+        const scale = nav.context.posterScale?.() ?? 1;
         const node = grid.content[0];
         node?.classList.add("catalog-grid");
         node?.style.setProperty("--grid-columns", String(columns));
@@ -73,7 +77,7 @@ export function personFilmographyView(route: Extract<Route, { kind: "person" }>,
         node?.style.setProperty("--grid-lift", String((390 * scale + 38) / (390 * scale)));
         content.push(...grid.content);
         zones.push(...grid.zones.map(zone => zone.id === "grid" ? { ...zone, columns, spatial: true as const } : zone));
-    } else if (handlers.busy || route.failure === undefined) {
+    } else if (snapshot.busy || snapshot.failure === undefined) {
         const loading = el("div", "person-filmography-state");
         loading.style.minHeight = `${MIN_FILMOGRAPHY_HEIGHT_PX}px`;
         loading.setAttribute("role", "status");
@@ -81,6 +85,6 @@ export function personFilmographyView(route: Extract<Route, { kind: "person" }>,
         content.push(loading);
     }
     const first = zones.find(zone => zone.id === "grid")?.items[0];
-    return { name: `person:${route.id}`, content, zones,
-        focus: first === undefined ? { zone: "filters", key: `filter:${route.filter}` } : { zone: "grid", key: first.key }, back: handlers.pop };
+    return { name: `person:${snapshot.id}`, content, zones,
+        focus: first === undefined ? { zone: "filters", key: `filter:${snapshot.filter}` } : { zone: "grid", key: first.key }, back: nav.back };
 }

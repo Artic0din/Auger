@@ -7,6 +7,7 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { SEEK_BACK_KEY, SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { DIAGNOSTICS_RELAY_URL } from "../../src/diagnostics.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { pressPin } from "./support/pin.ts";
@@ -1894,6 +1895,55 @@ appTest("saved server profile 15/45 reaches the composed controller and every re
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
 });
 
+// The Settings choice reaches the player only through startPlayback's threshold callback in src/app.ts. Without it the
+// controller falls back to 3, so the second episode would count down and start the third on its own.
+appTest("a Still watching prompt saved in Settings gates Auto-play after that many unattended episodes", async (tv, playback, catalog) => {
+    const settings = new FakeSettings(tv.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    for (const [id, file] of [["episode:s1e12", "42"], ["episode:s1e13", "43"], ["episode:s1e14", "42"]] as const) {
+        catalog.fileIds.set(id, file);
+        playback.items.set(id, [file]);
+    }
+    catalog.households.get("p-owner")?.sections[0]?.items.push("episode:s1e12");
+    await signIn(tv);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="playback"]').click();
+    await tv.page.locator('[data-focus="still-watching"]').click();
+    await tv.page.locator('[data-focus="still-watching:1"]').click();
+    await tv.page.locator('[data-focus="still-watching"] .settings-row-value', { hasText: "1 episode" }).waitFor();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "playback");
+    await tv.remote(10009);
+    await tv.page.locator(".settings").waitFor({ state: "detached" });
+
+    const starts = (): number => tv.fake.requests.filter(r => r.path === "/playback/start").length;
+    const countdown = tv.page.locator(".player-countdown");
+    await tv.page.locator('.skyline-continue[data-focus="episode:s1e12"]').first().focus();
+    await tv.remote(415);
+    await prepare(tv);
+    await settleUpNextLookup(tv);
+    // Unattended advance 1: the first episode ends and Auto-play counts down into the next.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await countdown.waitFor({ state: "visible" });
+    await tv.jump(10000);
+    await prepare(tv);
+    assert.equal(starts(), 2, "the countdown started the next episode with no key pressed");
+    assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").at(-1)?.body?.file_id, "43");
+    await settleUpNextLookup(tv);
+
+    // One unattended advance reached the saved threshold of 1: Up Next waits for the viewer.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "EOF reads settled");
+    assert.equal(await countdown.isHidden(), true, "the saved threshold gates the countdown");
+    await tv.jump(15000);
+    assert.equal(await countdown.isHidden(), true);
+    assert.equal(starts(), 2, "nothing plays until the viewer chooses");
+}, true);
+
 appTest("the composed app signs in, selects a profile, plays and returns to the same title", async (tv, playback) => {
     await signIn(tv);
     await startMovie(tv);
@@ -2566,30 +2616,95 @@ test("a secure-platform startup failure has a focused retry and can recover", as
     }
 });
 
-appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
+appTest("a new profile cannot send an incident recorded before the switch", async (tv, playback) => {
+    const reports: { inc?: { stage: string }; play?: { e?: string } }[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        reports.push(route.request().postDataJSON());
+        await route.fulfill({ json: { ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" } });
+    });
     await signIn(tv);
-    // Start real playback through AVPlay preparation so startPlayback's controller.subscribe populates the shared DiagnosticsCollector.
+    playback.next.push({ terminal: "session_expired" });
+    await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
+    await tv.remote(415);
+    await tv.page.locator(".player-error").waitFor();
+    await tv.remote(10009);
+
+    const sendFromSettings = async (): Promise<void> => {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics"]').click();
+        await tv.page.locator('[data-focus="send-diagnostics-playback"]').click();
+        await tv.page.getByText(/AUG-902/).first().waitFor();
+    };
+    await sendFromSettings();
+    assert.equal(reports[0]?.inc?.stage, "start");
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await sendFromSettings();
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1]?.inc, undefined);
+    assert.equal(reports[1]?.play?.e, undefined);
+});
+
+appTest("playback stats and structured playback errors flow into Settings Diagnostics without leaking server text (#847)", async (tv, playback) => {
+    const autoPayloads: string[] = [];
+    await tv.page.route(DIAGNOSTICS_RELAY_URL, async route => {
+        autoPayloads.push(route.request().postData() ?? "");
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true, status: "created", issueNumber: 902, reportId: "AUG-902" }) });
+    });
+    await signIn(tv);
+    // Start real playback through AVPlay preparation, trigger an AVPlay codec error fallback, and confirm Diagnostics records it.
     await startMovie(tv);
+    await tv.page.evaluate(() => {
+        window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_NOT_SUPPORTED_FORMAT");
+    });
+    await prepare(tv);
     await leavePlayer(tv);
     await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Open Settings > Diagnostics and confirm the recorded playback plan and event appear.
+    // Open Settings > Diagnostics and confirm the recorded playback plan, source/stream/subtitle telemetry, AVPlay error, and fallback event appear.
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
     await tv.page.getByText("Direct play · MP4", { exact: true }).waitFor();
     await tv.page.getByText("Original HTTP", { exact: true }).waitFor();
+    await tv.page.getByText("HTTP · MP4", { exact: true }).waitFor();
+    await tv.page.getByText("Source file", { exact: true }).waitFor();
+    await tv.page.getByText("Subtitle mode", { exact: true }).waitFor();
+    await tv.page.getByText("HDR setting", { exact: true }).waitFor();
+    await tv.page.getByText("Route fallbacks", { exact: true }).waitFor();
+    await tv.page.getByText("PLAYER_ERROR_NOT_SUPPORTED_FORMAT", { exact: true }).waitFor();
     await tv.page.getByText("Recorded events", { exact: true }).waitFor();
+    const initialPaneText = await tv.page.locator(".settings-pane").innerText();
+    assert.ok(initialPaneText.includes("avplay PLAYER_ERROR_NOT_SUPPORTED_FORMAT (fallback #1)"), initialPaneText);
+
+    // Opt in to Automatic Error Reports so the upcoming terminal failure fires one redacted auto-report silently.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.remote(10009);
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Trigger a structured terminal failure; Diagnostics records the structured code.
+    // Trigger a structured terminal failure; Diagnostics records the structured code and fires one opt-in auto-report.
     playback.next.push({ terminal: "source_unreadable" });
     await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
+    await tv.eventually(async () => autoPayloads.length === 1, "opt-in automatic error report posted");
+    const autoJson = JSON.parse(autoPayloads[0]!) as { auto?: boolean; play?: { e?: string }; inc?: { stage: string; pl: unknown; open: boolean } };
+    assert.equal(autoJson.auto, true);
+    assert.equal(autoJson.inc?.stage, "start");
+    assert.equal(autoJson.inc.pl, "not_reached");
+    assert.equal(autoJson.inc.open, false);
+    assert.equal(autoJson.play?.e, "terminal: source_unreadable");
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
@@ -2600,18 +2715,27 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
-    // Trigger a server error with a free-form message containing a private title and account name; Diagnostics must not record the free-form text.
-    tv.fake.script("/playback/start", problem(422, "validation_failed", "Private Movie Title for alice cannot play"));
+    // Trigger a server error whose free-form title and detail carry a private title, an account name, a URL, an email address and
+    // credential-shaped values; neither the error wall nor Diagnostics may show the free-form text, and Diagnostics keeps the status.
+    const leaked = problem(422, "validation_failed", "Private Movie Title for alice cannot play");
+    const privateDetail = "See https://private.example.test/media/SYNTH-URL-7f3a?token=SYNTH-TOKEN-3b9c for synthetic.viewer@example.test, password SYNTH-PASSWORD-51d2";
+    tv.fake.script("/playback/start", { ...leaked, body: { ...(leaked.body as Record<string, unknown>), detail: privateDetail } });
     await tv.page.locator('.skyline-continue[data-focus="movie:m0001"]').focus();
     await tv.remote(415);
     await tv.page.locator(".player-error").waitFor();
+    assert.equal(await tv.page.locator(".player-error-text").textContent(), "Some values aren’t valid. Check them and try again.");
+    const wallText = await tv.page.locator(".player-error").innerText();
+    for (const marker of ["Private Movie Title", "alice", "private.example.test", "SYNTH-URL-7f3a", "synthetic.viewer@example.test", "SYNTH-TOKEN-3b9c", "SYNTH-PASSWORD-51d2"]) {
+        assert.ok(!wallText.includes(marker), `${marker} must never show on the error wall`);
+    }
     await tv.remote(10009);
     await tv.page.locator('[data-view="home"]').waitFor();
 
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="diagnostics"]').click();
-    await tv.page.getByText("server: server_error", { exact: true }).waitFor();
+    await tv.page.getByText("server: HTTP 422", { exact: true }).waitFor();
+    assert.equal(autoPayloads.length, 1, "non-fatal server errors and cooldown must not send duplicate automatic reports");
     const paneText = await tv.page.locator(".settings-pane").innerText();
     assert.ok(!paneText.includes("Private Movie Title"), "free-form server movie title must never enter diagnostics");
     assert.ok(!paneText.includes("alice"), "free-form server account name must never enter diagnostics");
@@ -2620,4 +2744,26 @@ appTest("playback stats and structured playback errors flow into Settings Diagno
     await tv.page.locator('[data-focus="clear-diagnostics"]').click();
     await tv.page.getByText("No playback recorded yet in this session.", { exact: true }).waitFor();
     await tv.page.getByText("No events recorded yet.", { exact: true }).waitFor();
+
+    // Uncaught window error and unhandled rejection stay silent when auto-report is Off, and send safe error class names (never free-form messages) when On.
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "false");
+    await tv.page.evaluate(() => {
+        window.dispatchEvent(new ErrorEvent("error", { error: new TypeError("Secret Movie for alice"), message: "Secret Movie for alice" }));
+    });
+    assert.equal(autoPayloads.length, 1, "disabled auto-report must not post on uncaught window errors");
+
+    await tv.page.locator('[data-focus="auto-diagnostics"]').click();
+    assert.equal(await tv.page.locator('[data-focus="auto-diagnostics"]').getAttribute("aria-checked"), "true");
+    await tv.jump(16 * 60 * 1000);
+    await tv.page.evaluate(() => {
+        const rejection = new Event("unhandledrejection") as Event & { reason?: unknown };
+        rejection.reason = new RangeError("Private Title for bob");
+        window.dispatchEvent(rejection);
+    });
+    await tv.eventually(async () => autoPayloads.length === 2, "enabled auto-report posts safe error class on unhandled rejection");
+    const crashJson = JSON.parse(autoPayloads[1]!) as { auto?: boolean; err?: string };
+    assert.equal(crashJson.auto, true);
+    assert.equal(crashJson.err, "RangeError");
+    assert.ok(!autoPayloads[1]!.includes("Private Title") && !autoPayloads[1]!.includes("bob"), "uncaught error messages must never leave the TV");
 });

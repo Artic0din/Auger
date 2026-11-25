@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'workers/diagnostics-relay/**'
+      - 'shared/diagnostics-media.js'
       - '!workers/diagnostics-relay/**/*.md'
       - '!workers/diagnostics-relay/**/*.d.ts'
       - '.github/workflows/deploy-diagnostics-worker.yml'
@@ -24,7 +25,7 @@ jobs:
     timeout-minutes: 10
     steps:
       # Build the latest main even if queued runs start out of order.
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           persist-credentials: false
@@ -56,5 +57,10 @@ jobs:
             echo '::error::Set the CLOUDFLARE_ACCOUNT_ID repository variable and CLOUDFLARE_API_TOKEN repository secret.'
             exit 1
           fi
-          # GITHUB_TOKEN is an existing Worker secret, not a GitHub Actions input.
+          # Check before deploying: a deploy replaces dashboard Text variables with [vars], so the token only survives as a Secret.
+          secrets="$(npx --yes wrangler@4.168.0 secret list --format json)"
+          if ! jq -e 'any(.[]; .name == "GITHUB_TOKEN" and .type == "secret_text")' <<<"$secrets" >/dev/null; then
+            echo '::error::The Worker has no GITHUB_TOKEN secret, so every report would get HTTP 503. Run npx wrangler secret put GITHUB_TOKEN in workers/diagnostics-relay, or add it in the dashboard as type Secret (not Text), then rerun this workflow.'
+            exit 1
+          fi
           npx --yes wrangler@4.168.0 deploy

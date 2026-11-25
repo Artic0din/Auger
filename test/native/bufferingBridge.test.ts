@@ -55,7 +55,7 @@ function rig(): Rig {
 
 /** Plays past the startup grace and stalls for the long-stall limit, so the prompt is up. */
 async function promptUp(r: Rig): Promise<void> {
-    r.bridge.planAdopted(plan("p1"), [], "auto", false);
+    r.bridge.planAdopted(plan("p1"), [], "auto");
     r.bridge.sync(PLAYING);
     await r.clock.advance(11_000);
     r.bridge.sync({ ...PLAYING, buffering: true });
@@ -67,7 +67,7 @@ test("a deferred Lower quality is dropped when another plan takes over before it
     const r = rig();
     await promptUp(r);
     r.bridge.selectPrimary();
-    r.bridge.planAdopted(plan("p2"), [], "auto", false);
+    r.bridge.planAdopted(plan("p2"), [], "auto");
     await r.clock.advance(0);
     assert.deepEqual(r.issued, []);
     assert.equal(r.bridge.pill, undefined, "nothing waits on a replan that was never sent");
@@ -97,16 +97,16 @@ test("a deferred Lower quality that nothing superseded is sent", async () => {
 test("Restore quality is the viewer's answer: a plan taking over before it runs does not drop it", async () => {
     const r = rig();
     r.bridge.mode = "always";
-    r.bridge.planAdopted(plan("p1"), [], "auto", false);
+    r.bridge.planAdopted(plan("p1"), [], "auto");
     r.bridge.sync(PLAYING);
     await r.clock.advance(11_000);
     r.bridge.sync({ ...PLAYING, buffering: true });
     await r.clock.advance(6000);
     assert.equal(r.issued.length, 1, "the automatic lowering");
-    r.bridge.planAdopted(plan("p2", 5600), [], "auto", true);
+    r.bridge.planAdopted(plan("p2", 5600), [], "auto", r.issued[0]?.request);
     assert.equal(r.bridge.pill?.kind, "undo");
     r.bridge.selectPrimary();
-    r.bridge.planAdopted(plan("p3"), [], "auto", false);
+    r.bridge.planAdopted(plan("p3"), [], "auto");
     await r.clock.advance(0);
     assert.equal(r.issued.length, 2);
     assert.equal(r.issued[1]?.restore, true);

@@ -72,6 +72,8 @@ which surfaces are affected, paste the actual validation results, and call out
 any server, Apple or Android compatibility concerns. Fill in the template's
 AI Disclosure section: the harness, tools, and models used, the level of AI
 involvement, and any adversarial review, or "none" and "No AI used".
+Write the template's `## Release Notes` section for people using Auger, or
+"None" for an internal-only change, because it becomes the GitHub Release notes.
 
 ## Licensing of contributions
 

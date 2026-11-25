@@ -10,14 +10,31 @@ Problems that also happen in the web app usually belong in [silo-server](https:/
 
 ## Fastest way: send a Diagnostics report straight from Auger
 
-Auger can gather your TV model, firmware/Tizen version, Auger version, Silo server version, last playback Stats, and recent redacted events automatically.
-Server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
+Auger can gather your TV model, firmware/Tizen version, JS heap memory and uptime, Auger version, Silo server version, source and transcoded playback stats (including subtitle mode and delivery, HDR setting, route fallback count, and native Samsung AVPlay error codes), rebuffer count, and recent redacted events automatically.
+A recovered playback report means the player’s clock advanced after the retry while playback was running.
+A **Buffering / Quality** report adds the quality preference, Settings bitrate cap, how the learned connection limit applied, the playing plan’s planned, source and output bitrates, the network type and browser connection class, the newest stored speed reading with its age, recent durations of stalls lasting a second or more, and each quality step-down with its reason and outcome.
+Only a step-down or buffering recovery that fails and ends playback is reported automatically; ordinary stalls and a successful step-down are reported only when you send them.
+For **Audio / Subtitles**, the report also shows the selected audio track's codec and channels as stored in the file, the audio the server planned to send, and the audio row AVPlay reports playing, each labelled separately.
+It shows the subtitle mode, the shown track's source, format, delivery and language code, whether Auger, AVPlay or the server draws it, whether its file loaded and how many cues it held, the delay applied, and the result of the last audio or subtitle change you made.
+Track names and labels, subtitle text, server URLs, IP addresses, account names, media titles, and tokens are stripped before anything leaves the TV.
+Silent audio or subtitles drifting out of sync after a change that succeeded are not detected automatically: send a report with **Audio / Subtitles** while the problem is on screen.
 
 1. Open your **Profile** icon (top-right of Auger) → **Settings** → **Diagnostics**.
-2. **Primary (no GitHub or Discord account needed):** Select **Send Diagnostics Report** and confirm **Send Report**.
-   Auger submits the redacted report through the Auger diagnostics relay, which opens a GitHub diagnostics issue automatically and displays the reference number on your TV (for example, `#901`).
-3. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
+2. **Primary (no GitHub or Discord account needed):** Select **Send Diagnostics Report** and choose the category that best matches the issue (**Playback failed**, **Audio / Subtitles**, **Buffering / Quality**, or **App / Navigation**).
+   Auger submits the redacted report through the Auger diagnostics relay, which deduplicates against open `diagnostics` issues (opening a new issue or appending a compact diff comment when new details appear) and displays the reference number on your TV (for example, `AUG-901`).
+3. **Optional Automatic Error Reports:** Turn on **Automatic Error Reports** to send redacted reports from all profiles on this TV to public GitHub issues.
+   This setting defaults to off.
+   Auger reports qualifying playback failures, subtitle files that fail to load, audio or subtitle changes that fail, and uncaught app errors (capped to once per unique issue per app version, with a 15-minute cooldown).
+   A selection the server reports as unavailable, a subtitle AVPlay shows in place of a failed file, and a track change or subtitle download whose answer was lost on the network are never sent automatically.
+4. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
    The helper page decodes the link `#fragment` locally in your browser (never sent to a server) and lets you tap **Copy for Discord** or **Open Pre-filled GitHub Bug Report**.
+
+An **App / Navigation** report also describes what happened just before it.
+It lists the screen and focus area and the last remote presses.
+It says whether each press moved focus, stayed put or lost focus.
+It shows how many elements were on screen and the slowest recent server request.
+Opening **Settings** from the profile menu keeps the preceding screen and the recent presses leading into the menu, including movement through Home rows and the top bar.
+It never includes item names, titles or server addresses.
 
 If Auger cannot open **Settings**, follow the manual steps below instead.
 
@@ -36,13 +53,13 @@ If you installed through **Apps2Samsung**, the connected TV model also appears a
 
 1. From Auger's top navigation bar, move to your **Profile** icon at the top right and open **Settings**.
 2. Read the version at the bottom of the left sidebar (for example, `Auger 0.2.1`), or open **Server** → **About** → **App Version**.
-3. Note how you installed Auger: **Apps2Samsung** (official catalog or custom source), a `.wgt` from **GitHub Releases**, or **built from source**.
+3. Note how you installed Auger: the **Apps2Samsung** official catalog, a `.wgt` from **GitHub Releases**, **built from source**, or **Other**.
 
 ## 3. Silo server version
 
-1. Open your Silo server in a web browser and go to **Admin**.
-2. Read the **Build** value at the bottom of the admin sidebar (for example, `412 · 1a2b3c4d`).
-3. If someone else runs the server, ask them for the build version.
+1. In Auger, open **Profile** → **Settings** → **Diagnostics**.
+2. Under **Device**, look for **Silo Server**.
+3. If the version is unavailable, leave the field blank.
 
 ## 4. Playback problems: how to open the Stats tab
 
@@ -107,7 +124,9 @@ Mark each redaction clearly (for example, `<redacted-host>`).
 What happened:
 Steps to reproduce:
 Expected behavior:
-TV model & firmware/Tizen version:
+TV model:
+Firmware version:
+Tizen version (if known):
 Auger version & install method (Apps2Samsung / .wgt / source):
 Silo server version:
 Playback Stats (if playback issue):

@@ -60,6 +60,14 @@ export class BandwidthReadings {
         return highest;
     }
 
+    /** The most recently measured reading for `key`, fresh or not, and which kind it is. For diagnostics. */
+    newest(key: string): (BandwidthReading & { readonly source: "probe" | "sample" }) | undefined {
+        if (this.key !== key) return undefined;
+        const { probe, sample } = this;
+        if (probe !== undefined && (sample === undefined || probe.measuredAt >= sample.measuredAt)) return { ...probe, source: "probe" };
+        return sample === undefined ? undefined : { ...sample, source: "sample" };
+    }
+
     /** Forgets the readings when they belong to `scope`; another account's or server's stay. */
     forget(scope: string): void {
         if (this.key?.startsWith(scope)) this.clear();

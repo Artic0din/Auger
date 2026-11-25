@@ -3,7 +3,7 @@
 
 Usage: python3 scripts/pr-gate.py <number>
 
-The gate: open and mergeable, every check's latest run passed (including build, UI shards, packaging, secret scan, and Kody),
+The gate: open and mergeable, every check's latest run passed (including build, UI shards, packaging, CI scripts, secret scan, baseline checks, and Kody),
 and no review thread is unresolved. Exit status is 0 only for READY.
 """
 
@@ -12,8 +12,19 @@ import subprocess
 import sys
 
 REPOSITORY = "Artic0din/Auger-Tizen"
-REQUIRED_CHECKS = ("Build and native tests", "Package .wgt", "Secret scan",
-                   "UI tests (1/3)", "UI tests (2/3)", "UI tests (3/3)", "Kody Code Review")
+REQUIRED_CHECKS = (
+    "Typecheck, build, and native unit tests",
+    "Playwright UI tests (shard 1/3)",
+    "Playwright UI tests (shard 2/3)",
+    "Playwright UI tests (shard 3/3)",
+    "All build and test checks",
+    "Package and sign .wgt",
+    "API v2 guard and automation script tests",
+    "Gitleaks secret scan",
+    "Standards / Repository baseline",
+    "Standards / Pull request hygiene",
+    "Kody Code Review",
+)
 PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 THREADS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
 pullRequest(number:$number){headRefOid reviewThreads(first:100){totalCount nodes{isResolved path line}}}}}"""

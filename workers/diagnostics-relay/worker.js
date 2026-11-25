@@ -1,20 +1,23 @@
 // Zero-dependency Cloudflare Worker relay for Auger TV diagnostics.
-// Validates and redacts incoming reports, rate-limits by client IP, and files a GitHub issue.
-// Secrets live strictly in Cloudflare Worker Secrets (`GITHUB_TOKEN`), never in Auger or Git.
+// Validates every public field against an allowlist (contract.js for current clients, legacy.js for installed v1
+// clients), rate-limits by client IP, groups against open `diagnostics` issues via versioned markers, and opens an
+// issue or appends a compact follow-up comment. Secrets live strictly in Cloudflare Worker Secrets (`GITHUB_TOKEN`).
+
+import { legacyEquivalent, legacyEvidenceMatches, legacySignatureDigest } from "./grouping.js";
+import { fnv1aHex, sanitize, validateV1 } from "./legacy.js";
+import { decodeEmbeddedState, formatFollowUp, formatIssue, legacyStableState } from "./report.js";
+
+export { INCIDENT_CONTRACT, PRECEDING_SCREENS } from "./contract.js";
+export { fnv1aHex, sanitize };
+export { formatIssue as formatGitHubIssue, formatFollowUp as formatDiffComment };
 
 const MAX_BODY_BYTES = 8192;
 // Cloudflare [[ratelimits]] only supports period = 10 or 60; keep Retry-After aligned with wrangler.toml.
 const BINDING_RATE_LIMIT_WINDOW_SECONDS = 60;
 const FALLBACK_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 const FALLBACK_RATE_LIMIT_MAX_REQUESTS = 5;
+const MAX_DIFF_COMMENTS_PER_ISSUE = 5;
 const DEFAULT_REPO = "Artic0din/Auger-Tizen";
-
-const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
-const QUERY_PATTERN = /\?[^\s"'<>]+/g;
-const SECRET_ASSIGN_PATTERN = /\b(?:bearer|token|api[_-]?key|password|passwd|secret|authorization|cookie)\s*[:=]\s*\S+/gi;
-const BEARER_PATTERN = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
-const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
-const LONG_TOKEN_PATTERN = /\b[A-Za-z0-9_-]{28,}\b/g;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -34,119 +37,58 @@ function jsonResponse(body, status = 200, extraHeaders = {}) {
   });
 }
 
-export function sanitize(raw, maxLength = 140) {
-  if (typeof raw !== "string") return undefined;
-  const cleaned = raw
-    .replace(URL_PATTERN, "<url>")
-    .replace(BEARER_PATTERN, "Bearer <redacted>")
-    .replace(SECRET_ASSIGN_PATTERN, "<redacted>")
-    .replace(IPV4_PATTERN, "<ip>")
-    .replace(QUERY_PATTERN, "")
-    .replace(LONG_TOKEN_PATTERN, "<redacted>")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (cleaned === "") return undefined;
-  return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength - 1).trimEnd()}…`;
+/** Validated internal record, or `{ error, missing? }`. Only `v: 1` (with optional `inc`) is accepted. */
+export function validateReport(raw) {
+  return validateV1(raw);
 }
 
+/** Backwards-compatible helper: the validated record or undefined. */
 export function validatePayload(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
-  if (raw.v !== 1) return undefined;
-  const app = sanitize(raw.app, 32);
-  const tv = sanitize(raw.tv, 48);
-  if (app === undefined || tv === undefined) return undefined;
-
-  let play;
-  if (typeof raw.play === "object" && raw.play !== null && !Array.isArray(raw.play)) {
-    const notes = Array.isArray(raw.play.n)
-      ? raw.play.n.map((item) => sanitize(item, 96)).filter(Boolean).slice(0, 4)
-      : [];
-    play = {
-      m: sanitize(raw.play.m, 64),
-      v: sanitize(raw.play.v, 72),
-      dr: sanitize(raw.play.dr, 40),
-      a: sanitize(raw.play.a, 64),
-      s: sanitize(raw.play.s, 64),
-      d: sanitize(raw.play.d, 48),
-      st: sanitize(raw.play.st, 32),
-      n: notes.length > 0 ? notes : undefined,
-      e: sanitize(raw.play.e, 120),
-    };
-  }
-
-  const log = Array.isArray(raw.log)
-    ? raw.log.map((item) => sanitize(item, 120)).filter(Boolean).slice(0, 12)
-    : [];
-
-  return {
-    v: 1,
-    app,
-    tv,
-    fw: sanitize(raw.fw, 48),
-    os: sanitize(raw.os, 32),
-    ua: sanitize(raw.ua, 32),
-    hdr: typeof raw.hdr === "boolean" ? raw.hdr : undefined,
-    srv: sanitize(raw.srv, 48),
-    play,
-    log: log.length > 0 ? log : undefined,
-  };
+  return validateV1(raw).record;
 }
 
-export function formatGitHubIssue(payload) {
-  const titleParts = [`[diagnostics] ${payload.tv}`, `Auger ${payload.app}`];
-  if (payload.play?.e) titleParts.push(payload.play.e.slice(0, 48));
-  else if (payload.play?.m) titleParts.push(payload.play.m);
-  const title = titleParts.join(" · ").slice(0, 140);
-
-  const deviceLine = [
-    payload.tv,
-    payload.fw ? `Firmware ${payload.fw}` : undefined,
-    payload.os,
-    payload.ua,
-  ].filter(Boolean).join(", ");
-
-  const lines = [
-    "## Diagnostics Report (Sent from Auger TV)",
-    "",
-    "| Field | Value |",
-    "| --- | --- |",
-    `| TV | ${deviceLine} |`,
-    `| Auger version | ${payload.app} |`,
-    ...(payload.srv ? [`| Silo server | ${payload.srv} |`] : []),
-    ...(typeof payload.hdr === "boolean" ? [`| HDR TV support | ${payload.hdr ? "Yes" : "No"} |`] : []),
-  ];
-
-  if (payload.play) {
-    const p = payload.play;
-    const playRows = [
-      p.m ? `| Playback | ${p.m} |` : undefined,
-      p.d ? `| Delivery | ${p.d} |` : undefined,
-      p.v ? `| Video | ${p.v} |` : undefined,
-      p.dr ? `| Dynamic range | ${p.dr} |` : undefined,
-      p.a ? `| Audio | ${p.a} |` : undefined,
-      p.s ? `| Subtitles | ${p.s} |` : undefined,
-      p.st ? `| Status | ${p.st} |` : undefined,
-      p.n ? `| Diagnostics | ${p.n.join(" · ")} |` : undefined,
-      p.e ? `| Last error | ${p.e} |` : undefined,
-    ].filter(Boolean);
-    if (playRows.length > 0) {
-      lines.push("", "### Last Playback", "", "| Field | Value |", "| --- | --- |", ...playRows);
+/**
+ * Lookup candidates in priority order. Each names a body marker and a guard that rejects a marker hit whose
+ * embedded evidence describes a different failure (a hash collision or an ambiguous legacy signature).
+ */
+function lookupCandidates(record) {
+  if (record.inc) {
+    const candidates = [{
+      marker: `<!-- auger-group:inc1:${record.groupId} -->`,
+      accept: (previous) => previous === undefined || (previous.version === "inc1" && previous.state.gk === record.groupGuard),
+    }];
+    const equivalent = record.equivalent;
+    if (equivalent !== undefined) {
+      candidates.push({
+        marker: `<!-- auger-fp:${equivalent.fingerprint} -->`,
+        accept: (previous) => previous?.version === "legacy" && legacySignatureDigest(previous.state) === equivalent.digest && legacyEvidenceMatches(previous.state, equivalent),
+      });
     }
+    return candidates;
   }
-
-  if (payload.log && payload.log.length > 0) {
-    lines.push("", "### Recent Events (Redacted)", "", "```text", ...payload.log, "```");
+  if (record.navGroupId) {
+    return [{
+      marker: `<!-- auger-group:nav1:${record.navGroupId} -->`,
+      accept: (previous) => previous === undefined || (previous.version === "legacy" && previous.state.ng === record.navGuard),
+    }];
   }
+  if (record.observedGroupId) {
+    return [{
+      marker: `<!-- auger-group:obs1:${record.observedGroupId} -->`,
+      accept: (previous) => previous === undefined || (previous.version === "legacy" && previous.state.og === record.observedGuard),
+    }];
+  }
+  return [{
+    marker: `<!-- auger-fp:${record.legacyFingerprint} -->`,
+    accept: (previous) => previous === undefined || (previous.version === "legacy"
+      ? legacySignatureDigest(previous.state) === record.legacySignatureDigest
+      : previous.state.sg === record.legacySignatureDigest && matchesCurrentIssue(record, previous.state)),
+  }];
+}
 
-  lines.push(
-    "",
-    "### ELI5",
-    "",
-    `An Auger ${payload.app} user on ${payload.tv} submitted redacted TV and playback diagnostics directly from Settings > Diagnostics.`,
-  );
-
-  return { title, body: lines.join("\n") };
+function matchesCurrentIssue(record, state) {
+  const equivalent = state.inc && legacyEquivalent(state.inc);
+  return Boolean(equivalent && legacyEvidenceMatches(legacyStableState(record), equivalent));
 }
 
 let isolateBucketWindow = -1;
@@ -159,7 +101,6 @@ async function checkRateLimit(request, env, limiter) {
     const result = await binding.limit({ key: ip });
     return result?.success === true ? { allowed: true } : { allowed: false, retryAfter: BINDING_RATE_LIMIT_WINDOW_SECONDS };
   }
-  // Synchronous in-isolate atomic counter fallback when no Cloudflare Rate Limit binding is attached.
   const bucket = Math.floor(Date.now() / (FALLBACK_RATE_LIMIT_WINDOW_SECONDS * 1000));
   if (bucket !== isolateBucketWindow) {
     isolateBuckets.clear();
@@ -208,6 +149,91 @@ async function readBoundedBody(request, maxBytes) {
   return { tooLarge: false, text: new TextDecoder("utf-8").decode(merged) };
 }
 
+function githubHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+    "User-Agent": "auger-diagnostics-relay/2.0",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+const MAX_ISSUE_LOOKUP_PAGES = 5;
+const inFlightFingerprints = new Map();
+
+function nextLinkUrl(linkHeader) {
+  if (typeof linkHeader !== "string") return undefined;
+  const match = /<([^>]+)>;\s*rel="next"/.exec(linkHeader);
+  return match?.[1];
+}
+
+/** Scans open `diagnostics` issues; returns the highest-priority candidate whose marker and guard both match. */
+async function findMatchingOpenIssue(fetchFn, repo, token, candidates) {
+  let nextUrl = `https://api.github.com/repos/${repo}/issues?state=open&labels=diagnostics&per_page=100`;
+  let best;
+  const interrupted = (status) => best ? { ok: true, issue: best.issue } : { ok: false, status };
+  for (let page = 0; page < MAX_ISSUE_LOOKUP_PAGES && nextUrl; page++) {
+    let response;
+    let issues;
+    try {
+      response = await fetchFn(nextUrl, { method: "GET", headers: githubHeaders(token) });
+      if (!response.ok) return interrupted(response.status);
+      issues = await response.json();
+    } catch {
+      return interrupted(502);
+    }
+    if (!Array.isArray(issues)) return interrupted(502);
+    for (const entry of issues) {
+      if (!entry || typeof entry !== "object" || entry.pull_request || typeof entry.body !== "string" || typeof entry.number !== "number") continue;
+      const limit = best === undefined ? candidates.length : best.rank;
+      for (let rank = 0; rank < limit; rank++) {
+        const candidate = candidates[rank];
+        if (entry.body.includes(candidate.marker) && candidate.accept(decodeEmbeddedState(entry.body))) {
+          best = { rank, issue: entry };
+          break;
+        }
+      }
+      if (best?.rank === 0) return { ok: true, issue: best.issue };
+    }
+    nextUrl = nextLinkUrl(response.headers?.get?.("Link"));
+  }
+  return { ok: true, issue: best?.issue };
+}
+
+async function issueHasCommentHash(fetchFn, repo, token, issueNumber, hashMarker) {
+  try {
+    const response = await fetchFn(
+      `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=10`,
+      { method: "GET", headers: githubHeaders(token) },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const comments = await response.json();
+    if (!Array.isArray(comments)) return { ok: false, status: 502 };
+    const found = comments.some((entry) => entry && typeof entry.body === "string" && entry.body.includes(hashMarker));
+    return { ok: true, found };
+  } catch {
+    return { ok: false, status: 502 };
+  }
+}
+
+async function serializeByFingerprint(fingerprint, task) {
+  const previous = inFlightFingerprints.get(fingerprint) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const tail = previous.then(() => current);
+  inFlightFingerprints.set(fingerprint, tail);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (inFlightFingerprints.get(fingerprint) === tail) {
+      inFlightFingerprints.delete(fingerprint);
+    }
+  }
+}
+
 export async function handleRequest(request, env, deps = {}) {
   const fetchFn = deps.fetch ?? fetch;
 
@@ -247,40 +273,80 @@ export async function handleRequest(request, env, deps = {}) {
     return jsonResponse({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const payload = validatePayload(parsed);
-  if (!payload) {
-    return jsonResponse({ ok: false, error: "invalid_payload" }, 400);
+  const validated = validateReport(parsed);
+  if (!validated.record) {
+    const status = validated.error === "not_auto_reportable" ? 422 : 400;
+    return jsonResponse({ ok: false, error: validated.error, ...(validated.missing ? { fields: validated.missing } : {}) }, status);
   }
+  const record = validated.record;
 
   const repo = env.GITHUB_REPO || DEFAULT_REPO;
-  const issue = formatGitHubIssue(payload);
-  const ghResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      Accept: "application/vnd.github+json",
-      "Content-Type": "application/json",
-      "User-Agent": "auger-diagnostics-relay/1.0",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: JSON.stringify({
-      title: issue.title,
-      body: issue.body,
-      labels: ["bug", "needs-triage"],
-    }),
-  });
+  const issue = formatIssue(record);
+  const candidates = lookupCandidates(record);
 
-  if (!ghResponse.ok) {
-    return jsonResponse({ ok: false, error: "github_error", status: ghResponse.status }, 502);
-  }
+  const writeIssue = async () => {
+    const lookup = await findMatchingOpenIssue(fetchFn, repo, env.GITHUB_TOKEN, candidates);
+    if (!lookup.ok) {
+      return jsonResponse({ ok: false, error: "github_error", status: lookup.status }, 502);
+    }
+    const existing = lookup.issue;
 
-  const created = await ghResponse.json();
-  const issueNumber = typeof created?.number === "number" ? created.number : undefined;
-  return jsonResponse({
-    ok: true,
-    issueNumber,
-    reportId: issueNumber !== undefined ? `AUG-${issueNumber}` : "AUG-SENT",
-  }, 201);
+    if (existing) {
+      const reportId = `AUG-${existing.number}`;
+      const hashMarker = `<!-- auger-hash:${issue.contentHash} -->`;
+      if (existing.body.includes(hashMarker) || (typeof existing.comments === "number" && existing.comments >= MAX_DIFF_COMMENTS_PER_ISSUE)) {
+        return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+      }
+      if (typeof existing.comments === "number" && existing.comments > 0) {
+        const commentCheck = await issueHasCommentHash(fetchFn, repo, env.GITHUB_TOKEN, existing.number, hashMarker);
+        if (!commentCheck.ok) {
+          return jsonResponse({ ok: false, error: "github_error", status: commentCheck.status }, 502);
+        }
+        if (commentCheck.found) {
+          return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+        }
+      }
+      const followUp = formatFollowUp(decodeEmbeddedState(existing.body), record, issue.contentHash);
+      if (followUp === null) {
+        return jsonResponse({ ok: true, status: "duplicate", issueNumber: existing.number, reportId }, 200);
+      }
+      const commentResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues/${existing.number}/comments`, {
+        method: "POST",
+        headers: githubHeaders(env.GITHUB_TOKEN),
+        body: JSON.stringify({ body: followUp }),
+      });
+      if (!commentResponse.ok) {
+        return jsonResponse({ ok: false, error: "github_error", status: commentResponse.status }, 502);
+      }
+      return jsonResponse({ ok: true, status: "updated", issueNumber: existing.number, reportId }, 200);
+    }
+
+    const ghResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues`, {
+      method: "POST",
+      headers: githubHeaders(env.GITHUB_TOKEN),
+      body: JSON.stringify({
+        title: issue.title,
+        body: issue.body,
+        labels: ["diagnostics", "needs-triage"],
+      }),
+    });
+
+    if (!ghResponse.ok) {
+      return jsonResponse({ ok: false, error: "github_error", status: ghResponse.status }, 502);
+    }
+
+    const created = await ghResponse.json();
+    const issueNumber = typeof created?.number === "number" ? created.number : undefined;
+    return jsonResponse({
+      ok: true,
+      status: "created",
+      issueNumber,
+      reportId: issueNumber !== undefined ? `AUG-${issueNumber}` : "AUG-SENT",
+    }, 201);
+  };
+  // Within this isolate, take the preferred marker first and its legacy alias second.
+  return serializeByFingerprint(candidates[0].marker, () =>
+    candidates[1] ? serializeByFingerprint(candidates[1].marker, writeIssue) : writeIssue());
 }
 
 export default {

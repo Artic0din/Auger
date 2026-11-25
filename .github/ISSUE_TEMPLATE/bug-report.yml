@@ -1,6 +1,5 @@
 name: Bug report
 description: Report something broken in Auger (Samsung TV / Tizen)
-title: "[bug] "
 labels: ["bug"]
 body:
   - type: markdown
@@ -47,11 +46,25 @@ body:
   - type: input
     id: device-details
     attributes:
-      label: TV model, firmware, and Tizen version
-      description: "On your Samsung TV: **TV Settings > Support > About This TV** (Model Code and Software Version, plus Tizen version if known)."
-      placeholder: Samsung CU7095 (UE50CU7095), Firmware 1650, Tizen 8.0
+      label: TV model
+      description: Find the **Model Code** under **TV Settings > Support > About This TV**.
+      placeholder: UE50CU7095
     validations:
       required: true
+  - type: input
+    id: firmware-version
+    attributes:
+      label: Firmware version
+      description: Find the **Software Version** under **TV Settings > Support > About This TV**.
+      placeholder: "1650"
+    validations:
+      required: true
+  - type: input
+    id: tizen-version
+    attributes:
+      label: Tizen version
+      description: Enter your Tizen version if you know it.
+      placeholder: Tizen 8.0
   - type: input
     id: app-version
     attributes:
@@ -66,7 +79,6 @@ body:
       label: Installed from
       options:
         - "Apps2Samsung (official catalog)"
-        - "Apps2Samsung (custom GitHub source)"
         - ".wgt from GitHub Releases"
         - "Built from source"
         - "Other"
@@ -76,9 +88,7 @@ body:
     id: server-version
     attributes:
       label: Silo server version
-      description: The **Build** value at the bottom of the server's **Admin** sidebar, for example `412 · 1a2b3c4d`. Ask your server admin if that is not you.
-    validations:
-      required: true
+      description: In Auger, open **Profile > Settings > Diagnostics** and look for **Silo Server** under **Device**. Leave this field blank if the version is unavailable.
   - type: textarea
     id: playback-details
     attributes:
@@ -100,37 +110,6 @@ body:
     attributes:
       label: Technical notes
       description: Optional suspected root cause or related observations. Keep this separate from what you observed above.
-  - type: dropdown
-    id: ai-involvement
-    attributes:
-      label: AI involvement
-      options:
-        - No AI used
-        - Human-written, AI-reviewed
-        - AI-assisted
-        - Fully AI-generated, human verified
-    validations:
-      required: true
-  - type: input
-    id: ai-harness
-    attributes:
-      label: AI harness
-      description: Optional. If you used AI, enter the agent harness or app.
-  - type: input
-    id: ai-tools
-    attributes:
-      label: AI tool(s)
-      description: Optional. If you used AI, enter the tool name(s).
-  - type: input
-    id: ai-models
-    attributes:
-      label: AI model(s)
-      description: Optional. If you used AI, enter the model identifier(s).
-  - type: textarea
-    id: ai-review
-    attributes:
-      label: Independent or adversarial review
-      description: Optional. If applicable, summarize any independent review.
   - type: checkboxes
     id: confirmations
     attributes:

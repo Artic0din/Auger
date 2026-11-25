@@ -63,6 +63,10 @@ A curated Server group or personal Profile group of titles, which can span Libra
 Personal Collections stay private to their creator or share read-only with the Household.
 _Avoid_: Box Set, playlist
 
+**Request**:
+A Profile's request to the Server for a movie or series that is not yet in its Libraries, tracked through pending, approved, available, failed or cancelled states.
+_Avoid_: Media request, ticket, order
+
 ## What plays next
 
 **Next Up**:
