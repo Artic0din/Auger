@@ -297,6 +297,11 @@ export class FocusHost {
         return found === undefined ? undefined : { zone: found.zone.id, key: found.item.key };
     }
 
+    /** Id of the zone holding focus, for diagnostics. */
+    focusedZone(): string | undefined {
+        return this.locate(document.activeElement)?.zone.id;
+    }
+
     revealFocused(): void {
         const element = this.locate(document.activeElement)?.item.element;
         if (element !== undefined) this.scroll.reveal(element, this.container);

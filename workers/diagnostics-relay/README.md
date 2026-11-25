@@ -17,6 +17,7 @@ Unknown fields and unrecognized free text are discarded, never truncated into an
 | `grouping.js` | When an incident may reuse an older issue, and the evidence checks that guard it. |
 | `titles.js`, `labels.js` | Fixed plain-language phrases; no bracketed prefix and no TV model in titles (140-character ceiling). |
 | `report.js` | Issue bodies, follow-up comments and `auger-state` metadata. |
+| `navigation.js` | The optional `nav` (nv 1) App / Navigation record from `src/diagnosticsNavigation.ts`, with vocabulary shared through `shared/diagnostics-navigation.js`. An invalid `nav` is dropped and the report still files. |
 
 Codes the client allows but the relay does not list still group, but render as "Unlisted code".
 Automatic submission requires a failed incident.
@@ -29,6 +30,7 @@ The relay returns HTTP 422 `not_auto_reportable` for other automatic submissions
 | --- | --- | --- |
 | With `inc` | `auger-group:inc1:<hash>` | App version, TV model, incident category, first failed operation, stage and code (the client's `incidentGroupKey`). |
 | Viewer-observed, with an allowlisted `precedingScreen` | `auger-group:obs1:<hash>` | App version, TV model, selected category and screen. |
+| App error with `nav` naming a known screen | `auger-group:nav1:<hash>` | App version, TV model, the screen in `nav` and the error name. Manual and automatic submissions of one error hash identically. A legacy `app:<name>` issue cannot name a screen, so it is never reused. |
 | Anything else (installed clients) | `auger-fp:<hash>` | The deployed relay's legacy signature, so old clients keep finding their open issues after a title edit. |
 
 Each marker hit is checked against the issue's embedded state before reuse, so a hash collision files a new issue.
@@ -43,6 +45,7 @@ Existing titles and historical evidence are left untouched; reuse adds a comment
 
 `test/native/fixtures/diagnostics-relay/relayCases.js` holds the relay cases as a plain ES module with no Node imports, so a browser harness on the TV can import it with `worker.js` and call `runRelayCases(handleRequest)`.
 `test/native/diagnosticsRelay.test.ts` runs the same cases under `node:test`.
+`navigationCases.js` and `test/native/diagnosticsNavigationRelay.test.ts` do the same for `nav`.
 
 ## Deploy
 

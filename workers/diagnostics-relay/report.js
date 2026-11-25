@@ -4,6 +4,7 @@ import { CATEGORY_LABELS, CONTAINERS, DYNAMIC_RANGES, PROTOCOLS, VIDEO_CODECS, i
 import { codeCell, DELIVERY_LABELS, OPERATION_LABELS, OUTCOME_LABELS, RECOVERY_LABELS, SCREEN_LABELS, STAGE_LABELS } from "./labels.js";
 import { fnv1aHex, LEGACY_FIELD_CHECKS } from "./legacy.js";
 import { incidentTitle, legacyTitle } from "./titles.js";
+import { navigationSection } from "./navigation.js";
 
 const yesNo = (value) => (value ? "Yes" : "No");
 const table = (rows) => ["| Field | Value |", "| --- | --- |", ...rows.map(([label, value]) => `| ${label} | ${value} |`)];
@@ -132,11 +133,35 @@ export function legacyStableState(record) {
     fb: play.fb,
     e: play.e,
     log: (record.log ?? []).map(stripLogTimestamp),
+    nav: record.nav,
   };
 }
 
+/**
+ * Comparable evidence for an app error with navigation context. Excludes the selected category, the screen before
+ * Settings and the submission source, so manual and automatic submissions of one error hash identically.
+ */
+export function navigationErrorState(record) {
+  return {
+    ng: record.navGuard,
+    sg: record.legacySignatureDigest,
+    fw: record.fw,
+    os: record.os,
+    ua: record.ua,
+    srv: record.srv,
+    err: record.err,
+    nav: record.nav,
+    log: (record.log ?? []).map(stripLogTimestamp),
+  };
+}
+
+function stableState(record) {
+  if (record.inc) return incidentStableState(record);
+  return record.navGroupId ? navigationErrorState(record) : legacyStableState(record);
+}
+
 export function contentHash(record) {
-  return fnv1aHex(JSON.stringify(record.inc ? incidentStableState(record) : legacyStableState(record)));
+  return fnv1aHex(JSON.stringify(stableState(record)));
 }
 
 // ---------------------------------------------------------------------------
@@ -294,21 +319,23 @@ function legacyBody(record, hash) {
   const observed = record.cat !== undefined && record.auto !== true && !p.e && !record.err;
   const summaryRows = [
     ["Report source", sourceLabel(record)],
-    ["Report type", observed ? "Viewer-observed symptom (no failure detected)" : "Summary without an incident record"],
+    ["Report type", observed ? "Viewer-observed symptom (no failure detected)" : record.navGroupId ? "Uncaught app error with navigation context" : "Summary without an incident record"],
     ...screenRows(record),
     ...(record.err ? [["App error", record.err]] : []),
     ...(p.e ? [["Last error", p.e]] : []),
     ...(p.av ? [["AVPlay error", p.av]] : []),
     ...(typeof p.fb === "number" && p.fb > 0 ? [["Route fallbacks", String(p.fb)]] : []),
   ];
-  const lines = ["## What happened", "", ...table(summaryRows)];
+  const lines = ["## What happened", "", ...table(summaryRows), ...navigationSection(record.nav, table)];
   if (record.log) lines.push("", "### Recent Events (Redacted)", "", "```text", ...record.log, "```");
   const playRows = legacyPlayRows(p);
   if (playRows.length > 0) lines.push("", "### Last Playback", "", ...table(playRows));
   return finish(lines, record, "An Auger TV sent a redacted report; only values the relay recognizes are shown.", [
-    ...(record.observedGroupId ? [marker("auger-group", `obs1:${record.observedGroupId}`)] : [marker("auger-fp", record.legacyFingerprint)]),
+    ...(record.navGroupId
+      ? [marker("auger-group", `nav1:${record.navGroupId}`)]
+      : record.observedGroupId ? [marker("auger-group", `obs1:${record.observedGroupId}`)] : [marker("auger-fp", record.legacyFingerprint)]),
     marker("auger-hash", hash),
-    marker("auger-state", encodeBase64(JSON.stringify(legacyStableState(record)))),
+    marker("auger-state", encodeBase64(JSON.stringify(stableState(record)))),
   ]);
 }
 

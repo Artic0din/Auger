@@ -2,6 +2,7 @@
 // Unknown or unlisted values never reach a title; missing evidence falls back to a category phrase.
 
 import { CATEGORY_PROBLEM, codePhrase, SCREEN_LABELS } from "./labels.js";
+import { navigationErrorTitle } from "./navigation.js";
 
 export const TITLE_MAX = 140;
 
@@ -69,7 +70,7 @@ function legacyCategoryTitle(record) {
 
 /** Title for a record without an incident: older clients and user-observed symptoms. */
 export function legacyTitle(record) {
-  if (record.err) return cap(`Auger raised an uncaught ${record.err}`);
+  if (record.err) return cap(navigationErrorTitle(record) ?? `Auger raised an uncaught ${record.err}`);
   const e = record.play?.e;
   if (e !== undefined) {
     const [kind, detail] = e.split(": ");

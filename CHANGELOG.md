@@ -10,6 +10,10 @@ All notable changes to this project are documented in this file.
 - Videos whose stream link ended in a `#` bookmark started and resumed with their playback sign-in.
 - Playback errors no longer showed the server's own message, which could include web addresses, email addresses or sign-in details; the screen explained the problem without them.
 
+### Added
+
+- App / Navigation reports described the screen, remote presses and focus changes before the problem, and uncaught app errors were titled by the screen they happened on.
+
 <!-- changelog:releases -->
 
 ## [0.6.1] - 2026-11-25

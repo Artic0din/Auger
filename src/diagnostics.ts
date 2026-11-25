@@ -17,6 +17,7 @@ import {
     type PlaybackAttemptTrace,
     playbackIncident,
 } from "./diagnosticsIncident.ts";
+import { browserNavigationEnvironment, NAV_SAMPLING_KEY, type NavigationEnvironment, type NavigationPayload, NavigationRecorder } from "./diagnosticsNavigation.ts";
 
 export const DIAGNOSTICS_REPORT_URL = "https://artic0din.github.io/Auger-Tizen/report/";
 export const DIAGNOSTICS_RELAY_URL = "https://auger-diagnostics.plaintextlab.com/report";
@@ -123,6 +124,8 @@ export interface DiagnosticsSnapshot {
     readonly lastPlayback?: DiagnosticsPlayback | undefined;
     readonly lastAppError?: string | undefined;
     readonly events: readonly DiagnosticsEvent[];
+    /** Frozen App / Navigation evidence: at the app error, else when Settings opened. */
+    readonly navigation?: NavigationPayload | undefined;
 }
 
 export interface DiagnosticsPayloadPlayback {
@@ -163,6 +166,7 @@ export interface DiagnosticsPayloadV1 {
     readonly play?: DiagnosticsPayloadPlayback;
     readonly log?: readonly string[];
     readonly inc?: DiagnosticsIncidentPayload;
+    readonly nav?: NavigationPayload;
 }
 
 const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
@@ -478,6 +482,7 @@ function payloadFromSnapshot(
         ...(play === undefined ? {} : { play }),
         ...(log.length === 0 ? {} : { log }),
         ...(options?.incident === undefined ? {} : { inc: { ...options.incident, src: options.auto === true ? "auto" as const : "manual" as const } }),
+        ...(includeExtended && snapshot.navigation !== undefined ? { nav: snapshot.navigation } : {}),
     };
 }
 
@@ -859,12 +864,16 @@ export class DiagnosticsCollector {
     private lastAutoSendAt = -Infinity;
     private readonly autoSentKeys = new Set<string>();
     private readonly listeners = new Set<() => void>();
+    readonly navigation: NavigationRecorder;
+    private precedingNavigation: NavigationPayload | undefined;
+    private appErrorNavigation: NavigationPayload | undefined;
 
     constructor(
         device: DiagnosticsDeviceInfo,
         clock: Clock = systemClock,
         storage?: PublicStorage,
         runtimeProbe: () => DiagnosticsRuntimeEnvironment = readRuntimeEnvironment,
+        navigationEnvironment: () => NavigationEnvironment = browserNavigationEnvironment,
     ) {
         this.device = { ...device };
         this.clock = clock;
@@ -873,6 +882,7 @@ export class DiagnosticsCollector {
         this.runtimeProbe = runtimeProbe;
         this.autoReport = this.readStoredFlag(AUTO_REPORT_KEY);
         for (const key of this.readStoredKeys(AUTO_SENT_KEY)) this.autoSentKeys.add(key);
+        this.navigation = new NavigationRecorder(this.readStoredFlag(NAV_SAMPLING_KEY), navigationEnvironment);
     }
 
     get autoReportEnabled(): boolean {
@@ -933,6 +943,7 @@ export class DiagnosticsCollector {
             srv: this.device.serverVersion,
             cat: category,
             precedingScreen: this.precedingScreen,
+            nav: this.currentNavigation()?.st,
             err: this.lastAppError,
             play: play === undefined ? undefined : {
                 m: play.playback,
@@ -1053,6 +1064,7 @@ export class DiagnosticsCollector {
     recordAppError(code: string): void {
         const cleaned = /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(code) ? code : "Error";
         this.lastAppError = cleaned;
+        this.appErrorNavigation = this.navigation.capture();
         this.pushEvent("app", `error ${cleaned}`);
         this.emit();
     }
@@ -1169,12 +1181,17 @@ export class DiagnosticsCollector {
         this.emit();
     }
 
+    /** Opening Settings freezes the navigation that led there, so a manual report still describes it. */
     setPrecedingScreen(screen: DiagnosticsScreen | undefined): void {
         this.precedingScreen = screen;
+        this.precedingNavigation = screen === undefined ? undefined : this.navigation.capture();
     }
 
     clear(): void {
         this.precedingScreen = undefined;
+        this.precedingNavigation = undefined;
+        this.appErrorNavigation = undefined;
+        this.navigation.reset();
         this.scope++;
         this.playbackEventFloor = this.eventSeq;
         if (this.lastPlayback === undefined && this.lastAppError === undefined && this.events.length === 0 && this.lastPlanSignature === undefined && this.lastSentHash === undefined && this.incidents.length === 0) return;
@@ -1191,7 +1208,13 @@ export class DiagnosticsCollector {
     }
 
     snapshot(): DiagnosticsSnapshot {
-        return this.captureSnapshot(0);
+        const navigation = this.currentNavigation();
+        return { ...this.captureSnapshot(0), ...(navigation === undefined ? {} : { navigation }) };
+    }
+
+    /** An app error's frozen evidence describes that error; otherwise the navigation before Settings opened. */
+    private currentNavigation(): NavigationPayload | undefined {
+        return this.lastAppError === undefined ? this.precedingNavigation : this.appErrorNavigation;
     }
 
     private captureSnapshot(eventFloor: number): DiagnosticsSnapshot {

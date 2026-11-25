@@ -23,6 +23,13 @@ Server URLs, IP addresses, account names, media titles, and tokens are stripped 
 4. **Backup (copy for Discord or add your own details on GitHub):** Select **Share via QR Code** and scan with your phone camera (iPhone or Android).
    The helper page decodes the link `#fragment` locally in your browser (never sent to a server) and lets you tap **Copy for Discord** or **Open Pre-filled GitHub Bug Report**.
 
+An **App / Navigation** report also describes what happened just before it.
+It lists the screen and focus area and the last remote presses.
+It says whether each press moved focus, stayed put or lost focus.
+It shows how many elements were on screen and the slowest recent server request.
+Opening **Settings** keeps the screen you came from, so the report still describes that screen.
+It never includes item names, titles or server addresses.
+
 If Auger cannot open **Settings**, follow the manual steps below instead.
 
 ## 1. TV model and Tizen / firmware version
