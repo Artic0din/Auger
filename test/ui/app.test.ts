@@ -1895,6 +1895,55 @@ appTest("saved server profile 15/45 reaches the composed controller and every re
     assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").length, 1);
 });
 
+// The Settings choice reaches the player only through startPlayback's threshold callback in src/app.ts. Without it the
+// controller falls back to 3, so the second episode would count down and start the third on its own.
+appTest("a Still watching prompt saved in Settings gates Auto-play after that many unattended episodes", async (tv, playback, catalog) => {
+    const settings = new FakeSettings(tv.fake);
+    settings.remainingRows = true;
+    settings.overrides.set("playback.auto_play_next", true);
+    for (const [id, file] of [["episode:s1e12", "42"], ["episode:s1e13", "43"], ["episode:s1e14", "42"]] as const) {
+        catalog.fileIds.set(id, file);
+        playback.items.set(id, [file]);
+    }
+    catalog.households.get("p-owner")?.sections[0]?.items.push("episode:s1e12");
+    await signIn(tv);
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="playback"]').click();
+    await tv.page.locator('[data-focus="still-watching"]').click();
+    await tv.page.locator('[data-focus="still-watching:1"]').click();
+    await tv.page.locator('[data-focus="still-watching"] .settings-row-value', { hasText: "1 episode" }).waitFor();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "playback");
+    await tv.remote(10009);
+    await tv.page.locator(".settings").waitFor({ state: "detached" });
+
+    const starts = (): number => tv.fake.requests.filter(r => r.path === "/playback/start").length;
+    const countdown = tv.page.locator(".player-countdown");
+    await tv.page.locator('.skyline-continue[data-focus="episode:s1e12"]').first().focus();
+    await tv.remote(415);
+    await prepare(tv);
+    await settleUpNextLookup(tv);
+    // Unattended advance 1: the first episode ends and Auto-play counts down into the next.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await countdown.waitFor({ state: "visible" });
+    await tv.jump(10000);
+    await prepare(tv);
+    assert.equal(starts(), 2, "the countdown started the next episode with no key pressed");
+    assert.equal(tv.fake.requests.filter(r => r.path === "/playback/start").at(-1)?.body?.file_id, "43");
+    await settleUpNextLookup(tv);
+
+    // One unattended advance reached the saved threshold of 1: Up Next waits for the viewer.
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.page.getByRole("button", { name: "Play Now", exact: true }).waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "EOF reads settled");
+    assert.equal(await countdown.isHidden(), true, "the saved threshold gates the countdown");
+    await tv.jump(15000);
+    assert.equal(await countdown.isHidden(), true);
+    assert.equal(starts(), 2, "nothing plays until the viewer chooses");
+}, true);
+
 appTest("the composed app signs in, selects a profile, plays and returns to the same title", async (tv, playback) => {
     await signIn(tv);
     await startMovie(tv);
