@@ -1812,9 +1812,14 @@ test("Settings Playback shows NOT SAVED with Try Again and Discard Held Change w
         // Script 6 transient 503 replies (initial debounced PUT + 5 automatic retries) so the write becomes held.
         tv.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", ...Array.from({ length: 6 }, () => ({ status: 503, body: { error: "unavailable" } })));
         await tv.page.evaluate(() => window.browseHarness.enqueuePlayerSetting("playback.auto_play_next", false));
-        await tv.jump(750);
-        for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+        const putCount = (): number => tv.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next")).length;
+        for (const [index, delay] of [750, 1000, 2000, 4000, 8000, 16000].entries()) {
+            const before = await tv.page.evaluate(() => window.browseHarness.playerSettingsNotificationCount());
             await tv.jump(delay);
+            await tv.eventually(
+                async () => putCount() >= index + 1 && (await tv.page.evaluate(() => window.browseHarness.playerSettingsNotificationCount())) > before,
+                `auto_play_next attempt ${index + 1} settled`,
+            );
         }
         await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.heldPlayerSettings())).includes("playback.auto_play_next"), "auto_play_next held");
 

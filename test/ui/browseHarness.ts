@@ -45,6 +45,8 @@ export interface BrowseHarness {
     enqueuePlayerSetting(key: SettingsKey, value: SettingValue): void;
     /** Returns keys currently held on this TV by browse's shared PlayerSettingsFlusher (#810). */
     heldPlayerSettings(): readonly SettingsKey[];
+    /** Monotonic count of PlayerSettingsFlusher state notifications (incremented after drain schedules retries). */
+    playerSettingsNotificationCount(): number;
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -78,6 +80,8 @@ if (root === null) {
 let server: ConnectedServer | undefined;
 let profileName: string | undefined;
 let browse: Browse | undefined;
+let playerSettingsNotifications = 0;
+let stopPlayerSettingsWatch: (() => void) | undefined;
 let diagnostics: DiagnosticsCollector | undefined;
 const publicStorage = new MemoryPublicStorage();
 
@@ -173,11 +177,16 @@ const harness: BrowseHarness = {
             ...(offerSignOut ? { onSignOut: () => { harness.signOutCalls++; } } : {}),
             ...(harness.offerSwitchServer ? { onSwitchServer: (back: () => void) => { harness.coverBack = back; } } : {}),
         });
+        stopPlayerSettingsWatch?.();
+        playerSettingsNotifications = 0;
+        stopPlayerSettingsWatch = browse.playerSettings().subscribe(() => { playerSettingsNotifications += 1; });
     },
     resume() {
         browse?.resumeAfterPlayback();
     },
     destroy() {
+        stopPlayerSettingsWatch?.();
+        stopPlayerSettingsWatch = undefined;
         browse?.destroy();
     },
     clearResponseCache() { clearBrowseCache(publicStorage); },
@@ -207,6 +216,9 @@ const harness: BrowseHarness = {
     },
     heldPlayerSettings() {
         return browse?.playerSettings().heldKeys ?? [];
+    },
+    playerSettingsNotificationCount() {
+        return playerSettingsNotifications;
     },
     cacheOffline(route = "home") {
         const server = connected();
