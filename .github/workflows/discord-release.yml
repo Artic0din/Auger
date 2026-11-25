@@ -1,0 +1,110 @@
+name: Discord Releases
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build a payload from, for example v0.7.0
+        required: true
+        type: string
+      dry_run:
+        description: Build and print the payload without posting to Discord
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    name: Post release embed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A published tag may point at an older commit. Use the default
+          # branch so the current payload builder always runs.
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
+
+      - name: Build Discord payload
+        id: build
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Never enable xtrace: it would print secrets if a later step added one.
+          mkdir -p "$RUNNER_TEMP"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="${DISPATCH_TAG#refs/tags/}"
+            case "$tag" in
+              ''|*..*|/*|*[[:space:]]*)
+                echo "Invalid release tag: ${tag}" >&2
+                exit 2
+                ;;
+            esac
+            if ! [[ "$tag" =~ ^[A-Za-z0-9._/+-]+$ ]]; then
+              echo "Invalid release tag: ${tag}" >&2
+              exit 2
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+              | jq '{name, tag_name, html_url, body, published_at, draft, prerelease}' \
+              > "$RUNNER_TEMP/release.json"
+          else
+            jq '.release | {name, tag_name, html_url, body, published_at, draft, prerelease}' \
+              "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/release.json"
+          fi
+
+          if jq -e '.draft == true' "$RUNNER_TEMP/release.json" >/dev/null; then
+            echo "Draft releases are not posted to Discord." >&2
+            exit 1
+          fi
+
+          .github/scripts/discord-release-embed.sh "$RUNNER_TEMP/release.json" \
+            > "$RUNNER_TEMP/payload.json"
+
+          echo "Discord webhook payload:"
+          jq . "$RUNNER_TEMP/payload.json"
+
+      - name: Post to Discord
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        env:
+          DISCORD_RELEASES_WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_RELEASES_WEBHOOK}" ]; then
+            echo "DISCORD_RELEASES_WEBHOOK is not set" >&2
+            exit 1
+          fi
+          err="$RUNNER_TEMP/discord-webhook.err"
+          body="$RUNNER_TEMP/discord-webhook.body"
+          set +e
+          http_code="$(
+            curl -sS -o "$body" -w "%{http_code}" --max-time 30 \
+              -X POST -H "Content-Type: application/json" \
+              --data @"$RUNNER_TEMP/payload.json" \
+              "${DISCORD_RELEASES_WEBHOOK}" \
+              2>"$err"
+          )"
+          curl_ec=$?
+          set -e
+          if [ -s "$err" ]; then
+            # Keep the webhook URL out of logs even if curl prints it.
+            err_text="$(cat "$err")"
+            printf '%s\n' "${err_text//"$DISCORD_RELEASES_WEBHOOK"/[redacted]}" >&2
+          fi
+          if [ "$curl_ec" -ne 0 ] || { [ "$http_code" != "204" ] && [ "$http_code" != "200" ]; }; then
+            echo "Discord webhook failed (HTTP ${http_code:-n/a}, curl ${curl_ec})" >&2
+            if [ -s "$body" ]; then
+              cat "$body" >&2
+            fi
+            exit 1
+          fi
+          echo "Posted to Discord (HTTP ${http_code})"
