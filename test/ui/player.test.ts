@@ -4731,3 +4731,37 @@ test("the player takes its layout from the language it shows, not from a page th
         assert.ok(await page.locator(".player-menu-info").isVisible(), "the Options panel opened on Info");
     } finally { await page.close(); }
 });
+
+test("Up Next shows a spinner while loading, Shuffling badge above eyebrow, and Pick Another beside Play Now (#778)", async () => {
+    const { page, logs } = await open();
+    try {
+        // Loading state: spoke spinner sits beside "Finding the next episode" / "Picking at random".
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "resolving", next: undefined, retryable: false, shuffle: true, shuffleScopeLabel: "Movies" });
+        assert.equal(await page.locator(".player-next-spinner").isVisible(), true);
+        assert.equal(await text(page, ".player-error .player-title"), "Picking at random");
+        assert.equal(await page.locator(".player-shuffle-badge").isVisible(), true);
+        assert.equal(await text(page, ".player-shuffle-badge"), "Shuffling Movies");
+        assert.equal(await page.locator('[data-focus="pick-another"]').isVisible(), false);
+
+        // Ready state: spinner hides, Pick Another sits beside Play Now and Right moves to it.
+        const nextPick = { contentId: "movie-2", fileId: "43", title: "Second", startSeconds: 0, shuffleId: "sh1", shuffleScopeLabel: "Breaking Bad · Season 2" };
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", countdown: 10, autoNext: true });
+        assert.equal(await page.locator(".player-next-spinner").isVisible(), false);
+        assert.equal(await text(page, ".player-shuffle-badge"), "Shuffling Breaking Bad · Season 2");
+        assert.equal(await page.locator('[data-focus="pick-another"]').isVisible(), true);
+        assert.equal(await text(page, '[data-focus="pick-another"]'), "Pick Another");
+        // Focus stayed on Close during resolving; Up moves to Play Now, Right to Pick Another.
+        await remote(page, UP);
+        assert.equal(await focused(page), "play-next");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "pick-another");
+        await remote(page, ENTER);
+        assert.deepEqual(await commands(page), ["pickAnother"]);
+
+        // Error line appears below the action row when Pick Another fails.
+        await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", shuffleActionError: "upNext.pickAnotherFailed", countdown: 10, autoNext: true });
+        assert.equal(await page.locator(".player-shuffle-error").isVisible(), true);
+        assert.equal(await text(page, ".player-shuffle-error"), "Couldn't pick another.");
+        assert.deepEqual(logs, []);
+    } finally { await page.close(); }
+});

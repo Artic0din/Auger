@@ -110,3 +110,8 @@ export function starFillIcon(): string {
 export function uturnBackwardIcon(): string {
     return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.5 4 4 8.5 8.5 13M4 8.5h10a5 5 0 0 1 0 10.5H9"/>`);
 }
+
+/** `shuffle`: Up Next's Shuffling badge and Pick Another button symbol (#778). */
+export function shuffleIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h4v4"/><path d="M4 19 20 4"/><path d="M16 20h4v-4"/><path d="M14 14l6 6"/><path d="M4 5l6 6"/></g>`);
+}

@@ -10,6 +10,7 @@ import { displayVersion } from "../contracts/v2/versions.ts";
 /** What the player needs to call startPlayback: the item, one file and where to start. */
 export interface PlayRequest {
     readonly shuffleId?: string;
+    readonly shuffleScopeLabel?: string | undefined;
     readonly episode?: true;
     readonly contentId: string;
     /** startPlayback's file_id. */

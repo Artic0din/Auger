@@ -32,7 +32,7 @@ import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
-import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
+import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
@@ -297,7 +297,7 @@ interface SymbolMetrics {
 }
 
 /** A button drawn as Apple's Label: its symbol, then its words. The symbol is hidden from assistive technology, so the name is the words. */
-function labelWithSymbol(button: HTMLButtonElement, symbol: string, label: string, metrics?: SymbolMetrics): void {
+function labelWithSymbol(button: HTMLElement, symbol: string, label: string, metrics?: SymbolMetrics): void {
     const cacheKey = `${label}|${metrics?.size ?? ""}|${metrics?.gap ?? ""}`;
     // The card redraws on every playback tick: leave an unchanged label alone.
     if (button.dataset.symbolLabel === cacheKey && button.querySelector(".player-button-symbol") !== null) return;
@@ -562,7 +562,15 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     hud.append(tablist, menu);
     const failure = el("div", "player-error");
     failure.setAttribute("role", "alert");
+    const shuffleBadge = el("div", "player-shuffle-badge");
+    shuffleBadge.hidden = true;
+    const nextHeading = el("div", "player-next-heading");
+    const nextSpinner = el("span", "player-next-spinner");
+    nextSpinner.setAttribute("aria-hidden", "true");
+    nextSpinner.innerHTML = spinnerIcon();
+    nextSpinner.hidden = true;
     const failureTitle = el("h1", "player-title");
+    nextHeading.append(nextSpinner, failureTitle);
     const eyebrow = el("p", "player-next-eyebrow");
     const synopsis = el("p", "player-next-synopsis");
     const nextSeries = el("p", "player-next-series");
@@ -616,6 +624,13 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     next.type = "button";
     next.setAttribute("data-focus", "play-next");
     next.addEventListener("click", () => controls.playNext());
+    const pickAnother = el("button", "player-button");
+    pickAnother.type = "button";
+    pickAnother.setAttribute("data-focus", "pick-another");
+    pickAnother.hidden = true;
+    pickAnother.addEventListener("click", () => controls.pickAnother());
+    const shuffleError = el("p", "player-shuffle-error");
+    shuffleError.hidden = true;
     // PlayerView.autoPlayFooter: the Auto-play toggle, with Stop shuffling beside it during a shuffle (#807).
     const autoPlayFooter = el("div", "player-autoplay-footer");
     autoPlayFooter.hidden = true;
@@ -641,10 +656,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     // lays its buttons out as before.
     const primaryRow = el("div", "player-actions-row player-actions-primary");
     primaryRow.append(next, ring.element, retry);
+    const showPickAnother = (visible: boolean): void => {
+        pickAnother.hidden = !visible;
+        if (visible) {
+            if (pickAnother.parentNode !== primaryRow) primaryRow.insertBefore(pickAnother, ring.element);
+        } else if (pickAnother.parentNode === primaryRow) {
+            pickAnother.remove();
+        }
+    };
     const secondaryRow = el("div", "player-actions-row player-actions-secondary");
     secondaryRow.append(keep, back);
     actions.append(primaryRow, secondaryRow);
-    failure.append(nextBackdrop, eyebrow, nextSeries, failureTitle, nextMeta, mark, failureText, synopsis, actions, autoPlayFooter, deck);
+    failure.append(nextBackdrop, shuffleBadge, eyebrow, nextSeries, nextHeading, nextMeta, mark, failureText, synopsis, actions, shuffleError, autoPlayFooter, deck);
     section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
@@ -1053,6 +1076,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         deck.hidden = eyebrow.hidden;
         failure.className = view.phase === "error" ? "player-error player-error-wall" : "player-error";
         failureTitle.hidden = view.phase === "error";
+        nextSpinner.hidden = true;
+        shuffleBadge.hidden = true;
+        showPickAnother(false);
+        shuffleError.hidden = true;
         nextSeries.hidden = true;
         nextMeta.hidden = true;
         nextBackdrop.hidden = true;
@@ -1125,8 +1152,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 const failed = prompt?.failed === true;
                 next.hidden = loading || failed || candidate === undefined;
                 labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
+                showPickAnother(false);
                 retry.hidden = true;
                 showAutoPlay(loading || failed || candidate === undefined || (view.phase !== "playing" && view.phase !== "paused") ? undefined : view.hud?.autoNext, prompt?.shuffle === true);
+                nextSpinner.hidden = !loading;
                 nextTitle(loading ? undefined : candidate, loading ? translate("upNext.finding") : translate("upNext.almostFinished"));
                 failureTitle.classList.toggle("player-next-working", loading);
                 failureText.textContent = loading ? "" : failed ? translate("upNext.lookupFailed") : candidate === undefined ? translate("upNext.noNext") : "";
@@ -1136,14 +1165,24 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 status.hidden = true;
                 return;
             }
+            const scopeLabel = view.shuffleScopeLabel ?? view.next?.shuffleScopeLabel;
+            shuffleBadge.hidden = scopeLabel === undefined || scopeLabel === "";
+            if (!shuffleBadge.hidden && scopeLabel !== undefined) {
+                labelWithSymbol(shuffleBadge, shuffleIcon(), translate("upNext.shuffling", { scope: scopeLabel }), { size: 19, gap: 10 });
+            }
             next.hidden = view.state !== "ready" || view.next === undefined;
             labelWithSymbol(next, playIcon(), translate("upNext.playNow"), { size: 32, gap: 18 });
+            showPickAnother(!next.hidden && view.shuffle === true);
+            if (!pickAnother.hidden) labelWithSymbol(pickAnother, shuffleIcon(), translate("upNext.pickAnother"), { size: 26, gap: 16 });
+            shuffleError.hidden = view.shuffleActionError === undefined;
+            shuffleError.textContent = view.shuffleActionError === undefined ? "" : translate(view.shuffleActionError);
             retry.hidden = view.state !== "failed" || !view.retryable;
             showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined, view.shuffle === true);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
             // upNextEndOfPlayback over finishedMessage. This card has no On Deck row, so a failed lookup takes Apple's lookupFailedAlone;
             // a failure while the session ended says the progress was not recorded (Apple's playback.invalidSample), since nothing was looked up.
             const working = view.state === "finalizing" || view.state === "resolving";
+            nextSpinner.hidden = !working;
             nextTitle(working ? undefined : candidate, working ? translate(view.shuffle === true ? "upNext.picking" : "upNext.finding") : translate("upNext.endOfPlayback"));
             failureTitle.classList.toggle("player-next-working", working);
             failureText.textContent = working ? "" : view.state === "failed" ? translate(view.failure === "session" ? "errors.apple.playback.invalidSample" : "upNext.lookupFailedAlone") : view.next?.title ?? translate(view.shuffle === true ? "upNext.shuffleDone" : "upNext.noNext");
@@ -1724,7 +1763,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         if (view.phase === "completion" || ((view.phase === "playing" || view.phase === "paused") && view.upNext !== undefined)) {
             // PlayerView.actionRow's rows, then On Deck: Left and Right stay in a row (by the layout), Up and Down move to the next row's first button, if there is one.
-            const rows = [[next, retry], [keep, back], [autoPlay, stopShuffling], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
+            const rows = [[next, pickAnother, retry], [keep, back], [autoPlay, stopShuffling], Array.from(deck.querySelectorAll<HTMLButtonElement>("button"))]
                 .map(row => row.filter(button => !button.hidden)).filter(row => row.length > 0);
             const row = rows.findIndex(candidates => candidates.some(button => button === document.activeElement));
             const current = rows[row];

@@ -186,24 +186,69 @@ test("a discovery settings read started before a save cannot overwrite Auto-play
     r.controller.destroy();
 });
 
-test("a completed Shuffle item advances the same server session before offering its next pick", async () => {
-    const r = await rig();
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+test("a completed Shuffle item refreshes GET /shuffles/{id} before offering its next pick, skips via /skip, and advances via /advance (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-3" } } });
+    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", scope: { kind: "library", id: "12", title: "Movies" }, current: { content_id: "movie-3" }, next: { content_id: "movie-4" } } });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.h.fake.script("/watch/movie-3", { status: 200, body: { content_id: "movie-3", type: "movie", title: "Third", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    r.server.items.set("movie-3", ["43"]);
     await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
-    await r.h.clock.advance(0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).state, "ready");
+    assert.equal(completion(r).next?.contentId, "movie-2");
+    assert.equal(completion(r).shuffleScopeLabel, "Movies");
+    assert.equal(completion(r).countdown, 10);
+    // Pick Another calls POST /shuffles/sh1/skip with next_content_id and replaces the pick, restarting countdown.
+    r.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    const skips = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/skip");
+    assert.equal(skips.length, 1);
+    assert.deepEqual(skips[0]?.body, { next_content_id: "movie-2" });
+    assert.equal(completion(r).next?.contentId, "movie-3");
+    assert.equal(completion(r).countdown, 10);
+    // Playing the next pick calls POST /shuffles/sh1/advance with from_content_id.
+    r.controller.playNext();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
     assert.equal(advance.length, 1);
     assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
-    assert.equal(last(r.views).phase, "completion");
+    assert.equal(bodies(r.h, "/start").length, 2);
+    r.controller.destroy();
+});
+
+test("Pick Another failure shows upNext.pickAnotherFailed and restarts the countdown (#778)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", scope: { kind: "season", id: "s2", title: "Season 2", parent_title: "Breaking Bad" }, current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
+    r.h.fake.script("/shuffles/sh1/skip", problem(500, "internal_error", "Unavailable"));
+    scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
+    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
+    r.avplay.listener?.onstreamcompleted();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).shuffleScopeLabel, "Breaking Bad · Season 2");
+    r.controller.pickAnother();
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    assert.equal(completion(r).next?.contentId, "movie-2", "failed skip keeps the announced pick");
+    assert.equal(completion(r).shuffleActionError, "upNext.pickAnotherFailed");
+    assert.equal(completion(r).countdown, 10, "countdown restarts after failed Pick Another");
     r.controller.destroy();
 });
 
 test("the next Shuffle pick starts and reports progress from zero although it has a saved position", async () => {
     const r = await episodeRig();
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: EPISODE.contentId }, next: { content_id: "episode:s1e13" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "episode:s1e13" }, next: { content_id: "episode:s1e13" } } });
-    r.h.fake.script("/watch/episode%3As1e13", { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } });
+    const nextDetail = { status: 200, body: { content_id: "episode:s1e13", type: "episode", title: "Next", season_number: 1, episode_number: 13, versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false, position_seconds: 900, last_file_id: "43" } } };
+    r.h.fake.script("/watch/episode%3As1e13", nextDetail, nextDetail);
     await playMovie(r, { ...EPISODE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -211,7 +256,7 @@ test("the next Shuffle pick starts and reports progress from zero although it ha
     assert.equal(ready.state, "ready");
     assert.equal(ready.next?.startSeconds, 0);
     r.controller.playNext();
-    await r.h.clock.advance(0);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
     r.avplay.finishPrepare();
     await r.h.clock.advance(0);
     const starts = bodies(r.h, "/start");
@@ -249,10 +294,10 @@ test("a Shuffle pick's next part plays from its beginning after the finished par
     r.controller.destroy();
 });
 
-test("the last part of a Shuffle pick advances the Shuffle from the item once, after the earlier part", async () => {
+test("the last part of a Shuffle pick refreshes the Shuffle once, after the earlier part", async () => {
     const r = await rig();
     scriptParts(r);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
@@ -261,22 +306,21 @@ test("the last part of a Shuffle pick advances the Shuffle from the item once, a
     scriptParts(r);
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    const advance = r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance");
-    assert.equal(advance.length, 1);
-    assert.deepEqual(advance[0]?.body, { from_content_id: MOVIE.contentId });
+    const reads = r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1");
+    assert.equal(reads.length, 1);
     assert.equal(bodies(r.h, "/start").length, 2, "no third part");
     assert.equal(last(r.views).phase, "completion");
     r.controller.destroy();
 });
 
-test("a Shuffle pick with no later part advances the Shuffle", async () => {
+test("a Shuffle pick with no later part refreshes the Shuffle", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.equal(bodies(r.h, "/start").length, 1);
     r.controller.destroy();
 });
@@ -284,16 +328,16 @@ test("a Shuffle pick with no later part advances the Shuffle", async () => {
 test("a Shuffle working out its next pick reads Up Next at Random over Picking at random, from the controller", async () => {
     const r = await rig();
     scriptParts(r, [PART_VERSIONS[0] as Record<string, unknown>]);
-    const advance = r.h.fake.hold("/shuffles/sh1/advance");
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    const refresh = r.h.fake.hold("/shuffles/sh1");
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     for (let step = 0; step < 4; step++) await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1, "the next pick is being read");
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1, "the next pick is being read");
     assert.equal(completion(r).state, "resolving");
     assert.equal(completion(r).status, "upNext.headingShuffle", "Apple's statusLabel for a Shuffle, not Playing Next");
     assert.equal(completion(r).shuffle, true, "so the title reads Picking at random");
-    advance.release();
+    refresh.release();
     r.controller.destroy();
 });
 
@@ -335,11 +379,11 @@ test("the screens between a Shuffle pick's parts never show the completion scree
 test("a missing item at the between-parts read moves the Shuffle on instead of offering a retry", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1", problem(404, "not_found", "Unavailable"));
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: MOVIE.contentId } } });
     await playMovie(r, { ...MOVIE, shuffleId: "sh1", startSeconds: 0 });
     r.avplay.listener?.onstreamcompleted();
     await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path === "/shuffles/sh1/advance").length, 1);
+    assert.equal(r.h.fake.requests.filter(request => request.method === "GET" && request.path === "/shuffles/sh1").length, 1);
     assert.notEqual(completion(r).state, "failed");
     r.controller.destroy();
 });
@@ -2212,9 +2256,11 @@ test("turning Auto-play off and on over a Shuffle pick restarts its countdown an
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } });
     r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
-    r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
+    const secondDetail = { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } };
+    r.h.fake.script("/watch/movie-2", secondDetail, secondDetail);
     r.server.items.set("movie-2", ["43"]);
     await playMovie(r, { ...MOVIE, shuffleId: "sh1" });
     r.avplay.listener?.onstreamcompleted();
@@ -2237,8 +2283,7 @@ test("stopShuffling cancels the countdown, sends one DELETE /shuffles/{id}, and 
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
-    r.h.fake.script("/shuffles/sh1", { status: 204 });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 204 });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
     r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
     r.server.items.set("movie-2", ["43"]);
@@ -2260,8 +2305,7 @@ test("stopShuffling still closes the player with no unhandled rejection when DEL
     const r = await autoplayRig(true);
     r.settings.overrides.delete("playback.auto_play_next");
     r.settings.profile().set("playback.auto_play_next", true);
-    r.h.fake.script("/shuffles/sh1/advance", { status: 200, body: { id: "sh1", current: { content_id: "movie-2" }, next: { content_id: "movie-2" } } });
-    r.h.fake.script("/shuffles/sh1", { status: 500, body: { type: "about:blank", title: "Server error", status: 500 } });
+    r.h.fake.script("/shuffles/sh1", { status: 200, body: { id: "sh1", current: { content_id: MOVIE.contentId }, next: { content_id: "movie-2" } } }, { status: 500, body: { type: "about:blank", title: "Server error", status: 500 } });
     scriptParts(r, [{ file_id: "42", duration_seconds: 3000 }]);
     r.h.fake.script("/watch/movie-2", { status: 200, body: { content_id: "movie-2", type: "movie", title: "Second", versions: [{ file_id: "43", duration_seconds: 3000 }], user_data: { played: false } } });
     r.server.items.set("movie-2", ["43"]);

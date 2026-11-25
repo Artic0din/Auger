@@ -73,6 +73,7 @@ const controls: PlayerControls = {
     showUpNext: () => commands.push("showUpNext"),
     cancelAutoplay: () => commands.push("cancelAutoplay"),
     stopShuffling: () => commands.push("stopShuffling"),
+    pickAnother: () => commands.push("pickAnother"),
     keepWatching: () => commands.push("keepWatching"),
     saveSeriesSubtitle: () => commands.push("saveSeriesSubtitle"),
     startSubtitleAI: language => commands.push(`startSubtitleAI ${language}`),

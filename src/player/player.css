@@ -27,6 +27,17 @@
 .player-error.player-next-up .player-title { font-size: calc(42px * var(--silo-sf-cap-scale)); font-weight: 700; }
 .player-error.player-next-up .player-title.player-next-working { font-weight: 600; }
 .player-error.player-next-up .player-title.player-next-named { font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; }
+/* PlayerView.loadingContent (PlayerView.swift:1321-1333): 1.35× spoke spinner 14 pt before the 42 pt semibold label (#778). */
+.player-next-heading { display: flex; align-items: center; gap: 14px; }
+.player-next-spinner { display: inline-flex; flex: none; width: 42px; height: 42px; color: #ffffff; animation: player-spin 1s linear infinite; }
+.player-next-spinner[hidden] { display: none; }
+.player-next-spinner svg { display: block; width: 100%; height: 100%; }
+/* PlayerView.shuffleBadge (PlayerView.swift:1273-1281): captionSize semibold, white 0.78, 8×18 capsule at 10% white (#778). */
+.player-shuffle-badge { display: inline-flex; align-items: center; align-self: flex-start; margin: 0 0 12px; padding: 8px 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.78); font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 600; white-space: nowrap; }
+.player-shuffle-badge[hidden] { display: none; }
+/* PlayerView.shuffleActionErrorText (PlayerView.swift:1284-1290): captionSize medium, white 0.7 (#778). */
+.player-shuffle-error { margin: 12px 0 0; color: rgba(255, 255, 255, 0.7); font-size: calc(19px * var(--silo-sf-cap-scale)); font-weight: 500; }
+.player-shuffle-error[hidden] { display: none; }
 .player-next-eyebrow { font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; text-transform: uppercase; opacity: .52; }
 /* :1385-1390: bodySize at 0.58, three lines at most, 620 wide. */
 .player-next-synopsis[hidden] { display: none; }
@@ -35,6 +46,7 @@
 .player-next-up .player-error-text { max-width: 560px; color: #ffffff; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; opacity: .62; }
 /* actionRow (:1405-1470): Play Now at 30 semibold, Keep Watching and Close at 26 semibold. */
 .player-next-up .player-button[data-focus="play-next"] { font-size: calc(30px * var(--silo-sf-cap-scale)); }
+.player-next-up .player-button[data-focus="pick-another"],
 .player-next-up .player-button[data-focus="keep-watching"],
 .player-next-up .player-button[data-focus="back"] { font-size: calc(26px * var(--silo-sf-cap-scale)); }
 /* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
@@ -1591,7 +1603,8 @@
     .player-menu-column-rows {
         scroll-behavior: auto;
     }
-    .player-spinner-mark { animation: none; }
+    .player-spinner-mark,
+    .player-next-spinner { animation: none; }
 }
 
 /*

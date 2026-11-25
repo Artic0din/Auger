@@ -18,14 +18,44 @@ export async function nextShuffle(read: Read, shuffleId: string, finishedContent
     return shufflePick(read, shuffle, quality);
 }
 
+/** Re-checks a shuffle via GET /shuffles/{id} and resolves its announced `next` pick (Apple refreshShufflePick). */
+export async function refreshShuffle(read: Read, shuffleId: string, quality?: string): Promise<{ readonly next: PlayRequest | undefined; readonly scopeLabel?: string | undefined }> {
+    const shuffle = await read(operations.getShuffle(shuffleId));
+    if (shuffle.id !== shuffleId) throw new ApiError({ kind: "invalid_response", path: "shuffle.id" });
+    if (shuffle.next.id === shuffle.current.id) return { next: undefined, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
+    const next = await shufflePickItem(read, shuffle, shuffle.next.id, quality);
+    return { next, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
+}
+
+/** Pick Another: replaces `nextContentId` via POST /shuffles/{id}/skip and resolves the replacement `next` pick. */
+export async function skipShuffle(read: Read, shuffleId: string, nextContentId: string, quality?: string): Promise<{ readonly next: PlayRequest | undefined; readonly scopeLabel?: string | undefined }> {
+    const shuffle = await read(operations.skipShuffleItem(shuffleId, nextContentId));
+    if (shuffle.id !== shuffleId) throw new ApiError({ kind: "invalid_response", path: "shuffle.id" });
+    if (shuffle.next.id === shuffle.current.id) return { next: undefined, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
+    const next = await shufflePickItem(read, shuffle, shuffle.next.id, quality);
+    return { next, ...(shuffle.scopeLabel === undefined ? {} : { scopeLabel: shuffle.scopeLabel }) };
+}
+
 // Apple starts every pick from its beginning, not from saved progress (silo-apple 27cf4a2 PlayerViewModel.loadShufflePick).
 export async function shufflePick(read: Read, shuffle: Shuffle, quality?: string): Promise<PlayRequest | undefined> {
-    const detail = await read(operations.watchDetail(shuffle.current.id));
-    if (detail.id !== shuffle.current.id || (detail.type !== "movie" && detail.type !== "episode")) throw new ApiError({ kind: "invalid_response", path: "shuffle.current" });
+    return shufflePickItem(read, shuffle, shuffle.current.id, quality);
+}
+
+async function shufflePickItem(read: Read, shuffle: Shuffle, contentId: string, quality?: string): Promise<PlayRequest | undefined> {
+    const detail = await read(operations.watchDetail(contentId));
+    if (detail.id !== contentId || (detail.type !== "movie" && detail.type !== "episode")) throw new ApiError({ kind: "invalid_response", path: "shuffle.current" });
     const preferred = startVersion(detail.versions, detail.watch?.lastFileId, quality);
     const version = firstPart(preferred, detail.versions) ?? preferred;
     if (version === undefined) return undefined;
-    return { contentId: detail.id, fileId: version.fileId, title: detail.title, startSeconds: 0, shuffleId: shuffle.id, ...(detail.type === "episode" ? { episode: true as const, seasonNumber: detail.seasonNumber, episodeNumber: detail.episodeNumber } : {}) };
+    return {
+        contentId: detail.id,
+        fileId: version.fileId,
+        title: detail.title,
+        startSeconds: 0,
+        shuffleId: shuffle.id,
+        ...(shuffle.scopeLabel === undefined ? {} : { shuffleScopeLabel: shuffle.scopeLabel }),
+        ...(detail.type === "episode" ? { episode: true as const, seasonNumber: detail.seasonNumber, episodeNumber: detail.episodeNumber } : {}),
+    };
 }
 
 /** The part after the playing file in its group, played before the shuffle advances (Apple nextShufflePart + playShufflePart). */
