@@ -1812,7 +1812,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
 
     /** What Select would act on beyond the focused control: a prompt or mode that appears mid-press replaces the press's action. */
-    const selectContext = (): string => [skipKind, skipTarget, view.phase, view.phase === "playing" || view.phase === "paused" ? view.upNext !== undefined : false, menuOpen, timeline, holdSeeking, seekPreview !== undefined, autoRate, overlay.classList.contains("player-overlay-hidden"), skipUsable(), bufferingButtons().length, bufferingTarget].join("|");
+    const selectContext = (): string => [skipKind, skipTarget, view.phase, view.phase === "playing" || view.phase === "paused" ? view.upNext !== undefined : false, menuOpen, timeline, holdSeeking, seekPreview !== undefined, holdSeeking ? undefined : autoRate, overlay.classList.contains("player-overlay-hidden"), skipUsable(), bufferingButtons().length, bufferingTarget].join("|");
     const onKey = (event: KeyboardEvent, released = false): void => {
         const key = physicalKey(event);
         // Any other key, remote or not, ends a held Select.

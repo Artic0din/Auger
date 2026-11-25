@@ -49,8 +49,11 @@ export function createSeekTileRenderer(
     frameWidth: number,
     frameHeight: number,
     onLoaded: (loaded: boolean) => void,
+    options?: { readonly coalesce?: boolean },
 ): { request(seconds: number): void; clear(): void } {
+    const coalesce = options?.coalesce === true;
     let active: AbortController | undefined;
+    let pendingSeconds: number | undefined;
     let sheet: HTMLImageElement | undefined;
 
     const loadSheet = (tile: SeekThumbnail, signal: AbortSignal): Promise<void> => {
@@ -83,26 +86,57 @@ export function createSeekTileRenderer(
         });
     };
 
+    const start = (seconds: number): void => {
+        const target = new AbortController();
+        active = target;
+        const drain = (): void => {
+            if (active !== target) return;
+            active = undefined;
+            if (pendingSeconds !== undefined) {
+                const next = pendingSeconds;
+                pendingSeconds = undefined;
+                start(next);
+            }
+        };
+        void controls.seekThumbnail(seconds, target.signal, loadSheet).then((tile) => {
+            if (target.signal.aborted || active !== target) return;
+            if (tile === undefined || sheet === undefined) {
+                crop.textContent = "";
+                onLoaded(false);
+                drain();
+                return;
+            }
+            const scale = frameWidth / tile.width;
+            crop.style.width = `${frameWidth}px`;
+            crop.style.height = `${frameHeight}px`;
+            sheet.style.width = `${tile.sheetWidth * scale}px`;
+            sheet.style.height = `${tile.sheetHeight * scale}px`;
+            sheet.style.left = `${-tile.x * scale}px`;
+            sheet.style.top = `${-tile.y * scale}px`;
+            crop.textContent = "";
+            crop.appendChild(sheet);
+            onLoaded(true);
+            drain();
+        }, () => {
+            if (active === target) {
+                onLoaded(false);
+                drain();
+            }
+        });
+    };
+
     return {
         request(seconds) {
+            if (coalesce && active !== undefined) {
+                pendingSeconds = seconds;
+                return;
+            }
+            pendingSeconds = undefined;
             active?.abort();
-            const target = new AbortController();
-            active = target;
-            void controls.seekThumbnail(seconds, target.signal, loadSheet).then((tile) => {
-                if (target.signal.aborted || active !== target || tile === undefined || sheet === undefined) return;
-                const scale = frameWidth / tile.width;
-                crop.style.width = `${frameWidth}px`;
-                crop.style.height = `${frameHeight}px`;
-                sheet.style.width = `${tile.sheetWidth * scale}px`;
-                sheet.style.height = `${tile.sheetHeight * scale}px`;
-                sheet.style.left = `${-tile.x * scale}px`;
-                sheet.style.top = `${-tile.y * scale}px`;
-                crop.textContent = "";
-                crop.appendChild(sheet);
-                onLoaded(true);
-            }, () => { if (active === target) onLoaded(false); });
+            start(seconds);
         },
         clear() {
+            pendingSeconds = undefined;
             active?.abort();
             active = undefined;
             sheet?.removeAttribute("src");

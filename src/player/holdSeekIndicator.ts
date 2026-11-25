@@ -58,7 +58,7 @@ export function mountHoldSeekIndicator(parent: HTMLElement, controls: PlayerCont
 
     const renderer = createSeekTileRenderer(preview, controls, clock, PREVIEW_WIDTH, PREVIEW_HEIGHT, (loaded) => {
         preview.hidden = !loaded;
-    });
+    }, { coalesce: true });
 
     const refreshLabels = (): void => {
         speedHint.label.textContent = translate("player.settings.speed");

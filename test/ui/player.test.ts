@@ -962,25 +962,37 @@ test("holding Left or Right with controls hidden shows HoldSeekIndicator, auto-r
         assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×");
         await page.clock.fastForward(1200);
         assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "8×");
-
-        // Manual tap cancels ramp and steers rate along seekRates; Back cancels without seeking.
-        await remote(page, LEFT);
-        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×");
-        await page.clock.fastForward(2400);
-        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "4×", "manual steer cancelled auto-ramp");
+        // When the thumbnail provider subsequently returns no tile, the stale preview frame hides.
+        await page.evaluate(() => { window.player.setThumbnail(undefined); });
+        await page.clock.fastForward(500);
+        await page.waitForFunction(() => document.querySelector<HTMLElement>(".player-hold-seek-preview")?.hidden === true);
         await remote(page, BACK);
         assert.equal(await page.locator(".player-hold-seek").isVisible(), false);
         assert.equal(await page.locator(".player-overlay-hidden").count(), 1);
         assert.deepEqual(await commands(page), []);
 
-        // Hold Left -> auto-ramps backward (-2×) -> Select commits seek and briefly reveals controls.
+        // Manual tap before a scheduled ramp step cancels the pending auto-ramp so rate stays fixed past the deadline.
+        await holdKey(page, RIGHT);
+        await page.clock.fastForward(300);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×");
+        await page.clock.fastForward(1200);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "2×");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×");
+        await page.clock.fastForward(2400);
+        assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×", "manual steer cancelled the pending 4× auto-ramp");
+        await remote(page, BACK);
+
+        // Hold Left -> press Select right before an auto-ramp step -> release after ramp -> Select still commits the seek.
         await holdKey(page, LEFT);
         await page.clock.fastForward(300);
         assert.equal(await page.locator(".player-hold-seek").getAttribute("data-direction"), "backward");
         assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "1×");
-        await page.clock.fastForward(1200);
+        await page.clock.fastForward(1100);
+        await page.evaluate(() => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { keyCode: 13, bubbles: true, cancelable: true })));
+        await page.clock.fastForward(200);
         assert.equal(await page.locator(".player-hold-seek-rate").textContent(), "2×");
-        await remote(page, ENTER);
+        await page.evaluate(() => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", { keyCode: 13, bubbles: true, cancelable: true })));
         assert.equal(await page.locator(".player-hold-seek").isVisible(), false);
         assert.equal(await page.locator(".player-overlay-hidden").count(), 0);
         assert.equal((await commands(page)).length, 1);
