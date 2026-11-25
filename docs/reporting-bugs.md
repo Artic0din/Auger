@@ -124,7 +124,9 @@ Mark each redaction clearly (for example, `<redacted-host>`).
 What happened:
 Steps to reproduce:
 Expected behavior:
-TV model & firmware/Tizen version:
+TV model:
+Firmware version:
+Tizen version (if known):
 Auger version & install method (Apps2Samsung / .wgt / source):
 Silo server version:
 Playback Stats (if playback issue):

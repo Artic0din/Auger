@@ -191,6 +191,8 @@ test("diagnostics hash URL round-trips, stays under the QR length budget, and fo
         tvModel: "UE50CU7095",
         firmware: "1650",
         tizenVersion: "Tizen 8.0",
+        browser: "Chromium 108",
+        screen: "1920x1080",
         hdrSupported: true,
         serverVersion: "412 · 1a2b3c4d",
     }, clock);
@@ -238,11 +240,15 @@ test("diagnostics hash URL round-trips, stays under the QR length budget, and fo
 
     const github = new URL(buildGitHubBugReportUrl(decoded));
     assert.equal(github.searchParams.get("template"), "bug-report.yml");
-    assert.equal(github.searchParams.get("device-details"), "UE50CU7095, Firmware 1650, Tizen 8.0");
+    assert.equal(github.searchParams.get("device-details"), "UE50CU7095");
+    assert.equal(github.searchParams.get("firmware-version"), "1650");
+    assert.equal(github.searchParams.get("tizen-version"), "Tizen 8.0");
     assert.equal(github.searchParams.get("app-version"), "0.2.1");
     assert.equal(github.searchParams.get("server-version"), "412 · 1a2b3c4d");
     assert.ok(github.searchParams.get("playback-details")?.includes("Direct play · MKV"));
     assert.ok(github.searchParams.get("technical-notes")?.includes("HDR TV support: Yes"));
+    assert.ok(github.searchParams.get("technical-notes")?.includes("Web engine: Chromium 108"));
+    assert.ok(github.searchParams.get("technical-notes")?.includes("Screen: 1920x1080"));
 
     assert.equal(decodeDiagnosticsReportHash(""), undefined);
     assert.equal(decodeDiagnosticsReportHash("#d=not!valid"), undefined);
