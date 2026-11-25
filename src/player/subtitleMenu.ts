@@ -5,7 +5,9 @@ import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
 import type { SyncTimingView } from "./subtitleSync.ts";
 import { chevronForwardIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
-import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, languageLabel, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import { renderSubtitleDialog } from "./subtitleDialog.ts";
+import type { SubtitleSearchView } from "./subtitleSearch.ts";
 
 /** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
@@ -118,7 +120,78 @@ export function appearanceDetail(appearance: SubtitleAppearance, field: string):
     }
 }
 
-/** The Appearance and Search panes, which replace both columns. */
+function searchLanguageName(search: SubtitleSearchView): string {
+    if (search.language === undefined) return translate("player.tracks.subtitles");
+    return [...search.suggested, ...search.other].find(item => item.code === search.language)?.label ?? languageLabel(search.language);
+}
+
+/**
+ * `SubtitleSearchMenu`'s tvOS dialog (`TVSubtitleDialog.swift`, `SubtitleSearchMenu.swift:315-395`, silo-apple 3289bedb):
+ * shared 1280x800 modal dialog over a dimmed full-player backdrop with title, phase subtitle, hairline dividers, body, and
+ * non-focusable back/status footer.
+ */
+export function renderSearchDialog(host: HTMLElement, tracks: TrackView, onBackdropDismiss: () => void): void {
+    const search = tracks.subtitleTools?.search;
+    if (search === undefined || search.phase === "closed") return;
+    const subtitle = search.phase === "languages"
+        ? translate("subtitleSearch.explainer")
+        : search.phase === "searching"
+            ? search.language !== undefined ? translate("subtitleSearch.searchingIn", { language: searchLanguageName(search) }) : translate("subtitleSearch.searchingInYourLanguage")
+            : search.phase === "failed"
+                ? translate("subtitleSearch.failedTitle")
+                : translate("subtitleSearch.resultCount", { language: searchLanguageName(search), count: search.results.length });
+    const backHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.waitForDownload")
+        : search.phase === "languages" ? translate("player.tracks.backToSubtitles") : translate("subtitleSearch.backToLanguages");
+    const statusHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.adding")
+        : search.phase === "results" && search.results.length > 0 ? translate("subtitleSearch.selectHint") : "";
+
+    renderSubtitleDialog(host, {
+        title: translate("subtitleSearch.title"),
+        subtitle,
+        backHint,
+        statusHint,
+        className: "player-search-menu",
+        onBackdropDismiss: () => { if (search.downloadingKey === undefined) onBackdropDismiss(); },
+        body: (body) => {
+            if (search.phase === "searching") {
+                const center = el("div", "player-subtitle-dialog-center");
+                center.append(el("p", "player-menu-note", search.status));
+                const actions = el("div", "player-subtitle-dialog-actions");
+                actions.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
+                center.append(actions);
+                body.append(center);
+            } else if (search.phase === "failed") {
+                const center = el("div", "player-subtitle-dialog-center");
+                if (search.message !== "") center.append(el("p", "player-menu-note", search.message));
+                const actions = el("div", "player-subtitle-dialog-actions");
+                if (search.canRetry) actions.append(choice("subtitle-search-retry", translate("subtitleSearch.tryAgain"), false));
+                actions.append(choice("subtitle-search-back", translate("common.back"), false));
+                center.append(actions);
+                body.append(center);
+            } else if (search.phase === "languages") {
+                if (!search.offered && search.unavailableReason !== "") body.append(el("p", "player-menu-note", search.unavailableReason));
+                for (const item of [...search.suggested, ...search.other]) {
+                    body.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint === undefined ? undefined : translate(item.hint)));
+                }
+            } else {
+                for (const warning of search.warnings) body.append(el("p", "player-menu-note", warning));
+                if (search.message !== "") body.append(el("p", "player-menu-note", search.message));
+                if (search.results.length === 0) {
+                    body.append(choice("subtitle-search-back", translate("subtitleSearch.chooseAnother"), false));
+                } else {
+                    for (const result of search.results) {
+                        const title = result.releaseName !== "" ? result.releaseName : providerLabel(result.provider);
+                        body.append(choice(`subtitle-result:${result.key}`, title, result.key === search.downloadingKey, [providerLabel(result.provider), result.format.toUpperCase(), resultDetail(result)].filter(part => part !== "").join(" · ")));
+                    }
+                }
+            }
+        },
+    });
+}
+
+/** The Appearance pane, which replaces both columns. Search Subtitles renders in the shared modal via `renderSearchDialog`. */
 export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: SubtitlePane): void {
     const tools = tracks.subtitleTools;
     if (tools === undefined) return;
@@ -131,29 +204,6 @@ export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: Su
         // Apple's row names (`player.subtitles.style.*`) where its English is Tizen's; the rest keep their wording.
         const titles: Record<string, string> = { backgroundStyle: translate("player.subtitles.style.backgroundStyle"), fontSize: translate("player.subtitles.style.size"), position: translate("player.subtitles.style.position"), fontFamily: translate("player.subtitles.style.font"), fontColor: "Text color", textOpacity: "Text opacity", textOutline: translate("player.hud.subtitleOutline"), textOutlineColor: "Outline color", backgroundColor: "Background color", backgroundOpacity: "Background opacity" };
         for (const field of rows) list.append(choice(`subtitle-appearance:${field}`, titles[field] ?? field, false, appearanceDetail(display.appearance, field)));
-        return;
-    }
-    const search = tools.search;
-    if (search.phase !== "closed") {
-        list.append(el("h2", "player-menu-heading", "SEARCH"));
-        list.append(choice("subtitle-search-back", search.phase === "languages" ? translate("common.back") : translate("subtitleSearch.chooseAnother"), false));
-        if (search.phase === "searching") {
-            list.append(el("p", "player-menu-note", search.status));
-            list.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
-        } else if (search.phase === "failed") {
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            if (search.canRetry) list.append(choice("subtitle-search-retry", "Try Again", false));
-        } else if (search.phase === "languages") {
-            if (!search.offered && search.unavailableReason !== "") list.append(el("p", "player-menu-note", search.unavailableReason));
-            for (const item of [...search.suggested, ...search.other]) list.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint === undefined ? undefined : translate(item.hint)));
-        } else {
-            for (const warning of search.warnings) list.append(el("p", "player-menu-note", warning));
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            for (const result of search.results) {
-                const title = result.releaseName !== "" ? result.releaseName : providerLabel(result.provider);
-                list.append(choice(`subtitle-result:${result.key}`, title, result.key === search.downloadingKey, [providerLabel(result.provider), result.format.toUpperCase(), resultDetail(result)].filter(part => part !== "").join(" · ")));
-            }
-        }
         return;
     }
 }

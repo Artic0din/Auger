@@ -77,6 +77,16 @@ export function chevronForwardIcon(): string {
     return `<svg viewBox="0 0 11 15" focusable="false" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M2.7 2.2 8.3 7.5 2.7 12.8"/></svg>`;
 }
 
+/** `chevron.backward`: fallback navigation rows inside subtitle dialogs. */
+export function chevronBackwardIcon(): string {
+    return `<svg viewBox="0 0 11 15" focusable="false" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.3 2.2 2.7 7.5l5.6 5.3"/></svg>`;
+}
+
+/** `chevron.backward.circle`: non-focusable back hint in TVSubtitleDialog's footer. */
+export function chevronBackwardCircleIcon(): string {
+    return svg(`<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M13.5 8 9.5 12l4 4"/>`);
+}
+
 /** `magnifyingglass`: the Search Subtitles row's symbol. */
 export function magnifyingGlassIcon(): string {
     return svg(`<g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.2" cy="10.2" r="6.6"/><path d="M15.2 15.2 21 21"/></g>`);

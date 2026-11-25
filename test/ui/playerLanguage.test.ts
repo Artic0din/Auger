@@ -234,7 +234,8 @@ for (const language of ["de", "ar"]) {
             await menu({});
             assert.equal(await page.locator(".player-ai-title").textContent(), text("player.aiTranslate.aiSubtitles", language));
             assert.equal(await page.locator(".player-ai-subtitle").textContent(), text("player.aiTranslate.explainerShort", language));
-            assert.equal(await page.locator('[data-focus="ai-language-back"]').textContent(), text("player.tracks.backToSubtitles", language));
+            assert.equal(await page.locator('[data-focus="ai-language-back"]').count(), 0);
+            assert.equal(await page.locator(".player-subtitle-dialog-back-text").textContent(), text("player.tracks.backToSubtitles", language));
             assert.equal(await page.locator(".player-ai-quota-note").textContent(), text("player.aiTranslate.quotaExhaustedNote", language));
             assert.deepEqual(await texts(page, ".player-ai-menu .player-menu-heading"), [upper(text("player.aiTranslate.suggestedHeader", language), language), upper(text("subtitleSearch.allLanguagesHeader", language), language)]);
             assert.deepEqual(await texts(page, ".player-ai-menu .player-choice-detail"), [text("player.aiTranslate.detectedFromAudio", language), text("subtitleSearch.preferred", language)]);

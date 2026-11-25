@@ -1727,10 +1727,14 @@ test("AI Subtitles… opens a language menu with Apple's headings and hints, and
         assert.equal(await page.locator('[data-focus="ai-menu"] .player-setting-label').textContent(), "AI Subtitles…");
         await remote(page, ENTER);
         assert.equal(await focused(page), "ai-language:fr", "focus starts on the first language you can use");
+        const dialogBox = await page.locator(".player-subtitle-dialog.player-ai-menu").boundingBox();
+        assert.ok(dialogBox !== null && Math.abs(dialogBox.width - 1280) <= 1 && Math.abs(dialogBox.height - 800) <= 1, JSON.stringify(dialogBox));
+        assert.equal(await page.locator(".player-hud").evaluate(node => node.classList.contains("player-hud-covered") && (node as HTMLElement).inert), true, "HUD stays mounted but hidden/inert behind the dialog");
         assert.equal(await text(page, ".player-ai-title"), "AI Subtitles");
         assert.equal(await text(page, ".player-ai-subtitle"), "Choose a language. Auger translates existing subtitles or transcribes the audio.");
-        assert.equal(await page.locator('[data-focus="ai-language-back"] .player-choice-label').textContent(), "Back to Subtitles");
-        const headings = await page.evaluate(() => Array.from(document.querySelectorAll(".player-menu-pane-active .player-ai-menu .player-menu-heading")).map(node => node.textContent));
+        assert.equal(await page.locator('[data-focus="ai-language-back"]').count(), 0, "no focusable Back row inside TVSubtitleDialog");
+        assert.equal(await text(page, ".player-subtitle-dialog-back-text"), "Back to Subtitles");
+        const headings = await page.evaluate(() => Array.from(document.querySelectorAll(".player-ai-menu .player-menu-heading")).map(node => node.textContent));
         assert.deepEqual(headings, ["SUGGESTED LANGUAGES", "ALL LANGUAGES"]);
         const rows = await page.evaluate(() => Array.from(document.querySelectorAll(".player-ai-menu [data-focus^='ai-language:']")).map(row => [row.getAttribute("data-focus"), row.querySelector(".player-setting-label")?.textContent, row.querySelector(".player-choice-detail")?.textContent ?? null, row.getAttribute("aria-disabled"), row.querySelectorAll(".player-setting-chevron").length]));
         assert.deepEqual(rows, [["ai-language:fr", "French", "Preferred", "false", 1], ["ai-language:de", "German", null, "false", 1], ["ai-language:es", "Spanish", null, "true", 1]]);
@@ -4227,17 +4231,72 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await remote(page, ENTER);
         assert.equal(await focused(page), "ai-language:fr");
         await remote(page, UP);
-        await remote(page, UP);
-        await remote(page, LEFT);
-        await remote(page, LEFT);
-        await remote(page, DOWN);
-        await remote(page, RIGHT);
-        await remote(page, ENTER);
-        assert.equal(await text(page, ".player-menu-picker-title"), "Playback Speed");
+        assert.equal(await focused(page), "ai-language:fr", "Up stays inside the modal AI dialog instead of escaping to the hidden HUD tab rail");
         await remote(page, BACK);
-        assert.equal(await focused(page), "video-speed", "Back closes the open picker before the background AI language list");
-        assert.equal(await page.locator('.player-menu-subtitles [data-focus="ai-language-back"]').count(), 1);
+        assert.equal(await focused(page), "ai-menu", "Back dismisses the modal AI dialog back to AI Subtitles…");
+        assert.equal(await page.locator(".player-hud.player-hud-covered").count(), 0);
         assert.deepEqual(await commands(page), ["subtitleAIAction open"], "only the menu's opening: Back and the pickers send nothing");
+    } finally { await page.close(); }
+});
+
+test("Search Subtitles opens in the shared 1280x800 modal dialog with phase headers, footer hints, and download Back guard (#780)", async () => {
+    const { page } = await open();
+    type SearchState = NonNullable<TrackView["subtitleTools"]>["search"];
+    const searchBase: SearchState = {
+        offered: true, unavailableReason: "", phase: "languages",
+        suggested: [{ code: "en", label: "English", hint: "subtitleSearch.preferred" }],
+        other: [{ code: "fr", label: "French" }],
+        language: "en", status: "", message: "", warnings: [], canRetry: false,
+        results: [], downloadingKey: undefined,
+    };
+    const withSearch = (patch: Partial<SearchState>): TrackView => ({
+        ...TRACKS,
+        subtitleTools: {
+            search: { ...searchBase, ...patch },
+            display: { delay: true, styling: true, deviceScope: true, textOpacity: true, delayMs: 0, appearance: DEFAULT_APPEARANCE, deviceOverride: false, busy: false, message: "" },
+            overlay: true,
+        },
+    });
+    try {
+        await show(page, playing(withSearch({ phase: "closed" })));
+        await openPanel(page);
+        await nextTab(page, 4);
+        await show(page, playing(withSearch({ phase: "languages" })));
+        const box = await page.locator(".player-subtitle-dialog.player-search-menu").boundingBox();
+        assert.ok(box !== null && Math.abs(box.width - 1280) <= 1 && Math.abs(box.height - 800) <= 1, JSON.stringify(box));
+        assert.equal(await page.locator(".player-hud").evaluate(node => node.classList.contains("player-hud-covered") && (node as HTMLElement).inert), true);
+        assert.equal(await text(page, ".player-subtitle-dialog-title"), "Search Subtitles");
+        assert.equal(await text(page, ".player-subtitle-dialog-subtitle"), "Choose a language to find subtitles for this video.");
+        assert.equal(await text(page, ".player-subtitle-dialog-back-text"), "Back to Subtitles");
+        assert.equal(await page.locator('[data-focus="subtitle-search-back"]').count(), 0, "no focusable Back row in language list");
+        assert.equal(await focused(page), "subtitle-language:en");
+
+        // Results state: result count subtitle, select hint in footer, no focusable Back row when results exist.
+        const result = { key: "os:1", id: "1", provider: "opensubtitles", releaseName: "Movie.2026.1080p", format: "srt", language: "en", score: 85, downloads: 1200, hearingImpaired: false };
+        await show(page, playing(withSearch({ phase: "results", results: [result] })));
+        assert.equal(await text(page, ".player-subtitle-dialog-subtitle"), "English · 1 result");
+        assert.equal(await text(page, ".player-subtitle-dialog-back-text"), "Back to languages");
+        assert.equal(await text(page, ".player-subtitle-dialog-status"), "Select a subtitle to download and use it");
+        assert.equal(await page.locator('[data-focus="subtitle-search-back"]').count(), 0);
+        assert.equal(await focused(page), "subtitle-result:os:1");
+
+        // While downloading: footer switches to wait-for-download + Adding subtitle…, and Back is inert.
+        await show(page, playing(withSearch({ phase: "results", results: [result], downloadingKey: "os:1" })));
+        assert.equal(await text(page, ".player-subtitle-dialog-back-text"), "Please wait for the download to finish");
+        assert.equal(await text(page, ".player-subtitle-dialog-status"), "Adding subtitle…");
+        await remote(page, BACK);
+        assert.deepEqual(await commands(page), [], "Back is inert while a download is in flight");
+
+        // Empty results state: offers Choose another language fallback row.
+        await show(page, playing(withSearch({ phase: "results", results: [], downloadingKey: undefined, message: "No subtitles found for English." })));
+        assert.equal(await focused(page), "subtitle-search-back");
+        assert.equal(await text(page, '[data-focus="subtitle-search-back"]'), "Choose another language");
+
+        // Closing restores HUD visibility and focus to subtitle-search.
+        await show(page, playing(withSearch({ phase: "closed", results: [] })));
+        assert.equal(await page.locator(".player-subtitle-dialog-host").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await page.locator(".player-hud.player-hud-covered").count(), 0);
+        assert.equal(await focused(page), "subtitle-search");
     } finally { await page.close(); }
 });
 

@@ -29,8 +29,8 @@ import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
-import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
-import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
+import { aiRows, firstServiceableLanguage, renderAIDialog } from "./subtitleAIMenu.ts";
+import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, renderSearchDialog, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
 import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
@@ -201,14 +201,9 @@ function pickerAction(field: string, id: string): SubtitleToolAction | undefined
     return { kind: "appearance", member: field, value };
 }
 
-function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, pane: SubtitlePane = { kind: "tracks" }): void {
+function fillSubtitles(list: HTMLElement, tracks: TrackView, pane: SubtitlePane = { kind: "tracks" }): void {
     const ai = tracks.ai;
-    if (languages && ai !== undefined && tracks.aiMenu !== undefined) {
-        fillAIMenu(list, tracks);
-        return;
-    }
-    const searching = tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed";
-    if (pane.kind !== "tracks" || searching) {
+    if (pane.kind !== "tracks") {
         fillSubtitleTools(list, tracks, pane);
         return;
     }
@@ -666,7 +661,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     secondaryRow.append(keep, back);
     actions.append(primaryRow, secondaryRow);
     failure.append(nextBackdrop, shuffleBadge, eyebrow, nextSeries, nextHeading, nextMeta, mark, failureText, synopsis, actions, shuffleError, autoPlayFooter, deck);
-    section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud);
+    const subtitleDialogHost = el("div", "player-subtitle-dialog-host");
+    subtitleDialogHost.hidden = true;
+    section.append(surface, backdrop, spinner, overlay, status, skip, skipCaption, alerts, failure, hud, subtitleDialogHost);
     /** Text drawn once: `draw` sets the rest on every view, and a language that lands later runs this again. */
     const labelStatics = (): void => {
         spinner.setAttribute("aria-label", translate("common.loading"));
@@ -726,7 +723,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const columnScroll = new Map<string, number>();
 
     const buttons = (index: number): HTMLElement[] => Array.from(lists[index]?.querySelectorAll<HTMLElement>("[data-focus]") ?? []);
-    const focusedId = (): string | null => (menu.contains(document.activeElement) ? (document.activeElement?.getAttribute("data-focus") ?? null) : null);
+    const focusedId = (): string | null => (menu.contains(document.activeElement) || subtitleDialogHost.contains(document.activeElement) ? (document.activeElement?.getAttribute("data-focus") ?? null) : null);
     /** A list's current choice, else its first; undefined when it offers none. */
     const entry = (index: number): HTMLElement | undefined => {
         const all = buttons(index);
@@ -756,7 +753,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         target.focus();
         return true;
     };
-    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen) focusList(index); }));
+    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen && subtitleDialogHost.hidden) focusList(index); }));
 
     const fillInfo = (list: HTMLElement): void => {
         if (view.phase !== "playing" && view.phase !== "paused") return;
@@ -798,6 +795,42 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
 
     let aiPhase: string | undefined;
+    let subtitleDialogKey: string | undefined;
+    let searchDialogWasOpen = false;
+    const dialogButtons = (): HTMLButtonElement[] => Array.from(subtitleDialogHost.querySelectorAll<HTMLButtonElement>("[data-focus]"));
+    const activeSubtitleDialog = (tracks: TrackView): "ai" | "search" | undefined => {
+        if (aiLanguages && tracks.ai !== undefined && tracks.aiMenu !== undefined) return "ai";
+        if (tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed") return "search";
+        return undefined;
+    };
+    const defaultSearchFocus = (tracks: TrackView, choices: readonly HTMLButtonElement[]): HTMLButtonElement | undefined => {
+        const search = tracks.subtitleTools?.search;
+        if (search === undefined) return choices[0];
+        if (search.phase === "searching") return choices.find(b => b.getAttribute("data-focus") === "subtitle-search-cancel") ?? choices[0];
+        if (search.phase === "failed") return choices.find(b => b.getAttribute("data-focus") === "subtitle-search-retry") ?? choices.find(b => b.getAttribute("data-focus") === "subtitle-search-back") ?? choices[0];
+        if (search.phase === "results") return choices.find(b => b.getAttribute("data-focus")?.startsWith("subtitle-result:")) ?? choices.find(b => b.getAttribute("data-focus") === "subtitle-search-back") ?? choices[0];
+        const selected = search.language !== undefined ? choices.find(b => b.getAttribute("data-focus") === `subtitle-language:${search.language}`) : undefined;
+        return selected ?? choices[0];
+    };
+    const applyButtonBlocked = (button: HTMLElement, name: string | undefined, tracks: TrackView, hud: Extract<PlaybackView, { phase: "playing" | "paused" }>["hud"], subtitlePicker: Extract<SubtitlePane, { kind: "picker" }> | undefined): void => {
+        const id = button.getAttribute("data-focus") ?? "";
+        const aiAction = id.startsWith("ai-language:");
+        // Cancel, Dismiss and Discard act on the job itself, so a running job or a track change never locks them.
+        const aiPanel = AI_JOB_ACTIONS.includes(id);
+        const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
+        const downloading = tracks.subtitleTools?.search.downloadingKey;
+        const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
+        const subtitlePick = name === "Subtitles" && id !== SERIES_SUBTITLE && !id.startsWith("ai-");
+        // Picker options act for the row that opened them: a subtitle setting, or Video's quality, speed or aspect.
+        const picker = name === "Video" ? videoPicker : subtitlePicker;
+        const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
+        const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
+        const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
+        // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
+        const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
+        const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
+        button.setAttribute("aria-disabled", String(blocked));
+    };
     const drawMenu = (tracks: TrackView): void => {
         // A job that finishes while its menu is open returns to the tracks, where the result is; the finished job is dismissed so the menu reopens on its languages.
         if (aiLanguages && aiPhase === "busy" && tracks.ai?.phase === "completed") {
@@ -807,6 +840,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         }
         aiPhase = tracks.ai?.phase;
         if (aiLanguages && tracks.aiMenu === undefined) aiLanguages = false;
+        const modalKind = activeSubtitleDialog(tracks);
+        if (searchDialogWasOpen && modalKind !== "search") menuRestoreFocus = menuRestoreFocus ?? "subtitle-search";
+        searchDialogWasOpen = modalKind === "search";
         const identity = view.phase === "playing" || view.phase === "paused" ? [view.title, view.durationSeconds, view.hud, currentChapter(view.hud?.chapters ?? [], view.positionSeconds)] : [];
         const key = JSON.stringify([tracks, aiLanguages, subtitlePane, videoPicker, identity]);
         if (key !== drawn) {
@@ -817,23 +853,23 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             menuRestoreFocus = undefined;
             // A picker floats over the pane that opened it.
             const subtitlePicker = subtitlePane.kind === "picker" ? subtitlePane : undefined;
+            const activeHud = view.phase === "playing" || view.phase === "paused" ? view.hud : undefined;
             for (const [index, list] of lists.entries()) {
                 for (const column of list.querySelectorAll<HTMLElement>(".player-menu-column")) columnScroll.set(`${index} ${column.className}`, column.lastElementChild?.scrollTop ?? 0);
                 list.textContent = "";
                 const name = tabNames[index];
-                const hud = view.phase === "playing" || view.phase === "paused" ? view.hud : undefined;
-                const hidden = name === "Chapters" && (hud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && tracks.aiMenu === undefined && tracks.subtitleTools?.search.offered !== true;
+                const hidden = name === "Chapters" && (activeHud?.chapters.length ?? 0) === 0 || name === "Audio" && tracks.audio.state === "ready" && tracks.audio.choices.length === 0 || name === "Subtitles" && tracks.subtitles.length === 0 && tracks.aiMenu === undefined && tracks.subtitleTools?.search.offered !== true;
                 list.style.display = hidden ? "none" : "";
                 if (hidden) continue;
                 if (name === "Info") fillInfo(list);
                 else if (name === "Audio") fillAudio(list, tracks);
                 else if (name === "Subtitles") {
-                    fillSubtitles(list, tracks, aiLanguages, subtitlePicker === undefined ? subtitlePane : { kind: subtitlePicker.origin.pane === "appearance" ? "appearance" : "tracks" });
+                    fillSubtitles(list, tracks, subtitlePicker === undefined ? subtitlePane : { kind: subtitlePicker.origin.pane === "appearance" ? "appearance" : "tracks" });
                     if (subtitlePicker !== undefined) overlayPicker(list, subtitlePicker);
                 } else if (name === "Video") {
-                    fillVideoPane(list, hud, tracks);
+                    fillVideoPane(list, activeHud, tracks);
                     if (videoPicker !== undefined) overlayPicker(list, videoPicker);
-                } else fillHUDPane(list, name ?? "", hud, view.phase === "playing" || view.phase === "paused" ? view.positionSeconds : 0, choice, clockText);
+                } else fillHUDPane(list, name ?? "", activeHud, view.phase === "playing" || view.phase === "paused" ? view.positionSeconds : 0, choice, clockText);
                 // A rebuilt Info or Stats pane returns to the target it was paged to, recomputed for its new contents.
                 if (pagedPane(index)) settlePage(list, false);
                 for (const column of list.querySelectorAll<HTMLElement>(".player-menu-column")) {
@@ -844,34 +880,58 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     rows.scrollTop = top;
                     rows.style.scrollBehavior = "";
                 }
-                for (const button of buttons(index)) {
-                    const id = button.getAttribute("data-focus") ?? "";
-                    const aiAction = id.startsWith("ai-language:");
-                    // Cancel, Dismiss and Discard act on the job itself, so a running job or a track change never locks them.
-                    const aiPanel = AI_JOB_ACTIONS.includes(id);
-                    const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
-                    const downloading = tracks.subtitleTools?.search.downloadingKey;
-                    const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
-                    const subtitlePick = name === "Subtitles" && id !== SERIES_SUBTITLE && !id.startsWith("ai-");
-                    // Picker options act for the row that opened them: a subtitle setting, or Video's quality, speed or aspect.
-                    const picker = name === "Video" ? videoPicker : subtitlePicker;
-                    const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
-                    const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
-                    const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
-                    // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
-                    const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
-                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
-                    button.setAttribute("aria-disabled", String(blocked));
-                }
+                for (const button of buttons(index)) applyButtonBlocked(button, name, tracks, activeHud, subtitlePicker);
             }
             menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
+            if (modalKind !== undefined) {
+                const nextDialogKey = modalKind === "ai" ? `ai:${tracks.ai?.phase ?? ""}` : `search:${tracks.subtitleTools?.search.phase ?? ""}`;
+                const priorBody = subtitleDialogHost.querySelector<HTMLElement>(".player-subtitle-dialog-body");
+                const priorScroll = subtitleDialogKey === nextDialogKey ? priorBody?.scrollTop ?? 0 : 0;
+                subtitleDialogKey = nextDialogKey;
+                hud.classList.add("player-hud-covered");
+                hud.inert = true;
+                subtitleDialogHost.hidden = false;
+                if (modalKind === "ai") {
+                    renderAIDialog(subtitleDialogHost, tracks, () => {
+                        aiLanguages = false;
+                        menuRestoreFocus = "ai-menu";
+                        render();
+                    });
+                } else {
+                    renderSearchDialog(subtitleDialogHost, tracks, () => {
+                        menuRestoreFocus = "subtitle-search";
+                        controls.subtitleTool({ kind: "search-close" });
+                    });
+                }
+                const nextBody = subtitleDialogHost.querySelector<HTMLElement>(".player-subtitle-dialog-body");
+                if (nextBody !== null && priorScroll > 0) {
+                    nextBody.style.scrollBehavior = "auto";
+                    nextBody.scrollTop = priorScroll;
+                    nextBody.style.scrollBehavior = "";
+                }
+                const modalChoices = dialogButtons();
+                for (const button of modalChoices) applyButtonBlocked(button, "Subtitles", tracks, activeHud, undefined);
+                const modalTarget = (returnFocus === undefined ? undefined : modalChoices.find(button => button.getAttribute("data-focus") === returnFocus))
+                    ?? (keep === null ? undefined : modalChoices.find(button => button.getAttribute("data-focus") === keep))
+                    ?? (modalKind === "ai"
+                        ? AI_JOB_ACTIONS.map(id => modalChoices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined)
+                            ?? modalChoices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu))
+                            ?? modalChoices[0]
+                        : defaultSearchFocus(tracks, modalChoices));
+                modalTarget?.focus();
+                showPane(column, true);
+                return;
+            }
+            subtitleDialogKey = undefined;
+            hud.classList.remove("player-hud-covered");
+            hud.inert = false;
+            subtitleDialogHost.hidden = true;
+            subtitleDialogHost.textContent = "";
             const choices = buttons(column);
             // SubtitlesPane hands a vanished Sync or Reset row's focus to a neighbour: the other timing row, then Delay.
             const timingNeighbour = keep === "subtitle-sync" || keep === "subtitle-reset-timing" ? ["subtitle-sync", "subtitle-reset-timing", "subtitle-delay"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) : undefined;
             const same = (returnFocus === undefined ? undefined : choices.find(button => button.getAttribute("data-focus") === returnFocus))
                 ?? (keep === null ? undefined : choices.find(button => button.getAttribute("data-focus") === keep))
-                // The AI menu swaps its languages for a job's Cancel or a failure's Dismiss, and back.
-                ?? (aiLanguages ? AI_JOB_ACTIONS.map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) ?? choices.find(button => button.getAttribute("data-focus") === firstServiceableLanguage(tracks.aiMenu)) : undefined)
                 ?? timingNeighbour;
             if (heldTab !== undefined && lists[tabs.indexOf(heldTab)]?.style.display !== "none") {
                 heldTab.focus();
@@ -890,6 +950,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         subtitlePane = { kind: "tracks" };
         videoPicker = undefined;
         menuRestoreFocus = undefined;
+        subtitleDialogKey = undefined;
+        searchDialogWasOpen = false;
+        hud.classList.remove("player-hud-covered");
+        hud.inert = false;
+        subtitleDialogHost.hidden = true;
+        subtitleDialogHost.textContent = "";
         const phase = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.search.phase : undefined;
         if (phase !== undefined && phase !== "closed") controls.subtitleTool({ kind: "search-close" });
         menuOpen = false;
@@ -1289,7 +1355,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (document.activeElement !== overlay) overlay.focus();
         } else if (active) {
             const focusedNode = document.activeElement;
-            const held = (menuOpen && menu.contains(focusedNode)) || transport.contains(focusedNode) || focusedNode === bar || (focusedNode === skip && skipUsable()) || (focusedNode instanceof HTMLElement && bufferingButtons().includes(focusedNode as HTMLButtonElement));
+            const held = (menuOpen && (menu.contains(focusedNode) || subtitleDialogHost.contains(focusedNode))) || transport.contains(focusedNode) || focusedNode === bar || (focusedNode === skip && skipUsable()) || (focusedNode instanceof HTMLElement && bufferingButtons().includes(focusedNode as HTMLButtonElement));
             if (!held) {
                 if (skipUsable()) skip.focus();
                 else bar.focus();
@@ -1528,20 +1594,40 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             // An open picker closes first (its `onExitCommand`, TVPlayerInfoHUD.swift:1092).
             if (openPicker() !== undefined) { restoreSubtitlePicker(); return; }
             if (aiLanguages) { aiLanguages = false; menuRestoreFocus = "ai-menu"; return; }
+            const search = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.search : undefined;
+            if (search !== undefined && search.phase !== "closed") {
+                // Back is inert while a download is in flight (SubtitleSearchMenu.swift:364-366).
+                if (search.downloadingKey !== undefined) return;
+                if (search.phase === "languages") menuRestoreFocus = "subtitle-search";
+                else restoreSearchLanguage();
+                controls.subtitleTool({ kind: "search-back" });
+                return;
+            }
             if (subtitlePane.kind !== "tracks") {
                 subtitlePane = { kind: "tracks" };
                 menuRestoreFocus = "subtitle-appearance";
                 return;
             }
-            const phase = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.search.phase : undefined;
-            if (phase !== undefined && phase !== "closed") {
-                if (phase !== "languages") restoreSearchLanguage();
-                controls.subtitleTool({ kind: "search-back" });
-                return;
-            }
             closeMenu(true);
             reveal();
             return;
+        }
+        if (!subtitleDialogHost.hidden) {
+            const modalAll = landable(dialogButtons());
+            const modalAt = modalAll.findIndex(button => button === document.activeElement);
+            if (key === "up" || key === "down") {
+                modalAll[Math.max(0, Math.min(modalAll.length - 1, (modalAt < 0 ? 0 : modalAt) + (key === "up" ? -1 : 1)))]?.focus();
+                return;
+            }
+            if (key === "left" || key === "right") {
+                const actionRow = document.activeElement?.closest<HTMLElement>(".player-subtitle-dialog-actions");
+                if (actionRow !== null && actionRow !== undefined) {
+                    const siblings = landable(Array.from(actionRow.querySelectorAll<HTMLElement>("[data-focus]")));
+                    const index = siblings.findIndex(button => button === document.activeElement);
+                    if (index >= 0) siblings[Math.max(0, Math.min(siblings.length - 1, index + (key === "left" ? -1 : 1)))]?.focus();
+                }
+                return;
+            }
         }
         // Up and Down stay inside the focused column of a two-column pane.
         const columnScope = document.activeElement?.closest<HTMLElement>(".player-menu-column");
@@ -1686,13 +1772,24 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     };
 
     menu.addEventListener("click", (event) => {
-        if (!menuOpen || !(event.target instanceof Element)) {
+        if (!menuOpen || !subtitleDialogHost.hidden || !(event.target instanceof Element)) {
             return;
         }
         const button = event.target.closest<HTMLButtonElement>("button[data-focus]");
         const index = button === null ? -1 : lists.findIndex((list) => list.contains(button));
         if (button !== null && index !== -1) {
             column = index;
+            button.focus();
+            menuKey("enter");
+            render();
+        }
+    });
+    subtitleDialogHost.addEventListener("click", (event) => {
+        if (!menuOpen || subtitleDialogHost.hidden || !(event.target instanceof Element)) {
+            return;
+        }
+        const button = event.target.closest<HTMLButtonElement>("button[data-focus]");
+        if (button !== null && subtitleDialogHost.contains(button)) {
             button.focus();
             menuKey("enter");
             render();
