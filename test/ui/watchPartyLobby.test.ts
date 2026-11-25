@@ -477,14 +477,19 @@ test("a guest whose host is away sees the host-away indicator and Apple's warnin
     } finally { await tv.page.context().close(); }
 });
 
-test("Back from the lobby as the host returns to the entry and leaves as Leave party does, closing nothing", async () => {
+test("Back from the lobby as the host dismisses the page without leaving, and Return to Watch Party reopens it (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await tv.remote(10009);
-        await view(tv, "watchParty:hub").waitFor();
-        assert.equal(await tv.focused(), "create");
-        await tv.eventually(async () => fake.sockets[0]?.closed === true, "room socket closed");
+        await view(tv, "home").waitFor();
+        assert.equal(fake.sockets[0]?.closed, false, "Back from the lobby keeps the room socket open");
         assert.deepEqual(fake.closedRooms, []);
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="watch-party"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="watch-party"]').textContent(), "Return to Watch Party");
+        await tv.page.locator('[data-focus="watch-party"]').click();
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-code").textContent(), "K7M2QX");
     } finally { await tv.page.context().close(); }
 });
 

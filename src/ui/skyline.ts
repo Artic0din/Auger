@@ -108,11 +108,17 @@ export class Skyline {
     }
 
     private watchPartyEnabled = false;
+    private watchPartyEngaged = false;
     setWatchPartyEnabled(enabled: boolean): void {
         if (this.watchPartyEnabled === enabled) return;
         this.watchPartyEnabled = enabled;
         if (this.profileOpen) this.rebuildProfile();
         else if (!enabled) this.selector.querySelector('[data-focus="watch-party"]')?.remove();
+    }
+    setWatchPartyEngaged(engaged: boolean): void {
+        if (this.watchPartyEngaged === engaged) return;
+        this.watchPartyEngaged = engaged;
+        if (this.profileOpen) this.rebuildProfile();
     }
 
     private routeBack: (() => void) | undefined;
@@ -1027,7 +1033,7 @@ export class Skyline {
         const requests = this.profiles.requests;
         if (this.requestsEnabled && requests !== undefined) above.push(this.menuItem("requests", translate("menu.requests"), () => { this.close(); requests(); }));
         const watchParty = this.profiles.watchParty;
-        if (this.watchPartyEnabled && watchParty !== undefined) above.push(this.menuItem("watch-party", translate("watchParty.menu.open"), () => { this.close(); watchParty(); }));
+        if (this.watchPartyEnabled && watchParty !== undefined) above.push(this.menuItem("watch-party", translate(this.watchPartyEngaged ? "watchParty.menu.return" : "watchParty.menu.open"), () => { this.close(); watchParty(); }));
         const below: FocusItem[] = [];
         const settings = this.profiles.settings;
         if (settings !== undefined) below.push(this.menuItem("settings", translate("menu.settings"), () => { this.close(); settings(); }));

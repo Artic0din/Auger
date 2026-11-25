@@ -203,14 +203,14 @@ export class WatchPartyHub {
         this.notify();
     }
 
-    /** Back inside an open room: one page at a time, and out of the room from the lobby. */
-    back(): void {
+    /** Back inside an open room: one page at a time; from the lobby returns false so the host dismisses without leaving. */
+    back(): boolean {
         const page = this.state.page;
         switch (page.kind) {
-            case "lobby": this.leave(); return;
-            case "choice": this.show(page.from ?? { kind: "picker" }); return;
-            case "episodes": this.show({ kind: "picker" }); return;
-            default: this.show(LOBBY);
+            case "lobby": return false;
+            case "choice": this.show(page.from ?? { kind: "picker" }); return true;
+            case "episodes": this.show({ kind: "picker" }); return true;
+            default: this.show(LOBBY); return true;
         }
     }
 
@@ -373,7 +373,7 @@ export class WatchPartyHub {
     }
 
     /**
-     * Back from the lobby, or Leave party: Apple's leaveRoom closes this viewer's socket and nothing else. A host who leaves is
+     * Leave party: Apple's leaveRoom closes this viewer's socket and nothing else. A host who leaves is
      * away, and the server holds the party for them; End party is what ends it for everyone.
      */
     leave(): void {
