@@ -1,6 +1,8 @@
 import { ApiError } from "../api/errors.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
-import { SessionError } from "../session/session.ts";
+import { SessionError, SessionRefreshError } from "../session/session.ts";
+
+export type RequestWrite = "create" | "cancel" | "follow" | "unfollow";
 
 /** What the error page is about; recovery follows it, and the headline reads from it, so neither depends on the shown language. */
 export type ErrorKind = "generic" | "sessionExpired" | "notAllowed" | "notFound" | "updateRequired";
@@ -63,4 +65,65 @@ export function errorState(error: unknown): ErrorState {
     if (status === 401 || status === 404) return forStatus(status);
     if (status === 403) return forStatus(403, id === "permission_denied" && detail?.trim() ? { text: detail } : statusBody(403));
     return forStatus(status, { text: detail?.trim() ? detail : title });
+}
+
+/** Apple RequestMutationFailure.isUncertain: only an answer from the server, or a refusal before sending, rules out a write having landed. */
+export function writeMayHaveApplied(error: unknown): boolean {
+    if (error instanceof SessionError || error instanceof SessionRefreshError) return false;
+    return !(error instanceof ApiError) || (error.failure.kind !== "problem" && error.failure.kind !== "http");
+}
+
+/** Apple RequestErrorCopy.message(for:). */
+export function writeFailureMessage(error: unknown): string {
+    if (error instanceof ApiError && error.failure.kind === "problem") {
+        const { id, detail } = error.failure.problem;
+        if (id === "validation_failed") return translate("requests.reason.validation_failed");
+        if (id === "capability_disabled" || id === "capability_not_configured" || id === "capability_unsupported") return translate("requests.reason.requests_disabled");
+        if (detail?.trim()) return detail;
+    }
+    return errorMessage(errorState(error));
+}
+
+/** Apple RequestErrorCopy.unconfirmed*Message; Apple TV has no Follow, so it keeps this client's wording. */
+export function unconfirmedWriteMessage(action: RequestWrite): string {
+    if (action === "create") return translate("requests.notice.unconfirmedCreate");
+    return action === "cancel" ? translate("requests.notice.unconfirmedCancel") : "Could not confirm the change. Refresh before trying again.";
+}
+
+/** What to tell the person, as a catalog key where Apple has the words; undefined for an error that is not a server or session answer (a defect). */
+export function failureBody(error: unknown, current: { readonly kind: string }): ErrorBody | undefined {
+    const text = (line: string): ErrorBody => ({ text: line });
+    if (error instanceof SessionError) {
+        return error.reason === "unavailable" ? { key: "shell.error.serverProblem" } : text("This TV is no longer signed in.");
+    }
+    if (!(error instanceof ApiError)) {
+        return undefined;
+    }
+    const kind = error.failure.kind;
+    if (kind === "network" || kind === "timeout") {
+        return text("Could not reach the server. Check the connection and try again.");
+    }
+    if (error.status === 404) {
+        if (current.kind === "calendar") return text("Could not load Calendar. Try again.");
+        if (current.kind === "audiobook") return text("This audiobook is no longer available.");
+        if (current.kind === "boxSet") return { key: "boxSets.unavailableMessage" };
+        return text(current.kind === "library"
+            ? "This library is no longer available."
+            : current.kind === "season"
+              ? "This season is no longer available."
+              : current.kind === "person" ? "This person is no longer available." : "This title is no longer available.");
+    }
+    if (error.problemId === "invalid_cursor") {
+        return text(current.kind === "homeSection" || current.kind === "person" ? "The list changed. Try again." : "The list changed. Go back and open it again.");
+    }
+    if (kind === "invalid_response") {
+        return text("The server sent an answer this TV could not read.");
+    }
+    return error.transient ? { key: "shell.error.serverProblem" } : text("Something went wrong. Try again.");
+}
+
+/** What to tell the person, in the language shown now. */
+export function failureText(error: unknown, current: { readonly kind: string }): string | undefined {
+    const body = failureBody(error, current);
+    return body === undefined ? undefined : errorMessage({ body });
 }
