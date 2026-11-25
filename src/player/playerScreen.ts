@@ -28,6 +28,7 @@ import { artworkSymbol, defaultArtwork } from "../ui/defaultArtwork.ts";
 import { episodeAirDate, episodeRuntime } from "../ui/episodeCaption.ts";
 import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
+import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
 import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
@@ -2043,6 +2044,7 @@ export function startPlayback(
     resolutionCap?: PlaybackDeps["resolutionCap"],
     diagnostics?: DiagnosticsCollector,
     onAutoReport?: () => void,
+    settingsFlusher?: PlayerSettingsFlusher,
 ): PlayerScreen {
     const clock = platform.clock ?? systemClock;
     let screen: PlayerScreen | undefined;
@@ -2093,6 +2095,7 @@ export function startPlayback(
         ...(spoilers === undefined ? {} : { spoilers }),
         ...(storage === undefined ? {} : { publicStorage: storage }),
         ...(resolutionCap === undefined ? {} : { resolutionCap }),
+        ...(settingsFlusher === undefined ? {} : { settingsFlusher }),
     });
     if (diagnostics !== undefined) {
         diagnostics.beginPlaybackSession();

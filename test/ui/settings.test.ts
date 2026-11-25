@@ -1803,3 +1803,42 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+
+test("Settings Playback shows NOT SAVED with Try Again and Discard Held Change when Auto-play retries run out (#810)", async () => {
+    const { tv, settings } = await setup(true);
+    try {
+        settings.remainingRows = true;
+        settings.profile().set("playback.auto_play_next", true);
+        // Script 6 transient 503 replies (initial debounced PUT + 5 automatic retries) so the write becomes held.
+        tv.fake.script("/settings/values/playback.auto_play_next?scope=profile_device", ...Array.from({ length: 6 }, () => ({ status: 503, body: { error: "unavailable" } })));
+        await tv.page.evaluate(() => window.browseHarness.enqueuePlayerSetting("playback.auto_play_next", false));
+        await tv.jump(750);
+        for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+            await tv.jump(delay);
+        }
+        await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.heldPlayerSettings())).includes("playback.auto_play_next"), "auto_play_next held");
+
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.locator('[data-focus="held-retry"]').waitFor();
+        await tv.page.locator('[data-focus="held-discard"]').waitFor();
+        await tv.page.getByText("NOT SAVED", { exact: true }).waitFor();
+        await tv.page.getByText("A change couldn't be saved to the server. It stays on this device until you try again or discard it.", { exact: true }).waitFor();
+        // Auto-play row reflects the unsettled local value (Off) while held.
+        assert.equal(await tv.page.locator('[data-focus="auto-next"] .settings-row-value').textContent(), "Off");
+
+        // Discard while server cannot be reached keeps the held change and shows the offline discard message.
+        tv.fake.script("/settings/values/effective?keys=playback.auto_play_next", { status: 503, body: { error: "unavailable" } });
+        await tv.page.locator('[data-focus="held-discard"]').click();
+        await tv.page.getByText("Couldn't reach the server to discard this change. It stays on this device until the server can be reached.", { exact: true }).waitFor();
+        assert.equal(await tv.page.locator('[data-focus="held-discard"]').count(), 1);
+
+        // Once the server answers again, Try Again commits the held value and removes the NOT SAVED section.
+        await tv.page.locator('[data-focus="held-retry"]').click();
+        await tv.eventually(async () => await tv.page.locator('[data-focus="held-retry"]').count() === 0, "NOT SAVED cleared after retry");
+        const puts = tv.fake.requests.filter(request => request.method === "PUT" && request.path.includes("playback.auto_play_next"));
+        assert.deepEqual(puts.at(-1)?.body, { value: false });
+        assert.equal(await tv.page.locator('[data-focus="auto-next"] .settings-row-value').textContent(), "Off");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});

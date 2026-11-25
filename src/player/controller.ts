@@ -65,6 +65,7 @@ import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
 import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "./playerSettingsFlusher.ts";
 import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
 
 /** What browse hands over: one file of one catalog item. */
@@ -410,6 +411,8 @@ export interface PlaybackDeps {
     readonly publicStorage?: PublicStorage;
     /** The profile's Resolution cap. Absent reads as no cap. Next-episode, On Deck and shuffle picks rank files by it. */
     readonly resolutionCap?: Pick<ResolutionCap, "quality" | "ready">;
+    /** Shared debounced, retried writer for player device settings (#810). */
+    readonly settingsFlusher?: PlayerSettingsFlusher;
 }
 
 const PROGRESS_INTERVAL_MS = 10000;
@@ -501,10 +504,8 @@ interface Attempt {
     };
     transportCommandCount: number;
     autoNext: boolean;
-    /** Confirmed Auto-play saves advance this so an older settings read cannot overwrite them. */
+    /** Auto-play toggles advance this so an older settings read cannot overwrite them. */
     settingsEpoch: number;
-    /** The in-flight Auto-play save. EOF waits for it before reading the effective value. */
-    autoNextSave: Promise<void> | undefined;
     introMode: "never" | "ask" | "always";
     skipCredits: boolean;
     skippedMarkers: Set<SkipMarker>;
@@ -668,6 +669,8 @@ function subtitleStart(request: PlayRequest): { subtitle_track_id: string } | Re
 
 export class PlaybackController implements PlayerControls {
     private readonly deps: PlaybackDeps;
+    private readonly flusher: PlayerSettingsFlusher;
+    private readonly ownsFlusher: boolean;
     private readonly pending: PendingTransport;
     private attempt: Attempt | undefined;
     /** Increases on every AVPlay open and teardown; callbacks of an older value are dropped. */
@@ -696,6 +699,12 @@ export class PlaybackController implements PlayerControls {
 
     constructor(deps: PlaybackDeps) {
         this.deps = deps;
+        this.ownsFlusher = deps.settingsFlusher === undefined;
+        this.flusher = deps.settingsFlusher ?? new PlayerSettingsFlusher(sessionPlayerSettingsTransport(deps.session), deps.clock, {
+            scopeId: () => deps.session.activeProfile?.id ?? "default",
+            signal: () => deps.session.authoritySignal,
+            ...(deps.publicStorage === undefined ? {} : { storage: deps.publicStorage }),
+        });
         const pending = pendingTransports.get(deps.avplay) ?? { seek: undefined, closing: undefined };
         pendingTransports.set(deps.avplay, pending);
         this.pending = pending;
@@ -746,7 +755,7 @@ export class PlaybackController implements PlayerControls {
             offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
             transportCommandCount: 0,
-            autoNext: false, settingsEpoch: 0, autoNextSave: undefined,
+            autoNext: false, settingsEpoch: 0,
             ai: undefined, search: undefined, sync: undefined, display: undefined, aiBlockedFiles: new Set(), pendingAIResult: undefined, pendingDownloadId: undefined,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
             appearance: DEFAULT_APPEARANCE, subtitleSync: 0, cues: [], secondaryId: undefined, secondaryCues: [], secondaryOrigin: 0, secondaryUrl: undefined, captionTiming: 0, secondaryTiming: 0, secondaryAbort: undefined, captionAbort: undefined, captionNotice: "", captionFallback: undefined, switchLocal: false, redrawSwitch: undefined, wakeSwitch: undefined, switchFailedAt: undefined, switchWakeUsed: false, captionPreferenceNotice: "", captionKey: undefined, captionPreferencesRead: false, seriesSubtitle: request.episode ? { busy: false, message: "" } : undefined,
@@ -888,61 +897,24 @@ export class PlaybackController implements PlayerControls {
         // The finished card's toggle (PlayerView.autoPlayToggle) acts on the ended attempt.
         const completion = this.completion;
         const attempt = this.active() ?? (completion !== undefined && completion.attempt === this.attempt && completion.attempt.ended ? completion.attempt : undefined);
-        if (attempt === undefined || !attempt.autoNextSupported || attempt.hud.autoBusy) return;
-        attempt.hud.autoBusy = true;
-        attempt.hud.message = "Saving Auto-play next";
-        // PlayerViewModel.setNextUpAutoPlayEnabled: the local value changes, and the countdown stops or starts, before the write goes out.
-        // The new epoch also keeps an older settings read from overwriting it.
-        const previous = attempt.autoNext;
-        const enabled = !previous;
+        if (attempt === undefined || !attempt.autoNextSupported) return;
+        // PlayerViewModel.setNextUpAutoPlayEnabled -> PlayerSettings.setAutoPlayNextEpisode -> PlayerSettingsFlusher:
+        // the local value changes and the countdown updates at once, while the flusher debounces, retries transient
+        // failures, and holds exhausted writes for Settings without showing an error in the player.
+        const enabled = !attempt.autoNext;
         attempt.settingsEpoch += 1;
-        const epoch = attempt.settingsEpoch;
         attempt.autoNext = enabled;
         if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
         this.showPlayback(attempt);
         if (!attempt.live) this.completionAutoNextChanged(attempt);
-        const current = (at: number): boolean => !attempt.signal.aborted && at === attempt.settingsEpoch && (attempt.live || this.completion?.attempt === attempt);
-        // Apple writes this TV's value from every Auto-play control (PlayerSettings.setAutoPlayNextEpisode → enqueueDeviceValue).
-        const save = this.deps.session.call({ ...operations.putSetting(AUTO_NEXT_KEY, enabled, "profile_device"), profileScoped: true, signal: attempt.signal }).then(async () => {
-            if (!current(epoch)) return;
-            // The write is in: a settings read started before now may answer with the old value, so it is set aside too.
-            attempt.settingsEpoch += 1;
-            const written = attempt.settingsEpoch;
-            if (attempt.live) attempt.hud.message = "";
-            let saved: boolean;
-            try {
-                const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: attempt.signal });
-                saved = values.get(AUTO_NEXT_KEY)?.value === true;
-            } catch {
-                // The server took the write; a confirmation that cannot be read leaves the written value in place.
-                return;
-            }
-            if (!current(written) || saved === attempt.autoNext) return;
-            attempt.autoNext = saved;
-            if (!attempt.live) this.completionAutoNextChanged(attempt);
-        }, () => {
-            // A refused write. Apple's writer keeps the local value and retries, and a refusal shows only in Settings
-            // (SettingsViewModel.swift:443). Nothing here retries (#810), so the toggle goes back to the saved value and the card acts on it again.
-            if (!current(epoch)) return;
-            attempt.settingsEpoch += 1;
-            attempt.autoNext = previous;
-            if (attempt.live && attempt.offer.credits) this.startCreditsCountdownIfNeeded(attempt);
-            if (attempt.live) attempt.hud.message = "Could not save Auto-play next. Try again.";
-            else this.completionAutoNextChanged(attempt);
-        }).finally(() => {
-            attempt.hud.autoBusy = false;
-            if (attempt.live) this.showPlayback(attempt);
-        });
-        const settled = save.then(() => undefined, () => undefined);
-        attempt.autoNextSave = settled;
-        void settled.finally(() => {
-            if (attempt.autoNextSave === settled) attempt.autoNextSave = undefined;
-        });
+        this.flusher.enqueue(AUTO_NEXT_KEY, enabled, "profile_device");
     }
 
-    /** A settings read may apply Auto-play only if no press came after it started and no write is out: the write's own outcome decides. */
-    private readsAutoNext(attempt: Attempt, epoch: number): boolean {
-        return epoch === attempt.settingsEpoch && attempt.autoNextSave === undefined;
+    /** A settings read may apply Auto-play only if no press came after it started, and never over an unsettled local write. */
+    private applyAutoNextRead(attempt: Attempt, epoch: number, serverValue: boolean): void {
+        if (epoch !== attempt.settingsEpoch) return;
+        const unsettled = this.flusher.unsettledValue(AUTO_NEXT_KEY);
+        attempt.autoNext = typeof unsettled === "boolean" ? unsettled : serverValue;
     }
 
     togglePause(): void {
@@ -1534,6 +1506,7 @@ export class PlaybackController implements PlayerControls {
             this.leave(attempt, "stop");
         }
         this.attempt = undefined;
+        if (this.ownsFlusher) this.flusher.destroy();
         this.stopAuthority();
         globalThis.removeEventListener?.("online", this.onConnectivity);
         globalThis.removeEventListener?.("offline", this.onConnectivity);
@@ -1591,11 +1564,13 @@ export class PlaybackController implements PlayerControls {
             }
             if (definitions.some(def => def.key === AUTO_NEXT_KEY)) {
                 attempt.autoNextSupported = true;
+                const unsettled = this.flusher.unsettledValue(AUTO_NEXT_KEY);
+                if (typeof unsettled === "boolean") attempt.autoNext = unsettled;
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await call(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                    if (attempt.live && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { /* Unavailable autoplay preferences leave Play next manual. */ }
+                    if (attempt.live) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                } catch { /* Unavailable autoplay preferences leave Play next manual unless an unsettled local choice stands. */ }
             }
             if (definitions.some(def => def.key === HDR_KEY)) {
                 try {
@@ -3414,13 +3389,11 @@ export class PlaybackController implements PlayerControls {
             }
             const capRead = this.pickQuality(abort.signal);
             if (attempt.autoNextSupported) {
-                await attempt.autoNextSave;
-                if (!current()) return;
                 const epoch = attempt.settingsEpoch;
                 try {
                     const values = await this.deps.session.call({ ...operations.effectiveSettings([AUTO_NEXT_KEY]), profileScoped: true, signal: abort.signal });
-                    if (this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                } catch { if (current() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
+                    if (current()) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                } catch { if (current()) this.applyAutoNextRead(attempt, epoch, false); }
                 if (!current()) return;
             }
             show("resolving");
@@ -4376,8 +4349,8 @@ export class PlaybackController implements PlayerControls {
                     const epoch = attempt.settingsEpoch;
                     try {
                         const values = await read(operations.effectiveSettings([AUTO_NEXT_KEY]));
-                        if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = values.get(AUTO_NEXT_KEY)?.value === true;
-                    } catch { if (live() && this.readsAutoNext(attempt, epoch)) attempt.autoNext = false; }
+                        if (live()) this.applyAutoNextRead(attempt, epoch, values.get(AUTO_NEXT_KEY)?.value === true);
+                    } catch { if (live()) this.applyAutoNextRead(attempt, epoch, false); }
                 }
                 if (attempt.request.episode === true) {
                     const fileId = attempt.plan?.effectiveMediaFileId;

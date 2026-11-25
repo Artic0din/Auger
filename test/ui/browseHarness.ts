@@ -9,6 +9,7 @@ import { type Browse, mountBrowse, type PlayRequest } from "../../src/ui/browse.
 import { browseCache, clearBrowseCache } from "../../src/session/browseCache.ts";
 import { operations } from "../../src/api/operations.ts";
 import type { ThemeAudioOutput } from "../../src/ui/themeMusic.ts";
+import type { SettingValue, SettingsKey } from "../../src/contracts/v2/settings.ts";
 import { ExperimentalFeatures, type ExperimentalFeature } from "../../src/session/experimentalFeatures.ts";
 import { appLanguageCacheKey } from "../../src/ui/appLanguagePreferences.ts";
 import { storeBranding } from "../../src/ui/brandingCache.ts";
@@ -40,6 +41,10 @@ export interface BrowseHarness {
     seedServerName(name: string): void;
     /** Seeds a playback snapshot and event into the shared Diagnostics collector. */
     seedDiagnostics(): void;
+    /** Enqueues a player device setting write through browse's shared PlayerSettingsFlusher (#810). */
+    enqueuePlayerSetting(key: SettingsKey, value: SettingValue): void;
+    /** Returns keys currently held on this TV by browse's shared PlayerSettingsFlusher (#810). */
+    heldPlayerSettings(): readonly SettingsKey[];
     cacheOffline(route?: "home" | "for_you" | "movie:m0004"): boolean;
     failPublicStorage(read: boolean, write: boolean): void;
     /** Turns a device experimental feature on before mount, as Settings does. */
@@ -196,6 +201,12 @@ const harness: BrowseHarness = {
             engine: [{ label: "Delivery", value: "Server Remux HLS" }, { label: "Source", value: "silo.example.test" }],
         });
         diagnostics.recordEvent("app", "seeded test event");
+    },
+    enqueuePlayerSetting(key, value) {
+        browse?.playerSettings().enqueue(key, value, "profile_device");
+    },
+    heldPlayerSettings() {
+        return browse?.playerSettings().heldKeys ?? [];
     },
     cacheOffline(route = "home") {
         const server = connected();
