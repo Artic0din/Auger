@@ -147,6 +147,7 @@ export interface CollectionSummary {
     readonly id: string;
     readonly title: string;
     readonly posterUrl: string;
+    readonly posterThumbhash?: string | undefined;
     readonly itemCount: number;
     readonly posterIsCollage: boolean;
     /** Curated rows carry this; group cards do not, and inherit it by id. */
@@ -175,7 +176,8 @@ function collection(value: unknown, path: string): CollectionSummary {
     const obj = object(value, path);
     return {
         id: string(obj, "id", path), title: string(obj, "title", path),
-        posterUrl: string(obj, "poster_url", path), itemCount: count(obj, "item_count", path),
+        posterUrl: string(obj, "poster_url", path), posterThumbhash: optionalString(obj, "poster_thumbhash", path),
+        itemCount: count(obj, "item_count", path),
         posterIsCollage: boolean(obj, "poster_is_collage", path),
         collectionType: optionalString(obj, "collection_type", path),
     };

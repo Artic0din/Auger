@@ -215,15 +215,73 @@ page("collection group headers and cards match Apple's grid", async tv => {
     const header = await tv.page.locator(".collection-group-title").evaluate(node => {
         const style = getComputedStyle(node);
         const art = node.parentElement?.querySelector(".browse-art")?.getBoundingClientRect();
-        return { weight: style.fontWeight, wrap: style.whiteSpace, overflow: style.textOverflow, size: style.fontSize, gap: art === undefined ? undefined : Math.round(art.top - node.getBoundingClientRect().bottom) };
+        return { family: style.fontFamily, weight: style.fontWeight, wrap: style.whiteSpace, overflow: style.textOverflow, size: style.fontSize, gap: art === undefined ? undefined : Math.round(art.top - node.getBoundingClientRect().bottom) };
     });
-    // Monospaced text keeps Apple's points, as the details popover header does.
-    assert.deepEqual(header, { weight: "400", wrap: "nowrap", overflow: "ellipsis", size: "22px", gap: 20 });
+    // Monospaced text keeps Apple's points, using the bundled Roboto Mono token as the details popover header does.
+    assert.match(header.family, /Roboto Mono/);
+    assert.deepEqual({ weight: header.weight, wrap: header.wrap, overflow: header.overflow, size: header.size, gap: header.gap }, { weight: "400", wrap: "nowrap", overflow: "ellipsis", size: "22px", gap: 20 });
     await card.focus();
     const ring = await card.locator(".browse-art").evaluate(node => ({ offset: getComputedStyle(node).outlineOffset, width: getComputedStyle(node).outlineWidth, shadow: getComputedStyle(node).boxShadow }));
     assert.deepEqual(ring, { offset: "-2px", width: "4px", shadow: "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px" });
     const glyph = await card.locator(".collection-stack").evaluate(node => ({ symbol: node.getAttribute("data-symbol"), color: getComputedStyle(node).color, fill: node.querySelector("svg")?.getAttribute("fill") }));
     assert.deepEqual(glyph, { symbol: "square.stack.fill", color: "rgba(255, 255, 255, 0.85)", fill: "currentColor" });
+});
+
+page("Collections posters show ThumbHash or surface while loading, film glyph on failure, and stack gradient only when empty", async (tv, catalog) => {
+    const ART_HASH = "1QcSHQRnh493V4dIh4eXh1h4kJUI";
+    let releasePoster: () => void = () => undefined;
+    const posterGate = new Promise<void>(resolve => { releasePoster = resolve; });
+    await tv.page.route("**/art/col-hash.svg", async route => { await posterGate; await route.abort(); });
+    await tv.page.route("**/art/col-plain.svg", async route => { await posterGate; await route.abort(); });
+    const withHash = { id: "c-hash", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Hashed", poster_url: "/art/col-hash.svg", poster_thumbhash: ART_HASH, item_count: 2, poster_is_collage: false };
+    const noHash = { id: "c-plain", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Plain", poster_url: "/art/col-plain.svg", item_count: 3, poster_is_collage: false };
+    const missing = { id: "c-empty", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Empty", poster_url: "", item_count: 1, poster_is_collage: false };
+    catalog.failNext("/library/12/collections", {
+        status: 200,
+        body: { library_id: "12", collections: [withHash, noHash, missing], groups: [{ id: "curated", name: "Curated", kind: "admin", sort_mode: "name_asc", sort_order: 0, collections: [withHash, noHash, missing] }], ungrouped: { sort_order: 1, collections: [] } },
+    });
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+    await selectLibraryMode(tv, "Collections");
+    await tv.page.locator('[data-focus="collection:c-hash"]').waitFor();
+    const state = (focusKey: string) => tv.page.locator(`[data-focus="${focusKey}"] .browse-art`).evaluate(art => {
+        const style = getComputedStyle(art);
+        return {
+            inlineBg: (art as HTMLElement).style.background,
+            bgColor: style.backgroundColor,
+            thumbhash: art.querySelectorAll("canvas.browse-art-thumbhash").length,
+            img: art.querySelectorAll("img").length,
+            stack: art.querySelectorAll(".collection-stack").length,
+            surfaceGlyph: art.querySelector(".browse-art-surface-missing .browse-art-surface-glyph")?.getAttribute("data-symbol") ?? null,
+            surfaceGlyphColor: art.querySelector(".browse-art-surface-glyph") === null ? null : getComputedStyle(art.querySelector(".browse-art-surface-glyph")!).color,
+        };
+    });
+    try {
+        const hashLoading = await state("collection:c-hash");
+        assert.equal(hashLoading.inlineBg, "", "no id-hue gradient behind a poster while loading");
+        assert.equal(hashLoading.thumbhash, 1, "ThumbHash canvas shows while loading");
+        assert.equal(hashLoading.stack, 0);
+        assert.equal(hashLoading.surfaceGlyph, null);
+        const plainLoading = await state("collection:c-plain");
+        assert.equal(plainLoading.inlineBg, "");
+        assert.equal(plainLoading.bgColor, "rgb(14, 15, 18)", "surface variant shows when there is no ThumbHash");
+        assert.equal(plainLoading.thumbhash, 0);
+        assert.equal(plainLoading.stack, 0);
+        const emptyState = await state("collection:c-empty");
+        assert.match(emptyState.inlineBg, /linear-gradient/);
+        assert.equal(emptyState.stack, 1);
+    } finally { releasePoster(); }
+    await tv.eventually(async () => (await state("collection:c-hash")).surfaceGlyph === "film" && (await state("collection:c-plain")).surfaceGlyph === "film", "failed posters show faint film glyph");
+    const hashFailed = await state("collection:c-hash");
+    assert.equal(hashFailed.img, 0);
+    assert.equal(hashFailed.thumbhash, 1, "ThumbHash stays underneath the faint film glyph");
+    assert.equal(hashFailed.stack, 0, "no stack glyph when posterUrl failed");
+    assert.equal(hashFailed.inlineBg, "");
+    assert.equal(hashFailed.surfaceGlyphColor, "rgba(237, 237, 237, 0.3)");
+    const plainFailed = await state("collection:c-plain");
+    assert.equal(plainFailed.img, 0);
+    assert.equal(plainFailed.bgColor, "rgb(14, 15, 18)");
+    assert.equal(plainFailed.stack, 0);
 });
 
 // Browse, against TVLibraryGridView and TVLibraryGridViewModel.
