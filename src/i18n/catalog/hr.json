@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Traženje najava…",
  "detail.trailerFetch.notFound": "Nisu pronađene najave",
  "detail.trailerFetch.rateLimited": "Pričekajte trenutak i pokušajte ponovno",
+ "detail.trailerFetch.unplayable": "Ovdje nema najava koje se mogu reproducirati",
  "detail.trailers": "Najave i više",
  "detail.translation.translated": "Prevedeno pomoću AI-ja",
  "detail.translation.translating": "Prevođenje…",

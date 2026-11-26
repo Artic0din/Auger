@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "예고편 찾는 중…",
  "detail.trailerFetch.notFound": "예고편을 찾지 못했어요",
  "detail.trailerFetch.rateLimited": "잠시 후 다시 시도해 주세요",
+ "detail.trailerFetch.unplayable": "이 기기에서 재생할 수 있는 예고편이 없어요",
  "detail.trailers": "예고편 및 기타 영상",
  "detail.translation.translated": "AI 번역됨",
  "detail.translation.translating": "번역하는 중…",

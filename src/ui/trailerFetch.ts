@@ -100,7 +100,8 @@ export class TrailerFetch {
             }
         }
         const started = this.clock.now();
-        const keys = new Set(identities(baseline));
+        const baselineExtras = new Set(localIdentities(baseline));
+        const baselineVideos = new Set(remoteIdentities(baseline));
         let signature: string | undefined;
         let settled = 0;
         while (!controller.signal.aborted && this.clock.now() - started < WINDOW_MS) {
@@ -110,8 +111,11 @@ export class TrailerFetch {
             try { detail = await this.read(controller.signal); } catch { continue; }
             if (controller.signal.aborted) return;
             if (detail.id !== baseline.id) continue;
-            if (identities(detail).some(key => !keys.has(key))) {
+            if (localIdentities(detail).some(key => !baselineExtras.has(key))) {
                 this.found(detail); this.finish(undefined, controller); return;
+            }
+            if (remoteIdentities(detail).some(key => !baselineVideos.has(key))) {
+                this.finish(translate("detail.trailerFetch.unplayable"), controller); return;
             }
             const current = JSON.stringify({ videos: detail.videos?.map(video => `${video.site.toLowerCase()}:${video.siteKey}`).sort(), extras: detail.extras?.map(extra => extra.contentId).sort(), overview: detail.overview, tagline: detail.tagline, poster: detail.posterUrl, backdrop: detail.backdropUrl, ratings: detail.extra?.ratings });
             settled = current === signature ? settled + 1 : 0;
@@ -122,6 +126,10 @@ export class TrailerFetch {
     }
 }
 
-function identities(detail: ItemDetail): string[] {
-    return trailerCards(detail.extras, detail.videos, true).map(card => card.role === "local" ? `local:${card.extra.contentId}` : `remote:${card.site.toLowerCase()}:${card.siteKey}`);
+function localIdentities(detail: ItemDetail): string[] {
+    return trailerCards(detail.extras, undefined, false).flatMap(card => card.role === "local" ? [card.extra.contentId] : []);
+}
+
+function remoteIdentities(detail: ItemDetail): string[] {
+    return trailerCards(undefined, detail.videos, true).flatMap(card => card.role === "remote" ? [`${card.site.toLowerCase()}:${card.siteKey}`] : []);
 }

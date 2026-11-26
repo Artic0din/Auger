@@ -171,17 +171,17 @@ railTest("a focused season pill takes Apple's shadow and an unselected one turns
     assert.equal((await style(1)).shadow, "none");
 });
 
-const YOUTUBE = { kind: "trailer", site: "YouTube", site_key: "abc_def-1", name: "Official Trailer", is_official: true };
+const LOCAL_TRAILER = { content_id: "extra:1", title: "Official Trailer", kind: "trailer", duration: 90 };
 const BOX_SET = {
     id: "1241", library_id: "12", title: "Harry Potter Collection", overview: "Wizards.", poster_url: "/art/potter.svg", movie_count: 2, played_count: 0, first_year: 2001, last_year: 2002,
     items: [{ content_id: "movie:m0001", type: "movie", title: "Philosopher's Stone", year: 2001, poster_url: "/art/hp1.svg" }, { content_id: "movie:m0002", type: "movie", title: "Chamber of Secrets", year: 2002, poster_url: "/art/hp2.svg" }],
 };
 
-/** The Last Signal with a YouTube trailer, a box set and the given cast. */
+/** The Last Signal with a local trailer, a box set and the given cast. */
 async function routeMovie(tv: Tv, details: FakeDetails, change: (body: Record<string, unknown>) => Record<string, unknown> = body => body): Promise<void> {
     details.searchCapabilities = { ...details.searchCapabilities, box_sets: true };
     const body = details.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body as Record<string, unknown>;
-    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: change({ ...body, videos: [YOUTUBE] }) }));
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: change({ ...body, extras: [LOCAL_TRAILER] }) }));
     await tv.page.route("**/api/v2/catalog/items/movie%3Am0001/box-set?**", route => route.fulfill({ json: { box_set: BOX_SET } }));
 }
 

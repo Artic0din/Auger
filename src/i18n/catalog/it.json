@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Ricerca dei trailer…",
  "detail.trailerFetch.notFound": "Nessun trailer trovato",
  "detail.trailerFetch.rateLimited": "Attendi un momento e riprova",
+ "detail.trailerFetch.unplayable": "Nessun trailer riproducibile qui",
  "detail.trailers": "Trailer e altro",
  "detail.translation.translated": "Tradotto con l’IA",
  "detail.translation.translating": "Traduzione…",

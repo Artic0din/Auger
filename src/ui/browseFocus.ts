@@ -380,6 +380,7 @@ export class FocusHost {
             document.removeEventListener("keyup", this.onRelease, true);
             document.removeEventListener("focusout", this.cancelPress);
             this.container.removeEventListener("focusin", this.rememberContent);
+            this.container.removeEventListener("keydown", this.onEnterDown, true);
             this.container.removeEventListener("click", this.endPlayClaim, true);
             document.removeEventListener("visibilitychange", this.cancelPress);
             window.removeEventListener("blur", this.cancelPress);
@@ -405,6 +406,7 @@ export class FocusHost {
             document.addEventListener("keyup", this.onRelease, true);
             document.addEventListener("focusout", this.cancelPress);
             this.container.addEventListener("focusin", this.rememberContent);
+            this.container.addEventListener("keydown", this.onEnterDown, true);
             this.container.addEventListener("click", this.endPlayClaim, true);
             document.addEventListener("visibilitychange", this.cancelPress);
             window.addEventListener("blur", this.cancelPress);
@@ -444,8 +446,13 @@ export class FocusHost {
     }
 
     /** Select by Enter or pointer is the viewer's choice, like a directional move (`userNavigated` in TVSeriesDetailView). */
+    private readonly onEnterDown = (event: KeyboardEvent): void => {
+        if (remoteKey(event) === "enter") this.endPlayClaim();
+    };
+
     private readonly endPlayClaim = (): void => {
         if (this.playClaim !== undefined) this.playClaim.moved = true;
+        this.clearPlayClaimTimer();
     };
 
     private readonly rememberContent = (event: FocusEvent): void => {
@@ -570,7 +577,7 @@ export class FocusHost {
      * One Play claim per Details visit (`TVDetailActionRow.resetInitialPlayFocus`,
      * silo-apple eb82bb86). While `playTitle` is nil the claim stays unused
      * (lines 504, 567-568, 571). Apple uses Watchlist as its row stand-in
-     * (lines 597-602); itemView keeps initial episode loading passive instead.
+     * (lines 597-602); itemView matches Apple's Watchlist stand-in while episodes load.
      * The first attempt then assigns Play without reading that focus (lines 635–643).
      * A later attempt bails only when another action is focused and the page does
      * not track navigation (lines 622–641). Series tracks a directional move or a

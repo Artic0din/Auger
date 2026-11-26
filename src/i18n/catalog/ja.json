@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "予告編を検索しています…",
  "detail.trailerFetch.notFound": "予告編が見つかりません",
  "detail.trailerFetch.rateLimited": "しばらく待ってから、もう一度お試しください",
+ "detail.trailerFetch.unplayable": "このデバイスで再生できる予告編はありません",
  "detail.trailers": "予告編など",
  "detail.translation.translated": "AIによる翻訳",
  "detail.translation.translating": "翻訳中…",

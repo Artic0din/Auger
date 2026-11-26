@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Recherche de bandes-annonces…",
  "detail.trailerFetch.notFound": "Aucune bande-annonce trouvée",
  "detail.trailerFetch.rateLimited": "Patientez un instant et réessayez",
+ "detail.trailerFetch.unplayable": "Aucune bande-annonce lisible ici",
  "detail.trailers": "Bandes-annonces et plus",
  "detail.translation.translated": "Traduit par IA",
  "detail.translation.translating": "Traduction en cours…",

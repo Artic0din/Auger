@@ -1309,6 +1309,48 @@ browseTest("Opening a box set focuses Play, keeps member order, and Back returns
     assert.equal(await tv.page.locator('[data-focus="play"]').count(), 0);
 }, { catalog: new BoxSetCatalog() });
 
+browseTest("Box set hero title splits on colons and dashes like Details", async tv => {
+    let currentTitle = "Harry Potter Collection";
+    await tv.page.route("**/api/v2/catalog/box-sets/1241?**", route => route.fulfill({
+        json: {
+            id: "1241",
+            library_id: "12",
+            title: currentTitle,
+            overview: "Wizards.",
+            poster_url: "/art/potter.svg",
+            backdrop_url: "/art/potter-wide.svg",
+            movie_count: 2,
+            played_count: 1,
+            first_year: 2001,
+            last_year: 2002,
+            items: [
+                { content_id: "movie:m0001", type: "movie", title: "Philosopher's Stone", year: 2001, poster_url: "/art/hp1.svg", user_state: { played: true } },
+                { content_id: "movie:m0002", type: "movie", title: "Chamber of Secrets", year: 2002, poster_url: "/art/hp2.svg", user_state: { played: false } },
+            ],
+        },
+    }));
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);
+    const cases: readonly [string, string, string | null][] = [
+        ["Harry Potter: The Complete Collection", "Harry Potter", "The Complete Collection"],
+        ["Star Wars — Skywalker Saga", "Star Wars", "Skywalker Saga"],
+        ["Middle-earth – Extended", "Middle-earth", "Extended"],
+        ["Dune - The Trilogy", "Dune", "The Trilogy"],
+        ["The Matrix Trilogy", "The Matrix Trilogy", null],
+    ];
+    for (const [title, primary, subtitle] of cases) {
+        currentTitle = title;
+        await tv.page.locator('[data-focus="box-set:12:1241"]').click();
+        await showing(tv, "boxSet:12:1241");
+        await tv.eventually(async () => await tv.page.locator(".requests-title-primary").textContent() === primary, `primary ${primary}`);
+        const secondary = tv.page.locator(".requests-title-secondary");
+        if (subtitle === null) assert.equal(await secondary.count(), 0);
+        else assert.equal(await secondary.textContent(), subtitle);
+        await tv.remote(BACK);
+        await showing(tv, "search");
+    }
+}, { catalog: new BoxSetCatalog() });
+
 // Box set Play is TVPrimaryPillButton with stabilizesFocusMotion (TVDetailActions.swift:53-67, silo-apple main 71a3beb9): it does not
 // lift when focused and presses from 1 to 0.98 (:770), easeOut fastDuration (:745).
 for (const reduced of [false, true]) browseTest(`Box set Play stays at 1 when focused and presses to 0.98 (reduced motion: ${reduced})`, async tv => {

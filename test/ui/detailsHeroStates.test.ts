@@ -361,7 +361,7 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
     // A held answer repaints Details when it is released, which here lands while the focus scroll runs.
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
     // From Trailers the Cast row is still on screen, so a reveal that lost the previous focus reads the move as Down.
-    if (move === "up") catalog.videos = [{ site_key: "trailer-key", site: "YouTube", kind: "trailer", name: "Trailer" }];
+    if (move === "up") catalog.extras = [{ content_id: "extra:1", kind: "trailer", title: "Trailer", duration: 90 }];
     const late = tv.fake.hold(move === "down" ? "/recommendations/similar/movie%3Am0001" : "/favorites/movie%3Am0001/membership");
     await tv.page.locator(MOVIE).first().click();
     await tv.page.locator('[data-focus^="credit:"]').first().waitFor();
@@ -394,7 +394,7 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
 
 detailTest("a Details repaint during an Up move to Trailers that interrupted a move down keeps Trailers at its Up anchor", async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
-    catalog.videos = [{ site_key: "trailer-key", site: "YouTube", kind: "trailer", name: "Trailer" }];
+    catalog.extras = [{ content_id: "extra:1", kind: "trailer", title: "Trailer", duration: 90 }];
     // A held answer repaints Details when it is released, which here lands while the focus scroll runs.
     const late = tv.fake.hold("/favorites/movie%3Am0001/membership");
     await tv.page.locator(MOVIE).first().click();

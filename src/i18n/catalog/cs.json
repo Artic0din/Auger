@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Hledání trailerů…",
  "detail.trailerFetch.notFound": "Nebyly nalezeny žádné trailery",
  "detail.trailerFetch.rateLimited": "Chvíli počkejte a zkuste to znovu",
+ "detail.trailerFetch.unplayable": "Žádné přehratelné trailery",
  "detail.trailers": "Trailery a další",
  "detail.translation.translated": "Přeloženo pomocí AI",
  "detail.translation.translating": "Překládání…",

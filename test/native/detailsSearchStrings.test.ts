@@ -24,7 +24,7 @@ const SCREEN_KEYS: Readonly<Record<string, readonly string[]>> = {
     "src/ui/detailsActions.ts": ["detail.autoAudio", "detail.autoSubtitles", "detail.autoVersion", "detail.startOver", "detail.subtitles", "detail.watchlist"],
     "src/ui/detailsLoading.ts": ["detail.loadingDetails", "detail.loadingDetailsFor", "detail.readout.audio", "detail.readout.subtitles", "detail.readout.version"],
     "src/ui/detailsState.ts": ["detail.watchedError.body", "detail.watchedError.title", "shuffle.failed", "shuffle.failedTitle", "shuffle.nothingToPlay", "shuffle.notFound"],
-    "src/ui/trailerFetch.ts": ["detail.trailerFetch.cooldown", "detail.trailerFetch.disabled", "detail.trailerFetch.failed", "detail.trailerFetch.finding", "detail.trailerFetch.notFound", "detail.trailerFetch.rateLimited"],
+    "src/ui/trailerFetch.ts": ["detail.trailerFetch.cooldown", "detail.trailerFetch.disabled", "detail.trailerFetch.failed", "detail.trailerFetch.finding", "detail.trailerFetch.notFound", "detail.trailerFetch.rateLimited", "detail.trailerFetch.unplayable"],
     "src/ui/trailerRail.ts": ["catalog.extra.behind_the_scenes", "catalog.extra.bloopers", "catalog.extra.clip", "catalog.extra.deleted_scene", "catalog.extra.featurette", "catalog.extra.otherExtra", "catalog.extra.teaser", "catalog.extra.trailer"],
     "src/ui/seriesEpisodesView.ts": ["common.retry", "detail.episodes.empty", "detail.episodes.loadMoreFailed", "detail.episodes.title", "detail.error.loadEpisodes", "detail.season", "detail.specials", "detail.watched"],
     "src/ui/descriptionTranslation.ts": ["detail.translation.translated", "detail.translation.translating"],

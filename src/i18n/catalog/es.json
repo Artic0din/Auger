@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Buscando tráileres…",
  "detail.trailerFetch.notFound": "No se encontraron tráileres",
  "detail.trailerFetch.rateLimited": "Espera un momento y vuelve a intentarlo",
+ "detail.trailerFetch.unplayable": "No hay tráileres reproducibles aquí",
  "detail.trailers": "Tráileres y más",
  "detail.translation.translated": "Traducido por IA",
  "detail.translation.translating": "Traduciendo…",

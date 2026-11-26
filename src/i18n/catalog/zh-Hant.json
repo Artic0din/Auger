@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "正在尋找預告片……",
  "detail.trailerFetch.notFound": "找不到預告片",
  "detail.trailerFetch.rateLimited": "請稍候片刻再試一次",
+ "detail.trailerFetch.unplayable": "沒有可在此播放的預告片",
  "detail.trailers": "預告片與更多內容",
  "detail.translation.translated": "由 AI 翻譯",
  "detail.translation.translating": "正在翻譯……",

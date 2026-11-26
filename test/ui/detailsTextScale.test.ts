@@ -7,7 +7,7 @@ import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const MOVIE = '[data-section="recently_added"] [data-focus="movie:m0001"]';
 const SERIES = '[data-section="recently_added"] [data-focus="series:s1"]';
-const YOUTUBE = { kind: "trailer", site: "YouTube", site_key: "abc_def-1", name: "Official Trailer", is_official: true };
+const LOCAL_TRAILER = { content_id: "extra:1", title: "Official Trailer", kind: "trailer", duration: 95 };
 const BOX_SET = {
     id: "1241", library_id: "12", title: "Harry Potter Collection", overview: "Wizards.", poster_url: "/art/potter.svg", movie_count: 2, played_count: 0, first_year: 2001, last_year: 2002,
     items: [{ content_id: "movie:m0001", type: "movie", title: "Philosopher's Stone", year: 2001, poster_url: "/art/hp1.svg" }, { content_id: "movie:m0002", type: "movie", title: "Chamber of Secrets", year: 2002, poster_url: "/art/hp2.svg" }],
@@ -60,11 +60,11 @@ function unscaledText(root: string): string[] {
     return [...found].sort();
 }
 
-/** The Last Signal with a two-part title, a YouTube trailer, a box set, cast, Related and facts. */
+/** The Last Signal with a two-part title, a local trailer, a box set, cast, Related and facts. */
 async function routeMovie(tv: Tv, details: FakeDetails): Promise<void> {
     details.searchCapabilities = { ...details.searchCapabilities, box_sets: true };
     const body = details.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body as Record<string, unknown>;
-    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, title: "The Last Signal: Night Shift", logo_url: undefined, videos: [YOUTUBE], content_rating: "M" } }));
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, title: "The Last Signal: Night Shift", logo_url: undefined, extras: [LOCAL_TRAILER], content_rating: "M" } }));
     await tv.page.route("**/api/v2/catalog/items/movie%3Am0001/box-set?**", route => route.fulfill({ json: { box_set: BOX_SET } }));
 }
 
@@ -140,7 +140,6 @@ const SF_WIDTHS: readonly { selector: string; text: string; width: number }[] = 
     { selector: ".details-people .browse-card-title", text: "Morgan Lane", width: 119.32 },
     { selector: ".details-people .browse-card-subtitle", text: "Sam", width: 33.71 },
     { selector: ".details-extras .browse-card-title", text: "Official Trailer", width: 133.05 },
-    { selector: ".details-extras .browse-card-subtitle", text: "YouTube", width: 66.76 },
     { selector: ".box-set-row .browse-card-title", text: "Philosopher's Stone", width: 212.79 },
     { selector: ".details-fact-row dt", text: "COUNTRY", width: 88.38 + 7 * 2 },
     { selector: ".details-fact-row dd", text: "North Studio", width: 120.94 },

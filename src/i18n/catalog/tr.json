@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Fragmanlar aranıyor…",
  "detail.trailerFetch.notFound": "Fragman bulunamadı",
  "detail.trailerFetch.rateLimited": "Biraz bekleyip tekrar deneyin",
+ "detail.trailerFetch.unplayable": "Burada oynatılabilir fragman yok",
  "detail.trailers": "Fragmanlar ve daha fazlası",
  "detail.translation.translated": "Yapay zekâ tarafından çevrildi",
  "detail.translation.translating": "Çevriliyor…",

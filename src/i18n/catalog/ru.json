@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "Поиск трейлеров…",
  "detail.trailerFetch.notFound": "Трейлеры не найдены",
  "detail.trailerFetch.rateLimited": "Подождите немного и повторите попытку",
+ "detail.trailerFetch.unplayable": "Нет трейлеров, доступных для воспроизведения",
  "detail.trailers": "Трейлеры и другое",
  "detail.translation.translated": "Переведено ИИ",
  "detail.translation.translating": "Перевод…",

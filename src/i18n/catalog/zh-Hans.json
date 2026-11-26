@@ -216,6 +216,7 @@
  "detail.trailerFetch.finding": "正在查找预告片……",
  "detail.trailerFetch.notFound": "未找到预告片",
  "detail.trailerFetch.rateLimited": "请稍等片刻后重试",
+ "detail.trailerFetch.unplayable": "没有可播放的预告片",
  "detail.trailers": "预告片及更多",
  "detail.translation.translated": "由AI翻译",
  "detail.translation.translating": "正在翻译……",
