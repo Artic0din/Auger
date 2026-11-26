@@ -49,9 +49,14 @@ export function requestStatusLabel(progress: RequestProgress, text = progress.sh
 }
 
 function strokeIcon(d: string): SVGSVGElement {
+    return strokePaths([d]);
+}
+
+function strokePaths(paths: readonly string[], className?: string): SVGSVGElement {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24");
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d);
-    svg.appendChild(path); return svg;
+    if (className !== undefined) { svg.classList.add(className); svg.setAttribute("aria-hidden", "true"); }
+    for (const d of paths) { const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d); svg.appendChild(path); }
+    return svg;
 }
 
 export function requestPosterBadge(progress: RequestProgress): HTMLElement | undefined {
@@ -62,8 +67,19 @@ export function requestPosterBadge(progress: RequestProgress): HTMLElement | und
 }
 
 export function requestPlusIcon(): SVGSVGElement {
-    const icon = strokeIcon("M12 1.5v21M1.5 12h21"); icon.classList.add("requests-action-icon"); icon.setAttribute("aria-hidden", "true");
-    return icon;
+    return strokePaths(["M12 1.5v21M1.5 12h21"], "requests-action-icon");
+}
+
+export function requestBellIcon(): SVGSVGElement {
+    return strokePaths(["M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9", "M13.73 21a2 2 0 0 1-3.46 0"], "requests-secondary-icon");
+}
+
+export function requestBellSlashIcon(): SVGSVGElement {
+    return strokePaths(["M13.73 21a2 2 0 0 1-3.46 0", "M18.63 13A17.89 17.89 0 0 1 18 8", "M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14", "M18 8a6 6 0 0 0-9.33-5", "M2 2l20 20"], "requests-secondary-icon");
+}
+
+export function requestXmarkIcon(): SVGSVGElement {
+    return strokePaths(["M6 6 18 18M18 6 6 18"], "requests-secondary-icon");
 }
 
 /** Apple's rail is a lazy stack in a 100...1820 scroll view with clipping disabled: a card that touches those bounds draws whole, and one past them does not draw. */

@@ -3,7 +3,7 @@ import { boolean, integer, nonEmptyString, object, optionalInstant, optionalStri
 export interface RequestsCapability { readonly enabled: boolean; readonly follow: boolean; readonly removeFailed: boolean }
 export interface RequestState {
     readonly status?: string | undefined;
-    readonly requestable: boolean; readonly following: boolean; readonly requestedByViewer: boolean;
+    readonly requestable: boolean; readonly following: boolean; readonly requestedByViewer: boolean | undefined;
     readonly id: string | undefined; readonly state: string | undefined; readonly reason: string | undefined;
 }
 export interface RequestTitle {
@@ -48,6 +48,11 @@ function optionalStrings(o: Record<string, unknown>, key: string): readonly stri
         return value;
     });
 }
+function optionalBoolean(o: Record<string, unknown>, key: string): boolean | undefined {
+    if (o[key] === undefined || o[key] === null) return undefined;
+    return boolean(o, key, "requests");
+}
+
 /** Present boolean, or false when the server omits it. A non-boolean is a contract break. */
 function optionalFlag(o: Record<string, unknown>, key: string): boolean {
     if (o[key] === undefined) return false;
@@ -61,7 +66,7 @@ export function decodeRequestsCapability(value: unknown): RequestsCapability {
 }
 export function decodeRequestState(value: unknown): RequestState {
     const o = object(value, "request");
-    return { status: optionalString(o, "status", "requests"), requestable: boolean(o, "requestable", "requests"), following: boolean(o, "following", "requests"), requestedByViewer: boolean(o, "requested_by_viewer", "requests"), id: optionalString(o, "request_id", "requests"), state: optionalString(o, "state", "requests"), reason: optionalString(o, "reason", "requests") };
+    return { status: optionalString(o, "status", "requests"), requestable: boolean(o, "requestable", "requests"), following: boolean(o, "following", "requests"), requestedByViewer: optionalBoolean(o, "requested_by_viewer"), id: optionalString(o, "request_id", "requests"), state: optionalString(o, "state", "requests"), reason: optionalString(o, "reason", "requests") };
 }
 function identity(o: Record<string, unknown>): Pick<RequestTitle, "mediaType" | "tmdbId" | "title" | "overview" | "posterPath" | "backdropPath" | "libraryContentId"> {
     const tmdbId = integer(o, "tmdb_id", "requests");
