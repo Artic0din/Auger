@@ -124,9 +124,17 @@ test("Choose a title opens the picker with Apple's shelves, icon-only chrome, an
             return event.defaultPrevented;
         });
         assert.equal(emptyEnterPrevented, false, "Enter on an empty search field leaves default action intact for the TV keyboard");
+        await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs = 0;
+            node.addEventListener("blur", () => {
+                (window as unknown as { __searchInputBlurs: number }).__searchInputBlurs += 1;
+            });
+        });
         await tv.page.locator('[data-focus="picker-search-input"]').fill("Movie 0004");
         await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
         await tv.page.locator(".watch-party-search-grid .browse-card").first().waitFor();
+        const blursDuringSearch = await tv.page.evaluate(() => (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs ?? -1);
+        assert.equal(blursDuringSearch, 0, "search renders keep the search header mounted so the focused input never blurs");
         const completedEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
             const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
             node.dispatchEvent(event);

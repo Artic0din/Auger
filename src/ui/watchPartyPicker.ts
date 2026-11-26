@@ -97,18 +97,20 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
     return { name: `watchParty:picker:${firstShelf === undefined ? "empty" : "shelves"}`, content, zones, focus: { zone, key: first.key }, back: () => hub.back() };
 }
 
-/** Apple's WatchPartySearchPage on tvOS: retained search field over a 6-column poster grid. */
-export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInputElement): View {
+/** Apple's WatchPartySearchPage on tvOS: retained search header over a 6-column poster grid. */
+export function searchView(
+    { hub, baseUrl }: PickerContext,
+    searchHeader: { readonly element: HTMLDivElement; readonly title: HTMLHeadingElement; readonly input: HTMLInputElement },
+): View {
     const { search, pickerPurpose } = hub.state;
+    const { element: header, title, input: searchInput } = searchHeader;
     const prompt = translate("watchParty.picker.searchPromptTv");
+    title.textContent = translate("watchParty.picker.searchPage");
     searchInput.placeholder = prompt;
     searchInput.setAttribute("aria-label", prompt);
     if (searchInput.value !== search.query) searchInput.value = search.query;
 
     const field: FocusItem = { key: "picker-search-input", element: searchInput };
-    const header = el("div", "watch-party-search-head watch-party-ui");
-    header.append(el("h1", "watch-party-search-title", translate("watchParty.picker.searchPage")), searchInput);
-
     const content: HTMLElement[] = [header];
     const zones: Zone[] = [{ id: "picker-search-field", layout: "row", items: [field] }];
     const body = el("div", "watch-party-search-body watch-party-ui");
