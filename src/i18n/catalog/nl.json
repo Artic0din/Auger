@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Trailers zoeken…",
  "detail.trailerFetch.notFound": "Geen trailers gevonden",
  "detail.trailerFetch.rateLimited": "Wacht even en probeer het opnieuw",
+ "detail.trailerFetch.unplayable": "Geen trailers die hier kunnen worden afgespeeld",
  "detail.trailers": "Trailers en meer",
  "detail.translation.translated": "Vertaald door AI",
  "detail.translation.translating": "Wordt vertaald…",

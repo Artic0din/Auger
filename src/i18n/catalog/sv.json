@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Söker efter trailers…",
  "detail.trailerFetch.notFound": "Inga trailers hittades",
  "detail.trailerFetch.rateLimited": "Vänta en stund och försök igen",
+ "detail.trailerFetch.unplayable": "Inga trailers som kan spelas upp här",
  "detail.trailers": "Trailers med mera",
  "detail.translation.translated": "Översatt av AI",
  "detail.translation.translating": "Översätter…",

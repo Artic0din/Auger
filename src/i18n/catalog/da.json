@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Finder trailere…",
  "detail.trailerFetch.notFound": "Ingen trailere fundet",
  "detail.trailerFetch.rateLimited": "Vent et øjeblik, og prøv igen",
+ "detail.trailerFetch.unplayable": "Ingen afspillelige trailere her",
  "detail.trailers": "Trailere og mere",
  "detail.translation.translated": "Oversat af AI",
  "detail.translation.translating": "Oversætter…",

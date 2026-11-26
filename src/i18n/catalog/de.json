@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Trailer werden gesucht…",
  "detail.trailerFetch.notFound": "Keine Trailer gefunden",
  "detail.trailerFetch.rateLimited": "Warte einen Moment und versuche es erneut",
+ "detail.trailerFetch.unplayable": "Keine abspielbaren Trailer verfügbar",
  "detail.trailers": "Trailer & mehr",
  "detail.translation.translated": "Von KI übersetzt",
  "detail.translation.translating": "Wird übersetzt…",

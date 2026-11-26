@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Wyszukiwanie zwiastunów…",
  "detail.trailerFetch.notFound": "Nie znaleziono zwiastunów",
  "detail.trailerFetch.rateLimited": "Zaczekaj chwilę i spróbuj ponownie",
+ "detail.trailerFetch.unplayable": "Brak zwiastunów do odtworzenia",
  "detail.trailers": "Zwiastuny i więcej",
  "detail.translation.translated": "Przetłumaczono przez AI",
  "detail.translation.translating": "Tłumaczenie…",

@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Søker etter trailere …",
  "detail.trailerFetch.notFound": "Fant ingen trailere",
  "detail.trailerFetch.rateLimited": "Vent litt og prøv igjen",
+ "detail.trailerFetch.unplayable": "Ingen spillbare trailere her",
  "detail.trailers": "Trailere og mer",
  "detail.translation.translated": "Oversatt av KI",
  "detail.translation.translating": "Oversetter …",

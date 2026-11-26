@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "جارٍ البحث عن الإعلانات الترويجية…",
  "detail.trailerFetch.notFound": "لم يُعثر على إعلانات ترويجية",
  "detail.trailerFetch.rateLimited": "انتظر لحظة وحاول مرة أخرى",
+ "detail.trailerFetch.unplayable": "لا توجد إعلانات ترويجية قابلة للتشغيل هنا",
  "detail.trailers": "إعلانات ترويجية والمزيد",
  "detail.translation.translated": "مترجم بالذكاء الاصطناعي",
  "detail.translation.translating": "جارٍ الترجمة…",

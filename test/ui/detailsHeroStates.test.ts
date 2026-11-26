@@ -364,7 +364,7 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
     // A held answer repaints Details when it is released, which here lands while the focus scroll runs.
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
     // From Trailers the Cast row is still on screen, so a reveal that lost the previous focus reads the move as Down.
-    if (move === "up") catalog.videos = [{ site_key: "trailer-key", site: "YouTube", kind: "trailer", name: "Trailer" }];
+    if (move === "up") catalog.extras = [{ content_id: "extra:1", kind: "trailer", title: "Trailer", duration: 90 }];
     const late = tv.fake.hold(move === "down" ? "/recommendations/similar/movie%3Am0001" : "/favorites/movie%3Am0001/membership");
     await tv.page.locator(MOVIE).first().click();
     await tv.page.locator('[data-focus^="credit:"]').first().waitFor();
@@ -397,7 +397,7 @@ for (const move of ["down", "up"] as const) detailTest(`a Details repaint during
 
 detailTest("a Details repaint during an Up move to Trailers that interrupted a move down keeps Trailers at its Up anchor", async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
-    catalog.videos = [{ site_key: "trailer-key", site: "YouTube", kind: "trailer", name: "Trailer" }];
+    catalog.extras = [{ content_id: "extra:1", kind: "trailer", title: "Trailer", duration: 90 }];
     // A held answer repaints Details when it is released, which here lands while the focus scroll runs.
     const late = tv.fake.hold("/favorites/movie%3Am0001/membership");
     await tv.page.locator(MOVIE).first().click();
@@ -482,4 +482,19 @@ detailTest("the synopsis and meta line match the Apple TV capture of The Rookie"
     assert.deepEqual(shown.lines.map(line => line.top), [342, 377.5, 413], "a 35.5px pitch, 4px below the old first line");
     for (const [index, right] of [1085.6, 1128.8, 1005.9].entries()) assert.ok(Math.abs(shown.lines[index]!.right - right) <= 1, JSON.stringify(shown.lines));
     assert.ok(Math.abs(shown.metaEnd - 775) <= 1, String(shown.metaEnd));
+});
+
+detailTest("series details without Watchlist keeps non-Play loading focus while episodes load, then focuses Play", async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    catalog.capability = false;
+    const episodes = tv.fake.hold("/catalog/series/series%3As1/seasons/1/episodes", true);
+    try {
+        await tv.page.locator(SERIES).first().click();
+        await tv.page.locator('[data-view="item:series:s1"] .details-hero[data-focus="loading"]').waitFor();
+        await tv.eventually(async () => await tv.page.locator('[data-focus="next-episode"]').getAttribute("aria-disabled") === "false", "episode target resolves while episodes stay held");
+        assert.equal(await tv.focused(), "loading", "non-Play loading owner holds focus while episodes load even without Watchlist");
+        assert.equal(await tv.page.locator('[data-focus="watchlist"]').count(), 0);
+        episodes.release();
+        await tv.eventually(async () => await tv.focused() === "next-episode", "Play claims focus once episodes arrive");
+    } finally { episodes.release(); }
 });

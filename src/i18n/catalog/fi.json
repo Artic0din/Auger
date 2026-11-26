@@ -226,6 +226,7 @@
  "detail.trailerFetch.finding": "Etsitään trailereita…",
  "detail.trailerFetch.notFound": "Trailereita ei löytynyt",
  "detail.trailerFetch.rateLimited": "Odota hetki ja yritä uudelleen",
+ "detail.trailerFetch.unplayable": "Ei toistettavia trailereita",
  "detail.trailers": "Trailerit ja muuta",
  "detail.translation.translated": "Tekoälyn kääntämä",
  "detail.translation.translating": "Käännetään…",
