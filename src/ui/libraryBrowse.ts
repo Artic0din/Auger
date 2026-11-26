@@ -162,6 +162,12 @@ export function withSort(filter: BrowseFilter, key: SortKey): BrowseFilter {
     return { ...filter, sort: key, order: undefined };
 }
 
+/** Resets the sort and direction to Title when a filter change removes the active sort's media scope. */
+export function withValidSort(libraryType: string, filter: BrowseFilter): BrowseFilter {
+    const mediaType = sortMediaType(libraryType, filter);
+    return applies(filter.sort, mediaType) ? filter : { ...filter, sort: "title", order: undefined };
+}
+
 export function selected(filter: BrowseFilter, facet: Facet): readonly string[] {
     return filter.values[facet] ?? [];
 }

@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { build } from "esbuild";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
@@ -328,6 +329,7 @@ page("Browse's first load shows twelve static poster placeholders", async tv => 
         await openBrowse(tv);
         const cards = tv.page.locator(".browse .catalog-skeleton .poster-skeleton");
         await cards.first().waitFor();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "browse setup answers delivered");
         assert.equal(await cards.count(), 12);
         assert.equal(await tv.page.locator(".discovery-skeleton").count(), 0);
         const style = await cards.first().evaluate(node => ({ background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius, animations: node.getAnimations().length, ratio: node.getBoundingClientRect().height / node.getBoundingClientRect().width }));
@@ -1102,6 +1104,48 @@ test("Explore all section page renders blank loading focus owner, empty stack ic
         assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Row unavailable");
         assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row is no longer available.");
         assert.equal(await tv.focused(), "state");
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
+});
+
+test("SectionCatalog shows ErrorView with Retry over a cached unavailable snapshot when a reload fails", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const compiled = await build({
+            stdin: {
+                contents: 'import { SectionCatalog } from "./src/ui/sectionCatalog.ts"; (window as unknown as { SectionCatalog: typeof SectionCatalog }).SectionCatalog = SectionCatalog;',
+                resolveDir: process.cwd(),
+                loader: "ts",
+            },
+            bundle: true,
+            write: false,
+            format: "iife",
+            target: "chrome108",
+        });
+        await tv.page.addScriptTag({ content: compiled.outputFiles[0]!.text });
+        const summary = await tv.page.evaluate(() => {
+            const SectionCatalog = (window as unknown as { SectionCatalog: new () => { snapshot: unknown; view: (...args: unknown[]) => { focus?: { zone: string; key: string }; content: HTMLElement[] } } }).SectionCatalog;
+            const catalog = new SectionCatalog();
+            catalog.snapshot = { page: { items: [], nextCursor: undefined, total: 0, totalExact: true }, cursors: new Set(), unavailable: true };
+            const route = {
+                kind: "homeSection",
+                id: "library-picks",
+                title: "Library Picks",
+                continuing: false,
+                pages: { page: undefined, cursors: [undefined], index: 0 },
+                failure: "Server unreachable",
+                error: undefined,
+            };
+            const view = catalog.view(route, { baseUrl: "https://silo.example.test", open: () => undefined }, false, () => undefined, () => undefined, () => undefined);
+            const host = document.createElement("div");
+            host.append(...view.content);
+            return {
+                focus: view.focus,
+                retryCount: host.querySelectorAll('[data-focus="retry"]').length,
+                unavailableCount: host.querySelectorAll('[data-symbol="rectangle.stack.badge.minus"]').length,
+            };
+        });
+        assert.deepEqual(summary, { focus: { zone: "status", key: "retry" }, retryCount: 1, unavailableCount: 0 });
         assert.deepEqual(tv.console, [], "the page logs nothing");
     } finally { await tv.page.context().close(); }
 });

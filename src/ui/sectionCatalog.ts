@@ -53,8 +53,8 @@ export class SectionCatalog {
         const name = route.kind === "homeSection" ? `homeSection:${route.id}` : `libraryResults:${route.library.id}:${route.source.id}`;
         const content: HTMLElement[] = [title];
         if (page === undefined || page.items.length === 0) {
+            if (route.failure !== undefined) return errorView(name, failureError(route.failure, route.error), retry, back, signIn);
             const unavailable = this.snapshot?.unavailable === true;
-            if (!unavailable && route.failure !== undefined) return errorView(name, failureError(route.failure, route.error), retry, back, signIn);
             const message = unavailable ? translate("rowPage.unavailable") : busy ? translate("rowPage.loading", { title: isolated(route.title) }) : translate("rowPage.empty");
             const owner = el("div", "section-catalog-state");
             owner.tabIndex = -1;

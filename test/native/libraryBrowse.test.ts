@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { UserLibrary } from "../../src/contracts/v2/catalog.ts";
-import { applies, browseMediaType, browseQuery, DEFAULT_FILTER, directionLabel, effectiveOrder, facetsFor, options, SORT_KEYS, sortKeysFor, sortLabel, sortMediaType, toggled, withSort, reset, BrowsePrefs, type BrowseMediaType, type SortKey } from "../../src/ui/libraryBrowse.ts";
+import { applies, browseMediaType, browseQuery, DEFAULT_FILTER, directionLabel, effectiveOrder, facetsFor, options, SORT_KEYS, sortKeysFor, sortLabel, sortMediaType, toggled, withSort, withValidSort, reset, BrowsePrefs, type BrowseMediaType, type SortKey } from "../../src/ui/libraryBrowse.ts";
 import { panelFocus } from "../../src/ui/libraryBrowseViews.ts";
 import { discoveryState } from "../../src/ui/libraryDiscovery.ts";
 
@@ -238,6 +238,13 @@ test("facets are chosen per library media type, itemType is single-select, and a
     assert.equal(restored?.sort, "title");
     assert.equal(restored?.order, undefined);
     assert.deepEqual(restored?.values, { watchStatus: ["watched"], genre: ["Drama"] });
+
+    const seriesSorted = withSort(seriesScope, "last_air_date");
+    assert.equal(withValidSort("mixed", seriesSorted).sort, "last_air_date");
+    assert.deepEqual(withValidSort("mixed", reset(seriesSorted)), { ...reset(seriesSorted), sort: "title", order: undefined });
+    assert.deepEqual(withValidSort("mixed", toggled(seriesSorted, "itemType", "series")), { ...toggled(seriesSorted, "itemType", "series"), sort: "title", order: undefined });
+    assert.deepEqual(withValidSort("mixed", { ...toggled(seriesSorted, "genre", "Drama"), matchAll: false }).sort, "title");
+    assert.equal(withValidSort("mixed", withSort(DEFAULT_FILTER, "rating_imdb")).sort, "rating_imdb");
 });
 
 test("panelFocus selects first selected option, else first option, else facet-back, and picks first per-type facet", () => {
