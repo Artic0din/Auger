@@ -199,6 +199,7 @@ export class WatchPartyHub {
     canStartSuggestion(suggestion: Suggestion): boolean {
         const room = this.state.room;
         if (room?.phase !== "lobby" || !room.selfCanManageRoom) return false;
+        if (room.selectionMode === "vote" && !this.ballotCurrent()) return false;
         if (room.selectionMode !== "host_pick" && this.state.capabilities?.voteHostOverride !== true) return false;
         return this.state.votes.rows.some(row => row.id === suggestion.id);
     }
@@ -208,6 +209,7 @@ export class WatchPartyHub {
         const room = this.state.room;
         const row = this.state.votes.rows.find(candidate => candidate.id === id);
         if (room?.phase !== "lobby" || !room.selfCanManageRoom || row === undefined) return false;
+        if (room.selectionMode === "vote" && !this.ballotCurrent()) return false;
         if (room.selectionMode === "vote" && this.state.capabilities?.voteHostOverride !== true && this.winner()?.id !== id) return false;
         const started = await this.mutate(
             signal => this.api.promoteSuggestion(room.roomId, this.roomToken, id, signal),
