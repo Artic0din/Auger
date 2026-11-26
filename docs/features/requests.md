@@ -76,7 +76,7 @@ Details reuse its palette with the native uniform 42% base tint, accent and shad
 Both use the shared artwork fade stops.
 The hub also uses its 190 px top scrim to keep navigation legible over bright artwork.
 Inter remains the approved platform font substitute.
-Request captions use calibrated 27 px Inter so titles such as Street Fighter and Neuromancer fit the matching native poster width.
+Request captions use cap-scaled 28 pt Inter (~27.1 px) so titles such as Street Fighter and Neuromancer fit the matching native poster width.
 Hub status captions use calibrated -0.6 px tracking, which reproduces the native widths of Queued, Partly in library and Adding to library.
 The Request pill has calibrated 270 and 370 px minimum widths because Inter sets the word narrower than Apple's font.
 Details title text uses calibrated horizontal compression to approximate the licensed Apple compressed face.

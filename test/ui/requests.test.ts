@@ -10,6 +10,8 @@ import { assertPressedLook } from "./support/pressed.ts";
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 async function start(tv: Tv, fake = new FakeRequests(), offerSignOut = false): Promise<FakeRequests> {
     tv.fake.catalog = fake;
     await tv.page.evaluate(() => window.browseHarness.connect());
@@ -423,7 +425,7 @@ test("request record detail reads verified title metadata and recommendations", 
         await view(tv, "request");
         await tv.page.getByText("Directed by Michael Mann", { exact: true }).waitFor();
         assert.equal(await tv.page.locator(".requests-detail-hero .requests-synopsis").evaluate(node => getComputedStyle(node).color), "rgba(255, 255, 255, 0.92)");
-        assert.equal(await tv.page.locator(".requests-credit").evaluate(node => getComputedStyle(node).fontSize), "23px");
+        assert.equal(await tv.page.locator(".requests-credit").evaluate(node => getComputedStyle(node).fontSize), capped(23));
         await tv.page.getByText("REQUESTED", { exact: true }).waitFor();
         await tv.page.getByText("QUALITY", { exact: true }).waitFor();
         assert.ok(await tv.page.locator(".requests-credit").evaluate(node => node.getBoundingClientRect().top) > await tv.page.locator(".requests-track-labels").evaluate(node => node.getBoundingClientRect().bottom));
@@ -1181,8 +1183,8 @@ test("unrequested detail keeps its action whole with posters at 746 and native c
         assert.ok(Math.abs(action.left - 95.4) <= 1 && Math.abs(action.right - 474.6) <= 1, `native pill spans 95.4 to 474.6, got ${action.left} to ${action.right}`);
         assert.equal(action.shadow, "rgba(0, 0, 0, 0.24) 0px 4px 20px 0px", "compact focus shadow");
         const eyebrow = await tv.page.locator(".requests-eyebrow").evaluate(node => { const style = getComputedStyle(node); return [style.letterSpacing, style.paddingTop, style.paddingLeft, style.backgroundColor, style.boxShadow, style.fontSize, style.fontWeight, node.getBoundingClientRect().height]; });
-        assert.deepEqual(eyebrow, ["1.2px", "8px", "16px", "rgba(0, 0, 0, 0.55)", "rgba(255, 255, 255, 0.18) 0px 0px 0px 1px inset", "18px", "600", 38]);
-        assert.deepEqual(await tv.page.locator(".requests-tmdb span").first().evaluate(node => { const style = getComputedStyle(node); return [node.textContent, style.fontWeight, style.color, style.fontSize]; }), ["6.1", "700", "rgb(255, 255, 255)", "24px"]);
+        assert.deepEqual(eyebrow, ["1.2px", "8px", "16px", "rgba(0, 0, 0, 0.55)", "rgba(255, 255, 255, 0.18) 0px 0px 0px 1px inset", capped(18), "600", 38]);
+        assert.deepEqual(await tv.page.locator(".requests-tmdb span").first().evaluate(node => { const style = getComputedStyle(node); return [node.textContent, style.fontWeight, style.color, style.fontSize]; }), ["6.1", "700", "rgb(255, 255, 255)", capped(24)]);
     } finally { await tv.page.context().close(); }
 });
 test("request status dots, hub captions, poster badges and the magnifier use native values", async () => {
@@ -1219,7 +1221,7 @@ test("request status dots, hub captions, poster badges and the magnifier use nat
         await button(tv, "request-one").click(); await view(tv, "request");
         await tv.page.getByText("Directed by Denis Villeneuve", { exact: true }).waitFor();
         assert.deepEqual(await pseudo(tv, '[data-focus="status"] .requests-status-label', "::before", "width", "height"), ["14px", "14px"], "action dot");
-        assert.deepEqual(await button(tv, "status").locator(".requests-status-label").evaluate(node => { const style = getComputedStyle(node); return [style.alignItems, style.columnGap, style.fontSize, style.fontWeight]; }), ["center", "14px", "28px", "600"]);
+        assert.deepEqual(await button(tv, "status").locator(".requests-status-label").evaluate(node => { const style = getComputedStyle(node); return [style.alignItems, style.columnGap, style.fontSize, style.fontWeight]; }), ["center", "14px", capped(28), "600"]);
         assert.deepEqual(await pseudo(tv, ".requests-summary .requests-status-label", "::before", "width", "height"), ["11px", "11px"], "summary dot");
         assert.deepEqual(await tv.page.locator(".requests-summary .requests-status-label").evaluate(node => { const style = getComputedStyle(node); return [style.alignItems, style.columnGap]; }), ["center", "10px"]);
     } finally { await tv.page.context().close(); }
@@ -1281,7 +1283,7 @@ test("Requests loading is Apple's passive skeleton page and owns focus without a
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         near(await box(tv, ".requests-loading-spinner"), [88, 395, 40, 40], 0, "spinner");
         const label = await tv.page.locator(".requests-loading-label").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return { left: rect.left, centre: rect.top + rect.height / 2, size: style.fontSize, weight: style.fontWeight, color: style.color }; });
-        assert.deepEqual(label, { left: 142, centre: 415, size: "20px", weight: "500", color: "rgba(237, 237, 237, 0.72)" });
+        assert.deepEqual(label, { left: 142, centre: 415, size: capped(20), weight: "500", color: "rgba(237, 237, 237, 0.72)" });
         near(await box(tv, ".requests-loading-rail > .requests-loading-bar"), [88, 614, 300, 28], 0, "rail header");
         const cards = await tv.page.locator(".requests-loading-card > :first-child").evaluateAll(nodes => nodes.map(node => { const rect = node.getBoundingClientRect(); return [Math.round(rect.left), Math.round(rect.top), rect.width, rect.height]; }));
         assert.equal(cards.length, 8);
@@ -1317,14 +1319,14 @@ test("Requests failure uses Apple's ErrorView, its copy and Try Again shows load
         await tv.page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
         await tv.page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
         const heading = await tv.page.locator(".requests-failure h2").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [style.fontSize, style.fontWeight, Math.round(rect.top), Math.round(rect.height)]; });
-        assert.deepEqual(heading, ["36px", "600", 436, 43]);
+        assert.deepEqual(heading, [capped(36), "600", 436, 43]);
         const body = await tv.page.locator(".requests-failure p").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [style.fontSize, Math.round(rect.top), Math.round(rect.height), style.color]; });
-        assert.deepEqual(body, ["26px", 527, 32, "rgba(237, 237, 237, 0.6)"]);
+        assert.deepEqual(body, [capped(26), 527, 32, "rgba(237, 237, 237, 0.6)"]);
         near(await box(tv, ".requests-failure .search-state-icon"), [935, 335, 50, 53], 0, "icon box");
         assert.equal(await tv.page.locator(".requests-failure .search-state-icon").evaluate(node => getComputedStyle(node).color), "rgb(176, 0, 32)");
         near(await box(tv, ".requests-failure .browse-button"), [860, 623, 200, 62], 0, "Try Again at rest");
         const rest = await again.evaluate(node => { const style = getComputedStyle(node); return [style.fontSize, style.fontWeight, style.backgroundColor, style.color]; });
-        assert.deepEqual(rest, ["28px", "600", "rgba(237, 237, 237, 0.72)", "rgb(0, 0, 0)"]);
+        assert.deepEqual(rest, [capped(28), "600", "rgba(237, 237, 237, 0.72)", "rgb(0, 0, 0)"]);
         await tv.remote(40);
         assert.equal(await tv.focused(), "retry", "Down from the bar returns to Try Again");
         const focused = await again.evaluate(node => { const style = getComputedStyle(node); return { background: style.backgroundColor, transform: style.transform, ring: style.boxShadow.includes("rgb(255, 255, 255) 0px 0px 0px 2px") }; });
@@ -1407,9 +1409,9 @@ test("Requests empty is Apple's EmptyStateView and owns focus without a highligh
         assert.equal(await tv.page.getByText("No titles available.").count(), 0);
         assert.deepEqual(await focusedHighlight(tv), ["none", "none"]);
         const title = await tv.page.locator(".requests-empty h2").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [style.fontSize, style.fontWeight, Math.round(rect.top), Math.round(rect.height)]; });
-        assert.deepEqual(title, ["28px", "600", 502, 34]);
+        assert.deepEqual(title, [capped(28), "600", 502, 34]);
         const subtitle = await tv.page.locator(".requests-empty p").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [style.fontSize, Math.round(rect.top), Math.round(rect.height), style.color]; });
-        assert.deepEqual(subtitle, ["22px", 548, 27, "rgba(237, 237, 237, 0.6)"]);
+        assert.deepEqual(subtitle, [capped(22), 548, 27, "rgba(237, 237, 237, 0.6)"]);
         near(await box(tv, ".requests-empty .search-state-icon svg"), [935, 449, 51, 37], 0, "tray glyph");
         assert.equal(await tv.page.locator(".requests-empty .search-state-icon").evaluate(node => getComputedStyle(node).color), "rgba(237, 237, 237, 0.3)");
         const reads = tv.fake.requests.length;
@@ -1517,7 +1519,7 @@ test("hub rows align to the 596 band top, keep the heading visible and the eyebr
         const fake = new FakeRequests(); fake.created = true; manyRows(tv, fake);
         await start(tv, fake); await openRequests(tv); await button(tv, "a").waitFor();
         await tv.eventually(async () => await tv.focused() === "a", "first card");
-        assert.deepEqual(await tv.page.locator(".requests-discover").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [rect.top, rect.height, style.fontSize, style.letterSpacing, style.color]; }), [1049, 21, "17px", "1.6px", "rgba(237, 237, 237, 0.55)"], "the first row stops 10 px above DISCOVER");
+        assert.deepEqual(await tv.page.locator(".requests-discover").evaluate(node => { const style = getComputedStyle(node), rect = node.getBoundingClientRect(); return [rect.top, rect.height, style.fontSize, style.letterSpacing, style.color]; }), [1049, 21, capped(17), "1.6px", "rgba(237, 237, 237, 0.55)"], "the first row stops 10 px above DISCOVER");
         assert.equal(await top(tv, ".requests-row:nth-of-type(2) .requests-heading"), 1074);
         let tops = await rowTops(tv);
         assert.equal(tops.heading, 596); assert.equal(await untransformedArtTop(tv), 662);
