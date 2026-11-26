@@ -177,24 +177,30 @@ export function clientFeatures(renditionsAll: boolean, bufferingQuality = false)
     return [...CLIENT_FEATURES, ...(renditionsAll ? [HLS_SUBTITLE_RENDITIONS_ALL_FEATURE] : []), ...(bufferingQuality ? [BUFFERING_QUALITY_FEATURE] : [])];
 }
 
+const H264_FHD: VideoDecodeCapability = { codec: "h264", hardware: true, bit_depths: [8], max_width: 1920, max_height: 1080 };
+
 /**
  * Apple pairs its resolution token with the same pixel box: 3840x2160 for 2160p, 1920x1080 for
  * 1080p (silo-apple d74a30aa, AppleDecodeCapabilities.swift:256-273, sent as `maxResolution` at
  * ApplePlaybackV3Capabilities.swift:208). Apple TV HD is Apple's only 1080p surface.
+ *
+ * On the declared tier these entries only narrow the flat lists, and a source passes when any entry for
+ * its codec takes it. Samsung's 2024-2026 video specifications cap UHD H.264 at Level 5.1, which holds
+ * 3840x2160 at 30 fps, so the UHD H.264 entry carries that frame rate. The server enforces
+ * `max_frame_rate` absolutely on this tier, so the Full HD entry stays uncapped and 1080p60 H.264 keeps
+ * playing. HEVC UHD is Level 5.1 or 5.2, which holds 3840x2160 at 60 fps.
  */
-const DECODE_SIZE: Readonly<Record<PanelResolution, { readonly max_width: number; readonly max_height: number }>> = {
-    "2160p": { max_width: 3840, max_height: 2160 },
-    "1080p": { max_width: 1920, max_height: 1080 },
+const VIDEO_DECODE: Readonly<Record<PanelResolution, readonly VideoDecodeCapability[]>> = {
+    "2160p": [
+        H264_FHD,
+        { codec: "h264", hardware: true, bit_depths: [8], max_width: 3840, max_height: 2160, max_frame_rate: 30 },
+        { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 3840, max_height: 2160 },
+    ],
+    "1080p": [
+        H264_FHD,
+        { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 1920, max_height: 1080 },
+    ],
 };
-
-/** On the declared tier these entries only narrow the flat lists. */
-function videoDecode(resolution: PanelResolution): readonly VideoDecodeCapability[] {
-    const size = DECODE_SIZE[resolution];
-    return [
-        { codec: "h264", hardware: true, bit_depths: [8], ...size },
-        { codec: "hevc", hardware: true, bit_depths: [8, 10], ...size },
-    ];
-}
 
 export const CLIENT_CAPABILITIES: ClientCapabilities = {
     video_evidence: "declared",
@@ -205,13 +211,13 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
     containers: ["mp4", "m4v", "mkv", "matroska", "m3u8", "hls"],
     max_resolution: "1080p",
     hdr: false,
-    video_decode: videoDecode("1080p"),
+    video_decode: VIDEO_DECODE["1080p"],
 };
 
 /** The 1080p SDR profile when the panel and the report claim nothing. Otherwise the same lists, resized for a 4K panel and with HDR details. */
 export function clientCapabilities(report?: HdrReport, resolution: PanelResolution = "1080p"): ClientCapabilities {
     const details = report === undefined ? undefined : hdrDetails(report);
-    const sized = resolution === "1080p" ? CLIENT_CAPABILITIES : { ...CLIENT_CAPABILITIES, max_resolution: resolution, video_decode: videoDecode(resolution) };
+    const sized = resolution === "1080p" ? CLIENT_CAPABILITIES : { ...CLIENT_CAPABILITIES, max_resolution: resolution, video_decode: VIDEO_DECODE[resolution] };
     return details === undefined ? sized : { ...sized, hdr: true, hdr_details: details };
 }
 

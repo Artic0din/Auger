@@ -118,7 +118,9 @@ Off, an unsupported panel, a throwing probe, or a failed read of the HDR key the
 
 `client_capabilities` claims 2160p only when `webapis.productinfo.isUdPanelSupported()` returns true.
 Samsung's [4K 8K UHD Video guide](https://developer.samsung.com/smarttv/develop/guides/multimedia/4k-8k-uhd-video.html) names this call as the 4K check: true for a 4K or 8K panel, false for Full HD.
-A true result sets `max_resolution` to `2160p` and both `video_decode` entries to 3840x2160, so the server can send a 4K original or a copy remux.
+A true result sets `max_resolution` to `2160p` and claims 3840x2160 for HEVC and H.264, so the server can send a 4K original or a copy remux.
+UHD H.264 carries `max_frame_rate: 30`, because Samsung's 2024-2026 video specifications cap it at Level 5.1 (4K30).
+The server enforces that cap absolutely, so a separate uncapped 1920x1080 H.264 entry keeps 1080p60 H.264 playing.
 False, a non-boolean, a missing method, or a throw keeps `1080p` and 1920x1080.
 An 8K panel also claims 2160p; this client makes no 8K claim.
 The call reuses the `productinfo` privilege, so `config.xml` gains none.

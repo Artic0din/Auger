@@ -4954,7 +4954,7 @@ function resolutionClaim(body: Record<string, unknown>): unknown {
     const capabilities = body.client_capabilities as { max_resolution?: unknown; video_decode?: readonly { codec?: unknown; max_width?: unknown; max_height?: unknown }[] } | undefined;
     return {
         max_resolution: capabilities?.max_resolution,
-        video_decode: capabilities?.video_decode?.map(entry => [entry.codec, entry.max_width, entry.max_height]),
+        video_decode: capabilities?.video_decode?.map(entry => [entry.codec, entry.max_height]),
     };
 }
 
@@ -4969,7 +4969,7 @@ async function finishReplacement(r: Rig): Promise<void> {
 }
 
 test("a generic replan, a recovery replan and a replacement restart repeat the start HDR details and panel resolution", async () => {
-    for (const [uhd, resolution, width, height] of [[true, "2160p", 3840, 2160], [undefined, "1080p", 1920, 1080], [false, "1080p", 1920, 1080], ["throw", "1080p", 1920, 1080]] as const) {
+    for (const [uhd, resolution] of [[true, "2160p"], [undefined, "1080p"], [false, "1080p"], ["throw", "1080p"]] as const) {
         const r = await rig("p-owner", undefined, hdrPanel(true, uhd));
         const settings = new FakeSettings(r.h.fake);
         settings.hdrRows = true;
@@ -4979,7 +4979,8 @@ test("a generic replan, a recovery replan and a replacement restart repeat the s
         const start = only(bodies(r.h, "/playback/start"));
         const claimed = hdrClaim(start);
         assert.deepEqual(claimed, { hdr: true, capabilities: HDR, output: HDR, original_http: HDR, hls: HDR });
-        const sized = { max_resolution: resolution, video_decode: [["h264", width, height], ["hevc", width, height]] };
+        const top = resolution === "2160p" ? 2160 : 1080;
+        const sized = { max_resolution: resolution, video_decode: [["h264", 1080], ...(top === 2160 ? [["h264", 2160]] : []), ["hevc", top]] };
         assert.deepEqual(resolutionClaim(start), sized, String(uhd));
 
         r.controller.selectQuality("1080p-medium");

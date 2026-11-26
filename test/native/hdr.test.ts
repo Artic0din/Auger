@@ -112,14 +112,21 @@ test("only a strict true from isUdPanelSupported reads as a 4K panel", () => {
 test("panel resolution and HDR compose independently on the capability body", () => {
     const hdr: HdrReport = { panel: { hdr10: true, hlg: false, dolbyVision: false }, preference: { hdrEnabled: true } };
     const claimed = { hdr10: true, hdr10_plus: false, hlg: false, dolby_vision_profiles: [] };
-    for (const [resolution, width, height] of [["1080p", 1920, 1080], ["2160p", 3840, 2160]] as const) {
+    const h264Fhd = { codec: "h264", hardware: true, bit_depths: [8], max_width: 1920, max_height: 1080 };
+    const decode = {
+        "1080p": [h264Fhd, { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 1920, max_height: 1080 }],
+        // UHD H.264 is Level 5.1 (4K30); the uncapped Full HD entry keeps 1080p60 H.264 eligible.
+        "2160p": [
+            h264Fhd,
+            { codec: "h264", hardware: true, bit_depths: [8], max_width: 3840, max_height: 2160, max_frame_rate: 30 },
+            { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 3840, max_height: 2160 },
+        ],
+    } as const;
+    for (const resolution of ["1080p", "2160p"] as const) {
         for (const report of [undefined, OFF, hdr]) {
             const capabilities = clientCapabilities(report, resolution);
             assert.equal(capabilities.max_resolution, resolution);
-            assert.deepEqual(capabilities.video_decode, [
-                { codec: "h264", hardware: true, bit_depths: [8], max_width: width, max_height: height },
-                { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: width, max_height: height },
-            ]);
+            assert.deepEqual(capabilities.video_decode, decode[resolution]);
             assert.equal(capabilities.video_evidence, "declared");
             assert.equal(capabilities.hdr, report === hdr);
             assert.deepEqual(capabilities.hdr_details, report === hdr ? claimed : undefined);

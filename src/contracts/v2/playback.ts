@@ -558,6 +558,7 @@ export type VideoDecodeCapability = {
     readonly bit_depths?: readonly number[];
     readonly max_width?: number;
     readonly max_height?: number;
+    readonly max_frame_rate?: number;
 };
 
 /** ClientCodecCapabilitiesV3. */
