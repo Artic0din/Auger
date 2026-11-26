@@ -161,15 +161,18 @@ export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInp
 
     searchInput.oninput = () => { hub.setSearchQuery(searchInput.value); };
     searchInput.onkeydown = event => {
-        if (event.keyCode !== IME_DONE && event.key !== "Enter") return;
+        const done = event.keyCode === IME_DONE;
+        if (!done && event.key !== "Enter") return;
+        const trimmed = searchInput.value.trim();
+        // Leave Enter unhandled on an empty field so the Samsung TV remote can open the on-screen keyboard (matching browse.ts).
+        if (!done && trimmed === "") return;
         event.preventDefault();
         event.stopPropagation();
-        const trimmed = searchInput.value.trim();
         if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
             firstCard.element.focus();
             return;
         }
-        void hub.searchNow(searchInput.value);
+        if (trimmed !== "") void hub.searchNow(searchInput.value);
     };
 
     const focus = { zone: "picker-search-field", key: field.key };
