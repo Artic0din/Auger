@@ -247,12 +247,14 @@
 }
 
 /*
- * Apple TVIntroSkipPill and TVPlayerControls.segmentSkipLayer. tvOS adds its 80 px side and 60 px top and bottom
- * safe area to each layer's own padding, as it does for the transport above (160 px inset, 107 px from the bottom).
+ * Apple TVIntroSkipPill and TVPlayerControls.segmentSkipLayer (TVPlayerControls.swift:96-98, 114-119, 132, 435, 512).
+ * tvOS adds its 80 px side and 60 px top and bottom safe area to each layer's own padding, so the shared inset is
+ * 300 px (240 + 60) with controls up and 156 px (96 + 60) when hidden or with the HUD open.
  */
 .player-button.player-skip {
     position: absolute;
     inset-inline-end: 160px;
+    bottom: 300px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -260,16 +262,26 @@
     min-width: 0;
     border: 0;
     white-space: nowrap;
-    transition: bottom 220ms ease-out, width 180ms ease-in-out, transform 180ms ease-in-out, box-shadow 180ms ease-in-out, color 180ms ease-in-out, background-color 180ms ease-in-out;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 200ms ease-out, visibility 0s linear 0s, bottom 220ms ease-out, width 180ms ease-in-out, transform 180ms ease-in-out, box-shadow 180ms ease-in-out, color 180ms ease-in-out, background-color 180ms ease-in-out;
 }
 
 .player-button.player-skip[hidden] {
-    display: none;
+    display: flex;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 200ms ease-out, visibility 0s linear 200ms, bottom 220ms ease-out, width 180ms ease-in-out, transform 180ms ease-in-out, box-shadow 180ms ease-in-out, color 180ms ease-in-out, background-color 180ms ease-in-out;
+}
+
+.player-button.player-skip.player-skip-instant,
+.player-button.player-skip.player-skip-instant + .player-skip-caption {
+    transition: none;
 }
 
 /* Intro: a dark capsule with a ring and a fill that creeps across it as the five-second offer runs out. */
 .player-skip.player-skip-intro {
-    bottom: 460px;
     height: 72px;
     padding: 0 40px;
     border-radius: 36px;
@@ -290,7 +302,6 @@
 
 /* Recap and credits: a translucent capsule that turns white when focused. */
 .player-skip.player-skip-segment {
-    bottom: 216px;
     gap: 8px;
     width: 260px;
     height: 76px;
@@ -379,8 +390,10 @@
 .player-skip-caption {
     position: absolute;
     inset-inline-end: 184px;
-    bottom: 542px;
-    transition: bottom 220ms ease-out;
+    bottom: 382px;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 200ms ease-out, visibility 0s linear 0s, bottom 220ms ease-out;
     color: rgba(255, 255, 255, 0.72);
     font-size: 22px;
     font-weight: 500;
@@ -394,9 +407,21 @@
 }
 
 .player-skip[hidden] + .player-skip-caption,
-.player-skip-caption[hidden],
-.player-skip-caption:empty {
-    display: none;
+.player-skip-caption[hidden] {
+    display: block;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 200ms ease-out, visibility 0s linear 200ms, bottom 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-button.player-skip,
+    .player-button.player-skip[hidden],
+    .player-skip-caption,
+    .player-skip[hidden] + .player-skip-caption,
+    .player-skip-caption[hidden] {
+        transition: none;
+    }
 }
 
 /*
