@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.17] - 2026-11-26
+
+### Fixes
+
+- **Sign-In**: Size Sign-in and shared alert text as Apple does ([#956](https://github.com/Artic0din/Auger-Tizen/pull/956), [`205dba1f`](https://github.com/Artic0din/Auger-Tizen/commit/205dba1f))
+
 ## [0.14.16] - 2026-11-26
 
 ### Fixes
