@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.10.0] - 2026-11-26
+
+### Features
+
+- **Watch Party**: Add host-pick lobby suggestions panel and ballot long-press menu ([#914](https://github.com/Artic0din/Auger-Tizen/pull/914), [`1d96a55a`](https://github.com/Artic0din/Auger-Tizen/commit/1d96a55a))
+
 ## [0.9.0] - 2026-11-26
 
 ### Features
