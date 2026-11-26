@@ -18,8 +18,9 @@ import { qrCode } from "./qr.ts";
 import { profileMenuAvatar } from "./navigationAvatar.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { navigationIcon } from "./navigationIcon.ts";
-import { decodeAppearance, DEFAULT_APPEARANCE } from "../contracts/v2/subtitles.ts";
-import { applySubtitleAppearance } from "../player/subtitleView.ts";
+import { decodeAppearance, DEFAULT_APPEARANCE, type SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+import { isLowLegibilitySubtitleAppearance } from "../player/subtitleAppearance.ts";
+import { applySubtitleAppearance, subtitleFontFamily } from "../player/subtitleView.ts";
 import { pairedProfileDescription, pairedProfileLabel, profileSelectionCaption } from "./pairedProfile.ts";
 import { bitrateLabel, bufferingQualityModes, bufferingQualityTitle, qualityFooter } from "./qualitySettings.ts";
 import { ConnectionSpeed, learnedLimitText } from "./connectionSpeed.ts";
@@ -318,6 +319,27 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (snapshotPane !== null && snapshotPane !== undefined) snapshotPane.scrollTop = modalPaneTop;
     };
 
+    const currentSubtitleAppearance = (): SubtitleAppearance => {
+        const stored = state.stored(APPEARANCE_KEY);
+        return decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
+    };
+    const paintSubtitlePreview = (preview: HTMLElement, text: HTMLElement, appearance: SubtitleAppearance): void => {
+        // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
+        applySubtitleAppearance(preview, text, appearance, false, 0.5);
+        text.style.fontWeight = "600";
+        text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
+        text.style.borderRadius = "4px";
+        preview.style.alignItems = appearance.position === "top" ? "flex-start" : "flex-end";
+        preview.style.paddingBlock = appearance.position === "lower-third" ? "33px" : "12px";
+    };
+    const createSubtitlePreview = (appearance: SubtitleAppearance): { readonly preview: HTMLElement; readonly text: HTMLElement } => {
+        const preview = el("div", "settings-subtitle-preview");
+        const text = el("span", "", translate("player.subtitles.previewSample"));
+        preview.appendChild(text);
+        paintSubtitlePreview(preview, text, appearance);
+        return { preview, text };
+    };
+
     const showModal = (name: string, title: string, content: HTMLElement[], controls: FocusItem[], zone = "settings-picker"): void => {
         const card = el("div", "settings-modal settings-controls");
         card.setAttribute("role", "dialog");
@@ -611,6 +633,14 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const row = extraPicker;
             const unsettled = row.member === undefined ? actions?.playerSettings?.unsettledValue(row.key) : undefined;
             const current = unsettled !== undefined ? unsettled : rowValue(row, state);
+            const fontPicker = row.id === "appearance-fontFamily";
+            const previewAppearance = fontPicker ? currentSubtitleAppearance() : undefined;
+            const focusedFont = fontPicker && activeModal === `settings:${row.id}` && host.focused()?.key.startsWith("choice:")
+                ? host.focused()?.key.slice("choice:".length)
+                : undefined;
+            const pickerPreview = previewAppearance === undefined
+                ? undefined
+                : createSubtitlePreview({ ...previewAppearance, fontFamily: focusedFont ?? (typeof current === "string" ? current : previewAppearance.fontFamily) });
             const controls = [...row.choices.map(([value, text]) => {
                 const item = button(`choice:${String(value)}`, text, () => {
                     void serializePlayerSetting(row.key, () => state.save(row.key, rowEdit(row, value, state))).then(() => {
@@ -620,6 +650,16 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                         }
                     });
                 });
+                if (pickerPreview !== undefined && previewAppearance !== undefined) {
+                    item.element.setAttribute("aria-label", text);
+                    const sample = el("span", "settings-font-sample", translate("settings.picker.subtitleSample"));
+                    sample.setAttribute("aria-hidden", "true");
+                    sample.style.fontFamily = subtitleFontFamily(String(value));
+                    item.element.replaceChildren(el("span", "settings-option-label", text), sample);
+                    item.element.addEventListener("focus", () => {
+                        paintSubtitlePreview(pickerPreview.preview, pickerPreview.text, { ...previewAppearance, fontFamily: String(value) });
+                    });
+                }
                 item.element.setAttribute("role", "radio");
                 item.element.setAttribute("aria-checked", String(current === value));
                 return item;
@@ -642,7 +682,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 actions?.playerSettings?.clearKey(row.key);
                 if (extraPicker === row) back();
             }, row.key));
-            showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback()], controls);
+            showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback(), ...(pickerPreview === undefined ? [] : [pickerPreview.preview])], controls);
             return;
         }
         if (choosingLanguage && appLanguage !== undefined) {
@@ -1210,19 +1250,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 }
             }
             if (category === "subtitles" && state.definitions.some(def => def.key === APPEARANCE_KEY)) {
-                const preview = el("div", "settings-subtitle-preview");
-                const text = el("span", "", translate("player.subtitles.previewSample"));
-                preview.appendChild(text);
-                const stored = state.stored(APPEARANCE_KEY);
-                const appearance = decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
-                // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
-                applySubtitleAppearance(preview, text, appearance, false, 0.5);
-                text.style.fontWeight = "600";
-                text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
-                text.style.borderRadius = "4px";
-                preview.style.alignItems = appearance.position === "top" ? "flex-start" : "flex-end";
-                preview.style.paddingBlock = appearance.position === "lower-third" ? "33px" : "12px";
+                const appearance = currentSubtitleAppearance();
+                const { preview } = createSubtitlePreview(appearance);
                 body.appendChild(preview);
+                if (isLowLegibilitySubtitleAppearance(appearance)) {
+                    body.appendChild(el("p", "settings-value settings-low-legibility", translate("settings.subtitles.lowLegibility")));
+                }
                 const reset = button("reset-appearance", translate("settings.subtitles.resetAppearance"), () => { if (!state.canRetry) state.error = undefined; confirmingAppearanceReset = true; render(); });
                 rows.push(reset); body.append(reset.element, el("p", "settings-value settings-appearance-footer", `${state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.scopeDeviceOnlyAppleTv") : translate("settings.subtitles.scopeProfile")} ${translate("settings.subtitles.authoredStyle")}`));
                 if (state.definitions.some(def => def.key === APPEARANCE_KEY && def.device)) {
@@ -1273,10 +1306,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         body.classList.add("settings-controls");
         const firstAppearance = body.querySelector('[data-focus^="appearance-"]');
         const preview = body.querySelector(".settings-subtitle-preview");
+        const lowLegibility = body.querySelector(".settings-low-legibility");
         const deviceToggle = body.querySelector('[data-focus="appearance-device"]');
         if (firstAppearance !== null && preview !== null) {
             body.insertBefore(el("h3", "settings-section-header", translate("settings.subtitles.tvHeader.appearance")), firstAppearance);
             body.insertBefore(preview, firstAppearance);
+            if (lowLegibility !== null) body.insertBefore(lowLegibility, firstAppearance);
             if (deviceToggle !== null) body.insertBefore(deviceToggle, firstAppearance);
             const group = el("div", "settings-nested-group");
             body.insertBefore(group, firstAppearance);

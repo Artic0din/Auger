@@ -88,16 +88,19 @@ export function subtitleTextShadow(style: SubtitleAppearance, scale = 1): string
     return shadows.length === 0 ? "none" : shadows.join(", ");
 }
 
+export function subtitleFontFamily(fontFamily: string): string {
+    // Samsung's generic sans-serif face has no semibold, so sans-serif uses the bundled Inter (theme.css).
+    return `${fontFamily === "sans-serif" ? "Inter" : fontFamily}, sans-serif`;
+}
+
 export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false, scale = 1): void {
         // AetherSubtitleOverlay.defaultPlacement (:376-434): the primary's inset is 8% at the top and bottom and 27% in the lower
         // third; the second line's is 17% and 36%. Apple places the two independently, so a tall primary can reach the second line.
         layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
         layer.style.bottom = style.position === "top" ? "auto" : style.position === "lower-third" ? (secondary ? "36%" : "27%") : secondary ? "17%" : "8%";
         // AetherSubtitleOverlay draws the generic families semibold and a named family at its own weight.
-        // Samsung's generic sans-serif face has no semibold, so sans-serif uses the bundled Inter (theme.css).
-        const bundledSans = style.fontFamily === "sans-serif";
-        const generic = bundledSans || style.fontFamily === "serif" || style.fontFamily === "monospace";
-        text.style.fontFamily = `${bundledSans ? "Inter" : style.fontFamily}, sans-serif`;
+        const generic = style.fontFamily === "sans-serif" || style.fontFamily === "serif" || style.fontFamily === "monospace";
+        text.style.fontFamily = subtitleFontFamily(style.fontFamily);
         text.style.fontWeight = generic ? "600" : "";
         text.style.fontSize = subtitleFontSize(style, scale);
         const rgba = (color: string, opacity: number): string => `rgba(${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)},${opacity / 100})`;
