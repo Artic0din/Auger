@@ -2090,7 +2090,7 @@ function readPlaybackFailure(): {
 
 const failureButton = {
     minWidth: "140px",
-    size: "28px",
+    size: capped(28),
     weight: "600",
     line: "34px",
     background: "rgba(237, 237, 237, 0.72)",
@@ -2110,9 +2110,9 @@ const failureButtonFocus = {
     ring: true,
 };
 
-/** "Go Back" at siloSubheadline exceeds the 140px minimum; "Retry" stays on it. Tracking makes the label 141px, so the row centre is half a pixel from the player. */
-const failureBack = { ...failureButton, layoutWidth: 141 };
-const failureBackFocus = { ...failureButtonFocus, layoutWidth: 141 };
+/** Both "Retry" and "Go Back" stay within the 140px minimum at cap-scaled siloSubheadline, so the row centres on the player. */
+const failureBack = failureButton;
+const failureBackFocus = failureButtonFocus;
 
 async function showPlaybackFailure(tv: Tv, playback: FakePlayback, decision: { terminal: string; retryable?: boolean }): Promise<void> {
     await signIn(tv);
@@ -2139,7 +2139,7 @@ appTest("a terminal playback failure matches Apple's top-pinned error view and i
         markColor: "rgb(176, 0, 32)",
         markCenter: wall.playerCenter,
         playerCenter: wall.playerCenter,
-        copySize: "26px",
+        copySize: capped(26),
         copyWeight: "400",
         copyColor: "rgb(255, 255, 255)",
         copyAlign: "center",
@@ -2154,7 +2154,7 @@ appTest("a terminal playback failure matches Apple's top-pinned error view and i
         retry: { ...failureButton, layoutWidth: null, layoutHeight: null },
         back: failureBackFocus,
         rowGap: null,
-        rowCenter: wall.playerCenter + 0.5,
+        rowCenter: wall.playerCenter,
     });
 });
 
@@ -2173,7 +2173,7 @@ appTest("a retryable playback failure keeps Retry focused and Back leaves withou
         markColor: "rgb(176, 0, 32)",
         markCenter: wall.playerCenter,
         playerCenter: wall.playerCenter,
-        copySize: "26px",
+        copySize: capped(26),
         copyWeight: "400",
         copyColor: "rgb(255, 255, 255)",
         copyAlign: "center",
@@ -2188,7 +2188,7 @@ appTest("a retryable playback failure keeps Retry focused and Back leaves withou
         retry: failureButtonFocus,
         back: failureBack,
         rowGap: 16,
-        rowCenter: wall.playerCenter + 0.5,
+        rowCenter: wall.playerCenter,
     });
     const starts = tv.fake.requests.filter((request) => request.path === "/playback/start").length;
     await tv.remote(10009);

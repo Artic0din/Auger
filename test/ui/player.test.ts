@@ -24,6 +24,8 @@ const LEFT = 37;
 const RIGHT = 39;
 const UP = 38;
 const DOWN = 40;
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 const NO_TRACKS: TrackView = { audio: { state: "loading" }, selectedAudioId: undefined, subtitles: [], selectedSubtitleId: undefined, subtitleMode: "off", change: { state: "idle" }, notices: [] };
 const TRACKS: TrackView = {
@@ -1906,7 +1908,7 @@ test("a subtitle that could not load says so over the video until it loads", asy
             const box = node.getBoundingClientRect();
             return { size: computed.fontSize, weight: computed.fontWeight, color: computed.color, background: computed.backgroundColor, padding: computed.padding, radius: computed.borderRadius, centre: Math.round(box.top + box.height / 2), middle: Math.round(box.left + box.width / 2) };
         });
-        assert.deepEqual(style, { size: "31px", weight: "500", color: "rgb(255, 255, 255)", background: "rgba(0, 0, 0, 0.8)", padding: "12px", radius: "8px", centre: 972, middle: 960 });
+        assert.deepEqual(style, { size: capped(31), weight: "500", color: "rgb(255, 255, 255)", background: "rgba(0, 0, 0, 0.8)", padding: "12px", radius: "8px", centre: 972, middle: 960 });
         await show(page, { ...playing(TRACKS), captions: { text: "Hello", appearance: DEFAULT_APPEARANCE, status: "ready", cueCount: 1 } });
         assert.equal(await status.isVisible(), false);
         await show(page, { phase: "loading", title: "Movie", detail: "reconnecting" });
@@ -2664,11 +2666,11 @@ test("the skip pills sit where Apple TV draws them: bottom right, above the tran
         await page.evaluate(() => document.fonts.ready);
         // tvOS padding plus the 80 px side and 60 px top and bottom safe area: one shared 300 px inset for all pills.
         const { width: _labelWidth, ...intro } = await metrics(page);
-        assert.deepEqual(intro, { height: 72, right: 160, bottom: 300, background: "rgba(0, 0, 0, 0.65)", font: "28px/600" });
+        assert.deepEqual(intro, { height: 72, right: 160, bottom: 300, background: "rgba(0, 0, 0, 0.65)", font: `${capped(28)}/600` });
         await show(page, playing(TRACKS));
         await show(page, inMarker(RECAP, 5));
         // 220 px label frame plus 20 px of padding a side (TVPillButtonStyle .compact).
-        assert.deepEqual(await metrics(page), { width: 260, height: 76, right: 160, bottom: 300, background: "rgba(255, 255, 255, 0.1)", font: "26px/600" });
+        assert.deepEqual(await metrics(page), { width: 260, height: 76, right: 160, bottom: 300, background: "rgba(255, 255, 255, 0.1)", font: `${capped(26)}/600` });
         // Focused it takes 70 px a side, so it grows leftward to 360 px.
         await remote(page, UP);
         await remote(page, UP);
@@ -3521,7 +3523,7 @@ test("a playback error uses the Apple TV wall: triangle, body text, and a row of
         });
         assert.deepEqual(measured, {
             mark: { width: "40px", height: "40px", color: "rgb(176, 0, 32)" },
-            copy: { size: "26px", weight: "400", color: "rgb(255, 255, 255)", align: "center" },
+            copy: { size: capped(26), weight: "400", color: "rgb(255, 255, 255)", align: "center" },
             gap: "16px",
             direction: "row",
             minWidth: "140px",
@@ -4566,8 +4568,8 @@ test("pickers float over the dimmed pane, track rows carry only a checkmark, and
         assert.ok(dialog.picker.top >= dialog.panel.top + 22 - 0.5 && dialog.picker.bottom <= dialog.panel.bottom - 22 + 0.5, "inside the panel's padded content");
         assert.equal(dialog.behind, "0.28");
         assert.equal(dialog.columnsBehind, 2, "TRACKS and OPTIONS stay behind the picker");
-        assert.deepEqual(dialog.title, ["30px", "600"]);
-        assert.equal(dialog.option, "24px");
+        assert.deepEqual(dialog.title, [capped(30), "600"]);
+        assert.equal(dialog.option, capped(24));
         assert.equal(dialog.selectedWash, "rgba(255, 255, 255, 0.14)");
         await capture(page, "player-subtitle-delay-picker");
     } finally { await page.close(); }
@@ -5218,7 +5220,7 @@ test("SECONDARY follows the tracks with Off and the other text tracks, the prima
         assert.equal(await text(page, '[data-focus="secondary-off"]'), "Off");
         assert.equal(await page.locator('[data-focus="secondary:file:42:subtitle:0"]').evaluate(node => getComputedStyle(node).opacity), "0.35");
         const style = await page.locator(".player-menu-column-tracks h2", { hasText: "SECONDARY" }).evaluate(node => { const css = getComputedStyle(node); return [css.fontSize, css.fontWeight, css.letterSpacing, css.paddingTop, css.marginTop]; });
-        assert.deepEqual(style.slice(0, 3), ["14px", "600", "1.6px"]);
+        assert.deepEqual(style.slice(0, 3), [capped(14), "600", "1.6px"]);
         await show(page, playing({ ...TRACKS, selectedSubtitleId: "file:42:subtitle:0", secondary: { ...SECONDARY, selectedId: "file:42:subtitle:4" } }));
         assert.equal(await page.locator('[data-focus="secondary-off"]').getAttribute("aria-pressed"), "false");
         assert.equal(await page.locator('[data-focus="secondary:file:42:subtitle:4"]').getAttribute("aria-pressed"), "true");

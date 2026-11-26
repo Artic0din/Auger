@@ -1,8 +1,12 @@
 // Every text size on a screen is Apple's tvOS point size times --silo-sf-cap-scale (#749, after Details #399 and Person #418).
 // Screens join this file as they are matched; Details and Person keep their own files.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
-import type { Browser } from "playwright";
+import { build } from "esbuild";
+import type { Browser, Page } from "playwright";
+import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
+import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { FakeCalendar } from "../native/support/fakeCalendar.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
@@ -23,10 +27,11 @@ after(async () => { await browser.close(); });
 /**
  * Rendered text under `root` whose size is not a whole Apple point times the cap scale, as "classes size".
  * Left out: text hidden from sight (`.silo-sr-only`); avatar initials, which Apple sizes from the avatar
- * (`ProfileAvatarView.swift:51`, `size * 0.34`); and card badges, which Apple scales with the card's width
- * (`CardOverlays.swift:279`, the preset's points times width / 185); and the Settings subtitle preview, which Apple
- * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`). None is a whole point. Text
- * clipped into a 1 px box is hidden from sight too, as Search hides its screen-reader title and label.
+ * (`ProfileAvatarView.swift:51`, `size * 0.34`); card badges, which Apple scales with the card's width
+ * (`CardOverlays.swift:279`, the preset's points times width / 185); the Settings subtitle preview, which Apple
+ * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`); and decorative
+ * `aria-hidden` SVG vector glyphs (such as `skipIcon`'s embedded number). None is CSS UI text at a whole point.
+ * Text clipped into a 1 px box is hidden from sight too, as Search hides its screen-reader title and label.
  */
 function unscaledText(arg: string | readonly [root: string, roles?: readonly Role[]]): string[] {
     const [root, roles = []] = typeof arg === "string" ? [arg, [] as readonly Role[]] : arg;
@@ -36,7 +41,7 @@ function unscaledText(arg: string | readonly [root: string, roles?: readonly Rol
     const fractional = roles.filter(([, points]) => Math.abs(points - Math.round(points)) > 0.002);
     const found = new Set<string>();
     for (const node of document.querySelectorAll(`${root}, ${root} *`)) {
-        if (node.getClientRects().length === 0 || node.closest(".silo-sr-only, .navigation-avatar-fallback, .card-overlay, .settings-subtitle-preview") !== null) continue;
+        if (node.getClientRects().length === 0 || node.closest('.silo-sr-only, .navigation-avatar-fallback, .card-overlay, .settings-subtitle-preview, svg[aria-hidden="true"]') !== null) continue;
         let clipped = false;
         for (let box: Element | null = node; box !== null && !clipped; box = box.parentElement) {
             const rect = box.getBoundingClientRect();
@@ -981,7 +986,7 @@ class WatchPartyBadgeFake extends FakeWatchParty {
     }
 }
 
-async function fontStyle(tv: Tv, selector: string): Promise<{ fontFamily: string; fontSize: string; fontWeight: string }> {
+async function fontStyle(tv: { page: Page }, selector: string): Promise<{ fontFamily: string; fontSize: string; fontWeight: string }> {
     return tv.page.locator(selector).first().evaluate(node => {
         const style = getComputedStyle(node);
         return { fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight };
@@ -1358,4 +1363,503 @@ test("Sign-in screens and shared alert dialogs use Apple's points times the cap 
     assert.deepEqual([...found].sort(), []);
     assert.deepEqual(SIGN_IN_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Sign-in role was on screen");
     assert.deepEqual(BROWSE_ALERT_ROLES.map(([selector]) => selector).filter(selector => !alertSeen.has(selector)), [], "every pinned Browse alert role was on screen");
+});
+
+/** Player controls, panels, dialogs, Up Next, and error view text roles, paths under iosApp/iosApp/ (silo-apple d74a30aa). */
+const PLAYER_ROLES: readonly Role[] = [
+    [".player-series", 20, "500", "Screens/Player/tvOS/TVPlayerControls.swift:589; Theme/Typography.swift:34"],
+    [".player-overlay .player-title", 36, "600", "Screens/Player/tvOS/TVPlayerControls.swift:595; Theme/Typography.swift:14"],
+    [".player-episode", 20, "400", "Screens/Player/tvOS/TVPlayerControls.swift:600; Theme/Typography.swift:34"],
+    [".player-time-elapsed", 28, "600", "Screens/Player/tvOS/TVPlayerControls.swift:706"],
+    [".player-time-remaining", 28, "600", "Screens/Player/tvOS/TVPlayerControls.swift:706"],
+    [".player-thumbnail-time", 24, "600", "Screens/Player/tvOS/TVPlayerControls.swift:787"],
+    [".player-rate-value", 18, "700", "Screens/Player/tvOS/TVPlayerScrubber.swift:291"],
+    [".player-hold-seek-rate", 44, "800", "Screens/Player/tvOS/HoldSeekIndicator.swift:50"],
+    [".player-hold-seek-time", 28, "600", "Screens/Player/tvOS/HoldSeekIndicator.swift:54"],
+    [".player-hold-seek-hint-label", 15, "500", "Screens/Player/tvOS/HoldSeekIndicator.swift:92"],
+    [".player-caption-status", 31, "500", "Screens/Player/Subtitles/ASSSubtitleLayer.swift:47 (.callout)"],
+    [".player-captions span", 58, "600", "Screens/Player/Subtitles/SubtitleAppearance.swift:41"],
+    [".player-captions-secondary span", 58, "600", "Screens/Player/Subtitles/SubtitleAppearance.swift:41"],
+    [".player-skip.player-skip-intro .player-skip-label", 28, "600", "Screens/Player/tvOS/TVIntroSkipPill.swift:71"],
+    [".player-skip-caption", 22, "500", "Screens/Player/tvOS/TVIntroSkipPill.swift:23"],
+    [".player-skip.player-skip-segment .player-skip-label", 26, "600", "Screens/Player/tvOS/TVPlayerControls.swift:482"],
+    [".player-alert-notice .player-alert-title", 30, "600", "Screens/Player/PlayerNoticeOverlay.swift:77,113"],
+    [".player-alert-notice .player-alert-detail", 24, "400", "Screens/Player/PlayerNoticeOverlay.swift:78,118"],
+    [".player-buffering .player-alert-title", 30, "600", "Screens/Player/PlayerNoticeOverlay.swift:77"],
+    [".player-buffering .player-alert-detail", 24, "400", "Screens/Player/PlayerNoticeOverlay.swift:78"],
+    [".player-buffering-actions .player-buffering-action", 28, "600", "Screens/Player/tvOS/TVBufferingQualityPill.swift:53; Screens/Player/tvOS/TVIntroSkipPill.swift:71"],
+    [".player-tab", 22, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:284"],
+    [".player-menu-heading", 14, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:326,1758; Sheets/SubtitleTranslateMenu.swift:556; Sheets/SubtitleSearchMenu.swift:580"],
+    [".player-info-series", 16, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:626"],
+    [".player-info-title", 34, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:631"],
+    [".player-info-episode", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:636"],
+    [".player-info-meta", 20, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:641"],
+    [".player-info-overview", 20, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:647"],
+    [".player-info-row", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:431"],
+    [".player-info-value", 22, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:435"],
+    [".player-menu-note", 26, "400", "Theme/Typography.swift:28 (HUD empty/failure note at siloBody)"],
+    ['.player-menu-info [data-focus="chapters-retry"] .player-choice-label', 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2183 (Tizen chapters retry row matches HUD row)"],
+    [".player-stats-heading", 13, "600", "Screens/Player/PlaybackStatsPanel.swift:143"],
+    [".player-stats-label", 20, "500", "Screens/Player/PlaybackStatsPanel.swift:149"],
+    [".player-stats-value", 20, "400", "Screens/Player/PlaybackStatsPanel.swift:155"],
+    [".player-menu-audio .player-choice-label", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2183"],
+    [".player-menu-audio .player-choice-detail", 17, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2188"],
+    [".player-menu-subtitles .player-choice-label", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2183"],
+    [".player-menu-subtitles .player-choice-detail", 17, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:573,2188"],
+    [".player-setting .player-setting-label", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:569"],
+    [".player-setting-value", 22, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:584"],
+    ['[data-focus="subtitle-appearance"] .player-setting-glyph', 20, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:562"],
+    [".player-sync-percent", 20, "400", "Screens/Player/Subtitles/SubtitleSyncIndicator.swift:149"],
+    [".player-sync-phase", 17, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1856"],
+    [".player-sync-note", 17, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1879"],
+    [".player-chapter-number", 20, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2118"],
+    [".player-chapter-title", 22, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2124"],
+    [".player-chapter-time", 20, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:2137"],
+    [".player-menu-status", 17, "400", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:573 (status plate below HUD panel)"],
+    [".player-menu-picker-title", 30, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1022"],
+    [".player-menu-picker-options .player-choice-label", 24, "500", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1102"],
+    [".player-appearance-eyebrow", 14, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1156"],
+    [".player-appearance-title", 30, "600", "Screens/Player/tvOS/TVPlayerInfoHUD.swift:1160"],
+    [".player-ai-title", 32, "600", "Screens/Player/tvOS/TVSubtitleDialog.swift:23"],
+    [".player-ai-subtitle", 22, "400", "Screens/Player/tvOS/TVSubtitleDialog.swift:26"],
+    [".player-ai-quota", 16, "400", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:574"],
+    [".player-ai-quota-note", 16, "400", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:345"],
+    [".player-ai-menu .player-ai-row .player-setting-label", 24, "500", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:638"],
+    [".player-ai-menu .player-ai-row .player-choice-detail", 18, "400", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:642"],
+    [".player-ai-job", 29, "600", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:486 (.headline; player.css capture note at 29pt semibold)"],
+    [".player-ai-progress-message", 17, "400", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:491 (.footnote; existing 17pt estimate pending Apple TV capture)"],
+    [".player-ai-failure", 29, "500", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:465-474 (default tvOS .body; HIG Body 29 pt medium)"],
+    [".player-subtitle-dialog-actions .player-choice-label", 29, "500", "Screens/Player/Sheets/SubtitleTranslateMenu.swift:600; Sheets/SubtitleSearchMenu.swift:543,561 (.buttonStyle(.bordered); HIG Body 29 pt medium)"],
+    [".player-subtitle-dialog-back-text", 18, "400", "Screens/Player/tvOS/TVSubtitleDialog.swift:41"],
+    [".player-subtitle-dialog-status", 18, "400", "Screens/Player/tvOS/TVSubtitleDialog.swift:41"],
+    [".player-search-menu .player-subtitle-dialog-title", 32, "600", "Screens/Player/tvOS/TVSubtitleDialog.swift:23"],
+    [".player-search-menu .player-subtitle-dialog-subtitle", 22, "400", "Screens/Player/tvOS/TVSubtitleDialog.swift:26"],
+    [".player-search-menu .player-ai-row:not(.player-search-back-row) .player-setting-label", 24, "500", "Screens/Player/Sheets/SubtitleSearchMenu.swift:420"],
+    [".player-search-menu .player-ai-row .player-choice-detail", 18, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:424"],
+    [".player-search-warning-text", 20, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:442"],
+    [".player-search-empty", 20, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:454"],
+    [".player-search-back-row .player-setting-label", 22, "500", "Screens/Player/Sheets/SubtitleSearchMenu.swift:468"],
+    [".player-search-searching-title", 22, "500", "Screens/Player/Sheets/SubtitleSearchMenu.swift:537"],
+    [".player-search-searching-note", 17, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:541"],
+    [".player-search-failure-text", 20, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:557"],
+    [".player-search-score-badge", 18, "700", "Screens/Player/Sheets/SubtitleSearchMenu.swift:489,772"],
+    [".player-search-match-label", 14, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:491"],
+    [".player-search-result-title", 24, "500", "Screens/Player/Sheets/SubtitleSearchMenu.swift:497"],
+    [".player-search-result-detail", 20, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:500"],
+    [".player-search-provider-name", 18, "500", "Screens/Player/Sheets/SubtitleSearchMenu.swift:511"],
+    [".player-search-format", 17, "400", "Screens/Player/Sheets/SubtitleSearchMenu.swift:513"],
+    [".player-next-eyebrow", 18, "600", "Screens/Player/PlayerView.swift:1258,1741"],
+    [".player-next-series", 34, "700", "Screens/Player/PlayerView.swift:1353,1743"],
+    [".player-next-up .player-title.player-next-episode-title", 25, "600", "Screens/Player/PlayerView.swift:1364,1744"],
+    [".player-next-up .player-title.player-next-named", 34, "700", "Screens/Player/PlayerView.swift:1371,1743"],
+    [".player-next-up .player-title.player-next-working", 42, "600", "Screens/Player/PlayerView.swift:1328,1742"],
+    [".player-next-up .player-title:not(.player-next-episode-title):not(.player-next-named):not(.player-next-working)", 42, "700", "Screens/Player/PlayerView.swift:1338,1742"],
+    [".player-next-meta", 19, "500", "Screens/Player/PlayerView.swift:1379,1746"],
+    [".player-next-synopsis", 22, "400", "Screens/Player/PlayerView.swift:1387,1745"],
+    [".player-next-up .player-error-text", 22, "500", "Screens/Player/PlayerView.swift:1341,1745"],
+    [".player-shuffle-badge", 19, "600", "Screens/Player/PlayerView.swift:1275,1746"],
+    [".player-shuffle-error", 19, "500", "Screens/Player/PlayerView.swift:1287,1746"],
+    ['.player-next-up .player-button[data-focus="play-next"]', 30, "600", "Screens/Player/PlayerView.swift:1409"],
+    ['.player-next-up .player-button[data-focus="pick-another"]', 26, "600", "Screens/Player/PlayerView.swift:1427"],
+    ['.player-next-up .player-button[data-focus="keep-watching"]', 26, "600", "Screens/Player/PlayerView.swift:1452"],
+    ['.player-next-up .player-button[data-focus="back"]', 26, "600", "Screens/Player/PlayerView.swift:1469"],
+    ['.player-next-up .player-button[data-focus="settings-retry"]', 26, "600", "Screens/Player/PlayerView.swift:1452,1469 (Tizen completion retry matches secondary Up Next pill)"],
+    [".player-autoplay-toggle", 19, "600", "Screens/Player/PlayerView.swift:1305,1549,1746"],
+    [".player-countdown-seconds", 24, "700", "Screens/Player/PlayerView.swift:1790,1812"],
+    [".player-next-deck .browse-section-title", 36, "600", "Components/MediaRow.swift:438; Theme/Typography.swift:14"],
+    [".player-next-deck .browse-card-title", 24, "500", "tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
+    [".player-error-wall .player-error-text", 26, "400", "Screens/Player/PlayerView.swift:1006; Theme/Typography.swift:28"],
+    [".player-error-wall .player-error-actions .player-button", 28, "600", "Screens/Player/PlayerView.swift:1016,1021; Theme/Typography.swift:17"],
+];
+
+let playerScript: Promise<string> | undefined;
+function bundlePlayer(): Promise<string> {
+    playerScript ??= build({
+        entryPoints: [new URL("./playerHarness.ts", import.meta.url).pathname],
+        bundle: true,
+        format: "iife",
+        target: "chrome108",
+        write: false,
+        logLevel: "silent",
+    }).then(result => result.outputFiles[0]?.text ?? "");
+    return playerScript;
+}
+
+async function openPlayer(): Promise<{
+    page: Page;
+    logs: string[];
+    show(view: PlaybackView): Promise<void>;
+    remote(keyCode: number): Promise<void>;
+    down(keyCode: number): Promise<void>;
+    up(keyCode: number): Promise<void>;
+}> {
+    const ORIGIN = "https://tv.example.test";
+    const CSS = ["theme.css", "app.css", "ui/browse.css", "player/player.css"]
+        .map(name => readFileSync(new URL(`../../src/${name}`, import.meta.url), "utf8"))
+        .join("\n");
+    const HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1920, height=1080"><title>Silo</title><link rel="stylesheet" href="/tv/player.css"></head><body><main id="root"></main><script src="/tv/harness.js"></script></body></html>`;
+    const script = await bundlePlayer();
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    try {
+        const page = await context.newPage();
+        const logs: string[] = [];
+        page.on("console", message => logs.push(message.text()));
+        page.on("pageerror", error => logs.push(`pageerror: ${error.message}`));
+        await page.route("**/*", async route => {
+            const url = new URL(route.request().url());
+            if (url.pathname === "/fonts/InterVariable.woff2") {
+                await route.fulfill({ status: 200, contentType: "font/woff2", body: readFileSync(new URL("../../app/fonts/InterVariable.woff2", import.meta.url)) });
+                return;
+            }
+            if (url.pathname === "/fonts/RobotoMono-Variable.ttf") {
+                await route.fulfill({ status: 200, contentType: "font/ttf", body: readFileSync(new URL("../../app/fonts/RobotoMono-Variable.ttf", import.meta.url)) });
+                return;
+            }
+            if (url.pathname === "/trickplay.jpg") {
+                await route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#234"/></svg>' });
+                return;
+            }
+            if (url.pathname.startsWith("/art/")) {
+                await route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="280"><rect width="500" height="280" fill="#345"/></svg>' });
+                return;
+            }
+            const body = url.pathname === "/tv/index.html" ? HTML : url.pathname === "/tv/harness.js" ? script : url.pathname === "/tv/player.css" ? CSS : undefined;
+            if (body === undefined) {
+                await route.abort("internetdisconnected");
+                return;
+            }
+            const contentType = url.pathname.endsWith(".js") ? "application/javascript" : url.pathname.endsWith(".css") ? "text/css" : "text/html";
+            await route.fulfill({ status: 200, contentType, body });
+        });
+        await page.clock.install({ time: new Date("2026-11-05T00:00:00Z") });
+        await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+        await page.goto(`${ORIGIN}/tv/index.html`);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.evaluate(() => document.fonts.ready);
+        await page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        const dispatch = (type: "keydown" | "keyup", code: number): Promise<void> => page.evaluate(([eventType, keyCode]) => {
+            (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent(eventType, { keyCode, bubbles: true, cancelable: true }));
+        }, [type, code] as const);
+        return {
+            page,
+            logs,
+            show: view => page.evaluate(next => window.player.show(next), view),
+            remote: async code => { await dispatch("keydown", code); await dispatch("keyup", code); },
+            down: code => dispatch("keydown", code),
+            up: code => dispatch("keyup", code),
+        };
+    } catch (error) {
+        await context.close();
+        throw error;
+    }
+}
+
+test("Player controls, panels, dialogs, Up Next, and error view use Apple's points times the cap scale", async () => {
+    const player = await openPlayer();
+    const { page } = player;
+    const ENTER = 13;
+    const RIGHT = 39;
+    const BACK = 10009;
+    try {
+        const found = new Set<string>();
+        const seen = new Set<string>();
+        const collect = async (state: string): Promise<void> => {
+            for (const entry of await page.evaluate(unscaledText, [".player", PLAYER_ROLES] as const)) found.add(`${state}: ${entry}`);
+            const roles = await page.evaluate(offRoles, PLAYER_ROLES);
+            for (const entry of roles.off) found.add(`${state}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
+        };
+
+        const searchBase: NonNullable<NonNullable<TrackView["subtitleTools"]>["search"]> = {
+            offered: true,
+            unavailableReason: "",
+            phase: "closed",
+            suggested: [{ code: "en", label: "English", hint: "subtitleSearch.preferred" }],
+            other: [{ code: "fr", label: "French" }],
+            language: "en",
+            status: "",
+            message: "",
+            warnings: [],
+            canRetry: false,
+            results: [],
+            downloadingKey: undefined,
+        };
+        const aiMenu: NonNullable<TrackView["aiMenu"]> = {
+            menu: {
+                detected: { code: "ai-detected-spoken-language", label: "Spoken language", hint: "player.aiTranslate.detectedFromAudio", disabled: false },
+                suggested: [{ code: "fr", label: "French", hint: "subtitleSearch.preferred", disabled: false }],
+                other: [{ code: "de", label: "German", hint: undefined, disabled: false }],
+            },
+            quota: "2 of 5 used / month",
+            quotaExhausted: true,
+        };
+        const tracks: TrackView = {
+            quality: { choices: [{ id: "auto", label: "Auto" }, { id: "1080p", label: "1080p" }], selectedId: "auto" },
+            audio: {
+                state: "ready",
+                choices: [
+                    { id: "file:42:audio:0", label: "English · 5.1 · EAC3", detail: "EAC3 5.1" },
+                    { id: "file:42:audio:1", label: "Japanese · Stereo · AAC" },
+                ],
+            },
+            selectedAudioId: "file:42:audio:0",
+            subtitles: [
+                { id: "file:42:subtitle:0", label: "English", detail: "SRT" },
+                { id: "file:42:subtitle:1", label: "Spanish", detail: "SRT" },
+            ],
+            selectedSubtitleId: "file:42:subtitle:0",
+            subtitleMode: "overlay",
+            change: { state: "idle" },
+            notices: ["Subtitles active"],
+            secondary: { choices: [{ id: "file:42:subtitle:1", label: "Spanish", detail: "SRT" }], selectedId: undefined },
+            syncTiming: { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: true, forbidden: undefined, progress: { percent: 40, phase: "Listening…" }, note: { text: "Synced −1.0 s", tone: "plain" } },
+            ai: { available: { translate: true, transcribe: true }, languages: ["fr", "de"], preferred: "fr", quota: { limited: true, remaining: 0, period: "month", used: 5, limit: 5 }, busy: false, message: "", results: [], phase: "idle", kind: undefined, progress: undefined, held: false },
+            aiMenu,
+            subtitleTools: {
+                search: searchBase,
+                display: { delay: true, styling: true, deviceScope: true, textOpacity: true, delayMs: 0, appearance: DEFAULT_APPEARANCE, deviceOverride: false, busy: false, message: "" },
+                overlay: true,
+            },
+        };
+        const stats = {
+            nowPlaying: [{ label: "Video", value: "1080p" }, { label: "Audio", value: "English · EAC3 5.1" }],
+            playback: [{ label: "Playback", value: "Direct play · MP4" }],
+            stream: [{ label: "Playback status", value: "Playing" }],
+            engine: [{ label: "Delivery", value: "Original HTTP" }],
+        };
+        const baseHud = {
+            chapters: [{ title: "Opening", seconds: 0 }, { title: "Chapter 2", seconds: 120 }],
+            chapterState: "ready" as const,
+            overview: "A storm closes the harbor.",
+            stats,
+            speeds: [1, 2],
+            aspects: ["Fit", "Stretch"] as const,
+            speed: 1,
+            aspect: "Fit" as const,
+            autoNext: true,
+            busy: false,
+            message: "Hud status",
+        };
+        const basePlaying = (patch: Partial<Extract<PlaybackView, { phase: "playing" | "paused" }>> = {}): Extract<PlaybackView, { phase: "playing" | "paused" }> => ({
+            phase: "playing",
+            title: "Going Green",
+            seriesTitle: "The Series",
+            seasonNumber: 1,
+            episodeNumber: 13,
+            positionSeconds: 754,
+            durationSeconds: 7200,
+            buffering: false,
+            seekIntervals: { backward: 10, forward: 10 },
+            tracks,
+            hud: baseHud,
+            ...patch,
+        });
+
+        await page.evaluate(() => {
+            window.player.setThumbnail(async () => ({ index: 0, sheet: 0, url: "https://tv.example.test/trickplay.jpg", x: 0, y: 0, width: 160, height: 90, sheetWidth: 320, sheetHeight: 180 }));
+        });
+        await player.show(basePlaying());
+        await page.locator(".player-overlay .player-title").waitFor();
+        await collect("controls");
+        assert.match((await fontStyle(player, ".player-overlay .player-title")).fontFamily, /^"?Inter\b/);
+
+        await player.remote(ENTER);
+        await player.remote(RIGHT);
+        await page.waitForFunction(() => !document.querySelector<HTMLElement>(".player-thumbnail")?.hidden);
+        await collect("timeline-preview");
+
+        await player.down(RIGHT);
+        await page.clock.fastForward(300);
+        await page.locator(".player-rate:not([hidden])").waitFor();
+        await collect("timeline-rate");
+        await player.up(RIGHT);
+        await player.remote(BACK);
+        await player.remote(BACK);
+        await page.locator(".player-overlay.player-overlay-hidden").waitFor();
+
+        await player.down(RIGHT);
+        await page.clock.fastForward(300);
+        await page.locator(".player-hold-seek:not([hidden])").waitFor();
+        await collect("hold-seek");
+        await player.up(RIGHT);
+        await player.remote(BACK);
+        await page.evaluate(() => { window.player.setThumbnail(undefined); });
+
+        await player.show(basePlaying({ captions: { text: "Dialogue", secondaryText: "Secondary", appearance: DEFAULT_APPEARANCE, status: "failed" } }));
+        await page.locator(".player-caption-status:not([hidden])").waitFor();
+        await page.locator(".player-captions:not([hidden]) span").waitFor();
+        await page.locator(".player-captions-secondary:not([hidden]) span").waitFor();
+        await collect("captions");
+        assert.match((await fontStyle(player, ".player-captions span")).fontFamily, /^"?Inter\b/);
+        assert.match((await fontStyle(player, ".player-captions-secondary span")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ positionSeconds: 25, skipMarker: { kind: "intro", startSeconds: 20, endSeconds: 60 } }));
+        await page.locator(".player-skip.player-skip-intro:not([hidden])").waitFor();
+        await collect("skip-intro");
+        assert.match((await fontStyle(player, ".player-skip.player-skip-intro .player-skip-label")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ positionSeconds: 61, undoSkipSeconds: 20 }));
+        await page.locator(".player-skip-caption:not([hidden])").waitFor();
+        await collect("skip-undo");
+
+        await player.show(basePlaying({ positionSeconds: 5, skipMarker: { kind: "recap", startSeconds: 0, endSeconds: 15 } }));
+        await page.locator(".player-skip.player-skip-segment:not([hidden])").waitFor();
+        await collect("skip-recap");
+
+        await player.show(basePlaying({
+            bufferingNotice: { text: "Quality lowered to stop buffering", lowered: true },
+            bufferingPill: { kind: "prompt", remainingMs: 15_000, totalMs: 15_000, running: true, revision: 1 },
+        }));
+        await page.locator(".player-buffering .player-alert-title").waitFor();
+        await collect("buffering-notice-prompt");
+        assert.match((await fontStyle(player, ".player-buffering .player-alert-title")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ hud: { ...baseHud, chapters: [], chapterState: "failed" } }));
+        await page.locator('[data-focus="tracks"]').focus();
+        await player.remote(ENTER);
+        await page.locator(".player-hud:not([hidden]) .player-menu-note").waitFor();
+        await collect("hud-info-failed");
+        assert.match((await fontStyle(player, ".player-info-title")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying());
+        await page.locator('[data-focus="tab-stats"]').click();
+        await page.locator(".player-stats-heading").first().waitFor();
+        await collect("hud-stats");
+        assert.match((await fontStyle(player, ".player-stats-label")).fontFamily, /^"?Inter\b/);
+
+        await page.locator('[data-focus="tab-video"]').click();
+        await page.locator('[data-focus="video-speed"]').waitFor();
+        await collect("hud-video");
+        await page.locator('[data-focus="video-speed"]').click();
+        await page.locator(".player-menu-picker-title").waitFor();
+        await collect("hud-video-picker");
+        await player.remote(BACK);
+
+        await page.locator('[data-focus="tab-audio"]').click();
+        await page.locator(".player-menu-audio .player-choice-label").first().waitFor();
+        await collect("hud-audio");
+
+        await page.locator('[data-focus="tab-chapters"]').click();
+        await page.locator(".player-chapter-row").first().waitFor();
+        await collect("hud-chapters");
+
+        await page.locator('[data-focus="tab-subtitles"]').click();
+        await page.locator('[data-focus="subtitle-appearance"]').waitFor();
+        await collect("hud-subtitles");
+        await page.locator('[data-focus="subtitle-appearance"]').click();
+        await page.locator(".player-appearance-dialog").waitFor();
+        await collect("hud-appearance");
+        await player.remote(BACK);
+
+        await page.locator('[data-focus="ai-menu"]').click();
+        await page.locator(".player-ai-menu").waitFor();
+        await collect("ai-languages");
+        assert.match((await fontStyle(player, ".player-ai-title")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ tracks: { ...tracks, ai: { ...tracks.ai!, busy: true, phase: "busy", kind: "translate", progress: { percent: 40, message: "Translating lines…" } } } }));
+        await page.locator(".player-ai-job").waitFor();
+        await collect("ai-busy");
+
+        await player.show(basePlaying({ tracks: { ...tracks, ai: { ...tracks.ai!, phase: "failed", message: "Provider could not decode the source track." } } }));
+        await page.locator(".player-ai-failure").waitFor();
+        await collect("ai-failed");
+        await page.locator('[data-focus="ai-dismiss"]').click();
+
+        const withSearch = (patch: Partial<NonNullable<NonNullable<TrackView["subtitleTools"]>["search"]>>): TrackView => ({
+            ...tracks,
+            subtitleTools: { ...tracks.subtitleTools!, search: { ...searchBase, ...patch } },
+        });
+        await player.show(basePlaying({ tracks: withSearch({ phase: "languages" }) }));
+        await page.locator(".player-search-menu").waitFor();
+        await collect("search-languages");
+        assert.match((await fontStyle(player, ".player-search-menu .player-subtitle-dialog-title")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ tracks: withSearch({ phase: "searching" }) }));
+        await page.locator(".player-search-searching-title").waitFor();
+        await collect("search-searching");
+
+        const result = { key: "os:1", id: "1", provider: "opensubtitles", releaseName: "Movie.2026.1080p", format: "srt", language: "en", score: 85, downloads: 1200, hearingImpaired: false };
+        await player.show(basePlaying({ tracks: withSearch({ phase: "results", results: [result], warnings: ["Subsource timed out."] }) }));
+        await page.locator(".player-search-score-badge").waitFor();
+        assert.notEqual((await page.locator(".player-subtitle-dialog-status").textContent())?.trim() ?? "", "");
+        await collect("search-results");
+
+        await player.show(basePlaying({ tracks: withSearch({ phase: "results", results: [] }) }));
+        await page.locator('[data-focus="subtitle-search-back"]').waitFor();
+        await collect("search-empty");
+
+        await player.show(basePlaying({ tracks: withSearch({ phase: "failed", message: "Providers unavailable", canRetry: true }) }));
+        await page.locator(".player-search-failure-text").waitFor();
+        await collect("search-failed");
+
+        await player.show(basePlaying({ tracks: withSearch({ phase: "closed" }) }));
+        await player.remote(BACK);
+
+        const nextEpisode = {
+            contentId: "episode:s1e13",
+            fileId: "43",
+            title: "Chapter 1.3",
+            startSeconds: 0,
+            episode: true as const,
+            seriesTitle: "Harbor Lights",
+            seasonNumber: 1,
+            episodeNumber: 13,
+            overview: "A storm closes the harbor.",
+            airDate: "2022-02-18",
+            runtimeMinutes: 57,
+            backdropUrl: "https://tv.example.test/art/still.svg",
+        };
+        const deckCard = { contentId: "movie:other", fileId: "5", title: "Other", startSeconds: 0, backdropUrl: "https://tv.example.test/art/deck.svg" };
+
+        await player.show(basePlaying({ upNext: { next: nextEpisode, deck: [deckCard], countdown: 12, countdownTotal: 30, status: "Up Next" } }));
+        await page.locator(".player-next-up .player-next-deck .browse-card-title").waitFor();
+        await collect("up-next-episode");
+        assert.match((await fontStyle(player, ".player-next-up .player-title")).fontFamily, /^"?Inter\b/);
+        assert.match((await fontStyle(player, ".player-next-deck .browse-card-title")).fontFamily, /^"?Inter\b/);
+
+        await player.show(basePlaying({ upNext: { next: { contentId: "movie:aladdin", fileId: "7", title: "Aladdin", startSeconds: 0 }, deck: [], countdown: undefined, status: "Up Next" } }));
+        await page.locator(".player-next-up .player-title.player-next-named").waitFor();
+        await collect("up-next-named");
+
+        await player.show(basePlaying({ upNext: { next: undefined, deck: [], countdown: undefined, status: "Up Next", loading: true } }));
+        await page.locator(".player-next-up .player-title.player-next-working").waitFor();
+        await collect("up-next-working");
+
+        await player.show({
+            phase: "completion",
+            status: "upNext.headingShuffle",
+            state: "ready",
+            retryable: false,
+            next: { contentId: "movie:pick", fileId: "9", title: "Random Pick", startSeconds: 0 },
+            deck: [deckCard],
+            shuffle: true,
+            shuffleScopeLabel: "Movies",
+            shuffleActionError: "upNext.pickAnotherFailed",
+            autoNext: true,
+            countdown: 9,
+        });
+        await page.locator('[data-focus="pick-another"]').waitFor();
+        await collect("completion-shuffle");
+
+        await player.show({ phase: "completion", status: "upNext.headingFinished", state: "ready", retryable: false, next: undefined, deck: [deckCard] });
+        await page.locator(".player-next-up .player-title:not(.player-next-named):not(.player-next-working):not(.player-next-episode-title)").waitFor();
+        await collect("completion-finished");
+
+        await player.show({ phase: "completion", status: "upNext.headingEnded", state: "failed", retryable: true, next: undefined });
+        await page.locator('.player-next-up [data-focus="settings-retry"]').waitFor();
+        await collect("completion-failed");
+
+        await player.show({ phase: "loading", title: "Going Green", detail: "reconnecting" });
+        await page.locator(".player-alert-notice .player-alert-detail:not([hidden])").waitFor();
+        await collect("reconnecting-notice");
+
+        await player.show({ phase: "error", title: "The Movie", error: { kind: "terminal", reason: "err", message: "Cannot play", retryable: true }, retryable: true });
+        await page.locator(".player-error-wall .player-error-text").waitFor();
+        await collect("error-wall");
+        assert.match((await fontStyle(player, ".player-error-wall .player-error-text")).fontFamily, /^"?Inter\b/);
+
+        assert.deepEqual([...found].sort(), []);
+        assert.deepEqual(PLAYER_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Player role was on screen");
+        assert.deepEqual(player.logs, []);
+    } finally { await page.context().close(); }
 });
