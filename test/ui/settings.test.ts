@@ -580,21 +580,139 @@ for (const failFirst of [false, true]) test(`Playback profile reset confirms and
         await openSettings(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         await tv.page.getByRole('button', { name: 'Use Profile Settings', exact: true }).click();
+        const alertDialog = tv.page.getByRole('alertdialog');
+        await alertDialog.waitFor();
+        assert.equal(await tv.page.locator('.dialog-behind-dimmed').count(), 1);
         assert.equal(await tv.focused(), 'cancel-playback-reset');
+        await tv.remote(38);
+        assert.equal(await tv.focused(), 'confirm-playback-reset');
+        await tv.remote(40);
+        assert.equal(await tv.focused(), 'cancel-playback-reset');
+        const playbackLayout = await tv.page.evaluate(() => {
+            const confirm = document.querySelector('[data-focus="confirm-playback-reset"]');
+            const cancel = document.querySelector('[data-focus="cancel-playback-reset"]');
+            if (confirm === null || cancel === null) return null;
+            return {
+                confirmTop: confirm.getBoundingClientRect().top,
+                cancelTop: cancel.getBoundingClientRect().top,
+                confirmColor: getComputedStyle(confirm).color,
+                destructive: confirm.classList.contains('skyline-destructive'),
+            };
+        });
+        assert.ok(playbackLayout !== null && playbackLayout.confirmTop < playbackLayout.cancelTop);
+        assert.equal(playbackLayout.destructive, true);
+        assert.equal(playbackLayout.confirmColor, 'rgb(255, 69, 58)');
         await tv.remote(10009);
         assert.equal(device.get(QUALITY_KEY), '1080p');
         await tv.page.getByRole('button', { name: 'Use Profile Settings', exact: true }).click();
         if (failFirst) tv.fake.script(`/settings/values/${QUALITY_KEY}?scope=profile_device`, problem(503, 'unavailable', 'Try again'));
-        await tv.page.getByRole('button', { name: 'Reset', exact: true }).click();
+        await tv.remote(38);
+        await tv.page.keyboard.press("Enter");
         if (failFirst) {
-            await tv.page.getByRole('button', { name: 'Check and retry', exact: true }).waitFor();
+            await alertDialog.getByRole('button', { name: 'Check and retry', exact: true }).waitFor();
+            assert.equal(await tv.page.locator('[data-focus="confirm-playback-reset"]').getAttribute('aria-disabled'), 'true');
+            const alertErrorColor = await alertDialog.locator('[role="alert"]').evaluate(node => getComputedStyle(node).color);
+            assert.equal(alertErrorColor, 'rgb(255, 105, 97)');
+            await tv.remote(40);
+            assert.equal(await tv.focused(), 'cancel-playback-reset');
+            await tv.remote(40);
+            assert.equal(await tv.focused(), 'retry');
+            await tv.remote(38);
+            assert.equal(await tv.focused(), 'cancel-playback-reset');
+            await tv.remote(38);
+            assert.equal(await tv.focused(), 'cancel-playback-reset', 'skipDisabled keeps Up off disabled destructive confirm button');
+            await tv.remote(40);
+            assert.equal(await tv.focused(), 'retry');
             await tv.jump(5000);
-            await tv.page.getByRole('button', { name: 'Check and retry', exact: true }).click();
+            await tv.page.keyboard.press("Enter");
         }
         await tv.eventually(async () => !device.has(QUALITY_KEY) && !device.has(BITRATE_KEY), 'device playback reset');
         assert.equal(settings.profile().get(QUALITY_KEY), '720p');
         assert.ok(tv.fake.requests.filter(r => r.method === 'DELETE').every(r => r.path.includes('scope=profile_device')));
+        assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
+});
+
+test("Playback reset alert grows for long wrapped button labels without vertical clipping", async () => {
+    const { tv, settings } = await setup(true);
+    settings.device('p-owner', tv.fake.requests.find(r => r.headers['x-silo-device-id'])!.headers['x-silo-device-id']!).set(QUALITY_KEY, "1080p");
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.getByRole('button', { name: 'Use Profile Settings', exact: true }).click();
+        const fit = await tv.page.locator('[data-focus="confirm-playback-reset"]').evaluate(node => {
+            node.textContent = "Використовувати налаштування профілю";
+            const style = getComputedStyle(node);
+            return { clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, minHeight: style.minHeight };
+        });
+        assert.equal(fit.minHeight, "66px");
+        assert.ok(fit.scrollHeight <= fit.clientHeight, JSON.stringify(fit));
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("Subtitle appearance reset uses centred alert dialog for profile and device scopes with retry", async () => {
+    const { tv, settings } = await setup(true);
+    settings.remainingRows = true;
+    settings.profile().set("playback.subtitle_appearance", { fontSize: "small", position: "bottom" });
+    const deviceId = tv.fake.requests.find(request => request.headers['x-silo-device-id'])?.headers['x-silo-device-id'];
+    assert.ok(deviceId);
+    let held: { release(): void } | undefined;
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="subtitles"]').click();
+        await tv.page.getByRole("button", { name: "Reset Appearance", exact: true }).click();
+        const alertDialog = tv.page.getByRole("alertdialog");
+        await alertDialog.waitFor();
+        assert.equal(await tv.page.locator(".dialog-behind-dimmed").count(), 1);
+        assert.equal(await tv.focused(), "cancel");
+        assert.equal(await alertDialog.getByText("Reset Appearance?", { exact: true }).count(), 1);
+        assert.equal(await alertDialog.getByText("This restores this profile's subtitle appearance to the defaults on all devices.", { exact: true }).count(), 1);
+        const appearanceLayout = await tv.page.evaluate(() => {
+            const confirm = document.querySelector('[data-focus="reset"]');
+            const cancel = document.querySelector('[data-focus="cancel"]');
+            if (confirm === null || cancel === null) return null;
+            return {
+                confirmTop: confirm.getBoundingClientRect().top,
+                cancelTop: cancel.getBoundingClientRect().top,
+                confirmColor: getComputedStyle(confirm).color,
+                destructive: confirm.classList.contains("skyline-destructive"),
+            };
+        });
+        assert.ok(appearanceLayout !== null && appearanceLayout.confirmTop < appearanceLayout.cancelTop);
+        assert.equal(appearanceLayout.destructive, true);
+        assert.equal(appearanceLayout.confirmColor, "rgb(255, 69, 58)");
+        await tv.remote(10009);
+        assert.equal(await alertDialog.count(), 0);
+        assert.deepEqual(settings.profile().get("playback.subtitle_appearance"), { fontSize: "small", position: "bottom" });
+        await tv.page.getByRole("switch", { name: "Only on This TV", exact: true }).click();
+        await tv.eventually(async () => await tv.page.getByRole("switch", { name: "Only on This TV", exact: true }).getAttribute("aria-checked") === "true", "device override enabled");
+        await tv.page.getByRole("button", { name: "Reset Appearance", exact: true }).click();
+        await alertDialog.waitFor();
+        assert.equal(await alertDialog.getByText("This restores this TV's subtitle appearance to the defaults.", { exact: true }).count(), 1);
+        tv.fake.script(`/settings/values/playback.subtitle_appearance?scope=profile_device`, problem(503, "unavailable", "Try again"));
+        held = tv.fake.hold("/settings/values/playback.subtitle_appearance", true);
+        await tv.remote(38);
+        assert.equal(await tv.focused(), "reset");
+        await tv.page.keyboard.press("Enter");
+        await tv.eventually(async () => await tv.page.locator('[data-focus="cancel"]').getAttribute("aria-disabled") === "true", "Cancel disabled while reset is in flight");
+        await tv.remote(10009);
+        assert.equal(await alertDialog.count(), 1, "Back is ignored while appearance reset is in flight");
+        held.release();
+        await alertDialog.getByRole("button", { name: "Check and retry", exact: true }).waitFor();
+        assert.equal(await alertDialog.locator('[role="alert"]').evaluate(node => getComputedStyle(node).color), "rgb(255, 105, 97)");
+        await tv.remote(40);
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "retry");
+        await tv.jump(5000);
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-focus="reset-appearance"]').waitFor();
+        assert.equal(await alertDialog.count(), 0);
+        assert.equal(await tv.focused(), "reset-appearance");
+        assert.equal(JSON.stringify(settings.device("p-owner", deviceId).get("playback.subtitle_appearance")).includes('"fontSize":"large"'), true);
+        assert.deepEqual(settings.profile().get("playback.subtitle_appearance"), { fontSize: "small", position: "bottom" });
+        assert.deepEqual(tv.console, []);
+    } finally { held?.release(); await tv.page.context().close(); }
 });
 
 test("measured Settings pickers centre the selected choice and privacy handoff", async () => {
