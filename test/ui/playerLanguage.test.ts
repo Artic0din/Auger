@@ -651,3 +651,30 @@ test("a subtitle Appearance picker that is open when German lands is drawn again
         assert.equal(await page.locator('[data-focus="subtitle-appearance:fontSize"]').count(), 1, "and returns to the Appearance rows");
     } finally { await page.close(); }
 });
+
+test("scrubber end time, episode tag in footer and Info, and rate chip digits localize in German and Arabic (#777)", async () => {
+    const de = await open("de");
+    try {
+        await show(de, playing({ seriesTitle: "Die Serie", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await de.locator(".player-episode").textContent(), "S1 · F25");
+        assert.match(await de.locator(".player-time-remaining").textContent() ?? "", /^−1:47:26 · /);
+        assert.ok((await de.locator(".player-time-remaining").textContent() ?? "").includes(catalog("de")["player.scrubber.endsAt"]!.split("{time}")[0]!));
+        await openPanel(de, 0);
+        assert.equal(await de.locator(".player-info-episode").textContent(), "S1 · F25");
+    } finally { await de.close(); }
+
+    const ar = await open("ar");
+    try {
+        await show(ar, playing({ seriesTitle: "مسلسل", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await ar.locator(".player-episode").textContent(), "م1 · ح25");
+        const remainingText = await ar.locator(".player-time-remaining").textContent() ?? "";
+        assert.ok(remainingText.includes("\u2068") && remainingText.includes("\u2069"), `Arabic end time is isolated: ${remainingText}`);
+        await ar.evaluate(() => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: 39, bubbles: true, cancelable: true }));
+        });
+        await ar.clock.fastForward(300);
+        assert.equal(await ar.locator(".player-rate-glyph svg").count(), 1);
+        assert.equal(await ar.locator(".player-rate-value").textContent(), "١x");
+    } finally { await ar.close(); }
+});
