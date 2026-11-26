@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.1] - 2026-11-26
+
+### Fixes
+
+- **Playback**: Port the Info, Stats and Chapters tabs from the tvOS source ([#942](https://github.com/Artic0din/Auger-Tizen/pull/942), [`26c5e922`](https://github.com/Artic0din/Auger-Tizen/commit/26c5e922))
+
 ## [0.14.0] - 2026-11-26
 
 ### Features
