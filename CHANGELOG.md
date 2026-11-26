@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.7] - 2026-11-26
+
+### Fixes
+
+- **Browse**: Port Browse and the library grid from the tvOS source ([#927](https://github.com/Artic0din/Auger-Tizen/pull/927), [`a451d470`](https://github.com/Artic0din/Auger-Tizen/commit/a451d470))
+
 ## [0.14.6] - 2026-11-26
 
 ### Fixes
