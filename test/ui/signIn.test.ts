@@ -13,6 +13,8 @@ const IME_CANCEL = 65385;
 const MINUTE = 60000;
 const CLOCK_PROTOCOL_MARGIN_MS = 1000;
 const PLAIN = "http://silo.example.test";
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 let browser: Browser;
 before(async () => {
@@ -1556,24 +1558,24 @@ tvTest("the cleartext dialog and buttons match measured Apple frames", async tv 
         return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height), title: title === undefined ? undefined : { x: Math.round(title.x), y: Math.round(title.y), width: Math.round(title.width), height: Math.round(title.height) }, buttons: Array.from(node.querySelectorAll("button")).map(button => { const b = button.getBoundingClientRect(); return { y: Math.round(b.y), height: Math.round(b.height) }; }) };
     });
     assert.deepEqual(frames, { x: 667, y: 375, width: 586, height: 330, title: { x: 714, y: 421, width: 492, height: 37 }, buttons: [{ y: 608, height: 66 }, { y: 608, height: 66 }] });
-    assert.deepEqual(await style(tv, '.signin-alert [data-focus="connect"]', "font-size"), ["30px"]);
+    assert.deepEqual(await style(tv, '.signin-alert [data-focus="connect"]', "font-size"), [capped(30)]);
 }, { origin: PLAIN });
 
 tvTest("code instructions use measured Apple line spacing with the licensed font", async tv => {
     await connectTo(tv);
     await codeScreen(tv);
-    assert.deepEqual(await style(tv, ".marquee-lead", "font-size", "line-height"), ["27px", "35.5px"]);
+    assert.deepEqual(await style(tv, ".marquee-lead", "font-size", "line-height"), [capped(28), "35.5px"]);
     assert.deepEqual(await style(tv, ".marquee-actions", "margin-top"), ["98.4px"], "the unsupported nearby hint retains its reference layout space");
 });
 
 tvTest("code and server cards compensate for measured substitute-font advances", async tv => {
     await connectTo(tv);
     await codeScreen(tv);
-    assert.deepEqual(await style(tv, ".marquee-server-address", "font-size", "line-height"), ["24px", "28px"]);
+    assert.deepEqual(await style(tv, ".marquee-server-address", "font-size", "line-height"), [capped(23), "28px"]);
     assert.deepEqual(await style(tv, ".marquee-server-card", "padding-top", "padding-bottom"), ["23px", "23px"]);
     assert.deepEqual(await style(tv, ".marquee-badge .marquee-icon", "width", "height"), ["18px", "18px"]);
     assert.deepEqual(await style(tv, ".signin-code", "letter-spacing", "margin-top"), ["1.25px", "33px"]);
-    assert.deepEqual(await style(tv, ".signin-typed-url", "font-size", "line-height"), ["22.7px", "29px"]);
+    assert.deepEqual(await style(tv, ".signin-typed-url", "font-size", "line-height"), [capped(24), "29px"]);
     assert.deepEqual(await style(tv, ".signin-status", "margin-top", "line-height"), ["28px", "32px"]);
     assert.deepEqual(await style(tv, ".signin-status .marquee-spinner", "width", "height"), ["36px", "36px"]);
     assert.equal((await tv.page.locator(".signin-status").boundingBox())?.height, 32, "the measured indicator does not move the code card's text line");
@@ -1616,22 +1618,22 @@ tvTest("the sign-in screens use the Apple TV Marquee metrics", async (tv) => {
     assert.equal((await box(tv, ".marquee-copy")).width, 900);
     assert.equal(await tv.page.locator("#root > .marquee-backdrop canvas").count(), 1, "the brand light sits behind the screen");
     // Hero 88 heavy, kerning -2; lead 28 at 62% ink.
-    assert.deepEqual(await style(tv, "h1", "font-size", "font-weight", "letter-spacing"), ["88px", "800", "-2px"]);
+    assert.deepEqual(await style(tv, "h1", "font-size", "font-weight", "letter-spacing"), [capped(88), "800", "-2px"]);
     // SwiftUI sets no line height; Apple TV frames measure 106 px between the headline's baselines.
     assert.deepEqual(await style(tv, "h1", "line-height"), ["105.6px"]);
-    assert.deepEqual(await style(tv, ".marquee-lead", "font-size", "color", "line-height"), ["28px", "rgba(237, 237, 237, 0.62)", "34px"]);
+    assert.deepEqual(await style(tv, ".marquee-lead", "font-size", "color", "line-height"), [capped(28), "rgba(237, 237, 237, 0.62)", "34px"]);
     // MarqueeTVField: 760 x 84, corner 16, font 30.
     const field = await box(tv, ".marquee-field");
     assert.deepEqual([field.width, field.height], [760, 84]);
     assert.deepEqual(await style(tv, ".marquee-field", "border-top-left-radius"), ["16px"]);
-    assert.deepEqual(await style(tv, "#signin-address", "font-size"), ["30px"]);
+    assert.deepEqual(await style(tv, "#signin-address", "font-size"), [capped(30)]);
     // MarqueeTVCard: 640 wide, padding 52, corner 40.
     assert.equal((await box(tv, ".marquee-card")).width, 640);
     assert.deepEqual(await style(tv, ".marquee-card", "padding-top", "border-top-left-radius"), ["52px", "40px"]);
     assert.equal((await box(tv, ".marquee-card .marquee-symbol")).width, 112);
     // Buttons 76 high, font 29.
     assert.equal((await box(tv, '[data-focus="connect"]')).height, 76);
-    assert.deepEqual(await style(tv, '[data-focus="connect"]', "font-size"), ["29px"]);
+    assert.deepEqual(await style(tv, '[data-focus="connect"]', "font-size"), [capped(29)]);
 
     await connectTo(tv);
     await codeScreen(tv);
@@ -1642,10 +1644,10 @@ tvTest("the sign-in screens use the Apple TV Marquee metrics", async (tv) => {
     assert.deepEqual(await style(tv, ".signin-code", "font-size", "font-weight"), ["72px", "700"]);
     assert.match((await style(tv, ".signin-code", "font-family"))[0] ?? "", /monospace/);
     assert.ok((await box(tv, ".marquee-card")).x > (await box(tv, ".marquee-copy")).x + 900, "the card sits right of the copy");
-    // The substitute face uses 24px address text to match Apple's measured advance.
+    // Server card name 34 bold and address 23 regular, scaled by --silo-sf-cap-scale.
     assert.equal((await box(tv, ".marquee-server-mark")).width, 80);
-    assert.deepEqual(await style(tv, ".marquee-server-name", "font-size", "font-weight"), ["34px", "700"]);
-    assert.deepEqual(await style(tv, ".marquee-server-address", "font-size"), ["24px"]);
+    assert.deepEqual(await style(tv, ".marquee-server-name", "font-size", "font-weight"), [capped(34), "700"]);
+    assert.deepEqual(await style(tv, ".marquee-server-address", "font-size"), [capped(23)]);
 });
 
 // --- Approval, branding and the backdrop ---
