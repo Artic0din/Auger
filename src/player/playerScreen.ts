@@ -55,7 +55,7 @@ export interface PlayerScreen {
     destroy(): void;
 }
 
-export function errorText(error: PlaybackError): string {
+export function errorText(error: PlaybackError, retryable = true): string {
     switch (error.kind) {
         case "settings":
             return "Could not read this profile's seek intervals. Check the connection and retry.";
@@ -63,23 +63,23 @@ export function errorText(error: PlaybackError): string {
             // The server's sentence for its own refusal (protocol v3 §7.3).
             return error.message;
         case "unavailable":
-            return "This server can't stream to this TV.";
+            return translate("error.capability_unsupported");
         case "playback_failed":
-            return "This video can't play on this TV.";
+            return translate(retryable ? "player.error.couldNotStartRetry" : "player.error.couldNotStart");
         case "network":
             // Raised where Apple's player gives up reconnecting (PlayerViewModel.giveUpReconnect with connectionLostMessage).
             return error.noResponse === true ? translate("player.error.serverNoResponse") : translate("player.error.connectionLost");
         case "session_expired":
-            return "The server ended playback. Try again.";
+            return translate("error.playback_session_ended");
         case "installation_changed":
-            return "The server was reset or replaced. Try again.";
+            return translate("error.installation_changed");
         case "revoked":
-            return "This profile no longer has access. Sign in again.";
+            return translate("error.invalid_token");
         case "backgrounded":
             return "Playback stopped when you left Auger. Go back and select the title to play again.";
         case "server": {
             const reason = error.reason;
-            if (reason === undefined) return "The server couldn't start playback. Try again.";
+            if (reason === undefined) return translate(retryable ? "player.error.couldNotStartRetry" : "player.error.couldNotStart");
             if ("update" in reason) return translate("update.appRequired");
             // problem.localized's catalog lines (the field code's, else the problem type's), else Apple's HTTP status line.
             // Unlike Apple, never the problem's detail or title: server free text can carry private values onto a shared screen.
@@ -1260,7 +1260,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             retry.textContent = translate(view.error.kind === "network" && view.error.noResponse !== true ? "common.tryAgain" : "common.retry");
             retry.hidden = view.error.kind !== "settings" && !view.retryable;
             failureTitle.textContent = "";
-            failureText.textContent = errorText(view.error);
+            failureText.textContent = errorText(view.error, view.retryable === true);
             if (document.activeElement !== back && document.activeElement !== retry) {
                 (retry.hidden ? back : retry).focus();
             }

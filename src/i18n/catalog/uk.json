@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Шкала відтворення",
  "player.controls.showUpNext": "Показати «Далі»",
  "player.error.connectionLost": "З’єднання втрачено\nAuger не вдалося знову під’єднатися до сервера. Перевірте з’єднання й спробуйте ще раз, щоб продовжити з того самого місця.",
+ "player.error.couldNotStart": "Auger не вдалося запустити це відео. Поверніться назад і виберіть його ще раз.",
+ "player.error.couldNotStartRetry": "Auger не вдалося запустити це відео. Спробуйте ще раз або поверніться назад і виберіть його знову.",
  "player.error.serverNoResponse": "Сервер не відповів вчасно.",
  "player.eyebrow.episode": "С{season}:Е{episode}",
  "player.goBack": "Назад",

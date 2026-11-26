@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Tijdlijn",
  "player.controls.showUpNext": "Hierna tonen",
  "player.error.connectionLost": "Verbinding verbroken\nAuger kan niet opnieuw verbinden met de server. Controleer je verbinding en probeer het opnieuw om verder te gaan waar je gebleven was.",
+ "player.error.couldNotStart": "Auger kan deze video niet starten. Ga terug en kies hem opnieuw.",
+ "player.error.couldNotStartRetry": "Auger kan deze video niet starten. Probeer het opnieuw, of ga terug en kies hem opnieuw.",
  "player.error.serverNoResponse": "De server reageerde niet op tijd.",
  "player.eyebrow.episode": "S{season}:A{episode}",
  "player.goBack": "Terug",

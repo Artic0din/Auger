@@ -601,6 +601,8 @@
  "player.controls.scrubber": "شريط التقدّم",
  "player.controls.showUpNext": "عرض التالي",
  "player.error.connectionLost": "انقطع الاتصال\nتعذّر على Auger إعادة الاتصال بالخادم. تحقق من اتصالك، ثم حاول مرة أخرى لمتابعة المشاهدة من حيث توقفت.",
+ "player.error.couldNotStart": "تعذّر على Auger بدء هذا الفيديو. ارجع واختره مرة أخرى.",
+ "player.error.couldNotStartRetry": "تعذّر على Auger بدء هذا الفيديو. حاول مرة أخرى، أو ارجع واختره من جديد.",
  "player.error.serverNoResponse": "لم يستجب الخادم في الوقت المحدد.",
  "player.eyebrow.episode": "م{season}:ح{episode}",
  "player.goBack": "رجوع",

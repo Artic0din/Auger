@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Barra de tiempo",
  "player.controls.showUpNext": "Mostrar “A continuación”",
  "player.error.connectionLost": "Conexión perdida\nAuger no pudo volver a conectarse al servidor. Revisa tu conexión y vuelve a intentarlo para continuar donde lo dejaste.",
+ "player.error.couldNotStart": "Auger no pudo iniciar este video. Vuelve atrás y elígelo de nuevo.",
+ "player.error.couldNotStartRetry": "Auger no pudo iniciar este video. Vuelve a intentarlo o vuelve atrás y elígelo de nuevo.",
  "player.error.serverNoResponse": "El servidor no respondió a tiempo.",
  "player.eyebrow.episode": "T{season}:E{episode}",
  "player.goBack": "Volver",

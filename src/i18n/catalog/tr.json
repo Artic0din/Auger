@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Zaman çubuğu",
  "player.controls.showUpNext": "Sıradaki’ni göster",
  "player.error.connectionLost": "Bağlantı kesildi\nAuger sunucuya yeniden bağlanamadı. Bağlantınızı kontrol edin, ardından kaldığınız yerden devam etmek için tekrar deneyin.",
+ "player.error.couldNotStart": "Auger bu videoyu başlatamadı. Geri dönüp videoyu yeniden seçin.",
+ "player.error.couldNotStartRetry": "Auger bu videoyu başlatamadı. Tekrar deneyin veya geri dönüp videoyu yeniden seçin.",
  "player.error.serverNoResponse": "Sunucu zamanında yanıt vermedi.",
  "player.eyebrow.episode": "S{season}:B{episode}",
  "player.goBack": "Geri dön",

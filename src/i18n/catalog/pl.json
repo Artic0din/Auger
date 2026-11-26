@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Pasek postępu",
  "player.controls.showUpNext": "Pokaż panel Następnie",
  "player.error.connectionLost": "Utracono połączenie\nAplikacji Auger nie udało się ponownie połączyć z serwerem. Sprawdź połączenie i spróbuj ponownie, aby kontynuować od miejsca, w którym przerwano.",
+ "player.error.couldNotStart": "Aplikacji Auger nie udało się uruchomić tego filmu. Wróć i wybierz go ponownie.",
+ "player.error.couldNotStartRetry": "Aplikacji Auger nie udało się uruchomić tego filmu. Spróbuj ponownie lub wróć i wybierz go ponownie.",
  "player.error.serverNoResponse": "Serwer nie odpowiedział na czas.",
  "player.eyebrow.episode": "S{season}:O{episode}",
  "player.goBack": "Wróć",

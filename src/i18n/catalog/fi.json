@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Aikajana",
  "player.controls.showUpNext": "Näytä Seuraavaksi",
  "player.error.connectionLost": "Yhteys katkesi\nAuger ei saanut yhteyttä palvelimeen uudelleen. Tarkista yhteys ja yritä sitten uudelleen jatkaaksesi siitä, mihin jäit.",
+ "player.error.couldNotStart": "Auger ei voinut käynnistää tätä videota. Palaa takaisin ja valitse se uudelleen.",
+ "player.error.couldNotStartRetry": "Auger ei voinut käynnistää tätä videota. Yritä uudelleen tai palaa takaisin ja valitse se uudelleen.",
  "player.error.serverNoResponse": "Palvelin ei vastannut ajoissa.",
  "player.eyebrow.episode": "K{season}:J{episode}",
  "player.goBack": "Palaa",

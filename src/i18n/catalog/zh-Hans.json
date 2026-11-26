@@ -601,6 +601,8 @@
  "player.controls.scrubber": "进度条",
  "player.controls.showUpNext": "显示即将播放",
  "player.error.connectionLost": "连接已断开\nAuger无法重新连接到服务器。请检查你的网络连接，然后重试，从上次离开的位置继续播放。",
+ "player.error.couldNotStart": "Auger无法开始播放此视频。请返回后重新选择。",
+ "player.error.couldNotStartRetry": "Auger无法开始播放此视频。请重试，或返回后重新选择。",
  "player.error.serverNoResponse": "服务器未及时响应。",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "返回",

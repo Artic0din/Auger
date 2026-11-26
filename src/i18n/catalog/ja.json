@@ -601,6 +601,8 @@
  "player.controls.scrubber": "タイムライン",
  "player.controls.showUpNext": "次に再生を表示",
  "player.error.connectionLost": "接続が切断されました\nAugerはサーバーに再接続できませんでした。接続を確認してから、もう一度お試しください。中断したところから再開します。",
+ "player.error.couldNotStart": "Augerはこの動画を開始できませんでした。戻ってもう一度選択してください。",
+ "player.error.couldNotStartRetry": "Augerはこの動画を開始できませんでした。もう一度お試しいただくか、戻ってもう一度選択してください。",
  "player.error.serverNoResponse": "サーバーが時間内に応答しませんでした。",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "戻る",

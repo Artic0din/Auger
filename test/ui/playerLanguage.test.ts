@@ -309,7 +309,19 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
             assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.tryAgain", language));
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
-            assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStartRetry", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "playback_failed" }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStartRetry", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "playback_failed" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStart", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "unavailable" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.capability_unsupported"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "session_expired" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.playback_session_ended"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "installation_changed" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.installation_changed"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "revoked" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.invalid_token"]);
             // problem.localized (APIv2Models.swift:357-365): the field code's line, else the problem type's, else the server's own text.
             // Never the server's own text, which can carry private values: a problem type with no line reads Apple's HTTP status line.
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 400, problemId: "validation_failed" } }, retryable: true });
@@ -515,8 +527,8 @@ for (const language of [undefined, "ar"]) {
             const goBack = await center(page, '[data-focus="back"]');
             assert.equal(retry < goBack, language === undefined, "Retry leads the row");
             assert.equal(await direction(page, ".player-error"), language === undefined ? "ltr" : "rtl");
-            // An English message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
-            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            // An English server message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "terminal", reason: "source_unreadable", message: "The source file could not be read.", retryable: true }, retryable: true });
             const [first, stop] = await page.locator(".player-error-text").evaluate(node => [0, (node.textContent ?? "").length - 1].map(at => {
                 const range = document.createRange();
                 range.setStart(node.firstChild!, at);

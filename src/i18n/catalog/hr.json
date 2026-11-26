@@ -601,6 +601,8 @@
  "player.controls.scrubber": "Vremenska traka",
  "player.controls.showUpNext": "Prikaži „Slijedi“",
  "player.error.connectionLost": "Veza je prekinuta\nAuger se nije uspio ponovno povezati s poslužiteljem. Provjerite vezu i pokušajte ponovno kako biste nastavili ondje gdje ste stali.",
+ "player.error.couldNotStart": "Auger nije uspio pokrenuti ovaj videozapis. Vratite se i ponovno ga odaberite.",
+ "player.error.couldNotStartRetry": "Auger nije uspio pokrenuti ovaj videozapis. Pokušajte ponovno ili se vratite i ponovno ga odaberite.",
  "player.error.serverNoResponse": "Poslužitelj nije odgovorio na vrijeme.",
  "player.eyebrow.episode": "S{season}:E{episode}",
  "player.goBack": "Natrag",
