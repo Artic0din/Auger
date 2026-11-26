@@ -1155,11 +1155,18 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             shell.update(visible);
             const shown = top();
             if (audiobooksChanged && shown?.kind === "personal" && shown.source === "favorites") {
-                personalSnapshots.delete(shown);
-                shown.pages = newPages();
-                shown.pendingIndex = undefined;
-                shown.elsewhere = false;
-                loadPersonal(shown, true, false);
+                const resolved = resolvePersonalFilter(shown.filter, audiobooksInSearch());
+                if (resolved !== shown.filter) {
+                    personalSnapshots.delete(shown);
+                    shown.pages = newPages();
+                    shown.pendingIndex = undefined;
+                    shown.elsewhere = false;
+                    shown.filter = resolved;
+                    loadPersonal(shown, true, false);
+                } else if (shown.pages.page === undefined || shown.pages.page.items.length === 0) {
+                    shown.elsewhere = false;
+                    loadPersonal(shown, true, false);
+                }
             }
             const shownShell = shown?.kind === "home" || shown?.kind === "for_you" || shown?.kind === "library" || shown?.kind === "personal" || shown?.kind === "calendar";
             // The page in front has to take the new buttons. Calendar and For You can open

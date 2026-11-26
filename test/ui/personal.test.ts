@@ -1106,3 +1106,47 @@ test("History includes episodes and cached Details return remains visible during
         assert.equal(listReads(tv).every(request => request.body?.type !== "episode"), true);
     } finally { await tv.page.context().close(); }
 });
+
+test("delayed library load adds Audiobooks filter without dropping Favorites grid or focus", async () => {
+    let removedAudiobookLibrary: { id: string; name: string; type: string; sort_order: number }[] = [];
+    const { tv, catalog } = await setup(false, false, active => {
+        const fakeCatalog = active.fake.catalog as PersonalCatalog;
+        fakeCatalog.add({ id: "audiobook:ab1", type: "audiobook", title: "Northern Drift", libraryId: "14", year: 2024 });
+        const ownerLibraries = fakeCatalog.households.get("p-owner")?.libraries;
+        assert.ok(ownerLibraries !== undefined);
+        const index = ownerLibraries.findIndex(library => library.type === "audiobooks");
+        assert.ok(index >= 0);
+        removedAudiobookLibrary = ownerLibraries.splice(index, 1);
+    });
+    try {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="show-audiobooks"]').click();
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor();
+
+        const ownerLibraries = catalog.households.get("p-owner")?.libraries;
+        assert.ok(ownerLibraries !== undefined);
+        ownerLibraries.push(...removedAudiobookLibrary);
+        const heldLibraries = tv.fake.hold("/user/libraries", true);
+        try {
+            await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
+            await tv.page.locator('[data-view="home"]').waitFor();
+            await openList(tv, "favorites");
+            await tv.page.locator('[data-view="personal:favorites"] [data-focus="movie:m0002"]').focus();
+            assert.equal(await tv.focused(), "movie:m0002");
+            assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series"]);
+            const readsBeforeRelease = listReads(tv).length;
+
+            heldLibraries.release();
+            await tv.page.locator('[data-focus="filter:audiobook"]').waitFor();
+            assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series", "filter:audiobook"]);
+            assert.equal(await tv.focused(), "movie:m0002");
+            assert.equal(listReads(tv).length, readsBeforeRelease);
+
+            await tv.page.locator('[data-focus="filter:audiobook"]').click();
+            await tv.page.locator('.browse-card-square[data-focus="audiobook:ab1"]').waitFor();
+        } finally { heldLibraries.release(); }
+    } finally { await tv.page.context().close(); }
+});
