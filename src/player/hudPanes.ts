@@ -1,13 +1,39 @@
+import type { PlayerChapter } from "../contracts/v2/chapters.ts";
+import { localizeNumerals } from "../i18n/format.ts";
 import { translate } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
 import { heading } from "./headings.ts";
 import type { TrackView } from "./controller.ts";
-import { aspectLabel, currentChapter, type PlayerHUD, type StatsRow, statLabel } from "./playerHUD.ts";
+import { playIcon } from "./playerIcons.ts";
+import { aspectLabel, chapterTitle, currentChapter, type PlayerHUD, type StatsRow, statLabel } from "./playerHUD.ts";
 import { paneColumn, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 
 type Choice = (id: string, label: string, selected: boolean, detail?: string) => HTMLButtonElement;
 
+function chapterRow(chapter: PlayerChapter, index: number, current: boolean, startTime: string): HTMLButtonElement {
+    const title = chapterTitle(chapter, index);
+    const button = el("button", current ? "player-choice player-chapter-row player-choice-current" : "player-choice player-chapter-row");
+    button.type = "button";
+    button.setAttribute("data-focus", `chapter:${index}`);
+    button.setAttribute("aria-pressed", String(current));
+    button.setAttribute("aria-label", title);
+    if (current) button.setAttribute("aria-description", translate("player.hud.currentlyPlaying"));
+    button.append(
+        el("span", "player-chapter-number", localizeNumerals(String(index + 1).padStart(2, "0"))),
+        el("span", "player-chapter-title", title),
+    );
+    if (current) {
+        const playing = el("span", "player-chapter-playing");
+        playing.setAttribute("aria-hidden", "true");
+        playing.innerHTML = playIcon();
+        button.append(playing);
+    }
+    button.append(el("span", "player-chapter-time", startTime));
+    return button;
+}
+
 export function fillHUDPane(list: HTMLElement, name: string, hud: PlayerHUD | undefined, seconds: number, choice: Choice, time: (seconds: number) => string): void {
+    void choice;
     if (name === "Stats") {
         // PlaybackStatsPanel's tvOS two-column layout (PlaybackStatsPanel.swift:33-38, :74-89): Playback, a divider, then
         // Stream over Engine. Like HUDScrollablePane, the whole pane is one focus target that Up and Down scroll.
@@ -25,7 +51,7 @@ export function fillHUDPane(list: HTMLElement, name: string, hud: PlayerHUD | un
         list.appendChild(el("h2", "player-menu-heading", heading("options.chapters")));
         const chapters = hud?.chapters ?? [];
         const current = currentChapter(chapters, seconds);
-        chapters.forEach((chapter, index) => list.appendChild(choice(`chapter:${index}`, `${String(index + 1).padStart(2, "0")}  ${chapter.title}`, index === current, time(chapter.seconds))));
+        chapters.forEach((chapter, index) => list.appendChild(chapterRow(chapter, index, index === current, time(chapter.seconds))));
     }
 }
 
@@ -65,24 +91,28 @@ export function videoPickerFor(hud: PlayerHUD | undefined, tracks: TrackView, fi
     return undefined;
 }
 
+function unavailableRow(button: HTMLButtonElement): HTMLButtonElement {
+    button.setAttribute("aria-disabled", "true");
+    button.dataset.unavailable = "true";
+    return button;
+}
+
 /**
- * VideoPane (TVPlayerInfoHUD.swift:795-957, silo-apple e0337595): PICTURE has Quality and Aspect, PLAYBACK has Speed and
- * Auto-play next. Subtitle timing lives in the Subtitles pane.
+ * VideoPane (TVPlayerInfoHUD.swift:795-957, silo-apple 198a3e90): PICTURE always shows Aspect (plus Quality when offered),
+ * PLAYBACK always shows Speed and Auto-play next; unsupported controls stay rendered as disabled rows instead of replacing the pane with a note.
  */
 export function fillVideoPane(list: HTMLElement, hud: PlayerHUD | undefined, tracks: TrackView): void {
     const columns = el("div", "player-menu-columns player-menu-columns-video");
     const picture = paneColumn(heading("player.hud.picture"), "player-menu-column-picture");
     const playback = paneColumn(heading("player.hud.playback"), "player-menu-column-playback");
     if ((tracks.quality?.choices.length ?? 0) > 1) picture.rows.append(settingRow("video-quality", translate("options.quality"), qualityValue(tracks)));
-    if ((hud?.aspects.length ?? 0) > 0) picture.rows.append(settingRow("video-aspect", translate("player.hud.aspect"), hud?.aspect === undefined ? "" : aspectLabel(hud.aspect)));
-    if ((hud?.speeds.length ?? 0) > 0) playback.rows.append(settingRow("video-speed", translate("player.settings.speed"), hud?.speed === undefined ? "" : speedLabel(hud.speed)));
-    if (hud?.autoNext !== undefined) playback.rows.append(settingRow("auto-next", translate("options.autoplayNext"), hud.autoNext ? translate("options.on") : translate("options.off"), { chevron: false, pressed: hud.autoNext }));
+    const aspectRow = settingRow("video-aspect", translate("player.hud.aspect"), aspectLabel(hud?.aspect ?? "Fit"));
+    picture.rows.append((hud?.aspects.length ?? 0) > 0 ? aspectRow : unavailableRow(aspectRow));
+    const speedRow = settingRow("video-speed", translate("player.settings.speed"), speedLabel(hud?.speed ?? 1));
+    playback.rows.append((hud?.speeds.length ?? 0) > 0 ? speedRow : unavailableRow(speedRow));
+    const autoNextOn = hud?.autoNext === true;
+    const autoNextRow = settingRow("auto-next", translate("options.autoplayNext"), translate(autoNextOn ? "options.on" : "options.off"), { chevron: false, pressed: autoNextOn });
+    playback.rows.append(hud?.autoNext !== undefined ? autoNextRow : unavailableRow(autoNextRow));
     columns.append(picture.column, playback.column);
     list.append(columns);
-    if (list.querySelector("[data-focus]") === null) {
-        const note = el("p", "player-menu-note", "No video controls available for this stream.");
-        note.tabIndex = -1;
-        note.dataset.focus = "video-empty";
-        picture.rows.append(note);
-    }
 }
