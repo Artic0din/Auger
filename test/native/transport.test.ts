@@ -6,7 +6,7 @@ import { NativeHttp, SubtitleTruncated } from "../../src/api/http.ts";
 import { operations } from "../../src/api/operations.ts";
 import { isPermittedUrl, parseServerUrl, plainHttpFallbacks } from "../../src/api/serverUrl.ts";
 import { ManualClock } from "./support/clock.ts";
-import { FakeSilo } from "./support/fakeSilo.ts";
+import { FakeSilo, fixture } from "./support/fakeSilo.ts";
 
 const device = { id: "abababab", name: "Living room TV", platform: "tizen" };
 
@@ -87,7 +87,7 @@ test("subtitle downloads may use cleartext only from a plain-HTTP server", async
     await assert.rejects(http.subtitleText(`${plain.origin}/api/v2/captions`, new AbortController().signal), /Invalid subtitle URL/);
 });
 
-test("discovery checks api_major and request_origin before any credential is sent", async () => {
+test("discovery checks api_major before any credential is sent and accepts differing request_origin", async () => {
     const clock = new ManualClock();
     const fake = new FakeSilo(clock);
     const ok = await discoverServer(fake.origin, device, fake.fetch, clock);
@@ -98,8 +98,16 @@ test("discovery checks api_major and request_origin before any credential is sen
     assert.deepEqual(fake.paths(), ["GET /system/info", "GET /system/identity"]);
     assert.ok(fake.requests.every((request) => request.headers.authorization === undefined));
 
-    fake.script("/system/info", { status: 200, body: { server_version: "x", api_major: 2, contract_digest: "0", links: { openapi: "", capabilities: "", identity: "" }, request_origin: "https://elsewhere.example.test" } });
-    assert.deepEqual(await discoverServer(fake.origin, device, fake.fetch, clock), { status: "origin_mismatch" });
+    const info = fixture("get_system_info_ok");
+    const { request_origin: _omitted, ...withoutOrigin } = info;
+    const httpOrigin = fake.origin.replace(/^https:/, "http:");
+    for (const body of [{ ...info, request_origin: httpOrigin }, { ...info, request_origin: "https://elsewhere.example.test:8090" }, withoutOrigin]) {
+        fake.script("/system/info", { status: 200, body });
+        assert.equal((await discoverServer(fake.origin, device, fake.fetch, clock)).status, "connected");
+    }
+
+    fake.script("/system/info", { status: 200, body: { ...info, api_major: 1 } });
+    assert.deepEqual(await discoverServer(fake.origin, device, fake.fetch, clock), { status: "not_silo_v2" });
 
     fake.script("/system/info", { status: 404, body: "not found", headers: { "Content-Type": "text/plain" } });
     assert.deepEqual(await discoverServer(fake.origin, device, fake.fetch, clock), { status: "not_silo_v2" });
