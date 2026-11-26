@@ -2177,26 +2177,30 @@ svg.library-empty-icon { width: auto; }
 /* Watch Party hub: Apple's WatchPartyEntryView tvLayout and WatchPartyMetrics at 1920x1080. */
 /* The entry's content runs 140 to 1780 px on Apple TV: tvLayout's 88 pt page inset plus 52 px the pushed route takes from the system safe area (it does not ignore it, as Requests does).
    The source states only the 88; the 52 is read from Apple TV's accessibility frames, and the lobby, which is not captured, keeps its 88 until a live room can be measured. */
+.browse.watch-party-scene { font-weight: 400; }
+.watch-party-scene * { font-family: inherit; font-weight: inherit; }
+.watch-party-scene .card-watch-status { font-weight: 700; }
+.watch-party-scene .card-overlay-mark { font-weight: 900; }
 .watch-party-scene .watch-party { box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; min-height: 1080px; padding: 220px 52px 0; }
 .watch-party-intro { flex: none; display: flex; flex-direction: column; gap: 40px; width: 760px; }
 .watch-party-headline { display: flex; flex-direction: column; gap: 15.6px; }
-.watch-party-eyebrow { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 2.04px; line-height: 21px; text-transform: uppercase; color: var(--silo-secondary); }
-.watch-party-title { margin: 0; font-size: 88px; font-weight: 700; letter-spacing: -1.76px; line-height: 88px; white-space: pre-line; color: var(--silo-text); }
-.watch-party-body { margin: 0; font-size: 26px; line-height: 32px; color: var(--silo-secondary); }
+.watch-party-eyebrow { margin: 0; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: 2.04px; line-height: 21px; text-transform: uppercase; color: var(--silo-secondary); }
+.watch-party-title { margin: 0; font-size: calc(88px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: -1.76px; line-height: 88px; white-space: pre-line; color: var(--silo-text); }
+.watch-party-body { margin: 0; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 32px; color: var(--silo-secondary); }
 .watch-party-actions { flex: none; display: flex; flex-direction: column; gap: 28px; width: 640px; }
 .watch-party-section { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
 .watch-party-rejoin-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
 .watch-party-ui .watch-party-rejoin { max-width: 100%; border: 1px solid rgba(255,255,255,.28); overflow: hidden; text-overflow: ellipsis; }
-.watch-party-rejoin-note { margin: 0; font-size: 21px; line-height: 26px; color: var(--silo-secondary); }
+.watch-party-rejoin-note { margin: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 26px; color: var(--silo-secondary); }
 .watch-party-starting { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 1920px; height: 1080px; outline: none; }
 .watch-party-starting .marquee-spinner { width: 56px; height: 56px; border-width: 5px; }
-.watch-party-banner { box-sizing: border-box; display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 16px 20px; border-radius: 12px; border: 1px solid var(--silo-hairline); background: rgba(255,255,255,.08); font-size: 21px; line-height: 26px; color: var(--silo-text); }
+.watch-party-banner { box-sizing: border-box; display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 16px 20px; border-radius: 12px; border: 1px solid var(--silo-hairline); background: rgba(255,255,255,.08); font-size: calc(21px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 26px; color: var(--silo-text); }
 .watch-party-banner-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--silo-secondary); }
 .watch-party-banner-warning { border-color: rgba(245,197,99,.3); background: rgba(245,197,99,.12); color: #f5c563; }
 .watch-party-banner-warning .watch-party-banner-dot { background: #f5c563; }
 /* TVPillButtonStyle(.compact, stabilizesFocusMotion): 76 px tall, 22/20 px side padding, no focus scale; primary white .10 and secondary black .52 at rest; disabled 0.45. */
-.watch-party-ui .watch-party-button { display: inline-flex; align-items: center; justify-content: center; gap: 14px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 20px; border: 0; border-radius: 50px; font-size: 26px; font-weight: 600; line-height: 32px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,.14); }
-.watch-party-ui .watch-party-primary { padding: 0 22px; font-size: 29px; background: rgba(255,255,255,.1); color: #fff; }
+.watch-party-ui .watch-party-button { display: inline-flex; align-items: center; justify-content: center; gap: 14px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 20px; border: 0; border-radius: 50px; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 32px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,.14); }
+.watch-party-ui .watch-party-primary { padding: 0 22px; font-size: calc(29px * var(--silo-sf-cap-scale)); font-weight: 600; background: rgba(255,255,255,.1); color: #fff; }
 .watch-party-ui .watch-party-secondary { background: rgba(0,0,0,.52); color: #fff; }
 .watch-party-ui .watch-party-button[aria-disabled="true"] { opacity: .45; }
 .watch-party-ui .watch-party-button:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
@@ -2204,32 +2208,32 @@ svg.library-empty-icon { width: auto; }
 /* Apple's tvOS join field is a plain system TextField (the 14 pt fill and border in the source sit inside #if os(iOS)), so its look is the system's, read from Apple TV:
    a 648 by 73 frame reaching 4 px past the column, nothing drawn at rest, and a light grey capsule with no shadow when focused. The hint sits 30 px in from the left, in
    Arabic too (physical left), at 0.32 white at rest and rgb(179,179,185) on the capsule. Only the look is Apple's; typing stays on the Samsung keyboard. */
-.watch-party-ui .watch-party-input { box-sizing: border-box; width: 648px; height: 73px; margin: 0 -4px; padding: 0 30px; border: 0; border-radius: 36.5px; font-size: 29px; text-align: left; background: transparent; box-shadow: none; }
+.watch-party-ui .watch-party-input { box-sizing: border-box; width: 648px; height: 73px; margin: 0 -4px; padding: 0 30px; border: 0; border-radius: 36.5px; font-size: calc(29px * var(--silo-sf-cap-scale)); font-weight: 500; text-align: left; background: transparent; box-shadow: none; }
 .watch-party-ui .watch-party-input::placeholder { color: rgba(255,255,255,.32); }
 .watch-party-ui .watch-party-input:focus { background: #e7e7e7; color: #000; box-shadow: none; }
 .watch-party-ui .watch-party-input:focus::placeholder { color: rgb(179,179,185); }
 /* Room pages: the lobby and the sheets, picker and invitation it opens. */
 .watch-party-ui .watch-party-code-pill { display: inline-flex; align-items: center; gap: 15px; box-sizing: border-box; height: 76px; margin: 0; padding: 0 40px; border: 0; border-radius: 50px; background: rgba(0,0,0,.52); color: #fff; }
 .watch-party-ui .watch-party-code-pill:focus { background: #fff; color: #000; box-shadow: 0 4px 10px rgba(0,0,0,.24); }
-.watch-party-code-label { font-size: 15px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--silo-secondary); }
+.watch-party-code-label { font-size: calc(15px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--silo-secondary); }
 .watch-party-ui .watch-party-code-pill:focus .watch-party-code-label { color: rgba(0,0,0,.5); }
 .watch-party-code { font-family: ui-monospace, Menlo, monospace; font-size: 30px; font-weight: 700; letter-spacing: 5.4px; }
 .watch-party-here { display: flex; flex-direction: column; gap: 32px; }
 .watch-party-here-heading { display: flex; align-items: baseline; gap: 25.6px; }
-.watch-party-presence { font-size: 20px; color: var(--silo-secondary-muted); }
+.watch-party-presence { font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary-muted); }
 .watch-party-seats { display: flex; align-items: flex-start; gap: 36px; }
 .watch-party-seat { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 179px; }
 .watch-party-seat-avatar { position: relative; display: block; width: 146px; height: 146px; margin-top: 12.8px; }
 .watch-party-seat[data-state="away"] .watch-party-seat-disc { opacity: .45; }
-.watch-party-seat-disc { position: absolute; inset: 9px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 46px; font-weight: 600; color: var(--silo-text); }
+.watch-party-seat-disc { position: absolute; inset: 9px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: calc(46.08px * var(--silo-sf-cap-scale)); font-weight: 600; color: var(--silo-text); }
 .watch-party-seat-ring { position: absolute; inset: 0; width: 146px; height: 146px; }
 .watch-party-seat-ring circle { stroke: rgba(237,237,237,.38); stroke-width: 4.5; stroke-linecap: round; }
 .watch-party-seat[data-state="ready"] .watch-party-seat-ring circle, .watch-party-seat[data-state="watching"] .watch-party-seat-ring circle { stroke: var(--silo-text); }
 .watch-party-seat[data-state="away"] .watch-party-seat-ring circle { stroke: rgba(237,237,237,.25); }
 .watch-party-seat-tick { position: absolute; left: 102px; top: 102px; box-sizing: border-box; width: 43.5px; height: 43.5px; padding: 4px; border-radius: 50%; background: #000; }
 .watch-party-seat-tick svg { display: block; width: 100%; height: 100%; padding: 8px; box-sizing: border-box; border-radius: 50%; background: var(--silo-text); fill: none; stroke: #000; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
-.watch-party-seat-name { max-width: 100%; overflow: hidden; font-size: 24.3px; font-weight: 500; line-height: 30px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
-.watch-party-seat-detail { margin-top: -12px; font-size: 20.5px; line-height: 25px; white-space: nowrap; color: var(--silo-secondary); }
+.watch-party-seat-name { max-width: 100%; overflow: hidden; font-size: calc(24.32px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 30px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
+.watch-party-seat-detail { margin-top: -12px; font-size: calc(20.48px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 25px; white-space: nowrap; color: var(--silo-secondary); }
 .watch-party-backdrop { position: absolute; left: 0; top: 0; z-index: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; pointer-events: none; }
 .watch-party-backdrop-art, .watch-party-backdrop-art .browse-art-image { display: block; width: 100%; height: 100%; object-fit: cover; }
 .watch-party-backdrop-poster .watch-party-backdrop-art { opacity: .7; filter: blur(28px); transform: scale(1.1); }
@@ -2243,14 +2247,14 @@ svg.library-empty-icon { width: auto; }
 .watch-party-room { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; width: 1920px; height: 1080px; padding: 0 88px; }
 .watch-party-room-header { display: flex; align-items: center; justify-content: space-between; padding-top: 56px; }
 .watch-party-room-title { display: flex; align-items: center; gap: 18px; }
-.watch-party-room-name { font-size: 26px; font-weight: 600; color: var(--silo-text); }
-.watch-party-connection { display: inline-flex; align-items: center; gap: 6px; font-size: 20px; color: var(--silo-secondary); }
+.watch-party-room-name { font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; color: var(--silo-text); }
+.watch-party-connection { display: inline-flex; align-items: center; gap: 6px; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary); }
 .watch-party-connection-dot { width: 11px; height: 11px; border-radius: 50%; background: #34d399; }
 .watch-party-connection-warn .watch-party-connection-dot { background: #f5c563; }
 .watch-party-connection-wait .watch-party-connection-dot { background: var(--silo-secondary); }
 .watch-party-connection-off .watch-party-connection-dot { background: #fb7185; }
 .watch-party-room-tools { display: flex; align-items: center; gap: 22px; }
-.watch-party-ui .watch-party-circle { display: inline-flex; align-items: center; justify-content: center; gap: 14px; box-sizing: border-box; height: 76px; min-width: 76px; margin: 0; padding: 0; border: 0; border-radius: 38px; background: rgba(0,0,0,.52); color: #fff; font-size: 26px; font-weight: 600; line-height: 32px; box-shadow: 0 2px 4px rgba(0,0,0,.14); }
+.watch-party-ui .watch-party-circle { display: inline-flex; align-items: center; justify-content: center; gap: 14px; box-sizing: border-box; height: 76px; min-width: 76px; margin: 0; padding: 0; border: 0; border-radius: 38px; background: rgba(0,0,0,.52); color: #fff; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 32px; box-shadow: 0 2px 4px rgba(0,0,0,.14); }
 .watch-party-ui .watch-party-circle svg { width: 38px; height: 38px; }
 .watch-party-circle-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .watch-party-ui .watch-party-circle:focus { padding: 0 28px; background: #fff; color: #000; }
@@ -2260,33 +2264,33 @@ svg.library-empty-icon { width: auto; }
 .watch-party-room-body-split { display: flex; align-items: flex-start; justify-content: space-between; gap: 40px; }
 .watch-party-lobby-suggestions { display: flex; flex-direction: column; gap: 12px; max-width: 820px; min-width: 0; }
 .watch-party-strip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.watch-party-strip-subtitle { font-size: 20px; white-space: nowrap; color: var(--silo-secondary); }
+.watch-party-strip-subtitle { font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; white-space: nowrap; color: var(--silo-secondary); }
 .watch-party-room .watch-party-strip { display: flex; align-items: flex-start; gap: 24px; padding: 14px 12px; margin: 0 -12px; overflow: hidden; white-space: normal; }
 .watch-party-ui .watch-party-strip-card { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; width: 120px; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; color: inherit; text-align: start; outline: none; }
 .watch-party-strip-poster { position: relative; display: block; box-sizing: border-box; width: 120px; height: 180px; overflow: visible; border-radius: 10px; background: #222; outline: 1px solid rgba(255,255,255,.12); transition: transform .15s ease-out; }
 .watch-party-strip-art, .watch-party-strip-art .browse-art-image { display: block; width: 100%; height: 100%; border-radius: 10px; object-fit: cover; }
 .watch-party-ui .watch-party-strip-card:focus { background: none; color: inherit; border-color: transparent; box-shadow: none; outline: none; }
 .watch-party-strip-card:focus .watch-party-strip-poster { transform: scale(1.05); outline: 5px solid var(--silo-text); outline-offset: 8px; }
-.watch-party-strip-title { max-width: 120px; overflow: hidden; font-size: 20px; font-weight: 600; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
+.watch-party-strip-title { max-width: 120px; overflow: hidden; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
 .watch-party-room-copy { display: flex; flex-direction: column; gap: 30px; width: 760px; }
 .watch-party-hero { display: flex; flex-direction: column; gap: 24.6px; }
-.watch-party-hero-title { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 88px; font-weight: 700; letter-spacing: -1.76px; line-height: 92px; white-space: pre-line; color: var(--silo-text); }
+.watch-party-hero-title { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: calc(88px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: -1.76px; line-height: 92px; white-space: pre-line; color: var(--silo-text); }
 .watch-party-hero-dim { color: var(--silo-secondary); }
-.watch-party-facts { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 25px; white-space: nowrap; color: var(--silo-secondary); }
+.watch-party-facts { display: flex; align-items: center; gap: 8px; margin: 0; font-size: calc(25px * var(--silo-sf-cap-scale)); font-weight: 400; white-space: nowrap; color: var(--silo-secondary); }
 .watch-party-facts-dot { opacity: .5; }
-.watch-party-chip { padding: 2px 6px; border: 1px solid var(--silo-secondary-faint); border-radius: 4px; font-size: 17px; font-weight: 600; }
-.watch-party-caption { margin: 0; font-size: 20px; color: var(--silo-secondary-muted); }
-.watch-party-lead { margin: 0; font-size: 26px; line-height: 32px; color: var(--silo-secondary); }
-.watch-party-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; font-size: 24px; line-height: 34px; color: var(--silo-secondary); }
+.watch-party-chip { padding: 2px 6px; border: 1px solid var(--silo-secondary-faint); border-radius: 4px; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 600; }
+.watch-party-caption { margin: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary-muted); }
+.watch-party-lead { margin: 0; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 32px; color: var(--silo-secondary); }
+.watch-party-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 34px; color: var(--silo-secondary); }
 .watch-party-room-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; padding-bottom: 96px; }
 .watch-party-room-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 16px; }
 .watch-party-room-buttons { display: flex; gap: 18px; }
-.watch-party-hint { max-width: 620px; margin: 0; font-size: 20px; text-align: center; color: var(--silo-secondary-muted); }
+.watch-party-hint { max-width: 620px; margin: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; text-align: center; color: var(--silo-secondary-muted); }
 .watch-party-icon-solid.watch-party-icon { width: 26px; height: 26px; }
-.watch-party-undo { font-size: 20px; font-weight: 600; opacity: .6; }
+.watch-party-undo { font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; opacity: .6; }
 .watch-party-room-body-vote { padding-top: 36px; }
 .watch-party-room-body-vote .watch-party-room-copy { width: auto; gap: 20px; }
-.watch-party-hero-vote .watch-party-hero-title { font-size: 60px; letter-spacing: -1.2px; line-height: 66px; }
+.watch-party-hero-vote .watch-party-hero-title { font-size: calc(60px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: -1.2px; line-height: 66px; }
 .watch-party-room .watch-party-ballot { display: flex; align-items: flex-start; gap: 28px; margin: 0 -88px; padding: 28px 88px; overflow: hidden; white-space: normal; }
 .watch-party-ui .watch-party-candidate { flex: none; border-radius: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 220px; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: start; }
 .watch-party-candidate-poster { position: relative; display: block; box-sizing: border-box; width: 220px; height: 330px; margin-bottom: 14px; overflow: visible; border-radius: 12px; background: #222; outline: 1px solid rgba(255,255,255,.12); transition: transform .15s ease-out; }
@@ -2297,11 +2301,11 @@ svg.library-empty-icon { width: auto; }
 .watch-party-vote-badge { position: absolute; inset-inline-start: 16px; top: 16px; display: inline-flex; align-items: baseline; gap: 4px; padding: 6px 12px; border-radius: 999px; background: rgba(0,0,0,.7); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); color: var(--silo-text); }
 .watch-party-candidate-leader .watch-party-vote-badge { background: var(--silo-text); box-shadow: none; color: #000; }
 .watch-party-vote-count { font-family: ui-monospace, Menlo, monospace; font-size: 30px; font-weight: 700; }
-.watch-party-vote-label { font-size: 17px; font-weight: 600; letter-spacing: 1px; opacity: .6; }
+.watch-party-vote-label { font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: 1px; opacity: .6; }
 .watch-party-candidate-tick { position: absolute; inset-inline-end: 16px; top: 16px; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: var(--silo-text); }
 .watch-party-candidate-tick .watch-party-icon { width: 24px; height: 24px; fill: none; stroke: #000; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-.watch-party-candidate-title { max-width: 100%; overflow: hidden; font-size: 26px; font-weight: 600; line-height: 32px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
-.watch-party-candidate-line { max-width: 100%; overflow: hidden; font-size: 20px; line-height: 25px; text-overflow: ellipsis; white-space: pre; color: var(--silo-secondary); }
+.watch-party-candidate-title { max-width: 100%; overflow: hidden; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 32px; text-overflow: ellipsis; white-space: nowrap; color: var(--silo-text); }
+.watch-party-candidate-line { max-width: 100%; overflow: hidden; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 25px; text-overflow: ellipsis; white-space: pre; color: var(--silo-secondary); }
 .watch-party-suggest-card .watch-party-candidate-poster { display: flex; align-items: center; justify-content: center; background: none; outline: 2px dashed var(--silo-secondary-faint); outline-offset: -2px; }
 .watch-party-suggest-card .watch-party-icon { width: 72px; height: 72px; stroke-width: .8; color: var(--silo-secondary); }
 .watch-party-suggest-card .watch-party-candidate-title { color: var(--silo-secondary); }
@@ -2318,62 +2322,75 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-seat-invite:focus .watch-party-icon { color: #000; }
 .watch-party-scrim { position: absolute; left: 0; top: 0; z-index: 3; display: flex; align-items: center; justify-content: center; width: 1920px; height: 1080px; background: rgba(0,0,0,.62); }
 .watch-party-sheet { box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; width: 900px; padding: 48px; border: 1px solid rgba(255,255,255,.12); border-radius: 30px; background: #232326; }
-.watch-party-sheet-title { margin: 0 0 6px; font-size: 38px; font-weight: 600; color: #fff; }
-.watch-party-sheet .watch-party-option { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; height: auto; margin: 0; padding: 17px 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.06); font-size: 26px; font-weight: 500; line-height: 32px; text-align: start; color: #fff; }
-.watch-party-option-value { font-size: 24px; opacity: .7; }
+.watch-party-sheet-title { margin: 0 0 6px; font-size: calc(38px * var(--silo-sf-cap-scale)); font-weight: 600; color: #fff; }
+.watch-party-sheet .watch-party-option { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; height: auto; margin: 0; padding: 17px 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.06); font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 32px; text-align: start; color: #fff; }
+.watch-party-option-value { font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 400; opacity: .7; }
 .watch-party-sheet .watch-party-option-destructive { color: #ff6b61; }
 .watch-party-sheet .watch-party-option:focus { border-color: transparent; background: #fff; color: #000; box-shadow: 0 8px 18px rgba(0,0,0,.5); }
 .watch-party-end { align-items: center; gap: 32px; padding: 64px; }
+.watch-party-end .watch-party-sheet-title { font-size: calc(57px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 66px; text-align: center; }
 .watch-party-end-actions { display: flex; gap: 24px; }
 .watch-party-invite { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 96px; width: 1920px; height: 1080px; padding: 0 120px; }
 .watch-party-invite-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; max-width: 900px; }
-.watch-party-invite-title { margin: 0; font-size: 70.4px; font-weight: 700; color: var(--silo-text); }
+.watch-party-invite-title { margin: 0; font-size: calc(70.4px * var(--silo-sf-cap-scale)); font-weight: 700; color: var(--silo-text); }
 .watch-party-invite-code { margin: 0; padding-inline-start: 14.4px; font-family: ui-monospace, Menlo, monospace; font-size: 72px; font-weight: 700; letter-spacing: 14.4px; white-space: nowrap; color: var(--silo-text); }
 .watch-party-qr { flex: none; box-sizing: content-box; width: 560px; height: 560px; padding: 33.6px; border-radius: 16px; background: #fff; }
 .watch-party-qr svg { display: block; width: 100%; height: 100%; }
 .watch-party-picker-chrome { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 80px; padding: 0 0 24px; }
-.watch-party-picker-name { font-size: 30px; font-weight: 600; color: #fff; }
+.watch-party-picker-name { font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 600; color: #fff; }
 .watch-party-picker-tools { display: flex; align-items: center; gap: 36px; }
 .watch-party-ui .watch-party-chrome-icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 56px; height: 56px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: rgba(255,255,255,.62); outline: none; transition: background-color 150ms ease-out, color 150ms ease-out; }
 .watch-party-ui .watch-party-chrome-icon .watch-party-icon { width: 28px; height: 28px; }
 .watch-party-ui .watch-party-chrome-icon:focus { background: #fff; color: #0c0c0d; }
 .watch-party-shelf { position: relative; z-index: 1; }
+.watch-party-shelf .browse-section-title { font-size: calc(36px * var(--silo-sf-cap-scale)); font-weight: 600; }
+.watch-party-shelf .browse-card-title, .watch-party-search-grid .browse-card-title { font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 500; }
+.watch-party-shelf .browse-card-subtitle, .watch-party-search-grid .browse-card-subtitle { font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; }
+.watch-party-scene .browse-art-fallback { font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; }
 .watch-party-picker-empty { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; box-sizing: border-box; padding: 64px 0; }
 .watch-party-picker-empty-state { margin: 0; text-align: start; }
 .watch-party-picker-empty-state .search-state-icon { margin: 0 0 12px; color: rgba(237,237,237,.3); }
+.watch-party-picker-empty-state .search-state-title { font-size: calc(28px * var(--silo-sf-cap-scale)); font-weight: 600; }
+.watch-party-picker-empty-state .search-state-description { font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 400; }
 .watch-party-picker-spinner { margin: 48px 0; }
 .watch-party-search-head { display: flex; align-items: center; gap: 36px; padding: 0 0 32px; }
-.watch-party-search-title { margin: 0; font-size: 38px; font-weight: 700; color: var(--silo-text); }
-.watch-party-search-input { flex: 1; max-width: 720px; }
+.watch-party-search-title { margin: 0; font-size: calc(38px * var(--silo-sf-cap-scale)); font-weight: 700; color: var(--silo-text); }
+.watch-party-ui .watch-party-search-input { flex: 1; max-width: 720px; font-size: calc(29px * var(--silo-sf-cap-scale)); font-weight: 500; }
 .watch-party-search-body { display: flex; flex-direction: column; gap: 24px; }
-.watch-party-search-count { margin: 0; font-size: 22px; color: var(--silo-secondary); }
+.watch-party-search-body :is(.search-prompt, .search-empty) .search-state-title { font-weight: 600; }
+.watch-party-search-body :is(.search-prompt, .search-empty) .search-state-description { font-weight: 400; }
+.watch-party-search-body .search-failure .search-state-title { font-weight: 600; }
+.watch-party-search-body .search-failure .search-state-description { font-weight: 400; }
+.watch-party-search-body .search-failure .browse-button { font-size: calc(28px * var(--silo-sf-cap-scale)); font-weight: 600; }
+.watch-party-search-body .search-failure .browse-button + .browse-button { font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; }
+.watch-party-search-count { margin: 0; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary); }
 .watch-party-search-grid.browse-grid { grid-template-columns: repeat(6, 220px); column-gap: 40px; row-gap: 60px; width: auto; padding: 12px 0 48px; }
-.watch-party-empty-title { margin: 0; font-size: 28px; font-weight: 600; color: var(--silo-text); }
+.watch-party-empty-title { margin: 0; font-size: calc(28px * var(--silo-sf-cap-scale)); font-weight: 600; color: var(--silo-text); }
 .browse[data-view="watchParty:choice"] { padding: 0; }
 .browse[data-view="watchParty:choice"] .watch-party-backdrop { position: fixed; }
 .watch-party-choice { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; min-height: 1080px; padding: 96px 88px; }
 .watch-party-choice-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
 .watch-party-who-seen { display: flex; flex-direction: column; gap: 10px; width: 760px; max-width: 100%; border-radius: 14px; outline: none; }
 .watch-party-who-seen:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.35); padding: 12px 16px; margin: -12px -16px; }
-.watch-party-who-seen-checking { margin: 0; font-size: 20px; color: var(--silo-secondary); }
-.watch-party-who-seen-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; font-size: 26px; line-height: 32px; }
+.watch-party-who-seen-checking { margin: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary); }
+.watch-party-who-seen-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 32px; }
 .watch-party-who-seen-name { color: var(--silo-text); }
 .watch-party-who-seen-state { color: var(--silo-secondary); }
 .watch-party-choice-head { display: flex; align-items: flex-end; gap: 26px; }
 .watch-party-choice-poster { flex: none; width: 260px; height: 390px; overflow: hidden; border-radius: 8px; background: #222; box-shadow: 0 10px 16px rgba(0,0,0,.6); }
 .watch-party-choice-poster .browse-art-image { display: block; width: 100%; height: 100%; object-fit: cover; }
 .watch-party-choice-text { display: flex; flex-direction: column; gap: 8px; }
-.watch-party-choice-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; max-width: 1200px; font-size: 79px; font-weight: 700; letter-spacing: -1px; line-height: 84px; color: var(--silo-text); }
-.watch-party-choice-facts { margin: 0; font-size: 26px; color: var(--silo-secondary); }
-.watch-party-choice-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; margin: 0; max-width: 1100px; font-size: 26px; line-height: 34px; color: var(--silo-secondary); }
+.watch-party-choice-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; max-width: 1200px; font-size: calc(79.2px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: -1px; line-height: 84px; color: var(--silo-text); }
+.watch-party-choice-facts { margin: 0; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; color: var(--silo-secondary); }
+.watch-party-choice-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; margin: 0; max-width: 1100px; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 34px; color: var(--silo-secondary); }
 .watch-party-episodes { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; width: 1920px; height: 1080px; padding: 48px 88px 40px; background: rgba(0,0,0,.28); }
 .watch-party-episodes-hero { display: flex; flex-direction: column; gap: 10px; max-width: 1000px; margin-top: auto; margin-bottom: 36px; }
-.watch-party-episodes-title { margin: 0; font-size: 64px; font-weight: 700; letter-spacing: -1px; color: var(--silo-text); }
-.watch-party-episodes-line { margin: 0; font-size: 26px; font-weight: 500; line-height: 34px; color: var(--silo-secondary); }
-.watch-party-episodes-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; height: 101.4px; margin: 0; font-size: 26px; line-height: 33.8px; color: var(--silo-secondary); }
+.watch-party-episodes-title { margin: 0; font-size: calc(64px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: -1px; color: var(--silo-text); }
+.watch-party-episodes-line { margin: 0; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 34px; color: var(--silo-secondary); }
+.watch-party-episodes-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; height: 101.4px; margin: 0; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 33.8px; color: var(--silo-secondary); }
 .watch-party-season-tabs { margin-bottom: 24px; }
-.watch-party-season-tab { box-sizing: border-box; height: 64px; margin: 0; margin-inline-end: 16px; padding: 0 28px; border: 0; border-radius: 32px; background: rgba(255,255,255,.1); font-size: 24px; font-weight: 600; color: #fff; }
-.watch-party-season-tab[aria-pressed="true"] { background: rgba(255,255,255,.28); }
+.watch-party-season-tab { box-sizing: border-box; height: 64px; margin: 0; margin-inline-end: 16px; padding: 0 28px; border: 0; border-radius: 32px; background: rgba(255,255,255,.1); font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 500; color: #fff; }
+.watch-party-season-tab[aria-pressed="true"] { background: rgba(255,255,255,.28); font-weight: 600; }
 .watch-party-season-tab:focus { background: #fff; color: #000; }
 .watch-party-episodes-slot { align-self: stretch; height: 357px; }
 .watch-party-episodes-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -2383,8 +2400,8 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-episode-still .browse-art-image { display: block; width: 100%; height: 100%; object-fit: cover; }
 .watch-party-episode:focus { background: none; color: #fff; }
 .watch-party-episode:focus .watch-party-episode-still { transform: scale(1.04); outline: 5px solid var(--silo-text); outline-offset: 6px; }
-.watch-party-episode-title { max-width: 400px; overflow: hidden; font-size: 24px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.watch-party-episode-meta { font-size: 20px; color: var(--silo-secondary); }
+.watch-party-episode-title { max-width: 400px; overflow: hidden; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.watch-party-episode-meta { font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 500; color: var(--silo-secondary); }
 /* Apple EmptyStateView on Home: a 44 pt symbol at 0.3 opacity, 28 pt semibold title and 22 pt secondary body, 12 pt apart, centred on the page. */
 .home-empty { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; margin: 0; padding: 0 60px; outline: none; }
 .home-empty .search-state-icon { width: 54px; height: 44px; margin: 0; color: rgba(237,237,237,.3); }

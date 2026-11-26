@@ -9,9 +9,11 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
+import { FakeWatchParty, ROOM_ID } from "../native/support/fakeWatchParty.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { ACTIVE, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { button as watchPartyButton, menuTitles, openHub as openWatchPartyHub, start as startWatchParty } from "./support/watchParty.ts";
 
 const IME_DONE = 65376;
 let browser: Browser;
@@ -898,4 +900,272 @@ test("Who's watching, PIN entry, Create Profile, and profile states use Apple's 
         assert.deepEqual(PROFILES_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Profiles role was on screen");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
+});
+
+/** Watch Party hub, lobby, sheets, invite, picker, search, choice, episodes, and voting, paths under iosApp/iosApp/. */
+const WATCH_PARTY_ROLES: readonly Role[] = [
+    [".watch-party-eyebrow", 17, "600", "Screens/WatchParty/WatchPartyComponents.swift:26,49"],
+    [".watch-party-title", 88, "700", "Screens/WatchParty/WatchPartyHubView.swift:238; Screens/WatchParty/WatchPartyComponents.swift:23"],
+    [".watch-party-body", 26, "400", "Screens/WatchParty/WatchPartyHubView.swift:243; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-rejoin-note", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:278; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-banner", 21, "400", "Screens/WatchParty/WatchPartyComponents.swift:488"],
+    [".watch-party-ui .watch-party-primary", 29, "600", "Screens/WatchParty/WatchPartyComponents.swift:395"],
+    [".watch-party-ui .watch-party-secondary:not(.watch-party-code-pill)", 26, "600", "Screens/WatchParty/WatchPartyComponents.swift:395"],
+    [".watch-party-ui .watch-party-input", 29, "500", "Screens/WatchParty/WatchPartyHubView.swift:317 (tvOS system TextField body)"],
+    [".watch-party-code-label", 15, "600", "Screens/WatchParty/WatchPartyComponents.swift:126"],
+    [".watch-party-room-name", 26, "600", "Screens/WatchParty/WatchPartyHubView.swift:877"],
+    [".watch-party-connection", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:541; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-ui .watch-party-circle", 26, "600", "Screens/WatchParty/WatchPartyComponents.swift:395"],
+    [".watch-party-presence", 20, "400", "Screens/WatchParty/WatchPartyComponents.swift:337"],
+    [".watch-party-seat-disc", 46.08, "600", "Screens/WatchParty/WatchPartyComponents.swift:20,171"],
+    [".watch-party-seat-name", 24.32, "500", "Screens/WatchParty/WatchPartyComponents.swift:20,199,307"],
+    [".watch-party-seat-detail", 20.48, "400", "Screens/WatchParty/WatchPartyComponents.swift:20,205"],
+    [".watch-party-hero:not(.watch-party-hero-vote) .watch-party-hero-title", 88, "700", "Screens/WatchParty/WatchPartyHubView.swift:583,596,604; Screens/WatchParty/WatchPartyComponents.swift:23"],
+    [".watch-party-hero-vote .watch-party-hero-title", 60, "700", "Screens/WatchParty/WatchPartyHubView.swift:571,903"],
+    [".watch-party-facts", 25, "400", "Screens/WatchParty/WatchPartyHubView.swift:633; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-chip", 17, "600", "Screens/WatchParty/WatchPartyHubView.swift:628; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-caption", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:590; Screens/WatchParty/WatchPartyInviteView.swift:63"],
+    [".watch-party-lead", 26, "400", "Screens/WatchParty/WatchPartyHubView.swift:577,610; Screens/WatchParty/WatchPartyInviteView.swift:38"],
+    [".watch-party-overview", 24, "400", "Screens/WatchParty/WatchPartyHubView.swift:916"],
+    [".watch-party-hint", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:750; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-undo", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:671; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-strip-subtitle", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:999; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-strip-title", 20, "600", "Screens/WatchParty/WatchPartyHubView.swift:1128"],
+    [".watch-party-vote-label", 17, "600", "Screens/WatchParty/WatchPartyHubView.swift:1198; Screens/WatchParty/WatchPartyComponents.swift:26"],
+    [".watch-party-candidate-title", 26, "600", "Screens/WatchParty/WatchPartyHubView.swift:1332,1356"],
+    [".watch-party-candidate-line", 20, "400", "Screens/WatchParty/WatchPartyHubView.swift:1336,1357"],
+    [".watch-party-options .watch-party-sheet-title", 38, "600", "Screens/WatchParty/WatchPartyHubView.swift:1378"],
+    [".watch-party-end .watch-party-sheet-title", 57, "500", "Screens/WatchParty/WatchPartyHubView.swift:193 (tvOS .title2)"],
+    [".watch-party-sheet .watch-party-option", 26, "500", "Screens/WatchParty/WatchPartyHubView.swift:1418"],
+    [".watch-party-option-value", 24, "400", "Screens/WatchParty/WatchPartyHubView.swift:1420"],
+    [".watch-party-invite-title", 70.4, "700", "Screens/WatchParty/WatchPartyInviteView.swift:35; Screens/WatchParty/WatchPartyComponents.swift:23"],
+    [".watch-party-picker-name", 26, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:433; Theme/SiloTheme.swift:203"],
+    [".watch-party-shelf .browse-section-title", 36, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:396; Components/MediaRow.swift:438; Theme/Typography.swift:14"],
+    [".watch-party-shelf .browse-card-title", 24, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:396; tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
+    [".watch-party-shelf .browse-card-subtitle", 20, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:396; tvOS/Screens/Components/TVMediaCard.swift:275; Theme/Typography.swift:25"],
+    [".watch-party-picker-empty-state .search-state-title", 28, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:466; Components/EmptyStateView.swift:16; Theme/Typography.swift:17"],
+    [".watch-party-picker-empty-state .search-state-description", 22, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:467; Components/EmptyStateView.swift:21; Theme/Typography.swift:31"],
+    [".watch-party-search-title", 38, "700", "Screens/WatchParty/WatchPartyMediaPicker.swift:811 (tvOS inline navigationTitle)"],
+    [".watch-party-search-input", 29, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:813 (tvOS searchable field)"],
+    [".watch-party-search-count", 22, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:791; Theme/Typography.swift:31"],
+    [".watch-party-search-grid .browse-card-title", 24, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:793; tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
+    [".watch-party-search-grid .browse-card-subtitle", 20, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:793; tvOS/Screens/Components/TVMediaCard.swift:275; Theme/Typography.swift:25"],
+    [".watch-party-search-body :is(.search-prompt, .search-empty) .search-state-title", 28, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:781,786; Components/EmptyStateView.swift:16; Theme/Typography.swift:17"],
+    [".watch-party-search-body :is(.search-prompt, .search-empty) .search-state-description", 22, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:782,787; Components/EmptyStateView.swift:21; Theme/Typography.swift:31"],
+    [".watch-party-search-body .search-failure .search-state-title", 36, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:779; Components/ErrorView.swift:27; Theme/Typography.swift:14"],
+    [".watch-party-search-body .search-failure .search-state-description", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:779; Components/ErrorView.swift:32; Theme/Typography.swift:28"],
+    [".watch-party-search-body .search-failure .browse-button:first-child", 28, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:779; Components/ErrorView.swift:40; Extensions/ViewExtensions.swift:416; Theme/Typography.swift:17"],
+    [".watch-party-search-body .search-failure .browse-button + .browse-button", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:779; Components/ErrorView.swift:48; Theme/Typography.swift:28"],
+    [".watch-party-choice-title", 79.2, "700", "Screens/WatchParty/WatchPartyMediaPicker.swift:1211; Screens/WatchParty/WatchPartyComponents.swift:23"],
+    [".watch-party-choice-facts", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:1219; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-choice-overview", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:1226; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-who-seen-checking", 20, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:1251; Screens/WatchParty/WatchPartyComponents.swift:25"],
+    [".watch-party-who-seen-row", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:1261; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-episodes-title", 64, "700", "Screens/WatchParty/WatchPartyMediaPicker.swift:897"],
+    [".watch-party-episodes-line", 26, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:903; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    [".watch-party-episodes-overview", 26, "400", "Screens/WatchParty/WatchPartyMediaPicker.swift:906; Screens/WatchParty/WatchPartyComponents.swift:24"],
+    ['.watch-party-season-tab:not([aria-pressed="true"])', 22, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:918; tvOS/Screens/Detail/TVSeriesDetailView.swift:1549"],
+    ['.watch-party-season-tab[aria-pressed="true"]', 22, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:918; tvOS/Screens/Detail/TVSeriesDetailView.swift:1549"],
+    [".watch-party-episode-title", 24, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:953; tvOS/Screens/Detail/TVEpisodeRail.swift:726"],
+    [".watch-party-episode-meta", 18, "500", "Screens/WatchParty/WatchPartyMediaPicker.swift:953; tvOS/Screens/Detail/TVEpisodeRail.swift:735"],
+    [".watch-party-empty-title", 28, "600", "Screens/WatchParty/WatchPartyMediaPicker.swift:947"],
+    [".watch-party-scene .card-watch-status", 13.08, "700", "Overlays/CardWatchStatus.swift:44 (11 * 220 / 185)"],
+];
+
+class WatchPartyBadgeFake extends FakeWatchParty {
+    protected override card(id: string): Record<string, unknown> {
+        const card = super.card(id);
+        return id === "series:s2"
+            ? { ...card, user_state: { played: false, watched_count: 1, unplayed_count: 3 } }
+            : card;
+    }
+}
+
+async function fontStyle(tv: Tv, selector: string): Promise<{ fontFamily: string; fontSize: string; fontWeight: string }> {
+    return tv.page.locator(selector).first().evaluate(node => {
+        const style = getComputedStyle(node);
+        return { fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight };
+    });
+}
+
+test("Watch Party hub, lobby, sheets, invite, picker, search, choice, episodes, and voting use Apple's points times the cap scale", async () => {
+    const found = new Set<string>();
+    const seen = new Set<string>();
+    const collect = async (tv: Tv, state: string): Promise<void> => {
+        for (const entry of await tv.page.evaluate(unscaledText, ["body", WATCH_PARTY_ROLES] as const)) found.add(`${state}: ${entry}`);
+        const roles = await tv.page.evaluate(offRoles, WATCH_PARTY_ROLES);
+        for (const entry of roles.off) found.add(`${state}: ${entry}`);
+        for (const role of roles.seen) seen.add(role);
+    };
+
+    const hostTv = await openTv(browser, { app: "browse" });
+    try {
+        await hostTv.page.emulateMedia({ reducedMotion: "reduce" });
+        const fake = new WatchPartyBadgeFake();
+        const m0001 = fake.titles.get("movie:m0001");
+        assert.ok(m0001 !== undefined);
+        fake.add({ ...m0001, overview: "A remote observatory receives a message.", runtime: 90 });
+        await startWatchParty(hostTv, fake);
+        await hostTv.page.evaluate(() => document.fonts.ready);
+        await hostTv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        await hostTv.eventually(async () => (await menuTitles(hostTv)).includes("Watch Party"), "Watch Party offered");
+        await openWatchPartyHub(hostTv);
+        await collect(hostTv, "hub");
+        assert.match((await fontStyle(hostTv, ".watch-party-title")).fontFamily, /^"?Inter\b/);
+
+        await watchPartyButton(hostTv, "create").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+        await hostTv.eventually(async () => fake.sockets.length === 1 && !fake.sockets[0]?.closed, "room socket open");
+        await hostTv.eventually(async () => !["Connecting", "Reconnecting"].includes(await hostTv.page.locator(".watch-party-connection").textContent() ?? ""), "lobby connected");
+        await watchPartyButton(hostTv, "options").focus();
+        await collect(hostTv, "lobby-empty");
+        const lobbyCode = await fontStyle(hostTv, ".watch-party-code");
+        assert.equal(lobbyCode.fontSize, "30px");
+        assert.equal(lobbyCode.fontWeight, "700");
+        assert.match(lobbyCode.fontFamily, /monospace/);
+
+        await watchPartyButton(hostTv, "choose").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:picker:shelves"] .watch-party-shelf').first().waitFor();
+        await hostTv.page.locator(".watch-party-shelf .card-watch-status").first().waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "picker shelves settled");
+        await collect(hostTv, "picker-shelves");
+
+        await watchPartyButton(hostTv, "picker-search").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:search"] .search-prompt').waitFor();
+        await collect(hostTv, "search-prompt");
+
+        const searchField = hostTv.page.locator('[data-focus="picker-search-input"]');
+        await searchField.fill("Movie 0001");
+        await searchField.press("Enter");
+        await hostTv.page.locator('.watch-party-search-grid [data-focus="movie:m0001"]').waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "search results settled");
+        await collect(hostTv, "search-results");
+
+        await searchField.fill("zzzz-no-match");
+        await searchField.press("Enter");
+        await hostTv.page.locator(".watch-party-search-body .search-empty").waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "search empty settled");
+        await collect(hostTv, "search-empty");
+
+        await hostTv.page.route("**/api/v2/catalog?*", route =>
+            route.fulfill({ status: 500, contentType: "application/problem+json", body: JSON.stringify({ type: "about:blank", title: "Server Error", status: 500 }) }));
+        await searchField.fill("Fail");
+        await searchField.press("Enter");
+        await hostTv.page.locator(".watch-party-search-body .search-failure .browse-button").first().waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "search failure settled");
+        await collect(hostTv, "search-failure");
+        await hostTv.page.unroute("**/api/v2/catalog?*");
+
+        await searchField.fill("Movie 0001");
+        await searchField.press("Enter");
+        await hostTv.page.locator('.watch-party-search-grid [data-focus="movie:m0001"]').waitFor();
+        const heldMemberState = hostTv.fake.hold(`/watch-together/rooms/${ROOM_ID}/member-state`);
+        await hostTv.page.locator('.watch-party-search-grid [data-focus="movie:m0001"]').click();
+        await hostTv.page.locator(".watch-party-who-seen-checking").waitFor();
+        await collect(hostTv, "choice-checking");
+        heldMemberState.release();
+        await hostTv.page.locator(".watch-party-who-seen-row").first().waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "choice loaded settled");
+        await collect(hostTv, "choice-loaded");
+
+        await watchPartyButton(hostTv, "confirm").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"] .watch-party-chip').first().waitFor();
+        fake.suggest("s1", "Movie 0004", ["p-guest"], { subtitle: "2024" });
+        await hostTv.page.locator(".watch-party-strip-title").first().waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "lobby staged settled");
+        await collect(hostTv, "lobby-staged");
+
+        await watchPartyButton(hostTv, "host-suggestion:s1").click({ button: "right" });
+        await hostTv.page.locator('.browse[data-view="watchParty:suggestionMenu"]').waitFor();
+        await collect(hostTv, "suggestion-menu");
+        await hostTv.remote(10009);
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+
+        await watchPartyButton(hostTv, "options").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:options"]').waitFor();
+        await collect(hostTv, "options");
+        await watchPartyButton(hostTv, "end").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:end"]').waitFor();
+        await collect(hostTv, "end-confirm");
+        await watchPartyButton(hostTv, "cancel").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+
+        await watchPartyButton(hostTv, "lobby-code").click();
+        await hostTv.page.locator(".watch-party-invite-title").waitFor();
+        await collect(hostTv, "invite");
+        const inviteCode = await fontStyle(hostTv, ".watch-party-invite-code");
+        assert.equal(inviteCode.fontSize, "72px");
+        assert.equal(inviteCode.fontWeight, "700");
+        assert.match(inviteCode.fontFamily, /monospace/);
+        await watchPartyButton(hostTv, "done").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+
+        await watchPartyButton(hostTv, "change").click();
+        await hostTv.page.locator('.browse[data-view="watchParty:picker:shelves"]').waitFor();
+        await watchPartyButton(hostTv, "series:s2").click();
+        await hostTv.page.locator(".watch-party-episode-meta").first().waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "episodes loaded settled");
+        await collect(hostTv, "episodes-loaded");
+
+        fake.episodesReply = problem(500, "server_error", "Episodes unavailable.");
+        await watchPartyButton(hostTv, "season:2").click();
+        await hostTv.page.locator(".watch-party-empty-title").waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "episodes empty settled");
+        await collect(hostTv, "episodes-empty");
+        fake.episodesReply = undefined;
+
+        await hostTv.remote(10009);
+        await hostTv.page.locator('.browse[data-view="watchParty:picker:shelves"]').waitFor();
+        await hostTv.remote(10009);
+        await hostTv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+
+        fake.push({ type: "connection_replaced", reason: "replaced" });
+        await hostTv.page.locator(".watch-party-rejoin-note").waitFor();
+        await hostTv.eventually(async () => hostTv.pendingReplies === 0, "hub replaced settled");
+        await collect(hostTv, "hub-replaced");
+
+        assert.deepEqual(hostTv.console, []);
+    } finally { await hostTv.page.context().close(); }
+
+    const guestTv = await openTv(browser, { app: "browse" });
+    try {
+        await guestTv.page.emulateMedia({ reducedMotion: "reduce" });
+        const guestFake = new FakeWatchParty();
+        guestFake.role = "guest";
+        guestFake.selectionMode = "vote";
+        guestFake.suggest("v1", "Movie 0004", ["p-owner"], { subtitle: "2024" });
+        await startWatchParty(guestTv, guestFake);
+        await guestTv.page.evaluate(() => document.fonts.ready);
+        await guestTv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        await guestTv.eventually(async () => (await menuTitles(guestTv)).includes("Watch Party"), "Watch Party offered");
+        await openWatchPartyHub(guestTv);
+        await guestTv.page.locator('[data-focus="code"]').fill("K7M2QX");
+        await watchPartyButton(guestTv, "join").click();
+        await guestTv.page.locator('.browse[data-view="watchParty:lobby"] .watch-party-vote-label').first().waitFor();
+        await guestTv.eventually(async () => !["Connecting", "Reconnecting"].includes(await guestTv.page.locator(".watch-party-connection").textContent() ?? ""), "guest connected");
+        await guestTv.eventually(async () => guestTv.pendingReplies === 0, "vote lobby settled");
+        await collect(guestTv, "vote-lobby");
+        const voteCount = await fontStyle(guestTv, ".watch-party-vote-count");
+        assert.equal(voteCount.fontSize, "30px");
+        assert.equal(voteCount.fontWeight, "700");
+        assert.match(voteCount.fontFamily, /monospace/);
+
+        await watchPartyButton(guestTv, "ready").click();
+        await guestTv.page.locator(".watch-party-undo").waitFor();
+        await guestTv.eventually(async () => guestTv.pendingReplies === 0, "guest ready settled");
+        await collect(guestTv, "guest-ready");
+
+        guestFake.titles.clear();
+        guestFake.pickerFailure = problem(500, "server_error", "Down for maintenance.");
+        await watchPartyButton(guestTv, "suggest").click();
+        await guestTv.page.locator(".watch-party-picker-empty-state .search-state-title").waitFor();
+        await guestTv.page.locator(".watch-party-banner").waitFor();
+        await guestTv.eventually(async () => guestTv.pendingReplies === 0, "picker empty settled");
+        await collect(guestTv, "picker-empty");
+
+        assert.deepEqual(guestTv.console, []);
+    } finally { await guestTv.page.context().close(); }
+
+    assert.deepEqual([...found].sort(), []);
+    assert.deepEqual(WATCH_PARTY_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Watch Party role was on screen");
 });
