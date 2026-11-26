@@ -176,6 +176,8 @@
  "detail.more": "Ещё",
  "detail.more.addFavorite": "Добавить в избранное",
  "detail.more.findTrailers": "Найти трейлеры",
+ "detail.more.markEpisodeUnwatched": "Отметить серию как непросмотренную",
+ "detail.more.markEpisodeWatched": "Отметить серию как просмотренную",
  "detail.more.markSeasonUnwatched": "Отметить сезон как непросмотренный",
  "detail.more.markSeasonWatched": "Отметить сезон как просмотренный",
  "detail.more.markSeriesUnwatched": "Отметить сериал как непросмотренный",

@@ -176,6 +176,8 @@
  "detail.more": "Lisää",
  "detail.more.addFavorite": "Lisää suosikkeihin",
  "detail.more.findTrailers": "Etsi trailereita",
+ "detail.more.markEpisodeUnwatched": "Merkitse jakso katsomattomaksi",
+ "detail.more.markEpisodeWatched": "Merkitse jakso katsotuksi",
  "detail.more.markSeasonUnwatched": "Merkitse kausi katsomattomaksi",
  "detail.more.markSeasonWatched": "Merkitse kausi katsotuksi",
  "detail.more.markSeriesUnwatched": "Merkitse sarja katsomattomaksi",

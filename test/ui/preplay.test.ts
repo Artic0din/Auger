@@ -334,16 +334,38 @@ preplay("direct episode activation refreshes cached-zero progress and returns to
     assert.equal(starts(tv).length, 1, "return must not replay the episode");
 });
 
-preplay("direct episode activation keeps information and selectors behind an explicit action", async (tv, catalog) => {
+async function openStandaloneEpisode(tv: Tv, catalog: FakeDetails, id: string): Promise<void> {
+    await tv.page.route("**/api/v2/catalog?*", route => {
+        const url = new URL(route.request().url());
+        const path = `${url.pathname.replace(/^\/api\/v2/, "")}${url.search}`;
+        const reply = catalog.route("GET", path, "p-owner") as { status: number; body?: { items?: Record<string, unknown>[] } } | undefined;
+        if (reply?.body?.items === undefined) return route.fallback();
+        return route.fulfill({
+            status: reply.status,
+            json: { ...reply.body, items: reply.body.items.map(({ series_id: _s, ...item }) => item) },
+        });
+    });
+    await tv.page.locator('[data-focus="search"]').click();
+    await tv.page.fill("#browse-search", "chapter 1.2");
+    await tv.remote(65376);
+    await tv.page.locator(`.search-scene [data-focus="${id}"]`).click();
+    await tv.page.locator(`[data-view="item:${id}"]`).waitFor();
+}
+
+preplay("direct episode activation opens post-#1253 menu and episode Details keeps selectors behind explicit open", async (tv, catalog) => {
     catalog.fileIds.set("episode:s1e12", "42");
     await series(tv);
     await tv.page.locator('.details-episodes [data-focus="episode:s1e12"]').click({ button: "right" });
     const panel = tv.page.getByRole("menu");
     await panel.waitFor();
     assert.equal(starts(tv).length, 0);
-    assert.equal(await panel.locator('[data-focus="episode-information"]').count(), 1, "episode information remains an explicit choice");
-    await panel.locator('[data-focus="episode-information"]').click();
-    await tv.page.locator('[data-view="item:episode:s1e12"]').waitFor();
+    assert.equal(await panel.locator('[data-focus="episode-information"]').count(), 0);
+    assert.equal(await panel.locator('[data-focus="card-play"]').count(), 0);
+    assert.deepEqual(await panel.locator(".card-menu-label").allInnerTexts(), ["Mark Episode Unwatched", "Add to Favorites", "Add to watchlist"]);
+    await tv.remote(10009);
+    await tv.remote(10009);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await openStandaloneEpisode(tv, catalog, "episode:s1e12");
     await tv.page.locator('[data-focus="audio"]').click();
     assert.equal(await tv.page.getByRole("radio", { name: /Japanese/ }).count(), 1);
     assert.equal(starts(tv).length, 0);
@@ -718,10 +740,8 @@ preplay("episode Details uses its file audio and restores the initiating Resume 
     catalog.progress.set("episode:s1e12", 420);
     playback.items.set("episode:s1e12", ["42"]);
     await tv.remote(10009);
-    await tv.page.locator('[data-view="home"] .browse-card[data-focus="series:s1"]').first().click();
-    await tv.page.locator('[data-focus="season:1"]').click();
-    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await openStandaloneEpisode(tv, catalog, "episode:s1e12");
     await tv.page.locator('[data-focus="audio"]').click();
     await tv.page.getByRole("radio", { name: /Japanese/ }).click();
     await savedAudio(tv);

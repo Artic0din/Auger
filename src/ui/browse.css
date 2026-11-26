@@ -2394,10 +2394,10 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
    focused row is a white 74 px capsule, 18 px in from each side; Remove is the system red. The screen behind is not dimmed. */
 .card-menu-scrim { display: block; background: transparent; }
 .card-menu { position: fixed; display: flex; flex-direction: column; box-sizing: border-box; width: 451px; padding: 20px 16px; border: 2px solid rgba(255,255,255,.16); border-radius: 44px; background: rgba(255,255,255,.05); backdrop-filter: blur(40px); box-shadow: 0 24px 60px rgba(0,0,0,.35); animation: skyline-appear 150ms ease-out; }
-.card-menu-row { position: relative; isolation: isolate; display: flex; align-items: center; gap: 19px; box-sizing: border-box; min-height: 66px; margin: 0; padding: 17px 17px 17px 21px; border: 0; outline: none; background: transparent; color: #ededed; font: inherit; font-size: calc(25.7px * var(--silo-sf-cap-scale)); line-height: 32px; font-weight: 500; text-align: start; }
+.card-menu-row { position: relative; isolation: isolate; display: flex; align-items: center; gap: 19px; box-sizing: border-box; min-height: 66px; margin: 0; padding: 17px 17px 17px 21px; border: 0; outline: none; background: transparent; color: #ededed; font: inherit; font-size: calc(25.7px * var(--silo-sf-cap-scale)); line-height: 32px; font-weight: 500; text-align: start; --icon-ink: #000; }
 /* The focus capsule is 74 px tall on the 66 px pitch, so it overhangs the row by 4 px above and below. */
 .card-menu-row:focus::before { content: ""; position: absolute; z-index: -1; top: -4px; right: 0; bottom: -4px; left: 0; border-radius: 37px; background: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.35); }
-.card-menu-row:focus { color: #000; }
+.card-menu-row:focus { color: #000; --icon-ink: #fff; }
 .card-menu-icon { display: flex; flex: none; order: -1; width: 30px; height: 30px; }
 /* The symbols are drawn on a 24-point grid with a 2.5-point margin; 33 px puts the glyph at Apple's 29 px, centred in the 30 px slot. */
 .card-menu-icon svg { flex: none; width: 33px; height: 33px; margin: -1.5px; }

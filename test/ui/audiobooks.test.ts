@@ -554,3 +554,21 @@ audiobookTest("near-end progress with played=false syncs the Finished toggle and
     await tv.page.keyboard.press("Enter");
     await tv.eventually(async () => catalog.mutations.includes("DELETE /watched/audiobook%3Ahail"), "toggling near-end finished sends DELETE /watched");
 });
+
+audiobookTest("audiobook detail rail cards open no card menu on long-press or right-click", async (tv, catalog) => {
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
+    await showing(tv, `audiobook:${TIDE}`);
+    const card = tv.page.locator('.audiobook-rail .browse-card').first();
+    await card.waitFor();
+    const id = await card.getAttribute("data-focus");
+    assert.ok(id);
+    const readsBefore = tv.fake.requests.filter(request => request.path.startsWith(`/catalog/items/${encodeURIComponent(id)}`)).length;
+    await card.focus();
+    await tv.down(ENTER);
+    await tv.jump(700);
+    await tv.up(ENTER);
+    assert.equal(await tv.page.getByRole("menu").count(), 0);
+    await card.click({ button: "right" });
+    assert.equal(await tv.page.getByRole("menu").count(), 0);
+    assert.equal(tv.fake.requests.filter(request => request.path.startsWith(`/catalog/items/${encodeURIComponent(id)}`)).length, readsBefore);
+});

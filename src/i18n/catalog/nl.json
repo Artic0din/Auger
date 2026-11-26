@@ -176,6 +176,8 @@
  "detail.more": "Meer",
  "detail.more.addFavorite": "Toevoegen aan favorieten",
  "detail.more.findTrailers": "Trailers zoeken",
+ "detail.more.markEpisodeUnwatched": "Aflevering markeren als niet bekeken",
+ "detail.more.markEpisodeWatched": "Aflevering markeren als bekeken",
  "detail.more.markSeasonUnwatched": "Seizoen markeren als niet bekeken",
  "detail.more.markSeasonWatched": "Seizoen markeren als bekeken",
  "detail.more.markSeriesUnwatched": "Serie markeren als niet bekeken",

@@ -32,6 +32,7 @@ export interface BrowseHarness {
     connect(): Promise<void>;
     selectProfile(id: string, pin?: string): Promise<string>;
     mount(offerSignOut?: boolean): void;
+    openItem(id: string, title?: string): void;
     resume(): void;
     destroy(): void;
     clearResponseCache(): void;
@@ -180,6 +181,9 @@ const harness: BrowseHarness = {
         stopPlayerSettingsWatch?.();
         playerSettingsNotifications = 0;
         stopPlayerSettingsWatch = browse.playerSettings().subscribe(() => { playerSettingsNotifications += 1; });
+    },
+    openItem(id, title = id) {
+        browse?.open({ kind: "item", id, title });
     },
     resume() {
         browse?.resumeAfterPlayback();

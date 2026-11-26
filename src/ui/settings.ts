@@ -744,7 +744,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const signOutServer = actions?.serverName?.trim();
             const signOutTitle = signOutAccount && signOutServer ? translate("shell.signOut.titleNamed", { account: signOutAccount, server: signOutServer }) : copy.title;
             const cancel = actionButton("cancel-signout", translate("common.cancel"), back);
-            const confirm = actionButton("confirm-signout", translate("settings.signOut"), () => { destroy(); actions?.signOut?.(); });
+            const confirm = actionButton("confirm-signout", translate("shell.signOut.confirm"), () => { destroy(); actions?.signOut?.(); });
             const controls = [cancel, confirm];
             // AccountRemovalConfirmation on tvOS: TVSettingsConfirmationOverlay over Settings, Cancel then Sign Out, Cancel focused.
             const behind = paneSnapshot?.cloneNode(true);
