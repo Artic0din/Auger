@@ -563,6 +563,8 @@
 .requests-preview .requests-tmdb span { color: inherit; }
 .requests-progress { display: flex; gap: 22px; align-items: center; max-width: 100%; margin-top: 18px; font-size: 22px; line-height: 27px; }
 .requests-progress .requests-status-label { font-weight: 600; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* Cap preview status text to two 27px lines so verbose server failures cannot push the hero title out of view. */
+.requests-preview .requests-progress .requests-status-label { max-height: 54px; overflow: hidden; }
 .requests-track { width: 240px; flex-shrink: 0; display: flex; gap: 6px; }
 .requests-step { flex: 1; border-top: 6px solid rgba(255,255,255,.14); border-radius: 3px 3px 0 0; font-size: 18px; line-height: 22px; }
 .requests-step[data-state="complete"] { border-color: rgba(237,237,237,.82); }

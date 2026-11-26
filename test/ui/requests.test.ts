@@ -2526,6 +2526,7 @@ test("hub preview drops unavailable discover progress, appends reason or targets
                         items: [
                             { ...fake.record, id: "failed-reason", title: "Failed Reason", state: "failed", status: "approved", outcome: "failed", last_error: "quota_exceeded" },
                             { ...fake.record, id: "failed-custom", title: "Failed Custom", state: "declined", status: "approved", outcome: "declined", last_error: "indexer_timeout" },
+                            { ...fake.record, id: "failed-long", title: "Failed Long Title", state: "failed", status: "approved", outcome: "failed", last_error: Array(20).fill("upstream failure detail").join(" ") },
                             { ...fake.record, id: "multi-target", title: "Multi Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }, { quality: "4K", status: "queued" }] },
                             { ...fake.record, id: "single-target", title: "Single Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }] },
                         ],
@@ -2567,6 +2568,22 @@ test("hub preview drops unavailable discover progress, appends reason or targets
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Request failed · Request limit reached", "known last_error token appended");
         await button(tv, "failed-custom").focus();
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Declined · Indexer Timeout", "humanized last_error token appended");
+        await button(tv, "failed-long").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Failed Long Title", "previewed verbose failure title");
+        const longStatusLayout = await tv.page.evaluate(() => {
+            const label = document.querySelector(".requests-preview .requests-status-label")?.getBoundingClientRect();
+            const title = document.querySelector(".requests-preview .requests-hero-title")?.getBoundingClientRect();
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return {
+                labelHeight: label?.height ?? 0,
+                titleTop: title?.top ?? -1,
+                fitsWidth: Boolean(copy && progress && progress.right <= copy.right + 1),
+            };
+        });
+        assert.equal(longStatusLayout.fitsWidth, true, "long failure status stays inside the hero copy width");
+        assert.ok(longStatusLayout.labelHeight <= 55, `expected preview status height <= 55px, got ${longStatusLayout.labelHeight}`);
+        assert.ok(longStatusLayout.titleTop >= 0, `expected hero title to stay in viewport, got top=${longStatusLayout.titleTop}`);
         await button(tv, "multi-target").focus();
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading · 1080p downloading · 4K queued", "multi-target summary appended");
         const fitsCopy = await tv.page.evaluate(() => {
