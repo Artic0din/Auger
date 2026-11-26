@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "تحديث الحساب",
  "account.fallback.itsAccount": "حسابه",
  "account.fallback.thisAccount": "هذا الحساب",
  "account.fallback.thisServer": "هذا الخادم",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "انتهت صلاحية الجلسة",
  "shell.errorView.tryAgain": "إعادة المحاولة",
  "shell.errorView.updateRequired": "التحديث مطلوب",
+ "shell.notice.ok": "حسنًا",
  "shell.signOut.confirm": "تسجيل الخروج",
  "shell.signOut.titleNamed": "هل تريد تسجيل الخروج من {account} على {server}؟",
  "shuffle.failed": "تعذّر بدء التشغيل العشوائي. حاول مرة أخرى.",

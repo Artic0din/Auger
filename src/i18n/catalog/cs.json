@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Aktualizace účtu",
  "account.fallback.itsAccount": "jeho účet",
  "account.fallback.thisAccount": "tento účet",
  "account.fallback.thisServer": "tento server",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Relace vypršela",
  "shell.errorView.tryAgain": "Zkusit znovu",
  "shell.errorView.updateRequired": "Vyžadována aktualizace",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Odhlásit se",
  "shell.signOut.titleNamed": "Odhlásit účet {account} na serveru {server}?",
  "shuffle.failed": "Náhodné přehrávání se nepodařilo spustit. Zkuste to znovu.",

@@ -1247,9 +1247,12 @@ appTest("Remove Server holds focus while pending and reports protected-storage f
     hold.release();
     await tv.jump(100);
     await tv.page.locator('[data-view="accounts-error"]').waitFor();
-    assert.equal(await tv.focused(), "retry");
-    assert.match(await tv.page.locator('.accounts-title').innerText(), /Could not remove/);
-    await tv.page.getByRole("button", { name: "Back", exact: true }).click();
+    assert.equal(await tv.focused(), "ok");
+    assert.equal(await tv.page.locator(".signin-alert-title").innerText(), "Account Update");
+    assert.match(await tv.page.locator(".signin-alert-text").innerText(), /Could not remove/);
+    const behind = await tv.page.locator(".accounts-settings").evaluate(node => ({ inert: (node as HTMLElement).inert, opacity: getComputedStyle(node).opacity }));
+    assert.deepEqual(behind, { inert: true, opacity: "0.55" });
+    await tv.page.getByRole("button", { name: "OK", exact: true }).click();
     assert.equal(await tv.page.getByRole("button", { name: "Remove Server", exact: true }).count(), 1);
 });
 
@@ -1275,7 +1278,7 @@ appTest("Remove Server confirmation matches the settings alert and dismissal ret
         return {
             title: node.querySelector("h2")?.textContent,
             message: node.querySelector("p")?.textContent,
-            confirmation: node.getAttribute("data-confirmation"),
+            confirmation: node.classList.contains("confirm-dialog") ? "true" : null,
             // The card's outer box: TVSettingsConfirmationOverlay sizes to the 536 px button row plus 2 × 48 padding.
             width: `${Math.round(bounds.width)}px`,
             topPadding: style.paddingTop,
@@ -1283,7 +1286,7 @@ appTest("Remove Server confirmation matches the settings alert and dismissal ret
             titleSize: getComputedStyle(node.querySelector("h2") as HTMLElement).fontSize,
             buttonHeight: getComputedStyle(node.querySelector("button") as HTMLElement).height,
             row: Math.abs((buttons[0]?.y ?? 0) - (buttons[1]?.y ?? 1)) < 1,
-            scrim: document.querySelector(".skyline-dropdown-scrim[data-confirmation]") !== null,
+            scrim: document.querySelector(".confirm-dialog-scrim") !== null,
             behind: behind !== null,
             inert: behind instanceof HTMLElement && behind.inert,
             centerX: bounds.x + bounds.width / 2,

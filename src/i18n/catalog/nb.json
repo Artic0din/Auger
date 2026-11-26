@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Kontooppdatering",
  "account.fallback.itsAccount": "serverens konto",
  "account.fallback.thisAccount": "denne kontoen",
  "account.fallback.thisServer": "denne serveren",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Økten er utløpt",
  "shell.errorView.tryAgain": "Prøv igjen",
  "shell.errorView.updateRequired": "Oppdatering kreves",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Logg ut",
  "shell.signOut.titleNamed": "Vil du logge ut av {account} på {server}?",
  "shuffle.failed": "Kunne ikke starte tilfeldig avspilling. Prøv igjen.",

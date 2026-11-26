@@ -70,7 +70,11 @@ test("Settings › Accounts and its confirmations read in German", async () => {
         assert.equal(title, text("servers.remove.title", "de", { server: new URL(await tv.page.evaluate(() => location.origin)).host }));
         assert.equal(await tv.page.locator('[data-focus="cancel"]').innerText(), text("common.cancel", "de"));
         assert.equal(await tv.page.locator('[data-focus="confirm"]').innerText(), text("servers.remove.confirm", "de"));
-        assert.equal(await tv.page.locator(".skyline-confirm-message").innerText(), text("account.removeServer.signsOutMany", "de", { count: 3 }));
+        const message = tv.page.locator(".skyline-confirm-message");
+        assert.equal(await message.innerText(), text("account.removeServer.signsOutMany", "de", { count: 3 }));
+        const describedBy = await tv.page.locator(".confirm-dialog").getAttribute("aria-describedby");
+        assert.ok(describedBy !== null && describedBy !== "");
+        assert.equal(await message.getAttribute("id"), describedBy);
     }, "de");
 });
 
@@ -117,11 +121,51 @@ test("the expired-session dialog reads in German", async () => {
         await openSettingsAccounts(tv);
         await tv.page.locator('[data-focus="stale"]').click();
         await tv.page.locator('[data-view="account-expired"]').waitFor();
-        assert.equal(await tv.page.locator(".accounts-dialog .signin-title").innerText(), text("settings.accounts.expiredTitleAppleTv", "de", { account: "Stale" }));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signin"]').innerText(), text("account.signInAgain", "de"));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signout"]').innerText(), text("settings.accounts.signOut", "de"));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="cancel"]').innerText(), text("common.cancel", "de"));
+        assert.equal(await tv.page.locator(".confirm-dialog .skyline-confirm-title").innerText(), text("settings.accounts.expiredTitleAppleTv", "de", { account: "Stale" }));
+        assert.equal(await tv.page.locator(".confirm-dialog .skyline-confirm-message").count(), 0);
+        assert.equal(await tv.page.locator('.confirm-dialog [data-focus="signin"]').innerText(), text("account.signInAgain", "de"));
+        const signOut = tv.page.locator('.confirm-dialog [data-focus="signout"]');
+        assert.equal(await signOut.innerText(), text("settings.accounts.signOut", "de"));
+        assert.equal(await signOut.evaluate(node => node.classList.contains("skyline-destructive")), true);
+        assert.equal(await tv.page.locator('.confirm-dialog [data-focus="cancel"]').innerText(), text("common.cancel", "de"));
     }, "de");
+});
+
+test("a failed account switch shows the German alert over Change Account", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").first().innerText()) !== "Home", "German top bar");
+        await tv.page.evaluate(() => {
+            window.appHarness.mountAccounts(() => Promise.reject(new Error("Switch failed")));
+        });
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator(".signin-alert").waitFor();
+        assert.equal(await tv.page.locator(".signin-alert-title").innerText(), text("account.alertTitle", "de"));
+        assert.equal(await tv.page.locator(".signin-alert-text").innerText(), "Switch failed");
+        assert.equal(await tv.page.locator('.signin-alert [data-focus="ok"]').innerText(), text("shell.notice.ok", "de"));
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second");
+    }, "de");
+});
+
+test("an account switch rejecting without a value still shows the generic alert over Change Account", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        await tv.page.evaluate(() => {
+            window.appHarness.mountAccounts(() => Promise.reject());
+        });
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator(".signin-alert").waitFor();
+        assert.equal(await tv.page.locator(".signin-alert-text").innerText(), "Could not open the account. Try again.");
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second");
+    });
 });
 
 test("a German catalog that lands while Change Account is up redraws it in German", async () => {
@@ -247,7 +291,7 @@ test("every sign-out confirmation confirms with Wyloguj się in Polish", async (
         await openSettingsAccounts(tv);
         await tv.page.locator('[data-focus="stale"]').click();
         await tv.page.locator('[data-view="account-expired"]').waitFor();
-        await tv.page.locator('.accounts-dialog [data-focus="signout"]').click();
+        await tv.page.locator('.confirm-dialog [data-focus="signout"]').click();
         await tv.page.locator('[data-view="accounts-confirm"]').waitFor();
         assert.equal(await tv.page.locator('[data-focus="confirm"]').innerText(), polishConfirm);
         const heights = await tv.page.locator('.confirm-dialog .skyline-confirm-actions button').evaluateAll(nodes =>
