@@ -97,16 +97,84 @@ test("the lobby's remote order: Options, the code and the seats above, the actio
     } finally { await tv.page.context().close(); }
 });
 
-test("Choose a title opens the picker with the group's shelves, read once with the room token", async () => {
+test("Choose a title opens the picker with Apple's shelves, icon-only chrome, and Search (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         await tv.page.locator(".watch-party-shelf").first().waitFor();
-        assert.deepEqual(await texts(tv, ".watch-party-shelf .browse-section-title"), ["Continue Together", "On Your Watchlists"]);
-        assert.equal(await texts(tv, ".watch-party-shelf .browse-card").then(cards => cards.length), 4);
+        const titles = await texts(tv, ".watch-party-shelf .browse-section-title");
+        assert.deepEqual(titles.slice(0, 2), ["Continue Together", "On Your Watchlists"]);
+        assert.ok(titles.includes("Recently Added Movies"), `expected Recently Added Movies in ${titles.join(", ")}`);
+        assert.ok(titles.includes("Recently Added Series"), `expected Recently Added Series in ${titles.join(", ")}`);
         assert.deepEqual(fake.pickerTokens, ["room-proof-one"]);
+        // Chrome icons are icon-only 56x56 capsules matching Skyline's top bar.
+        assert.equal(await button(tv, "picker-search").textContent(), "");
+        assert.equal(await button(tv, "picker-search").getAttribute("aria-label"), "Search");
+        assert.equal(await button(tv, "picker-close").textContent(), "");
+        assert.equal(await button(tv, "picker-close").getAttribute("aria-label"), "Close");
         assert.equal(await tv.focused(), "movie:m0004", "focus opens on the first title");
+        // Search opens Apple's WatchPartySearchPage and lets you pick a matching movie.
+        await button(tv, "picker-search").click();
+        await view(tv, "watchParty:search").waitFor();
+        assert.equal(await tv.focused(), "picker-search-input");
+        const emptyEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+        assert.equal(emptyEnterPrevented, false, "Enter on an empty search field leaves default action intact for the TV keyboard");
+        await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs = 0;
+            node.addEventListener("blur", () => {
+                (window as unknown as { __searchInputBlurs: number }).__searchInputBlurs += 1;
+            });
+        });
+        await tv.page.locator('[data-focus="picker-search-input"]').fill("Movie 0004");
+        await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
+        await tv.page.locator(".watch-party-search-grid .browse-card").first().waitFor();
+        const blursDuringSearch = await tv.page.evaluate(() => (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs ?? -1);
+        assert.equal(blursDuringSearch, 0, "search renders keep the search header mounted so the focused input never blurs");
+        const completedEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+        assert.equal(completedEnterPrevented, false, "Enter on a completed search field still leaves default action intact to reopen the TV keyboard");
+        assert.equal(await tv.focused(), "picker-search-input", "Enter on a completed search field keeps focus on the input for editing");
+        await tv.remote(65376);
+        assert.equal(await tv.focused(), "movie:m0004", "IME Done on a completed search field moves focus to the first result");
+        await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').evaluate(node => {
+            (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts = 0;
+            node.addEventListener("focusout", () => {
+                (window as unknown as { __searchCardFocusouts: number }).__searchCardFocusouts += 1;
+            });
+        });
+        // A room update while a result card is focused must keep the search grid mounted without blurring it.
+        fake.guestReady = true;
+        fake.snapshot();
+        await tv.page.waitForTimeout(50);
+        const cardFocusouts = await tv.page.evaluate(() => (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts ?? -1);
+        assert.equal(cardFocusouts, 0, "room updates keep the search grid parent mounted so a focused result card never blurs");
+        await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').click();
+        await view(tv, "watchParty:choice").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:search").waitFor();
+        // Editing the query and pressing Enter within the debounce window runs the new search immediately rather than focusing stale results.
+        await tv.page.locator('[data-focus="picker-search-input"]').fill("Night Shift");
+        await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').waitFor();
+        // Opening a series without next-up from Search -> episode -> Back twice returns to Search.
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').click();
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.page.locator(".watch-party-episode").first().click();
+        await view(tv, "watchParty:choice").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:search").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:picker:shelves").waitFor();
         await tv.remote(10009);
         await view(tv, "watchParty:lobby").waitFor();
         assert.equal(await tv.focused(), "choose", "Back returns to the lobby's action");
@@ -125,8 +193,8 @@ test("the picker's shelves caption a series with the years it ran", async () => 
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        await tv.page.locator('.watch-party-shelf [data-focus="series:s2"]').waitFor();
-        const line = (id: string) => tv.page.locator(`.watch-party-shelf [data-focus="${id}"] .browse-card-subtitle`).textContent();
+        await tv.page.locator('.watch-party-shelf [data-focus="series:s2"]').first().waitFor();
+        const line = (id: string) => tv.page.locator(`.watch-party-shelf [data-focus="${id}"] .browse-card-subtitle`).first().textContent();
         assert.equal(await line("series:s1"), "2020 – Present");
         assert.equal(await line("series:s2"), "2021 – 2024");
     } finally { await tv.page.context().close(); }
@@ -233,20 +301,22 @@ test("a series with no next-up opens its seasons and episodes, and an episode is
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed picker read shows the reason with Try Again, and an empty picker says what to do", async () => {
-    const { tv, fake } = await inLobby("host", fake => { fake.pickerFailure = problem(503, "unavailable", "Down for maintenance."); });
+test("a failed and empty picker shows Apple's empty state with the warning banner, focuses Search, and omits Try Again (#783)", async () => {
+    const { tv, fake } = await inLobby();
     try {
+        fake.pickerFailure = problem(503, "unavailable", "Down for maintenance.");
+        fake.titles.clear();
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:empty").waitFor();
         await tv.page.locator(".watch-party-banner").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-picker-empty-state .search-state-title").textContent(), "Nothing to pick from yet");
+        assert.equal(await tv.page.locator(".watch-party-picker-empty-state .search-state-description").textContent(), "Search for a title, or add something to a watchlist.");
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "Down for maintenance.");
-        assert.equal(await tv.focused(), "picker-close", "focus stays on the strip, where it opened");
-        await tv.remote(40);
-        assert.equal(await tv.focused(), "picker-retry", "Down reaches Try Again");
+        assert.equal(await button(tv, "picker-retry").count(), 0, "tvOS empty state has no extra Try Again button");
+        assert.equal(await tv.focused(), "picker-search", "empty state focuses Search on the chrome strip");
         fake.pickerFailure = undefined;
-        await button(tv, "picker-retry").click();
-        await tv.page.locator(".watch-party-shelf").first().waitFor();
-        assert.equal(await tv.page.locator(".watch-party-banner").count(), 0);
+        await tv.remote(10009);
+        await view(tv, "watchParty:lobby").waitFor();
     } finally { await tv.page.context().close(); }
 });
 
@@ -595,30 +665,33 @@ test("a series on both shelves opens the entry of the shelf it was chosen from",
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        assert.equal(await tv.page.locator('[data-focus="series:s1"]').count(), 2);
+        assert.ok((await tv.page.locator('[data-focus="series:s1"]').count()) >= 2);
         await tv.page.locator('[data-focus="series:s1"]').first().click();
         await view(tv, "watchParty:choice").waitFor();
         assert.equal(await tv.page.locator(".watch-party-choice-facts").textContent(), "S1 · E2 · Harbor Lights chapter 1.2", "Continue Together goes to its next-up episode");
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed reload keeps the shelves, shows the reason and a Try Again that works", async () => {
+test("a failed reload keeps the shelves and shows the warning banner without an extra Try Again button (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
+        const initialShelves = await tv.page.locator(".watch-party-shelf").count();
         await tv.remote(10009);
         await view(tv, "watchParty:lobby").waitFor();
         fake.pickerFailure = problem(503, "unavailable", "Down for maintenance.");
         await button(tv, "choose").click();
         await tv.page.locator(".watch-party-banner").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-shelf").count(), 2, "the shelves from the first read stay");
+        assert.ok((await tv.page.locator(".watch-party-shelf").count()) > 0, "other shelves still show");
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "Down for maintenance.");
-        assert.equal(await button(tv, "picker-retry").count(), 1, "Try Again is on the page");
+        assert.equal(await button(tv, "picker-retry").count(), 0);
         fake.pickerFailure = undefined;
-        await button(tv, "picker-retry").click();
-        await tv.eventually(async () => await tv.page.locator(".watch-party-banner").count() === 0, "error clears");
-        assert.equal(await tv.page.locator(".watch-party-shelf").count(), 2);
+        await tv.remote(10009);
+        await view(tv, "watchParty:lobby").waitFor();
+        await button(tv, "choose").click();
+        await view(tv, "watchParty:picker:shelves").waitFor();
+        await tv.eventually(async () => await tv.page.locator(".watch-party-banner").count() === 0 && await tv.page.locator(".watch-party-shelf").count() === initialShelves, "error clears and all shelves reload on reopen");
     } finally { await tv.page.context().close(); }
 });
 

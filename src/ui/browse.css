@@ -2247,10 +2247,23 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-invite-code { margin: 0; padding-inline-start: 14.4px; font-family: ui-monospace, Menlo, monospace; font-size: 72px; font-weight: 700; letter-spacing: 14.4px; white-space: nowrap; color: var(--silo-text); }
 .watch-party-qr { flex: none; box-sizing: content-box; width: 560px; height: 560px; padding: 33.6px; border-radius: 16px; background: #fff; }
 .watch-party-qr svg { display: block; width: 100%; height: 100%; }
-.watch-party-picker-chrome { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 0 0 24px; }
+.watch-party-picker-chrome { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 80px; padding: 0 0 24px; }
 .watch-party-picker-name { font-size: 30px; font-weight: 600; color: #fff; }
+.watch-party-picker-tools { display: flex; align-items: center; gap: 36px; }
+.watch-party-ui .watch-party-chrome-icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 56px; height: 56px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: rgba(255,255,255,.62); outline: none; transition: background-color 150ms ease-out, color 150ms ease-out; }
+.watch-party-ui .watch-party-chrome-icon .watch-party-icon { width: 28px; height: 28px; }
+.watch-party-ui .watch-party-chrome-icon:focus { background: #fff; color: #0c0c0d; }
 .watch-party-shelf { position: relative; z-index: 1; }
 .watch-party-picker-empty { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; box-sizing: border-box; padding: 64px 0; }
+.watch-party-picker-empty-state { margin: 0; text-align: start; }
+.watch-party-picker-empty-state .search-state-icon { margin: 0 0 12px; color: rgba(237,237,237,.3); }
+.watch-party-picker-spinner { margin: 48px 0; }
+.watch-party-search-head { display: flex; align-items: center; gap: 36px; padding: 0 0 32px; }
+.watch-party-search-title { margin: 0; font-size: 38px; font-weight: 700; color: var(--silo-text); }
+.watch-party-search-input { flex: 1; max-width: 720px; }
+.watch-party-search-body { display: flex; flex-direction: column; gap: 24px; }
+.watch-party-search-count { margin: 0; font-size: 22px; color: var(--silo-secondary); }
+.watch-party-search-grid.browse-grid { grid-template-columns: repeat(6, 220px); column-gap: 40px; row-gap: 60px; width: auto; padding: 12px 0 48px; }
 .watch-party-empty-title { margin: 0; font-size: 28px; font-weight: 600; color: var(--silo-text); }
 .watch-party-choice { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; height: 1080px; padding: 96px 88px; }
 .watch-party-choice-head { display: flex; align-items: flex-end; gap: 26px; }
