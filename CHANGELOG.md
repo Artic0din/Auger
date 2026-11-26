@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.9] - 2026-11-26
+
+### Fixes
+
+- **Sign-In**: Allow server discovery when request_origin differs ([#947](https://github.com/Artic0din/Auger-Tizen/pull/947), [`95f863bc`](https://github.com/Artic0din/Auger-Tizen/commit/95f863bc))
+- **Details**: Port Details from the tvOS source ([#931](https://github.com/Artic0din/Auger-Tizen/pull/931), [`15a0cd0f`](https://github.com/Artic0din/Auger-Tizen/commit/15a0cd0f))
+
+## [0.14.8] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Remove Restore All Libraries row from Server pane ([#940](https://github.com/Artic0din/Auger-Tizen/pull/940), [`12e83c23`](https://github.com/Artic0din/Auger-Tizen/commit/12e83c23))
+
+### Tests
+
+- **Audiobooks**: Read detail styles atomically during background repaints ([#948](https://github.com/Artic0din/Auger-Tizen/pull/948), [`b79a4c09`](https://github.com/Artic0din/Auger-Tizen/commit/b79a4c09))
+
+## [0.14.7] - 2026-11-26
+
+### Fixes
+
+- **Browse**: Port Browse and the library grid from the tvOS source ([#927](https://github.com/Artic0din/Auger-Tizen/pull/927), [`a451d470`](https://github.com/Artic0din/Auger-Tizen/commit/a451d470))
+
 ## [0.14.6] - 2026-11-26
 
 ### Fixes

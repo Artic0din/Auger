@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getCalendar } from "../../src/api/calendarOperations.ts";
 import { decodeCalendar } from "../../src/contracts/v2/calendar.ts";
-import { calendarDestination, calendarEventKey, calendarWeek, eventTime, localDateKey, shiftDay } from "../../src/ui/calendarState.ts";
+import { calendarDateLabel, calendarDestination, calendarEventKey, calendarWeek, eventTime, localDateKey, shiftDay } from "../../src/ui/calendarState.ts";
 import { FakeCalendar } from "./support/fakeCalendar.ts";
 
 export const event = { content_id: "episode:s1e22", type: "episode", title: "Harbor Lights", series_id: "series:s1", season_number: 2, episode_number: 2, air_date: "2026-10-03", local_air_date: "2026-10-04", air_at: "2026-10-03T16:00:00Z", watched: false, badges: ["finale"] };
@@ -77,8 +77,9 @@ test("authoritative groups and date-only events survive extreme zones and the re
     assert.match(eventTime(repeated[1], "Australia/Melbourne") ?? "", /2:00\sAM/);
     assert.notEqual(calendarEventKey(repeated[0]), calendarEventKey(repeated[1]));
     assert.deepEqual(calendarDestination(repeated[0]), { kind: "item", id: "series:s1", title: "Harbor Lights", seriesContext: { seasonNumber: 2, episodeId: "episode:s1e22" } });
-    assert.equal(calendarDestination({ ...repeated[0], seriesId: undefined })?.id, "episode:s1e22");
-    assert.equal(calendarDestination({ ...repeated[0], type: "future_kind" }), undefined);
+    assert.equal(calendarDestination({ ...repeated[0], seriesId: undefined }).id, "episode:s1e22");
+    assert.deepEqual(calendarDestination({ ...repeated[0], type: "future_kind" }), { kind: "item", id: "episode:s1e22", title: "Harbor Lights" });
+    assert.equal(calendarDateLabel("2026-10-04", "long", "long"), "Sunday, October 4");
 });
 
 test("Calendar instant and wall times use the viewer's 12-hour clock", () => {

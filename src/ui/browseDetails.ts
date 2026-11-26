@@ -504,9 +504,8 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         zones.push({ id: "people", layout: "row", items: people, entry: people[0]?.key });
     }
     if (state !== undefined && (detail.type === "movie" || detail.type === "series")) {
-        // Show YouTube cards the way tvOS does when the YouTube app can open.
-        // Select cannot hand off or play them through AVPlay, so it stays on the card.
-        const extras = trailerCards(detail.extras, detail.videos, true).map(card => trailerCard(card, context, state, play));
+        // Hide unplayable remote YouTube cards until a Samsung YouTube handoff is proven (TVTrailersRail.swift:259-265).
+        const extras = trailerCards(detail.extras, detail.videos, false).map(card => trailerCard(card, context, state, play));
         if (extras.length > 0) {
             content.push(el("h2", "browse-section-title", translate("detail.trailers")), zoneNode("browse-row details-extras", extras));
             // TVTrailersRail is a focus section with user-initiated default focus
@@ -558,21 +557,26 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         zones.push({ id: "facts", layout: "column", items });
     }
     const first = focusable[0] ?? seasonItems[0];
+    // TVDetailActions.entryAction (TVDetailActions.swift:720-727): Watchlist stands in while episodes load;
+    // once Play gets a title, FocusHost.settlePrimaryFocus claims it once unless the viewer moved or selected.
     const waitingForEntryEpisode = detail.type === "series" && (
         state?.series?.loading === true && state.series.episodes === undefined
         || waitingForPlaybackTarget
     );
-    // A cached detail can paint before the loaders start, or an empty episode page can
-    // finish before playback detail. Unresolved Play must not default entry to Watchlist.
-    const loading = waitingForEntryEpisode ? content.find(node => node.classList.contains("details-hero")) : undefined;
+    const loadingWatchlist = waitingForEntryEpisode ? focusable.find(item => item.key === "watchlist") : undefined;
+    const loading = waitingForEntryEpisode && loadingWatchlist === undefined
+        ? content.find(node => node.classList.contains("details-hero"))
+        : undefined;
     if (loading !== undefined) {
-        loading.tabIndex = 0;
+        loading.tabIndex = -1;
         loading.dataset.focus = "loading";
         loading.setAttribute("aria-busy", "true");
-        loading.setAttribute("aria-label", "Loading episodes");
-        zones.unshift({ id: "loading", layout: "row", items: [{ key: "loading", element: loading }] });
+        loading.setAttribute("aria-label", translate("detail.episodes.loading"));
+        zones[0] = zones[0] === undefined ? { id: "actions", layout: "row", items: [{ key: "loading", element: loading }] } : { ...zones[0], items: [{ key: "loading", element: loading }, ...zones[0].items] };
     }
-    const focus = loading !== undefined ? { zone: "loading", key: "loading" }
+    const focus = loadingWatchlist !== undefined
+        ? { zone: "actions", key: loadingWatchlist.key }
+        : loading !== undefined ? { zone: "actions", key: "loading" }
         : first === undefined ? undefined : { zone: focusable[0] === undefined ? "seasons" : "actions", key: first.key };
     const view: View = { name: `item:${detail.id}`, content, zones, focus, back };
     if (state?.panel === "audio") {
@@ -879,13 +883,15 @@ export function personHero(person: Person, baseUrl: string, metadataLoading = fa
         const row = el("div", "person-facts");
         for (const fact of facts) row.appendChild(el("span", "person-fact", fact));
         if (metadataLoading) {
-            const loading = el("span", "person-fact person-metadata-loading", translate("person.loadingMetadata"));
+            const loading = el("span", "person-fact person-metadata-loading");
             loading.setAttribute("role", "status");
+            loading.append(spinner(), el("span", "person-metadata-loading-text", translate("person.loadingMetadata")));
             row.appendChild(loading);
         }
         info.appendChild(row);
     }
-    if (person.bio) info.appendChild(el("p", "browse-text browse-overview", person.bio));
+    const bio = person.bio?.trim();
+    if (bio) info.appendChild(el("p", "browse-text browse-overview", bio));
     hero.appendChild(info);
     return hero;
 }

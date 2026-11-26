@@ -298,8 +298,9 @@
 .person-facts { margin: 0 0 10px; }
 /* Fact capsules: siloSmall 20 regular, 16/8 padding (PersonDetailView.swift:475-483, Typography.swift:34); SF Pro's 23.56 line rounds to 24. */
 .person-fact { display: inline-block; margin: 0 12px 12px 0; padding: 8px 16px; border-radius: 999px; background: #0e0f12; color: var(--silo-text); font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 24px; letter-spacing: -.15px; }
-/* PersonMetadataRefreshIndicator: siloSecondaryText on siloSurfaceVariant at 0.72 (PersonDetailView.swift:730-738). */
-.person-fact.person-metadata-loading { color: var(--silo-secondary); background: rgba(14, 15, 18, 0.72); }
+/* PersonMetadataRefreshIndicator: ProgressView + text 8 apart, siloSecondaryText on siloSurfaceVariant at 0.72 (PersonDetailView.swift:725-740). */
+.person-fact.person-metadata-loading { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; color: var(--silo-secondary); background: rgba(14, 15, 18, 0.72); }
+.person-fact.person-metadata-loading .marquee-spinner { width: 18px; height: 18px; border-width: 2px; opacity: 1; color: var(--silo-text); }
 .person-portrait[data-person-portrait="loading"],
 .person-portrait[data-person-portrait="error"] { background: #0e0f12; }
 .person-portrait-thumbhash,
@@ -1570,8 +1571,8 @@ svg.library-empty-icon { width: auto; }
 .details-loading-actions { display: flex; gap: 14px; margin-top: 6px; }
 .details-loading-rail { display: flex; flex-direction: column; gap: 14px; margin-left: 12px; overflow: hidden; }
 .details-loading-cards { display: flex; }
-.details-episodes .skyline-progress { height: 5px; border-radius: 0; background: rgba(0,0,0,.6); }
-.details-episodes .skyline-progress-fill { border-radius: 0; background: #fff; }
+.details-episodes .skyline-progress { bottom: 8px; left: 10px; right: 10px; height: 4px; border-radius: 999px; background: rgba(0,0,0,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.45); }
+.details-episodes .skyline-progress-fill { border-radius: 999px; background: var(--silo-text); box-sizing: border-box; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.4); }
 .browse:has(.details-hero) > .browse-row:has(+ .browse-section-title) { margin-bottom: 35px; }
 /* TVTrailersRail rail padding 12 plus body section spacing 64 is the 76px caption-to-heading gap.
    The body inset is 100, and scrollClipDisabled paints through the trailing 88px to the screen edge. */

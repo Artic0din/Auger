@@ -18,7 +18,6 @@ test("vendored contract fixtures decode with the production decoders", () => {
     assert.deepEqual(decodeSystemInfo(fixture("get_system_info_ok")), {
         apiMajor: 2,
         serverVersion: "unavailable",
-        requestOrigin: "http://api.example.test",
     });
     assert.deepEqual(decodeDeviceLoginCapability(fixture("get_device_login_capability_ok")), {
         state: "available",

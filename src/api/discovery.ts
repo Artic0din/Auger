@@ -21,8 +21,6 @@ export type DiscoveryResult =
     | { readonly status: "unreachable" }
     /** Answers, but not as a Silo /api/v2 server (a v1-only alpha server, or not Silo). */
     | { readonly status: "not_silo_v2" }
-    /** The request reached another origin than the one entered (redirect or misrouted proxy). */
-    | { readonly status: "origin_mismatch" }
     | { readonly status: "server_error"; readonly transient?: true };
 
 export async function discoverServer(
@@ -41,9 +39,6 @@ export async function discoverServer(
         const info = await http.send({ ...operations.systemInfo(), signal });
         if (info.apiMajor !== SUPPORTED_API_MAJOR) {
             return { status: "not_silo_v2" };
-        }
-        if (info.requestOrigin !== undefined && info.requestOrigin !== parsed.base.origin) {
-            return { status: "origin_mismatch" };
         }
         const serverId = await http.send({ ...operations.serverIdentity(), signal });
         return { status: "connected", server: { http, serverId, serverVersion: info.serverVersion } };

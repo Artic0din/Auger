@@ -81,11 +81,14 @@ personTest("the metadata capsule and initials use Apple's points times the cap s
     await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
     await tv.page.locator(`${PAGE} .person-portrait-initials`).waitFor();
     assert.deepEqual(await tv.page.evaluate(unscaledText, PAGE), []);
-    // PersonMetadataRefreshIndicator: siloSmall in siloSecondaryText on siloSurfaceVariant at 0.72 (PersonDetailView.swift:730-738).
-    const capsule = await tv.page.locator(`${PAGE} .person-metadata-loading`).evaluate(node => ({ color: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
-    assert.deepEqual(capsule, { color: "rgba(237, 237, 237, 0.6)", background: "rgba(14, 15, 18, 0.72)" });
+    // PersonMetadataRefreshIndicator: spinner + text 8 apart, siloSmall in siloSecondaryText on siloSurfaceVariant at 0.72 (PersonDetailView.swift:725-738).
+    const capsule = await tv.page.locator(`${PAGE} .person-metadata-loading`).evaluate(node => {
+        const style = getComputedStyle(node);
+        return { display: style.display, gap: style.gap, color: style.color, background: style.backgroundColor, spinners: node.querySelectorAll(".marquee-spinner").length };
+    });
+    assert.deepEqual(capsule, { display: "flex", gap: "8px", color: "rgba(237, 237, 237, 0.6)", background: "rgba(14, 15, 18, 0.72)", spinners: 1 });
     await assertSfWidths(tv, [
-        { selector: `${PAGE} .person-metadata-loading`, text: "Loading metadata", width: 157.65 },
+        { selector: `${PAGE} .person-metadata-loading-text`, text: "Loading metadata", width: 157.65 },
         { selector: `${PAGE} .person-portrait-initials`, text: "RV", width: 107.63 },
     ]);
 });

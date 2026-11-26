@@ -136,7 +136,6 @@ export function decodeProblem(value: unknown): Problem {
 export interface SystemInfo {
     readonly apiMajor: number;
     readonly serverVersion: string;
-    readonly requestOrigin: string | undefined;
 }
 
 export function decodeSystemInfo(value: unknown): SystemInfo {
@@ -146,7 +145,6 @@ export function decodeSystemInfo(value: unknown): SystemInfo {
     return {
         apiMajor: integer(obj, "api_major", "system_info"),
         serverVersion: string(obj, "server_version", "system_info"),
-        requestOrigin: optionalString(obj, "request_origin", "system_info"),
     };
 }
 
