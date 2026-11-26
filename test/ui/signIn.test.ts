@@ -193,17 +193,15 @@ tvTest("an unreachable server can be retried, and manual entry renders no Remove
     await tv.eventually(async () => (await handoffs(tv)) === 2, "retried connect restores saved sign-in");
 });
 
-tvTest("unsupported, misrouted and failing servers are named, and a retry connects", async (tv) => {
+tvTest("unsupported and failing servers are named, and a retry connects even when request_origin differs", async (tv) => {
     const info = fixture("get_system_info_ok");
     tv.fake.script("/system/info", { status: 200, body: { ...info, api_major: 1, request_origin: tv.fake.origin } });
     await connectTo(tv);
     await shows(tv, "It needs a Silo server with the version 2 API.");
-    tv.fake.script("/system/info", { status: 200, body: info });
-    await tv.page.keyboard.press("Enter");
-    await shows(tv, "The server answered from a different address than the one entered.");
     tv.fake.script("/system/info", { status: 503 }, { status: 503 });
     await tv.page.keyboard.press("Enter");
     await connectFails(tv, "The server had a problem. Try again in a moment.");
+    tv.fake.script("/system/info", { status: 200, body: info });
     await tv.page.keyboard.press("Enter");
     await codeScreen(tv);
 });

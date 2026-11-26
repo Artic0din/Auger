@@ -83,3 +83,32 @@ test('interrupted start resumes without another POST', async () => {
     assert.equal(posts, 1);
     assert.equal(reads >= 1, true);
 });
+
+test('remote-only YouTube discovery reports unplayable without publishing while unsupported sites keep polling', async () => {
+    const youtube = { kind: 'trailer', site: 'YouTube', siteKey: 'yt_1', name: 'Trailer', language: undefined, isOfficial: true };
+    const vimeo = { kind: 'trailer', site: 'Vimeo', siteKey: 'vm_1', name: 'Vimeo', language: undefined, isOfficial: false };
+    const clock = new ManualClock();
+    const base = { ...baseline(), videos: [youtube] };
+    let poll = 0; let found = 0;
+    const run = new TrailerFetch(
+        async () => ({ status: 'queued', nextAllowedAt: undefined }),
+        async () => {
+            poll++;
+            if (poll === 1) return { ...base, videos: [youtube, vimeo] };
+            return { ...base, videos: [youtube, { ...youtube, siteKey: 'yt_2' }] };
+        },
+        () => { found++; },
+        () => {},
+        clock,
+    );
+    run.start(base); await flush();
+    await clock.advance(3000);
+    assert.equal(run.fetching, true, 'unsupported remote site neither triggers found nor unplayable');
+    assert.equal(run.message, 'Finding trailers…');
+    await clock.advance(3000);
+    assert.equal(found, 0);
+    assert.equal(run.fetching, false);
+    assert.equal(run.message, 'No playable trailers here');
+    await clock.advance(3000);
+    assert.equal(run.message, undefined);
+});

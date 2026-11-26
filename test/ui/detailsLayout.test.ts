@@ -472,7 +472,7 @@ detailTest("an unhydrated episode uses its summary for Resume and Start Over", a
 
 for (const media of ['movie:m0001', 'series:s1']) detailTest(`${media} reveals supporting headings in both directions`, async tv => {
     const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
-    catalog.videos = [{ site_key: 'trailer-key', site: 'YouTube', kind: 'trailer', name: 'Trailer' }];
+    catalog.extras = [{ content_id: 'extra:1', title: 'Trailer', kind: 'trailer', duration: 90 }];
     const body = catalog.route('GET', `/catalog/items/${encodeURIComponent(media)}`, 'p-owner')?.body as Record<string, unknown>;
     await tv.page.route(`**/api/v2/catalog/items/${encodeURIComponent(media)}?**`, route => route.fulfill({ json: {
         ...body, content_rating: 'PG', overview: 'A remote observatory receives a message that changes the lives of everyone on the night shift. '.repeat(3),
@@ -1145,15 +1145,16 @@ detailTest("Episode resume bar uses TVEpisodeRail's exact bottom edge metrics an
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="episode:progress0"]').waitFor();
     assert.equal(await tv.page.locator('.details-episodes .skyline-progress').count(), 2);
-    const progress = { height: "5px", bottom: "0px", left: "0px", right: "0px", background: "rgba(0, 0, 0, 0.6)", fill: "rgb(255, 255, 255)", width: "25%" };
+    const progress = { height: "4px", bottom: "8px", left: "10px", right: "10px", radius: "999px", background: "rgba(0, 0, 0, 0.55)", shadow: "rgba(0, 0, 0, 0.35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.45) 0px 1px 3px 0px", fill: "rgb(237, 237, 237)", fillRadius: "999px", width: "25%" };
     for (const index of [0, 1]) {
         const metrics = await readLive(tv, episode => {
             const node = document.querySelector(`[data-focus="episode:progress${episode}"] .skyline-progress`);
             const fill = node?.firstElementChild;
             if (node === null || fill === null || fill === undefined || !node.isConnected) return null;
             const style = getComputedStyle(node);
-            return { height: style.height, bottom: style.bottom, left: style.left, right: style.right, background: style.backgroundColor, fill: getComputedStyle(fill).backgroundColor, width: fill instanceof HTMLElement ? fill.style.width : "" };
-        }, index, value => value.height === "5px" && value.bottom === "0px" && value.left === "0px" && value.right === "0px" && value.background === "rgba(0, 0, 0, 0.6)" && value.fill === "rgb(255, 255, 255)" && value.width === "25%", "resume bar metrics");
+            const fillStyle = getComputedStyle(fill);
+            return { height: style.height, bottom: style.bottom, left: style.left, right: style.right, radius: style.borderTopLeftRadius, background: style.backgroundColor, shadow: style.boxShadow, fill: fillStyle.backgroundColor, fillRadius: fillStyle.borderTopLeftRadius, width: fill instanceof HTMLElement ? fill.style.width : "" };
+        }, index, value => value.height === "4px" && value.bottom === "8px" && value.left === "10px" && value.right === "10px" && value.radius === "999px" && value.background === "rgba(0, 0, 0, 0.55)" && value.fill === "rgb(237, 237, 237)" && value.width === "25%", "resume bar metrics");
         assert.deepEqual(metrics, progress);
     }
 });
@@ -3244,7 +3245,7 @@ detailTest("series detail rows match Apple's 100px inset, episode mask and still
     await tv.page.route("**/api/v2/catalog/items/series%3As1?**", route => route.fulfill({ json: {
         ...item,
         cast: Array.from({ length: 25 }, (_, order) => ({ person_id: String(order), name: `Actor ${order}`, character: "Role", order })),
-        videos: [{ kind: "trailer", site: "YouTube", site_key: "abc_def-1", name: "Official Trailer", is_official: true }],
+        extras: [{ content_id: "extra:1", title: "Official Trailer", kind: "trailer", duration: 90 }],
     } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="episode:s1e12"]').focus();

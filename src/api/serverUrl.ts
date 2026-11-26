@@ -5,7 +5,7 @@
 // from an HTTPS server.
 
 export interface ServerBase {
-    /** scheme://host[:port], serialized like the server's `request_origin`. */
+    /** scheme://host[:port]. */
     readonly origin: string;
     /** origin plus any path prefix, no trailing slash. Identifies the server locally. */
     readonly baseUrl: string;

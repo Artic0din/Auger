@@ -447,10 +447,13 @@ journey("a delayed Home libraries read cannot remove a library restored in Setti
     await tv.page.locator('[data-focus="profiles"]').focus();
     await tv.page.keyboard.press("Enter");
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
-    await tv.page.locator('[data-focus="server"]').click();
-    await tv.page.locator('[data-focus="restore-libraries"]').click();
-    await tv.eventually(async () => JSON.stringify(hiddenLibrarySettings.profile().get(HIDDEN_KEY)) === "[]", "library visibility restored");
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await tv.page.getByRole("button", { name: /Metadata Language/ }).click();
+    await tv.page.getByRole("radio", { name: "fr", exact: true }).click();
+    await tv.eventually(async () => hiddenLibrarySettings.profile().get("catalog.metadata_language") === "fr", "metadata language changed");
+    await tv.page.locator('[data-focus="metadata-language"]').waitFor();
     await tv.page.getByText("Saving…", { exact: true }).waitFor({ state: "hidden" });
+    hiddenLibrarySettings.profile().set(HIDDEN_KEY, []);
     for (let step = 0; step < 4 && await tv.page.locator(".settings").count() > 0; step++) await tv.remote(10009);
     assert.equal(await tv.page.locator(".settings").count(), 0);
     assert.equal(await tv.page.locator('.browse[data-view="home"]').count(), 1);
@@ -469,8 +472,14 @@ journey("a delayed Home libraries read cannot remove a library restored in Setti
     catalog.route = (method, path, profile, body) => path.startsWith("/calendar") ? calendar.route(method, path, profile, body) : read(method, path, profile, body);
 }, settings => {
     hiddenLibrarySettings = settings;
+    settings.remainingRows = true;
     settings.profile().set(HIDDEN_KEY, [15]);
-}, { beforeMount: tv => { heldStaleLibraries = tv.fake.hold("/user/libraries", true); }, readyTimeout: 4000 });
+}, { beforeMount: tv => {
+    tv.fake.extraRoutes.push((method, path) => method === "GET" && path.startsWith("/capabilities/metadata-ai")
+        ? { status: 200, body: { revision: "test", allowed: true, state: "available", on_view: "button" } }
+        : undefined);
+    heldStaleLibraries = tv.fake.hold("/user/libraries", true);
+}, readyTimeout: 4000 });
 
 journey("a failed libraries read keeps Home and retries the tabs after the app returns", async tv => {
     const libraryReads = (): number => tv.fake.requests.filter(request => request.path === "/user/libraries").length;
