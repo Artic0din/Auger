@@ -8,6 +8,8 @@ import { fixture } from "./support/fakeSilo.ts";
 import { decodePeople } from "../../src/contracts/v2/details.ts";
 import { detailOperations } from "../../src/api/detailOperations.ts";
 import { searchRequestCatalogId } from "../../src/ui/globalSearch.ts";
+import { canFollowRequest } from "../../src/ui/requests.ts";
+import { requestProgress } from "../../src/ui/requestProgress.ts";
 import { artworkUrl, requestPosterUrl } from "../../src/ui/browseModel.ts";
 import { errorHeadline, errorMessage, errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied } from "../../src/ui/browseRoutes.ts";
 import { ApiError } from "../../src/api/errors.ts";
@@ -165,4 +167,53 @@ test("errorState follows Apple's ErrorState copy and ErrorView headline", () => 
         const shown = errorState(error);
         assert.deepEqual({ headline: errorHeadline(shown), message: errorMessage(shown), signIn: shown.signIn }, expected);
     }
+});
+
+test("decodeRequestState allows omitted or null requested_by_viewer and rejects non-boolean values", () => {
+    const fake = new FakeRequests();
+    const base = fake.title().request as Record<string, unknown>;
+    const omitted = { ...base };
+    delete omitted.requested_by_viewer;
+    assert.equal(decodeRequestTitle({ ...fake.title(), request: omitted }).request.requestedByViewer, undefined);
+    assert.equal(decodeRequestTitle({ ...fake.title(), request: { ...base, requested_by_viewer: null } }).request.requestedByViewer, undefined);
+    assert.throws(() => decodeRequestTitle({ ...fake.title(), request: { ...base, requested_by_viewer: "false" } }));
+});
+
+test("canFollowRequest requires follow capability, already_requested, explicit requestedByViewer=false, and pending/onTheWay", () => {
+    const makeTitle = (requestPatch: Record<string, unknown>, availability = "missing") =>
+        decodeRequestTitle({
+            ...new FakeRequests().title(),
+            availability,
+            request: {
+                requestable: false,
+                following: false,
+                requested_by_viewer: false,
+                request_id: "r1",
+                state: "pending",
+                reason: "already_requested",
+                ...requestPatch,
+            },
+        });
+    const cap = (follow: boolean) => ({ enabled: true, follow, removeFailed: false });
+
+    for (const state of ["pending", "approved", "processing", "partially_available"]) {
+        const title = makeTitle({ state });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), true, state);
+    }
+
+    assert.equal(canFollowRequest(cap(false), makeTitle({}), requestProgress(makeTitle({}))), false, "capability off");
+    for (const reason of [undefined, "quota_exceeded", "already_available"]) {
+        const title = makeTitle({ reason });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `reason=${String(reason)}`);
+    }
+    for (const requestedByViewer of [true, undefined]) {
+        const title = makeTitle({ requested_by_viewer: requestedByViewer });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `requestedByViewer=${String(requestedByViewer)}`);
+    }
+    for (const [state, outcome] of [["available", "available"], ["failed", "missing"], ["declined", "missing"], ["cancelled", "missing"]] as const) {
+        const title = makeTitle({ state }, outcome);
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `state=${state}`);
+    }
+    const requestableTitle = makeTitle({ requestable: true, state: undefined, reason: "already_requested" });
+    assert.equal(canFollowRequest(cap(true), requestableTitle, requestProgress(requestableTitle)), false, "no progress");
 });
