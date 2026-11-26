@@ -266,6 +266,32 @@ test("sits at the top-trailing corner, 760px wide at most, with the countdown on
     } finally { await page.close(); }
 });
 
+test("buffering card and notice move below the open options panel at y 560 (#777)", async () => {
+    const { page } = await open();
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, playing({ bufferingPill: PROMPT, bufferingNotice: LOWERED }));
+        const before = await page.locator(".player-alerts").evaluate(node => node.getBoundingClientRect().top);
+        assert.equal(before, 112);
+        await page.getByRole("button", { name: "Info and options", exact: true }).click();
+        assert.equal(await page.locator(".player-hud").isVisible(), true);
+        const layout = await page.evaluate(() => {
+            const menu = document.querySelector<HTMLElement>(".player-menu")!.getBoundingClientRect();
+            const alerts = document.querySelector<HTMLElement>(".player-alerts")!.getBoundingClientRect();
+            const card = document.querySelector<HTMLElement>(".player-buffering")!.getBoundingClientRect();
+            return { menuBottom: menu.bottom, alertsTop: alerts.top, cardTop: card.top };
+        });
+        assert.equal(layout.alertsTop, 560);
+        assert.ok(layout.alertsTop > layout.menuBottom && layout.cardTop > layout.menuBottom, JSON.stringify(layout));
+        await page.evaluate(() => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: 10009, bubbles: true, cancelable: true }));
+        });
+        assert.equal(await page.locator(".player-hud").isVisible(), false);
+        assert.equal(await page.locator(".player-alerts").evaluate(node => node.getBoundingClientRect().top), 112);
+    } finally { await page.close(); }
+});
+
 test("the countdown restarts from where the controller's timer stands and holds while it is frozen", async () => {
     const { page } = await open();
     try {

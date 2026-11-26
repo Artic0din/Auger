@@ -909,7 +909,8 @@ test("episode footer shows series, title and episode tag without an empty status
         assert.equal(await page.locator(".player-status").isVisible(), false);
         assert.deepEqual(await tops(), playingTops);
         await show(page, { ...playing(TRACKS), buffering: true, title: "Going Green", seriesTitle: "The Series", seasonNumber: 1, episodeNumber: 25 });
-        assert.equal(await page.locator(".player-spinner").isVisible(), true);
+        await page.clock.runFor(500);
+        assert.equal(await page.locator(".player-spinner:not([hidden])").isVisible(), true);
         assert.equal(await page.locator(".player-status").isVisible(), false);
         assert.deepEqual(await tops(), playingTops);
     } finally { await page.close(); }
@@ -962,6 +963,68 @@ test("scrubber rate chip draws a directional arrow 7px before the rate and episo
         await remote(page, LEFT);
         assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
         assert.equal(await page.locator(".player-rate-value").textContent(), "2x");
+    } finally { await page.close(); }
+});
+
+test("loading spinner waits 500ms before showing, stays for 500ms minimum, fades 0.2s, and moves below the open HUD (#777)", async () => {
+    const { page } = await open();
+    try {
+        // Short initial load (< 500ms) never flashes the spinner.
+        const opacity = (): Promise<string> => page.locator(".player-spinner").evaluate(node => {
+            for (const animation of node.getAnimations()) animation.finish();
+            return getComputedStyle(node).opacity;
+        });
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
+        await page.clock.runFor(499);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        await page.clock.runFor(1);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
+        assert.equal(await opacity(), "1");
+        const fade = await page.locator(".player-spinner").evaluate(node => {
+            const style = getComputedStyle(node);
+            return { property: style.transitionProperty.split(", ")[0], duration: style.transitionDuration.split(", ")[0], timing: style.transitionTimingFunction.split(", ")[0] };
+        });
+        assert.deepEqual(fade, { property: "opacity", duration: "0.2s", timing: "ease-out" });
+
+        // Ending playback stall 100ms after spinner appears holds it for the remaining 400ms, then fades opacity to 0.
+        await page.clock.runFor(100);
+        await show(page, playing(TRACKS));
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
+        await page.clock.runFor(399);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), false);
+        await page.clock.runFor(1);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
+
+        // Transitioning to error before the 500ms show delay expires cancels the pending spinner.
+        await show(page, { phase: "loading", title: "The Movie" });
+        await page.clock.runFor(250);
+        await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
+        await page.clock.runFor(600);
+        assert.equal(await page.locator(".player-spinner").evaluate(node => (node as HTMLElement).hidden), true);
+        assert.equal(await opacity(), "0");
+
+        // With the options panel open during buffering, alerts snap below the panel immediately and the spinner clears it too.
+        await show(page, { ...playing(TRACKS), buffering: true });
+        await page.clock.runFor(500);
+        await openPanel(page);
+        assert.equal(await page.locator(".player-alerts").evaluate(node => getComputedStyle(node).transitionProperty), "none", "alerts snap below the open HUD without sliding across it");
+        // When Up Next closes the options panel, the alert stack clears player-alerts-hud immediately.
+        await show(page, { ...playing(TRACKS), upNext: { next: { contentId: "next", fileId: "43", title: "Next", startSeconds: 0, episode: true }, deck: [], countdown: 30, status: "Up Next" } });
+        assert.equal(await page.locator(".player-alerts").evaluate(node => node.classList.contains("player-alerts-hud")), false);
+        await show(page, { ...playing(TRACKS), buffering: true });
+        await page.clock.runFor(500);
+        await openPanel(page);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        const layout = await page.evaluate(() => {
+            const menu = document.querySelector<HTMLElement>(".player-menu")!.getBoundingClientRect();
+            const spinner = document.querySelector<HTMLElement>(".player-spinner")!;
+            const mark = document.querySelector<HTMLElement>(".player-spinner-mark")!.getBoundingClientRect();
+            return { menuBottom: menu.bottom, paddingTop: getComputedStyle(spinner).paddingTop, markTop: mark.top };
+        });
+        assert.equal(layout.paddingTop, "560px");
+        assert.ok(layout.markTop >= 560 && layout.markTop > layout.menuBottom, JSON.stringify(layout));
     } finally { await page.close(); }
 });
 
@@ -3158,7 +3221,8 @@ test("the video plane stays clear once a frame can show, including replan, recon
 test("loading, playing and paused are readable; the remote cancels a seek preview and goes back with focus kept", async () => {
     const { page, logs } = await open();
     try {
-        assert.equal(await page.locator(".player-spinner").isVisible(), true);
+        await page.clock.runFor(500);
+        assert.equal(await page.locator(".player-spinner:not([hidden])").isVisible(), true);
         assert.equal(await page.locator(".player-spinner").getAttribute("aria-label"), "Loading");
         assert.equal(await page.locator(".player-overlay .player-title").isVisible(), false);
         assert.equal(await page.locator(".player-bar").isVisible(), false);
@@ -3719,7 +3783,8 @@ test("a screen mounted while hidden suspends its loading attempt and restores wh
     const { page, logs } = await open(true);
     try {
         assert.deepEqual(await commands(page), ["suspend"]);
-        assert.equal(await page.locator(".player-spinner").isVisible(), true);
+        await page.clock.runFor(500);
+        assert.equal(await page.locator(".player-spinner:not([hidden])").isVisible(), true);
         assert.equal(await page.locator(".player-status").isVisible(), false);
         assert.equal(await page.locator(".player-error").isVisible(), false);
         await page.evaluate(() => {
