@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.0] - 2026-11-26
+
+### Features
+
+- **Diagnostics**: Record reconnect errors and refine auto-report policy ([#943](https://github.com/Artic0din/Auger-Tizen/pull/943), [`da7cb6d5`](https://github.com/Artic0din/Auger-Tizen/commit/da7cb6d5))
+
 ## [0.13.3] - 2026-11-26
 
 ### Fixes
