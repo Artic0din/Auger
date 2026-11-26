@@ -498,6 +498,27 @@ test("profile null is explicit, reset removes only the profile row, effective ov
     state.stop();
 });
 
+test("uiCustomizationMessage reflects server UI customization capability gates", async () => {
+    for (const mode of ["supported", "revision4", "no_tv_family", "no_batch", "no_shortcuts", "no_client_scope"] as const) {
+        const { state, fakeSettings } = await setup();
+        fakeSettings.remainingRows = true;
+        if (mode === "revision4") fakeSettings.revision = 4;
+        if (mode === "no_tv_family") fakeSettings.clientFamilies = ["mobile"];
+        if (mode === "no_batch") fakeSettings.supportsBatchedEffective = false;
+        if (mode === "no_shortcuts") fakeSettings.supportsAtomicShortcuts = false;
+        if (mode === "no_client_scope") fakeSettings.scopes = ["profile", "profile_device"];
+        await state.load();
+        assert.equal(state.error, undefined);
+        assert.equal(
+            state.uiCustomizationMessage,
+            mode === "supported" ? undefined : "Update this Silo server to use synced interface settings.",
+            mode,
+        );
+        assert.equal(state.definitions.some(def => def.key === "ui.card_presentation"), mode === "supported", mode);
+        state.stop();
+    }
+});
+
 test("already-achieved metadata edits invalidate catalogs without another write", async () => {
     for (const reset of [false, true]) {
         const { state, fakeSettings, fake } = await setup();
