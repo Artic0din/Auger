@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.13.2] - 2026-11-26
+
+### Fixes
+
+- **Collections**: Port collection poster loading, failure states and group header font ([#930](https://github.com/Artic0din/Auger-Tizen/pull/930), [`81a71b27`](https://github.com/Artic0din/Auger-Tizen/commit/81a71b27))
+
 ## [0.13.1] - 2026-11-26
 
 ### Fixes
