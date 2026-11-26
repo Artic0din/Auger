@@ -147,3 +147,26 @@ test("Calendar's Session expired page shows both German buttons in full, as Appl
         assert.ok(fits.every(button => button.right <= 1920), JSON.stringify(fits));
     }, catalog, undefined, undefined, true);
 });
+
+test("Calendar renders Digital and Physical badges, long spoken day labels, comma-separated card labels, and fallback events in German", async () => {
+    const catalog = new FakeCalendar();
+    catalog.watchedEpisodes.add("episode:s1e22");
+    catalog.events.push({ content_id: "movie:m0002", type: "new_kind", title: "Release 2 Digital", air_date: "2026-01-04", local_air_date: "2026-01-04", watched: false, badges: ["digital", "physical"] });
+    await inLanguage("de", async tv => {
+        await tv.page.locator('[data-focus="filter:everything"]').click();
+        const ep = tv.page.locator('.calendar-event[data-content-id="episode:s1e22"]');
+        await ep.waitFor();
+        assert.equal(await ep.getAttribute("aria-label"), `Harbor Lights, ${text("catalog.episodeCaption", "de", { season: "2", episode: "2" })}, The Crossing, 8:00 AM, ${text("calendar.badge.finale", "de")}, ${text("calendar.watched", "de")}`);
+        const dayWithEvents = new Intl.DateTimeFormat("de", { weekday: "long", month: "long", day: "numeric" }).format(new Date(2025, 11, 29));
+        const dayWithoutEvents = new Intl.DateTimeFormat("de", { weekday: "long", month: "long", day: "numeric" }).format(new Date(2025, 11, 30));
+        assert.equal(await tv.page.locator('[data-focus="day:2025-12-29"]').getAttribute("aria-label"), text("calendar.dayHasEvents", "de", { day: dayWithEvents }));
+        assert.equal(await tv.page.locator('[data-focus="day:2025-12-30"]').getAttribute("aria-label"), dayWithoutEvents);
+        await tv.page.locator('[data-focus="day:2026-01-04"]').focus();
+        await tv.page.keyboard.press("Enter");
+        const fallback = tv.page.locator(":focus");
+        assert.equal(await fallback.getAttribute("aria-disabled"), null);
+        assert.equal(await fallback.locator(".browse-card-subtitle").count(), 0);
+        assert.deepEqual(await fallback.locator(".calendar-release").allInnerTexts(), [text("calendar.badge.digital", "de"), text("calendar.badge.physical", "de")]);
+        assert.equal(await fallback.getAttribute("aria-label"), `Release 2 Digital, ${text("calendar.badge.digital", "de")}, ${text("calendar.badge.physical", "de")}`);
+    }, catalog);
+});

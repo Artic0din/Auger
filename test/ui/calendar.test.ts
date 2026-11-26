@@ -132,8 +132,9 @@ calendarTest("Calendar loading focus stays on Apple's blank owner", async (tv) =
     await tv.page.locator(".calendar-day").first().focus();
     await tv.page.keyboard.press("ArrowDown");
     assert.equal(await tv.focused(), "calendar-page", "Down from the strip lands on the loading owner");
-    const loading = await tv.page.locator(".calendar-loading").evaluate(node => ({ text: node.textContent ?? "", outline: getComputedStyle(node).outlineStyle }));
+    const loading = await tv.page.locator(".calendar-loading").evaluate(node => ({ text: node.textContent ?? "", label: node.getAttribute("aria-label"), outline: getComputedStyle(node).outlineStyle }));
     assert.equal(loading.text, "");
+    assert.equal(loading.label, null);
     assert.equal(loading.outline, "none");
     held.release();
 });
@@ -388,7 +389,7 @@ calendarTest("Calendar artwork corners carry time, release and watched while cap
     assert.equal(await card.locator('.browse-art .calendar-release').textContent(), "FINALE");
     assert.equal(await card.locator('.browse-art .calendar-watched').getAttribute('aria-label'), "Watched");
     assert.equal(await card.locator('.browse-card-subtitle').textContent(), "S2 · E2 · The Crossing");
-    assert.match(await card.getAttribute('aria-label') ?? '', /Harbor Lights.*S2 · E2.*The Crossing.*8:00 AM.*FINALE.*Watched/);
+    assert.equal(await card.getAttribute('aria-label'), "Harbor Lights, S2 · E2, The Crossing, 8:00 AM, FINALE, Watched");
     const art = await card.locator('.browse-art').boundingBox();
     assert.ok(art);
     for (const selector of ['.calendar-time', '.calendar-release', '.calendar-watched']) {
@@ -607,12 +608,20 @@ calendarTest("Calendar authority cancellation, PIN proof and server library rest
     assert.equal(catalog.households.get("p-owner")?.hidden?.includes(15), true);
 });
 
-calendarTest("Calendar metadata-only and missing targets retain safe Details and unknown events stay truthful", async (tv, catalog) => {
-    catalog.events.push({ content_id: "movie:m0002", type: "new_kind", title: "New event type", air_date: "2026-01-04", local_air_date: "2026-01-04", watched: false, badges: ["future_badge"] });
+calendarTest("Calendar metadata-only and missing targets retain safe Details and fallback event types open Details", async (tv, catalog) => {
+    catalog.events.push({ content_id: "movie:m0002", type: "new_kind", title: "New event type", air_date: "2026-01-04", local_air_date: "2026-01-04", watched: false, badges: ["digital", "physical", "future_badge"] });
     await activate(tv, "calendar"); await ready(tv, 3); await activate(tv, "filter:everything"); await ready(tv, 33);
+    assert.equal(await tv.page.locator('[data-focus="day:2025-12-29"]').getAttribute("aria-label"), "Monday, December 29, has events");
+    assert.equal(await tv.page.locator('[data-focus="day:2025-12-30"]').getAttribute("aria-label"), "Tuesday, December 30");
     await activate(tv, "day:2026-01-04");
-    assert.equal(await tv.page.locator(":focus").getAttribute("aria-disabled"), "true");
-    const count = tv.fake.requests.length; await tv.page.keyboard.press("Enter"); assert.equal(tv.fake.requests.length, count);
+    const fallbackCard = tv.page.locator(":focus");
+    assert.equal(await fallbackCard.getAttribute("aria-disabled"), null);
+    assert.equal(await fallbackCard.locator(".browse-card-subtitle").count(), 0);
+    assert.deepEqual(await fallbackCard.locator(".calendar-release").allInnerTexts(), ["DIGITAL", "PHYSICAL"]);
+    assert.equal(await fallbackCard.getAttribute("aria-label"), "New event type, DIGITAL, PHYSICAL");
+    await tv.page.keyboard.press("Enter");
+    await tv.page.locator('[data-focus="more"]').waitFor();
+    await tv.remote(10009); await ready(tv, 33);
     catalog.failNext("/catalog/items/movie%3Am0002", { status: 200, body: { ...fixture("get_catalog_item_ok"), content_id: "movie:m0002", versions: [] } });
     await tv.page.locator('.calendar-event[data-content-id="movie:m0002"]').first().focus(); await tv.page.keyboard.press("Enter");
     await tv.page.getByText("This title has no file this TV can play.").waitFor();

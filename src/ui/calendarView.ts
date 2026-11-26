@@ -24,13 +24,20 @@ export interface CalendarHandlers {
 }
 const FILTERS = ["following", "trending", "everything"] as const;
 const filterLabel = (filter: CalendarFilter): string => translate(filter === "following" ? "calendar.filter.following" : filter === "trending" ? "calendar.filter.trending" : "calendar.filter.all");
-const badgeLabel = (badge: string): string | undefined => badge === "series_premiere" ? translate("calendar.badge.series_premiere") : badge === "season_premiere" ? translate("calendar.badge.season_premiere") : badge === "finale" ? translate("calendar.badge.finale") : undefined;
+const BADGE_KEYS = {
+    series_premiere: "calendar.badge.series_premiere",
+    season_premiere: "calendar.badge.season_premiere",
+    finale: "calendar.badge.finale",
+    digital: "calendar.badge.digital",
+    physical: "calendar.badge.physical",
+} as const;
+const badgeLabel = (badge: string): string | undefined => Object.hasOwn(BADGE_KEYS, badge) ? translate(BADGE_KEYS[badge as keyof typeof BADGE_KEYS]) : undefined;
 const CALENDAR_ICON = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="9" width="38" height="34" rx="4"/><path d="M5 19h38M15 3v12M33 3v12M24 25v8m0 4v1"/></svg>';
 const MOON_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 18A9 9 0 0 1 7 4a9 9 0 1 0 13 12zM18 1l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg>';
 
 function eventCard(event: CalendarEvent, key: string, timezone: string, context: ViewContext): FocusItem {
     const destination = calendarDestination(event);
-    const item = actionButton(key, "", () => { if (destination !== undefined) context.open(destination); });
+    const item = actionButton(key, "", () => context.open(destination));
     item.element.className = "browse-card calendar-event";
     const art = artwork("browse-art", event.posterUrl, context.baseUrl, defaultArtwork(artworkSymbol(event.type)));
     const time = eventTime(event, timezone);
@@ -47,10 +54,9 @@ function eventCard(event: CalendarEvent, key: string, timezone: string, context:
     item.element.appendChild(art);
     item.element.appendChild(el("span", "browse-card-title", event.title));
     const number = event.seasonNumber === undefined ? undefined : event.type === "season_premiere" ? translate("calendar.season", { season: integerText(event.seasonNumber) }) : event.type === "episode" && event.episodeNumber !== undefined ? translate("catalog.episodeCaption", { season: String(event.seasonNumber), episode: String(event.episodeNumber) }) : undefined;
-    const metadata = [number, event.type === "episode" ? event.episodeTitle : undefined, event.type === "movie" ? translate("calendar.movie") : undefined, destination === undefined ? "Details unavailable for this event type" : undefined].filter(value => value !== undefined && value !== "");
-    item.element.appendChild(el("span", "browse-card-subtitle", metadata.join(" · ")));
-    item.element.setAttribute("aria-label", [event.title, ...metadata, time, ...badges, event.watched ? translate("calendar.watched") : undefined].filter(Boolean).join(" · "));
-    if (destination === undefined) item.element.setAttribute("aria-disabled", "true");
+    const metadata = [number, event.type === "episode" ? event.episodeTitle : undefined, event.type === "movie" ? translate("calendar.movie") : undefined].filter(value => value !== undefined && value !== "");
+    if (metadata.length > 0) item.element.appendChild(el("span", "browse-card-subtitle", metadata.join(" · ")));
+    item.element.setAttribute("aria-label", [event.title, ...metadata, time, ...badges, event.watched ? translate("calendar.watched") : undefined].filter(Boolean).join(", "));
     item.element.setAttribute("data-content-id", event.contentId);
     const type = event.type === "season_premiere" ? "season" : event.type === "movie" || event.type === "episode" ? event.type : "unknown";
     return mediaItem(item, { id: event.contentId, title: event.title, type, played: event.watched }, context);
@@ -96,7 +102,9 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         }) };
     });
     const days = dates.map(date => {
-        const label = calendarDateLabel(date, "short");
+        const hasEvents = state.data !== undefined && shelves.some(shelf => shelf.date === date && shelf.items.length > 0);
+        const dayText = calendarDateLabel(date, "long", "long");
+        const label = hasEvents ? translate("calendar.dayHasEvents", { day: dayText }) : dayText;
         const item = actionButton(`day:${date}`, label, () => {
             state.selectedDay = date;
             const shelf = shelves.find(shelf => shelf.date >= date && shelf.items.length > 0) ?? [...shelves].reverse().find(shelf => shelf.date < date && shelf.items.length > 0);
@@ -111,7 +119,6 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
         item.element.textContent = "";
         item.element.append(el("span", "calendar-weekday", abbreviatedWeekday(dayDate(date))), el("span", "calendar-day-number", new Intl.DateTimeFormat(shownLocale(), { day: "numeric" }).format(dayDate(date))));
         if (state.data !== undefined) {
-            const hasEvents = shelves.some(shelf => shelf.date === date && shelf.items.length > 0);
             item.element.setAttribute("data-has-events", String(hasEvents));
             // Apple always lays out the 8pt dot, clear when the day has no events, so the digit stays put.
             const dot = el("span", hasEvents ? "calendar-day-mark calendar-event-dot" : "calendar-day-mark");
@@ -150,8 +157,6 @@ function calendarContent(state: CalendarState, handlers: CalendarHandlers): View
             const page = el("div", "calendar-loading");
             page.tabIndex = -1;
             page.setAttribute("data-focus", "calendar-page");
-            page.setAttribute("aria-label", "Loading Calendar");
-            page.setAttribute("role", "status");
             content.push(page);
             zones.push({ id: "status", layout: "row", items: [{ key: "calendar-page", element: page }] });
         }
