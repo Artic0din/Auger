@@ -2569,6 +2569,12 @@ test("hub preview drops unavailable discover progress, appends reason or targets
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Declined · Indexer Timeout", "humanized last_error token appended");
         await button(tv, "multi-target").focus();
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading · 1080p downloading · 4K queued", "multi-target summary appended");
+        const fitsCopy = await tv.page.evaluate(() => {
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return copy !== undefined && progress !== undefined && progress.right <= copy.right + 1;
+        });
+        assert.equal(fitsCopy, true, "preview progress stays inside the hero copy width");
         await button(tv, "single-target").focus();
         await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading", "single-target summary omitted");
 
