@@ -2,7 +2,7 @@ import type { NativeSession } from "../session/session.ts";
 import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
 import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
-import { FocusHost, type FocusItem, type FocusTarget } from "./browseFocus.ts";
+import { FocusHost, type FocusItem, type FocusTarget, type Zone } from "./browseFocus.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { remoteKey } from "./keys.ts";
@@ -184,7 +184,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const rowFocus = (): FocusTarget => ({ zone: "settings-rows", key: returnRow });
     const back = (): void => {
         if (confirmingPlaybackReset) { if (state.busy) return; confirmingPlaybackReset = false; pendingPlaybackReset = []; render({ zone: "settings-rows", key: "reset-playback" }); }
-        else if (confirmingAppearanceReset) { confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
+        else if (confirmingAppearanceReset) { if (state.busy) return; confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
         else if (privacy) { privacy = false; render({ zone: "settings-rows", key: "privacy" }); }
         else if (confirmingDiagnosticsSend) { if (diagnosticsSending) return; confirmingDiagnosticsSend = false; render({ zone: "settings-rows", key: "send-diagnostics" }); }
         else if (diagnosticsQr) { diagnosticsQr = false; render({ zone: "settings-rows", key: "share-diagnostics" }); }
@@ -282,9 +282,14 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const resetPlayback = async (retry = false): Promise<void> => {
         if (state.busy) return;
         if (retry) {
+            const wasRetryable = state.canRetry;
             const firstKey = pendingPlaybackReset[0];
             await (firstKey === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.retry()) : state.retry());
             if (torn || state.error !== undefined) return;
+            if (!wasRetryable) {
+                pendingPlaybackReset = [];
+                return;
+            }
         }
         while (pendingPlaybackReset.length > 0) {
             const key = pendingPlaybackReset[0];
@@ -295,6 +300,22 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             pendingPlaybackReset.shift();
         }
         if (!torn) back();
+    };
+
+    const presentOverlay = (
+        name: string,
+        buildContent: (background: HTMLElement | undefined) => readonly HTMLElement[],
+        zones: readonly Zone[],
+        initialFocus: FocusTarget,
+    ): void => {
+        if (activeModal !== name) modalPaneTop = paneSnapshot?.querySelector<HTMLElement>(".settings-pane")?.scrollTop ?? 0;
+        const opening = activeModal !== name;
+        activeModal = name;
+        const behind = paneSnapshot?.cloneNode(true);
+        const background = behind instanceof HTMLElement ? behind : undefined;
+        host.show({ name, content: buildContent(background), zones, focus: initialFocus, back }, opening ? initialFocus : undefined);
+        const snapshotPane = background?.querySelector<HTMLElement>(".settings-pane");
+        if (snapshotPane !== null && snapshotPane !== undefined) snapshotPane.scrollTop = modalPaneTop;
     };
 
     const showModal = (name: string, title: string, content: HTMLElement[], controls: FocusItem[], zone = "settings-picker"): void => {
@@ -327,20 +348,38 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         else card.append(list);
         const scrim = el("div", "settings-modal-scrim");
         scrim.appendChild(card);
-        if (activeModal !== name) modalPaneTop = paneSnapshot?.querySelector<HTMLElement>(".settings-pane")?.scrollTop ?? 0;
-        const background = paneSnapshot?.cloneNode(true) as HTMLElement | undefined;
-        if (background !== undefined) {
-            background.inert = true;
-            background.setAttribute("aria-hidden", "true");
-            background.querySelectorAll("[data-focus]").forEach(node => node.removeAttribute("data-focus"));
-        }
         const selected = controls.find(item => item.element.getAttribute("aria-checked") === "true") ?? controls[0];
-        const initialFocus = { zone, key: selected?.key ?? "" };
-        const opening = activeModal !== name;
-        activeModal = name;
-        host.show({ name, content: [...(background === undefined ? [] : [background]), scrim], zones: [{ id: zone, layout: "column", items: controls }], focus: initialFocus, back }, opening ? initialFocus : undefined);
-        const snapshotPane = background?.querySelector<HTMLElement>(".settings-pane");
-        if (snapshotPane !== null && snapshotPane !== undefined) snapshotPane.scrollTop = modalPaneTop;
+        presentOverlay(name, (background) => {
+            if (background !== undefined) {
+                background.inert = true;
+                background.setAttribute("aria-hidden", "true");
+                background.querySelectorAll("[data-focus]").forEach(node => node.removeAttribute("data-focus"));
+            }
+            return [...(background === undefined ? [] : [background]), scrim];
+        }, [{ id: zone, layout: "column", items: controls }], { zone, key: selected?.key ?? "" });
+    };
+
+    const showAlertDialog = (options: {
+        readonly name: string;
+        readonly id: string;
+        readonly title: string;
+        readonly message: string;
+        readonly confirm: FocusItem;
+        readonly cancel: FocusItem;
+        readonly retry?: readonly FocusItem[];
+    }): void => {
+        const controls = [options.confirm, options.cancel, ...(options.retry ?? [])];
+        presentOverlay(options.name, (background) => centredDialog({
+            style: "alert",
+            id: options.id,
+            title: options.title,
+            message: options.message,
+            ...(state.busy ? { status: state.loaded ? translate("settings.saving") : "Loading settings…" } : {}),
+            ...(state.error === undefined ? {} : { problem: state.error }),
+            buttons: controls.map(control => control.element),
+            destructive: options.confirm.element,
+            behind: background === undefined ? [] : [background],
+        }), [{ id: "settings-confirm", layout: "column", skipDisabled: true, items: controls }], { zone: "settings-confirm", key: options.cancel.key });
     };
 
     const renderPicker = (): void => {
@@ -431,18 +470,48 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (confirmingPlaybackReset) {
             const playbackKeys = devicePlaybackKeys();
             const keys = playbackKeys.filter(key => state.scope(key) === "profile_device");
-            const controls = [button("cancel-playback-reset", translate("common.cancel"), back), button("confirm-playback-reset", translate("settings.subtitles.resetConfirm"), () => {
+            const confirm = button("confirm-playback-reset", translate("settings.profileSettings.useAll"), () => {
                 if (state.busy) return;
                 if (pendingPlaybackReset.length === 0) pendingPlaybackReset = [...keys];
                 void resetPlayback();
-            }), ...(state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void resetPlayback(true); })])];
-            showModal("settings:reset-playback", translate("settings.profileSettings.confirmTitle"), [el("h1", "browse-title", translate("settings.profileSettings.confirmTitle")), el("p", "settings-value", translateTv("settings.profileSettings.resetFooterAppleTv")), ...feedback()], controls);
+            });
+            const cancel = actionButton("cancel-playback-reset", translate("common.cancel"), back);
+            if (state.busy) cancel.element.setAttribute("aria-disabled", "true");
+            // TVPlaybackSettingsView.swift:48-57: alert over dimmed Settings; destructive Use Profile Settings stacked above Cancel, Cancel focused.
+            showAlertDialog({
+                name: "settings:reset-playback",
+                id: "settings-reset-playback",
+                title: translate("settings.profileSettings.confirmTitle"),
+                message: translateTv("settings.profileSettings.resetFooterAppleTv"),
+                confirm,
+                cancel,
+                retry: state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void resetPlayback(true); })],
+            });
             return;
         }
         if (torn) return;
         if (confirmingAppearanceReset) {
-            const controls = [actionButton("cancel", translate("common.cancel"), back), button("reset", translate("settings.subtitles.resetConfirm"), () => { void state.save(APPEARANCE_KEY, { ...DEFAULT_APPEARANCE }).then(() => { if (!torn && confirmingAppearanceReset && state.error === undefined) back(); }); }), ...retryButton()];
-            host.show({ name: "settings:reset-appearance", content: [el("h1", "browse-title", translate("settings.subtitles.resetTitleApple")), el("p", "settings-value", state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile")), ...feedback(), zoneNode("settings-controls", controls)], zones: [{ id: "settings-picker", layout: "column", items: controls }], focus: { zone: "settings-picker", key: "cancel" }, back });
+            const confirm = button("reset", translate("settings.subtitles.resetConfirm"), () => {
+                if (state.busy) return;
+                void state.save(APPEARANCE_KEY, { ...DEFAULT_APPEARANCE }).then(() => { if (!torn && confirmingAppearanceReset && state.error === undefined) back(); });
+            });
+            const cancel = actionButton("cancel", translate("common.cancel"), back);
+            if (state.busy) cancel.element.setAttribute("aria-disabled", "true");
+            // TVSubtitleSettingsView.swift:25-34: alert over dimmed Settings; destructive Reset stacked above Cancel, Cancel focused.
+            showAlertDialog({
+                name: "settings:reset-appearance",
+                id: "settings-reset-appearance",
+                title: translate("settings.subtitles.resetTitleApple"),
+                message: state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile"),
+                confirm,
+                cancel,
+                retry: state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
+                    const wasRetryable = state.canRetry;
+                    void state.retry().then(() => {
+                        if (!torn && state.error === undefined && wasRetryable && confirmingAppearanceReset) back();
+                    });
+                })],
+            });
             return;
         }
         if (confirmingDiagnosticsSend) {
@@ -1117,7 +1186,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 }
                 const playbackKeys = devicePlaybackKeys();
                 if (playbackKeys.some(key => state.scope(key) === "profile_device")) {
-                    const reset = button("reset-playback", translate("settings.profileSettings.useAll"), () => { confirmingPlaybackReset = true; render(); });
+                    const reset = button("reset-playback", translate("settings.profileSettings.useAll"), () => { if (!state.canRetry) state.error = undefined; confirmingPlaybackReset = true; render(); });
                     reset.element.classList.add("settings-destructive");
                     reset.element.prepend(navigationIcon("reset"));
                     rows.push(reset);
@@ -1138,7 +1207,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 preview.style.alignItems = appearance.position === "top" ? "flex-start" : "flex-end";
                 preview.style.paddingBlock = appearance.position === "lower-third" ? "33px" : "12px";
                 body.appendChild(preview);
-                const reset = button("reset-appearance", translate("settings.subtitles.resetAppearance"), () => { confirmingAppearanceReset = true; render(); });
+                const reset = button("reset-appearance", translate("settings.subtitles.resetAppearance"), () => { if (!state.canRetry) state.error = undefined; confirmingAppearanceReset = true; render(); });
                 rows.push(reset); body.append(reset.element, el("p", "settings-value settings-appearance-footer", `${state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.scopeDeviceOnlyAppleTv") : translate("settings.subtitles.scopeProfile")} ${translate("settings.subtitles.authoredStyle")}`));
                 if (state.definitions.some(def => def.key === APPEARANCE_KEY && def.device)) {
                     const device = state.scope(APPEARANCE_KEY) === "profile_device";

@@ -4,7 +4,7 @@ The Skyline For You dropdown opens Watchlist and Favorites; the profile dropdown
 Watchlist and Favorites retain the selected underlying root tab.
 Their first Back focuses that tab while the list remains; the second leaves the list with the menu closed.
 Saved lists append 24-card server pages using opaque continuations.
-Favorites filters Movies and TV Shows locally without changing stored list order.
+Favorites filters Movies, TV Shows, and (when audiobooks are shown in navigation and search) Audiobooks locally without changing stored list order.
 History appends unfiltered 60-card catalog pages and uses the TV safe area plus 48-point content padding.
 All lists preserve native source ordering.
 Moving focus never fetches data.
@@ -24,8 +24,8 @@ A failed page turn preserves the loaded page and retries the requested continuat
 An invalid cursor clears the obsolete window and Try again starts at page one.
 Profile authority changes cancel requests and remove all personal-page data with the browse owner.
 
-Favorites and Watchlist read the personal-list capability before querying.
-An unsupported or disallowed capability has an explicit unavailable state.
+Favorites and Watchlist read their endpoints directly without calling `/capabilities/personal-lists`, matching Apple TV.
+Watchlist and Favorites error views omit Go Back because those destinations open as root pages under the top bar; History stays pushed and retains Go Back.
 Malformed responses and transport/server failures offer Try again.
 `membership_supported` describes item membership reads, so it does not gate catalog list queries.
 List absence never establishes that an item is not a member.
@@ -46,6 +46,6 @@ Apple passes overlay data through `MediaCard.posterImage` on all three pages; ov
 The existing session supplies profile and PIN proof headers.
 `GET /history` has a different response shape and is not consumed here.
 
-`src/ui/personalLists.ts` owns read-only capability checks, page queries, and list rendering; Details owns item mutations and membership confirmation.
+`src/ui/personalLists.ts` owns personal list page queries, section filters, and list rendering; Details owns item mutations and membership confirmation.
 Personal pages preserve the `item` route identity and refresh their current page on Back.
 Desktop Chromium validates behavior, bounded DOM, and focus geometry; see [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for Chromium 108, signed `.wgt`, and physical-TV proof boundaries.

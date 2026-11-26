@@ -22,6 +22,7 @@ const SURFACES: readonly (readonly [string, string, string])[] = [
     ["PIN status", '<p id="s" class="pin-status-error">Incorrect PIN</p>', SILO_ERROR_INK],
     ["inline note on a browse page", '<p id="s" class="browse-text browse-error">Could not load title information.</p>', SILO_ERROR_INK],
     ["profile alert text", '<div class="profiles-flow"><div class="signin-alert"><p id="s" class="signin-alert-text signin-error">Could not save.</p></div></div>', SILO_ERROR_INK],
+    ["settings alert text", '<div class="browse settings"><div class="signin-alert"><p id="s" class="signin-alert-text signin-error">Could not save.</p></div></div>', SILO_ERROR_INK],
     ["player completion failure text", '<div class="player-error"><p id="s" class="player-error-text">Could not confirm playback.</p></div>', SILO_ERROR_INK],
     ["player error wall text (PlayerView.errorView)", '<div class="player-error player-error-wall"><p id="s" class="player-error-text">Can\'t reach the server.</p></div>', WHITE],
     ["player error wall mark", '<div class="player-error player-error-wall"><div id="s" class="player-error-mark"></div></div>', SILO_ERROR],

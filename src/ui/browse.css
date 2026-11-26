@@ -1416,7 +1416,7 @@ svg.library-empty-icon { width: auto; }
 .browse .signin-alert { z-index: 21; }
 /* The page under the alert at .55 opacity (dialog-behind-dimmed), as a layer so cached page nodes stay untouched. */
 .details-alert-dim { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); }
-.browse .signin-alert .signin-actions .browse-button { flex: 1; height: 66px; margin: 0; padding: 0 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: 30px; box-shadow: none; }
+.browse .signin-alert .signin-actions .browse-button { flex: 1; min-height: 66px; height: auto; margin: 0; padding: 12px 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: 30px; line-height: 1.2; text-align: center; box-shadow: none; }
 .browse .signin-alert .signin-actions .browse-button:focus { background: #fff; color: #000; }
 /* tvOS stacks a two-button alert: the destructive Discard Held Change in system red above OK. */
 .browse .signin-alert .signin-actions:has(> .skyline-destructive) { flex-direction: column; gap: 16px; }
