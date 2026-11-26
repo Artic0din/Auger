@@ -18,11 +18,12 @@ import { createRequests } from "./requestsModule.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
+import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { ShowAudiobooks } from "./audiobookPreference.ts";
 import { boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
-import { DetailsState } from "./detailsState.ts";
+import { audiobookItemDetail, DetailsState } from "./detailsState.ts";
 import { NotInterestedStore } from "./notInterestedStore.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
@@ -42,7 +43,7 @@ import { homeRows, removingDismissed, removingNotInterested, removingNotInterest
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
-import { personalEndCanReenter, personalListCapability, readPersonalPage, type PersonalFilter } from "./personalLists.ts";
+import { availablePersonalFilters, matchesPersonalFilter, personalEndCanReenter, readPersonalPage, resolvePersonalFilter, type PersonalFilter } from "./personalLists.ts";
 import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
 import type { Arrival, FocusReader } from "./browseEnv.ts";
 import type { BrowseSignal } from "./browseSignals.ts";
@@ -356,11 +357,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 else if (entry.kind === "calendar") entry.stale = true;
                 return;
             case "title.personal":
+                if (entry.kind === "audiobook") entry.stale = true;
                 if (entry.kind === "calendar" || (entry.kind === "library" && entry.discovery?.mode === "Browse")) entry.stale = true;
                 return;
             case "title.watched":
                 if (entry === signal.source) { entry.stale = true; return; }
                 if (entry.kind === "home" || entry.kind === "for_you" || isSectionRoute(entry) || entry.kind === "calendar" || (entry.kind === "library" && entry.discovery?.mode === "Browse")) entry.stale = true;
+                if (entry.kind === "audiobook" && entry.id === signal.id) entry.stale = true;
                 if (entry.kind === "season" && entry.seriesId === signal.seriesId && (signal.type !== "season" || entry.seasonNumber === signal.seasonNumber)) entry.stale = true;
                 if (entry.kind === "item") {
                     const covered = entry.data?.detail;
@@ -460,6 +463,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const discardVisitedDetails = (id: string): boolean => {
         if (detailWork?.detail.id === id) { detailWork.stop(); detailWork = undefined; }
         cache.discard(operations.getCatalogItem(id));
+        cache.discard(operations.getAudiobook(id));
         cache.discard(operations.listSeriesSeasons(id));
         return visitedDetails.delete(id);
     };
@@ -1031,8 +1035,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (current.kind === "personal") personalSnapshots.delete(current);
                 }
                 const text = error instanceof CalendarTimezoneError ? error.message : failureText(error, current);
-                if ((current.kind === "item" || current.kind === "home") && error instanceof ApiError && (error.status === 403 || error.status === 404)) {
-                    if (current.kind === "item") discardVisitedDetails(current.id);
+                if ((current.kind === "item" || current.kind === "audiobook" || current.kind === "home") && error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+                    if (current.kind === "item" || current.kind === "audiobook") discardVisitedDetails(current.id);
                     current.data = undefined;
                     if (current.kind === "home") shell.update([]);
                 }
@@ -1080,10 +1084,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const read = <T>(spec: RequestSpec<T>, signal: AbortSignal): Promise<T> => cache.read({ ...spec, signal }, request => session.call({ ...request, profileScoped: true }));
     const routeOffline = (current: Route): boolean => {
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details?.offline === true) return true;
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details?.offline === true) return true;
         const specs = current.kind === "home" ? [operations.listHomeSections(), operations.listUserLibraries(), operations.hiddenLibraries()]
             : current.kind === "for_you" ? [operations.recommendations()]
             : current.kind === "item" ? [operations.getCatalogItem(current.id), operations.listSeriesSeasons(current.id)]
+            : current.kind === "audiobook" ? [operations.getAudiobook(current.id)]
             : current.kind === "season" ? [operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork()), ...(current.id === undefined ? [] : [operations.getCatalogItem(current.id)])] : [];
         return specs.some(spec => cache.isOffline(spec));
     };
@@ -1091,8 +1096,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         offlineRefreshAt = undefined;
         cancelOfflineRefresh();
         if (torn || top() !== current || (!routeOffline(current) && !deferredDetails.has(current))) return;
-        const details = current.kind === "item" || current.kind === "season" ? current.data?.details : undefined;
-        if (playing || foreground.busy() || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay) {
+        const details = current.kind === "item" || current.kind === "season" || current.kind === "audiobook" ? current.data?.details : undefined;
+        if (playing || foreground.busy() || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay || details?.alert !== undefined) {
             cancelOfflineRefresh = clock.schedule(() => recoverCachedRoute(current), 15000);
             return;
         }
@@ -1141,9 +1146,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ]).then(([libraries, hidden]) => {
             if (signal.aborted || torn || current.kind !== "home") return;
             homeLibrariesFailed = false;
+            const hadAudiobooks = audiobooksInSearch();
             const visible = visibleLibraries(libraries, hidden);
             rememberLibraryTabs(visible);
             pendingHomeLibraries = visible;
+            const audiobooksChanged = audiobooksInSearch() !== hadAudiobooks;
             // shell.update replaces the nav, including a focused tab. Keep the target captured
             // before that replacement so Back from Settings stays on Profiles.
             // Library tabs fill the bar while Home is still the empty loading page (TVMainTabView
@@ -1152,6 +1159,20 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (current.data !== undefined) current.data = { ...current.data, libraries: visible };
             shell.update(visible);
             const shown = top();
+            if (audiobooksChanged && shown?.kind === "personal" && shown.source === "favorites") {
+                const resolved = resolvePersonalFilter(shown.filter, audiobooksInSearch());
+                if (resolved !== shown.filter) {
+                    personalSnapshots.delete(shown);
+                    shown.pages = newPages();
+                    shown.pendingIndex = undefined;
+                    shown.elsewhere = false;
+                    shown.filter = resolved;
+                    loadPersonal(shown, true, false);
+                } else if (shown.pages.page === undefined || shown.pages.page.items.length === 0) {
+                    shown.elsewhere = false;
+                    loadPersonal(shown, true, false);
+                }
+            }
             const shownShell = shown?.kind === "home" || shown?.kind === "for_you" || shown?.kind === "library" || shown?.kind === "personal" || shown?.kind === "calendar";
             // The page in front has to take the new buttons. Calendar and For You can open
             // before this read finishes (TVMainTabView reconcileVisibleRootsChange, TVMainTabView.swift:1065).
@@ -1203,7 +1224,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const detailsChanged = (current: Route, returnKey?: string): void => {
-        if (current.kind === "item" || current.kind === "season") {
+        if (current.kind === "item" || current.kind === "season" || current.kind === "audiobook") {
             const details = current.data?.details;
             for (const owner of details?.seasonStates.values() ?? []) if (owner.pending) invalidateWatched(current, owner.detail);
             if (details?.detail.type === "episode" && (details.audioPreference.pending || details.subtitlePreference.pending)) {
@@ -1216,7 +1237,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 browseStack.publish({ kind: "title.personal" });
             }
         }
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details?.changes.get("watched")?.pending) {
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details?.changes.get("watched")?.pending) {
             invalidateWatched(current, current.data.details.detail);
         }
         if (top() !== current) return;
@@ -1235,7 +1256,22 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const retry = focus?.key === "retry-episodes" && series?.failed;
             render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
         }
-        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && !foreground.busy()) queueMicrotask(() => recoverCachedRoute(current));
+        if (deferredDetails.has(current) && (current.kind === "item" || current.kind === "audiobook") && current.data?.details?.panel === undefined && current.data?.details?.alert === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && !foreground.busy()) queueMicrotask(() => recoverCachedRoute(current));
+    };
+
+    const createAudiobookDetails = (current: Extract<Route, { kind: "audiobook" }>, book: Audiobook): DetailsState => {
+        const details = new DetailsState(
+            audiobookItemDetail(book),
+            session,
+            returnKey => detailsChanged(current, returnKey),
+            (value, signal) => refreshWatched(current, value, signal),
+            personalPending,
+        );
+        details.presentsAlerts = true;
+        details.onAudiobookRefreshed = refreshed => {
+            if (current.data !== undefined) current.data.book = refreshed;
+        };
+        return details;
     };
 
     const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail, artwork: Readonly<Record<string, string>>): DetailsState => {
@@ -1355,31 +1391,37 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const loadPersonal = (current: Extract<Route, { kind: "personal" }>, quiet: boolean, append: boolean): void => {
         const previous = personalSnapshots.get(current);
         load(current, async signal => {
-            const capability = current.source === "history" ? undefined : append && current.capability !== undefined ? current.capability : await read(personalListCapability(), signal);
-            const blocked = capability !== undefined && (!capability.allowed || capability.state !== "available");
-            if (blocked) return { capability, snapshot: undefined as SectionSnapshot | undefined, elsewhere: false };
+            const audiobooksEnabled = audiobooksInSearch();
+            const activeFilter = resolvePersonalFilter(current.filter, audiobooksEnabled);
+            const filterChanged = activeFilter !== current.filter;
+            current.filter = activeFilter;
+            if (filterChanged) personalSnapshots.delete(current);
+            const effectiveAppend = append && !filterChanged;
+            const effectivePrevious = filterChanged ? undefined : previous;
+            const otherFilters = current.source === "favorites"
+                ? availablePersonalFilters("favorites", audiobooksEnabled).filter(candidate => candidate !== activeFilter)
+                : [];
+            let elsewhere = effectiveAppend ? current.elsewhere === true : false;
             // The personal query stays at its fenced page size. readSectionCatalog still appends that page when the end is on screen.
-            const snapshot = await readSectionCatalog(previous, append, async cursor => read(readPersonalPage(current.source, current.filter, cursor), signal), signal);
+            const snapshot = await readSectionCatalog(
+                effectivePrevious,
+                effectiveAppend,
+                async cursor => read(readPersonalPage(current.source, activeFilter, cursor, rawItems => {
+                    if (!elsewhere && otherFilters.length > 0 && rawItems.some(card => otherFilters.some(other => matchesPersonalFilter(card, other)))) {
+                        elsewhere = true;
+                    }
+                }), signal),
+                signal,
+            );
             if (snapshot.unavailable) throw new ApiError({ kind: "http", status: 404, retryAfterSeconds: undefined });
-            let elsewhere = false;
-            if (!append && current.source === "favorites" && snapshot.page.items.length === 0 && snapshot.page.nextCursor === undefined) {
-                const other = current.filter === "series" ? "movie" : "series";
-                elsewhere = (await readSectionCatalog(undefined, false, async cursor => read(readPersonalPage("favorites", other, cursor), signal), signal)).page.items.length > 0;
-            }
-            return { capability, snapshot, elsewhere };
-        }, ({ capability, snapshot, elsewhere }) => {
+            return { snapshot, elsewhere };
+        }, ({ snapshot, elsewhere }) => {
             const focus = host.focused();
             const oldItems = current.pages.page?.items ?? [];
             const oldIndex = oldItems.findIndex(item => item.id === focus?.key);
-            current.capability = capability;
             current.elsewhere = elsewhere;
             current.error = undefined;
             current.pendingIndex = undefined;
-            if (snapshot === undefined) {
-                personalSnapshots.delete(current);
-                current.pages = newPages();
-                return focus;
-            }
             personalSnapshots.set(current, snapshot);
             current.pages.page = snapshot.page;
             current.pages.index = 0;
@@ -1656,8 +1698,33 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             case "audiobook": {
                 const had = current.data !== undefined;
+                if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, signal => read(operations.getAudiobook(current.id), signal), book => {
-                    current.data = book;
+                    const previous = current.data?.details;
+                    if (previous?.busy || previous?.alert !== undefined) { current.stale = true; deferredDetails.add(current); return; }
+                    const restored = previous ?? visitedDetails.get(current.id);
+                    deferredDetails.delete(current);
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision) {
+                        const played = previous.detail.played ?? book.played;
+                        book = { ...book, played, ...(played ? { position: 0 } : {}) };
+                    }
+                    if (previous !== undefined && quiet && detailWork === previous && previous.changes.size > 0) {
+                        const offline = cache.isOffline(operations.getAudiobook(current.id));
+                        const nextBook = offline ? current.data!.book : book;
+                        const nextDetail = audiobookItemDetail(nextBook);
+                        previous.acceptDetail(nextDetail);
+                        if (nextDetail.played !== undefined) previous.values.set("watched", nextDetail.played);
+                        current.data = { book: nextBook, details: previous };
+                        if (had) return host.focused() ?? current.focus;
+                        return;
+                    }
+                    const details = createAudiobookDetails(current, book);
+                    details.restore(restored);
+                    stopDetails();
+                    current.data = { book, details };
+                    detailWork = details;
+                    details.start("personal");
                     if (had) return host.focused() ?? current.focus;
                 }, quiet || had);
                 return;
@@ -1870,9 +1937,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             current.page.arrive(arrival);
             return;
         }
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details))) {
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details) || current.kind === "audiobook")) {
             detailWork = current.data.details;
-            detailWork.start();
+            detailWork.start(current.kind === "audiobook" ? "personal" : "full");
         }
         if (!hasData(current) || current.stale || current.failure !== undefined) {
             loadRoute(current, hasData(current));
@@ -2266,6 +2333,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         render(open ? undefined : { zone: "actions", key: "chapters" });
     };
 
+    const audiobookDescription = (current: Extract<Route, { kind: "audiobook" }>, open: boolean): void => {
+        if (top() !== current || (current.description === true) === open) return;
+        current.description = open;
+        render(open ? undefined : { zone: "about", key: "about" });
+    };
+
     const mode = (current: Extract<Route, { kind: "library" }>, value: LibraryMode): void => {
         if (current.discovery?.mode === value && hasData(current)) {
             host.focusDefault();
@@ -2300,8 +2373,10 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         retry,
         turn,
         audiobookPicker,
+        audiobookDescription,
         mode,
         personalFilter,
+        audiobooksEnabled: audiobooksInSearch,
         morePersonal,
         signIn: options.onSignOut,
         manageServers: options.onSwitchServer === undefined ? undefined : () => { options.onSwitchServer?.(() => render()); },
@@ -2425,7 +2500,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (source !== "history") clearPersonalRoot();
             const origin = top();
             const selected = source === "history" ? anchor : origin === undefined ? "home" : tabFocus(origin).key;
-            push(newRoute({ kind: "personal", source, anchor: selected, filter: "movie", pages: newPages(), capability: undefined, pendingIndex: undefined }));
+            push(newRoute({ kind: "personal", source, anchor: selected, filter: "movie", pages: newPages(), pendingIndex: undefined }));
             if (origin !== undefined) origin.focus = { zone: "nav", key: selected };
         },
         switchProfile: chooseProfile,
@@ -2474,6 +2549,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const enrichedScene = (): boolean => { const current = top(); return current?.kind === "home" || current?.kind === "for_you" || (current?.kind === "library" && current.discovery?.mode === "Recommended"); };
     shell.details = (card, continuing) => !enrichedScene() ? { line: undefined, badges: undefined } : { line: homeDetails.detailLine(card.id), badges: continuing ? homeDetails.savedFile(card)?.badges : undefined };
     shell.filled = card => enrichedScene() ? homeDetails.filled(card) : card;
+    shell.heroEnrichment = (card, continuing) => ({
+        canLoad: enrichedScene() && card.collection === undefined,
+        state: homeDetails.enrichmentState(card, continuing),
+        artwork: homeDetails.artwork(card),
+    });
     shell.rowChangeRead = () => { if (enrichedScene()) homeDetails.readNow(); };
     // This profile's last bar, or no library tabs when it has none. An empty
     // update here would drop Movies and Series that a later failed read should keep.

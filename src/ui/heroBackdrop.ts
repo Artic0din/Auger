@@ -15,11 +15,36 @@ import { el, onDecoded } from "./screen.ts";
 import { artworkMark } from "./defaultArtwork.ts";
 import type { Clock } from "../api/clock.ts";
 import { documentIsRightToLeft } from "../i18n/direction.ts";
+import type { HeroEnrichmentState } from "./homeEnrichment.ts";
 
 export interface RGB { readonly r: number; readonly g: number; readonly b: number }
 /** One colour for each screen corner, taken from the same quarter of the art. */
 export interface Corners { readonly topLeading: RGB; readonly topTrailing: RGB; readonly bottomTrailing: RGB; readonly bottomLeading: RGB }
 export interface Tints { readonly base: RGB; readonly accent: RGB; readonly shadow: RGB; readonly corners: Corners }
+export type CoverAspect = "poster" | "square";
+
+export interface HeroArtwork {
+    readonly url: string;
+    readonly thumbhash: string | undefined;
+    readonly coverAspect?: CoverAspect | undefined;
+}
+
+export interface HeroArtworkResolutionInput {
+    readonly sectionBackdrop: HeroArtwork | undefined;
+    readonly fallback: HeroArtwork | undefined;
+    readonly prefersEnrichedBackdrop: boolean;
+    readonly canLoadEnrichment: boolean;
+    readonly enrichmentState: HeroEnrichmentState;
+    readonly enrichedBackdrop: HeroArtwork | undefined;
+}
+
+/** Pure hero artwork selection (TVHeroArtworkResolver.resolve in TVFocusMarquee.swift). */
+export function resolveHeroArtwork(input: HeroArtworkResolutionInput): HeroArtwork | undefined {
+    if (!input.prefersEnrichedBackdrop && input.sectionBackdrop !== undefined) return input.sectionBackdrop;
+    if (!input.canLoadEnrichment) return input.sectionBackdrop ?? input.fallback;
+    if (input.enrichmentState !== "completed" && input.enrichmentState !== "failed") return undefined;
+    return input.enrichedBackdrop ?? input.sectionBackdrop ?? input.fallback;
+}
 
 const SAMPLE_EDGE = 24;
 const PALETTE_MAX_PIXEL = 64;
@@ -263,6 +288,108 @@ const WASH_WIDTH = 1920;
 const WASH_HEIGHT = 1080;
 /** `TVHeroAmbientRenderer.pointsPerPixel` (silo-apple 6eea7cf7): the wash is one bitmap at two screen points per pixel. */
 const WASH_POINTS_PER_PIXEL = 2;
+/** `TVRootHeroBackdrop` & `TVHeroAmbientRenderer` framed cover constants (silo-apple 198a3e90). */
+const COVER_HEIGHT = 380;
+const COVER_TOP_INSET = 170;
+const COVER_TRAILING_INSET = 150;
+const COVER_CORNER_RADIUS = 14;
+const GLOW_POINTS_PER_PIXEL = 4;
+const GLOW_SCALE = 1.12;
+const GLOW_SIGMA = 36;
+const GLOW_OPACITY = 0.55;
+const SHADOW_OPACITY = 0.6;
+const SHADOW_BLUR = 70;
+const SHADOW_OFFSET_Y = 18;
+
+export interface CoverFrameRect {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+    readonly radius: number;
+}
+
+/** Where a framed cover sits on the 1920x1080 canvas (TVRootHeroBackdrop.coverFrame). */
+export function coverFrame(aspect: CoverAspect, rtl: boolean): CoverFrameRect {
+    const width = aspect === "square" ? COVER_HEIGHT : COVER_HEIGHT * 2 / 3;
+    const left = rtl ? COVER_TRAILING_INSET : WASH_WIDTH - COVER_TRAILING_INSET - width;
+    return { left, top: COVER_TOP_INSET, width, height: COVER_HEIGHT, radius: COVER_CORNER_RADIUS };
+}
+
+export interface CoverWash {
+    readonly aspect: CoverAspect;
+    readonly rtl: boolean;
+    readonly source: HTMLCanvasElement | HTMLImageElement | undefined;
+}
+
+export interface WashOptions {
+    readonly includesTopTrailing?: boolean | undefined;
+    readonly cover?: CoverWash | undefined;
+}
+
+function roundedRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+    context.beginPath();
+    context.moveTo(x + radius, y);
+    context.arcTo(x + width, y, x + width, y + height, radius);
+    context.arcTo(x + width, y + height, x, y + height, radius);
+    context.arcTo(x, y + height, x, y, radius);
+    context.arcTo(x, y, x + width, y, radius);
+    context.closePath();
+}
+
+function drawCoverEffects(context: CanvasRenderingContext2D, width: number, height: number, cover: CoverWash): void {
+    const frame = coverFrame(cover.aspect, cover.rtl);
+    const source = cover.source;
+    if (source !== undefined && (!(source instanceof HTMLImageElement) || (source.complete && source.naturalWidth > 0))) {
+        const glowCanvas = document.createElement("canvas");
+        glowCanvas.width = Math.round(WASH_WIDTH / GLOW_POINTS_PER_PIXEL);
+        glowCanvas.height = Math.round(WASH_HEIGHT / GLOW_POINTS_PER_PIXEL);
+        const glow = glowCanvas.getContext("2d");
+        if (glow !== null) {
+            const scale = 1 / GLOW_POINTS_PER_PIXEL;
+            const innerW = frame.width * GLOW_SCALE;
+            const innerH = frame.height * GLOW_SCALE;
+            const innerX = frame.left - (innerW - frame.width) / 2;
+            const innerY = frame.top - (innerH - frame.height) / 2;
+            glow.filter = `blur(${GLOW_SIGMA * scale}px)`;
+            try {
+                glow.drawImage(source, innerX * scale, innerY * scale, innerW * scale, innerH * scale);
+                context.save();
+                try {
+                    context.globalAlpha = GLOW_OPACITY;
+                    context.drawImage(glowCanvas, 0, 0, WASH_WIDTH, WASH_HEIGHT);
+                } finally {
+                    context.restore();
+                }
+            } catch {
+                // Cross-origin or broken cover images without CORS fall back cleanly to the wash and shadow.
+            }
+        }
+    }
+
+    const shadowCanvas = document.createElement("canvas");
+    shadowCanvas.width = width;
+    shadowCanvas.height = height;
+    const shadow = shadowCanvas.getContext("2d");
+    if (shadow !== null) {
+        const scale = 1 / WASH_POINTS_PER_PIXEL;
+        const sx = frame.left * scale, sy = frame.top * scale, sw = frame.width * scale, sh = frame.height * scale, sr = frame.radius * scale;
+        shadow.save();
+        shadow.shadowColor = `rgba(0,0,0,${SHADOW_OPACITY})`;
+        shadow.shadowBlur = SHADOW_BLUR * scale;
+        shadow.shadowOffsetY = SHADOW_OFFSET_Y * scale;
+        shadow.fillStyle = "#000";
+        roundedRectPath(shadow, sx, sy, sw, sh, sr);
+        shadow.fill();
+        shadow.restore();
+        shadow.save();
+        shadow.globalCompositeOperation = "destination-out";
+        roundedRectPath(shadow, sx, sy, sw, sh, sr);
+        shadow.fill();
+        shadow.restore();
+        context.drawImage(shadowCanvas, 0, 0, WASH_WIDTH, WASH_HEIGHT);
+    }
+}
 /**
  * `SiloTheme.Skyline.marqueeWashCrossfadeDuration` (silo-apple 648091a7): a new wash blends in over the old one for 0.7 s, longer than
  * the art's 0.24 s swap, so a change of focus drifts the page colours. `.skyline-wash-enter` (browse.css) runs the same 0.7 s.
@@ -300,7 +427,7 @@ function easeInOut(progress: number): number {
  * one small canvas draw instead of a software raster of 1920 x 1080 gradients on the TV (#515); four ellipses replace the earlier base, accent
  * and shadow layers, so the draw does not grow.
  */
-function drawWash(canvas: HTMLCanvasElement, tints: Tints | undefined): void {
+function drawWash(canvas: HTMLCanvasElement, tints: Tints | undefined, options?: WashOptions): void {
     canvas.width = WASH_WIDTH / WASH_POINTS_PER_PIXEL;
     canvas.height = WASH_HEIGHT / WASH_POINTS_PER_PIXEL;
     const context = canvas.getContext("2d");
@@ -308,28 +435,30 @@ function drawWash(canvas: HTMLCanvasElement, tints: Tints | undefined): void {
     context.scale(1 / WASH_POINTS_PER_PIXEL, 1 / WASH_POINTS_PER_PIXEL);
     context.fillStyle = "#000";
     context.fillRect(0, 0, WASH_WIDTH, WASH_HEIGHT);
-    if (tints === undefined) return;
-    const ellipse = (color: RGB, centerX: number, centerY: number): void => {
-        context.save();
-        context.translate(centerX * WASH_WIDTH, centerY * WASH_HEIGHT);
-        context.scale(WASH_REACH * WASH_WIDTH, WASH_REACH * WASH_HEIGHT);
-        const fade = context.createRadialGradient(0, 0, 0, 0, 0, 1);
-        fade.addColorStop(0, cssColor(color, 1));
-        fade.addColorStop(1, cssColor(color, 0));
-        context.fillStyle = fade;
-        context.fillRect(-1, -1, 2, 2);
-        context.restore();
-    };
-    ellipse(tints.corners.bottomTrailing, 1, 1);
-    ellipse(tints.corners.bottomLeading, 0, 1);
-    ellipse(tints.corners.topTrailing, 1, 0);
-    ellipse(tints.corners.topLeading, 0, 0);
+    if (tints !== undefined) {
+        const ellipse = (color: RGB, centerX: number, centerY: number): void => {
+            context.save();
+            context.translate(centerX * WASH_WIDTH, centerY * WASH_HEIGHT);
+            context.scale(WASH_REACH * WASH_WIDTH, WASH_REACH * WASH_HEIGHT);
+            const fade = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+            fade.addColorStop(0, cssColor(color, 1));
+            fade.addColorStop(1, cssColor(color, 0));
+            context.fillStyle = fade;
+            context.fillRect(-1, -1, 2, 2);
+            context.restore();
+        };
+        ellipse(tints.corners.bottomTrailing, 1, 1);
+        ellipse(tints.corners.bottomLeading, 0, 1);
+        if (options?.includesTopTrailing ?? true) ellipse(tints.corners.topTrailing, 1, 0);
+        ellipse(tints.corners.topLeading, 0, 0);
+    }
+    if (options?.cover !== undefined) drawCoverEffects(context, canvas.width, canvas.height, options.cover);
 }
 
-function washBitmap(tints: Tints | undefined): HTMLCanvasElement {
+function washBitmap(tints: Tints | undefined, options?: WashOptions): HTMLCanvasElement {
     const canvas = el("canvas", "skyline-wash-bitmap");
     canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%";
-    drawWash(canvas, tints);
+    drawWash(canvas, tints, options);
     return canvas;
 }
 
@@ -348,7 +477,7 @@ export class HeroWash {
         this.element.setAttribute("aria-hidden", "true");
     }
 
-    show(tints: Tints | undefined, fade: boolean): void {
+    show(tints: Tints | undefined, fade: boolean, options?: WashOptions): void {
         this.cancel();
         // A fade still under way is baked into the bitmap below it, at the opacity it has reached, so a roll of swaps never holds a third full-screen bitmap.
         const [under, entering] = Array.from(this.element.children).slice(-2);
@@ -364,7 +493,7 @@ export class HeroWash {
             }
         }
         const below = Array.from(this.element.children);
-        const next = washBitmap(tints);
+        const next = washBitmap(tints, options);
         this.element.appendChild(next);
         const drop = (): void => { for (const old of below) old.remove(); next.classList.remove("skyline-wash-enter"); };
         if (!fade || below.length === 0) { drop(); return; }
@@ -374,15 +503,15 @@ export class HeroWash {
     }
 
     /** Redraws the newest bitmap with the tint sampled from its image, in place, so a fade under way carries on. */
-    update(tints: Tints | undefined): void {
+    update(tints: Tints | undefined, options?: WashOptions): void {
         const newest = this.element.lastElementChild;
-        if (newest instanceof HTMLCanvasElement) drawWash(newest, tints);
-        else this.show(tints, false);
+        if (newest instanceof HTMLCanvasElement) drawWash(newest, tints, options);
+        else this.show(tints, false, options);
     }
 }
 
 /** Where a shared wash takes one backdrop's tint: first the cached or ThumbHash tint, then the one sampled from the image. */
-export type WashSink = (tints: Tints | undefined, sampled: boolean) => void;
+export type WashSink = (tints: Tints | undefined, sampled: boolean, options?: WashOptions) => void;
 
 /** The artwork frame's box (browse.css `.skyline-art-frame`): its bitmaps keep this shape. */
 const ART_FRAME_WIDTH = 1228.8;
@@ -437,6 +566,78 @@ export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTML
     return canvas;
 }
 
+function attachTintSampling(image: HTMLImageElement, url: string, cache: Map<string, Tints>, apply: (tints: Tints) => void): void {
+    image.addEventListener("load", () => {
+        const cached = cache.get(url);
+        if (cached !== undefined) { apply(cached); return; }
+        const commit = (tints: Tints | undefined): void => {
+            if (tints === undefined) return;
+            cache.set(url, tints);
+            apply(tints);
+        };
+        const local = sampleImage(image);
+        if (local !== undefined) { commit(local); return; }
+        // Keep the visible image credential-free and usable when the server refuses CORS sampling.
+        const sample = new Image();
+        sample.crossOrigin = "anonymous";
+        sample.referrerPolicy = "no-referrer";
+        sample.addEventListener("load", () => commit(sampleImage(sample)));
+        sample.src = url;
+    });
+}
+
+function appendMissingMark(frame: HTMLElement): void {
+    const missing = el("div", "hero-art-missing");
+    missing.appendChild(artworkMark("film", "hero-art-glyph"));
+    frame.appendChild(missing);
+}
+
+/**
+ * A framed cover standing in for a missing backdrop (TVRootHeroBackdrop.coverImage in silo-apple 198a3e90).
+ */
+export function heroCover(url: string, thumbhash: string | undefined, aspect: CoverAspect, cache: Map<string, Tints>, sink: WashSink): HTMLElement {
+    const root = el("div", "skyline-hero-cover");
+    const frame = el("div", "skyline-cover-frame");
+    frame.dataset.aspect = aspect;
+    const rtl = documentIsRightToLeft();
+    const initialTints = cache.get(url) ?? sampleThumbhash(thumbhash);
+    const preview = thumbhashCanvas(thumbhash, "skyline-cover-thumbhash");
+    if (preview !== undefined) frame.appendChild(preview);
+    let latestTints = initialTints;
+    let glowSource: HTMLCanvasElement | HTMLImageElement | undefined = preview;
+    const notify = (tints: Tints | undefined, sampled: boolean): void => {
+        latestTints = tints ?? latestTints;
+        sink(latestTints, sampled, { includesTopTrailing: true, cover: { aspect, rtl, source: glowSource } });
+    };
+    const image = el("img", "skyline-cover-image");
+    image.alt = "";
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener("load", () => {
+        glowSource = image;
+        notify(cache.get(url) ?? latestTints, true);
+    });
+    attachTintSampling(image, url, cache, tints => {
+        glowSource = image;
+        notify(tints, true);
+    });
+    frame.dataset.art = "loading";
+    onDecoded(image, () => { frame.dataset.art = "loaded"; });
+    image.addEventListener("error", () => {
+        frame.dataset.art = "failed";
+        image.remove();
+        appendMissingMark(frame);
+    });
+    image.src = url;
+    if (image.complete && image.naturalWidth > 0) {
+        frame.dataset.art = "cached";
+        glowSource = image;
+    }
+    notify(initialTints, false);
+    frame.appendChild(image);
+    root.appendChild(frame);
+    return root;
+}
+
 /**
  * The backdrop for one marquee selection: the tint wash, the masked art block and the top scrim. Tints
  * already sampled for the URL apply at once; otherwise they follow the image's load.
@@ -446,7 +647,11 @@ export function heroPlaceholder(encoded: string | undefined, rtl: boolean): HTML
 export function heroBackdrop(url: string, thumbhash: string | undefined, cache: Map<string, Tints>, detail = false, surface = false, sink?: WashSink): HTMLElement {
     const root = el("div", "skyline-hero-backdrop");
     const wash = el("div", "skyline-tint-wash");
-    const paint = (tints: Tints | undefined, sampled = false): void => { if (sink === undefined) wash.style.background = washBackground(tints, detail); else sink(tints, sampled); };
+    const washOptions: WashOptions | undefined = sink === undefined ? undefined : { includesTopTrailing: false };
+    const paint = (tints: Tints | undefined, sampled = false): void => {
+        if (sink === undefined) wash.style.background = washBackground(tints, detail);
+        else sink(tints, sampled, washOptions);
+    };
     paint(cache.get(url) ?? sampleThumbhash(thumbhash));
     if (sink === undefined) root.appendChild(wash);
     if (url === "") return root;
@@ -454,22 +659,7 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
     const image = el("img", "skyline-backdrop");
     image.alt = "";
     image.referrerPolicy = "no-referrer";
-    image.addEventListener("load", () => {
-        if (cache.has(url)) return;
-        const apply = (tints: Tints | undefined): void => {
-            if (tints === undefined) return;
-            cache.set(url, tints);
-            paint(tints, true);
-        };
-        const local = sampleImage(image);
-        if (local !== undefined) { apply(local); return; }
-        // Keep the visible image credential-free and usable when the server refuses CORS sampling.
-        const sample = new Image();
-        sample.crossOrigin = "anonymous";
-        sample.referrerPolicy = "no-referrer";
-        sample.addEventListener("load", () => apply(sampleImage(sample)));
-        sample.src = url;
-    });
+    attachTintSampling(image, url, cache, tints => paint(tints, true));
     if (surface) {
         frame.classList.add("hero-art-surface");
         if (sink === undefined) {
@@ -488,7 +678,7 @@ export function heroBackdrop(url: string, thumbhash: string | undefined, cache: 
         }
         frame.dataset.art = "loading";
         onDecoded(image, () => { frame.dataset.art = "loaded"; });
-        image.addEventListener("error", () => { frame.dataset.art = "failed"; image.remove(); const missing = el("div", "hero-art-missing"); missing.appendChild(artworkMark("film", "hero-art-glyph")); frame.appendChild(missing); });
+        image.addEventListener("error", () => { frame.dataset.art = "failed"; image.remove(); appendMissingMark(frame); });
     } else image.addEventListener("error", () => { image.remove(); frame.remove(); root.querySelector(".skyline-top-scrim")?.remove(); });
     image.src = url;
     // A decoded image paints at once, as AsyncImageView's cached path does.

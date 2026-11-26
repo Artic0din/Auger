@@ -12,7 +12,7 @@ import { type CardOverlayPrefs, overlayLayer, watchStatus } from "./cardOverlays
 import { homeCaption } from "./cardPresentation.ts";
 import type { CardMenuOptions, MenuCard } from "./cardActions.ts";
 import type { HomeDismissal } from "../api/detailOperations.ts";
-import { artworkSymbol, defaultArtwork, type DefaultArtworkFactory } from "./defaultArtwork.ts";
+import { artworkMark, artworkSymbol, defaultArtwork, type ArtworkSymbol, type DefaultArtworkFactory } from "./defaultArtwork.ts";
 import { blurEpisodeStill, cardUsesBackdrop, hidesCardImage, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { thumbhashCanvas } from "./heroBackdrop.ts";
 import { el, onDecoded } from "./screen.ts";
@@ -149,24 +149,43 @@ export function exploreAllCard(rowTitle: string, key: string, wide: boolean, onP
     return { key, element };
 }
 
+/** AsyncImageView `.surface` placeholder (`AsyncImageView.swift:242-275, :302`): ThumbHash or `--silo-surface-variant` while loading, with the symbol glyph on failure. */
+export interface SurfaceArtworkPlaceholder { readonly surface: true; readonly symbol: ArtworkSymbol; }
+export const surfaceArtwork = (symbol: ArtworkSymbol = "film"): SurfaceArtworkPlaceholder => ({ surface: true, symbol });
+
+function isSurfacePlaceholder(fallback: string | Node | DefaultArtworkFactory | SurfaceArtworkPlaceholder): fallback is SurfaceArtworkPlaceholder {
+    return typeof fallback === "object" && fallback !== null && "surface" in fallback && fallback.surface === true;
+}
+
 /**
  * An <img> for signed or presigned artwork, or the fallback when it is missing or fails. A `defaultArtwork`
- * factory fills the box as Apple's DefaultArtwork does and is called only when the fallback shows; any
+ * factory fills the box as Apple's DefaultArtwork does and is called only when the fallback shows; a
+ * `surfaceArtwork` placeholder keeps the surface or ThumbHash and adds its faint glyph on failure; any
  * other fallback sits in the text placeholder.
- * A `thumbhash` is AsyncImageView's `.artwork` placeholder (silo-apple 85679e7
+ * A `thumbhash` is AsyncImageView's placeholder (silo-apple 85679e7
  * `Components/Images/AsyncImageView.swift:218-229`, `:338-344`): it shows while the image loads and
- * stays in place of DefaultArtwork when the image is missing.
+ * stays when the image is missing.
  */
-export function artwork(className: string, reference: string | undefined, baseUrl: string, fallback: string | Node | DefaultArtworkFactory, thumbhash?: string): HTMLElement {
+export function artwork(className: string, reference: string | undefined, baseUrl: string, fallback: string | Node | DefaultArtworkFactory | SurfaceArtworkPlaceholder, thumbhash?: string): HTMLElement {
     const box = el("div", className);
     const src = artworkUrl(reference, baseUrl);
     const drawn = typeof fallback === "function";
-    const preview = drawn ? thumbhashCanvas(thumbhash, "browse-art-thumbhash") : undefined;
+    const surface = isSurfacePlaceholder(fallback);
+    const hasSurface = drawn || surface;
+    const preview = hasSurface ? thumbhashCanvas(thumbhash, "browse-art-thumbhash") : undefined;
     if (preview !== undefined) box.appendChild(preview);
     const showFallback = (): void => {
-        if (preview !== undefined) return;
+        if (preview !== undefined && !surface) return;
         box.classList.add("browse-art-missing");
-        if (drawn) {
+        if (surface) {
+            const missing = el("div", "browse-art-surface-missing");
+            missing.setAttribute("aria-hidden", "true");
+            const mark = artworkMark(fallback.symbol, "browse-art-surface-glyph");
+            mark.setAttribute("data-symbol", fallback.symbol);
+            missing.appendChild(mark);
+            if (preview === undefined) box.prepend(missing);
+            else preview.after(missing);
+        } else if (drawn) {
             // Drawn artwork is absolutely placed: first, so badges and progress added to the box stay above it.
             box.prepend(fallback());
         } else {
@@ -175,7 +194,7 @@ export function artwork(className: string, reference: string | undefined, baseUr
             box.appendChild(placeholder);
         }
     };
-    if (drawn) box.classList.add("browse-art-default");
+    if (hasSurface) box.classList.add("browse-art-default");
     if (src === undefined) {
         showFallback();
         return box;

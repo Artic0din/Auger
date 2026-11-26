@@ -71,6 +71,17 @@ test("the server address screen reads in German and carries lang=de", async () =
         await tv.page.fill("#signin-address", "http://");
         await tv.page.locator('[data-focus="connect"]').click();
         await tv.page.getByText(text("setup.error.invalidAddress", "de"), { exact: true }).waitFor();
+
+        const hold = tv.fake.hold("/system/info", true);
+        await tv.page.fill("#signin-address", "silo.example.test");
+        await tv.page.locator('[data-focus="connect"]').click();
+        const connecting = await section(tv, "connecting");
+        assert.equal(await connecting.locator('[data-focus="connect"]').innerText(), text("setup.connecting", "de"));
+        assert.equal(await connecting.locator('[data-focus="cancel"]').innerText(), text("common.cancel", "de"));
+        await connecting.locator('[data-focus="cancel"]').click();
+        hold.release();
+        await tv.eventually(async () => tv.pendingReplies === 0, "released probe settled");
+        await section(tv, "entry");
     });
 });
 

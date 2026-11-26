@@ -1,11 +1,12 @@
-import type { MediaRequest, RequestTitle } from "../contracts/v2/requests.ts";
+import type { MediaRequest, RequestsCapability, RequestTitle } from "../contracts/v2/requests.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, artwork, FAILURE_ICON, lines, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
 import { requestPosterUrl } from "./browseModel.ts";
+import { detailsLoadingView } from "./detailsLoading.ts";
 import { el } from "./screen.ts";
-import { requestProgress } from "./requestProgress.ts";
-import type { RequestPage, RequestPageSnapshot, RequestsSource } from "./requestsModule.ts";
-import { cullToRailBounds, requestActionSpinner, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, TRAY_ICON } from "./requestsScene.ts";
+import { requestProgress, type RequestProgress } from "./requestProgress.ts";
+import { requestFollowTarget, type RequestPage, type RequestPageSnapshot, type RequestsSource } from "./requestsModule.ts";
+import { cullToRailBounds, requestActionSpinner, requestBellIcon, requestBellSlashIcon, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, requestXmarkIcon, TRAY_ICON } from "./requestsScene.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage, failureState, type RequestWrite } from "./errorState.ts";
@@ -27,7 +28,12 @@ const searchHeads = new WeakMap<RequestPage, { readonly head: readonly HTMLEleme
 
 export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string, open: () => void, preview?: (title: RequestTitle | MediaRequest) => void): FocusItem {
     const key = "id" in title ? title.id : `${title.mediaType}:${title.tmdbId}`;
-    const progress = requestProgress(title), label = `${title.title} · ${progress?.short ?? "Not requested"}`;
+    const progress = requestProgress(title);
+    // Apple RequestMediaCard.accessibilityTitle: "Title, 2024, Status" with no placeholder when unrequested.
+    const parts = [title.title];
+    if (title.year !== undefined && title.year > 0) parts.push(integerText(title.year));
+    if (progress !== undefined) parts.push(progress.short);
+    const label = parts.join(", ");
     const item = actionButton(key, label, open);
     item.element.className = "browse-card requests-card";
     item.element.setAttribute("aria-label", label);
@@ -35,13 +41,21 @@ export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string,
     if ("request" in title && progress !== undefined) { const badge = requestPosterBadge(progress); if (badge !== undefined) art.appendChild(badge); }
     const subtitle = el("span", "browse-card-subtitle");
     if (!("request" in title) && progress !== undefined) subtitle.appendChild(requestStatusLabel(progress));
-    else subtitle.textContent = title.year === undefined ? "" : integerText(title.year);
+    else subtitle.textContent = title.year !== undefined && title.year > 0 ? integerText(title.year) : "";
     item.element.replaceChildren(art, el("span", "browse-card-title", title.title), subtitle);
     if (preview !== undefined) item.element.addEventListener("focus", () => preview(title));
     return item;
 }
 
 const browsable = (title: RequestTitle): boolean => title.mediaType === "movie" || title.mediaType === "series";
+
+/** Apple RequestDetailViewModel.canFollow: notify toggle only applies to another viewer's pending or in-flight request. */
+export function canFollowRequest(capability: RequestsCapability, title: RequestTitle, progress: RequestProgress | undefined): boolean {
+    return capability.follow
+        && title.request.reason === "already_requested"
+        && title.request.requestedByViewer === false
+        && (progress?.display === "pending" || progress?.display === "onTheWay");
+}
 
 /** Apple TVPageFocusOwner: an inert page holds focus with no highlight, so the remote always has a target. */
 function pageOwner(page: HTMLElement, label: string): FocusItem {
@@ -79,6 +93,72 @@ function hubPlaceholder(state: RequestPageSnapshot, page: RequestPage, nav: Requ
     return placeholder(node, { id: "page", layout: "row", items: [pageOwner(node, translate(data === undefined ? "requests.loadingSpoken" : "requests.empty"))] });
 }
 
+/** Apple's detail action row (`RequestDetailView.tvActions`): primary morphing pill plus Notify Me / Cancel Request. */
+function detailActions(data: RequestTitle | MediaRequest, state: RequestPageSnapshot, page: RequestPage, nav: RequestsViewNav): { readonly items: FocusItem[]; readonly row: HTMLElement } | undefined {
+    const actions: FocusItem[] = [];
+    const inert = state.writing || state.uncertain || state.busy;
+    const progress = requestProgress(data);
+    // Apple's primary action: one button whose label and style morph, so focus stays put (RequestDetailView.swift:11).
+    const requestAction = (again = false): FocusItem => {
+        const idleKey = again ? "requests.action.requestAgain" : "requests.action.request";
+        const request = actionButton("create", translate(idleKey), () => { if (!inert) page.write("create"); });
+        request.element.classList.add("requests-primary-action");
+        const label = translate(state.action !== "create" ? idleKey : state.unconfirmed ? "requests.reason.request_unconfirmed" : "requests.action.requesting");
+        request.element.setAttribute("aria-label", label);
+        if (state.action !== "create") { request.element.classList.add("requests-interactive-action"); request.element.prepend(requestPlusIcon()); }
+        else if (state.unconfirmed) request.element.replaceChildren(requestStatusLabel({ display: "unavailable", short: label, long: label, completed: 0, current: undefined }));
+        else request.element.replaceChildren(requestActionSpinner(), el("span", "", label));
+        return request;
+    };
+    const secondaryAction = (key: string, label: string, icon: SVGSVGElement, onPress: () => void): FocusItem => {
+        const item = actionButton(key, label, onPress);
+        item.element.classList.add("requests-secondary-action");
+        item.element.setAttribute("aria-label", label);
+        item.element.replaceChildren(icon, el("span", "", label));
+        return item;
+    };
+    if ("request" in data && data.request.requestable) actions.push(requestAction());
+    const followTitle = requestFollowTarget(data, state.detail);
+    if (followTitle !== undefined && canFollowRequest(state.capability, followTitle, requestProgress(followTitle))) {
+        const following = followTitle.request.following;
+        const label = translate(following ? "requests.action.stopNotify" : "requests.action.notify");
+        actions.push(secondaryAction("follow", label, following ? requestBellSlashIcon() : requestBellIcon(), () => { if (!inert) page.write(following ? "unfollow" : "follow"); }));
+    }
+    if (!("request" in data)) {
+        // Apple's canCancel hides Cancel while it runs and until a read settles an unconfirmed one. A list cancel owns the same gate.
+        if (data.profileId === state.profileId && data.outcome === "active" && data.status === "pending" && state.action !== "cancel" && state.actingId === undefined) {
+            actions.push(secondaryAction("cancel", translate("requests.action.cancel"), requestXmarkIcon(), () => { if (!inert) page.write("cancel"); }));
+        }
+    }
+    // A request that ended no longer blocks a new one once the fresh title says so (RequestDetailViewModel.primaryAction, endedRequest).
+    const requestAgain = !("request" in data) && state.detail?.request.requestable === true && (progress?.display === "unavailable" || progress?.display === "needsAttention");
+    if (requestAgain) {
+        const isEnded = progress?.display === "needsAttention" && (state.detail?.request.id === undefined || state.detail.request.id === data.id);
+        actions.unshift(requestAction(isEnded));
+    } else if (progress !== undefined) {
+        const catalogId = data.libraryContentId;
+        const inLibrary = progress.display === "inLibrary" && !!catalogId;
+        const primary = actionButton("status", inLibrary ? translate("requests.action.openInLibrary") : progress.long, () => { if (inLibrary && !inert) nav.openCatalog(catalogId, data.title); });
+        primary.element.classList.add("requests-primary-action");
+        if (inLibrary) primary.element.classList.add("requests-interactive-action");
+        primary.element.dataset.requestDisplay = progress.display;
+        primary.element.replaceChildren(inLibrary ? el("span", "", translate("requests.action.openInLibrary")) : requestStatusLabel(progress, progress.long));
+        primary.element.setAttribute("aria-label", inLibrary ? translate("requests.action.openInLibrary") : progress.long);
+        actions.unshift(primary);
+    }
+    // Disabled buttons leave the focus graph, so Apple keeps both primary and secondary actions focusable and ignores presses (RequestDetailView.swift:301-306, 449-456).
+    if (inert) for (const action of actions) action.element.setAttribute("aria-disabled", "true");
+    if (actions.length === 0) return undefined;
+    const row = zoneNode("browse-actions requests-detail-actions", actions);
+    // Apple shows an unconfirmed write's message once its read has answered.
+    if (state.actionMessage !== undefined && !(state.unconfirmed && state.busy)) {
+        const message = el("p", "requests-action-message", state.actionMessage);
+        message.setAttribute("role", "alert");
+        row.appendChild(message);
+    }
+    return { items: actions, row };
+}
+
 export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
     const state = page.snapshot();
     const source = state.source;
@@ -94,9 +174,17 @@ export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
         banner.setAttribute("role", "status");
         return { ...view, content: [...view.content, banner] };
     };
-    // Apple RequestDetailView: with no page to keep, a failed read is the whole screen.
+    // Apple RequestDetailView: with no page to keep, a failed read is the whole screen, and loading uses TVItemDetailLoadingView.
     const placeholder = hub ? hubPlaceholder(state, page, nav) : detailPage && data === undefined && state.failure !== undefined ? errorPlaceholder(state, page, nav, `requests:${source.kind}`, nav.back) : undefined;
     if (placeholder !== undefined) return withNotice(placeholder);
+    if (detailPage && data === undefined) {
+        return withNotice(detailsLoadingView(
+            { id: source.kind === "request" ? source.id : `${source.title.mediaType}:${source.title.tmdbId}`, title: "" },
+            { baseUrl: nav.baseUrl },
+            nav.back,
+            "requests:loading",
+        ));
+    }
     const content: HTMLElement[] = [];
     const zones: Zone[] = [];
     const openCard = (title: RequestTitle | MediaRequest): void => {
@@ -159,7 +247,7 @@ export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
     if (hub) content.push(preview);
     // A hub with rows keeps them through a failed or running refresh, as Apple's does; a detail's held action says why itself.
     if (!hub && state.failure !== undefined && state.actionMessage === undefined) content.push(...lines([state.failure], "error"));
-    if (!hub && state.busy && !(detailPage && data !== undefined)) content.push(...lines(["Loading requests…"], "info"));
+    if (!hub && state.busy && !(detailPage && data !== undefined)) content.push(...lines([translate("requests.loading")], "info"));
     if (data !== undefined) {
         if ("sections" in data) {
             const mine = state.visibleMine;
@@ -172,7 +260,8 @@ export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
             let eyebrow = true;
             for (const section of data.sections) {
                 if (!section.results.some(browsable)) continue;
-                hubRow(`row:${section.key}`, [...(eyebrow ? [el("p", "requests-discover", translate("requests.hub.discover"))] : []), el("h2", "requests-heading", section.title)], titleItems(section.results));
+                const heading = section.titleKey !== undefined ? translate(section.titleKey) : section.title;
+                hubRow(`row:${section.key}`, [...(eyebrow ? [el("p", "requests-discover", translate("requests.hub.discover"))] : []), el("h2", "requests-heading", heading)], titleItems(section.results));
                 eyebrow = false;
             }
         } else if ("results" in data) {
@@ -189,57 +278,10 @@ export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
             const hero = requestHero(data, baseUrl, metadata, true);
             content.push(hero);
             if (state.detailFailed) content.push(...lines(["Could not load title information. Refresh to try again."], "error"));
-            const actions: FocusItem[] = [];
-            const inert = state.writing || state.uncertain || state.busy;
-            // Apple's primary action: one button whose label and style morph, so focus stays put (RequestDetailView.swift:11).
-            const requestAction = (): FocusItem => {
-                const request = actionButton("create", translate("requests.action.request"), () => page.write("create"));
-                request.element.classList.add("requests-primary-action");
-                const label = translate(state.action !== "create" ? "requests.action.request" : state.unconfirmed ? "requests.reason.request_unconfirmed" : "requests.action.requesting");
-                request.element.setAttribute("aria-label", label);
-                if (state.action !== "create") { request.element.classList.add("requests-interactive-action"); request.element.prepend(requestPlusIcon()); }
-                else if (state.unconfirmed) request.element.replaceChildren(requestStatusLabel({ display: "unavailable", short: label, long: label, completed: 0, current: undefined }));
-                else request.element.replaceChildren(requestActionSpinner(), el("span", "", label));
-                return request;
-            };
-            if ("request" in data) {
-                if (data.request.requestable) actions.push(requestAction());
-                if (state.capability.follow && data.request.id !== undefined && !data.request.requestedByViewer) actions.push(actionButton("follow", data.request.following ? "Unfollow" : "Follow", () => page.write(data.request.following ? "unfollow" : "follow")));
-            } else {
-                // Apple's canCancel hides Cancel while it runs and until a read settles an unconfirmed one. A list cancel owns the same gate.
-                if (data.profileId === state.profileId && data.outcome === "active" && data.status === "pending" && state.action !== "cancel" && state.actingId === undefined) actions.push(actionButton("cancel", "Cancel request", () => page.write("cancel")));
-            }
-            const progress = requestProgress(data);
-            // A request that ended no longer blocks a new one once the fresh title says so (RequestDetailViewModel.primaryAction).
-            const requestAgain = !("request" in data) && state.detail?.request.requestable === true && (progress?.display === "unavailable" || progress?.display === "needsAttention");
-            if (requestAgain) actions.unshift(requestAction());
-            else if (progress !== undefined) {
-                const catalogId = data.libraryContentId;
-                const inLibrary = progress.display === "inLibrary" && !!catalogId;
-                const primary = actionButton("status", inLibrary ? translate("requests.action.openInLibrary") : progress.long, () => { if (inLibrary && !inert) nav.openCatalog(catalogId, data.title); });
-                primary.element.classList.add("requests-primary-action");
-                if (inLibrary) primary.element.classList.add("requests-interactive-action");
-                primary.element.dataset.requestDisplay = progress.display;
-                primary.element.replaceChildren(inLibrary ? el("span", "", translate("requests.action.openInLibrary")) : requestStatusLabel(progress, progress.long));
-                primary.element.setAttribute("aria-label", inLibrary ? translate("requests.action.openInLibrary") : progress.long);
-                actions.unshift(primary);
-            }
-            // A disabled button leaves the focus zones, so the primary action stays focusable and only ignores presses (RequestDetailView.swift:438).
-            if (inert) for (const action of actions) {
-                if (action.element.classList.contains("requests-primary-action")) action.element.setAttribute("aria-disabled", "true");
-                else (action.element as HTMLButtonElement).disabled = true;
-            }
-            if (actions.length > 0) {
-                const row = zoneNode("browse-actions requests-detail-actions", actions);
-                // Apple shows an unconfirmed write's message once its read has answered.
-                if (state.actionMessage !== undefined && !(state.unconfirmed && state.busy)) {
-                    const message = el("p", "requests-action-message", state.actionMessage);
-                    message.setAttribute("role", "alert");
-                    row.appendChild(message);
-                }
-                (hero.querySelector(".requests-hero-copy") ?? hero).appendChild(row);
-                const enabled = actions.filter(action => !(action.element as HTMLButtonElement).disabled);
-                if (enabled.length > 0) zones.push({ id: "mutations", layout: "row", spatial: true, items: enabled });
+            const builtActions = detailActions(data, state, page, nav);
+            if (builtActions !== undefined) {
+                (hero.querySelector(".requests-hero-copy") ?? hero).appendChild(builtActions.row);
+                zones.push({ id: "mutations", layout: "row", spatial: true, items: builtActions.items });
             }
             if ((metadata?.recommendations?.length ?? 0) > 0) {
                 content.push(el("h2", "requests-heading", translate("requests.moreLikeThis")));

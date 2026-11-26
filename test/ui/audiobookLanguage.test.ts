@@ -80,6 +80,9 @@ for (const language of ["de", "ar"]) {
             assert.equal(titles[0], text("detail.audiobook.about", language));
             assert.equal(titles[1], text("detail.audiobook.narrations", language));
             assert.deepEqual(titles.slice(3), [text("detail.audiobook.moreByAuthor", language), text("detail.audiobook.related", language)]);
+            const factLabels = await tv.page.locator(".audiobook-fact-label").allInnerTexts();
+            assert.equal(factLabels.length, 6);
+            assert.equal(factLabels[2], text("detail.facts.publisher", language).toLocaleUpperCase(language));
             assert.equal(plain(await tv.page.locator(".audiobook-rail .browse-card-subtitle").first().innerText()), plain(text("detail.audiobook.bookNumber", language, { number: integerText(1) })));
         });
     });
@@ -92,20 +95,33 @@ for (const language of ["de", "ar"]) {
             assert.equal(await tv.page.locator(".audiobook-picker-title").innerText(), text("detail.audiobook.chapters", language));
             assert.equal(await tv.page.locator(".audiobook-picker").getAttribute("aria-label"), text("detail.audiobook.chapters", language));
             assert.ok(plain(await tv.page.locator(".audiobook-picker-subline").innerText()).includes(plain(text("detail.audiobook.chapterOf", language, { number: integerText(2), total: integerText(3) }))), await tv.page.locator(".audiobook-picker-subline").innerText());
+            assert.equal(plain(await tv.page.locator('[data-focus="chapter-2"] .audiobook-row-title').innerText()), plain(text("detail.audiobook.chapter", language, { number: integerText(3) })));
             assert.equal(await tv.page.locator('[data-focus="chapter-1"] .audiobook-chapter-now').innerText(), text("detail.audiobook.nowBadge", language));
         });
     });
 }
 
-test("in Arabic the page is mirrored: the actions read from the right and Left steps to the next pill", async () => {
+test("in Arabic the page is mirrored: the actions read from the right, Left steps pills, and chapter progress fills left to right", async () => {
     await inLanguage("ar", async tv => {
         await openTide(tv);
         assert.equal(await tv.page.evaluate(() => document.documentElement.getAttribute("dir")), "rtl");
-        const lefts = await tv.page.evaluate(() => ["play", "chapters", "start-over"].map(key => Math.round(document.querySelector(`[data-focus="${key}"]`)?.getBoundingClientRect().left ?? Number.NaN)));
-        assert.ok(lefts[0]! > lefts[1]! && lefts[1]! > lefts[2]!, `Resume is rightmost: ${lefts.join(",")}`);
+        const lefts = await tv.page.evaluate(() => ["play", "chapters", "start-over", "favorite", "finished"].map(key => Math.round(document.querySelector(`[data-focus="${key}"]`)?.getBoundingClientRect().left ?? Number.NaN)));
+        assert.ok(lefts[0]! > lefts[1]! && lefts[1]! > lefts[2]! && lefts[2]! > lefts[3]! && lefts[3]! > lefts[4]!, `Resume is rightmost: ${lefts.join(",")}`);
         await tv.page.locator('[data-focus="play"]').focus();
         await tv.remote(LEFT);
         assert.equal(await tv.focused(), "chapters", "Left goes to the pill drawn on the left");
+
+        await tv.page.locator('[data-focus="chapters"]').click();
+        await tv.page.locator(`.browse[data-view="audiobook:${TIDE}:chapters"]`).waitFor();
+        // The current chapter hides its underline while focused, so move focus before measuring left-to-right progress.
+        await tv.page.locator('[data-focus="chapter-0"]').focus();
+        const bar = await tv.page.locator('[data-focus="chapter-1"]').evaluate(row => {
+            const fill = row.querySelector(".audiobook-chapter-progress");
+            if (fill === null) return null;
+            const r = row.getBoundingClientRect(), f = fill.getBoundingClientRect();
+            return { rowLeft: r.left, rowRight: r.right, fillLeft: f.left, fillRight: f.right };
+        });
+        assert.ok(bar !== null && Math.abs(bar.fillLeft - bar.rowLeft) <= 2 && bar.fillRight < bar.rowRight, `LTR progress grows from left edge: ${JSON.stringify(bar)}`);
     });
 });
 

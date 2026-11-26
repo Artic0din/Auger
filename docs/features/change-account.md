@@ -32,7 +32,7 @@ Desktop Chromium tests establish app behavior only; see [docs/evidence/simulator
 Saved-server follow-up reference: silo-apple `2c03722c3eecee64c74272258190f13e3258d959`.
 `TVChangeAccountView.swift:1` guards this screen with `#if os(tvOS)`.
 Its Select action enters the account pane (`:275-279`), remembering the last card (`:92-94`); Back returns to the rail (`:281-285`).
-The Samsung manual entry adds Back to saved servers and holds Back while connecting, matching the probe guard in `Screens/Auth/TVServerSetupView.swift:286-295`.
+The Samsung manual entry adds Back to saved servers and cancels a running connect on Back, matching `Screens/Auth/TVServerSetupView.swift:272-334`.
 Discovery and nearby-phone setup remain outside this delivery.
 Removal keeps its confirmation focused with a loading label until storage answers; failures offer Back without removing the failed saved entry.
 

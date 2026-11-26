@@ -108,7 +108,7 @@ export class SkylineScroll {
 
     restoreDetailsAnchor(element: HTMLElement, viewport: HTMLElement, immediate = false): boolean {
         // TVDetailFocusScroll pins actions; TVSeriesDetailView pins the primary episode viewport.
-        if (element.closest(".details-editorial, .details-season-chips, .details-episodes") === null) return false;
+        if (element.closest(".details-editorial, .details-season-chips, .details-episodes, .audiobook-actions") === null) return false;
         if (immediate) {
             // Repaints must not restart the hero move from an intermediate scrollTop.
             const previous = this.frames.get(viewport);
@@ -223,7 +223,7 @@ export class SkylineScroll {
     reveal(element: HTMLElement, container: HTMLElement, previous?: Element | null, movingUp?: boolean): void {
         if (element.closest(".settings-categories") !== null) return;
         if (element.closest(".browse-nav, .skyline-selector:not(.details-audio-picker)") !== null) return;
-        const viewport = element.closest<HTMLElement>(".browse-panel-list, .browse-letters, .details-popover-scroll, .details-audio-picker, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings") ?? container;
+        const viewport = element.closest<HTMLElement>(".browse-panel-list, .browse-letters, .details-popover-scroll, .details-audio-picker, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings, .audiobook-description-body") ?? container;
         // TVAlphabetRail.swift:43-44: the open rail scrolls to the focused letter. Entering, its chips are still growing
         // from 10 to 38, so measure the letter where it lands: each open chip is 38 tall, 4 below the one above. The rail draws
         // into the bottom safe area like Apple's ScrollView but reveals within its frame, so its bottom padding stays clear.

@@ -80,6 +80,9 @@ import { test } from "node:test";
 import { ApiError } from "../../src/api/errors.ts";
 import type { ProfileSummary } from "../../src/contracts/v2/wire.ts";
 import type { AuthorityChange, AuthorizedSpec } from "../../src/session/session.ts";
+import { AccountDirectory } from "../../src/session/accounts.ts";
+import { CredentialVault } from "../../src/session/credentialVault.ts";
+import { openSecretStore, type SecretStore } from "../../src/session/secretStore.ts";
 import { SessionError } from "../../src/session/session.ts";
 import { FakeSilo, problem } from "./support/fakeSilo.ts";
 import { connected, type Harness, latestDeviceCode, record, signIn } from "./support/harness.ts";
@@ -549,4 +552,143 @@ test("a media token is refreshed through the shared refresh when about to expire
     h.core.profiles.clear();
     await h.core.session.mediaToken();
     await assert.rejects(h.core.session.mediaToken(signal), (error: unknown) => error instanceof ApiError && error.aborted);
+});
+
+test("aborting connect during session opening rejects with aborted and writes no storage changes", async () => {
+    const h = await connected();
+    await signIn(h);
+    const keyManager = h.keyManager;
+    assert.ok(keyManager !== undefined);
+    const baseStore = openSecretStore(keyManager);
+    const beforeDirectory = h.storage.getItem("silo.native.accounts.v1");
+    let readStarted!: () => void;
+    const waitForRead = new Promise<void>(resolve => { readStarted = resolve; });
+    let releaseRead!: () => void;
+    const gate = new Promise<void>(resolve => { releaseRead = resolve; });
+    let writes = 0;
+    const pausedSecrets: SecretStore = {
+        persistent: true,
+        async read(alias) {
+            readStarted();
+            await gate;
+            return baseStore.read(alias);
+        },
+        async write(alias, value) { writes++; return baseStore.write(alias, value); },
+        async remove(alias) { writes++; return baseStore.remove(alias); },
+    };
+    const trackedStorage = {
+        getItem: (key: string) => h.storage.getItem(key),
+        setItem: (key: string, value: string) => { writes++; h.storage.setItem(key, value); },
+        removeItem: (key: string) => { writes++; h.storage.removeItem(key); },
+    };
+
+    const controller = new AbortController();
+    const pending = connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: trackedStorage,
+        keyManager: undefined,
+        transientAccounts: { secrets: pausedSecrets, storage: trackedStorage },
+        randomBytes: bytes => bytes.fill(0xab),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    }, controller.signal);
+
+    await waitForRead;
+    controller.abort();
+    releaseRead();
+    await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.aborted);
+    assert.equal(writes, 0);
+    assert.equal(h.storage.getItem("silo.native.accounts.v1"), beforeDirectory);
+});
+
+test("aborting legacy migration avoids publishing a row and protects an immediate retry that completes first", async () => {
+    const h = await connected();
+    await signIn(h);
+    const keyManager = h.keyManager;
+    assert.ok(keyManager !== undefined);
+    const baseStore = openSecretStore(keyManager);
+    const id = h.core.accounts.localAccountId;
+    assert.ok(id !== undefined);
+    const saved = await new CredentialVault(baseStore, h.storage, h.fake.origin, id).load();
+    assert.equal(saved.status, "found");
+    await new CredentialVault(baseStore, h.storage, h.fake.origin).save(saved.credential);
+    await new CredentialVault(baseStore, h.storage, h.fake.origin, id).clear();
+    h.storage.removeItem("silo.native.accounts.v1");
+
+    // 1. Cancelling during SecretStore.write on a fresh legacy migration leaves the directory empty.
+    let writeStarted!: () => void;
+    let waitWrite = new Promise<void>(resolve => { writeStarted = resolve; });
+    let releaseWrite!: () => void;
+    let gate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const pausedSecrets: SecretStore = {
+        persistent: true,
+        read: alias => baseStore.read(alias),
+        async write(alias, value) {
+            writeStarted();
+            await gate;
+            return baseStore.write(alias, value);
+        },
+        remove: alias => baseStore.remove(alias),
+    };
+
+    const controller1 = new AbortController();
+    const attempt1 = connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: h.storage,
+        keyManager: undefined,
+        transientAccounts: { secrets: pausedSecrets, storage: h.storage },
+        randomBytes: bytes => bytes.fill(0xaa),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    }, controller1.signal);
+
+    await waitWrite;
+    assert.deepEqual(new AccountDirectory(h.storage, bytes => bytes.fill(0xaa)).list(), []);
+    controller1.abort();
+    releaseWrite();
+    await assert.rejects(attempt1, (error: unknown) => error instanceof ApiError && error.aborted);
+    assert.deepEqual(new AccountDirectory(h.storage, bytes => bytes.fill(0xaa)).list(), []);
+
+    // 2. When a retried connect migrates and selects the account before the cancelled migration write settles, the retry's row stays intact.
+    waitWrite = new Promise<void>(resolve => { writeStarted = resolve; });
+    gate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const controller2 = new AbortController();
+    const pausedRetry = connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: h.storage,
+        keyManager: undefined,
+        transientAccounts: { secrets: pausedSecrets, storage: h.storage },
+        randomBytes: bytes => bytes.fill(0xaa),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    }, controller2.signal);
+
+    await waitWrite;
+    controller2.abort();
+
+    const retry = await connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: h.storage,
+        keyManager: undefined,
+        transientAccounts: { secrets: baseStore, storage: h.storage },
+        randomBytes: bytes => bytes.fill(0xbb),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    });
+    assert.equal(retry.status, "connected");
+    if (retry.status === "connected") assert.equal(retry.restore, "signed_in");
+
+    releaseWrite();
+    await assert.rejects(pausedRetry, (error: unknown) => error instanceof ApiError && error.aborted);
+
+    const directory = new AccountDirectory(h.storage, bytes => bytes.fill(0xbb));
+    assert.equal(directory.list().length, 1);
+    assert.equal(directory.selected, "bb".repeat(16));
+
+    const recovered = await connected({ clock: h.clock, fake: h.fake, keyManager, storage: h.storage });
+    assert.equal(recovered.core.restore, "signed_in");
 });
