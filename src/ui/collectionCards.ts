@@ -38,17 +38,20 @@ export function countLine(count: number, type: string | undefined): string {
     return translate(key, { count, count_text: groupedCount(count) }).toLocaleUpperCase(shownLocale());
 }
 
+const ID_ENCODER = new TextEncoder();
+
 /** The poster with ThumbHash/surface states, or the stacked-cards symbol on a colour taken from the collection's id when empty (TVCollectionPosterCard.swift:69-100). */
 export function collectionArt(face: CollectionFace, className: string, baseUrl: string): HTMLElement {
-    if (artworkUrl(face.posterUrl, baseUrl) !== undefined) {
-        return artwork(className, face.posterUrl, baseUrl, surfaceArtwork("film"), face.posterThumbhash);
+    const poster = face.posterUrl?.trim();
+    if (poster !== undefined && poster !== "" && artworkUrl(poster, baseUrl) !== undefined) {
+        return artwork(className, poster, baseUrl, surfaceArtwork("film"), face.posterThumbhash);
     }
     const fallback = el("span", "collection-stack");
     fallback.setAttribute("data-symbol", "square.stack.fill");
     fallback.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="8.5" y="1.6" width="7" height="2" rx="1"/><rect x="5.8" y="4.6" width="12.4" height="2.2" rx="1.1"/><rect x="3.5" y="8" width="17" height="14.2" rx="3.2"/></svg>';
     const art = artwork(className, "", baseUrl, fallback);
     let hash = 2166136261;
-    for (const byte of new TextEncoder().encode(face.id)) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
+    for (const byte of ID_ENCODER.encode(face.id)) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
     art.style.background = `linear-gradient(to bottom right, hsl(${hash % 360} 33.3333% 31.5%), hsl(${hash % 360} 19.0476% 18.48%))`;
     return art;
 }

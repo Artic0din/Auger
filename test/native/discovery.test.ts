@@ -129,7 +129,7 @@ test("malformed consumed optional members fail and opaque continuation survives 
     }
     const collection = { id: "opaque/字", title: "T", poster_url: "", item_count: 0, poster_is_collage: false,
         library_id: "opaque/1", library_ids: ["opaque/1"], group_id: null };
-    for (const bad of [{ group_id: 7 }, { library_ids: [7] }, { poster_is_collage: null }, { item_count: -1 }, { poster_url: 7 }, { poster_thumbhash: 7 }]) {
+    for (const bad of [{ group_id: 7 }, { library_ids: [7] }, { poster_is_collage: null }, { item_count: -1 }, { poster_url: 7 }, { poster_thumbhash: 7 }, { poster_thumbhash: null }]) {
         assert.throws(() => decodeLibraryCollections({ library_id: "opaque/1", collections: [{ ...collection, ...bad }], groups: [] }), WireError);
     }
     assert.equal(decodeLibraryCollections({ library_id: "opaque/1", collections: [collection], groups: [], extra: true }).collections[0]?.id, "opaque/字");

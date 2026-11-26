@@ -171,22 +171,21 @@ export function artwork(className: string, reference: string | undefined, baseUr
     const src = artworkUrl(reference, baseUrl);
     const drawn = typeof fallback === "function";
     const surface = isSurfacePlaceholder(fallback);
-    const preview = drawn || surface ? thumbhashCanvas(thumbhash, "browse-art-thumbhash") : undefined;
+    const hasSurface = drawn || surface;
+    const preview = hasSurface ? thumbhashCanvas(thumbhash, "browse-art-thumbhash") : undefined;
     if (preview !== undefined) box.appendChild(preview);
     const showFallback = (): void => {
+        if (preview !== undefined && !surface) return;
+        box.classList.add("browse-art-missing");
         if (surface) {
-            box.classList.add("browse-art-missing");
             const missing = el("div", "browse-art-surface-missing");
             missing.setAttribute("aria-hidden", "true");
             const mark = artworkMark(fallback.symbol, "browse-art-surface-glyph");
             mark.setAttribute("data-symbol", fallback.symbol);
             missing.appendChild(mark);
-            box.appendChild(missing);
-            return;
-        }
-        if (preview !== undefined) return;
-        box.classList.add("browse-art-missing");
-        if (drawn) {
+            if (preview === undefined) box.prepend(missing);
+            else preview.after(missing);
+        } else if (drawn) {
             // Drawn artwork is absolutely placed: first, so badges and progress added to the box stay above it.
             box.prepend(fallback());
         } else {
@@ -195,7 +194,7 @@ export function artwork(className: string, reference: string | undefined, baseUr
             box.appendChild(placeholder);
         }
     };
-    if (drawn || surface) box.classList.add("browse-art-default");
+    if (hasSurface) box.classList.add("browse-art-default");
     if (src === undefined) {
         showFallback();
         return box;

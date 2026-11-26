@@ -217,7 +217,7 @@ page("collection group headers and cards match Apple's grid", async tv => {
         const art = node.parentElement?.querySelector(".browse-art")?.getBoundingClientRect();
         return { family: style.fontFamily, weight: style.fontWeight, wrap: style.whiteSpace, overflow: style.textOverflow, size: style.fontSize, gap: art === undefined ? undefined : Math.round(art.top - node.getBoundingClientRect().bottom) };
     });
-    // Monospaced text keeps Apple's points, using the bundled Roboto Mono token as the details popover header does.
+    // Monospaced text keeps Apple's points, using the bundled Roboto Mono token.
     assert.match(header.family, /Roboto Mono/);
     assert.deepEqual({ weight: header.weight, wrap: header.wrap, overflow: header.overflow, size: header.size, gap: header.gap }, { weight: "400", wrap: "nowrap", overflow: "ellipsis", size: "22px", gap: 20 });
     await card.focus();
@@ -231,14 +231,17 @@ page("Collections posters show ThumbHash or surface while loading, film glyph on
     const ART_HASH = "1QcSHQRnh493V4dIh4eXh1h4kJUI";
     let releasePoster: () => void = () => undefined;
     const posterGate = new Promise<void>(resolve => { releasePoster = resolve; });
+    await tv.page.route("**/art/col-ok.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>' }));
     await tv.page.route("**/art/col-hash.svg", async route => { await posterGate; await route.abort(); });
     await tv.page.route("**/art/col-plain.svg", async route => { await posterGate; await route.abort(); });
+    const loaded = { id: "c-ok", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Loaded", poster_url: "/art/col-ok.svg", poster_thumbhash: ART_HASH, item_count: 5, poster_is_collage: false };
     const withHash = { id: "c-hash", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Hashed", poster_url: "/art/col-hash.svg", poster_thumbhash: ART_HASH, item_count: 2, poster_is_collage: false };
     const noHash = { id: "c-plain", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Plain", poster_url: "/art/col-plain.svg", item_count: 3, poster_is_collage: false };
     const missing = { id: "c-empty", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Empty", poster_url: "", item_count: 1, poster_is_collage: false };
+    const whitespace = { id: "c-space", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Space", poster_url: "   ", item_count: 1, poster_is_collage: false };
     catalog.failNext("/library/12/collections", {
         status: 200,
-        body: { library_id: "12", collections: [withHash, noHash, missing], groups: [{ id: "curated", name: "Curated", kind: "admin", sort_mode: "name_asc", sort_order: 0, collections: [withHash, noHash, missing] }], ungrouped: { sort_order: 1, collections: [] } },
+        body: { library_id: "12", collections: [loaded, withHash, noHash, missing, whitespace], groups: [{ id: "curated", name: "Curated", kind: "admin", sort_mode: "name_asc", sort_order: 0, collections: [loaded, withHash, noHash, missing, whitespace] }], ungrouped: { sort_order: 1, collections: [] } },
     });
     await tv.page.locator('[data-focus="movies"]').click();
     await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
@@ -246,17 +249,24 @@ page("Collections posters show ThumbHash or surface while loading, film glyph on
     await tv.page.locator('[data-focus="collection:c-hash"]').waitFor();
     const state = (focusKey: string) => tv.page.locator(`[data-focus="${focusKey}"] .browse-art`).evaluate(art => {
         const style = getComputedStyle(art);
+        const glyph = art.querySelector(".browse-art-surface-glyph");
+        const img = art.querySelector(".browse-art-image");
         return {
-            inlineBg: (art as HTMLElement).style.background,
+            inlineBg: art instanceof HTMLElement ? art.style.background : "",
             bgColor: style.backgroundColor,
             thumbhash: art.querySelectorAll("canvas.browse-art-thumbhash").length,
             img: art.querySelectorAll("img").length,
+            imgLoaded: img !== null && img.classList.contains("is-loaded"),
             stack: art.querySelectorAll(".collection-stack").length,
-            surfaceGlyph: art.querySelector(".browse-art-surface-missing .browse-art-surface-glyph")?.getAttribute("data-symbol") ?? null,
-            surfaceGlyphColor: art.querySelector(".browse-art-surface-glyph") === null ? null : getComputedStyle(art.querySelector(".browse-art-surface-glyph")!).color,
+            surfaceGlyph: glyph?.getAttribute("data-symbol") ?? null,
+            surfaceGlyphColor: glyph === null ? null : getComputedStyle(glyph).color,
         };
     });
     try {
+        await tv.eventually(async () => (await state("collection:c-ok")).imgLoaded, "valid poster loads");
+        const okState = await state("collection:c-ok");
+        assert.equal(okState.stack, 0);
+        assert.equal(okState.surfaceGlyph, null);
         const hashLoading = await state("collection:c-hash");
         assert.equal(hashLoading.inlineBg, "", "no id-hue gradient behind a poster while loading");
         assert.equal(hashLoading.thumbhash, 1, "ThumbHash canvas shows while loading");
@@ -267,9 +277,11 @@ page("Collections posters show ThumbHash or surface while loading, film glyph on
         assert.equal(plainLoading.bgColor, "rgb(14, 15, 18)", "surface variant shows when there is no ThumbHash");
         assert.equal(plainLoading.thumbhash, 0);
         assert.equal(plainLoading.stack, 0);
-        const emptyState = await state("collection:c-empty");
-        assert.match(emptyState.inlineBg, /linear-gradient/);
-        assert.equal(emptyState.stack, 1);
+        for (const emptyKey of ["collection:c-empty", "collection:c-space"]) {
+            const emptyState = await state(emptyKey);
+            assert.match(emptyState.inlineBg, /linear-gradient/);
+            assert.equal(emptyState.stack, 1);
+        }
     } finally { releasePoster(); }
     await tv.eventually(async () => (await state("collection:c-hash")).surfaceGlyph === "film" && (await state("collection:c-plain")).surfaceGlyph === "film", "failed posters show faint film glyph");
     const hashFailed = await state("collection:c-hash");
