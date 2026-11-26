@@ -28,7 +28,7 @@ Mixed-library Movies/Series slices hide Shuffle because the server's library sco
 Collections preserves server groups and order, including opted-in personal collections, in a six-column portrait grid (seven Compact, five Large).
 Each card uses the single poster or collage supplied by the server, without inventing additional posters.
 Standard collection artwork is 260×390 with a 12px radius, 40px column spacing, 60px row spacing, and centered 24px title / 20px metadata captions.
-Missing or failed artwork uses a stack glyph over a stable collection-id gradient.
+Missing artwork uses a stack glyph over a stable collection-id gradient; cards with a poster URL show `poster_thumbhash` or the surface colour while loading and keep it with a faint `film` glyph if the image fails.
 Collection entry focuses the first non-empty group; Back from members restores the collection by id.
 An empty list, or a failed read, shows Apple's “No collections yet” empty state (`TVLibraryCollectionsView.swift:139-151`, `:183-191`).
 Empty members say “Collection is empty”.
@@ -48,7 +48,7 @@ Recommended media previews show at most 20 supported cards; Explore All opens th
 
 The library tabs offer only Apple's three destinations, Recommended, Browse and Collections (`TVLibraryPillRow.swift:7-17`); genre, A–Z and date added are Browse's filter, letter rail and sort.
 Browse's 1920 column, the letter rail and its 32 trailing overflow the screen and centre, as Apple's HStack does at silo-apple `5780c84` (`TVLibraryGridView.swift:98-108`, `TVCatalogGrid.swift:102-143`): the pills and grid start at x55 with the rail closed and slide to x16 as it opens, and the open rail draws on through the bottom safe area.
-The rail's letters, the Sort panel's heading and the filter count use bundled Roboto Mono in place of SF Mono (`app/fonts/README.md`).
+The rail's letters, Collections group headers, the Sort panel's heading and the filter count use bundled Roboto Mono in place of SF Mono (`app/fonts/README.md`).
 Inter substitutes for SF Pro, drawn SVGs replace SF Symbols, CSS scale/shadow replaces native parallax/specular focus, and the dark panel gradient approximates tvOS material.
 The focused Sort direction stays readable instead of copying Apple's low-contrast label, and Filter keeps focus trapped inside its modal.
 All requests use the existing operations/session/NativeHttp owners and active profile authority.
