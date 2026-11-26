@@ -13,6 +13,8 @@ import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 const BACK = 10009;
 const IME_DONE = 65376;
 const KID_PIN = "2468";
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 for (const reduced of [false, true]) {
     for (const key of ["profile:p-kid", "add-profile", "change-server", "signout"]) {
@@ -111,7 +113,7 @@ tvTest("the profile picker uses source-sized circular avatars and centered accou
     assert.equal(geometry.diameter, 220);
     assert.deepEqual(geometry.columns, ["240px", "240px", "240px"]);
     assert.equal(geometry.gap, "44px");
-    assert.equal(geometry.titleSize, "64px");
+    assert.equal(geometry.titleSize, capped(64));
     assert.ok(Math.abs(geometry.center - 960) < .02, "the heading is centered within one CSS subpixel");
     assert.equal(geometry.font.startsWith("Inter"), true);
     assert.equal(geometry.accountWeight, "400");

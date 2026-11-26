@@ -10,6 +10,7 @@ import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
 import { selectLibraryMode } from "./support/library.ts";
+import { ACTIVE, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
@@ -25,10 +26,12 @@ after(async () => { await browser.close(); });
  * draws at the player's subtitle size times 0.5 (`SubtitleAppearancePreview.swift:21,75`). None is a whole point. Text
  * clipped into a 1 px box is hidden from sight too, as Search hides its screen-reader title and label.
  */
-function unscaledText(root: string): string[] {
+function unscaledText(arg: string | readonly [root: string, roles?: readonly Role[]]): string[] {
+    const [root, roles = []] = typeof arg === "string" ? [arg, [] as readonly Role[]] : arg;
     const cap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale"));
     // A missing or broken scale would make every size look whole or none of them.
     if (!Number.isFinite(cap) || cap <= 0) throw new Error(`--silo-sf-cap-scale is not a positive number: ${String(cap)}`);
+    const fractional = roles.filter(([, points]) => Math.abs(points - Math.round(points)) > 0.002);
     const found = new Set<string>();
     for (const node of document.querySelectorAll(`${root}, ${root} *`)) {
         if (node.getClientRects().length === 0 || node.closest(".silo-sr-only, .navigation-avatar-fallback, .card-overlay, .settings-subtitle-preview") !== null) continue;
@@ -44,7 +47,8 @@ function unscaledText(root: string): string[] {
         const size = parseFloat(style.fontSize);
         if (size === 0) continue;
         const points = size / cap;
-        if (Math.abs(points - Math.round(points)) > 0.002) found.add(`${node.tagName.toLowerCase()}.${[...node.classList].join(".")} ${style.fontSize}`);
+        const matchedFractional = fractional.some(([selector, expected]) => node.matches(selector) && Math.abs(points - expected) <= 0.002);
+        if (!matchedFractional && Math.abs(points - Math.round(points)) > 0.002) found.add(`${node.tagName.toLowerCase()}.${[...node.classList].join(".")} ${style.fontSize}`);
     }
     return [...found].sort();
 }
@@ -651,6 +655,247 @@ test("Requests loading, hub, preview, detail, empty and failure states use Apple
 
         assert.deepEqual([...found].sort(), []);
         assert.deepEqual(REQUESTS_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+/** Change Account, Settings › Accounts, and their confirmation/alert dialogs, paths under iosApp/iosApp/. */
+const ACCOUNTS_ROLES: readonly Role[] = [
+    [".accounts-title", 88, "800", "tvOS/Screens/Auth/TVChangeAccountView.swift:110; DesignSystem/Marquee/MarqueeControls.swift:13"],
+    [".accounts-screen > .signin-text", 28, "400", "tvOS/Screens/Auth/TVChangeAccountView.swift:114; DesignSystem/Marquee/MarqueeTV.swift:184,191; DesignSystem/Marquee/MarqueeControls.swift:14"],
+    [".accounts-rail button", 25, "500", "tvOS/Screens/Auth/TVChangeAccountView.swift:164"],
+    [".accounts-plus", 28, "400", "tvOS/Screens/Auth/TVChangeAccountView.swift:138"],
+    [".account-initial", 34, "400", "tvOS/Screens/Auth/TVChangeAccountView.swift:388"],
+    [".account-name", 34, "700", "tvOS/Screens/Auth/TVChangeAccountView.swift:392"],
+    [".account-count", 23, "400", "tvOS/Screens/Auth/TVChangeAccountView.swift:397"],
+    [".account-badge", 18, "600", "tvOS/Screens/Auth/TVChangeAccountView.swift:427"],
+    [".accounts-settings h1", 42, "700", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:97"],
+    [".accounts-settings-header p", 20, "400", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:100"],
+    [".accounts-section-header", 19, "600", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:119; tvOS/Screens/Settings/TVSettingsComponents.swift:436"],
+    [".accounts-settings button", 26, "400", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:156"],
+    [".accounts-row-title", 26, "400", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:156"],
+    [".accounts-row-value", 24, "400", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:161"],
+    [".accounts-settings > p", 20, "400", "tvOS/Screens/Settings/TVAccountsSettingsView.swift:52"],
+    [".skyline-confirm-title", 38, "600", "Components/AccountRemovalConfirmation.swift:31; tvOS/Screens/Settings/TVSettingsComponents.swift:508"],
+    [".skyline-confirm-message", 22, "400", "Components/AccountRemovalConfirmation.swift:31; tvOS/Screens/Settings/TVSettingsComponents.swift:513"],
+    [".confirm-dialog .skyline-confirm-actions button", 24, "600", "Components/AccountRemovalConfirmation.swift:31; tvOS/Screens/Settings/TVSettingsComponents.swift:524,533,546"],
+    [".signin-alert-title", 32, "700", "tvOS system .alert title measured at 32pt bold"],
+    [".signin-alert-text", 25, "400", "tvOS system .alert body measured at 25pt regular"],
+    [".accounts-screen .signin-alert .signin-actions button", 30, "400", "tvOS system .alert action measured at 30pt regular"],
+];
+
+/** Who's watching, PIN entry, Create Profile, and profile error/loading screens, paths under iosApp/iosApp/. */
+const PROFILES_ROLES: readonly Role[] = [
+    [".profile-loading-message", 22, "400", "Screens/Profiles/ProfileSelectionView.swift:281; Components/LoadingView.swift:25; Theme/Typography.swift:31"],
+    [".profile-picker-title", 64, "800", "Screens/Profiles/ProfileSelectionView.swift:369,716"],
+    [".profile-account", 28, "400", "Screens/Profiles/ProfileSelectionView.swift:385; DesignSystem/Marquee/MarqueeControls.swift:14"],
+    [".profile-picker .profile-name", 30, "600", "Screens/Profiles/ProfileTile.swift:33,101,304"],
+    [".profile-remembered", 20, "400", "Screens/Profiles/ProfileTile.swift:34,108"],
+    [".profile-child", 18, "800", "Screens/Profiles/ProfileTile.swift:38,202"],
+    [".profile-add-circle", 66, "300", "Screens/Profiles/ProfileTile.swift:30,291"],
+    [".profile-footer .signin-button", 24.65, "600", "Screens/Profiles/ProfileSelectionView.swift:427,442,450; DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-alert-title", 32, "700", "Screens/Profiles/ProfileSelectionView.swift tvOS .alert title measured at 32pt bold"],
+    [".signin-alert-text", 25, "400", "Screens/Profiles/ProfileSelectionView.swift tvOS .alert body measured at 25pt regular"],
+    [".profiles-flow .signin-alert .signin-button", 30, "600", "Screens/Profiles/ProfileSelectionView.swift tvOS .alert button"],
+    [".pin-name", 38, "700", "Screens/Profiles/PINEntryView.swift:140,231"],
+    [".pin-status", 26, "400", "Screens/Profiles/PINEntryView.swift:152,163,232"],
+    [".pin-key-digit", 44, "400", "Screens/Profiles/PINEntryView.swift:301,329"],
+    [".pin-key-letters", 12.32, "700", "Screens/Profiles/PINEntryView.swift:304,329"],
+    [".profile-pin .pin-cancel:not(:focus)", 24.65, "500", "Screens/Profiles/PINEntryView.swift:115; DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".profile-pin .pin-cancel:focus", 24.65, "600", "Screens/Profiles/PINEntryView.swift:115; DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".profile-create-title", 48, "600", "Screens/Profiles/CreateProfileView.swift:184"],
+    [".profile-create-subtitle", 20, "400", "Screens/Profiles/CreateProfileView.swift:188"],
+    [".profile-create-header .signin-button", 18, "500", "Screens/Profiles/CreateProfileView.swift:197"],
+    [".profile-create-preview .profile-name", 30, "600", "Screens/Profiles/ProfileTile.swift:33,101"],
+    [".profile-create-preview-hint", 17, "400", "Screens/Profiles/CreateProfileView.swift:212"],
+    [".profile-create-label", 13, "600", "Screens/Profiles/CreateProfileView.swift:333"],
+    [".profile-create-section-heading .signin-button", 18, "500", "Screens/Profiles/CreateProfileView.swift:659"],
+    [".profile-style-row .signin-button", 18, "500", "Screens/Profiles/CreateProfileView.swift:844,857"],
+    [".profile-editor .signin-input", 26, "400", "Screens/Profiles/CreateProfileView.swift:267,278; Extensions/ViewExtensions.swift:575; Theme/Typography.swift:28"],
+    [".profile-create-pin-hint", 16, "400", "Screens/Profiles/CreateProfileView.swift:288"],
+    [".profile-create-switch .signin-button", 20, "500", "Screens/Profiles/CreateProfileView.swift:964,974"],
+    [".profile-create-switch-detail", 16, "400", "Screens/Profiles/CreateProfileView.swift:965,977"],
+    [".profile-create-controls > .signin-button", 20, "500", "Screens/Profiles/CreateProfileView.swift:563,964,974"],
+    ['.profile-library-options .signin-button:not([data-focus="libraries-retry"])', 20, "500", "Screens/Profiles/CreateProfileView.swift:580,964,974"],
+    [".profile-library-options .signin-text", 22, "400", "Screens/Profiles/CreateProfileView.swift:572; Theme/Typography.swift:31"],
+    ['.profile-editor [data-focus="libraries-retry"]', 18, "500", "Screens/Profiles/CreateProfileView.swift:574"],
+    [".profile-create-subheading", 22, "400", "Screens/Profiles/CreateProfileView.swift:568; Theme/Typography.swift:31"],
+    [".profile-create-section > .signin-text", 15, "500", "Screens/Profiles/CreateProfileView.swift:630"],
+    ['.profile-editor [data-focus="create-submit"]', 28, "600", "Screens/Profiles/CreateProfileView.swift:315; Extensions/ViewExtensions.swift:416; Theme/Typography.swift:17"],
+    [".profile-error-state .search-state-title", 36, "600", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:27; Theme/Typography.swift:14"],
+    [".profile-error-state .search-state-description", 26, "400", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:32; Theme/Typography.swift:28"],
+    [".profile-error-main .signin-button:not(.profile-error-secondary)", 28, "600", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:40; Extensions/ViewExtensions.swift:416; Theme/Typography.swift:17"],
+    [".profile-error-main .profile-error-secondary", 26, "400", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:48; Theme/Typography.swift:28"],
+    [".profile-error-main .signin-title", 36, "600", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:27; Theme/Typography.swift:14"],
+    [".profile-error-main .signin-text", 26, "400", "Screens/Profiles/ProfileSelectionView.swift:302; Components/ErrorView.swift:32; Theme/Typography.swift:28"],
+];
+
+test("Change Account, Settings Accounts, and their dialogs use Apple's points times the cap scale", async () => {
+    await withSignedInTv(browser, async tv => {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => document.fonts.ready);
+        await tv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        await seedAccounts(tv, 9, [
+            { id: "expired", baseUrl: ACTIVE, username: "expired", profileCount: 1, needsSignIn: true, lastUsedAt: 1 },
+            { id: "x-other", baseUrl: "https://other.example.test", username: "other", profileCount: 2, needsSignIn: false, lastUsedAt: 5 },
+        ]);
+
+        const found = new Set<string>();
+        const seen = new Set<string>();
+        const collect = async (state: string): Promise<void> => {
+            for (const entry of await tv.page.evaluate(unscaledText, ["body", ACCOUNTS_ROLES] as const)) found.add(`${state}: ${entry}`);
+            const roles = await tv.page.evaluate(offRoles, ACCOUNTS_ROLES);
+            for (const entry of roles.off) found.add(`${state}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
+        };
+
+        await openChangeAccount(tv);
+        await tv.page.locator('[data-focus="expired"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "change account settled");
+        await collect("change-account");
+
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "home settled");
+
+        await openSettingsAccounts(tv);
+        await tv.eventually(async () => tv.pendingReplies === 0, "accounts settings settled");
+        await collect("accounts-settings");
+
+        await tv.page.locator('[data-focus="expired"]').click();
+        await tv.page.locator(".confirm-dialog").waitFor();
+        await collect("accounts-expired");
+        await tv.page.locator('[data-focus="cancel"]').click();
+
+        await tv.page.locator('.accounts-settings [data-focus^="remove:"]').first().click();
+        await tv.page.locator(".confirm-dialog .skyline-confirm-message").waitFor();
+        await collect("accounts-confirm");
+
+        await tv.page.evaluate(() => { window.appHarness.keyManager.failRemove = true; window.appHarness.storage.failSet = true; });
+        await tv.page.locator('[data-focus="confirm"]').click();
+        await tv.page.locator('[data-view="accounts-error"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "accounts error settled");
+        await collect("accounts-error");
+        await tv.page.locator('[data-focus="ok"]').click();
+        await tv.page.evaluate(() => { window.appHarness.keyManager.failRemove = false; window.appHarness.storage.failSet = false; });
+
+        assert.deepEqual([...found].sort(), []);
+        assert.deepEqual(ACCOUNTS_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Accounts role was on screen");
+    });
+});
+
+test("Who's watching, PIN entry, Create Profile, and profile states use Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "application" });
+    const catalog = new FakeCatalog();
+    catalog.fileIds.set("movie:m0001", "42");
+    tv.fake.catalog = catalog;
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.fill("#signin-address", "silo.example.test");
+        await tv.page.getByRole("button", { name: "Connect", exact: true }).click();
+        await tv.page.locator('[data-screen="code"]').waitFor();
+        const code = [...tv.fake.devices.keys()].pop();
+        assert.ok(code !== undefined);
+        tv.fake.approve(code);
+        const held = tv.fake.hold("/profiles");
+        await tv.jump(5000);
+        await tv.page.locator('[data-screen="approved"], [data-screen="notice"], [data-screen="profiles-loading"]').waitFor();
+        if (await tv.screen() === "approved") await tv.jump(1000);
+        await tv.page.locator('[data-screen="notice"], [data-screen="profiles-loading"]').waitFor();
+        if (await tv.screen() === "notice") await tv.page.getByRole("button", { name: "Continue", exact: true }).click();
+        await tv.page.locator(".profile-loading-message").waitFor();
+        await tv.page.evaluate(() => document.fonts.ready);
+        await tv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+
+        const found = new Set<string>();
+        const seen = new Set<string>();
+        const collect = async (state: string): Promise<void> => {
+            for (const entry of await tv.page.evaluate(unscaledText, ["body", PROFILES_ROLES] as const)) found.add(`${state}: ${entry}`);
+            const roles = await tv.page.evaluate(offRoles, PROFILES_ROLES);
+            for (const entry of roles.off) found.add(`${state}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
+        };
+
+        await collect("profiles-loading");
+        held.release();
+        await tv.page.locator('[data-screen="profiles"] [data-focus="profile:p-owner"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "profiles picker settled");
+        await collect("profiles-picker");
+
+        await tv.page.locator('[data-focus="profile:p-owner"]').click();
+        await tv.page.locator('[data-screen="remember-profile"] .signin-alert-text').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "remember offer settled");
+        await collect("remember-offer");
+
+        await tv.page.locator('[data-focus="remember"]').click();
+        await tv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "home settled");
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="switch-profile"]').click();
+        await tv.page.locator(".profile-remembered").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "remembered picker settled");
+        await collect("profiles-remembered");
+
+        await tv.page.locator('[data-focus="signout"]').click();
+        await tv.page.locator('[data-screen="profiles:signout"] .confirm-dialog .skyline-confirm-message').waitFor();
+        await collect("profiles-signout");
+        await tv.page.locator('[data-focus="cancel-signout"]').click();
+        await tv.page.locator('[data-screen="profiles"] [data-focus="profile:p-kid"]').waitFor();
+
+        await tv.page.locator('[data-focus="profile:p-kid"]').click();
+        await tv.page.locator('[data-screen="pin"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "pin entry settled");
+        await collect("pin-entry");
+
+        for (const digit of ["1", "1", "1", "1"]) await tv.page.locator(`[data-focus="${digit}"]`).click();
+        await tv.page.locator(".pin-status-error").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "pin error settled");
+        await collect("pin-error");
+        await tv.page.locator('[data-focus="cancel"]').focus();
+        await collect("pin-cancel-focus");
+        await tv.page.locator('[data-focus="cancel"]').click();
+        await tv.page.locator('[data-screen="profiles"] [data-focus="add-profile"]').waitFor();
+
+        tv.fake.script("/user/libraries", { status: 500 });
+        await tv.page.locator('[data-focus="add-profile"]').click();
+        await tv.page.locator('[data-screen="profile-create"]').waitFor();
+        await tv.page.fill("#create-profile-pin", "12");
+        await tv.page.locator('[data-focus="create-child"]').click();
+        await tv.page.locator('[data-focus="create-libraries"]').click();
+        await tv.page.locator('[data-focus="libraries-retry"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "create profile failed libraries settled");
+        await collect("profile-create-libraries-failed");
+
+        await tv.page.locator('[data-focus="libraries-retry"]').click();
+        await tv.page.locator(".profile-create-subheading").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "create profile settled");
+        await collect("profile-create");
+
+        await tv.page.locator('[data-focus="style:initials"]').click();
+        await tv.page.locator(".profile-create-section > .signin-text").waitFor();
+        await collect("profile-create-initials");
+
+        tv.fake.script("/profiles", { status: 500 });
+        await tv.page.locator('[data-focus="create-header-cancel"]').click();
+        await tv.page.locator('[data-screen="profiles-error"] .profile-error-state .search-state-title').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "profiles error settled");
+        await collect("profiles-error");
+
+        tv.fake.script("/profiles", { status: 401 }, { status: 401 });
+        await tv.page.locator('[data-focus="retry"]').click();
+        await tv.page.locator('[data-screen="profiles-error"] .profile-error-main .profile-error-secondary').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "profiles 401 error settled");
+        await collect("profiles-error-signin");
+
+        tv.fake.script("/profiles", problem(403, "password_change_required", "Password change required"));
+        await tv.page.locator('[data-focus="retry"]').click();
+        await tv.page.locator('[data-screen="profiles-error"] .profile-error-main .signin-title').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "profiles reset error settled");
+        await collect("profiles-error-reset");
+
+        assert.deepEqual([...found].sort(), []);
+        assert.deepEqual(PROFILES_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Profiles role was on screen");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
