@@ -242,7 +242,7 @@ test("Switch Profile during an outage keeps root Back and the remembered profile
         await tv.page.locator('[data-screen="profiles-error"]').waitFor({ timeout: 5000 });
         assert.equal(await tv.page.locator('[data-view="home"]').count(), 0, "Switch Profile must not restore the remembered profile");
         assert.equal(await tv.focused(), "retry");
-        await tv.page.getByText("Could not reach the server. Check the TV's internet connection, then try again.", { exact: true }).waitFor();
+        await tv.page.getByText("Can't reach the server. Check your connection and try again.", { exact: true }).waitFor();
         assert.equal(await tv.page.evaluate(() => window.appHarness.storage.getItem("silo.browseSnapshots.v1")), snapshot);
         assert.equal(await tv.page.evaluate(() => window.appHarness.storage.getItem("silo.native.accounts.v1")), accounts);
         assert.equal(await tv.page.evaluate(() => window.appHarness.keyManager.items.size), secrets);
