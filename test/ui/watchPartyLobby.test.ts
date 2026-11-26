@@ -144,6 +144,18 @@ test("Choose a title opens the picker with Apple's shelves, icon-only chrome, an
         assert.equal(await tv.focused(), "picker-search-input", "Enter on a completed search field keeps focus on the input for editing");
         await tv.remote(65376);
         assert.equal(await tv.focused(), "movie:m0004", "IME Done on a completed search field moves focus to the first result");
+        await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').evaluate(node => {
+            (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts = 0;
+            node.addEventListener("focusout", () => {
+                (window as unknown as { __searchCardFocusouts: number }).__searchCardFocusouts += 1;
+            });
+        });
+        // A room update while a result card is focused must keep the search grid mounted without blurring it.
+        fake.guestReady = true;
+        fake.snapshot();
+        await tv.page.waitForTimeout(50);
+        const cardFocusouts = await tv.page.evaluate(() => (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts ?? -1);
+        assert.equal(cardFocusouts, 0, "room updates keep the search grid parent mounted so a focused result card never blurs");
         await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').click();
         await view(tv, "watchParty:choice").waitFor();
         await tv.remote(10009);

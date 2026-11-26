@@ -97,13 +97,31 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
     return { name: `watchParty:picker:${firstShelf === undefined ? "empty" : "shelves"}`, content, zones, focus: { zone, key: first.key }, back: () => hub.back() };
 }
 
-/** Apple's WatchPartySearchPage on tvOS: retained search header over a 6-column poster grid. */
+/** Replaces non-retained children in place without moving retained nodes (matching FocusHost's place()). */
+function placeChildren(container: HTMLElement, nodes: readonly HTMLElement[]): void {
+    const retained = new Set(nodes);
+    for (const child of Array.from(container.children)) {
+        if (child instanceof HTMLElement && !retained.has(child)) child.remove();
+    }
+    nodes.forEach((node, index) => {
+        const current = container.children[index];
+        if (current !== node) container.insertBefore(node, current ?? null);
+    });
+}
+
+/** Apple's WatchPartySearchPage on tvOS: retained search header and body over a 6-column poster grid. */
 export function searchView(
     { hub, baseUrl }: PickerContext,
-    searchHeader: { readonly element: HTMLDivElement; readonly title: HTMLHeadingElement; readonly input: HTMLInputElement },
+    nodes: {
+        readonly header: HTMLDivElement;
+        readonly title: HTMLHeadingElement;
+        readonly input: HTMLInputElement;
+        readonly body: HTMLDivElement;
+        readonly count: HTMLParagraphElement;
+    },
 ): View {
     const { search, pickerPurpose } = hub.state;
-    const { element: header, title, input: searchInput } = searchHeader;
+    const { header, title, input: searchInput, body, count } = nodes;
     const prompt = translate("watchParty.picker.searchPromptTv");
     title.textContent = translate("watchParty.picker.searchPage");
     searchInput.placeholder = prompt;
@@ -113,25 +131,26 @@ export function searchView(
     const field: FocusItem = { key: "picker-search-input", element: searchInput };
     const content: HTMLElement[] = [header];
     const zones: Zone[] = [{ id: "picker-search-field", layout: "row", items: [field] }];
-    const body = el("div", "watch-party-search-body watch-party-ui");
+    const bodyChildren: HTMLElement[] = [];
     let firstCard: FocusItem | undefined;
 
     if (search.searching && search.results.length === 0) {
-        body.appendChild(searchLoading());
+        bodyChildren.push(searchLoading());
     } else if (search.error !== undefined) {
         const retry = actionButton("search-retry", translate("shell.errorView.tryAgain"), () => { void hub.searchNow(); });
         const goBack = actionButton("search-back", translate("player.goBack"), () => { hub.back(); });
         const failure = searchState(errorHeadline(search.error), errorMessage(search.error), "search-failure");
         failure.setAttribute("role", "alert");
         failure.appendChild(zoneNode("browse-actions", [retry, goBack]));
-        body.appendChild(failure);
+        bodyChildren.push(failure);
         zones.push({ id: "picker-search-status", layout: "column", items: [retry, goBack] });
     } else if (search.hasSearched && search.results.length === 0) {
-        body.appendChild(searchState(translate("watchParty.picker.noResults"), translate("watchParty.picker.noResultsBody"), "search-empty"));
+        bodyChildren.push(searchState(translate("watchParty.picker.noResults"), translate("watchParty.picker.noResultsBody"), "search-empty"));
     } else if (search.results.length === 0) {
-        body.appendChild(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
+        bodyChildren.push(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
     } else {
-        body.appendChild(el("p", "watch-party-search-count", translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) })));
+        count.textContent = translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) });
+        bodyChildren.push(count);
         const page = { items: search.results, nextCursor: search.nextCursor, total: search.total, totalExact: true };
         const grid = feedGrid(
             search.feedKey,
@@ -155,10 +174,11 @@ export function searchView(
         firstCard = gridZone?.items[0];
         if (gridZone !== undefined && gridZone.items.length > 0) {
             grid.content[0]?.classList.add("watch-party-search-grid");
-            body.append(...grid.content);
+            bodyChildren.push(...grid.content);
             zones.push({ ...gridZone, id: "picker-search-grid" });
         }
     }
+    placeChildren(body, bodyChildren);
     content.push(body);
 
     searchInput.oninput = () => { hub.setSearchQuery(searchInput.value); };
