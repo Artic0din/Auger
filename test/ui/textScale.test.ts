@@ -8,6 +8,7 @@ import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
+import { selectLibraryMode } from "./support/library.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const IME_DONE = 65376;
@@ -319,6 +320,114 @@ test("a Settings pane error uses Apple's warning footer size and weight", async 
         await tv.page.locator(".settings-pane .browse-error.settings-warning").waitFor();
         const roles = await tv.page.evaluate(offRoles, [[".settings-pane .browse-error.settings-warning", 29, "500", "TVSettingsComponents.swift:474 (.body; HIG Body 29 pt medium)"]] as const);
         assert.deepEqual(roles, { off: [], seen: [".settings-pane .browse-error.settings-warning"] });
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+/** Library Browse grid, panel, empty and failure roles, paths under iosApp/iosApp/ (silo-apple 198a3e9). */
+const LIBRARY_BROWSE_ROLES: readonly Role[] = [
+    [".browse-controls .browse-button", 24, "500", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:79"],
+    [".library-browse .catalog-grid .browse-card-title", 24, "500", "tvOS/Screens/Components/TVMediaCard.swift:267; Theme/Typography.swift:22"],
+    [".library-browse .catalog-grid .browse-card-subtitle", 20, "400", "tvOS/Screens/Components/TVMediaCard.swift:275; Theme/Typography.swift:25"],
+    [".browse-sort-panel .browse-panel-row", 26, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:176"],
+    [".browse-filter-panel .browse-panel-title", 34, "600", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:305"],
+    [".browse-filter-panel [data-focus^=\"facet:\"]", 25, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:376"],
+    [".browse-filter-panel [data-focus^=\"match:\"]", 23, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:391"],
+    [".browse-filter-panel [data-focus=\"preserve\"]", 23, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:409"],
+    [".browse-filter-panel [data-focus=\"reset\"]", 23, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:427"],
+    [".browse-filter-panel .browse-panel-done", 25, "600", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:444"],
+    [".browse-filter-panel [data-focus=\"facet-back\"]", 24, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:461"],
+    [".browse-filter-panel [data-focus^=\"clear:\"]", 23, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:487"],
+    [".browse-filter-panel [data-focus^=\"value:\"]", 24, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:507"],
+    [".browse-empty-state .library-empty-title", 28, "600", "tvOS/Screens/Libraries/TVLibraryGridView.swift:275; Components/EmptyStateView.swift:16; Theme/Typography.swift:17"],
+    [".browse-empty-actions .browse-button", 24, "500", "tvOS/Screens/Libraries/TVLibraryGridView.swift:286"],
+    [".library-browse .details-failure .search-state-title", 36, "600", "tvOS/Screens/Libraries/TVLibraryGridView.swift:210; Components/ErrorView.swift:27; Theme/Typography.swift:14"],
+    [".browse-filter-panel [data-focus^=\"facet:\"] .browse-panel-detail", 25, "400", "tvOS/Screens/Libraries/TVBrowseFilterUI.swift:367,376"],
+    [".browse-alert .browse-alert-title", 34, "600", "Screens/Shuffle/ShuffleLauncher.swift:75"],
+    [".browse-alert .browse-alert-message", 25, "400", "Screens/Shuffle/ShuffleLauncher.swift:84"],
+    [".browse-alert .browse-button", 25, "600", "Screens/Shuffle/ShuffleLauncher.swift:81"],
+    [".browse-empty-state .library-empty-body", 22, "400", "Components/EmptyStateView.swift:21; Theme/Typography.swift:31"],
+    [".library-browse .details-failure .search-state-description", 26, "400", "tvOS/Screens/Libraries/TVLibraryGridView.swift:210; Components/ErrorView.swift:32; Theme/Typography.swift:28"],
+    [".library-browse .details-failure .browse-button", 28, "600", "tvOS/Screens/Libraries/TVLibraryGridView.swift:210; Components/ErrorView.swift:40; Extensions/ViewExtensions.swift:416; Theme/Typography.swift:17"],
+];
+
+test("Library Browse grid, Sort, Filter, empty and failure states use Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCatalog();
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await signedIn(tv, catalog);
+        await tv.page.route("**/api/v2/shuffles/capabilities", route => route.fulfill({ json: { allowed: true, state: "available", scope_kinds: ["library"] } }));
+        await tv.page.route("**/api/v2/shuffles", route => route.fulfill({ status: 404, contentType: "application/problem+json", json: problem(404, "not_found", "Missing shuffle scope").body }));
+        await tv.page.locator('[data-focus="movies"]').first().click();
+        await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+        await selectLibraryMode(tv, "Browse");
+        await tv.page.locator(".library-browse .catalog-grid .browse-card-title").first().waitFor();
+        await tv.page.locator('.browse-controls [data-focus="shuffle"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "browse setup answered");
+        await tv.page.evaluate(() => document.fonts.ready);
+
+        const found = new Set<string>();
+        const seen = new Set<string>();
+        const collect = async (state: string): Promise<void> => {
+            for (const entry of await tv.page.evaluate(unscaledText, "body")) found.add(`${state}: ${entry}`);
+            const roles = await tv.page.evaluate(offRoles, LIBRARY_BROWSE_ROLES);
+            for (const entry of roles.off) found.add(`${state}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
+        };
+
+        await collect("grid");
+
+        await tv.page.locator('.browse-controls [data-focus="shuffle"]').click();
+        await tv.page.locator(".browse-alert .browse-alert-title").waitFor();
+        await collect("shuffle-alert");
+        await tv.remote(10009);
+        await tv.page.locator(".browse-alert").waitFor({ state: "detached" });
+
+        await tv.page.locator('[data-focus="sort"]').click();
+        await tv.page.locator(".browse-sort-panel .browse-panel-row").first().waitFor();
+        await collect("sort");
+        await tv.remote(10009);
+        await tv.page.locator(".browse-sort-panel").waitFor({ state: "detached" });
+
+        await tv.page.locator('[data-focus="filter"]').click();
+        await tv.page.locator('.browse-filter-panel [data-focus^="facet:"]').first().waitFor();
+        await collect("filter-list");
+        await tv.page.locator('.browse-filter-panel [data-focus^="facet:"]').first().click();
+        await tv.page.locator('.browse-filter-panel [data-focus^="value:"]').first().waitFor();
+        await tv.page.locator('.browse-filter-panel [data-focus^="value:"]').first().click();
+        await tv.page.locator('.browse-filter-panel [data-focus^="clear:"]').waitFor();
+        await collect("filter-values");
+        await tv.remote(10009);
+        await tv.page.locator('.browse-filter-panel [data-focus^="facet:"]').first().waitFor();
+        await collect("filter-list-selected");
+        await tv.remote(10009);
+        await tv.page.locator(".browse-filter-panel").waitFor({ state: "detached" });
+        await tv.eventually(async () => tv.pendingReplies === 0, "filter apply answered");
+
+        const emptyPage = { status: 200, body: { window_cursor: "w", items: [], total: 0, total_exact: true, page: { has_more: false } } };
+        catalog.failNext("/catalog/query", emptyPage);
+        await tv.page.locator('[data-focus="letter:Q"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('.browse-empty-actions [data-focus="clear-filters"]').waitFor();
+        await collect("no-filter-matches");
+        await tv.eventually(async () => tv.pendingReplies === 0, "empty filter probe answered");
+
+        catalog.failNext("/catalog/query", emptyPage);
+        await tv.page.locator('.browse-empty-actions [data-focus="clear-filters"]').click();
+        await tv.page.locator(".browse-empty-state .library-empty-body").waitFor();
+        await collect("library-empty");
+        await tv.eventually(async () => tv.pendingReplies === 0, "empty library answered");
+
+        await tv.page.locator('[data-focus="series"]').first().click();
+        await tv.page.locator('[data-view="library:13"] .home-section').first().waitFor();
+        catalog.failNext("/catalog/query", problem(422, "validation_failed", "Browse unavailable"));
+        await selectLibraryMode(tv, "Browse");
+        await tv.page.locator(".library-browse .details-failure .search-state-title").waitFor();
+        await collect("failure");
+
+        assert.deepEqual([...found].sort(), []);
+        assert.deepEqual(LIBRARY_BROWSE_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
