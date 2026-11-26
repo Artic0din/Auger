@@ -4,7 +4,8 @@
 // Conservative for every Samsung TV on Tizen 8.0 or later. The OS version does not fix the panel's
 // decoder generation, so this keeps to Samsung's 2021 TV video specification, which lists
 // H.264 and HEVC (MP4, MKV and TS), AAC, AC3, E-AC3 and MP3, and no DTS. Tizen offers no decoder
-// enumeration, so the evidence tier is `declared` and the resolution cap stays 1080p. HDR is
+// enumeration, so the evidence tier is `declared`. The resolution cap is 2160p only when
+// webapis.productinfo.isUdPanelSupported() returns true, and 1080p otherwise. HDR is
 // claimed only when webapis.avinfo.isHdrTvSupport() returns true and the HDR setting is on.
 // That call is one boolean. A true result claims HDR10 only. HDR10+ and HLG stay unclaimed:
 // Samsung documents no per-format probe, and the year specifications do not list those formats
@@ -16,7 +17,7 @@
 // when the open stream lists a TEXT row; bitmap and ASS styling stay off. The progressive class
 // is omitted (no proof AVPlay plays a forward-only chunked remux).
 
-import type { ClientCapabilities, ClientPlaybackContext, DeliveryCapability, HdrDetails } from "../contracts/v2/playback.ts";
+import type { ClientCapabilities, ClientPlaybackContext, DeliveryCapability, HdrDetails, VideoDecodeCapability } from "../contracts/v2/playback.ts";
 
 /** What the panel reported. Dolby Vision stays false: Samsung does not document a probe for it. */
 export interface HdrPanel {
@@ -57,21 +58,47 @@ export function probeHdrPanel(scope: unknown = globalThis): HdrPanel {
 /** What the probe observed: the TV answered true or false, or gave no usable answer. Only diagnostics tell the last two apart. */
 export type HdrProbe = "hdr" | "sdr" | "unavailable";
 
-export function probeHdr(scope: unknown = globalThis): HdrProbe {
+/** Calls `webapis[api][method]()` with the API object as `this`. A missing method, a non-boolean, or a throw is undefined. */
+function askPanel(scope: unknown, api: string, method: string): boolean | undefined {
     try {
-        const avinfo = field(field(scope, "webapis"), "avinfo");
-        const read = field(avinfo, "isHdrTvSupport");
-        if (typeof read !== "function") return "unavailable";
-        const supported: unknown = read.call(avinfo);
-        return supported === true ? "hdr" : supported === false ? "sdr" : "unavailable";
+        const target = field(field(scope, "webapis"), api);
+        const read = field(target, method);
+        if (typeof read !== "function") return undefined;
+        const answer: unknown = read.call(target);
+        return typeof answer === "boolean" ? answer : undefined;
     } catch {
-        return "unavailable";
+        return undefined;
     }
+}
+
+export function probeHdr(scope: unknown = globalThis): HdrProbe {
+    const supported = askPanel(scope, "avinfo", "isHdrTvSupport");
+    return supported === undefined ? "unavailable" : supported ? "hdr" : "sdr";
 }
 
 /** An unavailable probe declares SDR, exactly as an observed false does. */
 export function hdrPanelFor(probe: HdrProbe): HdrPanel {
     return probe === "hdr" ? { hdr10: true, hlg: false, dolbyVision: false } : NO_HDR;
+}
+
+/** What the panel answered: 4K/8K, Full HD, or no usable answer. */
+export type UhdProbe = "uhd" | "fhd" | "unavailable";
+
+/**
+ * `webapis.productinfo.isUdPanelSupported()` (ProductInfo API). Samsung's 4K 8K UHD Video guide
+ * names it as the 4K check: true for a 4K or 8K panel, false for Full HD. The `productinfo`
+ * privilege is already declared for the model name.
+ */
+export function probeUhd(scope: unknown = globalThis): UhdProbe {
+    const supported = askPanel(scope, "productinfo", "isUdPanelSupported");
+    return supported === undefined ? "unavailable" : supported ? "uhd" : "fhd";
+}
+
+export type PanelResolution = "2160p" | "1080p";
+
+/** An unavailable probe keeps 1080p, exactly as an observed false does. An 8K panel claims 2160p. */
+export function resolutionFor(probe: UhdProbe): PanelResolution {
+    return probe === "uhd" ? "2160p" : "1080p";
 }
 
 /**
@@ -150,6 +177,31 @@ export function clientFeatures(renditionsAll: boolean, bufferingQuality = false)
     return [...CLIENT_FEATURES, ...(renditionsAll ? [HLS_SUBTITLE_RENDITIONS_ALL_FEATURE] : []), ...(bufferingQuality ? [BUFFERING_QUALITY_FEATURE] : [])];
 }
 
+const H264_FHD: VideoDecodeCapability = { codec: "h264", hardware: true, bit_depths: [8], max_width: 1920, max_height: 1080 };
+
+/**
+ * Apple pairs its resolution token with the same pixel box: 3840x2160 for 2160p, 1920x1080 for
+ * 1080p (silo-apple d74a30aa, AppleDecodeCapabilities.swift:256-273, sent as `maxResolution` at
+ * ApplePlaybackV3Capabilities.swift:208). Apple TV HD is Apple's only 1080p surface.
+ *
+ * On the declared tier these entries only narrow the flat lists, and a source passes when any entry for
+ * its codec takes it. Samsung's 2024-2026 video specifications cap UHD H.264 at Level 5.1, which holds
+ * 3840x2160 at 30 fps, so the UHD H.264 entry carries that frame rate. The server enforces
+ * `max_frame_rate` absolutely on this tier, so the Full HD entry stays uncapped and 1080p60 H.264 keeps
+ * playing. HEVC UHD is Level 5.1 or 5.2, which holds 3840x2160 at 60 fps.
+ */
+const VIDEO_DECODE: Readonly<Record<PanelResolution, readonly VideoDecodeCapability[]>> = {
+    "2160p": [
+        H264_FHD,
+        { codec: "h264", hardware: true, bit_depths: [8], max_width: 3840, max_height: 2160, max_frame_rate: 30 },
+        { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 3840, max_height: 2160 },
+    ],
+    "1080p": [
+        H264_FHD,
+        { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 1920, max_height: 1080 },
+    ],
+};
+
 export const CLIENT_CAPABILITIES: ClientCapabilities = {
     video_evidence: "declared",
     audio_evidence: "declared",
@@ -159,18 +211,14 @@ export const CLIENT_CAPABILITIES: ClientCapabilities = {
     containers: ["mp4", "m4v", "mkv", "matroska", "m3u8", "hls"],
     max_resolution: "1080p",
     hdr: false,
-    // On the declared tier these entries only narrow the flat lists.
-    video_decode: [
-        { codec: "h264", hardware: true, bit_depths: [8], max_width: 1920, max_height: 1080 },
-        { codec: "hevc", hardware: true, bit_depths: [8, 10], max_width: 1920, max_height: 1080 },
-    ],
+    video_decode: VIDEO_DECODE["1080p"],
 };
 
-/** The SDR profile when the report claims nothing. Otherwise the same lists, with HDR details on the output and both deliveries. */
-export function clientCapabilities(report?: HdrReport): ClientCapabilities {
+/** The 1080p SDR profile when the panel and the report claim nothing. Otherwise the same lists, resized for a 4K panel and with HDR details. */
+export function clientCapabilities(report?: HdrReport, resolution: PanelResolution = "1080p"): ClientCapabilities {
     const details = report === undefined ? undefined : hdrDetails(report);
-    if (details === undefined) return CLIENT_CAPABILITIES;
-    return { ...CLIENT_CAPABILITIES, hdr: true, hdr_details: details };
+    const sized = resolution === "1080p" ? CLIENT_CAPABILITIES : { ...CLIENT_CAPABILITIES, max_resolution: resolution, video_decode: VIDEO_DECODE[resolution] };
+    return details === undefined ? sized : { ...sized, hdr: true, hdr_details: details };
 }
 
 export function playbackContext(model: string, appVersion: string, report?: HdrReport): ClientPlaybackContext {

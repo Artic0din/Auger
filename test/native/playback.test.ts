@@ -736,9 +736,9 @@ interface Rig {
     readonly views: PlaybackView[];
 }
 
-async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig> {
-    const spoilers = typeof hdrProbeScopeOrSpoilers === "function" ? hdrProbeScopeOrSpoilers as () => EpisodeSpoilerSettings : undefined;
-    const hdrProbeScope = typeof hdrProbeScopeOrSpoilers === "function" ? undefined : hdrProbeScopeOrSpoilers;
+async function rig(profileId = "p-owner", origin?: string, probeScopeOrSpoilers?: unknown, resolutionCap?: PlaybackDeps["resolutionCap"], stillWatchingThreshold?: () => number): Promise<Rig> {
+    const spoilers = typeof probeScopeOrSpoilers === "function" ? probeScopeOrSpoilers as () => EpisodeSpoilerSettings : undefined;
+    const probeScope = typeof probeScopeOrSpoilers === "function" ? undefined : probeScopeOrSpoilers;
     const clock = new ManualClock();
     const h = await connected({ clock, fake: new FakeSilo(clock, undefined, origin) });
     await signIn(h);
@@ -756,7 +756,7 @@ async function rig(profileId = "p-owner", origin?: string, hdrProbeScopeOrSpoile
         avplay,
         clock: h.clock,
         randomBytes: (bytes) => bytes.fill(++serial),
-        device: { model: "QN55Q60AAFXZA", appVersion: "0.1.0", ...(hdrProbeScope === undefined ? {} : { hdrProbeScope }) },
+        device: { model: "QN55Q60AAFXZA", appVersion: "0.1.0", ...(probeScope === undefined ? {} : { probeScope }) },
         exits: {
             onBack: () => exits.push("back"),
             onEnd: (reason) => exits.push(`end:${reason}`),
@@ -4869,8 +4869,12 @@ test("backgrounding during a failed seek cancels its deferred replan and closes 
 
 const HDR = { hdr10: true, hdr10_plus: false, hlg: false, dolby_vision_profiles: [] };
 
-function hdrPanel(result: boolean | "throw"): unknown {
-    return { webapis: { avinfo: { isHdrTvSupport: () => { if (result === "throw") throw new Error("unavailable"); return result; } } } };
+type PanelAnswer = boolean | "throw";
+
+/** A `webapis` scope whose HDR probe answers `hdr`; `uhd` adds `productinfo.isUdPanelSupported`. */
+function hdrPanel(hdr: PanelAnswer, uhd?: PanelAnswer): unknown {
+    const answer = (result: PanelAnswer) => () => { if (result === "throw") throw new Error("unavailable"); return result; };
+    return { webapis: { avinfo: { isHdrTvSupport: answer(hdr) }, ...(uhd === undefined ? {} : { productinfo: { isUdPanelSupported: answer(uhd) } }) } };
 }
 
 test("a supporting panel claims HDR10 on start and leaves HDR10+, HLG and Dolby Vision unclaimed", async () => {
@@ -4946,6 +4950,14 @@ function hdrClaim(body: Record<string, unknown>): unknown {
     };
 }
 
+function resolutionClaim(body: Record<string, unknown>): unknown {
+    const capabilities = body.client_capabilities as { max_resolution?: unknown; video_decode?: readonly { codec?: unknown; max_width?: unknown; max_height?: unknown }[] } | undefined;
+    return {
+        max_resolution: capabilities?.max_resolution,
+        video_decode: capabilities?.video_decode?.map(entry => [entry.codec, entry.max_height]),
+    };
+}
+
 async function finishReplacement(r: Rig): Promise<void> {
     r.avplay.finishPrepare();
     await r.h.clock.advance(0);
@@ -4956,37 +4968,43 @@ async function finishReplacement(r: Rig): Promise<void> {
     assert.equal(r.avplay.state, "PLAYING");
 }
 
-test("a generic replan, a recovery replan and a replacement restart repeat the start HDR details", async () => {
-    const r = await rig("p-owner", undefined, hdrPanel(true));
-    const settings = new FakeSettings(r.h.fake);
-    settings.hdrRows = true;
-    settings.device("p-owner", r.h.core.session.http.deviceId).set(HDR_KEY, true);
-    r.server.next.push({ availableQualities: [{ label: "original", preserves_source: true }, { label: "1080p-medium", height: 1080, bitrate_kbps: 6000, preserves_source: false }] });
-    const id = await playMovie(r);
-    const start = only(bodies(r.h, "/playback/start"));
-    const claimed = hdrClaim(start);
-    assert.deepEqual(claimed, { hdr: true, capabilities: HDR, output: HDR, original_http: HDR, hls: HDR });
+test("a generic replan, a recovery replan and a replacement restart repeat the start HDR details and panel resolution", async () => {
+    for (const [uhd, resolution] of [[true, "2160p"], [undefined, "1080p"], [false, "1080p"], ["throw", "1080p"]] as const) {
+        const r = await rig("p-owner", undefined, hdrPanel(true, uhd));
+        const settings = new FakeSettings(r.h.fake);
+        settings.hdrRows = true;
+        settings.device("p-owner", r.h.core.session.http.deviceId).set(HDR_KEY, true);
+        r.server.next.push({ availableQualities: [{ label: "original", preserves_source: true }, { label: "1080p-medium", height: 1080, bitrate_kbps: 6000, preserves_source: false }] });
+        const id = await playMovie(r);
+        const start = only(bodies(r.h, "/playback/start"));
+        const claimed = hdrClaim(start);
+        assert.deepEqual(claimed, { hdr: true, capabilities: HDR, output: HDR, original_http: HDR, hls: HDR });
+        const top = resolution === "2160p" ? 2160 : 1080;
+        const sized = { max_resolution: resolution, video_decode: [["h264", 1080], ...(top === 2160 ? [["h264", 2160]] : []), ["hevc", top]] };
+        assert.deepEqual(resolutionClaim(start), sized, String(uhd));
 
-    r.controller.selectQuality("1080p-medium");
-    await r.h.clock.advance(0);
-    await finishReplacement(r);
+        r.controller.selectQuality("1080p-medium");
+        await r.h.clock.advance(0);
+        await finishReplacement(r);
 
-    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
-    await r.h.clock.advance(1000);
-    await finishReplacement(r);
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(1000);
+        await finishReplacement(r);
 
-    r.server.sessions.delete(id);
-    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
-    await r.h.clock.advance(2000);
-    const starts = bodies(r.h, "/playback/start");
-    const replans = bodies(r.h, "/replan");
-    assert.deepEqual(replans.map(body => body.operation), ["quality_change", "track_change", "track_change"]);
-    assert.equal(starts.length, 2);
-    for (const body of [...replans, starts[1]]) {
-        assert.ok(body);
-        assert.deepEqual(hdrClaim(body), claimed);
+        r.server.sessions.delete(id);
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(2000);
+        const starts = bodies(r.h, "/playback/start");
+        const replans = bodies(r.h, "/replan");
+        assert.deepEqual(replans.map(body => body.operation), ["quality_change", "track_change", "track_change"]);
+        assert.equal(starts.length, 2);
+        for (const body of [...replans, starts[1]]) {
+            assert.ok(body);
+            assert.deepEqual(hdrClaim(body), claimed);
+            assert.deepEqual(resolutionClaim(body), sized, String(uhd));
+        }
+        r.controller.destroy();
     }
-    r.controller.destroy();
 });
 
 test("an empty language catalog still offers the Spoken language row when translation is off and the spoken language is unknown", async () => {
