@@ -177,12 +177,9 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
         stop.element.classList.add("audiobook-about-stop");
         stop.element.setAttribute("aria-label", translate("detail.audiobook.about"));
         const columns = el("div", "audiobook-about-columns");
-        const describedBy: string[] = [];
         if (body.about !== undefined) {
             const overviewCol = el("div", "audiobook-about-overview");
             overviewNode = el("p", "audiobook-about", body.about);
-            overviewNode.id = "audiobook-about-overview";
-            describedBy.push(overviewNode.id);
             moreTag = el("span", "audiobook-about-more", translate("detail.overviewMore"));
             moreTag.hidden = true;
             overviewCol.append(overviewNode, moreTag);
@@ -200,8 +197,6 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
         }
         if (body.facts.length > 0) {
             const list = el("dl", body.about === undefined ? "audiobook-facts audiobook-facts-alone" : "audiobook-facts");
-            list.id = "audiobook-about-facts";
-            describedBy.push(list.id);
             for (const fact of body.facts) {
                 const row = el("div", "audiobook-fact");
                 row.append(
@@ -212,7 +207,6 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
             }
             columns.append(list);
         }
-        if (describedBy.length > 0) stop.element.setAttribute("aria-describedby", describedBy.join(" "));
         const card = el("div", "audiobook-about-card");
         card.append(stop.element, columns);
         block.append(card);

@@ -475,6 +475,9 @@ audiobookTest("a truncated About shows MORE and opens the scrollable full descri
     await tv.remote(40);
     assert.equal(await tv.focused(), "about", "Down from the actions enters About");
     assert.equal(await tv.page.locator('[data-focus="about"] .audiobook-about, [data-focus="about"] .audiobook-facts').count(), 0, "overview and facts live outside the button subtree");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-describedby"), null, "About button does not recite the full overview or facts on focus");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-haspopup"), "dialog");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-label"), "About: MORE");
     assert.equal(await tv.page.locator('[data-focus="about"]').evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
     await tv.page.keyboard.press("Enter");
     await showing(tv, "audiobook:audiobook:fresh:description");
