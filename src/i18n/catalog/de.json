@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Kontoaktualisierung",
  "account.fallback.itsAccount": "das zugehörige Konto",
  "account.fallback.thisAccount": "dieses Konto",
  "account.fallback.thisServer": "diesem Server",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Sitzung abgelaufen",
  "shell.errorView.tryAgain": "Erneut versuchen",
  "shell.errorView.updateRequired": "Update erforderlich",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Abmelden",
  "shell.signOut.titleNamed": "{account} auf {server} abmelden?",
  "shuffle.failed": "Die Zufallswiedergabe konnte nicht gestartet werden. Versuche es erneut.",

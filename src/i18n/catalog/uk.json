@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Оновлення облікового запису",
  "account.fallback.itsAccount": "його облікового запису",
  "account.fallback.thisAccount": "цей обліковий запис",
  "account.fallback.thisServer": "цей сервер",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Сеанс завершився",
  "shell.errorView.tryAgain": "Повторити спробу",
  "shell.errorView.updateRequired": "Потрібне оновлення",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Вийти",
  "shell.signOut.titleNamed": "Вийти з облікового запису {account} на сервері {server}?",
  "shuffle.failed": "Не вдалося запустити перемішане відтворення. Спробуйте ще раз.",

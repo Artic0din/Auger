@@ -53,26 +53,41 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         const mine = { id: row.id };
         opening = mine;
         refresh();
-        const settle = (failed: boolean): void => {
+        const settle = (failed: boolean, error?: unknown): void => {
             if (destroyed || opening !== mine) return;
             opening = undefined;
-            if (failed) showError("Could not open the account. Try again.", host.focused()?.zone);
-            else refresh();
+            if (failed) {
+                const text = error instanceof Error && error.message.trim() !== "" ? error.message : "Could not open the account. Try again.";
+                showError(text, host.focused()?.zone === "servers" ? "servers" : "accounts", row.id);
+            } else refresh();
         };
-        void (async () => open(row, undefined, true))().then(() => settle(false), () => settle(true));
+        void (async () => open(row, undefined, true))().then(() => settle(false), (error: unknown) => settle(true, error));
     };
     /** Redraws in place: focus stays in the column it was in. */
     const refresh = (zone = host.focused()?.zone): void => { render(zone === "servers", zone === "accounts"); };
-    const showError = (message: string, returnZone?: string): void => {
+    const showError = (message: string, returnZone?: string, returnKey?: string): void => {
+        // Draw the underlying list cleanly first so no card stays spinning and no prior dialog remains inert.
+        if (manage) render();
+        else render(returnZone === "servers");
         dialogOpen = true;
-        const leave = (): void => returnZone === undefined ? render() : refresh(returnZone);
-        const retry = actionButton("retry", translate("common.back"), leave);
-        host.show({ name: "accounts-error", content: [el("h1", "accounts-title", message), retry.element], zones: [{ id: "error", layout: "column", items: [retry] }], focus: { zone: "error", key: "retry" }, back: leave });
+        const leave = (): void => {
+            if (manage) render();
+            else if (returnZone === "servers") render(true);
+            else render(false, true, false, returnKey);
+        };
+        const ok = actionButton("ok", translate("shell.notice.ok"), leave);
+        const behind = manage
+            ? Array.from(container.querySelectorAll<HTMLElement>(".accounts-settings"))
+            : Array.from(container.children).filter((node): node is HTMLElement =>
+                node instanceof HTMLElement && !node.classList.contains("marquee-backdrop") && !node.classList.contains("accounts-scrim"));
+        const dialog = centredDialog({ style: "alert", id: "accounts-error", title: translate("account.alertTitle"), message, buttons: [ok.element], behind });
+        const content = manage ? dialog : [backdrop.element, scrim, ...dialog];
+        host.show({ name: "accounts-error", content, zones: [{ id: "error", layout: "column", items: [ok] }], focus: { zone: "error", key: "ok" }, back: leave });
     };
     const confirm = (targets: readonly SavedAccount[], removeServer: boolean): void => {
         dialogOpen = true;
         const dismiss = (): void => { render(false, false, removeServer); };
-        let panel: HTMLElement = el("div", "skyline-selector");
+        let panel: HTMLElement = el("div", "confirm-dialog");
         const cancel = actionButton("cancel", translate("common.cancel"), dismiss);
         const accept = actionButton("confirm", translate(removeServer ? "servers.remove.confirm" : "shell.signOut.confirm"), () => {
             if (removalPending) return;
@@ -95,53 +110,26 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         });
         const address = targets[0]?.baseUrl;
         const serverName = address ? cachedBranding(core.publicStorage, address)?.serverName ?? new URL(address).host : translate("account.fallback.thisServer");
-        const dialog = { id: "dialog", layout: "row" as const, items: [cancel, accept] };
+        const dialog = { id: "dialog", layout: "row" as const, skipDisabled: true, items: [cancel, accept] };
         const view = { name: "accounts-confirm", zones: [dialog], focus: { zone: "dialog", key: "cancel" }, back: dismiss };
-        if (removeServer) {
-            accept.element.classList.add("skyline-destructive");
-            const signsOut = targets.length === 1 ? translate("account.removeServer.signsOutOne", { account: targets[0]?.username ?? translate("account.fallback.itsAccount") })
-                : targets.length > 1 ? translate("account.removeServer.signsOutMany", { count: targets.length }) : undefined;
-            const scrim = el("div", "skyline-dropdown-scrim");
-            scrim.setAttribute("data-confirmation", "true");
-            scrim.addEventListener("click", () => { if (!removalPending) dismiss(); });
-            panel.setAttribute("data-confirmation", "true");
-            panel.setAttribute("role", "alertdialog");
-            panel.setAttribute("aria-modal", "true");
-            panel.style.left = "50%";
-            panel.style.right = "auto";
-            panel.style.top = "50%";
-            const title = el("h2", "skyline-confirm-title", translate("servers.remove.title", { server: serverName }));
-            title.id = "accounts-remove-title";
-            panel.setAttribute("aria-labelledby", title.id);
-            const header = el("div", "skyline-confirm-header");
-            header.append(title);
-            if (signsOut !== undefined) {
-                const message = el("p", "skyline-confirm-message", signsOut);
-                message.id = "accounts-remove-message";
-                panel.setAttribute("aria-describedby", message.id);
-                header.append(message);
+        const removesServer = !removeServer && signOutRemovesServer(() => directory.list(), address, targets.length);
+        const copy = removeServer
+            ? {
+                id: "accounts-remove",
+                title: translate("servers.remove.title", { server: serverName }),
+                message: targets.length === 1 ? translate("account.removeServer.signsOutOne", { account: targets[0]?.username ?? translate("account.fallback.itsAccount") })
+                    : targets.length > 1 ? translate("account.removeServer.signsOutMany", { count: targets.length }) : "",
             }
-            const actions = el("div", "skyline-confirm-actions");
-            actions.append(cancel.element, accept.element);
-            panel.append(header, actions);
-            const behind = container.querySelector<HTMLElement>(".accounts-settings");
-            if (behind !== null) {
-                behind.inert = true;
-                behind.setAttribute("aria-hidden", "true");
-            }
-            host.show({ ...view, content: behind === null ? [scrim, panel] : [behind, scrim, panel] });
-            return;
-        }
-        const removesServer = signOutRemovesServer(() => directory.list(), address, targets.length);
-        const copy = signOutConfirmationCopy(targets[0]?.username, serverName, removesServer);
-        // AccountRemovalConfirmation on tvOS: the same centred confirmation as Who's watching and Settings, over the accounts pane.
+            : { id: "accounts-signout", ...signOutConfirmationCopy(targets[0]?.username, serverName, removesServer) };
+        // AccountRemovalConfirmation on tvOS: the same centred confirmation as Who's watching and Settings, over the settings pane.
         const behind = container.querySelector<HTMLElement>(".accounts-settings");
-        const content = centredDialog({ style: "confirmation", id: "accounts-signout", title: copy.title, message: copy.message,
-            buttons: [cancel.element, accept.element], destructive: accept.element, behind: behind === null ? [] : [behind] });
+        const content = centredDialog({ style: "confirmation", id: copy.id, title: copy.title, message: copy.message,
+            buttons: [cancel.element, accept.element], destructive: accept.element, behind: behind === null ? [] : [behind],
+            onDismiss: () => { if (!removalPending) dismiss(); } });
         panel = content[content.length - 1] ?? panel;
         host.show({ ...view, content });
     };
-    function render(railFocus = false, enterPane = false, focusFirst = false): void {
+    function render(railFocus = false, enterPane = false, focusFirst = false, accountKey?: string): void {
         if (removalPending) return;
         // Drawing the list afresh reads the shown language, so a redraw that was waiting is done.
         dialogOpen = false;
@@ -243,16 +231,28 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
                 if (host.focused()?.zone === "accounts") { render(true); return; }
                 if (opening !== undefined) return;
                 destroy(); back();
-            } }, railFocus ? { zone: "servers", key: selected ?? "add-server" } : enterPane ? { zone: "accounts", key: paneEntry ?? accounts.find(row => row.key === current?.accounts.localAccountId)?.key ?? accounts[0]!.key } : undefined);
+            } }, railFocus ? { zone: "servers", key: selected ?? "add-server" } : enterPane ? { zone: "accounts", key: accountKey ?? paneEntry ?? accounts.find(row => row.key === current?.accounts.localAccountId)?.key ?? accounts[0]!.key } : undefined);
         // Before the first paint, so the restored scroll never shows the chevrons fading back in.
         for (const column of overflow) column.sync();
     }
     function expired(row: SavedAccount): void {
         dialogOpen = true;
-        const controls = [actionButton("signin", translate("account.signInAgain"), () => go(row)), actionButton("signout", translate("settings.accounts.signOut"), () => confirm([row], false)), actionButton("cancel", translate("common.cancel"), render)];
-        const panel = el("div", "accounts-dialog");
-        panel.append(el("h1", "signin-title", translate("settings.accounts.expiredTitleAppleTv", { account: row.username })), ...controls.map(item => item.element));
-        host.show({ name: "account-expired", content: [panel], zones: [{ id: "choices", layout: "column", items: controls }], focus: { zone: "choices", key: "signin" }, back: render });
+        const signin = actionButton("signin", translate("account.signInAgain"), () => go(row));
+        const signout = actionButton("signout", translate("settings.accounts.signOut"), () => confirm([row], false));
+        const cancel = actionButton("cancel", translate("common.cancel"), () => render());
+        const controls = [signin, signout, cancel];
+        const behind = container.querySelector<HTMLElement>(".accounts-settings");
+        const content = centredDialog({
+            style: "confirmation",
+            id: "account-expired",
+            title: translate("settings.accounts.expiredTitleAppleTv", { account: row.username }),
+            message: "",
+            buttons: controls.map(item => item.element),
+            destructive: signout.element,
+            behind: behind === null ? [] : [behind],
+            onDismiss: () => render(),
+        });
+        host.show({ name: "account-expired", content, zones: [{ id: "choices", layout: "row", items: controls }], focus: { zone: "choices", key: "signin" }, back: () => render() });
     }
     host.listen(); render();
     return { destroy };

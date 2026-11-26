@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Ažuriranje računa",
  "account.fallback.itsAccount": "njegov račun",
  "account.fallback.thisAccount": "ovaj račun",
  "account.fallback.thisServer": "ovaj poslužitelj",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Sesija je istekla",
  "shell.errorView.tryAgain": "Pokušaj ponovno",
  "shell.errorView.updateRequired": "Potrebno je ažuriranje",
+ "shell.notice.ok": "U redu",
  "shell.signOut.confirm": "Odjavi se",
  "shell.signOut.titleNamed": "Odjaviti se s računa {account} na poslužitelju {server}?",
  "shuffle.failed": "Nije moguće pokrenuti nasumičnu reprodukciju. Pokušajte ponovno.",

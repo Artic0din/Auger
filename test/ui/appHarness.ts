@@ -1,4 +1,6 @@
 import { mountApp, type SiloApp } from "../../src/app.ts";
+import { mountAccounts, type AccountsScreen } from "../../src/ui/accounts.ts";
+import type { SavedAccount } from "../../src/session/accounts.ts";
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { registerCatalog } from "../../src/i18n/translate.ts";
 import { FakeAVPlay } from "../native/support/fakeAVPlay.ts";
@@ -16,11 +18,14 @@ const storage = new MemoryPublicStorage();
 const keyManager = new FakeKeyManager();
 const avplay = new FakeAVPlay();
 let app: SiloApp | undefined;
+let accountsScreen: AccountsScreen | undefined;
 let exits = 0;
 let exitFails = false;
 const registeredKeys: string[] = [];
 
 const mount = (withPlayer = true): void => {
+    accountsScreen?.destroy();
+    accountsScreen = undefined;
     app?.destroy();
     const randomBytes = (bytes: Uint8Array): void => { bytes.set(crypto.getRandomValues(new Uint8Array(bytes.length))); };
     app = mountApp(root, {
@@ -51,7 +56,15 @@ const harness = {
     get exits() { return exits; },
     failExit() { exitFails = true; },
     mount,
-    destroy() { app?.destroy(); },
+    destroy() { accountsScreen?.destroy(); accountsScreen = undefined; app?.destroy(); },
+    mountAccounts(open: (account: SavedAccount | undefined, address?: string, inPlace?: boolean) => Promise<void> | void, manage = false): AccountsScreen {
+        accountsScreen?.destroy();
+        app?.destroy();
+        app = undefined;
+        const randomBytes = (bytes: Uint8Array): void => { bytes.set(crypto.getRandomValues(new Uint8Array(bytes.length))); };
+        accountsScreen = mountAccounts(root, { fetch: (url, init) => window.fetch(url, init), publicStorage: storage, keyManager, randomBytes, deviceName: "Living room TV", devicePlatform: "tizen" }, undefined, open, () => {}, manage);
+        return accountsScreen;
+    },
     /** The shown language, whose file has not landed yet, and the file landing later. */
     showLanguage(tag: string | null) { setAppLanguage(tag, SHIPPED_LANGUAGES, ["en-AU"]); },
     landLanguage(tag: string, catalog: Record<string, string>) { registerCatalog(tag, catalog); },

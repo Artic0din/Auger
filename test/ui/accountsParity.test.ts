@@ -257,3 +257,86 @@ test("an account that cannot open quietly hands over to sign-in, as before", asy
         assert.equal(await tv.page.locator('[data-view="change-account"]').count(), 0);
     });
 });
+
+test("failed account switch shows centred alert over Change Account and returns focus to the picked card", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seedAccounts(tv, 9, [
+            { id: "second", baseUrl: ACTIVE, username: "Second", profileCount: 2, needsSignIn: false, lastUsedAt: 5 },
+        ]);
+        await tv.page.evaluate(() => {
+            window.appHarness.mountAccounts(() => Promise.reject(new Error("Server refused switch")));
+        });
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        const typography = await tv.page.evaluate(() => ({
+            weight: getComputedStyle(document.querySelector(".accounts-title")!).fontWeight,
+            countOpacity: getComputedStyle(document.querySelector(".account-count")!).opacity,
+        }));
+        assert.deepEqual(typography, { weight: "800", countOpacity: "0.4" });
+
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        await tv.page.keyboard.press("Enter");
+        const alert = tv.page.locator(".signin-alert");
+        await alert.waitFor();
+        const dialogState = await tv.page.evaluate(() => {
+            const box = document.querySelector(".signin-alert")!.getBoundingClientRect();
+            const cols = document.querySelector<HTMLElement>(".accounts-columns")!;
+            return {
+                title: document.querySelector(".signin-alert-title")?.textContent,
+                text: document.querySelector(".signin-alert-text")?.textContent,
+                button: document.querySelector('.signin-alert [data-focus="ok"]')?.textContent,
+                width: Math.round(box.width),
+                height: Math.round(box.height),
+                centre: [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)],
+                behindInert: cols.inert,
+                behindOpacity: getComputedStyle(cols).opacity,
+                spinners: document.querySelectorAll(".marquee-spinner").length,
+            };
+        });
+        assert.deepEqual(dialogState, {
+            title: "Account Update",
+            text: "Server refused switch",
+            button: "OK",
+            width: 586,
+            height: 330,
+            centre: [960, 540],
+            behindInert: true,
+            behindOpacity: "0.55",
+            spinners: 0,
+        });
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second", "focus returns to the picked card after OK");
+
+        await tv.page.keyboard.press("Enter");
+        await alert.waitFor();
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second", "focus returns to the picked card after Back");
+    });
+});
+
+test("Settings › Accounts expired confirmation styles Sign Out destructively and Remove Server uses centred confirmation", async () => {
+    await withSignedInTv(browser, async tv => {
+        const { baseUrl } = await seedAccounts(tv, 9, [
+            { id: "stale", baseUrl: ACTIVE, username: "Stale", profileCount: 0, needsSignIn: true, lastUsedAt: 1 },
+        ]);
+        await openSettingsAccounts(tv);
+        await tv.page.locator('[data-focus="stale"]').click();
+        await tv.page.locator('[data-view="account-expired"]').waitFor();
+        assert.equal(await tv.page.locator(".confirm-dialog .skyline-confirm-message").count(), 0);
+        const signOut = tv.page.locator('.confirm-dialog [data-focus="signout"]');
+        assert.equal(await signOut.evaluate(node => getComputedStyle(node).color), "rgb(176, 0, 32)");
+        await signOut.focus();
+        assert.equal(await signOut.evaluate(node => getComputedStyle(node).color), "rgb(210, 47, 63)");
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="accounts-settings"]').waitFor();
+
+        await tv.page.locator(`[data-focus="remove:${baseUrl}"]`).click();
+        await tv.page.locator('[data-view="accounts-confirm"]').waitFor();
+        assert.equal(await tv.page.locator(".accounts-screen .skyline-selector, .skyline-selector[data-confirmation]").count(), 0);
+        assert.equal(await tv.page.locator(".accounts-screen .confirm-dialog").count(), 1);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="accounts-settings"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="stale"]').count(), 1, "Back cancels removal and preserves accounts");
+    });
+});

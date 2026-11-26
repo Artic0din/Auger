@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "账户更新",
  "account.fallback.itsAccount": "其账户",
  "account.fallback.thisAccount": "此账户",
  "account.fallback.thisServer": "此服务器",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "会话已过期",
  "shell.errorView.tryAgain": "重试",
  "shell.errorView.updateRequired": "需要更新",
+ "shell.notice.ok": "好",
  "shell.signOut.confirm": "退出登录",
  "shell.signOut.titleNamed": "要退出{server}上的{account}吗？",
  "shuffle.failed": "无法开始随机播放。请重试。",

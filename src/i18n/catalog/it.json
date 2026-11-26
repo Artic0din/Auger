@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Aggiornamento account",
  "account.fallback.itsAccount": "il suo account",
  "account.fallback.thisAccount": "questo account",
  "account.fallback.thisServer": "questo server",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Sessione scaduta",
  "shell.errorView.tryAgain": "Riprova",
  "shell.errorView.updateRequired": "Aggiornamento necessario",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Esci",
  "shell.signOut.titleNamed": "Uscire da {account} su {server}?",
  "shuffle.failed": "Impossibile avviare la riproduzione casuale. Riprova.",

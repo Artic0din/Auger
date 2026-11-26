@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Kontouppdatering",
  "account.fallback.itsAccount": "dess konto",
  "account.fallback.thisAccount": "det här kontot",
  "account.fallback.thisServer": "den här servern",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Sessionen har gått ut",
  "shell.errorView.tryAgain": "Försök igen",
  "shell.errorView.updateRequired": "Uppdatering krävs",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Logga ut",
  "shell.signOut.titleNamed": "Logga ut från {account} på {server}?",
  "shuffle.failed": "Det gick inte att starta blandad uppspelning. Försök igen.",

@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Kontoopdatering",
  "account.fallback.itsAccount": "dens konto",
  "account.fallback.thisAccount": "denne konto",
  "account.fallback.thisServer": "denne server",
@@ -1164,6 +1165,7 @@
  "shell.errorView.sessionExpired": "Sessionen er udløbet",
  "shell.errorView.tryAgain": "Prøv igen",
  "shell.errorView.updateRequired": "Opdatering påkrævet",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Log ud",
  "shell.signOut.titleNamed": "Log ud af {account} på {server}?",
  "shuffle.failed": "Kunne ikke begynde at blande. Prøv igen.",
