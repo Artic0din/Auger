@@ -33,7 +33,7 @@ import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import type { AVPlay, AVPlayListener } from "./avplay.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
-import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, type HdrPanel, type HdrProbe } from "./capabilities.ts";
+import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, probeUhd, resolutionFor, type HdrPanel, type HdrProbe, type PanelResolution } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
 import { storedSpeed, type BufferingEvidenceTrace, type SpeedEvidence } from "./bufferingEvidence.ts";
 import { AUTO_QUALITY, DEFAULT_BUFFERING_QUALITY_MODE, type BufferingQualityMode, type ReplanRequest } from "./bufferingQuality.ts";
@@ -296,8 +296,11 @@ export interface PlaybackDeps {
     readonly avplay: AVPlay;
     readonly clock: Clock;
     readonly randomBytes: RandomBytes;
-    /** `webapis.productinfo.getRealModel()` and the package version, for the server's device-quirk match. */
-    readonly device: { readonly model: string; readonly appVersion: string; readonly hdrProbeScope?: unknown };
+    /**
+     * `webapis.productinfo.getRealModel()` and the package version, for the server's device-quirk match.
+     * `probeScope` holds the `webapis` both panel probes read; absent reads the page's own.
+     */
+    readonly device: { readonly model: string; readonly appVersion: string; readonly probeScope?: unknown };
     readonly exits: PlaybackExits;
     /** The profile spoiler owner. Absent reads as both switches off. */
     readonly spoilers?: () => EpisodeSpoilerSettings;
@@ -426,6 +429,8 @@ interface Attempt {
     /** Apple's default is on. A failed read of an offered HDR key forces it off. */
     hdrEnabled: boolean;
     hdrPanel: HdrPanel;
+    /** Probed once per attempt, so start, every replan and a replacement start claim the same size. */
+    panelResolution: PanelResolution;
     /** Most recent native AVPlay error code or exception name recorded during this attempt. */
     lastAvplayError: string | undefined;
     /** What this attempt reached and where it first failed, for incident reports; never carried into a later attempt. */
@@ -645,6 +650,7 @@ export class PlaybackController implements PlayerControls {
             seekIntervals: { backward: 10, forward: 10 },
             hdrEnabled: true,
             hdrPanel: { hdr10: false, hlg: false, dolbyVision: false },
+            panelResolution: "1080p",
             lastAvplayError: undefined,
             trace: newTrace(++this.traceSeq),
             batchedSettings: true,
@@ -1583,14 +1589,15 @@ export class PlaybackController implements PlayerControls {
     private reportedPlayback(attempt: Attempt): Pick<StartPlaybackBody, "client_capabilities" | "client_playback_context"> {
         const report = { panel: attempt.hdrPanel, preference: { hdrEnabled: attempt.hdrEnabled } };
         return {
-            client_capabilities: clientCapabilities(report),
+            client_capabilities: clientCapabilities(report, attempt.panelResolution),
             client_playback_context: playbackContext(this.deps.device.model, this.deps.device.appVersion, report),
         };
     }
 
     private async begin(attempt: Attempt): Promise<void> {
-        attempt.trace.hdrProbe = probeHdr(this.deps.device.hdrProbeScope);
+        attempt.trace.hdrProbe = probeHdr(this.deps.device.probeScope);
         attempt.hdrPanel = hdrPanelFor(attempt.trace.hdrProbe);
+        attempt.panelResolution = resolutionFor(probeUhd(this.deps.device.probeScope));
         const session = this.deps.session;
         let decision: PlaybackDecision;
         const trace = attempt.trace;
