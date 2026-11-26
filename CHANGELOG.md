@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.13] - 2026-11-26
+
+### Fixes
+
+- **Browse**: Size Library Browse grid text as Apple does ([#951](https://github.com/Artic0din/Auger-Tizen/pull/951), [`26d8c6d0`](https://github.com/Artic0din/Auger-Tizen/commit/26d8c6d0))
+
 ## [0.14.12] - 2026-11-26
 
 ### Fixes
