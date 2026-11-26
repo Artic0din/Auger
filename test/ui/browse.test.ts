@@ -2199,6 +2199,7 @@ browseTest("Search draws Apple's spacing, corners, captions, badges and scaled t
             requestHeading: style(".search-requests-heading").fontSize,
             requestLine: style(".search-requests-description").fontSize,
             requestRadius: style('.search-request-rail [data-focus="movie:949"] .browse-art').borderTopLeftRadius,
+            requestTitle: style('.search-request-rail [data-focus="movie:949"] .browse-card-title').fontSize,
             requestSubtitle: style('.search-request-rail [data-focus="movie:949"] .browse-card-subtitle').fontSize,
         };
     });
@@ -2207,7 +2208,7 @@ browseTest("Search draws Apple's spacing, corners, captions, badges and scaled t
     assert.equal(results.requestRadius, "12px", "SiloTheme.cornerRadius on request posters");
     assert.equal(results.subtitleWeight, "400");
     for (const [name, value, points] of [["title", results.title, 24], ["subtitle", results.subtitle, 20], ["count", results.count, 22], ["People heading", results.people, 36], ["person", results.person, 20],
-        ["request heading", results.requestHeading, 36], ["request line", results.requestLine, 20], ["request subtitle", results.requestSubtitle, 22]] as const) {
+        ["request heading", results.requestHeading, 36], ["request line", results.requestLine, 20], ["request title", results.requestTitle, 28], ["request subtitle", results.requestSubtitle, 22]] as const) {
         assert.ok(Math.abs(pixels(value) - capScaled(points)) < 0.01, `${name} ${value}`);
     }
     await tv.page.fill("#browse-search", "potter"); await tv.remote(IME_DONE);

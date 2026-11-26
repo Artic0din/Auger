@@ -6,6 +6,7 @@ import type { Browser } from "playwright";
 import { FakeCalendar } from "../native/support/fakeCalendar.ts";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
+import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
 import { selectLibraryMode } from "./support/library.ts";
@@ -428,6 +429,228 @@ test("Library Browse grid, Sort, Filter, empty and failure states use Apple's po
 
         assert.deepEqual([...found].sort(), []);
         assert.deepEqual(LIBRARY_BROWSE_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+/** Requests hub, preview, detail, loading, empty and failure roles, paths under iosApp/iosApp/ (silo-apple 198a3e9). */
+const REQUESTS_ROLES: readonly Role[] = [
+    [".requests-loading-label", 20, "500", "tvOS/Screens/Requests/TVRequestsPage.swift:595"],
+    [".requests-discover", 17, "700", "Screens/Requests/Components/RequestCardRail.swift:71,104"],
+    [".requests-scene .requests-heading", 30, "600", "Screens/Requests/Components/RequestCardRail.swift:76,112"],
+    [".requests-scene .requests-rail .browse-card-title", 28, "600", "Screens/Requests/Components/RequestMediaCard.swift:154; Theme/Typography.swift:17"],
+    [".requests-scene .requests-rail .browse-card-subtitle", 22, "400", "Screens/Requests/Components/RequestMediaCard.swift:167; Screens/Requests/Components/RequestStatusViews.swift:57; Theme/Typography.swift:31"],
+    [".requests-preview .requests-hero-title", 84, "800", "tvOS/Components/TVFocusMarquee.swift:1526; Theme/SiloTheme.swift:294"],
+    [".requests-preview .requests-metadata", 20, "500", "tvOS/Components/TVFocusMarquee.swift:1583; Theme/SiloTheme.swift:296"],
+    [".requests-preview .requests-tmdb span", 20, "700", "tvOS/Components/TVFocusMarquee.swift:1583; Theme/SiloTheme.swift:296"],
+    [".requests-preview .requests-synopsis", 22, "400", "tvOS/Components/TVFocusMarquee.swift:1425; Theme/SiloTheme.swift:298"],
+    [".requests-preview .requests-progress .requests-status-label", 22, "600", "tvOS/Components/TVFocusMarquee.swift:1452"],
+    [".requests-list-notice", 22, "600", "tvOS/Screens/Requests/TVRequestsPage.swift:77"],
+    [".requests-eyebrow", 18, "600", "tvOS/Screens/Detail/TVDetailHero.swift:678"],
+    [".requests-detail-hero .requests-title-primary", 92, "900", "tvOS/Screens/Detail/TVDetailHero.swift:568"],
+    [".requests-detail-hero .requests-title-secondary", 40, "800", "tvOS/Screens/Detail/TVDetailHero.swift:569"],
+    [".requests-rating-chip", 18, "700", "tvOS/Screens/Detail/TVDetailHero.swift:449"],
+    [".requests-detail-metadata", 24, "500", "tvOS/Screens/Detail/TVDetailHero.swift:394,475"],
+    [".requests-detail-metadata .requests-tmdb span", 24, "700", "tvOS/Screens/Detail/TVDetailHero.swift:430"],
+    [".requests-detail-hero .requests-synopsis", 26, "400", "tvOS/Screens/Detail/TVHeroSynopsis.swift:19"],
+    [".requests-credit", 23, "400", "tvOS/Screens/Detail/TVDetailHero.swift:482"],
+    [".requests-summary-label", 13, "700", "Screens/Requests/Detail/RequestDetailView.swift:362"],
+    [".requests-summary-value", 22, "600", "Screens/Requests/Detail/RequestDetailView.swift:370"],
+    [".requests-summary .requests-status-label", 22, "600", "Screens/Requests/Detail/RequestDetailView.swift:370"],
+    [".requests-track-labels .requests-step", 18, "600", "Screens/Requests/Detail/RequestDetailView.swift:693"],
+    [".requests-detail-actions .requests-primary-action", 28, "600", "Screens/Requests/Detail/RequestDetailView.swift:423"],
+    [".requests-detail-actions .requests-secondary-action", 26, "600", "tvOS/Screens/Detail/TVDetailActions.swift:119"],
+    [".requests-detail-actions .requests-action-message", 22, "400", "Screens/Requests/Detail/RequestDetailView.swift:317; Theme/Typography.swift:31"],
+    [".requests-empty .search-state-title", 28, "600", "tvOS/Screens/Requests/TVRequestsPage.swift:130; Components/EmptyStateView.swift:16; Theme/Typography.swift:17"],
+    [".requests-empty .search-state-description", 22, "400", "tvOS/Screens/Requests/TVRequestsPage.swift:130; Components/EmptyStateView.swift:21; Theme/Typography.swift:31"],
+    [".requests-failure .search-state-title", 36, "600", "tvOS/Screens/Requests/TVRequestsPage.swift:124; Components/ErrorView.swift:27; Theme/Typography.swift:14"],
+    [".requests-failure .search-state-description", 26, "400", "tvOS/Screens/Requests/TVRequestsPage.swift:124; Components/ErrorView.swift:32; Theme/Typography.swift:28"],
+    [".requests-failure .browse-button:first-child", 28, "600", "tvOS/Screens/Requests/TVRequestsPage.swift:124; Components/ErrorView.swift:40; Extensions/ViewExtensions.swift:416; Theme/Typography.swift:17"],
+    [".requests-failure .browse-button + .browse-button", 26, "400", "tvOS/Screens/Requests/TVRequestsPage.swift:124; Components/ErrorView.swift:40"],
+    [".requests-card .browse-art-fallback", 22, "600", "Screens/Requests/Components/RequestMediaCard.swift:142-143; Theme/Typography.swift:31"],
+    [".requests-scene > .browse-text", 22, "400", "Theme/Typography.swift:31 (Tizen detail recovery notice matches siloCaption)"],
+    [".requests-scene > .browse-actions .browse-button", 28, "600", "Theme/Typography.swift:17 (Tizen detail recovery button matches siloSubheadline)"],
+    [".card-actions-panel .browse-section-title", 28, "600", "Theme/Typography.swift:17 (RequestRecordMenu title matches siloSubheadline)"],
+    [".card-actions-panel .browse-text", 22, "400", "Theme/Typography.swift:31 (RequestRecordMenu confirmation copy matches siloCaption)"],
+    [".card-actions-buttons .browse-button", 28, "600", "Theme/Typography.swift:17 (RequestRecordMenu action button matches siloSubheadline)"],
+];
+
+test("Requests loading, hub, preview, detail, empty and failure states use Apple's points times the cap scale", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        const baseTitle = fake.title.bind(fake);
+        Object.assign(fake.record, { created_at: "2026-01-02T12:00:00Z", targets: [{ quality: "1080p", status: "queued" }] });
+        fake.title = () => ({
+            ...baseTitle(),
+            title: "Dune: Part Three",
+            year: 2026,
+            runtime: 155,
+            content_rating: "PG-13",
+            vote_average: 7.5,
+            genres: ["Sci-Fi", "Adventure"],
+            director: "Denis Villeneuve",
+            recommendations: [{ ...baseTitle(), tmdb_id: 950, title: "Related Title" }],
+        });
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await signedIn(tv, fake);
+        await tv.page.evaluate(() => document.fonts.ready);
+
+        const found = new Set<string>();
+        const seen = new Set<string>();
+        const collect = async (state: string): Promise<void> => {
+            for (const entry of await tv.page.evaluate(unscaledText, "body")) found.add(`${state}: ${entry}`);
+            const roles = await tv.page.evaluate(offRoles, REQUESTS_ROLES);
+            for (const entry of roles.off) found.add(`${state}: ${entry}`);
+            for (const role of roles.seen) seen.add(role);
+        };
+
+        const openFromMenu = async (): Promise<void> => {
+            await tv.page.locator('[data-focus="profiles"]').click();
+            await tv.page.locator('[data-focus="requests"]').click();
+        };
+        const returnHome = async (): Promise<void> => {
+            while (await tv.page.locator(".browse-nav").count() === 0) await tv.remote(10009);
+            await tv.remote(10009);
+            await tv.page.locator('[data-focus="home"]').click();
+            await tv.page.locator('.browse[data-view="home"]').waitFor();
+            await tv.eventually(async () => tv.pendingReplies === 0, "home settled");
+        };
+
+        const held = tv.fake.hold("/requests/discover", true);
+        await openFromMenu();
+        await tv.page.locator(".requests-loading-label").waitFor();
+        await collect("loading");
+        held.release();
+        await tv.page.locator('[data-focus="request-one"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "requests hub settled");
+        await collect("hub-own");
+
+        await tv.page.locator('[data-focus="movie:949"]').focus();
+        await tv.page.locator(".requests-preview .requests-tmdb span").waitFor();
+        await collect("hub-discover");
+
+        await tv.page.locator('[data-focus="request-one"]').click();
+        await tv.page.locator(".requests-summary-label").first().waitFor();
+        await tv.page.locator(".requests-credit").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "request detail settled");
+        await collect("detail-request");
+
+        fake.requestFailure = problem(422, "conflict", "Could not cancel request");
+        await tv.page.locator('.requests-detail-actions [data-focus="cancel"]').click();
+        await tv.page.locator(".requests-detail-actions .requests-action-message").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "action error settled");
+        await collect("detail-action-error");
+        fake.requestFailure = undefined;
+
+        await tv.remote(10009);
+        await tv.page.locator('[data-focus="request-one"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub restored");
+
+        tv.fake.script("/requests/detail/movie/949", { status: 400, text: "bad" });
+        await tv.page.locator('[data-focus="request-one"]').click();
+        await tv.page.locator(".requests-scene > .browse-text").waitFor();
+        await tv.page.locator('.requests-scene > .browse-actions [data-focus="refresh"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "detail metadata failure settled");
+        await collect("detail-metadata-failure");
+
+        await tv.remote(10009);
+        await tv.page.locator('[data-focus="request-one"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub restored after metadata failure");
+
+        fake.requestFailure = problem(422, "conflict", "Could not cancel request");
+        await tv.page.locator('[data-focus="request-one"]').focus();
+        await tv.down(13);
+        await tv.jump(650);
+        await tv.up(13);
+        await tv.page.locator('[data-focus="cancel-request"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub menu settled");
+        await collect("hub-menu");
+        await tv.page.locator('[data-focus="cancel-request"]').click();
+        await tv.page.locator(".requests-list-notice").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub cancel notice settled");
+        await collect("hub-notice");
+        fake.requestFailure = undefined;
+
+        await tv.page.locator('[data-focus="request-one"]').focus();
+        await tv.down(13);
+        await tv.jump(650);
+        await tv.up(13);
+        await tv.page.locator('[data-focus="cancel-request"]').waitFor();
+        await tv.page.locator('[data-focus="cancel-request"]').click();
+        await tv.eventually(async () => await tv.focused() === "movie:949", "discover focused after cancel");
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub cancel settled");
+
+        await tv.page.locator('[data-focus="movie:949"]').click();
+        await tv.page.locator('.requests-detail-actions [data-focus="create"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "media detail settled");
+        await collect("detail-media");
+
+        await tv.remote(10009);
+        await tv.page.locator(".requests-hub").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "hub restored after media");
+
+        fake.requestFailure = problem(404, "not_found", "Hidden");
+        await tv.page.locator('[data-focus="movie:949"]').click();
+        await tv.page.locator(".requests-failure .browse-button + .browse-button").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "detail failure settled");
+        await collect("detail-failure");
+        fake.requestFailure = undefined;
+
+        await returnHome();
+        tv.fake.script("/requests/mine?limit=50", {
+            status: 200,
+            body: {
+                items: [{
+                    id: "failed-a",
+                    media_type: "movie",
+                    tmdb_id: 949,
+                    title: "Heat",
+                    overview: "A detective pursues a professional thief.",
+                    requested_by_profile_id: "p-owner",
+                    state: "failed",
+                    status: "approved",
+                    outcome: "failed",
+                    targets: [{ quality: "1080p", status: "failed" }],
+                }],
+                page: { has_more: false },
+            },
+        });
+        await openFromMenu();
+        await tv.page.locator('[data-focus="failed-a"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "failed hub item settled");
+        await tv.page.locator('[data-focus="failed-a"]').focus();
+        await tv.down(13);
+        await tv.jump(650);
+        await tv.up(13);
+        await tv.page.locator('[data-focus="remove-request"]').waitFor();
+        await tv.page.locator('[data-focus="remove-request"]').click();
+        await tv.page.locator(".card-actions-panel .browse-text").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "remove confirmation settled");
+        await collect("hub-remove-confirm");
+        await tv.page.locator('[data-focus="keep-request"]').click();
+        await tv.eventually(async () => await tv.page.locator(".card-actions-panel").count() === 0, "remove confirmation dismissed");
+
+        await returnHome();
+        fake.requestsEmpty = true;
+        fake.created = false;
+        fake.cancelled = false;
+        await openFromMenu();
+        await tv.page.locator(".requests-empty .search-state-title").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "empty hub settled");
+        await collect("hub-empty");
+
+        await returnHome();
+        fake.requestFailure = problem(422, "validation_failed", "Requests unavailable");
+        await openFromMenu();
+        await tv.page.locator(".requests-failure .search-state-title").waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "failed hub settled");
+        await collect("hub-failure");
+        fake.requestFailure = undefined;
+
+        assert.deepEqual([...found].sort(), []);
+        assert.deepEqual(REQUESTS_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned role was on screen");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
