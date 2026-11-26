@@ -42,7 +42,7 @@ import { homeRows, removingDismissed, removingNotInterested, removingNotInterest
 import { HomeEnrichment } from "./homeEnrichment.ts";
 import { el } from "./screen.ts";
 import { discoveryState, libraryScope, librarySectionQuery, readDiscovery, readSections, type LibraryMode, type VideoScope } from "./libraryDiscovery.ts";
-import { personalEndCanReenter, personalListCapability, readPersonalPage, type PersonalFilter } from "./personalLists.ts";
+import { availablePersonalFilters, matchesPersonalFilter, personalEndCanReenter, readPersonalPage, resolvePersonalFilter, type PersonalFilter } from "./personalLists.ts";
 import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
 import type { Arrival, FocusReader } from "./browseEnv.ts";
 import type { BrowseSignal } from "./browseSignals.ts";
@@ -1141,9 +1141,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ]).then(([libraries, hidden]) => {
             if (signal.aborted || torn || current.kind !== "home") return;
             homeLibrariesFailed = false;
+            const hadAudiobooks = audiobooksInSearch();
             const visible = visibleLibraries(libraries, hidden);
             rememberLibraryTabs(visible);
             pendingHomeLibraries = visible;
+            const audiobooksChanged = audiobooksInSearch() !== hadAudiobooks;
             // shell.update replaces the nav, including a focused tab. Keep the target captured
             // before that replacement so Back from Settings stays on Profiles.
             // Library tabs fill the bar while Home is still the empty loading page (TVMainTabView
@@ -1152,6 +1154,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (current.data !== undefined) current.data = { ...current.data, libraries: visible };
             shell.update(visible);
             const shown = top();
+            if (audiobooksChanged && shown?.kind === "personal" && shown.source === "favorites") {
+                personalSnapshots.delete(shown);
+                shown.pages = newPages();
+                shown.pendingIndex = undefined;
+                shown.elsewhere = false;
+                loadPersonal(shown, true, false);
+            }
             const shownShell = shown?.kind === "home" || shown?.kind === "for_you" || shown?.kind === "library" || shown?.kind === "personal" || shown?.kind === "calendar";
             // The page in front has to take the new buttons. Calendar and For You can open
             // before this read finishes (TVMainTabView reconcileVisibleRootsChange, TVMainTabView.swift:1065).
@@ -1355,31 +1364,37 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const loadPersonal = (current: Extract<Route, { kind: "personal" }>, quiet: boolean, append: boolean): void => {
         const previous = personalSnapshots.get(current);
         load(current, async signal => {
-            const capability = current.source === "history" ? undefined : append && current.capability !== undefined ? current.capability : await read(personalListCapability(), signal);
-            const blocked = capability !== undefined && (!capability.allowed || capability.state !== "available");
-            if (blocked) return { capability, snapshot: undefined as SectionSnapshot | undefined, elsewhere: false };
+            const audiobooksEnabled = audiobooksInSearch();
+            const activeFilter = resolvePersonalFilter(current.filter, audiobooksEnabled);
+            const filterChanged = activeFilter !== current.filter;
+            current.filter = activeFilter;
+            if (filterChanged) personalSnapshots.delete(current);
+            const effectiveAppend = append && !filterChanged;
+            const effectivePrevious = filterChanged ? undefined : previous;
+            const otherFilters = current.source === "favorites"
+                ? availablePersonalFilters("favorites", audiobooksEnabled).filter(candidate => candidate !== activeFilter)
+                : [];
+            let elsewhere = effectiveAppend ? current.elsewhere === true : false;
             // The personal query stays at its fenced page size. readSectionCatalog still appends that page when the end is on screen.
-            const snapshot = await readSectionCatalog(previous, append, async cursor => read(readPersonalPage(current.source, current.filter, cursor), signal), signal);
+            const snapshot = await readSectionCatalog(
+                effectivePrevious,
+                effectiveAppend,
+                async cursor => read(readPersonalPage(current.source, activeFilter, cursor, rawItems => {
+                    if (!elsewhere && otherFilters.length > 0 && rawItems.some(card => otherFilters.some(other => matchesPersonalFilter(card, other)))) {
+                        elsewhere = true;
+                    }
+                }), signal),
+                signal,
+            );
             if (snapshot.unavailable) throw new ApiError({ kind: "http", status: 404, retryAfterSeconds: undefined });
-            let elsewhere = false;
-            if (!append && current.source === "favorites" && snapshot.page.items.length === 0 && snapshot.page.nextCursor === undefined) {
-                const other = current.filter === "series" ? "movie" : "series";
-                elsewhere = (await readSectionCatalog(undefined, false, async cursor => read(readPersonalPage("favorites", other, cursor), signal), signal)).page.items.length > 0;
-            }
-            return { capability, snapshot, elsewhere };
-        }, ({ capability, snapshot, elsewhere }) => {
+            return { snapshot, elsewhere };
+        }, ({ snapshot, elsewhere }) => {
             const focus = host.focused();
             const oldItems = current.pages.page?.items ?? [];
             const oldIndex = oldItems.findIndex(item => item.id === focus?.key);
-            current.capability = capability;
             current.elsewhere = elsewhere;
             current.error = undefined;
             current.pendingIndex = undefined;
-            if (snapshot === undefined) {
-                personalSnapshots.delete(current);
-                current.pages = newPages();
-                return focus;
-            }
             personalSnapshots.set(current, snapshot);
             current.pages.page = snapshot.page;
             current.pages.index = 0;
@@ -2302,6 +2317,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         audiobookPicker,
         mode,
         personalFilter,
+        audiobooksEnabled: audiobooksInSearch,
         morePersonal,
         signIn: options.onSignOut,
         manageServers: options.onSwitchServer === undefined ? undefined : () => { options.onSwitchServer?.(() => render()); },
@@ -2425,7 +2441,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (source !== "history") clearPersonalRoot();
             const origin = top();
             const selected = source === "history" ? anchor : origin === undefined ? "home" : tabFocus(origin).key;
-            push(newRoute({ kind: "personal", source, anchor: selected, filter: "movie", pages: newPages(), capability: undefined, pendingIndex: undefined }));
+            push(newRoute({ kind: "personal", source, anchor: selected, filter: "movie", pages: newPages(), pendingIndex: undefined }));
             if (origin !== undefined) origin.focus = { zone: "nav", key: selected };
         },
         switchProfile: chooseProfile,
