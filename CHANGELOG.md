@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.12.0] - 2026-11-26
+
+### Features
+
+- **Playback**: Port HoldSeekIndicator and stepped auto-ramp for hidden hold-seek ([#900](https://github.com/Artic0din/Auger-Tizen/pull/900), [`ae5b9c99`](https://github.com/Artic0din/Auger-Tizen/commit/ae5b9c99))
+
+### CI
+
+- **Releases**: Align release versioning and PR checks with SemVer 2.0.0 ([`62240b52`](https://github.com/Artic0din/Auger-Tizen/commit/62240b52))
+
 ## [0.11.0] - 2026-11-26
 
 ### Features
