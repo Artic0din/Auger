@@ -2475,3 +2475,38 @@ test("request route hides Notify Me when closed record id differs from newer pen
         assert.equal(await tv.page.getByRole("button", { name: "Notify Me", exact: true }).count(), 0);
     } finally { await tv.page.context().close(); }
 });
+
+test("request route shows and toggles Notify Me for an active record when media detail omits request_id", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        Object.assign(fake.record, { requested_by_profile_id: "profile-a", state: "pending", status: "pending", outcome: "active" });
+        const origTitle = fake.title.bind(fake);
+        let detailRequest: Record<string, unknown> = {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            state: "pending",
+            reason: "already_requested",
+        };
+        fake.title = () => ({ ...origTitle(), request: detailRequest });
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (path === "/requests/status") {
+                return { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: true, remove_failed_supported: true } };
+            }
+            if (method === "PUT" && path === "/requests/follows/movie/949") {
+                detailRequest = { ...detailRequest, following: true };
+            }
+            return route(method, path, profileId, body);
+        };
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "follow").waitFor();
+        assert.equal(await button(tv, "follow").textContent(), "Notify Me");
+        await button(tv, "follow").click();
+        await tv.eventually(async () => await button(tv, "follow").textContent() === "Stop Notifying Me", "toggled Notify Me without request_id");
+    } finally { await tv.page.context().close(); }
+});

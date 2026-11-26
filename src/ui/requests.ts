@@ -5,7 +5,7 @@ import { requestPosterUrl } from "./browseModel.ts";
 import { detailsLoadingView } from "./detailsLoading.ts";
 import { el } from "./screen.ts";
 import { requestProgress, type RequestProgress } from "./requestProgress.ts";
-import type { RequestPage, RequestPageSnapshot, RequestsSource } from "./requestsModule.ts";
+import { requestFollowTarget, type RequestPage, type RequestPageSnapshot, type RequestsSource } from "./requestsModule.ts";
 import { cullToRailBounds, requestActionSpinner, requestBellIcon, requestBellSlashIcon, requestHero, requestPlusIcon, requestPosterBadge, requestsLoadingPage, requestStatusLabel, requestXmarkIcon, TRAY_ICON } from "./requestsScene.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
@@ -113,7 +113,7 @@ function detailActions(data: RequestTitle | MediaRequest, state: RequestPageSnap
         return item;
     };
     if ("request" in data && data.request.requestable) actions.push(requestAction());
-    const followTitle = "request" in data ? data : state.detail?.request.id === data.id ? state.detail : undefined;
+    const followTitle = requestFollowTarget(data, state.detail);
     if (followTitle !== undefined && canFollowRequest(state.capability, followTitle, requestProgress(followTitle))) {
         const following = followTitle.request.following;
         const label = translate(following ? "requests.action.stopNotify" : "requests.action.notify");
