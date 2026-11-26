@@ -692,7 +692,7 @@ export class WatchPartyHub {
                 const roomId = this.state.room?.roomId;
                 if (roomId === undefined || !message.suggestions.every(row => row.roomId === roomId)) return;
                 this.state.votes.receive(message.suggestions);
-                this.notify();
+                if (this.showsLobby()) this.notify();
                 this.refreshSuggestions();
                 return;
             }
@@ -809,6 +809,12 @@ export class WatchPartyHub {
         this.refreshSuggestions();
     }
 
+    /** Pages that render the lobby or its ballot/suggestions; picker pages stay quiet on background ballot refreshes. */
+    private showsLobby(): boolean {
+        const kind = this.state.page.kind;
+        return kind !== "picker" && kind !== "search" && kind !== "choice" && kind !== "episodes";
+    }
+
     /**
      * WatchPartySession.refreshSuggestions: a vote room reads its ballot shortly after a socket update, one read at a time.
      * A failed read tries again after 1, 2 and 4 seconds, so new suggestions do not stay unvotable until the next update.
@@ -826,12 +832,15 @@ export class WatchPartyHub {
                 await sleep(this.options.clock ?? systemClock, failures === 0 ? SUGGESTIONS_REFRESH_MS : 1000 * 2 ** (failures - 1), this.controller.signal, () => new Error("stopped"));
                 if (epoch !== this.suggestionsEpoch) return;
                 await this.loadSuggestions(room.roomId, epoch);
-                if (this.state.error === this.refreshFailure && epoch === this.suggestionsEpoch) { this.state.error = undefined; this.notify(); }
+                if (this.state.error === this.refreshFailure && epoch === this.suggestionsEpoch) {
+                    this.state.error = undefined;
+                    if (this.showsLobby()) this.notify();
+                }
             } catch (error) {
                 if (this.stopped || epoch !== this.suggestionsEpoch || this.state.room?.roomId !== room.roomId) return;
                 this.refreshFailure = { key: "watchParty.error.suggestionsRefresh", args: { error: this.describe(error) } };
                 this.state.error = this.refreshFailure;
-                this.notify();
+                if (this.showsLobby()) this.notify();
                 retry = failures < SUGGESTIONS_REFRESH_RETRIES;
             } finally {
                 if (epoch === this.suggestionsEpoch) this.suggestionsRefreshing = false;
@@ -857,7 +866,10 @@ export class WatchPartyHub {
                 if (cursor !== undefined && cursors.has(cursor)) throw new Error("The server repeated a page of suggestions.");
                 if (cursor !== undefined) cursors.add(cursor);
             } while (cursor !== undefined);
-            if (this.state.votes.reconcile(rows, revision)) { this.notify(); return; }
+            if (this.state.votes.reconcile(rows, revision)) {
+                if (this.showsLobby()) this.notify();
+                return;
+            }
             await sleep(clock, SUGGESTIONS_REFRESH_MS, this.controller.signal, () => new Error("stopped"));
             if (this.stopped || epoch !== this.suggestionsEpoch) return;
         }

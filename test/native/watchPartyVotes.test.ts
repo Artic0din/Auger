@@ -102,7 +102,7 @@ class FakeSocket implements RoomWebSocket {
 
 const settle = async (): Promise<void> => { for (let i = 0; i < 8; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
 
-interface Rig { readonly hub: WatchPartyHub; readonly clock: ManualClock; readonly socket: () => FakeSocket; readonly reads: string[]; readonly calls: string[] }
+interface Rig { readonly hub: WatchPartyHub; readonly clock: ManualClock; readonly socket: () => FakeSocket; readonly reads: string[]; readonly calls: string[]; readonly renders: () => number }
 
 /** A vote room over a fake socket; `pages` answers each ballot read in turn, the last one repeating. */
 async function voteRoom(pages: (() => SuggestionPage)[], room: Record<string, unknown> = { selection_mode: "vote" }, over: Partial<WatchPartyApi> = {}, capabilities: Record<string, unknown> = {}): Promise<Rig> {
@@ -111,6 +111,7 @@ async function voteRoom(pages: (() => SuggestionPage)[], room: Record<string, un
     const reads: string[] = [];
     const calls: string[] = [];
     let read = 0;
+    let renders = 0;
     const api: WatchPartyApi = {
         capabilities: async () => roomCapabilities({ staged_selection: true, lobby_ready: true, ...capabilities }),
         playbackCapabilities: async () => playbackCapabilities(),
@@ -129,12 +130,12 @@ async function voteRoom(pages: (() => SuggestionPage)[], room: Record<string, un
         },
         ...over,
     };
-    const hub = new WatchPartyHub(api, () => undefined, { supported: true, clock, uuid: () => SUGGESTION_ID, socket: () => { const socket = new FakeSocket(); sockets.push(socket); return socket; } });
+    const hub = new WatchPartyHub(api, () => { renders++; }, { supported: true, clock, uuid: () => SUGGESTION_ID, socket: () => { const socket = new FakeSocket(); sockets.push(socket); return socket; } });
     await hub.create("vote");
     await settle();
     const socket = (): FakeSocket => { const last = sockets.at(-1); assert.ok(last, "a socket opened"); return last; };
     socket().open();
-    return { hub, clock, socket, reads, calls };
+    return { hub, clock, socket, reads, calls, renders: () => renders };
 }
 
 const page = (items: Record<string, unknown>[], nextCursor?: string): () => SuggestionPage => () => decodeSuggestionPage({ items, page: { has_more: nextCursor !== undefined, ...(nextCursor === undefined ? {} : { next_cursor: nextCursor }) } });
@@ -498,5 +499,24 @@ test("queueSuggestion never seeds the lobby with an unsanitized external posterU
     await settle();
     assert.equal(await r.hub.queueSuggestion(r.hub.state.votes.rows[0]!), true);
     assert.equal(stagedPoster, undefined, "external guest artwork is never copied into optimistic lobby selection");
+    r.hub.leave();
+});
+
+test("background suggestion refreshes and socket updates keep state current without repainting picker pages", async () => {
+    const r = await voteRoom([page([row("a")]), page([row("a"), row("b")])], { selection_mode: "host_pick" });
+    r.hub.show({ kind: "picker" });
+    const before = r.renders();
+    await r.clock.advance(200);
+    await settle();
+    assert.deepEqual(r.hub.state.votes.rows.map(item => item.id), ["a"]);
+    assert.equal(r.renders(), before, "initial background suggestions refresh does not repaint picker");
+    r.socket().frame({ type: "suggestions_update", suggestions: [row("a"), row("b")] });
+    await r.clock.advance(200);
+    await settle();
+    assert.deepEqual(r.hub.state.votes.rows.map(item => item.id), ["a", "b"]);
+    assert.equal(r.renders(), before, "socket suggestions_update and refresh do not repaint picker");
+    r.hub.back();
+    assert.equal(r.hub.state.page.kind, "lobby");
+    assert.equal(r.renders(), before + 1, "returning to lobby renders the updated suggestions");
     r.hub.leave();
 });
