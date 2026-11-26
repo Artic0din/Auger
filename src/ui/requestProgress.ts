@@ -37,6 +37,29 @@ export function requestProgress(item: RequestTitle | MediaRequest): RequestProgr
     return "request" in item && item.request.requestable ? undefined : result("unavailable", translate("requests.short.unavailable"), translate("requests.detailTitle.unavailable"));
 }
 
+const REASON_KEYS = new Map<string, Parameters<typeof translate>[0]>([
+    ["already_requested", "requests.reason.already_requested"],
+    ["already_available", "requests.reason.already_available"],
+    ["quota_exceeded", "requests.reason.quota_exceeded"],
+    ["limit_reached", "requests.reason.quota_exceeded"],
+    ["requests_disabled", "requests.reason.requests_disabled"],
+    ["requesting_blocked", "requests.reason.blocked"],
+    ["blocked", "requests.reason.blocked"],
+    ["validation_failed", "requests.reason.validation_failed"],
+    ["invalid_state", "requests.reason.invalid_state"],
+    ["not_found", "requests.reason.not_found"],
+    ["request_unconfirmed", "requests.reason.request_unconfirmed"],
+]);
+
+/** Apple RequestErrorCopy.message(forToken:): localizes known server reason tokens and humanizes unknown ones. */
+export function requestReasonCopy(token: string | undefined): string | undefined {
+    if (token === undefined || token === "") return undefined;
+    const key = REASON_KEYS.get(token);
+    if (key !== undefined) return translate(key);
+    const words = token.split(/[_-]+/).filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    return words === "" ? undefined : words;
+}
+
 export function orderRequests(records: readonly MediaRequest[]): MediaRequest[] {
     return records.flatMap(record => {
         const display = requestProgress(record)?.display;

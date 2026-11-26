@@ -37,7 +37,7 @@ export class PersonalCatalog extends FakeDetails {
             if (failure !== undefined) return failure;
             const scope = `${profile}:${body.source}:${body.type}`;
             // Unset scope queries media_items; episode history aggregates into series there.
-            const scoped = [...this.titles.values()].filter(t => (profile === "p-kid" ? t.libraryId === "16" : ["12", "13"].includes(t.libraryId)) && (body.type === undefined || body.type === "video" ? ["movie", "series"].includes(t.type) : t.type === body.type));
+            const scoped = [...this.titles.values()].filter(t => (profile === "p-kid" ? t.libraryId === "16" : ["12", "13", "14"].includes(t.libraryId)) && (body.type === undefined || body.type === "video" ? ["movie", "series", "audiobook"].includes(t.type) : t.type === body.type));
             const members = body.source === "history" ? undefined : this.members(profile, body.source);
             const included = (id: string): boolean => !this.excluded.has(id) && (members?.has(id) ?? true);
             const ids = scoped.filter(t => included(t.id));

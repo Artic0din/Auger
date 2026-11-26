@@ -931,7 +931,6 @@
 .profiles-flow .signin-alert .signin-button:focus { border-color: transparent; color: #000000; }
 .profiles-flow .signin-alert .signin-actions { flex-wrap: wrap; row-gap: 16px; }
 .profiles-flow .signin-alert [data-focus="continue-session"] { width: 100%; }
-.profiles-flow .signin-alert-text.signin-error { margin-bottom: 12px; color: #ff6961; }
 
 .profile-grid {
     display: grid;

@@ -1,3 +1,4 @@
+import { ApiError } from "../api/errors.ts";
 import { CredentialVault, type StoredCredential, type VaultLoad, type VaultSave, type VaultClear } from "./credentialVault.ts";
 import type { PublicStorage, RandomBytes } from "./deviceIdentity.ts";
 import { translate } from "../i18n/translate.ts";
@@ -41,13 +42,18 @@ export class AccountDirectory {
         this.storage?.setItem(KEY, JSON.stringify(state));
         this.state = state;
     }
-    add(baseUrl: string, serverId: string, accountId: string, username: string): SavedAccount {
-        const existing = this.list().find(row => row.baseUrl === baseUrl && row.serverId === serverId && row.accountId === accountId);
-        if (existing) return existing;
+    nextId(): string {
         const bytes = new Uint8Array(16);
         this.random(bytes);
         const id = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
         if (this.list().some(row => row.id === id)) throw new Error("Account identity collision");
+        return id;
+    }
+    add(baseUrl: string, serverId: string, accountId: string, username: string, preferredId?: string): SavedAccount {
+        const existing = this.list().find(row => row.baseUrl === baseUrl && row.serverId === serverId && row.accountId === accountId);
+        if (existing) return existing;
+        const id = preferredId ?? this.nextId();
+        if (preferredId !== undefined && this.list().some(row => row.id === id)) throw new Error("Account identity collision");
         const row = { id, baseUrl, serverId, accountId, username, profileCount: 0, needsSignIn: false, lastUsedAt: this.now() };
         this.write({ ...this.state, accounts: [...this.list(), row] });
         return row;
@@ -131,11 +137,13 @@ export class AccountVault extends CredentialVault {
         return result;
     }
     override async drain(): Promise<void> { await this.accountQueue; await super.drain(); }
-    override load(): Promise<VaultLoad> { return this.ordered(() => this.loadAccount()); }
-    private async loadAccount(): Promise<VaultLoad> {
+    override load(signal?: AbortSignal): Promise<VaultLoad> { return this.ordered(() => this.loadAccount(signal)); }
+    private async loadAccount(signal?: AbortSignal): Promise<VaultLoad> {
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
         if (this.adding) return { status: "none" };
         if (this.activeId) {
             const loaded = await this.accountVault(this.activeId).load();
+            if (signal?.aborted) throw new ApiError({ kind: "aborted" });
             const row = this.directory.list().find(row => row.id === this.activeId);
             if (loaded.status === "found" && (!row || loaded.credential.accountId !== row.accountId || loaded.credential.serverId !== row.serverId)) return { status: "corrupt" };
             if (this.directory.list().find(row => row.id === this.activeId)?.needsSignIn && loaded.status === "found") return { status: "none" };
@@ -146,27 +154,55 @@ export class AccountVault extends CredentialVault {
             return loaded;
         }
         const legacy = await super.load();
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
         if (legacy.status !== "found") return legacy;
         const credential = legacy.credential;
         try {
-            const row = this.directory.add(this.address, credential.serverId, credential.accountId, credential.username);
-            const existing = await this.accountVault(row.id).load();
-            if (existing.status === "unavailable" || existing.status === "corrupt") return existing;
-            if (row.needsSignIn) return { status: "none" };
-            if (existing.status === "found") {
-                this.directory.select(row.id);
-                this.activeId = row.id;
-                this.chooseOnSave = false;
-                return existing;
+            const existingRow = this.directory.list().find(entry => entry.baseUrl === this.address && entry.serverId === credential.serverId && entry.accountId === credential.accountId);
+            if (existingRow !== undefined) return await this.loadPublishedMigrationRow(existingRow, credential, legacy, signal);
+
+            // Generate an unshared id and save the credential before publishing a row in the directory so an abort never leaves or deletes a published row.
+            const newId = this.directory.nextId();
+            const saved = await this.accountVault(newId).save(credential);
+            if (signal?.aborted) {
+                await this.accountVault(newId).clear();
+                throw new ApiError({ kind: "aborted" });
             }
-            const saved = await this.accountVault(row.id).save(credential);
             if (saved !== "saved") return { status: "unavailable" };
+            const row = this.directory.add(this.address, credential.serverId, credential.accountId, credential.username, newId);
+            if (row.id !== newId) {
+                await this.accountVault(newId).clear();
+                if (signal?.aborted) throw new ApiError({ kind: "aborted" });
+                return await this.loadPublishedMigrationRow(row, credential, legacy, signal);
+            }
             this.directory.select(row.id);
             this.activeId = row.id;
             this.chooseOnSave = false;
             // The protected legacy copy is retained as recovery until explicit sign-out.
             return legacy;
-        } catch { return { status: "unavailable" }; }
+        } catch (error: unknown) {
+            if (error instanceof ApiError && error.aborted) throw error;
+            return { status: "unavailable" };
+        }
+    }
+    private async loadPublishedMigrationRow(row: SavedAccount, credential: StoredCredential, legacy: Extract<VaultLoad, { readonly status: "found" }>, signal?: AbortSignal): Promise<VaultLoad> {
+        const existing = await this.accountVault(row.id).load();
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
+        if (existing.status === "unavailable" || existing.status === "corrupt") return existing;
+        if (row.needsSignIn) return { status: "none" };
+        if (existing.status === "found") {
+            this.directory.select(row.id);
+            this.activeId = row.id;
+            this.chooseOnSave = false;
+            return existing;
+        }
+        const saved = await this.accountVault(row.id).save(credential);
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
+        if (saved !== "saved") return { status: "unavailable" };
+        this.directory.select(row.id);
+        this.activeId = row.id;
+        this.chooseOnSave = false;
+        return legacy;
     }
     override save(credential: StoredCredential): Promise<VaultSave> { return this.ordered(() => this.saveAccount(credential)); }
     private async saveAccount(credential: StoredCredential): Promise<VaultSave> {

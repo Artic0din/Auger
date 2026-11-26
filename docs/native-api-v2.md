@@ -285,6 +285,7 @@ Defined in `src/api/operations.ts` unless noted.
 | getCatalogBoxSet | `GET /catalog/box-sets/{id}?library_id&image_size=medium` (`src/api/boxSetOperations.ts`) | safe |
 | getCatalogItemBoxSet | `GET /catalog/items/{id}/box-set?image_size=medium` (`src/api/boxSetOperations.ts`), movie pages only, gated by `box_sets: true`. `box_set` absent means no row. Library browse does not group box sets | safe |
 | queryCatalogItems | `POST /catalog/query?image_size=small[&slot widths]` (`src/api/discoveryOperations.ts`) | safe |
+| listPersonalItems | `GET /watchlist?limit&cursor&image_size=small`, `GET /favorites?limit&cursor&image_size=small` (`src/api/discoveryOperations.ts`) | safe |
 
 Notes:
 
@@ -294,7 +295,7 @@ Notes:
 - Pages continue with the opaque `next_cursor`.
 - `limit` is bounded client-side (1 to 200 for collection items, 1 to 100 for `catalog/query`), and out-of-range values throw `RangeError` before any request.
 - The two POST queries are marked `safe` in code ("natural_idempotent"), so the transport retry applies to them.
-- `queryCatalogItems` also serves the watchlist, favorites and history lists (`src/ui/personalLists.ts`).
+- `queryCatalogItems` serves `history` (`src/ui/personalLists.ts`); Watchlist and Favorites call `discoveryOperations.listPersonalItems` (`GET /watchlist`, `GET /favorites`) directly.
 - Person works use that same POST through `personQuery`: `source: "person"`, `person_id`, `type` (`video`, `movie` or `series`), `sort: "year"`, `order: "desc"`, `limit: 60` (`PERSON_PAGE_SIZE`) and an optional opaque `cursor`. `detailOperations.filmography` (`GET /catalog?source=person...`) is not called.
 - The detail view reads the same `GET /catalog/items/{id}` for Home marquee fields (`marqueeDetail`).
 - Item detail carries `themes`: `owner_id` and ordered `items` (`id`, `title`, `duration_seconds`). A season or episode answers with the set it inherits. A malformed set reads as none, because the server treats the theme lookup as optional.
@@ -319,7 +320,7 @@ All are Bearer plus Profile.
 Gating: `decodePersonalCapability` is true only when `state === "available"`, `allowed` and `membership_supported` are all true (`src/contracts/v2/details.ts`).
 Mutations are sent once, with refresh replay off, and repeat only when the person presses again (comment in `detailOperations.ts`).
 The card menu reads watched, Favorites and Watchlist from the card's own `user_state` (`is_favorite`, `in_watchlist`), as Apple's MediaCard does; it reads the item only for a card that carries none.
-The list screens decode the same capability with a second decoder in `src/ui/personalLists.ts`, which requires a `revision` string.
+Only Details uses `decodePersonalCapability` for item membership actions; Watchlist and Favorites read `listPersonalItems` directly without calling `/capabilities/personal-lists`.
 
 ### Recommendations
 

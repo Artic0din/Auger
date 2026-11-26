@@ -11,6 +11,8 @@ export interface DialogOptions {
     readonly id: string;
     readonly title: string;
     readonly message: string;
+    /** Live status shown above the message while an operation is in flight. */
+    readonly status?: string;
     /** Shown above the message, such as a failed save. */
     readonly problem?: string;
     readonly buttons: readonly HTMLElement[];
@@ -41,6 +43,11 @@ export function centredDialog(options: DialogOptions): HTMLElement[] {
     const title = el("h2", alert ? "signin-alert-title" : "skyline-confirm-title", options.title);
     title.id = `${options.id}-title`;
     const lines: HTMLElement[] = [];
+    if (options.status !== undefined) {
+        const status = el("p", alert ? "signin-alert-text" : "skyline-confirm-message", options.status);
+        status.setAttribute("role", "status");
+        lines.push(status);
+    }
     if (options.problem !== undefined) {
         const problem = el("p", alert ? "signin-alert-text signin-error" : "skyline-confirm-message signin-error", options.problem);
         problem.setAttribute("role", "alert");

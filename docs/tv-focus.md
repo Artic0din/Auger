@@ -38,7 +38,7 @@ Each `Zone` has:
   A focused item that becomes disabled keeps focus.
   Settings rows use it, except while a save is in flight.
 - Optional `onLeft`: replaces Left entirely for that zone (used for panels that close on Left).
-- Optional `reading`: a single reading stop taller than the page (audiobook About).
+- Optional `reading`: a single reading stop taller than the page (when a zone is scrolled line by line).
   Entering it shows its leading edge; Up and Down scroll the page 360 px at a time until that edge is visible, and only then leave the zone.
 
 A key press resolves in this order (`FocusHost.onKey`, `moveWithin`):
@@ -177,7 +177,7 @@ Other layers:
 - Library genre views and personal lists pass `pop` to `Skyline.decorate` as `routeBack`, which wins over the bar logic when no menu is open.
 - A modal view in browse mode replaces `back` with its own dismiss handler.
 - A `ScreenHost` screen with `back: undefined` lets Back reach the app's handler, so sign-in's first screen opens the Exit dialog.
-- A no-op handler (`back: () => undefined` while a probe runs in `signIn.ts`) swallows Back deliberately.
+- A no-op handler (`back: () => undefined` while password sign-in submits or on the session-only notice in `signIn.ts`) swallows Back deliberately; a running server connect cancels on Back.
 - The Exit dialog defaults to Cancel; Back cancels, Select released on Exit calls `options.exit` (`tizen.application` exit in `src/platform.ts`).
 
 ## Samsung Remote Specifics

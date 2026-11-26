@@ -1,12 +1,14 @@
-import { FakeCatalog } from "./fakeCatalog.ts";
+import { FakeDetails } from "./fakeDetails.ts";
 import type { Reply } from "./fakeSilo.ts";
 
 const LIBRARY = "14";
-/** Taller than the 1080 px viewport at the About size, so the remote must scroll to read it. */
-export const OVERSIZED_OVERVIEW = Array.from({ length: 60 }, (_, index) => `Paragraph ${index + 1}: the house is a maze of halls and statues, and the tides climb its lower floors.`).join(" ");
+/** Taller than the 1080 px viewport at the About size, so the description overlay scrolls across passages and paragraphs. */
+export const OVERSIZED_OVERVIEW = Array.from({ length: 12 }, (_, index) =>
+    `Paragraph ${index + 1}: the house is a maze of halls and statues, and the tides climb its lower floors with steady patience.`.repeat(4),
+).join("\n\n");
 
 /** An owner household with an audiobook library: square covers on Home, a library and a detail page per book. */
-export class FakeAudiobooks extends FakeCatalog {
+export class FakeAudiobooks extends FakeDetails {
     constructor() {
         super(12);
         const books = [
@@ -39,22 +41,24 @@ export class FakeAudiobooks extends FakeCatalog {
 
     private book(id: string, base: Record<string, unknown>): Record<string, unknown> {
         const position = this.progress.get(id) ?? 0;
+        const played = Boolean((base.user_data as { played?: boolean } | undefined)?.played);
         const chapters = (titles: readonly string[]): Record<string, unknown>[] => titles.map((title, index) => ({
             index, title, start_seconds: index * 3600, end_seconds: (index + 1) * 3600, source: "embedded",
         }));
         return {
             ...base,
             content_id: id, type: "audiobook", genres: ["Fantasy", "Epic"],
+            ...(id === "audiobook:tide" ? { release_date: "2024-12-06" } : {}),
             overview: id === "audiobook:fresh" ? OVERSIZED_OVERVIEW : "The war for Roshar reaches its last turn, and the oaths that bound the Radiants are tested one more time.",
-            user_data: { played: false, position_seconds: position },
-            versions: [{ file_id: "af-1", presentation_kind: "audiobook_part", presentation_part_index: 1, duration: 10800, codec_audio: "aac", chapters: chapters(["Opening", "What the Tide Owes", ""]) }],
+            user_data: { played, position_seconds: position },
+            versions: [{ file_id: "af-1", presentation_kind: "audiobook_part", presentation_part_index: 1, duration: 10800, codec_audio: "aac", container: "m4b", chapters: chapters(["Opening", "What the Tide Owes", ""]) }],
             audiobook: {
                 authors: [{ name: "Brandon Sanderson" }],
                 narrators: [{ name: "Michael Kramer" }, { name: "Kate Reading" }],
                 publisher: "Tor Books",
                 total_duration_seconds: 10800,
                 series: { name: "The Stormlight Archive", entries: [
-                    { content_id: "audiobook:dune", title: "The Way of Kings", year: 2010, series_index: 1, poster_url: "/art/audiobook%3Adune.svg" },
+                    { content_id: "audiobook:dune", title: "The Stormlight Archive 1 - The Way of Kings", year: 2010, series_index: 1, poster_url: "/art/audiobook%3Adune.svg" },
                     { content_id: "audiobook:hail", title: "Words of Radiance", year: 2014, series_index: 2, poster_url: "/art/audiobook%3Ahail.svg" },
                     { content_id: id, title: "The Tide Owes", year: 2024, series_index: 5, poster_url: `/art/${encodeURIComponent(id)}.svg` },
                 ] },

@@ -163,12 +163,15 @@ export class NativeSession {
         };
     }
 
-    async restore(): Promise<RestoreResult> {
-        const loaded = await this.vault.load();
+    async restore(signal?: AbortSignal): Promise<RestoreResult> {
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
+        const loaded = await this.vault.load(signal);
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
         switch (loaded.status) {
             case "found":
                 if (loaded.credential.serverId !== this.server.serverId) {
                     // Another deployment now answers at this address: its tokens are not ours to send.
+                    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
                     await this.vault.clear();
                     return "signed_out";
                 }
@@ -176,6 +179,7 @@ export class NativeSession {
                 const credential = loaded.credential.signInEpoch === undefined
                     ? { ...loaded.credential, signInEpoch: randomHex(this.random, EPOCH_BYTES) }
                     : loaded.credential;
+                if (signal?.aborted) throw new ApiError({ kind: "aborted" });
                 this.beginAccount(credential);
                 if (credential !== loaded.credential) await this.vault.save(credential);
                 return "signed_in";

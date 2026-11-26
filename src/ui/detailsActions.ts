@@ -15,6 +15,8 @@ const ICONS: Readonly<Record<string, string>> = {
     audio: "M3 9H7L13 4V20L7 15H3ZM17 8Q23 12 17 16",
     subtitles: "M5 4H19Q22 4 22 7V15Q22 18 19 18H10L5 22V18Q2 18 2 15V7Q2 4 5 4ZM6 9H11M6 13H10M14 9H18M13 13H18",
     watchlist: "M6 3H18V22L12 18 6 22Z",
+    favorite: "M12 21 3 12C-3 3 8-1 12 6 16-1 27 3 21 12Z",
+    finished: "M7 12 10 15 17 8M22 12A10 10 0 1 1 2 12 10 10 0 0 1 22 12",
     more: "M4 12H5M11 12H12M18 12H19",
 };
 
@@ -28,7 +30,13 @@ export function detailAction(item: FocusItem): FocusItem {
     const button = item.element;
     const accessibleLabel = startOver ? translate("detail.startOver") : button.textContent ?? "";
     // TVPlaybackSelectorRow (silo-apple 71a3beb9, :112, :147) titles these detail.version and detail.audio.
-    const label = item.key === "version" ? translate("detail.version") : item.key === "audio" ? translate("detail.audio") : item.key === "subtitles" ? translate("detail.subtitles") : item.key === "watchlist" ? translate("detail.watchlist") : accessibleLabel;
+    const label = item.key === "version" ? translate("detail.version")
+        : item.key === "audio" ? translate("detail.audio")
+        : item.key === "subtitles" ? translate("detail.subtitles")
+        : item.key === "watchlist" ? translate("detail.watchlist")
+        : item.key === "favorite" ? translate("detail.favorite")
+        : item.key === "finished" ? translate("detail.audiobook.finished")
+        : accessibleLabel;
     button.textContent = "";
     button.setAttribute("aria-label", accessibleLabel);
     button.classList.add("details-action", !startOver && (item.key === "play" || item.key === "resume" || item.key === "next-episode") ? "details-play" : "details-circle");
@@ -45,8 +53,27 @@ export function detailAction(item: FocusItem): FocusItem {
     icon.setAttribute("stroke-width", item.key === "more" ? "4" : "1.8");
     const shape = document.createElementNS(icon.namespaceURI, "path");
     shape.setAttribute("d", path);
+    const pressed = button.getAttribute("aria-pressed") === "true";
     if (startOver || ["play", "resume", "next-episode"].includes(item.key)) shape.setAttribute("fill", "currentColor");
-    if (item.key === "watchlist" && button.getAttribute("aria-pressed") === "true") shape.setAttribute("fill", "currentColor");
+    if (item.key === "watchlist" && pressed) shape.setAttribute("fill", "currentColor");
+    if (item.key === "favorite") {
+        icon.dataset.symbol = pressed ? "heart.fill" : "heart";
+        if (pressed) shape.setAttribute("fill", "currentColor");
+    }
+    if (item.key === "finished") {
+        icon.dataset.symbol = pressed ? "checkmark.circle.fill" : "checkmark.circle";
+        if (pressed) {
+            const circle = document.createElementNS(icon.namespaceURI, "circle");
+            circle.setAttribute("cx", "12");
+            circle.setAttribute("cy", "12");
+            circle.setAttribute("r", "10");
+            circle.setAttribute("fill", "currentColor");
+            circle.setAttribute("stroke", "none");
+            icon.append(circle);
+            shape.setAttribute("d", "M7 12 10 15 17 8");
+            shape.setAttribute("stroke", "var(--icon-ink, #000)");
+        }
+    }
     icon.appendChild(shape);
     if (item.key === "more") {
         icon.dataset.symbol = "ellipsis";

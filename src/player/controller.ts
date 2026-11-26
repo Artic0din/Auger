@@ -823,6 +823,7 @@ export class PlaybackController implements PlayerControls {
             shown: trace.shown,
             recovered: trace.recovered,
             exhausted: trace.exhausted,
+            timedOut: trace.timedOut,
             steps: trace.steps.slice(),
             settings: trace.settingsRead ? { quality: attempt.qualityPreference, capKbps: attempt.bandwidthCapKbps, hdr: attempt.hdrEnabled } : undefined,
             hdrPanel: trace.hdrProbe === "unavailable" ? "unavailable" : { hdr10: attempt.hdrPanel.hdr10, hlg: attempt.hdrPanel.hlg, dolbyVision: attempt.hdrPanel.dolbyVision },
@@ -2007,7 +2008,7 @@ export class PlaybackController implements PlayerControls {
             }
             if (operation === "failure_recovery" && unanswered(error) && attempt.presented && this.shownError === undefined) {
                 this.releaseFailedRoute(attempt);
-                if (attempt.recovery?.active === true) this.noteTransportUnanswered(attempt);
+                if (attempt.recovery?.active === true) this.noteTransportUnanswered(attempt, error);
                 else this.recoverConnection(attempt);
                 return;
             }
@@ -3260,7 +3261,7 @@ export class PlaybackController implements PlayerControls {
         attempt.busy = false;
     }
 
-    private noteTransportUnanswered(attempt: Attempt): void {
+    private noteTransportUnanswered(attempt: Attempt, error: unknown): void {
         const recovery = attempt.recovery;
         if (recovery === undefined || !recovery.active || !attempt.live) {
             this.fail(attempt, { kind: "network" }, true);
@@ -3270,6 +3271,8 @@ export class PlaybackController implements PlayerControls {
         attempt.started = false;
         const action = recovery.retryLater(this.deps.clock.now());
         if (action.kind === "give_up") {
+            enterStage(attempt.trace, "reconnect");
+            noteApiError(attempt.trace, error);
             this.giveUp(attempt);
             return;
         }
@@ -3358,6 +3361,7 @@ export class PlaybackController implements PlayerControls {
                 await this.recoveryStart(attempt, current);
                 return;
             }
+            beginReconnectAttempt(attempt.trace);
             const decision = await this.recoveryReplan(attempt);
             attempt.recoverySpec = undefined;
             if (!current()) {
@@ -3388,6 +3392,9 @@ export class PlaybackController implements PlayerControls {
             const verdict = recoveryVerdict(error, step);
             if (verdict.kind === "start_new_session") {
                 attempt.retirePredecessor = !(error instanceof ApiError && error.status === 404);
+                traceFailure(attempt.trace, "fallback", httpCode(error));
+            } else {
+                recordReconnectError(attempt.trace, error, verdict);
             }
             await this.applyVerdict(attempt, verdict);
         } finally {
@@ -3458,7 +3465,7 @@ export class PlaybackController implements PlayerControls {
         if (recovery === undefined) {
             return;
         }
-        enterStage(attempt.trace, "reconnect");
+        beginReconnectAttempt(attempt.trace);
         try {
             const body = attempt.replacementBody ?? this.replacementBody(attempt);
             attempt.replacementBody = body;
@@ -3502,7 +3509,9 @@ export class PlaybackController implements PlayerControls {
             if (error instanceof ApiError && error.aborted) {
                 return;
             }
-            await this.applyVerdict(attempt, recoveryVerdict(error, "start"));
+            const verdict = recoveryVerdict(error, "start");
+            recordReconnectError(attempt.trace, error, verdict);
+            await this.applyVerdict(attempt, verdict);
         }
     }
 
@@ -3568,6 +3577,7 @@ export class PlaybackController implements PlayerControls {
         if (this.attempt !== attempt || !attempt.live) {
             return;
         }
+        enterStage(attempt.trace, "reconnect");
         const error: PlaybackError = { kind: "network" };
         traceFailure(attempt.trace, "end", error.kind);
         attempt.trace.exhausted = true;
@@ -4334,6 +4344,7 @@ interface AttemptTrace {
     shown: boolean;
     recovered: boolean;
     exhausted: boolean;
+    timedOut: boolean;
     settingsRead: boolean;
     hdrProbe: HdrProbe;
     /** The latest plan this attempt received, recorded before any check can refuse it. */
@@ -4368,7 +4379,7 @@ function newTrace(seq: number): AttemptTrace {
     return {
         seq, chain: 0, frozen: undefined, stage: "capabilities", done: undefined, first: undefined, http: undefined, decision: undefined,
         firstAvplay: undefined, lastAvplay: undefined, resends: 0, fallbacks: 0, reconnects: 0, opened: false, shown: false, recovered: false,
-        exhausted: false, settingsRead: false, hdrProbe: "unavailable", received: undefined, buffering: false, steps: [],
+        exhausted: false, timedOut: false, settingsRead: false, hdrProbe: "unavailable", received: undefined, buffering: false, steps: [],
         media: { load: "not_needed", switch: undefined, failure: undefined, failures: 0, observed: undefined, observedFor: undefined },
     };
 }
@@ -4400,6 +4411,7 @@ function nextChain(trace: AttemptTrace): void {
     trace.frozen = undefined;
     trace.recovered = false;
     trace.exhausted = false;
+    trace.timedOut = false;
     trace.first = undefined;
     trace.http = undefined;
     trace.decision = undefined;
@@ -4433,7 +4445,7 @@ function traceFailure(trace: AttemptTrace, result: TraceStepResult, code?: strin
         trace.resends = 0;
         trace.steps.length = 0;
     }
-    if (result === "fallback") trace.http = undefined;
+    if (result === "fallback") clearRecoveryError(trace);
     if (trace.first === undefined) trace.first = { stage: trace.stage, ...(result === "end" ? {} : { code }), buffering: trace.buffering };
     traceStep(trace, result, code);
 }
@@ -4459,10 +4471,34 @@ function noteAvplay(attempt: Attempt, code: string): void {
     attempt.trace.lastAvplay = code;
 }
 
-/** Keeps only an HTTP status the server actually answered with. */
+function clearRecoveryError(trace: AttemptTrace): void {
+    trace.http = undefined;
+    trace.timedOut = false;
+}
+
+function beginReconnectAttempt(trace: AttemptTrace): void {
+    enterStage(trace, "reconnect");
+    clearRecoveryError(trace);
+}
+
+function traceUniqueStep(trace: AttemptTrace, result: TraceStepResult, code?: string): void {
+    const step = code === undefined ? `${trace.stage}:${result}` : `${trace.stage}:${result}:${code}`;
+    if (trace.steps[trace.steps.length - 1] !== step) traceStep(trace, result, code);
+}
+
+function recordReconnectError(trace: AttemptTrace, error: unknown, verdict: RecoveryVerdict): void {
+    noteApiError(trace, error);
+    if (verdict.kind === "retry") {
+        const code = httpCode(error) ?? (error instanceof ApiError && error.failure.kind === "timeout" ? "no_response" : undefined);
+        if (code !== undefined) traceUniqueStep(trace, "retry", code);
+    }
+}
+
+/** Keeps only an HTTP status or timeout observed on the failing request; clears stale failure state from earlier attempts. */
 function noteApiError(trace: AttemptTrace, error: unknown): void {
     nextChain(trace);
-    if (error instanceof ApiError && error.status !== undefined) trace.http = error.status;
+    trace.http = error instanceof ApiError ? error.status : undefined;
+    trace.timedOut = error instanceof ApiError && error.failure.kind === "timeout";
 }
 
 function httpCode(error: unknown): string | undefined {

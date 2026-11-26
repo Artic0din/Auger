@@ -3764,7 +3764,7 @@ test("the tab rail omits Audio while its choices are loading and crosses directl
         await remote(page, LEFT);
         assert.equal(await focused(page), "tab-video");
         await remote(page, DOWN);
-        assert.equal(await focused(page), "video-empty");
+        assert.equal(await focused(page), "video-aspect");
     } finally { await page.close(); }
 });
 
@@ -3968,8 +3968,15 @@ test("quality is server-gated, remote reachable and reports pending/refused stat
         // Old path was Down, Right, Right from an Audio panel. Info is the first tab now.
         await openPanel(page);
         await nextTab(page, 2);
-        assert.equal(await focused(page), "video-empty", "Video remains available when quality has no choice");
+        assert.equal(await page.locator('[data-focus="video-empty"]').count(), 0);
+        assert.equal(await page.getByText("No video controls available for this stream.").count(), 0);
+        assert.equal(await focused(page), "video-aspect", "Video opens on Aspect when quality has no choice");
+        assert.equal(await page.locator('[data-focus="video-aspect"]').getAttribute("aria-disabled"), "true");
+        assert.equal(await page.locator('[data-focus="video-speed"]').getAttribute("aria-disabled"), "true");
+        assert.equal(await page.locator('[data-focus="auto-next"]').getAttribute("aria-disabled"), "true");
         await show(page, playing({ ...TRACKS, quality }));
+        assert.equal(await focused(page), "video-aspect", "Aspect keeps focus when Quality arrives above it");
+        await remote(page, UP);
         assert.equal(await focused(page), "video-quality");
         assert.equal(await text(page, '[data-focus="video-quality"]'), "Quality\nAuto");
         await remote(page, ENTER);
@@ -3990,8 +3997,8 @@ test("quality is server-gated, remote reachable and reports pending/refused stat
         assert.equal(await text(page, '[data-focus="video-quality"]'), "Quality\nAuto");
         await capture(page, "player-quality-after");
         await show(page, playing({ ...TRACKS, quality: { choices: [], selectedId: undefined } }));
-        // Old focus was the first audio row. Info is the first usable pane when Video disappears.
-        assert.equal(await focused(page), "video-empty", "disappearing quality hands focus to the Video empty state");
+        // Old focus was the first audio row. Aspect stays available when Quality disappears.
+        assert.equal(await focused(page), "video-aspect", "disappearing quality hands focus to Aspect");
         await remote(page, BACK);
         // Old focus was "player". Closing the panel returns to the scrubber.
         assert.equal(await focused(page), "position");
@@ -4059,13 +4066,13 @@ test("an empty audio list does not trap remote movement between Info and Subtitl
         await nextTab(page, 1);
         assert.equal(await focused(page), "stats");
         await nextTab(page, 1);
-        assert.equal(await focused(page), "video-empty");
+        assert.equal(await focused(page), "video-aspect");
         assert.equal(await page.locator(".player-tab:not([hidden])").allTextContents().then(names => names.includes("Audio")), false);
         await remote(page, ENTER);
         assert.deepEqual(await commands(page), []);
         await nextTab(page, 1);
         assert.equal(await focused(page), "subtitles-off");
-        for (const expected of ["video-empty", "stats", "info"]) {
+        for (const expected of ["video-aspect", "stats", "info"]) {
             await remote(page, UP);
             await remote(page, LEFT);
             await remote(page, DOWN);
@@ -5325,6 +5332,116 @@ test("Up Next shows a spinner while loading, Shuffling badge above eyebrow, and 
         await show(page, { phase: "completion", status: "upNext.headingShuffle", state: "ready", next: nextPick, retryable: false, shuffle: true, shuffleScopeLabel: "Breaking Bad · Season 2", shuffleActionError: "upNext.pickAnotherFailed", countdown: 10, autoNext: true });
         assert.equal(await page.locator(".player-shuffle-error").isVisible(), true);
         assert.equal(await text(page, ".player-shuffle-error"), "Couldn't pick another.");
+        assert.deepEqual(logs, []);
+    } finally { await page.close(); }
+});
+
+test("Chapters draws single-line rows with play symbol for current chapter and untitled fallback (#779)", async () => {
+    const { page, logs } = await open();
+    try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await show(page, {
+            ...playing(TRACKS),
+            positionSeconds: 850,
+            hud: {
+                chapters: [{ title: "Opening", seconds: 0 }, { title: undefined, seconds: 800 }],
+                chapterState: "ready",
+                stats: STATS,
+                speeds: [],
+                aspects: [],
+                speed: undefined,
+                aspect: undefined,
+                autoNext: undefined,
+                busy: false,
+            },
+        });
+        await openPanel(page);
+        assert.match(await text(page, ".player-menu-info"), /Chapter\s+Chapter 2/);
+
+        // Video tab always shows Aspect, Speed and Auto-play (disabled when stream controls are absent), never the video-empty note.
+        await nextTab(page, 2);
+        assert.equal(await page.locator('[data-focus="video-empty"]').count(), 0);
+        assert.equal(await focused(page), "video-aspect");
+        for (const id of ["video-aspect", "video-speed", "auto-next"]) {
+            assert.equal(await page.locator(`[data-focus="${id}"]`).count(), 1);
+            assert.equal(await page.locator(`[data-focus="${id}"]`).getAttribute("aria-disabled"), "true");
+            assert.equal(await page.locator(`[data-focus="${id}"] .player-setting-value`).count(), 0);
+        }
+
+        // Chapters enters at the top of the column with unfocused current play.fill (80% white), then Down moves to chapter:1 with focused single-line geometry and no ::after checkmark.
+        await nextTab(page, 3);
+        assert.equal(await focused(page), "chapter:0");
+        const cap = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--silo-sf-cap-scale")));
+        const inspect = (key: string) => page.locator(`[data-focus="${key}"]`).evaluate(row => {
+            const rowRect = row.getBoundingClientRect();
+            const num = row.querySelector<HTMLElement>(".player-chapter-number");
+            const title = row.querySelector<HTMLElement>(".player-chapter-title");
+            const play = row.querySelector<HTMLElement>(".player-chapter-playing");
+            const time = row.querySelector<HTMLElement>(".player-chapter-time");
+            const metrics = (el: HTMLElement | null) => {
+                if (el === null) return null;
+                const css = getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return { text: el.textContent ?? "", size: parseFloat(css.fontSize), weight: css.fontWeight, color: css.color, width: rect.width, left: rect.left, cy: rect.top + rect.height / 2 };
+            };
+            return {
+                afterContent: getComputedStyle(row, "::after").content,
+                rowCy: rowRect.top + rowRect.height / 2,
+                hasPlaySvg: (play?.querySelector("svg") ?? null) !== null,
+                num: metrics(num),
+                title: metrics(title),
+                play: metrics(play),
+                time: metrics(time),
+            };
+        });
+        assert.equal((await inspect("chapter:1")).play?.color, "rgba(255, 255, 255, 0.8)");
+        await remote(page, DOWN);
+        assert.equal(await focused(page), "chapter:1");
+        const focusedCurrent = await inspect("chapter:1");
+        const unfocusedFirst = await inspect("chapter:0");
+
+        assert.equal(await page.locator('[data-focus="chapter:1"]').getAttribute("aria-label"), null);
+        assert.equal(focusedCurrent.afterContent, "none");
+        assert.equal(focusedCurrent.hasPlaySvg, true);
+        assert.equal(unfocusedFirst.hasPlaySvg, false);
+        assert.equal(focusedCurrent.title?.text, "Chapter 2");
+        assert.equal(unfocusedFirst.title?.text, "Opening");
+        assert.equal(unfocusedFirst.num?.text, "01");
+        assert.equal(focusedCurrent.num?.text, "02");
+
+        // Single horizontal line ordering: number -> title -> play -> time.
+        assert.ok(focusedCurrent.num && focusedCurrent.title && focusedCurrent.play && focusedCurrent.time);
+        assert.ok(focusedCurrent.num.left < focusedCurrent.title.left);
+        assert.ok(focusedCurrent.title.left < focusedCurrent.play.left);
+        assert.ok(focusedCurrent.play.left < focusedCurrent.time.left);
+        for (const box of [focusedCurrent.num, focusedCurrent.title, focusedCurrent.play, focusedCurrent.time]) {
+            assert.ok(Math.abs(box.cy - focusedCurrent.rowCy) < 2, `part vertically aligned on one line: ${JSON.stringify(box)}`);
+        }
+
+        // Apple TV sizes (times cap) and opacities (both focused dark-ink and unfocused light-ink).
+        assert.equal(focusedCurrent.num.width, 44);
+        assert.ok(Math.abs(focusedCurrent.num.size - 20 * cap) < 0.05);
+        assert.equal(focusedCurrent.num.weight, "600");
+        assert.equal(focusedCurrent.num.color, "rgba(0, 0, 0, 0.55)");
+        assert.equal(unfocusedFirst.num?.color, "rgba(255, 255, 255, 0.55)");
+
+        assert.ok(Math.abs(focusedCurrent.title.size - 22 * cap) < 0.05);
+        assert.equal(focusedCurrent.title.weight, "500");
+        assert.equal(focusedCurrent.title.color, "rgb(0, 0, 0)");
+        assert.equal(unfocusedFirst.title?.color, "rgb(255, 255, 255)");
+
+        assert.ok(Math.abs(focusedCurrent.play.width - 16 * cap) < 0.05);
+        assert.equal(focusedCurrent.play.color, "rgba(0, 0, 0, 0.8)");
+
+        assert.ok(Math.abs(focusedCurrent.time.size - 20 * cap) < 0.05);
+        assert.equal(focusedCurrent.time.weight, "500");
+        assert.equal(focusedCurrent.time.color, "rgba(0, 0, 0, 0.65)");
+        assert.equal(unfocusedFirst.time?.color, "rgba(255, 255, 255, 0.65)");
+
+        // Moving focus up to chapter:0 restores unfocused current play opacity (80% white).
+        await remote(page, UP);
+        assert.equal(await focused(page), "chapter:0");
+        assert.equal((await inspect("chapter:1")).play?.color, "rgba(255, 255, 255, 0.8)");
         assert.deepEqual(logs, []);
     } finally { await page.close(); }
 });

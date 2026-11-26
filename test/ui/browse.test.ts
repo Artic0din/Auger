@@ -305,7 +305,7 @@ browseTest("late Collections poster size updates columns without reading or losi
     lateCollectionSize = tv.fake.hold("/settings/values/effective?keys=ui.card_presentation", true);
 } });
 
-browseTest("failed collection collage renders the same visible stack fallback", async (tv, catalog) => {
+browseTest("failed collection collage renders the surface film glyph instead of the stack fallback", async (tv, catalog) => {
     await tv.page.locator('[data-focus="movies"]').click();
     await showing(tv, "library:12");
     const collection = { id: "broken", library_id: "12", library_ids: ["12"], group_id: null, title: "Broken collection", poster_url: "/broken-collection.svg", item_count: 0, poster_is_collage: true };
@@ -313,7 +313,8 @@ browseTest("failed collection collage renders the same visible stack fallback", 
     await tv.page.route('**/broken-collection.svg', route => route.abort());
     await selectLibraryMode(tv, "Collections");
     const card = tv.page.locator('[data-focus="collection:broken"]');
-    await card.locator('.browse-art-missing svg').waitFor();
+    await card.locator('.browse-art-surface-missing .browse-art-surface-glyph[data-symbol="film"]').waitFor();
+    assert.equal(await card.locator('.collection-stack').count(), 0);
     assert.equal(await card.locator('img').count(), 0);
     assert.equal(await card.locator('.browse-card-subtitle').count(), 0);
     assert.equal(await card.getAttribute('aria-label'), 'Broken collection, collection');
@@ -1442,7 +1443,7 @@ browseTest("Search retries a cancelled background Requests refresh with cached c
     refresh.release();
     await tv.remote(BACK); await showing(tv, "search");
     await tv.eventually(async () => tv.fake.requests.filter(request => request.path.startsWith("/requests/search?")).length === reads + 2, "replacement Requests read after Back");
-    await tv.page.getByRole("button", { name: "Heat · Pending", exact: true }).waitFor();
+    await tv.page.getByRole("button", { name: "Heat, Pending", exact: true }).waitFor();
     assert.equal(tv.fake.requests.filter(request => request.method === "POST" && request.path === "/requests").length, 1);
 }, { catalog: interruptedRequests });
 for (const lost of [false, true]) {
@@ -1475,7 +1476,7 @@ for (const lost of [false, true]) {
         const titles = browseReads(tv, "/catalog").length, people = browseReads(tv, "/catalog/people").length;
         held.release();
         await tv.eventually(async () => tv.fake.requests.filter(request => request.path.startsWith("/requests/search?")).length === reads + 1, "visible Search supplement refreshed after settlement");
-        await tv.page.getByRole("button", { name: "Heat · Pending", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Heat, Pending", exact: true }).waitFor();
         assert.equal(await tv.focused(), "movie:949", "refresh retains the returned card identity");
         assert.equal(browseReads(tv, "/catalog").length, titles);
         assert.equal(browseReads(tv, "/catalog/people").length, people);
@@ -1592,7 +1593,7 @@ browseTest("Search Requests is supplementary, includes existing requests and sur
     held.release();
     await tv.page.locator('[data-focus="movie:949"]').waitFor();
     assert.equal(await tv.page.locator('[data-focus="movie:949"] .requests-status-badge').count(), 1);
-    assert.equal(await tv.page.locator('[data-focus="movie:949"]').getAttribute("aria-label"), "Heat · Pending");
+    assert.equal(await tv.page.locator('[data-focus="movie:949"]').getAttribute("aria-label"), "Heat, Pending");
     assert.equal(browseReads(tv, "/catalog").length, reads);
     await tv.page.emulateMedia({ reducedMotion: "reduce" });
     await tv.page.locator('[data-focus="query"]').focus();
