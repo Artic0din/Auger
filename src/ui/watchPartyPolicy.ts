@@ -1,6 +1,6 @@
 // Apple's WatchPartyLobbyPolicy: seat states, the presence summary, the host's hint and the lobby's one action.
 
-import type { Room, RoomMember, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
+import type { Room, RoomMember, Suggestion, WatchTogetherCapabilities } from "../contracts/v2/watchTogether.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
 
@@ -50,4 +50,12 @@ export function primaryAction(room: Room, capabilities: WatchTogetherCapabilitie
         return canStart ? "start" : "chooseTitle";
     }
     return capabilities?.lobbyReady === true && room.members.some(member => member.isSelf) ? "ready" : "none";
+}
+
+/** WatchPartyLobbyPolicy.canRemove: host can remove any suggestion; guests can remove only their own. */
+export function canRemoveSuggestion(suggestion: Suggestion, room: Room | undefined): boolean {
+    if (room === undefined || room.roomId !== suggestion.roomId || room.phase === "ended") return false;
+    if (room.selfCanManageRoom) return true;
+    const self = room.members.find(member => member.isSelf);
+    return self !== undefined && self.userId === suggestion.suggesterUserId && self.profileId === suggestion.suggesterProfileId;
 }

@@ -12,6 +12,8 @@ import { type Browser, chromium, type Page } from "playwright";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "../../src/player/upNextPreview.ts";
+import { percentText } from "../../src/i18n/format.ts";
+import { formattingLocale } from "../../src/i18n/language.ts";
 import { type MessageKey, translate, translateTv } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 
@@ -200,6 +202,24 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-setting-label').textContent(), text("player.hud.subtitleAppearance", language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-device"] .player-setting-label').textContent(), translateTv("player.hud.onlyOnThisAppleTv", undefined, language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-choice-detail').textContent(), [text("player.subtitles.size.large", language), text("player.subtitles.background.box", language), text("player.subtitles.position.bottom", language)].join(" · "));
+            await page.locator('[data-focus="subtitle-appearance"]').focus();
+            await remote(page, ENTER);
+            assert.equal(await page.locator(".player-appearance-eyebrow").textContent(), text("player.hud.appearanceEyebrow", language));
+            assert.equal(await page.locator(".player-appearance-title").textContent(), text("player.hud.styleAndColors", language));
+            assert.equal(await label(page, "subtitle-appearance-close"), text("player.hud.closeAppearance", language));
+            assert.deepEqual(await texts(page, ".player-appearance-dialog .player-setting-label"), (["player.subtitles.style.backgroundStyle", "player.subtitles.style.font", "player.subtitles.style.size", "player.hud.appearanceText", "player.subtitles.style.textOpacityLabel", "player.subtitles.style.textOutline", "player.hud.subtitleOutline", "player.subtitles.style.background", "player.subtitles.style.opacity", "player.subtitles.style.position"] as const).map(key => text(key, language)));
+            const locale = formattingLocale(language, undefined);
+            const expected100 = percentText(100, locale);
+            const expected75 = percentText(75, locale);
+            assert.notEqual(expected100, "100%");
+            assert.equal(await page.locator('[data-focus="subtitle-appearance:textOpacity"] .player-setting-value').textContent(), expected100);
+            assert.equal(await page.locator('[data-focus="subtitle-appearance:backgroundOpacity"] .player-setting-value').textContent(), expected75);
+            await page.locator('[data-focus="subtitle-appearance:textOpacity"]').focus();
+            await remote(page, ENTER);
+            const pickerOptions = await texts(page, ".player-menu-picker .player-choice-label");
+            assert.ok(pickerOptions.includes(expected100) && pickerOptions.includes(expected75), `expected localized percents in ${JSON.stringify(pickerOptions)}`);
+            await remote(page, 10009);
+            await remote(page, 10009);
             // SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main 9dabb62): Sync to Audio, its progress and Reset Timing.
             const timing = { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: false, forbidden: undefined, progress: undefined, note: undefined };
             assert.notEqual(text("player.tracks.syncToAudioButton", language), "Sync to Audio", `the ${language} file carries the sync keys`);
@@ -650,4 +670,31 @@ test("a subtitle Appearance picker that is open when German lands is drawn again
         assert.equal(await picker(page).count(), 0, "Back closes the picker");
         assert.equal(await page.locator('[data-focus="subtitle-appearance:fontSize"]').count(), 1, "and returns to the Appearance rows");
     } finally { await page.close(); }
+});
+
+test("scrubber end time, episode tag in footer and Info, and rate chip digits localize in German and Arabic (#777)", async () => {
+    const de = await open("de");
+    try {
+        await show(de, playing({ seriesTitle: "Die Serie", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await de.locator(".player-episode").textContent(), "S1 · F25");
+        assert.match(await de.locator(".player-time-remaining").textContent() ?? "", /^−1:47:26 · /);
+        assert.ok((await de.locator(".player-time-remaining").textContent() ?? "").includes(catalog("de")["player.scrubber.endsAt"]!.split("{time}")[0]!));
+        await openPanel(de, 0);
+        assert.equal(await de.locator(".player-info-episode").textContent(), "S1 · F25");
+    } finally { await de.close(); }
+
+    const ar = await open("ar");
+    try {
+        await show(ar, playing({ seriesTitle: "مسلسل", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await ar.locator(".player-episode").textContent(), "م1 · ح25");
+        const remainingText = await ar.locator(".player-time-remaining").textContent() ?? "";
+        assert.ok(remainingText.includes("\u2068") && remainingText.includes("\u2069"), `Arabic end time is isolated: ${remainingText}`);
+        await ar.evaluate(() => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: 39, bubbles: true, cancelable: true }));
+        });
+        await ar.clock.fastForward(300);
+        assert.equal(await ar.locator(".player-rate-glyph svg").count(), 1);
+        assert.equal(await ar.locator(".player-rate-value").textContent(), "١x");
+    } finally { await ar.close(); }
 });

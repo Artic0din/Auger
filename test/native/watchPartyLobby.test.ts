@@ -10,6 +10,7 @@ import { inviteUrl } from "../../src/ui/watchPartyInvite.ts";
 import { noticeText, WatchPartyHub, type WatchPartyApi } from "../../src/ui/watchPartyHub.ts";
 import { primaryAction } from "../../src/ui/watchPartyPolicy.ts";
 import { fixture } from "./support/fakeSilo.ts";
+import { settle, type ManualClock } from "./support/clock.ts";
 import { playbackCapabilities, ROOM_ID, roomAccess, roomCapabilities, unusedLobbyOperations, offline } from "./support/watchPartyApi.ts";
 import { decodeItemDetail } from "../../src/contracts/v2/catalog.ts";
 
@@ -62,7 +63,7 @@ const movie = (id = "movie:m0004"): MediaChoice => choiceFromCard(decodeCard({ c
 const episode = (): MediaChoice => choiceFromCard(decodeCard({ content_id: "episode:s1e12", type: "episode", title: "Chapter 1.2", series_id: "series:s1", series_title: "Harbor Lights", season_number: 1, episode_number: 2, poster_url: "/series.jpg", series_backdrop_url: "/series-b.jpg", backdrop_url: "/still.jpg", overview: "Spoiler." }, "card"));
 const detail = (over: Record<string, unknown> = {}) => decodeItemDetail({ ...fixture("get_catalog_item_ok"), ...over });
 
-interface Setup { hub: WatchPartyHub; calls: string[]; plays: PlayRequest[]; api: WatchPartyApi; renders: () => number }
+interface Setup { hub: WatchPartyHub; calls: string[]; plays: PlayRequest[]; api: WatchPartyApi; clock: ManualClock; renders: () => number }
 function lobby(over: Partial<WatchPartyApi> = {}, flags: Record<string, unknown> = { staged_selection: true, selection_mode_switch: true, stop_playback: true, picker: true }, room: Record<string, unknown> = {}): Setup {
     const calls: string[] = [];
     const plays: PlayRequest[] = [];
@@ -77,8 +78,9 @@ function lobby(over: Partial<WatchPartyApi> = {}, flags: Record<string, unknown>
         item: async id => detail({ content_id: id, title: `Loaded ${id}` }),
         ...over,
     };
-    const hub = new WatchPartyHub(api, () => { renders++; }, { ...offline(), supported: true, onPlay: request => plays.push(request) });
-    return { hub, calls, plays, api, renders: () => renders };
+    const transport = offline();
+    const hub = new WatchPartyHub(api, () => { renders++; }, { ...transport, supported: true, onPlay: request => plays.push(request) });
+    return { hub, calls, plays, api, clock: transport.clock, renders: () => renders };
 }
 
 test("the lobby keeps the capabilities the server answered with", async () => {
@@ -666,6 +668,51 @@ test("Back through nested See all episodes reloads the restored season when a ne
     assert.equal(restored.kind, "episodes");
     assert.equal(restored.kind === "episodes" && restored.season?.seasonNumber, 1);
     assert.equal(hub.state.episodes?.[0]?.id, "episode:s1e1", "restored season 1 reloads its own episodes");
+});
+
+test("picker search blocks stale-cursor pagination after edits and drops an in-flight append superseded by a debounced refresh", async () => {
+    const calls: [string, string | undefined][] = [];
+    const card = (id: string) => decodeCard({ content_id: id, type: "movie", title: id }, "card");
+    let resolveAppend: ((page: { items: ReturnType<typeof card>[]; nextCursor: string | undefined; total: number; totalExact: boolean }) => void) | undefined;
+    let resolveRefresh: ((page: { items: ReturnType<typeof card>[]; nextCursor: string | undefined; total: number; totalExact: boolean }) => void) | undefined;
+    const { hub, clock } = lobby({
+        searchCatalog: (q, cursor) => {
+            calls.push([q, cursor]);
+            if (calls.length === 1) return Promise.resolve({ items: [card("movie:p1")], nextCursor: "p2", total: 2, totalExact: true });
+            if (cursor === "p2") return new Promise(resolve => { resolveAppend = resolve; });
+            return new Promise(resolve => { resolveRefresh = resolve; });
+        },
+    });
+    await hub.create("host_pick");
+    hub.openSearch();
+    await hub.searchNow("dune");
+    assert.deepEqual(calls, [["dune", undefined]]);
+
+    // Editing the query before debounce expires must not send the old cursor with the new text.
+    hub.setSearchQuery("dun");
+    await hub.loadMoreSearch();
+    assert.deepEqual(calls, [["dune", undefined]], "loadMoreSearch ignores edited query while debounce is pending");
+
+    // Trailing whitespace keeps trimmed === completedQuery; starting pagination before the debounced refresh fires
+    // must not allow the stale page-2 response to populate the cleared grid ahead of page 1.
+    hub.setSearchQuery("dune ");
+    const pendingAppend = hub.loadMoreSearch();
+    await settle();
+    assert.deepEqual(calls, [["dune", undefined], ["dune", "p2"]]);
+
+    await clock.advance(300);
+    assert.deepEqual(calls, [["dune", undefined], ["dune", "p2"], ["dune", undefined]]);
+    assert.equal(hub.state.search.results.length, 0, "debounced refresh clears previous page before page 1 resolves");
+
+    resolveAppend?.({ items: [card("movie:p2")], nextCursor: undefined, total: 2, totalExact: true });
+    await pendingAppend;
+    assert.equal(hub.state.search.results.length, 0, "stale page-2 append is ignored after refresh advances searchEpoch");
+    assert.equal(hub.state.search.searching, true, "refresh remains in flight until page 1 resolves");
+
+    resolveRefresh?.({ items: [card("movie:p1-fresh")], nextCursor: undefined, total: 1, totalExact: true });
+    await settle();
+    assert.deepEqual(hub.state.search.results.map(item => item.id), ["movie:p1-fresh"]);
+    assert.equal(hub.state.search.searching, false);
 });
 
 test("a failed picker read says so and can be tried again", async () => {

@@ -119,6 +119,7 @@ export class NavigationRecorder {
     private source: NavigationSource | undefined;
     private pending: Pending | undefined;
     private readonly steps: { text: string; count: number }[] = [];
+    private historyBeforeSelector: { screen: NavigationScreen; steps: readonly string[] } | undefined;
     private readonly frames: number[] = [];
     private framePending = false;
     private generation = 0;
@@ -151,6 +152,7 @@ export class NavigationRecorder {
     detach(source: NavigationSource): void {
         if (this.source !== source) return;
         this.settle();
+        this.historyBeforeSelector = undefined;
         this.source = undefined;
         const env = this.environment();
         env.keyTarget.removeEventListener("keydown", this.onCapture, true);
@@ -166,6 +168,7 @@ export class NavigationRecorder {
         this.syncObserver(false);
         this.syncObserver(this.source?.screen() !== undefined);
         this.pending = undefined;
+        this.historyBeforeSelector = undefined;
         this.steps.length = 0;
         this.frames.length = 0;
         this.longTasks.length = 0;
@@ -187,17 +190,19 @@ export class NavigationRecorder {
     }
 
     /** Freezes the evidence now. Counts DOM nodes once here, never per key. */
-    capture(): NavigationPayload {
+    capture(context: "live" | "settings" = "live"): NavigationPayload {
         this.settle();
         const env = this.environment();
+        const screen = this.source?.screen() ?? "unknown";
+        const menu = this.historyBeforeSelector;
         const counts = env.counts();
         const cores = env.cores();
         const reducedMotion = env.reducedMotion();
         const slowest = this.api.reduce<{ op: string; ms: number } | undefined>((best, entry) => best === undefined || entry.ms > best.ms ? entry : best, undefined);
         return {
             nv: 1,
-            sc: this.source?.screen() ?? "unknown",
-            st: this.steps.map(step => step.count > 1 ? `${step.text}*${step.count}` : step.text),
+            sc: screen,
+            st: context === "settings" && menu?.screen === screen ? menu.steps : this.stepHistory(),
             lt: this.longTaskSummary(env.now()),
             fr: this.frameSummary(),
             dom: counts === undefined ? "unavailable" : { n: Math.min(counts.nodes, 1_000_000), img: Math.min(counts.images, 100_000) },
@@ -235,9 +240,15 @@ export class NavigationRecorder {
         const source = this.source;
         const screen = source?.screen();
         this.syncObserver(screen !== undefined);
-        if (source === undefined || screen === undefined) return;
+        if (source === undefined || screen === undefined) {
+            this.historyBeforeSelector = undefined;
+            return;
+        }
         const env = this.environment();
-        this.pending = { action: key, screen, zone: source.zone(), element: env.activeElement() };
+        const zone = source.zone();
+        if (zone !== "selector") this.historyBeforeSelector = undefined;
+        else if (this.historyBeforeSelector?.screen !== screen) this.historyBeforeSelector = { screen, steps: this.stepHistory() };
+        this.pending = { action: key, screen, zone, element: env.activeElement() };
         if (!this.sampling || !ARROWS.has(key) || this.framePending) return;
         // A key's timeStamp shares performance.now()'s origin in Chromium; an implausible one falls back to now.
         const now = env.now();
@@ -274,6 +285,10 @@ export class NavigationRecorder {
             else outcome = `zone:${navZone(to)}`;
         }
         this.pushStep(`${pending.screen}:${from}:${pending.action}:${outcome}`);
+    }
+
+    private stepHistory(): string[] {
+        return this.steps.map(step => step.count > 1 ? `${step.text}*${step.count}` : step.text);
     }
 
     private pushStep(text: string): void {

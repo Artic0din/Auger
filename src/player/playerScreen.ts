@@ -12,6 +12,7 @@
 import type { Clock } from "../api/clock.ts";
 import type { DiagnosticsCollector, DiagnosticsIncidentRecord } from "../diagnostics.ts";
 import { applyScreenDirection, textIsRightToLeft } from "../i18n/direction.ts";
+import { localizeNumerals } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { UP_NEXT_PREVIEW, UP_NEXT_SCREEN, upNextPreviewLeft } from "./upNextPreview.ts";
 import { onCatalogLoaded, type MessageKey, translate, translateKnown } from "../i18n/translate.ts";
@@ -30,13 +31,14 @@ import type { AVPlay } from "./avplay.ts";
 import { AUTOPLAY_COUNTDOWN_SECONDS, type PlaybackDeps, type PlaybackError, type PlaybackExits, PlaybackController, type PlaybackView, type PlayerControls, type PlayRequest, type SubtitleToolAction, type TrackView, unsupportedFormat } from "./controller.ts";
 import type { PlayerSettingsFlusher } from "./playerSettingsFlusher.ts";
 import { aiRows, fillAIMenu, firstServiceableLanguage } from "./subtitleAIMenu.ts";
-import { fillSubtitleTools, optionColumn, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
+import { fillSubtitleTools, optionColumn, overlayAppearance, overlayPicker, paneColumn, pickerFor, settingRow, type SubtitlePane } from "./subtitleMenu.ts";
 import type { AppearanceMember } from "./subtitleAppearance.ts";
-import { arrowDownCircleIcon, closeIcon, episodesIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
+import { arrowDownCircleIcon, backwardFillIcon, closeIcon, episodesIcon, forwardFillIcon, rectangleInsetFilledIcon, infoCircleIcon, optionsIcon, pauseIcon, playIcon, shuffleIcon, skipIcon, skipToEndIcon, sparklesIcon, spinnerIcon, warningTriangleIcon } from "./playerIcons.ts";
 import { COPY as BUFFERING_COPY } from "./bufferingQuality.ts";
 import { SkipPrompt, type SkipActivity } from "./skipPrompt.ts";
 import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
+import { withEndTime } from "./endTime.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
 import { currentChapter, statLabel } from "./playerHUD.ts";
 import { heading } from "./headings.ts";
@@ -102,7 +104,6 @@ function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
 }
 
 const OFF = "subtitles-off";
-const SERIES_SUBTITLE = "series-subtitles";
 const RETRY = "audio-retry";
 /** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
 const AI_JOB_ACTIONS: readonly string[] = ["ai-cancel", "ai-dismiss", "ai-discard"];
@@ -208,7 +209,7 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
         return;
     }
     const searching = tracks.subtitleTools !== undefined && tracks.subtitleTools.search.phase !== "closed";
-    if (pane.kind !== "tracks" || searching) {
+    if (searching) {
         fillSubtitleTools(list, tracks, pane);
         return;
     }
@@ -233,11 +234,6 @@ function fillSubtitles(list: HTMLElement, tracks: TrackView, languages = false, 
             trackColumn.rows.appendChild(row);
         }
     }
-    if (tracks.seriesSubtitle !== undefined) {
-        const save = choice(SERIES_SUBTITLE, tracks.selectedSubtitleId === undefined ? "Keep subtitles off for this series" : "Use this subtitle choice for this series", false);
-        save.setAttribute("aria-disabled", String(tracks.seriesSubtitle.busy));
-        trackColumn.rows.appendChild(save);
-    }
     if (ai !== undefined) {
         for (const result of ai.results) {
             const row = choice(`ai-result:${result.id}`, result.label, false, result.unavailable === true ? unsupportedFormat() : undefined);
@@ -261,6 +257,20 @@ const SKIP_DEBOUNCE_MS = 200;
 const AUTO_SEEK_MS = 100;
 /** TVPlayerScrubber timelineAutoSeekBaseStep. Each tick moves 2s times the rate. */
 const AUTO_SEEK_STEP = 2;
+
+/**
+ * `PreparedPlayback.episodeTag` (PlaybackSessionBridge.swift:47-60): `catalog.episodeCaption`
+ * when both numbers are present, falling back to `calendar.seasonShort` / `calendar.episodeShort`.
+ * Season and episode codes keep ASCII digits in every language (`LocaleFormat.codeNumber`).
+ */
+export function episodeTag(seasonNumber: number | undefined, episodeNumber: number | undefined): string | undefined {
+    if (seasonNumber !== undefined && episodeNumber !== undefined) {
+        return translate("catalog.episodeCaption", { season: String(seasonNumber), episode: String(episodeNumber) });
+    }
+    if (seasonNumber !== undefined) return translate("calendar.seasonShort", { season: String(seasonNumber) });
+    if (episodeNumber !== undefined) return translate("calendar.episodeShort", { episode: String(episodeNumber) });
+    return undefined;
+}
 
 /** Compact runtime for the Info pane. PlayerTimeFormatter.formatRuntime. */
 export function runtimeText(seconds: number | undefined): string | undefined {
@@ -485,8 +495,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     track.appendChild(fill);
     const rate = el("p", "player-rate");
     rate.hidden = true;
+    const rateGlyph = el("span", "player-rate-glyph");
+    rateGlyph.setAttribute("aria-hidden", "true");
     const rateValue = el("span", "player-rate-value");
-    rate.append(rateValue);
+    rate.append(rateGlyph, rateValue);
     bar.append(track, puck, rate);
     // `.mediaLayoutDirection()` (TVPlayerControls.swift lines 325, 555, 557 and 575): media timelines and transport read left to right in every language.
     bar.setAttribute("dir", "ltr");
@@ -686,6 +698,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     /** A playing or paused view means AVPlay can show a frame. Later loads must not cover it. */
     let pictureShown = false;
     let cancelHide: (() => void) | undefined;
+    let cancelEndTick: (() => void) | undefined;
     /** Back took the controls down over a buffering stall, which otherwise keeps them up (dismissControls); a key or the stall's end clears it. */
     let dismissed = false;
     let menuOpen = false;
@@ -756,7 +769,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         target.focus();
         return true;
     };
-    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen) focusList(index); }));
+    const tabRailLocked = (): boolean => openPicker() !== undefined || (tabNames[column] === "Subtitles" && subtitlePane.kind === "appearance");
+    tabs.forEach((tab, index) => tab.addEventListener("click", () => { if (menuOpen && !tabRailLocked()) focusList(index); }));
 
     const fillInfo = (list: HTMLElement): void => {
         if (view.phase !== "playing" && view.phase !== "paused") return;
@@ -771,8 +785,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const series = episode ? metadata?.seriesTitle ?? view.seriesTitle : undefined;
         if (series) titleColumn.appendChild(el("p", "player-info-series", series.toUpperCase()));
         titleColumn.appendChild(el("p", "player-info-title", view.title));
-        const tag = [view.seasonNumber === undefined ? undefined : `S${view.seasonNumber}`, view.episodeNumber === undefined ? undefined : `E${view.episodeNumber}`].filter(part => part !== undefined).join(" · ");
-        if (episode && tag !== "") titleColumn.appendChild(el("p", "player-info-episode", tag));
+        const tag = episodeTag(view.seasonNumber, view.episodeNumber);
+        if (episode && tag !== undefined) titleColumn.appendChild(el("p", "player-info-episode", tag));
         const metaBits = [episode || metadata?.year === undefined ? undefined : String(metadata.year), runtimeText(view.durationSeconds)].filter(part => part !== undefined);
         if (metaBits.length > 0) titleColumn.appendChild(el("p", "player-info-meta", metaBits.join("  ·  ")));
         if (view.hud?.overview) titleColumn.appendChild(el("p", "player-info-overview", view.hud.overview));
@@ -828,7 +842,10 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 if (name === "Info") fillInfo(list);
                 else if (name === "Audio") fillAudio(list, tracks);
                 else if (name === "Subtitles") {
-                    fillSubtitles(list, tracks, aiLanguages, subtitlePicker === undefined ? subtitlePane : { kind: subtitlePicker.origin.pane === "appearance" ? "appearance" : "tracks" });
+                    fillSubtitles(list, tracks, aiLanguages, { kind: "tracks" });
+                    if (subtitlePane.kind === "appearance" || subtitlePicker?.origin.pane === "appearance") {
+                        overlayAppearance(list, tracks);
+                    }
                     if (subtitlePicker !== undefined) overlayPicker(list, subtitlePicker);
                 } else if (name === "Video") {
                     fillVideoPane(list, hud, tracks);
@@ -852,19 +869,19 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                     const aiDimmed = aiAction && tracks.aiMenu !== undefined && aiRows(tracks.aiMenu).some(row => `ai-language:${row.code}` === id && row.disabled);
                     const downloading = tracks.subtitleTools?.search.downloadingKey;
                     const toolBusy = tracks.subtitleTools?.display?.busy === true || downloading !== undefined;
-                    const subtitlePick = name === "Subtitles" && id !== SERIES_SUBTITLE && !id.startsWith("ai-");
+                    const subtitlePick = name === "Subtitles" && !id.startsWith("ai-");
                     // Picker options act for the row that opened them: a subtitle setting, or Video's quality, speed or aspect.
                     const picker = name === "Video" ? videoPicker : subtitlePicker;
                     const videoOption = id.startsWith("subtitle-picker:") && picker !== undefined && (picker.field === "quality" || picker.field === "speed" || picker.field === "aspect");
                     const qualityAction = id === "video-quality" || videoOption && picker?.field === "quality";
-                    const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id === SERIES_SUBTITLE || id.startsWith("ai-"));
+                    const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id.startsWith("ai-"));
                     // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
                     const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
-                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (id === SERIES_SUBTITLE && tracks.seriesSubtitle?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
+                    const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
                     button.setAttribute("aria-disabled", String(blocked));
                 }
             }
-            menuStatus.textContent = [changeText(tracks), tracks.seriesSubtitle?.message, tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
+            menuStatus.textContent = [changeText(tracks), tracks.ai?.message, tracks.subtitleTools?.search.status, tracks.subtitleTools?.search.message, tracks.subtitleTools?.display?.message, view.phase === "playing" || view.phase === "paused" ? view.hud?.message : undefined].filter(Boolean).join(" ");
             const choices = buttons(column);
             // SubtitlesPane hands a vanished Sync or Reset row's focus to a neighbour: the other timing row, then Delay.
             const timingNeighbour = keep === "subtitle-sync" || keep === "subtitle-reset-timing" ? ["subtitle-sync", "subtitle-reset-timing", "subtitle-delay"].map(id => choices.find(button => button.getAttribute("data-focus") === id)).find(button => button !== undefined) : undefined;
@@ -882,6 +899,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             }
             showPane(column, true);
         }
+        tablist.inert = tabRailLocked();
     };
 
     let focusScrubberOnRender = false;
@@ -889,6 +907,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         aiLanguages = false;
         subtitlePane = { kind: "tracks" };
         videoPicker = undefined;
+        tablist.inert = false;
         menuRestoreFocus = undefined;
         const phase = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.search.phase : undefined;
         if (phase !== undefined && phase !== "closed") controls.subtitleTool({ kind: "search-close" });
@@ -1086,7 +1105,12 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         mark.hidden = view.phase !== "error";
         if (view.phase === "error") { back.textContent = translate("player.goBack"); delete back.dataset.symbolLabel; }
         else labelWithSymbol(back, closeIcon(), translate("upNext.close"), { size: 24, gap: 16 });
+        const stopEndTick = (): void => {
+            cancelEndTick?.();
+            cancelEndTick = undefined;
+        };
         if (view.phase === "completion" || prompt !== undefined) {
+            stopEndTick();
             cancelScrub();
             closeMenu();
             hud.hidden = true;
@@ -1194,6 +1218,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (view.phase === "error") {
+            stopEndTick();
             failure.classList.remove("player-next-up");
             retry.hidden = view.error.kind !== "settings" && !view.retryable;
             failureTitle.textContent = "";
@@ -1206,6 +1231,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             return;
         }
         if (view.phase === "closed") {
+            stopEndTick();
             spinner.hidden = true;
             status.hidden = true;
             return;
@@ -1214,7 +1240,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const activeView = view.phase === "playing" || view.phase === "paused" ? view : undefined;
         series.textContent = activeView?.seriesTitle ?? "";
         series.hidden = !series.textContent;
-        episode.textContent = activeView?.seasonNumber !== undefined && activeView.episodeNumber !== undefined ? `S${activeView.seasonNumber} · E${activeView.episodeNumber}` : "";
+        episode.textContent = episodeTag(activeView?.seasonNumber, activeView?.episodeNumber) ?? "";
         episode.hidden = !episode.textContent;
         const namedStatus = view.phase === "loading" && view.detail !== undefined ? loadingText(view.detail) : "";
         status.textContent = namedStatus;
@@ -1226,6 +1252,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         time.hidden = conceal;
         spinner.hidden = !(view.phase === "loading" || (active && view.buffering));
         if (view.phase === "loading") {
+            stopEndTick();
             elapsed.textContent = "";
             remaining.hidden = true;
             remaining.textContent = "";
@@ -1255,9 +1282,14 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (duration === undefined || duration <= 0) {
                 remaining.hidden = true;
                 remaining.textContent = "";
+                stopEndTick();
             } else {
                 remaining.hidden = false;
-                remaining.textContent = `−${clockText(Math.max(0, duration - position))}`;
+                const left = Math.max(0, duration - position);
+                remaining.textContent = withEndTime(`−${clockText(left)}`, clock.now(), left, view.hud?.speed ?? 1);
+                if (time.hidden || controlsHidden()) stopEndTick();
+                // TimelineView(.periodic(by: 1)): the finish moves with the clock even while the position stands still.
+                else if (cancelEndTick === undefined) cancelEndTick = clock.schedule(() => { cancelEndTick = undefined; render(); }, 1000);
             }
             bar.setAttribute("aria-valuenow", String(position));
             bar.setAttribute("aria-valuetext", clockText(position));
@@ -1265,7 +1297,18 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             else bar.setAttribute("aria-valuemax", String(duration));
             bar.className = timeline ? "player-bar player-bar-preview" : "player-bar";
             rate.hidden = autoRate === 0;
-            rateValue.textContent = autoRate === 0 ? "" : `${Math.abs(autoRate)}x`;
+            if (autoRate === 0) {
+                delete rate.dataset.direction;
+                rateGlyph.textContent = "";
+                rateValue.textContent = "";
+            } else {
+                const direction = autoRate < 0 ? "backward" : "forward";
+                if (rate.dataset.direction !== direction) {
+                    rate.dataset.direction = direction;
+                    rateGlyph.innerHTML = direction === "backward" ? backwardFillIcon() : forwardFillIcon();
+                }
+                rateValue.textContent = `${localizeNumerals(String(Math.abs(autoRate)))}x`;
+            }
             const fraction = duration === undefined || duration <= 0 ? 0 : Math.min(100, (position / duration) * 100);
             fill.style.width = `${fraction}%`;
             puck.style.left = `${fraction}%`;
@@ -1553,8 +1596,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const pane = lists[column];
         if (scrollPane && pane !== undefined && (key === "up" || key === "down") && pageScrollPane(pane, key)) return;
         if (key === "up" && at <= 0) {
-            // An open picker takes the rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1709-1712).
-            if (openPicker() === undefined) tabs[column]?.focus();
+            // An open picker or Appearance dialog takes the tab rail out of the focus graph (TVPlayerInfoHUD.swift:139, :1640-1644).
+            if (!tabRailLocked()) tabs[column]?.focus();
             return;
         }
         if (atTab >= 0) {
@@ -1604,8 +1647,6 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 controls.selectSecondarySubtitle(id.slice("secondary:".length));
             } else if (id === OFF) {
                 controls.selectSubtitle(undefined);
-            } else if (id === SERIES_SUBTITLE) {
-                controls.saveSeriesSubtitle();
             } else if (id === "ai-menu") {
                 aiLanguages = true;
                 controls.subtitleAIAction("open");
@@ -1653,13 +1694,20 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
                 }
             } else if (id === "subtitle-appearance") {
                 subtitlePane = { kind: "appearance" };
-            } else if (id === "subtitle-appearance-back") {
+                // SubtitleAppearanceDialog.defaultFocus($focusedField, .style) (TVPlayerInfoHUD.swift:1418).
+                menuRestoreFocus = "subtitle-appearance:backgroundStyle";
+            } else if (id === "subtitle-appearance-close") {
                 subtitlePane = { kind: "tracks" };
                 menuRestoreFocus = "subtitle-appearance";
             } else if (id?.startsWith("subtitle-appearance:")) {
                 const field = id.slice("subtitle-appearance:".length);
-                const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, field) : undefined;
-                if (next !== undefined) subtitlePane = { ...next, origin: { pane: "appearance", focusId: id } };
+                if (field === "textOutline") {
+                    const current = view.phase === "playing" || view.phase === "paused" ? view.tracks.subtitleTools?.display?.appearance.textOutline === true : false;
+                    controls.subtitleTool({ kind: "appearance", member: "textOutline", value: !current });
+                } else {
+                    const next = view.phase === "playing" || view.phase === "paused" ? pickerFor(view.tracks, field) : undefined;
+                    if (next !== undefined) subtitlePane = { ...next, origin: { pane: "appearance", focusId: id } };
+                }
             } else if (id?.startsWith("subtitle-picker:") && picker !== undefined) {
                 const value = id.slice("subtitle-picker:".length);
                 const field = picker.field;
@@ -2041,6 +2089,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             stopCatalog();
             late.clear();
             cancelHide?.();
+            cancelEndTick?.();
             // A Select still down when the player closes must not reach the screen underneath.
             swallowSelect();
             document.removeEventListener("keydown", onKey);

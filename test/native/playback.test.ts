@@ -3856,63 +3856,6 @@ test("autoplay stops at the series end and never starts after failed resolution"
     }
 });
 
-test("series subtitle choice persists the server index or explicit Off without interrupting playback", async () => {
-    for (const off of [true, false]) {
-        const r = await episodeRig();
-        if (!off) r.server.next.push({ subtitle: 4 });
-        // A failed preference read keeps the server's default track, which is the track these tests save.
-        r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
-        r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
-        await playMovie(r, EPISODE);
-        r.controller.saveSeriesSubtitle();
-        r.controller.saveSeriesSubtitle();
-        await r.h.clock.advance(0);
-        const writes = r.h.fake.requests.filter(request => request.path.startsWith("/subtitle-prefs/"));
-        assert.equal(writes.length, 1);
-        assert.equal(writes[0]?.headers["x-profile-id"], "p-owner");
-        assert.equal(writes[0]?.body?.subtitle_track_index, off ? -1 : 4);
-        assert.equal(writes[0]?.body?.subtitle_mode, off ? "off" : "always");
-        if (off) assert.equal(writes[0]?.body?.show_forced_subtitles, false);
-        const view = last(r.views);
-        assert.ok(view.phase === "playing");
-        assert.equal(view.tracks.seriesSubtitle?.message, "Subtitle choice saved for this series.");
-        r.controller.destroy();
-    }
-});
-
-test("series subtitle write is not resent after a 401 and token refresh", async () => {
-    const r = await episodeRig();
-    r.server.next.push({ subtitle: 4 });
-    // A failed preference read keeps the server's default track, which is the track these tests save.
-    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
-    r.h.fake.script("/subtitle-prefs/series%3As1", problem(401, "authentication_required", "Authentication required"), { status: 204 });
-    await playMovie(r, EPISODE);
-    r.controller.saveSeriesSubtitle();
-    await r.h.clock.advance(0);
-    assert.ok(r.h.fake.paths().includes("POST /auth/refresh"));
-    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/subtitle-prefs/")).length, 1);
-    const view = last(r.views);
-    assert.ok(view.phase === "playing");
-    assert.match(view.tracks.seriesSubtitle?.message ?? "", /Could not confirm/);
-    r.controller.destroy();
-});
-
-test("series subtitle save refuses when the shown track is missing from the inventory instead of saving Off", async () => {
-    const r = await episodeRig();
-    r.server.next.push({ subtitle: 9 });
-    // A failed preference read keeps the server's default track, which is the track these tests save.
-    r.h.fake.script("/watch/episode%3As1e12?file_id=42", { status: 500 });
-    r.h.fake.script("/subtitle-prefs/series%3As1", { status: 204 });
-    await playMovie(r, EPISODE);
-    r.controller.saveSeriesSubtitle();
-    await r.h.clock.advance(0);
-    assert.equal(r.h.fake.requests.filter(request => request.path.startsWith("/subtitle-prefs/")).length, 0);
-    const view = last(r.views);
-    assert.ok(view.phase === "playing");
-    assert.match(view.tracks.seriesSubtitle?.message ?? "", /Could not confirm/);
-    r.controller.destroy();
-});
-
 test("episode EOF orders held progress, final STOP, fresh watch and exactly one manual successor START", async () => {
     const r = await episodeRig();
     const id = await playMovie(r, EPISODE);

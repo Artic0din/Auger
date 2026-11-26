@@ -111,6 +111,16 @@ export function uturnBackwardIcon(): string {
     return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.5 4 4 8.5 8.5 13M4 8.5h10a5 5 0 0 1 0 10.5H9"/>`);
 }
 
+/** `forward.fill`: fast-forward double-arrow glyph for scrubber rate chip and hold-seek indicator. */
+export function forwardFillIcon(): string {
+    return `<svg viewBox="0 0 24 16" focusable="false" aria-hidden="true"><path fill="currentColor" d="M1.5 2.2A1 1 0 0 1 3 1.4l8.8 5.7a1 1 0 0 1 0 1.8L3 14.6a1 1 0 0 1-1.5-.8V2.2zm11 0A1 1 0 0 1 14 1.4l8.8 5.7a1 1 0 0 1 0 1.8L14 14.6a1 1 0 0 1-1.5-.8V2.2z"/></svg>`;
+}
+
+/** `backward.fill`: rewind double-arrow glyph for scrubber rate chip and hold-seek indicator. */
+export function backwardFillIcon(): string {
+    return `<svg viewBox="0 0 24 16" focusable="false" aria-hidden="true"><path fill="currentColor" d="M22.5 2.2A1 1 0 0 0 21 1.4l-8.8 5.7a1 1 0 0 0 0 1.8l8.8 5.7a1 1 0 0 0 1.5-.8V2.2zm-11 0A1 1 0 0 0 10 1.4L1.2 7.1a1 1 0 0 0 0 1.8L10 14.6a1 1 0 0 0 1.5-.8V2.2z"/></svg>`;
+}
+
 /** `shuffle`: Up Next's Shuffling badge and Pick Another button symbol (#778). */
 export function shuffleIcon(): string {
     return svg(`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h4v4"/><path d="M4 19 20 4"/><path d="M16 20h4v-4"/><path d="M14 14l6 6"/><path d="M4 5l6 6"/></g>`);

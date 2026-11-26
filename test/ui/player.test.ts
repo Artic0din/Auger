@@ -915,6 +915,56 @@ test("episode footer shows series, title and episode tag without an empty status
     } finally { await page.close(); }
 });
 
+test("remaining time shows Ends clock at playback speed and ticks forward while paused (#777)", async () => {
+    const { page } = await open();
+    try {
+        const formatEnd = (remainingSeconds: number, speed: number): Promise<string> => page.evaluate(([left, rate]) => {
+            const end = new Date(Date.now() + (left / rate) * 1000);
+            return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", hourCycle: "h12" }).format(end);
+        }, [remainingSeconds, speed] as const);
+        await show(page, { ...playing(TRACKS), phase: "paused", positionSeconds: 754, durationSeconds: 7200, hud: { chapters: [], chapterState: "ready", stats: NO_STATS, speeds: [1, 2], aspects: [], speed: 1, aspect: "Fit", autoNext: false, busy: false } });
+        const at1x = await formatEnd(6446, 1);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${at1x}`);
+        await show(page, { ...playing(TRACKS), phase: "paused", positionSeconds: 754, durationSeconds: 7200, hud: { chapters: [], chapterState: "ready", stats: NO_STATS, speeds: [1, 2], aspects: [], speed: 2, aspect: "Fit", autoNext: false, busy: false } });
+        const at2x = await formatEnd(6446, 2);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${at2x}`);
+        assert.notEqual(at2x, at1x);
+        await page.clock.runFor(60_000);
+        const ticked = await formatEnd(6446, 2);
+        assert.notEqual(ticked, at2x);
+        assert.equal(await page.locator(".player-time-remaining").textContent(), `−1:47:26 · Ends ${ticked}`);
+    } finally { await page.close(); }
+});
+
+test("scrubber rate chip draws a directional arrow 7px before the rate and episode tags fall back to season or episode (#777)", async () => {
+    const { page } = await open();
+    try {
+        await show(page, { ...playing(TRACKS), title: "Going Green", seriesTitle: "The Series", seasonNumber: 3 });
+        assert.equal(await page.locator(".player-episode").textContent(), "S3");
+        await show(page, { ...playing(TRACKS), title: "Going Green", seriesTitle: "The Series", episodeNumber: 12 });
+        assert.equal(await page.locator(".player-episode").textContent(), "E12");
+        await openPanel(page);
+        assert.equal(await page.locator(".player-info-episode").textContent(), "E12");
+        await remote(page, BACK);
+        await holdKey(page, RIGHT);
+        await page.clock.fastForward(300);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "forward");
+        const forwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(forwardPath?.startsWith("M1.5 2.2"), `expected forward double-arrow glyph, got ${forwardPath}`);
+        assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
+        assert.equal(await page.locator(".player-rate").evaluate(node => getComputedStyle(node).columnGap), "7px");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
+        const backwardPath = await page.locator(".player-rate-glyph svg path").getAttribute("d");
+        assert.ok(backwardPath?.startsWith("M22.5 2.2"), `expected backward double-arrow glyph, got ${backwardPath}`);
+        assert.notEqual(backwardPath, forwardPath);
+        assert.equal(await page.locator(".player-rate-value").textContent(), "1x");
+        await remote(page, LEFT);
+        assert.equal(await page.locator(".player-rate").getAttribute("data-direction"), "backward");
+        assert.equal(await page.locator(".player-rate-value").textContent(), "2x");
+    } finally { await page.close(); }
+});
+
 test("Info panel measured placement and Up Down Menu focus", async () => {
     const { page } = await open();
     try {
@@ -948,7 +998,7 @@ for (const commit of ["debounce", "select", "timeline"] as const) test(`pending 
         await show(page, { ...playing(TRACKS), previewKey: undefined });
         await page.clock.runFor(1000);
         assert.equal(await page.locator(".player-time-elapsed").textContent(), "12:44");
-        assert.equal(await page.locator(".player-time-remaining").textContent(), "−1:47:16");
+        assert.match(await page.locator(".player-time-remaining").textContent() ?? "", /^−1:47:16 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         await remote(page, RIGHT);
         assert.equal(await page.getByRole("slider").getAttribute("aria-valuenow"), "774");
     } finally { await page.close(); }
@@ -1545,10 +1595,9 @@ test("Up Next captures remote input, preserves focus and exposes Keep Watching a
 test("Subtitles stays hidden without tracks or actionable sources like Apple TV", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...NO_TRACKS, seriesSubtitle: { busy: false, message: "" } }));
+        await show(page, playing(NO_TRACKS));
         await openAudio(page);
-        await nextTab(page, 1);
-        assert.equal(await page.getByRole("button", { name: "Keep subtitles off for this series", exact: true }).isVisible(), false);
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allInnerTexts(), ["Info", "Stats", "Video", "Audio"]);
     } finally { await page.close(); }
 });
 
@@ -1687,19 +1736,14 @@ test("captions paint above the overlay gradient but below its controls and the m
     } finally { await page.close(); }
 });
 
-test("series subtitle save stays focused while its write is pending", async () => {
+test("Subtitles TRACKS column lists Off and tracks only, without an extra series-save row (#780)", async () => {
     const { page } = await open();
     try {
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: false, message: "" } }));
-        // Old path was Down then Right, from an Audio panel. Info is the first tab now.
+        await show(page, playing(TRACKS));
         await openAudio(page);
         await nextTab(page, 1);
-        for (let index = 0; index < TRACKS.subtitles.length + 1; index++) await remote(page, DOWN);
-        assert.equal(await focused(page), "series-subtitles");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["saveSeriesSubtitle"]);
-        await show(page, playing({ ...TRACKS, seriesSubtitle: { busy: true, message: "Saving…" } }));
-        assert.equal(await focused(page), "series-subtitles");
+        const ids = await page.locator(".player-menu-column-tracks [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus")));
+        assert.deepEqual(ids, ["subtitles-off", ...TRACKS.subtitles.map(track => track.id)]);
     } finally { await page.close(); }
 });
 
@@ -3056,7 +3100,7 @@ test("loading, playing and paused are readable; the remote cancels a seek previe
         await show(page, { phase: "playing", title: "The Movie", positionSeconds: 754, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks: NO_TRACKS });
         // Old value was "12:34 / 2:00:00" (elapsed slash duration). Apple's time row is elapsed and a minus remaining.
         assert.equal(await page.locator(".player-time-elapsed").innerText(), "12:34");
-        assert.equal(await page.locator(".player-time-remaining").innerText(), "−1:47:26");
+        assert.match(await page.locator(".player-time-remaining").innerText(), /^−1:47:26 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         assert.equal(await page.locator(".player-overlay").getAttribute("class"), "player-overlay", "shown when playback starts");
         await page.clock.fastForward(5000);
         await show(page, { phase: "playing", title: "The Movie", positionSeconds: 759, durationSeconds: 7200, buffering: false, seekIntervals: { backward: 10, forward: 10 }, tracks: NO_TRACKS });
@@ -3241,7 +3285,7 @@ test("the open panel is Apple's 1100 by 380 tabbed HUD and the clock is elapsed 
         const elapsed = page.locator(".player-time-elapsed");
         const remaining = page.locator(".player-time-remaining");
         assert.equal(await elapsed.innerText(), "12:34");
-        assert.equal(await remaining.innerText(), "−1:47:26");
+        assert.match(await remaining.innerText(), /^−1:47:26 · Ends \d{1,2}:\d{2}\s?[AP]M$/);
         await page.locator(".player-bar").focus();
         const puck = await page.locator(".player-puck").evaluate((node) => {
             const style = getComputedStyle(node);
@@ -3867,13 +3911,97 @@ for (const field of ["fontSize", "position"] as const) for (const ending of ["se
             if (ending === "select") await remote(page, ENTER);
             else await remote(page, BACK);
             assert.equal(await focused(page), trigger);
-            assert.equal(await page.locator('[data-focus="subtitle-appearance-back"]').count(), 1);
+            assert.equal(await page.locator('[data-focus="subtitle-appearance-close"]').count(), 1);
             assert.equal((await commands(page)).length, ending === "select" ? 1 : 0);
             await remote(page, BACK);
             assert.equal(await focused(page), "subtitle-appearance");
         } finally { await page.close(); }
     });
 }
+
+test("Appearance opens as a 720px floating dialog defaulting to Style with Apple row order, toggles, swatches, and dashes (#780)", async () => {
+    const { page } = await open();
+    const tracks: TrackView = {
+        ...TRACKS,
+        subtitleTools: {
+            search: { offered: true, unavailableReason: "", phase: "closed", suggested: [], other: [], language: undefined, status: "", message: "", warnings: [], canRetry: false, results: [], downloadingKey: undefined },
+            display: { delay: true, styling: true, deviceScope: true, textOpacity: true, delayMs: 0, appearance: { ...DEFAULT_APPEARANCE, backgroundStyle: "shadow", textOutline: false, backgroundOpacity: 75 }, deviceOverride: false, busy: false, message: "" },
+            overlay: true,
+        },
+    };
+    try {
+        await show(page, playing(tracks));
+        await openPanel(page);
+        await nextTab(page, 4);
+        await page.locator('[data-focus="subtitle-appearance"]').focus();
+        await remote(page, ENTER);
+        assert.equal(await focused(page), "subtitle-appearance:backgroundStyle", "default focus lands on Style");
+        const dialogGeometry = await page.evaluate(() => {
+            const dialog = document.querySelector(".player-appearance-dialog")!.getBoundingClientRect();
+            const tabs = document.querySelector(".player-tabs")!.getBoundingClientRect();
+            const menu = document.querySelector(".player-menu")!.getBoundingClientRect();
+            const rowsEl = document.querySelector(".player-appearance-rows")!;
+            return {
+                width: dialog.width,
+                height: dialog.height,
+                top: dialog.top,
+                bottom: dialog.bottom,
+                tabsBottom: tabs.bottom,
+                menuTop: menu.top,
+                menuBottom: menu.bottom,
+                scrolls: rowsEl.scrollHeight > rowsEl.clientHeight,
+            };
+        });
+        assert.equal(dialogGeometry.width, 720);
+        assert.ok(dialogGeometry.height <= 336.5, `dialog fits inside the 380px panel's 336px inner height: ${JSON.stringify(dialogGeometry)}`);
+        assert.ok(dialogGeometry.top >= dialogGeometry.tabsBottom && dialogGeometry.top >= dialogGeometry.menuTop && dialogGeometry.bottom <= dialogGeometry.menuBottom, `dialog sits below the tab rail and inside the HUD panel: ${JSON.stringify(dialogGeometry)}`);
+        assert.equal(dialogGeometry.scrolls, true, "10 appearance rows scroll inside the constrained dialog");
+        assert.equal(await page.locator(".player-appearance-eyebrow").textContent(), "SUBTITLE APPEARANCE");
+        assert.equal(await page.locator(".player-appearance-title").textContent(), "Style and colors");
+        assert.equal(await page.locator(".player-appearance-close").evaluate(node => node.getBoundingClientRect().width), 46);
+        assert.equal(await page.locator('[data-focus="subtitle-appearance-back"]').count(), 0, "no Back row");
+        assert.equal(await page.locator(".player-tabs").evaluate(node => (node as HTMLElement).inert), true, "tab rail is inert while Appearance is open");
+        const dialogSwatchBox = await page.locator(".player-appearance-dialog .player-color-swatch").first().boundingBox();
+        assert.ok(dialogSwatchBox !== null && Math.abs(dialogSwatchBox.width - 18) < 0.5 && Math.abs(dialogSwatchBox.height - 18) < 0.5, `dialog swatch must render 18x18: ${JSON.stringify(dialogSwatchBox)}`);
+        assert.equal(await page.locator(".player-appearance-dialog .player-setting-value-swatch").first().evaluate(node => getComputedStyle(node).display), "flex");
+        const rows = await page.locator('.player-appearance-rows [data-focus]').evaluateAll(nodes => nodes.map(node => ({
+            id: node.getAttribute("data-focus"),
+            label: node.querySelector(".player-setting-label")?.textContent,
+            value: node.querySelector(".player-setting-value")?.textContent,
+            swatch: node.querySelector(".player-color-swatch") !== null,
+            chevron: node.querySelector(".player-setting-chevron") !== null,
+        })));
+        assert.deepEqual(rows, [
+            { id: "subtitle-appearance:backgroundStyle", label: "Style", value: "Drop Shadow", swatch: false, chevron: true },
+            { id: "subtitle-appearance:fontFamily", label: "Font", value: "Sans-serif", swatch: false, chevron: true },
+            { id: "subtitle-appearance:fontSize", label: "Size", value: "Large", swatch: false, chevron: true },
+            { id: "subtitle-appearance:fontColor", label: "Text", value: "White", swatch: true, chevron: true },
+            { id: "subtitle-appearance:textOpacity", label: "Text Opacity", value: "100%", swatch: false, chevron: true },
+            { id: "subtitle-appearance:textOutline", label: "Text outline", value: "Off", swatch: false, chevron: false },
+            { id: "subtitle-appearance:textOutlineColor", label: "Outline", value: "—", swatch: false, chevron: true },
+            { id: "subtitle-appearance:backgroundColor", label: "Background", value: "—", swatch: false, chevron: true },
+            { id: "subtitle-appearance:backgroundOpacity", label: "Opacity", value: "Off", swatch: false, chevron: true },
+            { id: "subtitle-appearance:position", label: "Position", value: "Bottom", swatch: false, chevron: true },
+        ]);
+        // Text outline toggles directly without opening a picker.
+        await page.locator('[data-focus="subtitle-appearance:textOutline"]').focus();
+        await remote(page, ENTER);
+        assert.equal(await page.locator(".player-menu-picker").count(), 0);
+        assert.deepEqual(await commands(page), ['subtitleTool {"kind":"appearance","member":"textOutline","value":true}']);
+        // Color picker renders 18px circular swatches.
+        await page.locator('[data-focus="subtitle-appearance:fontColor"]').focus();
+        await remote(page, ENTER);
+        const swatchBox = await page.locator(".player-menu-picker .player-color-swatch").first().boundingBox();
+        assert.ok(swatchBox !== null && Math.abs(swatchBox.width - 18) < 0.5 && Math.abs(swatchBox.height - 18) < 0.5, JSON.stringify(swatchBox));
+        await remote(page, BACK);
+        assert.equal(await focused(page), "subtitle-appearance:fontColor");
+        // Close button dismisses back to Appearance and re-enables the tab rail.
+        await page.locator('[data-focus="subtitle-appearance-close"]').focus();
+        await remote(page, ENTER);
+        assert.equal(await focused(page), "subtitle-appearance");
+        assert.equal(await page.locator(".player-tabs").evaluate(node => (node as HTMLElement).inert), false);
+    } finally { await page.close(); }
+});
 
 test("subtitle search, the delay and the appearance rows are remote-operable", async () => {
     const { page, logs } = await open();
@@ -4203,25 +4331,11 @@ test("a Video picker closes first on Back and leaves the Subtitles pane as it wa
         await nextTab(page, 4);
         await page.locator('[data-focus="subtitle-appearance"]').focus();
         await remote(page, ENTER);
-        assert.equal(await focused(page), "subtitle-appearance-back");
+        assert.equal(await focused(page), "subtitle-appearance:backgroundStyle");
         await remote(page, UP);
-        await remote(page, LEFT);
-        await remote(page, LEFT);
-        await remote(page, DOWN);
-        assert.equal(await focused(page), "video-aspect");
-        await remote(page, RIGHT);
-        assert.equal(await focused(page), "video-speed");
-        await remote(page, ENTER);
-        assert.equal(await text(page, ".player-menu-picker-title"), "Playback Speed");
-        assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance-back"]').count(), 1, "Subtitles stays on Appearance behind the Video picker");
+        assert.equal(await focused(page), "subtitle-appearance-close", "Appearance is a modal dialog; Up stays inside it instead of jumping to the tab rail");
         await remote(page, BACK);
-        assert.equal(await focused(page), "video-speed");
-        assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance-back"]').count(), 1, "closing the Video picker keeps Subtitles on Appearance");
-        await remote(page, UP);
-        await remote(page, RIGHT);
-        await remote(page, RIGHT);
-        await remote(page, DOWN);
-        await remote(page, BACK);
+        assert.equal(await focused(page), "subtitle-appearance");
         for (let step = 0; step < 10 && await focused(page) !== "ai-menu"; step += 1) await remote(page, UP);
         assert.equal(await focused(page), "ai-menu");
         await remote(page, ENTER);

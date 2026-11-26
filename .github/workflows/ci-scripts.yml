@@ -43,6 +43,8 @@ jobs:
             echo "::error::set-wgt-version.sh accepted 1.2"
             exit 1
           fi
+      - name: Test Discord release embed payload
+        run: bash .github/scripts/discord-release-embed.test.sh
       - name: Check user-facing PR release notes
         if: github.event_name == 'pull_request'
         env:

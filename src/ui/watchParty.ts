@@ -7,15 +7,24 @@ import { actionButton } from "./browseViews.ts";
 import type { EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { el } from "./screen.ts";
 import { banner, enabled, eyebrow, pill, plusIcon } from "./watchPartyParts.ts";
-import { endView, inviteView, lobbyView, optionsView } from "./watchPartyLobby.ts";
+import { endView, inviteView, lobbyView, optionsView, suggestionMenuView } from "./watchPartyLobby.ts";
 import { choiceView, episodesView, pickerView, searchView } from "./watchPartyPicker.ts";
 import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 
-/** What a route keeps across renders: the hub, and the text fields so a focused field is never rebuilt. */
+/** Retained search page containers so renders never detach or blur an active TV keyboard session or focused result card. */
+export interface WatchPartySearchNodes {
+    readonly header: HTMLDivElement;
+    readonly title: HTMLHeadingElement;
+    readonly input: HTMLInputElement;
+    readonly body: HTMLDivElement;
+    readonly count: HTMLParagraphElement;
+}
+
+/** What a route keeps across renders: the hub, and the retained containers/fields so focused controls are never rebuilt. */
 export interface WatchPartyScreen {
     readonly hub: WatchPartyHub;
     readonly input: HTMLInputElement;
-    readonly searchInput: HTMLInputElement;
+    readonly search: WatchPartySearchNodes;
 }
 
 export function watchPartyScreen(hub: WatchPartyHub): WatchPartyScreen {
@@ -25,12 +34,23 @@ export function watchPartyScreen(hub: WatchPartyHub): WatchPartyScreen {
     input.setAttribute("autocomplete", "off");
     input.setAttribute("autocapitalize", "characters");
     input.spellcheck = false;
+    const searchTitle = el("h1", "watch-party-search-title");
     const searchInput = el("input", "browse-input watch-party-search-input");
     searchInput.type = "search";
     searchInput.setAttribute("data-focus", "picker-search-input");
     searchInput.setAttribute("autocomplete", "off");
     searchInput.spellcheck = false;
-    return { hub, input, searchInput };
+    // Kept across renders so the field, TV keyboard, and retained result grid are never detached (matching browse.ts).
+    const searchHeader = el("div", "watch-party-search-head watch-party-ui");
+    searchHeader.append(searchTitle, searchInput);
+    const search: WatchPartySearchNodes = {
+        header: searchHeader,
+        title: searchTitle,
+        input: searchInput,
+        body: el("div", "watch-party-search-body watch-party-ui"),
+        count: el("p", "watch-party-search-count"),
+    };
+    return { hub, input, search };
 }
 
 /** The IME Done key on the Tizen keyboard. */
@@ -46,8 +66,9 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "options": return optionsView(context, room);
         case "end": return endView(context, room);
         case "invite": return inviteView(context, room);
+        case "suggestionMenu": return suggestionMenuView(context, room, page.suggestion);
         case "picker": return pickerView(context);
-        case "search": return searchView(context, screen.searchInput);
+        case "search": return searchView(context, screen.search);
         case "choice": return choiceView(context, page.choice, page.from);
         case "episodes": return episodesView(context, page.series, page.season, page.from, page.initialEpisodeId);
         case "lobby": return lobbyView(context, room, back);

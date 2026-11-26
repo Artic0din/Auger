@@ -102,39 +102,60 @@ export function pickerView({ hub, baseUrl }: PickerContext): View {
     return { name: `watchParty:picker:${firstShelf === undefined ? "empty" : "shelves"}`, content, zones, focus: { zone, key: first.key }, back: () => hub.back() };
 }
 
-/** Apple's WatchPartySearchPage on tvOS: retained search field over a 6-column poster grid. */
-export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInputElement): View {
+/** Replaces non-retained children in place without moving retained nodes (matching FocusHost's place()). */
+function placeChildren(container: HTMLElement, nodes: readonly HTMLElement[]): void {
+    const retained = new Set(nodes);
+    for (const child of Array.from(container.children)) {
+        if (child instanceof HTMLElement && !retained.has(child)) child.remove();
+    }
+    nodes.forEach((node, index) => {
+        const current = container.children[index];
+        if (current !== node) container.insertBefore(node, current ?? null);
+    });
+}
+
+/** Apple's WatchPartySearchPage on tvOS: retained search header and body over a 6-column poster grid. */
+export function searchView(
+    { hub, baseUrl }: PickerContext,
+    nodes: {
+        readonly header: HTMLDivElement;
+        readonly title: HTMLHeadingElement;
+        readonly input: HTMLInputElement;
+        readonly body: HTMLDivElement;
+        readonly count: HTMLParagraphElement;
+    },
+): View {
     const { search, pickerPurpose } = hub.state;
+    const { header, title, input: searchInput, body, count } = nodes;
     const prompt = translate("watchParty.picker.searchPromptTv");
+    title.textContent = translate("watchParty.picker.searchPage");
     searchInput.placeholder = prompt;
     searchInput.setAttribute("aria-label", prompt);
     if (searchInput.value !== search.query) searchInput.value = search.query;
 
     const field: FocusItem = { key: "picker-search-input", element: searchInput };
-    const header = el("div", "watch-party-search-head watch-party-ui");
-    header.append(el("h1", "watch-party-search-title", translate("watchParty.picker.searchPage")), searchInput);
-
     const content: HTMLElement[] = [header];
     const zones: Zone[] = [{ id: "picker-search-field", layout: "row", items: [field] }];
-    const body = el("div", "watch-party-search-body watch-party-ui");
+    const bodyChildren: HTMLElement[] = [];
     let firstCard: FocusItem | undefined;
 
     if (search.searching && search.results.length === 0) {
-        body.appendChild(searchLoading());
+        bodyChildren.push(searchLoading());
     } else if (search.error !== undefined) {
         const retry = actionButton("search-retry", translate("shell.errorView.tryAgain"), () => { void hub.searchNow(); });
         const goBack = actionButton("search-back", translate("player.goBack"), () => { hub.back(); });
         const failure = searchState(errorHeadline(search.error), errorMessage(search.error), "search-failure");
         failure.setAttribute("role", "alert");
         failure.appendChild(zoneNode("browse-actions", [retry, goBack]));
-        body.appendChild(failure);
+        bodyChildren.push(failure);
         zones.push({ id: "picker-search-status", layout: "column", items: [retry, goBack] });
     } else if (search.hasSearched && search.results.length === 0) {
-        body.appendChild(searchState(translate("watchParty.picker.noResults"), translate("watchParty.picker.noResultsBody"), "search-empty"));
+        bodyChildren.push(searchState(translate("watchParty.picker.noResults"), translate("watchParty.picker.noResultsBody"), "search-empty"));
     } else if (search.results.length === 0) {
-        body.appendChild(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
+        bodyChildren.push(searchState(translate(pickerPurpose === "suggest" ? "watchParty.picker.suggest" : "watchParty.picker.select"), translate("search.initialBody"), "search-prompt"));
     } else {
-        body.appendChild(el("p", "watch-party-search-count", translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) })));
+        count.textContent = translate("requests.search.resultCount", { count: search.total, count_text: integerText(search.total) });
+        bodyChildren.push(count);
         const page = { items: search.results, nextCursor: search.nextCursor, total: search.total, totalExact: true };
         const grid = feedGrid(
             search.feedKey,
@@ -158,23 +179,32 @@ export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInp
         firstCard = gridZone?.items[0];
         if (gridZone !== undefined && gridZone.items.length > 0) {
             grid.content[0]?.classList.add("watch-party-search-grid");
-            body.append(...grid.content);
+            bodyChildren.push(...grid.content);
             zones.push({ ...gridZone, id: "picker-search-grid" });
         }
     }
+    placeChildren(body, bodyChildren);
     content.push(body);
 
     searchInput.oninput = () => { hub.setSearchQuery(searchInput.value); };
     searchInput.onkeydown = event => {
-        if (event.keyCode !== IME_DONE && event.key !== "Enter") return;
-        event.preventDefault();
-        event.stopPropagation();
+        const done = event.keyCode === IME_DONE;
+        if (!done && event.key !== "Enter") return;
         const trimmed = searchInput.value.trim();
-        if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
-            firstCard.element.focus();
+        if (done) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
+                firstCard.element.focus();
+                return;
+            }
+            if (trimmed !== "") void hub.searchNow(searchInput.value);
             return;
         }
-        void hub.searchNow(searchInput.value);
+        // Leave Enter unhandled by preventDefault so the Samsung TV remote can always open the on-screen keyboard
+        // to enter or edit a query (matching browse.ts); on a desktop keyboard, Enter still triggers an immediate
+        // search when the text changed.
+        if (trimmed !== "" && trimmed !== search.completedQuery) void hub.searchNow(searchInput.value);
     };
 
     const focus = { zone: "picker-search-field", key: field.key };
