@@ -17,6 +17,26 @@
 .player-captions,
 .player-captions-secondary { unicode-bidi: plaintext; }
 
+/* A platform stylesheet may set every element's font (the Samsung TV simulator adds
+   `*{font-family:SamsungOne;font-weight:600}`): the player keeps the app's font, and each
+   element inherits the weight its own rule or parent gives it. */
+.player {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    /* AVPlay draws on a plane behind the page. An opaque player hides the picture. */
+    background: transparent;
+    color: var(--silo-text);
+    font-family: var(--silo-font);
+    font-weight: 400;
+}
+
+.player * {
+    font-family: inherit;
+    font-weight: inherit;
+}
+
 .player-error.player-next-up {
     padding: 112px 0 260px;
     padding-inline: 980px 180px;
@@ -50,7 +70,8 @@
 .player-next-up .player-button[data-focus="play-next"] { font-size: calc(30px * var(--silo-sf-cap-scale)); }
 .player-next-up .player-button[data-focus="pick-another"],
 .player-next-up .player-button[data-focus="keep-watching"],
-.player-next-up .player-button[data-focus="back"] { font-size: calc(26px * var(--silo-sf-cap-scale)); }
+.player-next-up .player-button[data-focus="back"],
+.player-next-up .player-button[data-focus="settings-retry"] { font-size: calc(26px * var(--silo-sf-cap-scale)); }
 /* PlayerView.metadata(for:) on tvOS: the series at 34 bold, then the code at 62% white and the title at 25 semibold. */
 .player-next-series { margin: 0; font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-next-series[hidden] { display: none; }
@@ -169,7 +190,7 @@
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.8);
     color: #fff;
-    font-size: 31px;
+    font-size: calc(31px * var(--silo-sf-cap-scale));
     font-weight: 500;
     line-height: 38px;
     text-align: center;
@@ -186,17 +207,6 @@
     padding: 4px 12px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
-}
-
-.player {
-    position: relative;
-    width: 1920px;
-    height: 1080px;
-    overflow: hidden;
-    /* AVPlay draws on a plane behind the page. An opaque player hides the picture. */
-    background: transparent;
-    color: var(--silo-text);
-    font-family: var(--silo-font);
 }
 
 .player-backdrop {
@@ -289,7 +299,7 @@
     border-radius: 36px;
     background: rgba(0, 0, 0, 0.65);
     color: rgba(255, 255, 255, 0.62);
-    font-size: 28px;
+    font-size: calc(28px * var(--silo-sf-cap-scale));
     font-weight: 600;
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25), 0 6px 20px rgba(0, 0, 0, 0.3);
 }
@@ -311,7 +321,7 @@
     border-radius: 38px;
     background: rgba(255, 255, 255, 0.1);
     color: #ffffff;
-    font-size: 26px;
+    font-size: calc(26px * var(--silo-sf-cap-scale));
     font-weight: 600;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
 }
@@ -397,7 +407,7 @@
     visibility: visible;
     transition: opacity 200ms ease-out, visibility 0s linear 0s, bottom 220ms ease-out;
     color: rgba(255, 255, 255, 0.72);
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 500;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
     pointer-events: none;
@@ -506,14 +516,14 @@
 }
 
 .player-alert-title {
-    font-size: 30px;
+    font-size: calc(30px * var(--silo-sf-cap-scale));
     font-weight: 600;
     line-height: 36px;
     color: var(--silo-text);
 }
 
 .player-alert-detail {
-    font-size: 24px;
+    font-size: calc(24px * var(--silo-sf-cap-scale));
     line-height: 30px;
     color: rgba(255, 255, 255, 0.72);
 }
@@ -536,7 +546,7 @@
     border-radius: 36px;
     background: rgba(0, 0, 0, 0.65);
     color: rgba(255, 255, 255, 0.85);
-    font-size: 28px;
+    font-size: calc(28px * var(--silo-sf-cap-scale));
     font-weight: 600;
     white-space: nowrap;
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25), 0 6px 20px rgba(0, 0, 0, 0.3);
@@ -593,14 +603,14 @@
 
 .player-error .player-title {
     margin: 0 0 24px;
-    font-size: 48px;
+    font-size: calc(48px * var(--silo-sf-cap-scale));
     font-weight: 700;
     text-shadow: none;
 }
 
 .player-title {
     margin: 0;
-    font-size: 36px;
+    font-size: calc(36px * var(--silo-sf-cap-scale));
     font-weight: 600;
     line-height: 1.1;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
@@ -616,9 +626,9 @@
     left: 160px;
 }
 .player-overlay .player-title { line-height: 44px; }
-.player-series { margin: 0 0 2px; font-size: 20px; font-weight: 500; line-height: 24px; color: rgba(255, 255, 255, 0.65); }
+.player-series { margin: 0 0 2px; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 24px; color: rgba(255, 255, 255, 0.65); }
 .player-title-row { display: flex; align-items: center; gap: 10px; }
-.player-episode { font-size: 20px; line-height: 24px; color: rgba(255, 255, 255, 0.6); }
+.player-episode { font-size: calc(20px * var(--silo-sf-cap-scale)); line-height: 24px; color: rgba(255, 255, 255, 0.6); }
 
 /* PlayerBufferingCapsule / the status column: top-trailing, off the title stack. */
 .player-status {
@@ -627,7 +637,7 @@
     inset-inline-end: 80px;
     z-index: 3;
     margin: 0;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     font-weight: 500;
     color: rgba(255, 255, 255, 0.82);
     pointer-events: none;
@@ -720,7 +730,7 @@
 
 .player-thumbnail-time {
     margin: 8px 0 0;
-    font-size: 24px;
+    font-size: calc(24px * var(--silo-sf-cap-scale));
     font-weight: 600;
     line-height: 28.265625px;
     text-align: center;
@@ -903,7 +913,7 @@
     border-radius: 999px;
     background: #ffffff;
     color: #000000;
-    font-size: 18px;
+    font-size: calc(18px * var(--silo-sf-cap-scale));
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
@@ -974,7 +984,7 @@
 }
 
 .player-hold-seek-rate {
-    font-size: 44px;
+    font-size: calc(44px * var(--silo-sf-cap-scale));
     font-weight: 800;
     font-family: ui-rounded, var(--silo-font, sans-serif);
     font-variant-numeric: tabular-nums;
@@ -983,7 +993,7 @@
 }
 
 .player-hold-seek-time {
-    font-size: 28px;
+    font-size: calc(28px * var(--silo-sf-cap-scale));
     font-weight: 600;
     font-family: ui-rounded, var(--silo-font, sans-serif);
     font-variant-numeric: tabular-nums;
@@ -1013,7 +1023,7 @@
     display: inline-flex;
     align-items: center;
     gap: 18px;
-    font-size: 15px;
+    font-size: calc(15px * var(--silo-sf-cap-scale));
     font-weight: 500;
     color: rgba(255, 255, 255, 0.55);
 }
@@ -1063,7 +1073,7 @@
     display: flex;
     justify-content: space-between;
     margin: 0 0 13px;
-    font-size: 28px;
+    font-size: calc(28px * var(--silo-sf-cap-scale));
     font-weight: 600;
     /* Inter's used line box at 28px semibold. The fallback face is 33px, so an
        unlocked line would drop the scrubber by 1px until the face swaps, and a
@@ -1076,7 +1086,7 @@
 .player-error-text {
     max-width: 1300px;
     margin: 0 0 48px;
-    font-size: 30px;
+    font-size: calc(30px * var(--silo-sf-cap-scale));
     line-height: 1.35;
     color: var(--silo-error-ink);
     /* Apple's connection-lost message is a title line and a body line; an English message keeps its own direction in Arabic. */
@@ -1134,7 +1144,7 @@
     -webkit-line-clamp: 26;
     margin: 0 auto 16px;
     padding: 0 16px;
-    font-size: 26px;
+    font-size: calc(26px * var(--silo-sf-cap-scale));
     font-weight: 400;
     color: #ffffff;
     text-align: center;
@@ -1158,7 +1168,7 @@
     border-radius: 31px;
     background: rgba(237, 237, 237, 0.72);
     color: #000;
-    font-size: 28px;
+    font-size: calc(28px * var(--silo-sf-cap-scale));
     line-height: 34px;
     font-weight: 600;
 }
@@ -1186,7 +1196,7 @@
     background: var(--silo-elevated);
     color: var(--silo-text);
     font: inherit;
-    font-size: 23px;
+    font-size: calc(23px * var(--silo-sf-cap-scale));
     font-weight: 600;
     transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out;
 }
@@ -1272,7 +1282,7 @@
 
 .player-subtitle-dialog-title {
     margin: 0;
-    font-size: 32px;
+    font-size: calc(32px * var(--silo-sf-cap-scale));
     font-weight: 600;
     line-height: 1.2;
     color: #ffffff;
@@ -1280,7 +1290,7 @@
 
 .player-subtitle-dialog-subtitle {
     margin: 0;
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     line-height: 1.3;
     color: rgba(255, 255, 255, 0.65);
     display: -webkit-box;
@@ -1327,10 +1337,13 @@
     gap: 12px;
 }
 
+/* SubtitleTranslateMenu.swift:600-601 & SubtitleSearchMenu.swift:543-544,561-566 use .buttonStyle(.bordered) with no .font(...) modifier (default tvOS .body, HIG Body 29pt medium). */
 .player-subtitle-dialog-actions .player-choice {
     width: auto;
     padding: 14px 26px;
     background: rgba(255, 255, 255, 0.14);
+    font-size: calc(29px * var(--silo-sf-cap-scale));
+    font-weight: 500;
 }
 
 .player-subtitle-dialog-actions .player-choice:focus {
@@ -1355,7 +1368,7 @@
     justify-content: space-between;
     gap: 24px;
     padding: 0 16px;
-    font-size: 18px;
+    font-size: calc(18px * var(--silo-sf-cap-scale));
     line-height: 22px;
     color: rgba(255, 255, 255, 0.6);
 }
@@ -1397,7 +1410,7 @@
     background: rgba(0, 0, 0, 0.45);
     color: #ffffff;
     font: inherit;
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 600;
 }
 
@@ -1563,7 +1576,7 @@
 
 .player-appearance-eyebrow {
     margin: 0;
-    font-size: 14px;
+    font-size: calc(14px * var(--silo-sf-cap-scale));
     font-weight: 600;
     letter-spacing: 1.6px;
     text-transform: uppercase;
@@ -1572,7 +1585,7 @@
 
 .player-appearance-title {
     margin: 0;
-    font-size: 30px;
+    font-size: calc(30px * var(--silo-sf-cap-scale));
     font-weight: 600;
     color: #ffffff;
 }
@@ -1667,7 +1680,7 @@
 .player-menu-picker-options .player-choice {
     margin-bottom: 4px;
     border-radius: 10px;
-    font-size: 24px;
+    font-size: calc(24px * var(--silo-sf-cap-scale));
 }
 
 .player-menu-picker-options .player-choice-current {
@@ -1687,7 +1700,7 @@
 .player-menu-picker-title {
     flex: none;
     margin: 0 0 18px;
-    font-size: 30px;
+    font-size: calc(30px * var(--silo-sf-cap-scale));
     font-weight: 600;
     color: #ffffff;
 }
@@ -1744,7 +1757,7 @@
     flex: none;
     justify-content: center;
     min-width: 22px;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     font-weight: 600;
 }
 
@@ -1840,14 +1853,14 @@
 .player-sync-percent {
     min-width: 60px;
     text-align: right;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     font-variant-numeric: tabular-nums;
     color: var(--silo-secondary);
 }
 
 .player-sync-phase {
     margin: 6px 0 0;
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.55);
 }
 
@@ -1855,7 +1868,7 @@
 .player-sync-note {
     margin: 0;
     padding: 4px 14px 10px;
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
 }
 
 .player-sync-note-error {
@@ -1897,7 +1910,7 @@
 /* InfoPane's title lines (TVPlayerInfoHUD.swift:623-653): series 16 semibold at 60 % with 1.8 tracking, title 34
  * semibold on two lines at most, episode 22 medium at 75 %, year and runtime 20 at 65 %, overview 20 at 75 %. */
 .player-info-series {
-    font-size: 16px;
+    font-size: calc(16px * var(--silo-sf-cap-scale));
     font-weight: 600;
     letter-spacing: 1.8px;
     color: rgba(255, 255, 255, 0.6);
@@ -1908,13 +1921,13 @@
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    font-size: 34px;
+    font-size: calc(34px * var(--silo-sf-cap-scale));
     font-weight: 600;
     line-height: 1.15;
 }
 
 .player-info-episode {
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 500;
     color: rgba(255, 255, 255, 0.75);
 }
@@ -1922,14 +1935,14 @@
 /* Year and runtime are joined by "  ·  " (InfoPane.metaBits); the doubled spaces stay. */
 .player-info-meta {
     white-space: pre-wrap;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.65);
     font-variant-numeric: tabular-nums;
 }
 
 .player-info-column > .player-info-overview {
     padding-top: 4px;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.75);
 }
 
@@ -1939,7 +1952,7 @@
     gap: 16px;
     margin: 0;
     padding: 4px 0;
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 500;
 }
 
@@ -1984,14 +1997,14 @@
 }
 
 .player-stats-heading {
-    font-size: 13px;
+    font-size: calc(13px * var(--silo-sf-cap-scale));
     font-weight: 600;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.52);
 }
 
 .player-stats-label {
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     font-weight: 500;
     color: rgba(255, 255, 255, 0.74);
 }
@@ -2002,14 +2015,14 @@
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
 }
 
 .player-menu-heading {
     margin: 0 0 14px;
-    font-size: 14px;
+    font-size: calc(14px * var(--silo-sf-cap-scale));
     font-weight: 600;
     letter-spacing: 1.6px;
     color: rgba(255, 255, 255, 0.5);
@@ -2017,7 +2030,7 @@
 
 .player-menu-note {
     margin: 0 0 16px;
-    font-size: 26px;
+    font-size: calc(26px * var(--silo-sf-cap-scale));
     color: var(--silo-secondary);
 }
 
@@ -2033,7 +2046,7 @@
     background: transparent;
     color: #ffffff;
     font: inherit;
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 500;
     text-align: start;
     transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out, scale var(--silo-fast) ease-out;
@@ -2053,7 +2066,7 @@
 }
 
 .player-choice-detail {
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
     line-height: 21px;
     font-weight: 400;
     color: rgba(255, 255, 255, 0.55);
@@ -2172,14 +2185,14 @@
     box-sizing: border-box;
     width: max-content;
     max-width: 1044px;
-    /* Three 17px lines at 1.35 plus the plate's padding: the remote cannot scroll it while focus stays in the menu. */
-    max-height: calc(3 * 17px * 1.35 + 12px);
+    /* Three 17px lines (times the cap scale) at 1.35 plus the plate's padding: the remote cannot scroll it while focus stays in the menu. */
+    max-height: calc(3 * 17px * var(--silo-sf-cap-scale) * 1.35 + 12px);
     overflow-y: auto;
     margin: 12px 0 0;
     padding: 6px 14px;
     border-radius: 14px;
     background: rgba(26, 26, 26, 0.88);
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
     line-height: 1.35;
     color: rgba(255, 255, 255, 0.7);
 }
@@ -2209,14 +2222,14 @@
 
 .player-ai-title {
     margin: 0;
-    font-size: 32px;
+    font-size: calc(32px * var(--silo-sf-cap-scale));
     font-weight: 600;
     color: #ffffff;
 }
 
 .player-ai-subtitle {
     margin: 0;
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.65);
 }
 
@@ -2224,7 +2237,7 @@
 .player-search-menu .player-menu-heading {
     margin: 10px 0 0;
     padding: 0 12px 8px;
-    font-size: 14px;
+    font-size: calc(14px * var(--silo-sf-cap-scale));
     letter-spacing: 1.2px;
     color: rgba(255, 255, 255, 0.45);
 }
@@ -2233,7 +2246,7 @@
     gap: 18px;
     padding: 18px 20px;
     border-radius: 12px;
-    font-size: 24px;
+    font-size: calc(24px * var(--silo-sf-cap-scale));
 }
 
 .player-ai-row .player-setting-glyph {
@@ -2243,7 +2256,7 @@
 }
 
 .player-ai-row .player-choice-detail {
-    font-size: 18px;
+    font-size: calc(18px * var(--silo-sf-cap-scale));
     line-height: 22px;
     color: rgba(255, 255, 255, 0.65);
 }
@@ -2265,7 +2278,7 @@
 .player-ai-quota {
     margin: 0;
     padding: 6px 16px;
-    font-size: 16px;
+    font-size: calc(16px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.6);
 }
 
@@ -2276,7 +2289,7 @@
 .player-ai-quota-note {
     margin: 0;
     padding: 0 16px 4px;
-    font-size: 16px;
+    font-size: calc(16px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.45);
 }
 
@@ -2304,20 +2317,22 @@
 
 .player-ai-job {
     margin: 0;
-    font-size: 29px;
+    font-size: calc(29px * var(--silo-sf-cap-scale));
     font-weight: 600;
 }
 
 .player-ai-progress-message,
 .player-ai-failure {
     margin: 0;
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.6);
 }
 
+/* SubtitleTranslateMenu.swift:465-474 uses default tvOS .body (HIG Body 29pt medium). */
 .player-ai-failure {
     padding: 8px 12px;
-    font-size: 22px;
+    font-size: calc(29px * var(--silo-sf-cap-scale));
+    font-weight: 500;
 }
 
 /* SubtitlesPane: the SECONDARY heading is 14pt semibold, tracked 1.6, white at 45%, padded 20 above, 4 below and 14 leading. */
@@ -2338,7 +2353,7 @@
     gap: 10px;
     margin: 0;
     padding: 4px 16px;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     color: #ffc107;
 }
 
@@ -2362,12 +2377,12 @@
 .player-search-empty {
     margin: 0;
     padding: 12px 16px;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.55);
 }
 
 .player-search-back-row .player-setting-label {
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
 }
 
 .player[dir="rtl"] .player-search-back-icon svg {
@@ -2395,14 +2410,14 @@
 }
 
 .player-search-searching-title {
-    font-size: 22px;
+    font-size: calc(22px * var(--silo-sf-cap-scale));
     font-weight: 500;
     color: #ffffff;
 }
 
 .player-search-searching-note {
     margin: 0;
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.5);
 }
 
@@ -2411,7 +2426,7 @@
     align-items: center;
     gap: 12px;
     margin: 0;
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
     color: rgba(255, 255, 255, 0.7);
 }
 
@@ -2432,7 +2447,7 @@
     display: inline-block;
     padding: 4px 8px;
     border-radius: 6px;
-    font-size: 18px;
+    font-size: calc(18px * var(--silo-sf-cap-scale));
     font-weight: 700;
     line-height: 1.1;
     color: #ffffff;
@@ -2451,7 +2466,8 @@
 }
 
 .player-search-match-label {
-    font-size: 14px;
+    font-size: calc(14px * var(--silo-sf-cap-scale));
+    font-weight: 400;
     line-height: 1.1;
     opacity: 0.65;
 }
@@ -2463,7 +2479,7 @@
 }
 
 .player-search-result-title {
-    font-size: 24px;
+    font-size: calc(24px * var(--silo-sf-cap-scale));
     font-weight: 500;
     line-height: 1.25;
     display: -webkit-box;
@@ -2473,7 +2489,8 @@
 }
 
 .player-search-result-detail {
-    font-size: 20px;
+    font-size: calc(20px * var(--silo-sf-cap-scale));
+    font-weight: 400;
     line-height: 1.25;
     opacity: 0.65;
     white-space: nowrap;
@@ -2496,7 +2513,7 @@
 }
 
 .player-search-provider-name {
-    font-size: 18px;
+    font-size: calc(18px * var(--silo-sf-cap-scale));
     font-weight: 500;
     line-height: 1.2;
 }
@@ -2505,7 +2522,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 17px;
+    font-size: calc(17px * var(--silo-sf-cap-scale));
+    font-weight: 400;
     line-height: 1.2;
     opacity: 0.6;
 }
