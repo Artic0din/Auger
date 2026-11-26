@@ -62,13 +62,14 @@ export interface ServerNeedsSetup {
 export type ConnectResult = ConnectedServer | ServerNeedsSetup | Exclude<DiscoveryResult, { readonly status: "connected" }>;
 
 /** Opens a session on a server discovery has already accepted. */
-export async function openDiscoveredServer(server: ServerConnection, deps: SessionCoreDeps): Promise<ConnectedServer> {
-    return openServerSession(server, deps, "online");
+export async function openDiscoveredServer(server: ServerConnection, deps: SessionCoreDeps, signal?: AbortSignal): Promise<ConnectedServer> {
+    return openServerSession(server, deps, "online", signal);
 }
 
-function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "online"): Promise<ConnectedServer>;
-function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "offline"): Promise<ConnectedServer | { readonly status: "unreachable"; readonly restore?: RestoreResult }>;
-async function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "online" | "offline"): Promise<ConnectedServer | { readonly status: "unreachable"; readonly restore?: RestoreResult }> {
+function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "online", signal?: AbortSignal): Promise<ConnectedServer>;
+function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "offline", signal?: AbortSignal): Promise<ConnectedServer | { readonly status: "unreachable"; readonly restore?: RestoreResult }>;
+async function openServerSession(server: ServerConnection, deps: SessionCoreDeps, mode: "online" | "offline", signal?: AbortSignal): Promise<ConnectedServer | { readonly status: "unreachable"; readonly restore?: RestoreResult }> {
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     const clock = deps.clock ?? systemClock;
     const device = deviceHeaders(loadDeviceId(deps.publicStorage, deps.randomBytes), deps.deviceName, deps.devicePlatform);
     let session: NativeSession;
@@ -109,6 +110,7 @@ async function openServerSession(server: ServerConnection, deps: SessionCoreDeps
         };
         server = { ...server, http: new NativeHttp(server.http.base, device, deps.fetch, clock, check) };
     }
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     let vault: AccountVault;
     const transient = deps.keyManager === undefined ? deps.transientAccounts : undefined;
     try { vault = new AccountVault(transient?.secrets ?? openSecretStore(deps.keyManager), transient?.storage ?? deps.publicStorage, server.http.base.baseUrl, deps.randomBytes, deps.localAccountId, deps.addAccount, transient?.storage); }
@@ -117,7 +119,8 @@ async function openServerSession(server: ServerConnection, deps: SessionCoreDeps
         vault = new AccountVault(deps.transientAccounts?.secrets ?? openSecretStore(undefined), deps.transientAccounts?.storage, server.http.base.baseUrl, deps.randomBytes, undefined, true, deps.transientAccounts?.storage);
     }
     if (offlineDiscovery) {
-        const saved = await vault.load();
+        const saved = await vault.load(signal);
+        if (signal?.aborted) throw new ApiError({ kind: "aborted" });
         if (saved.status !== "found") return { status: "unreachable", ...(saved.status === "corrupt" ? { restore: "storage_corrupt" as const } : saved.status === "unavailable" ? { restore: "storage_unavailable" as const } : {}) };
         if (saved.credential.serverId !== server.serverId) return { status: "unreachable" };
     }
@@ -126,7 +129,8 @@ async function openServerSession(server: ServerConnection, deps: SessionCoreDeps
     });
     watchBrowseCache(session, deps.publicStorage, deps.keyManager, server.serverId, vault.directory.list().find(row => row.id === vault.localAccountId)?.accountId);
     watchBandwidthReadings(session);
-    const restore = await session.restore();
+    const restore = await session.restore(signal);
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     if (offlineDiscovery && restore !== "signed_in") return { status: "unreachable" };
     // Offline restoration must keep the deployment gate; a live online session has none.
     if (!offlineDiscovery && restore === "signed_in" && session.account) {
@@ -165,16 +169,17 @@ export async function connect(serverAddress: string, deps: SessionCoreDeps, sign
     if (deps.allowOfflineRestore === true) {
         const saved = savedServer();
         if (saved !== undefined) {
-            const local = await openServerSession(saved, deps, "offline");
+            const local = await openServerSession(saved, deps, "offline", signal);
             if (signal?.aborted) throw new ApiError({ kind: "aborted" });
             if (local.status === "connected") return local;
             localFailure = local.restore;
         }
     }
     const discovered = await discoverServer(serverAddress, device, deps.fetch, clock, signal);
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     if (discovered.status === "unreachable") {
         const saved = savedServer();
-        return saved === undefined ? discovered : openServerSession(saved, deps, "offline");
+        return saved === undefined ? discovered : openServerSession(saved, deps, "offline", signal);
     }
     if (discovered.status !== "connected") {
         return discovered;
@@ -186,14 +191,16 @@ export async function connect(serverAddress: string, deps: SessionCoreDeps, sign
     } catch (error) {
         if (error instanceof ApiError && !error.aborted && ["network", "timeout"].includes(error.failure.kind)) {
             const saved = savedServer();
-            if (saved?.serverId === discovered.server.serverId) return openServerSession(discovered.server, deps, "offline");
+            if (saved?.serverId === discovered.server.serverId) return openServerSession(discovered.server, deps, "offline", signal);
         }
         return failedDiscovery(error);
     }
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     if (setup.needsSetup) {
         return { status: "needs_setup", server: discovered.server };
     }
-    const opened = await openDiscoveredServer(discovered.server, deps);
+    const opened = await openDiscoveredServer(discovered.server, deps, signal);
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     return localFailure !== undefined && opened.restore === "signed_out" ? { ...opened, restore: localFailure } : opened;
 }
 

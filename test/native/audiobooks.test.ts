@@ -107,12 +107,23 @@ test("audiobook parts and chapters stitch onto one whole-book timeline", () => {
     assert.deepEqual(book.chapters, [
         { title: "Opening", start: 0, end: 120, partIndex: 0 },
         { title: "Part Two Opening", start: 120, end: 160, partIndex: 1 },
-        { title: "Chapter 3", start: 160, end: 220, partIndex: 1 },
+        { title: "", start: 160, end: 220, partIndex: 1 },
     ]);
     assert.equal(book.duration, 230);
     assert.equal(book.position, 140.5);
     assert.equal(book.played, false);
+    assert.deepEqual(book.audioFormat, { codec: "aac" });
+    assert.equal(book.releaseDate, undefined);
     assert.deepEqual([book.title, book.overview, book.year, book.genres, book.posterUrl], ["Dune", "Spice.", 1965, ["Science Fiction"], "/art/dune"]);
+});
+
+test("audiobook keeps releaseDate and primary sorted part audioFormat (codec and container)", () => {
+    const raw = twoPartBook();
+    const versions = raw.versions as Record<string, unknown>[];
+    versions[1] = { ...versions[1], codec_audio: "flac", container: "m4b" };
+    const book = decodeAudiobook({ ...raw, release_date: "1965-08-01" });
+    assert.equal(book.releaseDate, "1965-08-01");
+    assert.deepEqual(book.audioFormat, { codec: "flac", container: "m4b" });
 });
 
 test("parts sort by part index, then numerically by file id", () => {

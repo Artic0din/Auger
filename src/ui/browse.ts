@@ -18,11 +18,12 @@ import { createRequests } from "./requestsModule.ts";
 import { RequestRecordMenu } from "./requestRecordMenu.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
+import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import { ShowAudiobooks } from "./audiobookPreference.ts";
 import { boxSetOperations } from "../api/boxSetOperations.ts";
 import { BoxSetRowState } from "./boxSetRow.ts";
 import type { ItemDetail, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
-import { DetailsState } from "./detailsState.ts";
+import { audiobookItemDetail, DetailsState } from "./detailsState.ts";
 import { NotInterestedStore } from "./notInterestedStore.ts";
 import { DescriptionTranslations } from "./descriptionTranslation.ts";
 import { freshPlayPosition } from "./playbackPreparation.ts";
@@ -356,11 +357,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 else if (entry.kind === "calendar") entry.stale = true;
                 return;
             case "title.personal":
+                if (entry.kind === "audiobook") entry.stale = true;
                 if (entry.kind === "calendar" || (entry.kind === "library" && entry.discovery?.mode === "Browse")) entry.stale = true;
                 return;
             case "title.watched":
                 if (entry === signal.source) { entry.stale = true; return; }
                 if (entry.kind === "home" || entry.kind === "for_you" || isSectionRoute(entry) || entry.kind === "calendar" || (entry.kind === "library" && entry.discovery?.mode === "Browse")) entry.stale = true;
+                if (entry.kind === "audiobook" && entry.id === signal.id) entry.stale = true;
                 if (entry.kind === "season" && entry.seriesId === signal.seriesId && (signal.type !== "season" || entry.seasonNumber === signal.seasonNumber)) entry.stale = true;
                 if (entry.kind === "item") {
                     const covered = entry.data?.detail;
@@ -460,6 +463,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     const discardVisitedDetails = (id: string): boolean => {
         if (detailWork?.detail.id === id) { detailWork.stop(); detailWork = undefined; }
         cache.discard(operations.getCatalogItem(id));
+        cache.discard(operations.getAudiobook(id));
         cache.discard(operations.listSeriesSeasons(id));
         return visitedDetails.delete(id);
     };
@@ -1031,8 +1035,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (current.kind === "personal") personalSnapshots.delete(current);
                 }
                 const text = error instanceof CalendarTimezoneError ? error.message : failureText(error, current);
-                if ((current.kind === "item" || current.kind === "home") && error instanceof ApiError && (error.status === 403 || error.status === 404)) {
-                    if (current.kind === "item") discardVisitedDetails(current.id);
+                if ((current.kind === "item" || current.kind === "audiobook" || current.kind === "home") && error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+                    if (current.kind === "item" || current.kind === "audiobook") discardVisitedDetails(current.id);
                     current.data = undefined;
                     if (current.kind === "home") shell.update([]);
                 }
@@ -1080,10 +1084,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const read = <T>(spec: RequestSpec<T>, signal: AbortSignal): Promise<T> => cache.read({ ...spec, signal }, request => session.call({ ...request, profileScoped: true }));
     const routeOffline = (current: Route): boolean => {
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details?.offline === true) return true;
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details?.offline === true) return true;
         const specs = current.kind === "home" ? [operations.listHomeSections(), operations.listUserLibraries(), operations.hiddenLibraries()]
             : current.kind === "for_you" ? [operations.recommendations()]
             : current.kind === "item" ? [operations.getCatalogItem(current.id), operations.listSeriesSeasons(current.id)]
+            : current.kind === "audiobook" ? [operations.getAudiobook(current.id)]
             : current.kind === "season" ? [operations.listSeasonEpisodes(current.seriesId, current.seasonNumber, episodeArtwork()), ...(current.id === undefined ? [] : [operations.getCatalogItem(current.id)])] : [];
         return specs.some(spec => cache.isOffline(spec));
     };
@@ -1091,8 +1096,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         offlineRefreshAt = undefined;
         cancelOfflineRefresh();
         if (torn || top() !== current || (!routeOffline(current) && !deferredDetails.has(current))) return;
-        const details = current.kind === "item" || current.kind === "season" ? current.data?.details : undefined;
-        if (playing || foreground.busy() || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay) {
+        const details = current.kind === "item" || current.kind === "season" || current.kind === "audiobook" ? current.data?.details : undefined;
+        if (playing || foreground.busy() || document.hidden || cardActions.active || settingsScreen !== undefined || details?.panel !== undefined || details?.busy || details?.preparingPlay || details?.alert !== undefined) {
             cancelOfflineRefresh = clock.schedule(() => recoverCachedRoute(current), 15000);
             return;
         }
@@ -1219,7 +1224,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
     };
 
     const detailsChanged = (current: Route, returnKey?: string): void => {
-        if (current.kind === "item" || current.kind === "season") {
+        if (current.kind === "item" || current.kind === "season" || current.kind === "audiobook") {
             const details = current.data?.details;
             for (const owner of details?.seasonStates.values() ?? []) if (owner.pending) invalidateWatched(current, owner.detail);
             if (details?.detail.type === "episode" && (details.audioPreference.pending || details.subtitlePreference.pending)) {
@@ -1232,7 +1237,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 browseStack.publish({ kind: "title.personal" });
             }
         }
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details?.changes.get("watched")?.pending) {
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details?.changes.get("watched")?.pending) {
             invalidateWatched(current, current.data.details.detail);
         }
         if (top() !== current) return;
@@ -1251,7 +1256,22 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const retry = focus?.key === "retry-episodes" && series?.failed;
             render(returnKey === undefined ? retry ? focus : undefined : { zone: "actions", key: returnKey });
         }
-        if (deferredDetails.has(current) && (current.kind === "item") && current.data?.details?.panel === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && !foreground.busy()) queueMicrotask(() => recoverCachedRoute(current));
+        if (deferredDetails.has(current) && (current.kind === "item" || current.kind === "audiobook") && current.data?.details?.panel === undefined && current.data?.details?.alert === undefined && !current.data?.details?.busy && !current.data?.details?.preparingPlay && !foreground.busy()) queueMicrotask(() => recoverCachedRoute(current));
+    };
+
+    const createAudiobookDetails = (current: Extract<Route, { kind: "audiobook" }>, book: Audiobook): DetailsState => {
+        const details = new DetailsState(
+            audiobookItemDetail(book),
+            session,
+            returnKey => detailsChanged(current, returnKey),
+            (value, signal) => refreshWatched(current, value, signal),
+            personalPending,
+        );
+        details.presentsAlerts = true;
+        details.onAudiobookRefreshed = refreshed => {
+            if (current.data !== undefined) current.data.book = refreshed;
+        };
+        return details;
     };
 
     const createItemDetails = (current: Extract<Route, { kind: "item" }>, detail: ItemDetail, artwork: Readonly<Record<string, string>>): DetailsState => {
@@ -1678,8 +1698,33 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }
             case "audiobook": {
                 const had = current.data !== undefined;
+                if (current.data?.details === undefined) stopDetails();
+                const watchedRevision = current.data?.details?.watchedRevision;
                 load(current, signal => read(operations.getAudiobook(current.id), signal), book => {
-                    current.data = book;
+                    const previous = current.data?.details;
+                    if (previous?.busy || previous?.alert !== undefined) { current.stale = true; deferredDetails.add(current); return; }
+                    const restored = previous ?? visitedDetails.get(current.id);
+                    deferredDetails.delete(current);
+                    if (previous !== undefined && previous.watchedRevision !== watchedRevision) {
+                        const played = previous.detail.played ?? book.played;
+                        book = { ...book, played, ...(played ? { position: 0 } : {}) };
+                    }
+                    if (previous !== undefined && quiet && detailWork === previous && previous.changes.size > 0) {
+                        const offline = cache.isOffline(operations.getAudiobook(current.id));
+                        const nextBook = offline ? current.data!.book : book;
+                        const nextDetail = audiobookItemDetail(nextBook);
+                        previous.acceptDetail(nextDetail);
+                        if (nextDetail.played !== undefined) previous.values.set("watched", nextDetail.played);
+                        current.data = { book: nextBook, details: previous };
+                        if (had) return host.focused() ?? current.focus;
+                        return;
+                    }
+                    const details = createAudiobookDetails(current, book);
+                    details.restore(restored);
+                    stopDetails();
+                    current.data = { book, details };
+                    detailWork = details;
+                    details.start("personal");
                     if (had) return host.focused() ?? current.focus;
                 }, quiet || had);
                 return;
@@ -1892,9 +1937,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             current.page.arrive(arrival);
             return;
         }
-        if ((current.kind === "item" || current.kind === "season") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details))) {
+        if ((current.kind === "item" || current.kind === "season" || current.kind === "audiobook") && current.data?.details !== undefined && (!current.stale || cachedDetailOwners.has(current.data.details) || current.kind === "audiobook")) {
             detailWork = current.data.details;
-            detailWork.start();
+            detailWork.start(current.kind === "audiobook" ? "personal" : "full");
         }
         if (!hasData(current) || current.stale || current.failure !== undefined) {
             loadRoute(current, hasData(current));
@@ -2288,6 +2333,12 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         render(open ? undefined : { zone: "actions", key: "chapters" });
     };
 
+    const audiobookDescription = (current: Extract<Route, { kind: "audiobook" }>, open: boolean): void => {
+        if (top() !== current || (current.description === true) === open) return;
+        current.description = open;
+        render(open ? undefined : { zone: "about", key: "about" });
+    };
+
     const mode = (current: Extract<Route, { kind: "library" }>, value: LibraryMode): void => {
         if (current.discovery?.mode === value && hasData(current)) {
             host.focusDefault();
@@ -2322,6 +2373,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         retry,
         turn,
         audiobookPicker,
+        audiobookDescription,
         mode,
         personalFilter,
         audiobooksEnabled: audiobooksInSearch,

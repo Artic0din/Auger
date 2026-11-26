@@ -4,7 +4,7 @@ import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import type { UserLibrary } from "../contracts/v2/catalog.ts";
 import { translate, type MessageKey } from "../i18n/translate.ts";
-import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, isSkipKey, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, BITRATE_KEY, CARD_PRESENTATION_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, HDR_KEY, HIDDEN_KEY, QUALITY_KEY, TITLE_ART_KEY, isSkipKey, SETTINGS_KEYS, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, decodeSettingValue, numericLibraryId, profileSettings, type SettingsIdentity, type SettingsScope, type EffectiveSetting, type ExplicitSetting, type SettingDefinition, type SettingsKey, type SettingValue } from "../contracts/v2/settings.ts";
 import { NativeSession, SessionError } from "../session/session.ts";
 import { APPEARANCE_KEY, BUFFERING_MODE_KEY, METADATA_KEY, INTRO_SKIP_KEY, CREDITS_SKIP_KEY } from "../contracts/v2/settingsRows.ts";
 import { descriptionTranslationOperations } from "../api/descriptionTranslationOperations.ts";
@@ -27,6 +27,7 @@ export class SettingsState {
     subtitleOptions: readonly string[] = [];
     busy = false;
     loaded = false;
+    uiCustomizationMessage: string | undefined = undefined;
     /** The failure on screen: a catalog key resolved each time it is read, so a language file that lands later translates it, or a plain line. */
     private errorKey: MessageKey | undefined;
     private errorText: string | undefined;
@@ -52,7 +53,7 @@ export class SettingsState {
     get canRetry(): boolean { return this.retryEdit !== undefined; }
     scope(key: SettingsKey): SettingsScope {
         if (key === APPEARANCE_KEY && this.device.get(key)?.isSet) return "profile_device";
-        if (key === "ui.card_presentation" && this.definitions.some(def => def.key === key && def.client)) return "profile_client";
+        if (key === CARD_PRESENTATION_KEY && this.definitions.some(def => def.key === key && def.client)) return "profile_client";
         return [AUDIO_KEY, QUALITY_KEY, "playback.max_bitrate_kbps", "playback.auto_play_next", "playback.next_up_prompt_seconds", INTRO_SKIP_KEY, CREDITS_SKIP_KEY, BUFFERING_MODE_KEY, HDR_KEY].includes(key) && this.definitions.some(def => def.key === key && def.device) ? "profile_device" : "profile";
     }
     stored(key: SettingsKey): ExplicitSetting | undefined { return (this.scope(key) === "profile_device" ? this.device : this.scope(key) === "profile_client" ? this.client : this.explicit).get(key); }
@@ -68,13 +69,14 @@ export class SettingsState {
         return { profileId: profile.id, deviceId: this.session.http.deviceId, ...(this.manifestRevision === undefined ? {} : { manifestRevision: this.manifestRevision }) };
     }
     private call<T>(spec: RequestSpec<T>): Promise<T> {
-        return this.session.call({ ...spec, ...(spec.path.includes("ui.card_presentation") ? { clientFamily: "tv" } : {}), profileScoped: true, replayAfterRefresh: spec.method === "GET", signal: this.controller.signal });
+        return this.session.call({ ...spec, ...(spec.path.includes(CARD_PRESENTATION_KEY) ? { clientFamily: "tv" } : {}), profileScoped: true, replayAfterRefresh: spec.method === "GET", signal: this.controller.signal });
     }
 
     async load(): Promise<void> {
         if (!this.active || this.busy || this.clock.now() < this.retryAt) return;
         this.busy = true;
         this.loaded = false;
+        this.uiCustomizationMessage = undefined;
         this.definitions = [];
         this.explicit.clear();
         this.device.clear();
@@ -94,7 +96,10 @@ export class SettingsState {
             if (!this.active) return;
             if (contract.apiVersion !== 1 || contract.revision < capability.manifestRevision) throw new Error("The server settings contract changed. Try again.");
             const revision = Math.min(contract.revision, capability.manifestRevision);
-            this.definitions = profileSettings(contract, capability).filter(def => def.key !== "ui.card_presentation" || (capability.supportsBatchedEffective && capability.supportsAtomicShortcuts && capability.scopes.includes("profile_client") && capability.clientFamilies.includes("tv") && def.client));
+            // UICustomizationPreferences.swift:156-157, 405-417: require revision >= 5, batched/atomic/client support, and tv family.
+            const supportsUiCustomization = capability.manifestRevision >= 5 && capability.supportsBatchedEffective && capability.supportsAtomicShortcuts && capability.scopes.includes("profile_client") && capability.clientFamilies.includes("tv");
+            this.definitions = profileSettings(contract, capability).filter(def => def.key !== CARD_PRESENTATION_KEY || (supportsUiCustomization && def.client));
+            this.uiCustomizationMessage = this.definitions.some(def => def.key === CARD_PRESENTATION_KEY) ? undefined : "Update this Silo server to use synced interface settings.";
             this.manifestRevision = contract.revision;
             this.batchedEffective = capability.supportsBatchedEffective;
             const keys: SettingsKey[] = [...SETTINGS_KEYS, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY].filter(key => this.definitions.some(def => def.key === key));
@@ -295,6 +300,7 @@ export class SettingsState {
         this.subtitleOptions = [];
         this.retryEdit = undefined;
         this.loaded = false;
+        this.uiCustomizationMessage = undefined;
         this.error = undefined;
     }
 

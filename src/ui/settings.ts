@@ -1,5 +1,5 @@
 import type { NativeSession } from "../session/session.ts";
-import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, CARD_PRESENTATION_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
 import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import { FocusHost, type FocusItem, type FocusTarget, type Zone } from "./browseFocus.ts";
@@ -1055,7 +1055,25 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
         }
         if (state.loaded) {
-            if (category === "general") body.appendChild(el("h3", "settings-section-header", translate("settings.general.cardsHeaderTv")));
+            if (category === "general") {
+                // TVGeneralSettingsView.swift:63-79: Server Support and Sync Source sit above Cards.
+                if (state.uiCustomizationMessage !== undefined) {
+                    body.append(
+                        el("h3", "settings-section-header", translate("settings.general.serverSupportHeaderTv")),
+                        el("p", "settings-value", state.uiCustomizationMessage),
+                    );
+                }
+                if (state.effective.get(CARD_PRESENTATION_KEY)?.source === "profile_device") {
+                    const synced = button("use-synced-tv", translate("settings.general.useSyncedTvSettings"), () => { void state.resetPosterDevice(); });
+                    rows.push(synced);
+                    body.append(
+                        el("h3", "settings-section-header", translate("settings.general.syncSourceHeaderTv")),
+                        synced.element,
+                        el("p", "settings-value", translateTv("settings.general.deviceOverrideFooterTv")),
+                    );
+                }
+                body.appendChild(el("h3", "settings-section-header", translate("settings.general.cardsHeaderTv")));
+            }
             if (category === "playback") {
                 if (state.definitions.some(def => def.key === HDR_KEY)) {
                     const hdrOn = state.effective.get(HDR_KEY)?.value === true;
@@ -1083,14 +1101,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 rows.push(item); body.appendChild(item.element);
                 if (row.id === "advisory-age") body.appendChild(el("p", "settings-value", translate("settings.general.showAdvisoryAgeFooter")));
                 if (row.id === "metadata-language") body.appendChild(el("p", "settings-value", translate("settings.metadataLanguageNote")));
-                if (row.id === "poster-size" && state.client.get(row.key)?.isSet) {
+                if (row.id === "poster-size" && state.effective.get(row.key)?.source === "profile_client") {
                     const inherited = button("poster-profile-default", translate("settings.cards.useProfileDefault"), () => { void state.reset(row.key); });
                     rows.push(inherited); body.appendChild(inherited.element);
                 }
                 if (row.id === "poster-size" && state.effective.get(row.key)?.source === "profile_device") {
                     item.element.setAttribute("aria-disabled", "true");
-                    const synced = button("use-synced-tv", translate("settings.general.useSyncedTvSettings"), () => { void state.resetPosterDevice(); });
-                    rows.push(synced); body.appendChild(synced.element);
                 }
                 if (row.id === "poster-size") body.appendChild(el("p", "settings-value", translate("settings.general.posterSizeSyncsTv")));
                 if (category === "playback" && row.id === "auto-next" && actions?.stillWatching !== undefined) {
@@ -1275,13 +1291,19 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         rail.appendChild(el("p", "settings-version", `Auger ${APP_VERSION}`));
         panes.append(rail, body);
         paneSnapshot = panes;
+        // TVGeneralSettingsView.swift:70-75: once Use Synced TV Settings clears the device override and disappears, focus moves to Poster Size.
+        const previousFocus = host.focused();
+        const nextFocus = focus === undefined && previousFocus?.zone === "settings-rows" && previousFocus.key === "use-synced-tv"
+            && !rows.some(item => item.key === "use-synced-tv") && rows.some(item => item.key === "poster-size")
+            ? { zone: "settings-rows", key: "poster-size" }
+            : focus;
         host.show({ name: "settings", content: [panes], zones: [
             // The rail is a focus section too: Up at the profile card and Down at Sign Out stay in it.
             { id: "settings-categories", layout: "column", up: "settings-categories", down: "settings-categories", right: "settings-rows", items: categories },
             // A save in flight blocks every row's press, so only then do the rows stay reachable (Apple's view models ignore presses while saving).
             // Apple's panes are focus sections: Up at the first row and Down at the last stay in the pane, and only Left leaves it.
             { id: "settings-rows", layout: "column", left: "settings-categories", up: "settings-rows", down: "settings-rows", skipDisabled: !state.busy, items: rows },
-        ], focus: { zone: "settings-categories", key: category }, back }, focus);
+        ], focus: { zone: "settings-categories", key: category }, back }, nextFocus);
     }
     connection.start();
     host.listen();

@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.4] - 2026-11-26
+
+### Fixes
+
+- **Requests**: Port Requests detail actions and loading state from tvOS ([#926](https://github.com/Artic0din/Auger-Tizen/pull/926), [`2e5e8646`](https://github.com/Artic0din/Auger-Tizen/commit/2e5e8646))
+
 ## [0.14.3] - 2026-11-26
 
 ### Fixes

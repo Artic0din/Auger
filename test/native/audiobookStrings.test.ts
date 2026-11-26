@@ -39,11 +39,13 @@ function inLanguage<T>(tag: string | null, body: () => T): T {
 
 test("every catalog key the audiobook detail reads is in the German and Arabic files", () => {
     const keys = new Set<string>();
-    for (const name of ["audiobookDetail.ts", "audiobookView.ts"]) {
+    for (const name of ["audiobookDetail.ts", "audiobookView.ts", "detailsActions.ts"]) {
         const source = readFileSync(new URL(`../../src/ui/${name}`, import.meta.url), "utf8");
-        for (const [, key] of source.matchAll(/"([a-z][A-Za-z]*(?:\.[A-Za-z0-9]+)+)"/g)) if (key !== undefined && Object.hasOwn(english, key) && /^(detail\.(audiobook|resume|playAgain|startOver)|common\.play)/.test(key)) keys.add(key);
+        for (const [, key] of source.matchAll(/"([a-z][A-Za-z]*(?:\.[A-Za-z0-9]+)+)"/g)) {
+            if (key !== undefined && Object.hasOwn(english, key) && /^(detail\.(audiobook|facts|resume|playAgain|startOver|released|overviewMore|favorite|more\.)|common\.play)/.test(key)) keys.add(key);
+        }
     }
-    assert.ok(keys.size >= 20, `the page reads ${keys.size} keys`);
+    assert.ok(keys.size >= 30, `the page reads ${keys.size} keys`);
     for (const tag of ["de", "ar"]) {
         const catalog = JSON.parse(readFileSync(new URL(`../../src/i18n/catalog/${tag}.json`, import.meta.url), "utf8")) as Record<string, string>;
         assert.deepEqual([...keys].filter(key => !Object.hasOwn(catalog, key)), [], `${tag} lacks keys the page reads`);
