@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.9.0] - 2026-11-26
+
+### Features
+
+- **Watch Party**: Add picker Search, Home and Recently Added shelves, and tvOS empty states ([#912](https://github.com/Artic0din/Auger-Tizen/pull/912), [`61f273ef`](https://github.com/Artic0din/Auger-Tizen/commit/61f273ef))
+
 ## [0.8.0] - 2026-11-26
 
 ### Features
