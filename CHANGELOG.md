@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.10] - 2026-11-26
+
+### Fixes
+
+- **Person**: Port Person from the tvOS source ([#934](https://github.com/Artic0din/Auger-Tizen/pull/934), [`e11ca429`](https://github.com/Artic0din/Auger-Tizen/commit/e11ca429))
+- **Calendar**: Port Calendar from the tvOS source ([#936](https://github.com/Artic0din/Auger-Tizen/pull/936), [`30f6d4e8`](https://github.com/Artic0din/Auger-Tizen/commit/30f6d4e8))
+
 ## [0.14.9] - 2026-11-26
 
 ### Fixes
