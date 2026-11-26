@@ -43,6 +43,16 @@ export interface HomeEnrichmentRow {
     readonly continuing: boolean;
 }
 
+export type HeroEnrichmentState = "notStarted" | "loading" | "completed" | "failed";
+
+export interface EnrichedHeroArtwork {
+    readonly backdropUrl: string | undefined;
+    readonly backdropThumbhash: string | undefined;
+    readonly backdropIsEpisodeStill: boolean | undefined;
+    readonly posterUrl: string | undefined;
+    readonly posterThumbhash: string | undefined;
+}
+
 interface Entry {
     readonly detail: MarqueeDetail;
     /** Continue Watching's progress revision the detail was read at; undefined for other rows. */
@@ -58,6 +68,7 @@ interface Job {
 /** One Browse (one server and profile) owns this; nothing here outlives it. */
 export class HomeEnrichment {
     private readonly entries = new Map<string, Entry>();
+    private readonly failed = new Map<string, string | undefined>();
     private readonly jobs = new Map<string, Job>();
     private readonly read: <T>(spec: RequestSpec<T>, signal: AbortSignal) => Promise<T>;
     private readonly landed: (id: string) => void;
@@ -158,7 +169,7 @@ export class HomeEnrichment {
         const read = (): void => {
             if (this.focusController !== controller) return;
             this.request(card.id, revision, controller.signal, () => {
-                if (this.focusController !== controller || !this.fresh(card.id, revision)) return;
+                if (this.focusController !== controller) return;
                 this.landed(card.id);
             });
         };
@@ -197,6 +208,7 @@ export class HomeEnrichment {
         this.continuingController = undefined;
         this.prewarmController?.abort();
         this.prewarmController = undefined;
+        this.failed.clear();
     }
 
     stop(): void {
@@ -217,21 +229,29 @@ export class HomeEnrichment {
             return;
         }
         let job = this.jobs.get(id);
-        const sameRevision = job !== undefined && (revision === undefined || job.revision === undefined || job.revision === revision);
+        const sameRevision = job !== undefined && (revision === undefined || job.revision === revision);
         if (job !== undefined && !sameRevision) {
             job.controller.abort();
             this.jobs.delete(id);
             job = undefined;
         }
         if (job === undefined) {
+            this.failed.delete(id);
             const controller = new AbortController();
             const created: Job = { revision, controller, listeners: new Set() };
             job = created;
             this.jobs.set(id, created);
             void this.read(operations.marqueeDetail(id), controller.signal).then(detail => {
                 if (controller.signal.aborted || this.jobs.get(id) !== created) return;
-                if (detail.id === id) this.entries.set(id, { detail, revision });
-            }, () => undefined).finally(() => {
+                if (detail.id === id) {
+                    this.entries.set(id, { detail, revision });
+                    this.failed.delete(id);
+                } else {
+                    this.failed.set(id, revision);
+                }
+            }, () => {
+                if (!controller.signal.aborted && this.jobs.get(id) === created) this.failed.set(id, revision);
+            }).finally(() => {
                 if (this.jobs.get(id) !== created) return;
                 this.jobs.delete(id);
                 if (controller.signal.aborted) return;
@@ -267,7 +287,7 @@ export class HomeEnrichment {
                         return;
                     }
                     this.request(job.id, job.revision, signal, () => {
-                        if (!signal.aborted && this.focusedId === job.id && this.fresh(job.id, job.revision)) this.landed(job.id);
+                        if (!signal.aborted && this.focusedId === job.id) this.landed(job.id);
                         onDone?.();
                         resolve();
                     });
@@ -275,6 +295,44 @@ export class HomeEnrichment {
             }
         };
         void Promise.all(Array.from({ length: workers }, () => worker()));
+    }
+
+    /** Detail lookup state used by TVHeroArtworkResolver to hold fallback cover art until detail settles. */
+    enrichmentState(card: Card, continuing: boolean): HeroEnrichmentState {
+        const revision = continuing ? card.progressUpdatedAt ?? "" : undefined;
+        if (this.fresh(card.id, revision)) return "completed";
+        const job = this.jobs.get(card.id);
+        if (job !== undefined && (revision === undefined || job.revision === undefined || job.revision === revision)) return "loading";
+        if (this.focusedId === card.id && this.focusRevision === revision && this.pendingRead !== undefined) return "loading";
+        if (this.failed.has(card.id)) {
+            const failedRevision = this.failed.get(card.id);
+            if (revision === undefined || failedRevision === undefined || failedRevision === revision) return "failed";
+        }
+        return "notStarted";
+    }
+
+    /** Detail artwork fields extracted per TVMarqueeEnrichment (TVFocusMarquee.swift). */
+    artwork(card: Card): EnrichedHeroArtwork | undefined {
+        const detail = this.entries.get(card.id)?.detail;
+        if (detail === undefined) return undefined;
+        const posterUrl = detail.posterIsEpisodeStill === true ? undefined : nonEmpty(detail.posterUrl);
+        const posterThumbhash = detail.posterIsEpisodeStill === true ? undefined : detail.posterThumbhash;
+        if (card.type === "episode" && nonEmpty(detail.seriesBackdropUrl) !== undefined) {
+            return {
+                backdropUrl: nonEmpty(detail.seriesBackdropUrl),
+                backdropThumbhash: undefined,
+                backdropIsEpisodeStill: false,
+                posterUrl,
+                posterThumbhash,
+            };
+        }
+        return {
+            backdropUrl: nonEmpty(detail.backdropUrl),
+            backdropThumbhash: detail.backdropThumbhash,
+            backdropIsEpisodeStill: detail.backdropIsEpisodeStill,
+            posterUrl,
+            posterThumbhash,
+        };
     }
 
     /** TVMarqueeEnrichment fills only metadata the row omitted. */
