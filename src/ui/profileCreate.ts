@@ -4,12 +4,23 @@ import type { UserLibrary } from "../contracts/v2/catalog.ts";
 import type { ProfileCreateBody, ProfileSummary } from "../contracts/v2/wire.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import { ProfileManagement } from "../session/profileManagement.ts";
+import { errorMessage, errorState } from "./errorState.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
-import { translate } from "../i18n/translate.ts";
+import { onCatalogLoaded, translate, type MessageKey } from "../i18n/translate.ts";
+import { centredDialog } from "./confirmationDialog.ts";
 import { pinProblem, pinScreen } from "./pinScreen.ts";
 import { profileAvatar } from "./profilePicker.ts";
 import { PROFILE_STYLES, profilePresets } from "./profilePresets.ts";
 import { actions, button, el, type Control, type Screen } from "./screen.ts";
+import { lateRedraw } from "./selectRelease.ts";
+
+const CONTENT_RATINGS = [
+    ["G", "newProfile.rating.g"],
+    ["PG", "newProfile.rating.pg"],
+    ["PG-13", "newProfile.rating.pg13"],
+    ["R", "newProfile.rating.r"],
+] as const satisfies readonly (readonly [string, MessageKey])[];
 
 export interface ProfileCreateFlow { destroy(): void; }
 interface Options {
@@ -30,32 +41,52 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
     const allowed = new Set<string>();
     let libraries: UserLibrary[] | undefined;
     let librariesFailed = false;
+    let librariesError = "";
+    let alert: { readonly title: string; readonly message: string; readonly returnFocus: string } | undefined;
     let updateLibraries = (): void => undefined;
+    let redrawer: (() => void) | undefined;
 
-    const destroy = (): void => { ended = true; controller.abort(); management.close(); pin = ""; };
+    const late = lateRedraw(() => false, () => { if (!ended) redrawer?.(); });
+    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
+    const destroy = (): void => { ended = true; redrawer = undefined; stopCatalog(); late.clear(); controller.abort(); management.close(); pin = ""; };
     const finish = (profileId?: string, uncertain = false): void => {
         try { destroy(); }
         catch {
+            const heading = el("h1", "signin-title", "Could not leave profile management");
+            markEnglishOnly(heading, "Could not leave profile management");
             const retry = button("cleanup-retry", translate("common.tryAgain"), () => finish(profileId, uncertain));
-            options.show({ name: "profile-cleanup", content: [el("h1", "signin-title", "Could not leave profile management"), actions([retry])], controls: [retry], focus: retry.key, back: undefined });
+            options.show({ name: "profile-cleanup", content: [heading, actions([retry])], controls: [retry], focus: retry.key, back: undefined, translated: true });
             return;
         }
         options.finished(profileId, uncertain);
     };
     const showProblem = (line: string): void => {
+        const heading = el("h1", "signin-title", "Profile could not be created");
+        const detail = el("p", "signin-text signin-error", line);
+        detail.setAttribute("role", "alert");
         const back = button("creation-back", "Choose profile", () => finish(undefined, submitting));
-        options.show({ name: "profile-create-error", content: [el("h1", "signin-title", "Profile could not be created"), el("p", "signin-text signin-error", line), actions([back])], controls: [back], focus: back.key, back: () => finish(undefined, submitting) });
+        markEnglishOnly(heading, "Profile could not be created");
+        markEnglishOnly(detail, line);
+        markEnglishOnly(back.element, "Choose profile");
+        options.show({ name: "profile-create-error", content: [heading, detail, actions([back])], controls: [back], focus: back.key, back: () => finish(undefined, submitting) });
     };
     const loadLibraries = (): void => {
         librariesFailed = false;
+        librariesError = "";
         void options.server.session.call({ ...operations.listUserLibraries(), profileScoped: true, signal: controller.signal }).then(found => {
             if (ended) return;
             libraries = found;
             updateLibraries();
-        }, () => { if (!ended) { librariesFailed = true; updateLibraries(); } });
+        }, (failure: unknown) => {
+            if (!ended) {
+                librariesFailed = true;
+                librariesError = errorMessage(errorState(failure));
+                updateLibraries();
+            }
+        });
     };
 
-    const render = (focus = "create-name", error?: string): void => {
+    const render = (focus = "create-name"): void => {
         if (ended) return;
         const controls: Control[] = [];
         updateLibraries = () => undefined;
@@ -92,7 +123,7 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                 const control = rowButton(`preset:${index}`, translate("profiles.avatar.preset", { seed: integerText(index + 1) }), () => { selected = index; render(`preset:${index}`); });
                 control.element.className = "profile-preset";
                 control.element.setAttribute("aria-pressed", String(selected === index));
-                const avatar = profileAvatar({ id: `preset-${index}`, name, hasPin: false, isPrimary: false, isChild: child, avatar: reference, avatarUrl: undefined }, options.server.server.http.base.baseUrl);
+                const avatar = profileAvatar({ id: `preset-${index}`, name, hasPin: false, isPrimary: false, isChild: child, avatar: reference, avatarUrl: undefined }, options.server.server.http.base.baseUrl, 88);
                 avatar.style.background = "none";
                 avatar.querySelector(".navigation-avatar-fallback")?.remove();
                 control.element.appendChild(avatar);
@@ -115,13 +146,33 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
         pinInput.value = pin; pinInput.autocomplete = "off";
         pinInput.setAttribute("data-focus", "create-pin");
         controls.push({ key: "create-pin", element: pinInput, row: row++, done: "create-submit" });
-        section(translate("newProfile.pin"), pinInput);
+        const pinHint = el("p", "profile-create-pin-hint", translate("newProfile.pinHint"));
+        pinHint.id = "profile-create-pin-hint";
+        pinHint.setAttribute("role", "status");
+        pinInput.setAttribute("aria-describedby", pinHint.id);
+        const pinAcceptable = (): boolean => pin === "" || /^\d{4}$/.test(pin);
+        const isValid = (): boolean => name.trim() !== "" && pinAcceptable();
+        const syncPinHint = (): void => { pinHint.hidden = pinAcceptable(); };
+        syncPinHint();
+        const pinBlock = el("div", "profile-create-pin-block");
+        pinBlock.append(pinInput, pinHint);
+        section(translate("newProfile.pin"), pinBlock);
         if (!bootstrap) {
+            const switchGroup = el("div", "profile-create-switch");
             const toggle = rowButton("create-child", `${translate("newProfile.child")}: ${translate(child ? "newProfile.on" : "newProfile.off")}`, () => { child = !child; render("create-child"); });
-            row++; column.appendChild(toggle.element);
+            row++;
+            const switchDetail = el("p", "profile-create-switch-detail", translate("newProfile.childDetail"));
+            switchDetail.id = "profile-create-child-detail";
+            toggle.element.setAttribute("aria-describedby", switchDetail.id);
+            switchGroup.append(toggle.element, switchDetail);
+            column.appendChild(switchGroup);
             if (child) {
-                const ratings = ["G", "PG", "PG-13", "R", "NC-17"];
-                const limit = rowButton("create-rating", `Content rating: ${rating}`, () => { rating = ratings[(ratings.indexOf(rating) + 1) % ratings.length] ?? "PG"; render("create-rating"); });
+                const ratingOption = CONTENT_RATINGS.find(([value]) => value === rating) ?? CONTENT_RATINGS[1];
+                const limit = rowButton("create-rating", `${translate("newProfile.rating")}: ${translate(ratingOption[1])}`, () => {
+                    const index = CONTENT_RATINGS.findIndex(([value]) => value === rating);
+                    rating = (CONTENT_RATINGS[(index + 1) % CONTENT_RATINGS.length] ?? CONTENT_RATINGS[1])[0];
+                    render("create-rating");
+                });
                 row++; column.appendChild(limit.element);
                 const access = rowButton("create-libraries", `${translate("newProfile.restrict")}: ${translate(restricted ? "newProfile.on" : "newProfile.off")}`, () => { restricted = !restricted; render("create-libraries"); });
                 row++; column.appendChild(access.element);
@@ -136,20 +187,26 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                         const content: HTMLElement[] = [];
                         previous = [];
                         if (libraries === undefined) {
-                            content.push(el("p", "signin-text", librariesFailed ? "Could not load libraries." : "Loading libraries."));
-                            if (librariesFailed) { const retry = { ...button("libraries-retry", translate("common.tryAgain"), loadLibraries), row: firstRow }; previous.push(retry); content.push(retry.element); }
-                        } else for (const library of libraries) {
-                            const control = { ...button(`library:${library.id}`, `${library.name}: ${allowed.has(library.id) ? "Allowed" : "Blocked"}`, () => {
-                                if (submitting) return;
-                                if (allowed.has(library.id)) allowed.delete(library.id); else allowed.add(library.id);
-                                drawLibraries?.();
-                            }), row: firstRow + previous.length };
-                            previous.push(control); content.push(control.element);
+                            content.push(el("p", "signin-text", librariesFailed ? translate("newProfile.librariesFailedDetail", { message: librariesError }) : translate("newProfile.librariesLoading")));
+                            if (librariesFailed) { const retry = { ...button("libraries-retry", translate("profiles.access.retry"), loadLibraries), row: firstRow }; previous.push(retry); content.push(retry.element); }
+                        } else if (libraries.length === 0) {
+                            content.push(el("p", "signin-text", translate("newProfile.librariesEmpty")));
+                        } else {
+                            content.push(el("p", "profile-create-subheading", translate("newProfile.allowed")));
+                            for (const library of libraries) {
+                                const control = { ...button(`library:${library.id}`, `${library.name}: ${allowed.has(library.id) ? "Allowed" : "Blocked"}`, () => {
+                                    if (submitting) return;
+                                    if (allowed.has(library.id)) allowed.delete(library.id); else allowed.add(library.id);
+                                    drawLibraries?.();
+                                }), row: firstRow + previous.length };
+                                control.element.setAttribute("aria-pressed", String(allowed.has(library.id)));
+                                previous.push(control); content.push(control.element);
+                            }
                         }
                         slot.replaceChildren(...content);
                         for (let index = 0; index < controls.length; index++) {
                             const control = controls[index];
-                            if (control?.key === "create-submit" || control?.key === "create-cancel") controls[index] = { ...control, row: firstRow + previous.length };
+                            if (control?.key === "create-submit") controls[index] = { ...control, row: firstRow + previous.length };
                         }
                         const index = controls.findIndex(control => control.key === "create-submit");
                         controls.splice(index < 0 ? controls.length : index, 0, ...previous);
@@ -159,49 +216,103 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
                 }
             }
         }
-        const status = el("p", error === undefined ? "signin-text" : "signin-text signin-error", error ?? "");
-        status.setAttribute("role", error === undefined ? "status" : "alert");
-        if (error === undefined) column.appendChild(status);
-        else {
-            status.id = "profile-create-error";
-            const field = controls.find(control => control.key === focus)?.element ?? nameInput;
-            field.setAttribute("aria-describedby", status.id);
-            field.after(status);
-        }
         const submit = rowButton("create-submit", submitting ? "Creating profile" : translate("newProfile.create"), () => {
             name = nameInput.value; pin = pinInput.value;
-            if (!name.trim()) { render("create-name", "Enter a profile name."); return; }
-            if (pin !== "" && !/^\d{4}$/.test(pin)) { render("create-pin", "Enter all four PIN digits or leave the PIN empty."); return; }
-            if (child && restricted && (libraries === undefined || allowed.size === 0)) { render("create-libraries", "Choose at least one library."); return; }
+            if (!isValid()) return;
+            if (child && restricted && (libraries === undefined || allowed.size === 0)) {
+                alert = { title: translate("newProfile.error.libraryTitle"), message: translate("newProfile.error.library"), returnFocus: "create-libraries" };
+                render();
+                return;
+            }
             const body: ProfileCreateBody = { name: name.trim(), ...(style === "initials" ? {} : { avatar: presets[selected] }), ...(pin === "" ? {} : { pin }),
                 ...(!bootstrap ? { is_child: child, ...(child ? { max_content_rating: rating, library_restrictions_enabled: restricted, ...(restricted ? { allowed_library_ids: [...allowed].sort() } : {}) } : {}) } : {}) };
             submitting = true; pin = ""; pinInput.value = "";
+            syncPinHint();
+            updatePreview();
+            submit.element.setAttribute("aria-disabled", "false");
             submit.element.textContent = "Creating profile";
+            markEnglishOnly(submit.element, "Creating profile");
             void management.create(body, controller.signal).then(profile => { if (!ended) finish(profile.id); }, (failure: unknown) => {
                 if (ended) return;
-                const status = failure instanceof ApiError ? failure.status : undefined;
-                const certain = status !== undefined && [400, 403, 409, 422].includes(status);
-                if (certain) { submitting = false; render("create-name", "The server could not create this profile. Check the name and household limits, or return to profiles."); }
-                else showProblem("The request may already have created this profile. Check the profile list before trying again.");
+                const httpStatus = failure instanceof ApiError ? failure.status : undefined;
+                const certain = httpStatus !== undefined && [400, 403, 409, 422].includes(httpStatus);
+                if (certain) {
+                    submitting = false;
+                    const title = httpStatus !== undefined && [403, 409, 422].includes(httpStatus)
+                        ? translate("newProfile.refused.title")
+                        : translate("newProfile.error.title");
+                    const reason = failure instanceof ApiError && failure.failure.kind === "problem" && failure.failure.problem.detail?.trim()
+                        ? failure.failure.problem.detail
+                        : errorMessage(errorState(failure));
+                    alert = { title, message: reason, returnFocus: "create-name" };
+                    render();
+                } else showProblem("The request may already have created this profile. Check the profile list before trying again.");
             });
         });
-        const cancel = { ...button("create-cancel", translate("common.cancel"), () => finish(undefined, submitting)), row };
-        controls.push(cancel);
-        column.appendChild(actions([submit, cancel]));
-        const preview = el("div", "profile-create-preview");
-        const updatePreview = (): void => {
-            preview.replaceChildren(profileAvatar({ id: "new-profile", name, hasPin: pin !== "", isPrimary: false, isChild: child, avatarUrl: undefined, ...(style === "initials" ? {} : { avatar: presets[selected] }) }, options.server.server.http.base.baseUrl), el("h2", "profile-name", name || "New Profile"));
+        if (submitting) markEnglishOnly(submit.element, "Creating profile");
+        const syncValidity = (): void => {
+            submit.element.setAttribute("aria-disabled", String(!submitting && !isValid()));
         };
-        nameInput.addEventListener("input", () => { name = nameInput.value; updatePreview(); });
-        pinInput.addEventListener("input", () => { pin = pinInput.value.replace(/\D/g, "").slice(0, 4); pinInput.value = pin; });
+        syncValidity();
+        column.appendChild(actions([submit]));
+        const preview = el("div", "profile-create-preview");
+        const tilePreview = el("div", "profile-create-preview-tile");
+        const previewHint = el("p", "profile-create-preview-hint", translate("newProfile.preview"));
+        preview.append(tilePreview, previewHint);
+        const updatePreview = (): void => {
+            const previewName = name === "" ? translate("newProfile.previewName") : name;
+            tilePreview.replaceChildren(
+                profileAvatar({ id: "new-profile", name: previewName, hasPin: pin !== "", isPrimary: false, isChild: child, avatarUrl: undefined, ...(style === "initials" ? {} : { avatar: presets[selected] }) }, options.server.server.http.base.baseUrl),
+                el("h2", "profile-name", previewName),
+            );
+            previewHint.hidden = name.trim() !== "";
+        };
+        nameInput.addEventListener("input", () => { name = nameInput.value; updatePreview(); syncValidity(); });
+        pinInput.addEventListener("input", () => { pin = pinInput.value.replace(/\D/g, "").slice(0, 4); pinInput.value = pin; syncPinHint(); updatePreview(); syncValidity(); });
         updatePreview();
         const header = el("div", "profile-create-header");
         const headerCancel = { ...button("create-header-cancel", translate("common.cancel"), () => finish(undefined, submitting)), row: -1 };
+        const closeIcon = el("span", "profile-create-cancel-icon");
+        closeIcon.setAttribute("aria-hidden", "true");
+        closeIcon.innerHTML = '<svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3 3 13"/></svg>';
+        headerCancel.element.prepend(closeIcon);
         controls.unshift(headerCancel);
-        header.append(el("h1", "profile-create-title", translate("newProfile.title")), headerCancel.element);
+        const heading = el("div", "profile-create-heading");
+        heading.append(el("h1", "profile-create-title", translate("newProfile.title")), el("p", "profile-create-subtitle", translate("newProfile.pickLook")));
+        header.append(heading, headerCancel.element);
         const body = el("div", "profile-create-body"); body.append(preview, column);
+        redrawer = () => {
+            const active = document.activeElement;
+            const currentFocus = active instanceof HTMLElement ? active.dataset.focus : undefined;
+            render(currentFocus ?? focus);
+        };
+        if (alert !== undefined) {
+            drawLibraries?.();
+            updateLibraries = () => undefined;
+            const currentAlert = alert;
+            const dismiss = (): void => {
+                alert = undefined;
+                render(currentAlert.returnFocus);
+            };
+            const ok = button("refusal-ok", translate("newProfile.ok"), dismiss);
+            options.show({
+                name: "profile-create:alert",
+                content: centredDialog({
+                    style: "alert",
+                    id: "profile-create-refused",
+                    title: currentAlert.title,
+                    message: currentAlert.message,
+                    buttons: [ok.element],
+                    behind: [header, body],
+                }),
+                controls: [ok],
+                focus: "refusal-ok",
+                back: dismiss,
+                translated: true,
+            }, "refusal-ok");
+            return;
+        }
         options.show({ name: "profile-create", content: [header, body], controls, focus, back: () => finish(undefined, submitting), translated: true }, focus);
-        if (error !== undefined && status.isConnected) status.scrollIntoView({ block: "nearest" });
         updateLibraries = drawLibraries ?? (() => undefined);
         drawLibraries?.();
     };

@@ -224,7 +224,8 @@ appTest("cold offline launch without a remembered profile does not invent a prof
     tv.offline = true;
     await tv.page.evaluate(() => window.appHarness.mount());
     await tv.jump(35000);
-    await tv.page.getByText("Profiles didn't load", { exact: true }).waitFor();
+    await tv.page.locator('[data-screen="profiles-error"]').waitFor();
+    await tv.page.getByText("Something went wrong", { exact: true }).waitFor();
     assert.equal(await tv.page.locator('[data-view="home"]').count(), 0);
     assert.equal(await tv.page.locator('[data-focus^="profile:"]').count(), 0);
 });

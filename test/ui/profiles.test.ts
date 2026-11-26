@@ -29,7 +29,7 @@ for (const reduced of [false, true]) {
             if (key === "change-server") assert.equal(await tv.screen(), "server-selection");
         });
     }
-    for (const key of ["create-submit", "create-header-cancel", "create-cancel", "shuffle-avatars", "libraries-retry"]) {
+    for (const key of ["create-submit", "create-header-cancel", "shuffle-avatars", "libraries-retry"]) {
         tvTest(`Create Profile ${key}: focus, held Select and release (reduced motion: ${reduced})`, async tv => {
             await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
             await picker(tv);
@@ -53,7 +53,8 @@ for (const reduced of [false, true]) {
                 focusMs: reduced ? 0 : primary ? 320 : 120, pressMs: primary && !reduced ? 120 : 0 });
             if (key.includes("cancel")) await screenIs(tv, "profiles");
             if (primary) {
-                await shows(tv, "The server could not create this profile. Check the name and household limits, or return to profiles.");
+                await screenIs(tv, "profile-create:alert");
+                await shows(tv, "Can't Create Profile");
                 assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 1);
             }
             if (key === "shuffle-avatars") assert.notEqual(await tv.page.locator('[data-focus="preset:0"] img').getAttribute("src"), avatar);
@@ -345,7 +346,11 @@ tvTest("a profile without a PIN is chosen with the remote and handed to browse; 
     const list = tv.fake.hold("/profiles");
     await signIn(tv);
     await screenIs(tv, "profiles-loading");
-    assert.equal(await tv.focused(), "signout", "the loading screen has a focus target");
+    assert.equal(await tv.focused(), "profiles-loading", "the loading screen has a focus target");
+    assert.equal(await tv.page.locator('[data-focus="signout"]').count(), 0);
+    assert.equal(await tv.page.getByText("Who's watching?", { exact: true }).count(), 0);
+    await shows(tv, "Loading profiles...");
+    assert.equal(await tv.page.locator(".profile-loading-wordmark").isVisible(), true);
     list.release();
     await screenIs(tv, "profiles");
     await shows(tv, "Who's watching?");
@@ -358,8 +363,8 @@ tvTest("a profile without a PIN is chosen with the remote and handed to browse; 
     assert.equal(await tv.focused(), "add-profile", "focus stops at the row's end");
     await tv.page.keyboard.press("ArrowDown");
     assert.equal(await tv.focused(), "signout");
-    await tv.page.keyboard.press("ArrowUp");
-    assert.equal(await tv.focused(), "add-profile", "Up returns to the originating tile");
+    await tv.remote(38);
+    assert.equal(await tv.focused(), "add-profile", "Up (including remote hardware Up) returns to the originating tile");
     await tv.page.keyboard.press("ArrowLeft");
     await tv.page.keyboard.press("ArrowLeft");
     assert.equal(await tv.focused(), "profile:p-owner");
@@ -644,10 +649,7 @@ tvTest("Sign out revokes the session and clears the TV; signing out while profil
     const list = tv.fake.hold("/profiles", true);
     await signIn(tv);
     await screenIs(tv, "profiles-loading");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await tv.page.keyboard.press("ArrowRight");
-    await tv.page.keyboard.press("Enter");
+    await tv.page.evaluate(() => window.harness.profileController?.signOut());
     await screenIs(tv, "entry");
     await shows(tv, "Signed out on this TV.");
     list.release();
@@ -691,65 +693,41 @@ tvTest("a routed session expiry abandons a launch choice still being saved", asy
     assert.equal((await handed(tv)).length, 0);
 });
 
-tvTest("a profile list that arrives during sign-out confirmation waits for Cancel and is dropped on Sign Out", async (tv) => {
-    const deliver = async (hold: { release(): void }): Promise<void> => {
-        hold.release();
-        await tv.eventually(async () => tv.pendingReplies === 0, "held profile list delivered");
-        await tv.page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
-    };
-    const first = tv.fake.hold("/profiles", true);
+tvTest("a profile list failure shows the shared error view above the Change account and Sign out footer", async (tv) => {
+    tv.fake.script("/profiles", { status: 500 });
     await signIn(tv);
-    await screenIs(tv, "profiles-loading");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await deliver(first);
-    assert.equal(await tv.screen(), "profiles:signout", "the list does not replace the confirmation");
-    assert.equal(await tv.page.locator('[data-screen="browse"]').count(), 0);
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles");
-    assert.equal(await tv.page.locator('[data-focus="profile:p-owner"]').count(), 1, "Cancel replays the held list");
-
+    await screenIs(tv, "profiles-error");
+    await shows(tv, "Something went wrong");
+    await shows(tv, "The server ran into a problem. Try again in a moment.");
+    assert.equal(await tv.focused(), "retry");
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Try Again");
     await tv.page.keyboard.press("ArrowDown");
+    assert.equal(await tv.focused(), "change-account");
     await tv.page.keyboard.press("ArrowRight");
+    assert.equal(await tv.focused(), "signout");
     await tv.page.keyboard.press("Enter");
     await screenIs(tv, "profiles:signout");
-    await tv.page.keyboard.press("ArrowRight");
     await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "entry");
+    await screenIs(tv, "profiles-error");
+    assert.equal(await tv.focused(), "signout", "Cancel returns to Sign out on the error screen");
+    await tv.page.keyboard.press("ArrowLeft");
+    assert.equal(await tv.focused(), "change-account");
+    await tv.page.keyboard.press("Enter");
+    assert.equal(await tv.page.locator('[data-screen="server-selection"]').count(), 1);
+    assert.equal(tv.fake.revokedSessions.size, 0);
+});
 
-    const second = tv.fake.hold("/profiles", true);
+tvTest("a 404 failure on profile loading shows Not found with Try Again above the footer and remote Up returns to Retry", async (tv) => {
+    tv.fake.script("/profiles", { status: 404 });
     await signIn(tv);
-    await screenIs(tv, "profiles-loading");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await deliver(second);
-    assert.equal(await tv.screen(), "profiles:signout", "the list does not replace the confirmation");
-    await tv.remote(BACK);
-    await screenIs(tv, "profiles");
-    assert.equal(await tv.page.locator('[data-focus="profile:p-owner"]').count(), 1, "Back replays the held list");
-
+    await screenIs(tv, "profiles-error");
+    await shows(tv, "Not found");
+    assert.equal(await tv.focused(), "retry");
+    assert.equal(await tv.page.locator('[data-focus="retry"]').innerText(), "Try Again");
     await tv.page.keyboard.press("ArrowDown");
-    await tv.page.keyboard.press("ArrowRight");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await tv.page.keyboard.press("ArrowRight");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "entry");
-
-    const third = tv.fake.hold("/profiles", true);
-    await signIn(tv);
-    await screenIs(tv, "profiles-loading");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await deliver(third);
-    assert.equal(await tv.screen(), "profiles:signout");
-    await tv.page.keyboard.press("ArrowRight");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "entry");
-    await tv.jump(0);
-    assert.equal(await tv.screen(), "entry", "Sign Out drops the held list");
-    assert.equal(await tv.page.locator('[data-screen="profiles"]').count(), 0);
-    assert.equal(await tv.page.locator('[data-screen="browse"]').count(), 0);
+    assert.equal(await tv.focused(), "change-account");
+    await tv.remote(38);
+    assert.equal(await tv.focused(), "retry");
 });
 
 tvTest("an expired sign-in ends the profile and leads back to sign-in", async (tv) => {
@@ -862,7 +840,7 @@ tvTest("an authority callback destroyed by an earlier listener cannot replace it
 
 tvTest("repeated profile teardown preserves a successor sign-in screen and its styling", async (tv) => {
     await picker(tv);
-    const result = await tv.page.evaluate(async () => {
+    await tv.page.evaluate(() => {
         const harness = window.harness;
         const server = harness.server;
         const root = document.getElementById("root");
@@ -871,14 +849,21 @@ tvTest("repeated profile teardown preserves a successor sign-in screen and its s
         let complete = (): void => undefined;
         const handedBack = new Promise<void>((resolve) => { complete = resolve; });
         const controller = harness.mountProfiles(root, { server, onSelected: () => undefined, onSignedOut: (notice) => { harness.mount(notice); complete(); }, onChangeServer: () => undefined });
+        Reflect.set(window, "__teardownTest", { controller, handedBack });
+    });
+    await screenIs(tv, "profiles");
+    const result = await tv.page.evaluate(async () => {
+        const root = document.getElementById("root");
+        const state = Reflect.get(window, "__teardownTest") as { controller: { destroy(): void }; handedBack: Promise<void> } | undefined;
+        if (root === null || state === undefined) { throw new Error("teardown test setup missing"); }
         const signOut = document.querySelector('[data-focus="signout"]');
         if (!(signOut instanceof HTMLElement)) { throw new Error("sign-out control required"); }
         signOut.click();
         const confirm = document.querySelector('[data-focus="confirm-signout"]');
         if (!(confirm instanceof HTMLElement)) { throw new Error("sign-out confirmation required"); }
         confirm.click();
-        await handedBack;
-        controller.destroy();
+        await state.handedBack;
+        state.controller.destroy();
         return { screen: document.querySelector("[data-screen]")?.getAttribute("data-screen"), styled: root.classList.contains("signin") };
     });
     assert.deepEqual(result, { screen: "entry", styled: true });
@@ -1018,7 +1003,11 @@ tvTest("late library choices preserve the form inputs and selected child restric
     assert.equal(await tv.page.locator("#create-profile-pin").inputValue(), "2468");
     await tv.page.getByRole("button", { name: "Movies: Blocked", exact: true }).click();
     await tv.page.getByRole("button", { name: "Create Profile", exact: true }).click();
-    await tv.page.getByRole("alert").waitFor();
+    await screenIs(tv, "profile-create:alert");
+    await tv.page.getByRole("alertdialog").waitFor();
+    await shows(tv, "Can't Create Profile");
+    await tv.page.locator('[data-focus="refusal-ok"]').click();
+    await screenIs(tv, "profile-create");
     assert.deepEqual(submitted, { name: "Kid", pin: "2468", is_child: true, max_content_rating: "PG", library_restrictions_enabled: true, allowed_library_ids: ["movies"] });
     assert.equal(await tv.focused(), "create-name");
     assert.equal(await tv.page.locator("#create-profile-pin").inputValue(), "");
@@ -1079,21 +1068,47 @@ tvTest("creation validates locally and cancellation restores Add without launchi
     await picker(tv);
     await tv.page.getByRole("button", { name: "Add", exact: true }).click();
     await screenIs(tv, "profile-create");
-    await tv.page.getByRole("button", { name: "Create Profile", exact: true }).click();
-    assert.equal(await tv.focused(), "create-name");
-    const errorInView = () => tv.page.locator('.profile-create-controls').evaluate(column => {
-        const alert = column.querySelector('[role="alert"]');
-        if (alert === null) return false;
-        const a = alert.getBoundingClientRect(), c = column.getBoundingClientRect();
-        return a.top >= c.top && a.bottom <= Math.min(c.bottom, innerHeight);
-    });
-    assert.equal(await errorInView(), true, "the missing-name error is in the visible form viewport");
-    await tv.page.locator("#create-profile-name").fill("Guest");
-    await tv.page.locator("#create-profile-pin").fill("123");
-    await tv.page.getByRole("button", { name: "Create Profile", exact: true }).click();
-    assert.equal(await tv.focused(), "create-pin");
-    assert.equal(await errorInView(), true, "the PIN error is in the visible form viewport");
+    await shows(tv, "Pick a look and give it a name.");
+    assert.equal(await tv.page.locator('[data-focus="create-cancel"]').count(), 0);
+    assert.equal(await tv.page.locator('[data-focus="create-header-cancel"]').count(), 1);
+    assert.equal(await tv.page.locator(".profile-create-preview .profile-name").textContent(), "Your Name");
+    assert.equal(await tv.page.locator(".profile-create-preview-hint").isVisible(), true);
+    assert.equal(await tv.page.locator(".profile-create-pin-hint").isHidden(), true);
+    const submit = tv.page.locator('[data-focus="create-submit"]');
+    assert.equal(await submit.getAttribute("aria-disabled"), "true");
+    assert.equal(await submit.isDisabled(), true);
+    await submit.click({ force: true });
     assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 0);
+
+    await tv.page.getByRole("button", { name: "Child Profile: Off", exact: true }).click();
+    await shows(tv, "Restricts content to kid-friendly ratings");
+    const ratingButton = tv.page.locator('[data-focus="create-rating"]');
+    const seenRatings: string[] = [];
+    for (let step = 0; step < 5; step++) {
+        seenRatings.push((await ratingButton.innerText()).trim());
+        await ratingButton.click();
+    }
+    assert.deepEqual(seenRatings.slice(0, 4), [
+        "Maximum content rating: PG / TV-PG / TV-Y7",
+        "Maximum content rating: PG-13 / TV-14",
+        "Maximum content rating: R / TV-MA / NC-17",
+        "Maximum content rating: G / TV-G",
+    ]);
+    assert.equal(seenRatings[4], seenRatings[0], "ratings cycle across G, PG, PG-13, R with no standalone NC-17 option");
+    assert.equal(seenRatings.some(text => text.endsWith(": NC-17")), false);
+    await tv.page.getByRole("button", { name: "Child Profile: On", exact: true }).click();
+
+    await tv.page.locator("#create-profile-name").fill("Guest");
+    assert.equal(await tv.page.locator(".profile-create-preview-hint").isHidden(), true);
+    assert.equal(await submit.getAttribute("aria-disabled"), "false");
+    assert.equal(await submit.isDisabled(), false);
+    await tv.page.locator("#create-profile-pin").fill("123");
+    assert.equal(await tv.page.locator(".profile-create-pin-hint").isVisible(), true);
+    assert.equal(await submit.getAttribute("aria-disabled"), "true");
+    assert.equal(await submit.isDisabled(), true);
+    await submit.click({ force: true });
+    assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 0);
+
     await tv.remote(BACK);
     await screenIs(tv, "profiles");
     assert.equal(await tv.focused(), "add-profile");
@@ -1160,8 +1175,12 @@ tvTest("a structured creation rejection keeps the editable draft instead of trea
         ...fixture("rate_limited"), status: 409, type: "https://silo.example.test/problems/profile_name_conflict",
     } });
     await tv.page.getByRole("button", { name: "Create Profile", exact: true }).click();
-    await tv.eventually(async () => await tv.screen() === "profile-create-error" || await tv.page.getByRole("alert").count() === 1, "the creation rejection is rendered");
-    assert.equal(await tv.screen(), "profile-create");
+    await screenIs(tv, "profile-create:alert");
+    await tv.page.getByRole("alertdialog").waitFor();
+    await shows(tv, "Can't Create Profile");
+    assert.equal(await tv.focused(), "refusal-ok");
+    await tv.page.keyboard.press("Enter");
+    await screenIs(tv, "profile-create");
     assert.equal(await tv.focused(), "create-name");
     assert.equal(await tv.page.locator("#create-profile-name").inputValue(), "Guest");
     assert.equal(await tv.page.locator("#create-profile-pin").inputValue(), "");
@@ -1215,41 +1234,9 @@ tvTest("an empty household offers creation and a failed list offers Try again", 
     tv.fake.script("/profiles", { status: 500 });
     await tv.remote(BACK);
     await screenIs(tv, "profiles-error");
-    await shows(tv, "The server had a problem. Try again in a moment.");
+    await shows(tv, "Something went wrong");
+    await shows(tv, "The server ran into a problem. Try again in a moment.");
     assert.equal(await tv.focused(), "retry");
     await tv.page.keyboard.press("Enter");
     await screenIs(tv, "profiles");
-});
-
-tvTest("a remembered profile that verifies during sign-out confirmation waits behind it", async (tv) => {
-    await picker(tv);
-    await tv.page.evaluate(() => {
-        const harness = window.harness;
-        const server = harness.server;
-        const root = document.getElementById("root");
-        if (server === undefined || root === null) { throw new Error("profile flow required"); }
-        harness.profileController?.destroy();
-        const state = window as unknown as { verify?: (id: string) => void; selected?: string[] };
-        state.selected = [];
-        // Online launch verifies the remembered profile after the list arrives; the test answers it by hand.
-        const launch = {
-            remembered: true,
-            needsOffer: false,
-            requiresSelection: () => false,
-            restoreOffline: () => Promise.resolve(undefined),
-            restore: (list: readonly { id: string }[]) => new Promise(resolve => { state.verify = id => resolve(list.find(profile => profile.id === id)); }),
-        };
-        harness.mountProfiles(root, { server, launch: launch as never, onSelected: () => { state.selected?.push("handed-off"); }, onSignedOut: () => undefined, onChangeServer: () => undefined } as never);
-    });
-    await tv.eventually(async () => tv.page.evaluate(() => typeof (window as unknown as { verify?: unknown }).verify === "function"), "remembered profile verification started");
-    assert.equal(await tv.focused(), "signout");
-    await tv.page.keyboard.press("Enter");
-    await screenIs(tv, "profiles:signout");
-    await tv.page.evaluate(() => (window as unknown as { verify: (id: string) => void }).verify("p-owner"));
-    await tv.page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
-    assert.equal(await tv.screen(), "profiles:signout", "the restored profile does not replace the confirmation");
-    assert.deepEqual(await tv.page.evaluate(() => (window as unknown as { selected: string[] }).selected), []);
-    await tv.page.keyboard.press("Enter");
-    await tv.eventually(async () => (await tv.page.evaluate(() => (window as unknown as { selected: string[] }).selected)).length === 1, "Cancel replays the restored profile");
-    assert.equal(tv.fake.revokedSessions.size, 0);
 });
