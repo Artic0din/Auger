@@ -80,6 +80,8 @@ import { test } from "node:test";
 import { ApiError } from "../../src/api/errors.ts";
 import type { ProfileSummary } from "../../src/contracts/v2/wire.ts";
 import type { AuthorityChange, AuthorizedSpec } from "../../src/session/session.ts";
+import { AccountDirectory } from "../../src/session/accounts.ts";
+import { CredentialVault } from "../../src/session/credentialVault.ts";
 import { openSecretStore, type SecretStore } from "../../src/session/secretStore.ts";
 import { SessionError } from "../../src/session/session.ts";
 import { FakeSilo, problem } from "./support/fakeSilo.ts";
@@ -598,4 +600,59 @@ test("aborting connect during session opening rejects with aborted and writes no
     await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.aborted);
     assert.equal(writes, 0);
     assert.equal(h.storage.getItem("silo.native.accounts.v1"), beforeDirectory);
+});
+
+test("aborting legacy migration rolls back the published directory row so a subsequent connect still signs in", async () => {
+    const h = await connected();
+    await signIn(h);
+    const keyManager = h.keyManager;
+    assert.ok(keyManager !== undefined);
+    const baseStore = openSecretStore(keyManager);
+    const id = h.core.accounts.localAccountId;
+    assert.ok(id !== undefined);
+    const saved = await new CredentialVault(baseStore, h.storage, h.fake.origin, id).load();
+    assert.equal(saved.status, "found");
+    await new CredentialVault(baseStore, h.storage, h.fake.origin).save(saved.credential);
+    await new CredentialVault(baseStore, h.storage, h.fake.origin, id).clear();
+    h.storage.removeItem("silo.native.accounts.v1");
+
+    let reads = 0;
+    let perAccountReadStarted!: () => void;
+    const waitPerAccountRead = new Promise<void>(resolve => { perAccountReadStarted = resolve; });
+    let releasePerAccountRead!: () => void;
+    const gate = new Promise<void>(resolve => { releasePerAccountRead = resolve; });
+    const pausedSecrets: SecretStore = {
+        persistent: true,
+        async read(alias) {
+            reads++;
+            if (reads === 3) {
+                perAccountReadStarted();
+                await gate;
+            }
+            return baseStore.read(alias);
+        },
+        write: (alias, value) => baseStore.write(alias, value),
+        remove: alias => baseStore.remove(alias),
+    };
+
+    const controller = new AbortController();
+    const pending = connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: h.storage,
+        keyManager: undefined,
+        transientAccounts: { secrets: pausedSecrets, storage: h.storage },
+        randomBytes: bytes => bytes.fill(0xab),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    }, controller.signal);
+
+    await waitPerAccountRead;
+    controller.abort();
+    releasePerAccountRead();
+    await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.aborted);
+    assert.deepEqual(new AccountDirectory(h.storage, bytes => bytes.fill(0xab)).list(), []);
+
+    const recovered = await connected({ clock: h.clock, fake: h.fake, keyManager, storage: h.storage });
+    assert.equal(recovered.core.restore, "signed_in");
 });

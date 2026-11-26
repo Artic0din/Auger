@@ -152,8 +152,11 @@ export class AccountVault extends CredentialVault {
         if (signal?.aborted) throw new ApiError({ kind: "aborted" });
         if (legacy.status !== "found") return legacy;
         const credential = legacy.credential;
+        const existed = this.directory.list().some(entry => entry.baseUrl === this.address && entry.serverId === credential.serverId && entry.accountId === credential.accountId);
+        let row: SavedAccount | undefined;
+        let savedNewCredential = false;
         try {
-            const row = this.directory.add(this.address, credential.serverId, credential.accountId, credential.username);
+            row = this.directory.add(this.address, credential.serverId, credential.accountId, credential.username);
             const existing = await this.accountVault(row.id).load();
             if (signal?.aborted) throw new ApiError({ kind: "aborted" });
             if (existing.status === "unavailable" || existing.status === "corrupt") return existing;
@@ -165,6 +168,7 @@ export class AccountVault extends CredentialVault {
                 return existing;
             }
             const saved = await this.accountVault(row.id).save(credential);
+            savedNewCredential = saved === "saved";
             if (signal?.aborted) throw new ApiError({ kind: "aborted" });
             if (saved !== "saved") return { status: "unavailable" };
             this.directory.select(row.id);
@@ -173,7 +177,10 @@ export class AccountVault extends CredentialVault {
             // The protected legacy copy is retained as recovery until explicit sign-out.
             return legacy;
         } catch (error: unknown) {
-            if (error instanceof ApiError && error.aborted) throw error;
+            if (error instanceof ApiError && error.aborted) {
+                if (row !== undefined && !existed && !savedNewCredential) this.directory.remove(row.id);
+                throw error;
+            }
             return { status: "unavailable" };
         }
     }
