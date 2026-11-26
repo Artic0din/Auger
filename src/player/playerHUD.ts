@@ -2,7 +2,14 @@ import type { PlayerChapter } from "../contracts/v2/chapters.ts";
 import type { AudioTrackInfo, PlaybackPlan, SubtitleTrack } from "../contracts/v2/playback.ts";
 import { audioInfoLine, audioStatsLine, subtitleSingleLine, subtitleStatsLine } from "./trackLabels.ts";
 import type { ItemDetail } from "../contracts/v2/catalog.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
+
+/** `TVPlayerInfoHUD` (`InfoCurrentChapterRow` / `ChaptersView`): chapter's title, else localized "Chapter N". */
+export function chapterTitle(chapter: PlayerChapter, index: number): string {
+    const title = chapter.title?.trim();
+    return title !== undefined && title !== "" ? title : translate("options.chapterNumbered", { number: integerText(index + 1) });
+}
 
 export function currentChapter(chapters: readonly PlayerChapter[], seconds: number): number {
     for (let index = chapters.length - 1; index >= 0; index--) if (chapters[index]!.seconds <= seconds) return index;
