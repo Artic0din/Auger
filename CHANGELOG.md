@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.7.4] - 2026-11-26
+
+### Fixes
+
+- **Watch Party**: Dismiss lobby on Back without leaving and show Return to Watch Party ([#907](https://github.com/Artic0din/Auger-Tizen/pull/907), [`6665f15a`](https://github.com/Artic0din/Auger-Tizen/commit/6665f15a))
+- **Subtitles**: Match tvOS subtitle outline and drop-shadow thickness ([#902](https://github.com/Artic0din/Auger-Tizen/pull/902), [`f6e0c604`](https://github.com/Artic0din/Auger-Tizen/commit/f6e0c604))
+
 ## [0.7.3] - 2026-11-26
 
 ### Fixes
