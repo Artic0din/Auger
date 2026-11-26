@@ -1202,7 +1202,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, zero {{title}، لا أصوات، في الصدارة} one {{title}، صوت واحد، في الصدارة} two {{title}، صوتان، في الصدارة} few {{title}، # أصوات، في الصدارة} many {{title}، # صوتًا، في الصدارة} other {{title}، # صوت، في الصدارة}}",
  "watchParty.ballot.loadingVote": "جارٍ تحميل صوتك",
  "watchParty.ballot.note": "«{note}»",
+ "watchParty.ballot.remove": "إزالة الاقتراح",
  "watchParty.ballot.removeVote": "إزالة التصويت لـ {title}",
+ "watchParty.ballot.startThis": "تشغيل هذا العنوان",
  "watchParty.ballot.vote": "التصويت لـ {title}",
  "watchParty.ballot.votesLabel": "{count, plural, zero {صوت} one {صوت} two {صوتان} few {أصوات} many {صوتًا} other {صوت}}",
  "watchParty.banner.hostAway": "انقطع اتصال {host}. تنتظر Watch Party لمدة دقيقتين ريثما يعود.",
@@ -1340,6 +1342,11 @@
  "watchParty.seat.youLower": "أنت",
  "watchParty.seats.hereNow": "الحاضرون الآن",
  "watchParty.seats.members": "الأعضاء",
+ "watchParty.strip.guest": "المضيف يقرر ما يتم تشغيله.",
+ "watchParty.strip.manager": "أضف اقتراحًا إلى قائمة الانتظار ليكون التالي.",
+ "watchParty.strip.titleCount": "الاقتراحات · {count}",
+ "watchParty.suggestion.playTitle": "تشغيل {title}",
+ "watchParty.suggestion.queueTitle": "إضافة {title} إلى قائمة الانتظار",
  "watchParty.theHost": "المضيف",
  "watchParty.title": "Watch Party"
 }

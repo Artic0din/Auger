@@ -1202,7 +1202,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # hlas, vede} few {{title}, # hlasy, vede} many {{title}, # hlasu, vede} other {{title}, # hlasů, vede}}",
  "watchParty.ballot.loadingVote": "Načítání vašeho hlasu",
  "watchParty.ballot.note": "„{note}“",
+ "watchParty.ballot.remove": "Odebrat návrh",
  "watchParty.ballot.removeVote": "Odebrat hlas pro titul {title}",
+ "watchParty.ballot.startThis": "Spustit tento titul",
  "watchParty.ballot.vote": "Hlasovat pro titul {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {HLAS} few {HLASY} many {HLASU} other {HLASŮ}}",
  "watchParty.banner.hostAway": "Hostitel {host} ztratil připojení. Watch Party počká dvě minuty, než se hostitel vrátí.",
@@ -1340,6 +1342,11 @@
  "watchParty.seat.youLower": "vy",
  "watchParty.seats.hereNow": "Právě zde",
  "watchParty.seats.members": "Členové",
+ "watchParty.strip.guest": "O tom, co se přehraje, rozhoduje hostitel.",
+ "watchParty.strip.manager": "Zařaďte návrh do fronty a přehraje se jako další.",
+ "watchParty.strip.titleCount": "Návrhy · {count}",
+ "watchParty.suggestion.playTitle": "Přehrát titul {title}",
+ "watchParty.suggestion.queueTitle": "Zařadit titul {title} do fronty",
  "watchParty.theHost": "Hostitel",
  "watchParty.title": "Watch Party"
 }

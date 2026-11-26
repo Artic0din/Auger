@@ -1202,7 +1202,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, one {{title}, # stem, aan kop} other {{title}, # stemmen, aan kop}}",
  "watchParty.ballot.loadingVote": "Je stem wordt geladen",
  "watchParty.ballot.note": "“{note}”",
+ "watchParty.ballot.remove": "Voorstel verwijderen",
  "watchParty.ballot.removeVote": "Stem op {title} intrekken",
+ "watchParty.ballot.startThis": "Deze starten",
  "watchParty.ballot.vote": "Stemmen op {title}",
  "watchParty.ballot.votesLabel": "{count, plural, one {STEM} other {STEMMEN}}",
  "watchParty.banner.hostAway": "{host} heeft geen verbinding meer. De party wacht twee minuten zodat {host} terug kan komen.",
@@ -1340,6 +1342,11 @@
  "watchParty.seat.youLower": "jij",
  "watchParty.seats.hereNow": "Nu aanwezig",
  "watchParty.seats.members": "Leden",
+ "watchParty.strip.guest": "De host bepaalt wat er speelt.",
+ "watchParty.strip.manager": "Zet er een in de wachtrij om die hierna af te spelen.",
+ "watchParty.strip.titleCount": "Suggesties · {count}",
+ "watchParty.suggestion.playTitle": "{title} afspelen",
+ "watchParty.suggestion.queueTitle": "{title} in wachtrij zetten",
  "watchParty.theHost": "De host",
  "watchParty.title": "Watch Party"
 }

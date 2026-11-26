@@ -15,6 +15,7 @@ import { supportsSynchronizedParty, uuidV4, type WatchPartyApi, watchPartyFailur
 import { browserSocket, type ConnectionStatus, RoomConnection, type RoomEnd, type RoomSocketFactory, RoomState } from "./watchPartySocket.ts";
 import type { RoomServerMessage, Suggestion } from "../contracts/v2/watchTogether.ts";
 import { RoomVotes, voteWinner } from "./watchPartyVotes.ts";
+import { canRemoveSuggestion } from "./watchPartyPolicy.ts";
 import type { MessageArgs } from "../i18n/icu.ts";
 import { serverText, translate, type MessageKey } from "../i18n/translate.ts";
 
@@ -36,6 +37,7 @@ export type LobbyPage =
     | { readonly kind: "options" }
     | { readonly kind: "end" }
     | { readonly kind: "invite" }
+    | { readonly kind: "suggestionMenu"; readonly suggestion: Suggestion }
     | { readonly kind: "picker" }
     | { readonly kind: "search" }
     | { readonly kind: "choice"; readonly choice: MediaChoice; readonly from?: LobbyPage }
@@ -216,6 +218,70 @@ export class WatchPartyHub {
 
     /** The suggestion with the most votes, or none while nobody has voted. */
     winner(): Suggestion | undefined { return voteWinner(this.state.votes.rows); }
+
+    /** WatchPartySession.canRemoveSuggestion: hosts can remove any suggestion; guests only their own. */
+    canRemoveSuggestion(suggestion: Suggestion): boolean {
+        return this.state.room !== undefined && canRemoveSuggestion(suggestion, this.state.room);
+    }
+
+    /** WatchPartyCandidateCard context menu gate for "Start this one". */
+    canStartSuggestion(suggestion: Suggestion): boolean {
+        const room = this.state.room;
+        if (room?.phase !== "lobby" || !room.selfCanManageRoom) return false;
+        if (room.selectionMode === "vote" && !this.ballotCurrent()) return false;
+        if (room.selectionMode !== "host_pick" && this.state.capabilities?.voteHostOverride !== true) return false;
+        return this.state.votes.rows.some(row => row.id === suggestion.id);
+    }
+
+    /** WatchPartySession.promoteSuggestion: host starts a specific suggestion immediately. */
+    async promoteSuggestion(id: string): Promise<boolean> {
+        const room = this.state.room;
+        const row = this.state.votes.rows.find(candidate => candidate.id === id);
+        if (room?.phase !== "lobby" || !room.selfCanManageRoom || row === undefined) return false;
+        if (room.selectionMode === "vote" && !this.ballotCurrent()) return false;
+        if (room.selectionMode === "vote" && this.state.capabilities?.voteHostOverride !== true && this.winner()?.id !== id) return false;
+        const started = await this.mutate(
+            signal => this.api.promoteSuggestion(room.roomId, this.roomToken, id, signal),
+            undefined,
+            now => now.phase === "playing" && now.selectedContentId === row.contentId,
+        );
+        if (started && !this.ending) this.resume();
+        return started;
+    }
+
+    /** WatchPartySession.deleteSuggestion: removes a suggestion the viewer is allowed to remove. */
+    async deleteSuggestion(id: string): Promise<boolean> {
+        const row = this.state.votes.rows.find(candidate => candidate.id === id);
+        if (row === undefined || !this.canRemoveSuggestion(row) || this.api.deleteSuggestion === undefined) return false;
+        const deleteSuggestion = this.api.deleteSuggestion;
+        return this.changeBallot(async (roomId, signal) => { await deleteSuggestion(roomId, this.roomToken, id, signal); });
+    }
+
+    /** WatchPartyLobbySuggestions.queue: in a host-pick lobby, stages (or selects) a guest suggestion using only same-origin artwork. */
+    async queueSuggestion(suggestion: Suggestion, safePosterUrl?: string): Promise<boolean> {
+        const posterUrl = safePosterUrl === undefined || safePosterUrl === "" ? undefined : safePosterUrl;
+        const subtitle = suggestion.subtitle === "" ? undefined : suggestion.subtitle;
+        return this.stage({
+            contentId: suggestion.contentId,
+            type: suggestion.contentType,
+            title: suggestion.title,
+            subtitle: () => subtitle,
+            posterUrl,
+            backdropUrl: undefined,
+            overview: undefined,
+            facts: () => [],
+            lobby: {
+                contentId: suggestion.contentId,
+                title: () => suggestion.title,
+                subtitle: () => subtitle,
+                posterUrl,
+                backdropUrl: undefined,
+                overview: undefined,
+                facts: () => [],
+                chips: [],
+            },
+        });
+    }
 
     /** Whether the next render should drop the focus it carries: shelves that arrive claim focus for the first title, as Apple's picker does. */
     takeRefocus(): boolean {
@@ -671,7 +737,7 @@ export class WatchPartyHub {
      */
     private refreshSuggestions(failures = 0): void {
         const room = this.state.room;
-        if (room?.selectionMode !== "vote" || this.suggestionsRefreshing || this.stopped) return;
+        if (room === undefined || this.suggestionsRefreshing || this.stopped) return;
         // Apple skips the read while a change runs; this one runs it when the change finishes, so an update or the host's own switch to voting is not lost.
         if (this.state.busy) { this.refreshPending = true; return; }
         const epoch = ++this.suggestionsEpoch;

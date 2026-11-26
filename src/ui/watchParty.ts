@@ -6,7 +6,7 @@ import type { FocusItem, View } from "./browseFocus.ts";
 import { actionButton } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { banner, enabled, eyebrow, pill, plusIcon } from "./watchPartyParts.ts";
-import { endView, inviteView, lobbyView, optionsView } from "./watchPartyLobby.ts";
+import { endView, inviteView, lobbyView, optionsView, suggestionMenuView } from "./watchPartyLobby.ts";
 import { choiceView, episodesView, pickerView, searchView } from "./watchPartyPicker.ts";
 import { noticeText, type WatchPartyHub } from "./watchPartyHub.ts";
 
@@ -65,6 +65,7 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "options": return optionsView(context, room);
         case "end": return endView(context, room);
         case "invite": return inviteView(context, room);
+        case "suggestionMenu": return suggestionMenuView(context, room, page.suggestion);
         case "picker": return pickerView(context);
         case "search": return searchView(context, screen.search);
         case "choice": return choiceView(context, page.choice);

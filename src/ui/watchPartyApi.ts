@@ -47,6 +47,7 @@ export interface WatchPartyApi extends RoomSocketApi {
     picker(roomId: string, token: string, signal: AbortSignal): Promise<Picker>;
     suggestions(roomId: string, token: string, cursor: string | undefined, signal: AbortSignal): Promise<SuggestionPage>;
     addSuggestion(roomId: string, token: string, suggestion: NewSuggestion, signal: AbortSignal): Promise<string>;
+    deleteSuggestion?(roomId: string, token: string, suggestionId: string, signal: AbortSignal): Promise<void>;
     setVote(roomId: string, token: string, suggestionId: string, voted: boolean, signal: AbortSignal): Promise<void>;
     promoteSuggestion(roomId: string, token: string, suggestionId: string, signal: AbortSignal): Promise<RoomAccess>;
     item(contentId: string, signal: AbortSignal): Promise<ItemDetail>;
@@ -76,6 +77,7 @@ export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): Wa
         picker: (roomId, token, signal) => call(watchTogetherOperations.picker(roomId, token), signal),
         suggestions: (roomId, token, cursor, signal) => call(watchTogetherOperations.suggestions(roomId, token, cursor), signal),
         addSuggestion: (roomId, token, suggestion, signal) => call(watchTogetherOperations.addSuggestion(roomId, token, suggestion), signal),
+        deleteSuggestion: (roomId, token, suggestionId, signal) => call(watchTogetherOperations.deleteSuggestion(roomId, token, suggestionId), signal),
         setVote: (roomId, token, suggestionId, voted, signal) => call(watchTogetherOperations.setVote(roomId, token, suggestionId, voted), signal),
         promoteSuggestion: (roomId, token, suggestionId, signal) => call(watchTogetherOperations.promoteSuggestion(roomId, token, suggestionId), signal),
         socketTicket: (roomId, token, signal) => call(watchTogetherOperations.socketTicket(roomId, token), signal),

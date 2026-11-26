@@ -152,15 +152,15 @@ test("a vote room reads its ballot, every page, with the room token shortly afte
     r.hub.leave();
 });
 
-test("a host-pick room never reads the ballot, and one switched to voting reads it", async () => {
-    const r = await voteRoom([page([row("a")])], { selection_mode: "host_pick" });
-    await r.clock.advance(1000);
-    await settle();
-    assert.deepEqual(r.reads, []);
-    r.socket().frame({ type: "snapshot", room: wireRoom({ selection_mode: "vote", generation: 2 }) });
+test("a host-pick room reads suggestions for the lobby strip, and switching to voting refreshes them (#783)", async () => {
+    const r = await voteRoom([page([row("a")]), page([row("a")])], { selection_mode: "host_pick" });
     await r.clock.advance(200);
     await settle();
     assert.deepEqual(r.reads, ["room-proof -"]);
+    r.socket().frame({ type: "snapshot", room: wireRoom({ selection_mode: "vote", generation: 2 }) });
+    await r.clock.advance(200);
+    await settle();
+    assert.deepEqual(r.reads, ["room-proof -", "room-proof -"]);
     r.hub.leave();
 });
 
@@ -410,5 +410,93 @@ test("after a reconnect the host cannot start until the ballot is read again, so
     assert.equal(r.hub.winner()?.id, "b");
     assert.equal(await r.hub.start(), true);
     assert.deepEqual(promoted, ["b"]);
+    r.hub.leave();
+});
+
+test("deleteSuggestion removes a host's or guest's own suggestion with the room token and refuses others' (#783)", async () => {
+    const deleted: string[] = [];
+    const own = row("own", { suggester_user_id: "u2", suggester_profile_id: "p-guest" });
+    const other = row("other", { suggester_user_id: "u1", suggester_profile_id: "p-owner" });
+    const guest = await voteRoom([page([own, other]), page([other])], {
+        selection_mode: "host_pick",
+        self_can_manage_room: false,
+        self_role: "guest",
+        members: [
+            { user_id: "u1", profile_id: "p-owner", display_name: "Owner", is_host: true, is_self: false, connected: true },
+            { user_id: "u2", profile_id: "p-guest", display_name: "Sam", is_host: false, is_self: true, connected: true },
+        ],
+    }, {
+        deleteSuggestion: async (_roomId, token, id) => { deleted.push(`${token} ${id}`); },
+    });
+    await guest.clock.advance(200);
+    await settle();
+    assert.equal(guest.hub.state.votes.rows.length, 2, "host-pick rooms also load suggestions");
+    assert.equal(guest.hub.canRemoveSuggestion(guest.hub.state.votes.rows[0]!), true);
+    assert.equal(guest.hub.canRemoveSuggestion(guest.hub.state.votes.rows[1]!), false);
+    assert.equal(await guest.hub.deleteSuggestion("other"), false);
+    assert.equal(await guest.hub.deleteSuggestion("own"), true);
+    assert.deepEqual(deleted, ["room-proof own"]);
+    guest.hub.leave();
+});
+
+test("promoteSuggestion honors voteHostOverride in vote rooms and starts playback (#783)", async () => {
+    const promoted: string[] = [];
+    const r = await voteRoom([page([row("a", { vote_count: 1 }), row("b", { vote_count: 0 })])], { selection_mode: "vote" }, {
+        promoteSuggestion: async (_roomId, token, id) => { promoted.push(`${token} ${id}`); return roomAccess({ selection_mode: "vote", phase: "playing", generation: 2, selection_revision: 1, selected_content_id: `movie:${id}`, selected_file_id: "9" }); },
+        item: async () => { throw new Error("optional"); },
+    }, { vote_host_override: true });
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), true);
+    assert.equal(await r.hub.promoteSuggestion("b"), true);
+    assert.deepEqual(promoted, ["room-proof b"]);
+    assert.equal(r.hub.state.room?.phase, "playing");
+    r.hub.leave();
+});
+
+test("after reconnect in a vote room, canStartSuggestion and promoteSuggestion stay blocked until the ballot refreshes (#783)", async () => {
+    let reads = 0;
+    const promoted: string[] = [];
+    const r = await voteRoom([], { selection_mode: "vote" }, {
+        suggestions: async () => { reads++; return page(reads === 1 ? [row("a", { vote_count: 1 }), row("b", { vote_count: 0 })] : [row("a", { vote_count: 1 }), row("b", { vote_count: 2 })])(); },
+        promoteSuggestion: async (_roomId, _token, id) => { promoted.push(id); return roomAccess({ selection_mode: "vote", phase: "playing", generation: 2, selection_revision: 1, selected_content_id: `movie:${id}`, selected_file_id: "9" }); },
+        item: async () => { throw new Error("optional"); },
+    }, { vote_host_override: true });
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(r.hub.ballotCurrent(), true);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), true);
+    r.socket().close();
+    await r.clock.advance(1000);
+    await settle();
+    r.socket().open();
+    assert.equal(r.hub.state.connection, "connected");
+    assert.equal(r.hub.ballotCurrent(), false);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), false, "override start stays disabled until the ballot refreshes");
+    assert.equal(await r.hub.promoteSuggestion("b"), false, "stale suggestion promotion sends no request");
+    assert.deepEqual(promoted, []);
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(r.hub.ballotCurrent(), true);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), true);
+    assert.equal(await r.hub.promoteSuggestion("b"), true);
+    assert.deepEqual(promoted, ["b"]);
+    r.hub.leave();
+});
+
+test("queueSuggestion never seeds the lobby with an unsanitized external posterUrl (#783)", async () => {
+    let stagedPoster: string | undefined = "sentinel";
+    const external = row("ext", { poster_url: "https://evil.example/track.png" });
+    const r = await voteRoom([page([external])], { selection_mode: "host_pick" }, {
+        stageSelection: async () => {
+            stagedPoster = r.hub.state.selected?.posterUrl;
+            return roomAccess({ selection_mode: "host_pick", selected_content_id: "movie:ext", generation: 2 });
+        },
+        item: async () => { throw new Error("optional"); },
+    }, { staged_selection: true });
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(await r.hub.queueSuggestion(r.hub.state.votes.rows[0]!), true);
+    assert.equal(stagedPoster, undefined, "external guest artwork is never copied into optimistic lobby selection");
     r.hub.leave();
 });

@@ -1,9 +1,10 @@
-// Apple's WatchPartyBallot on tvOS: in a vote room's lobby, every suggestion as a poster card with its
-// tally badge, a tick on the ones this profile voted for and an outline on the leader, then the dashed
-// Suggest a title card. Pressing a card votes or takes the vote back. Metrics are Apple's tvOS values.
-// Not built: the cards' long-press menu (Start this one, Remove suggestion).
+// Apple's WatchPartyBallot and WatchPartyLobbySuggestions on tvOS:
+// - In a vote room's lobby, every suggestion as a 220x330 poster card with its tally badge, tick, leader outline,
+//   long-press context menu (Start this one, Remove suggestion), and the dashed Suggest a title card.
+// - In a host-pick lobby, guest suggestions appear on the right as 120x180 poster cards (host clicks to queue/play,
+//   long-press removes removable suggestions).
 
-import type { Suggestion } from "../contracts/v2/watchTogether.ts";
+import type { Room, Suggestion } from "../contracts/v2/watchTogether.ts";
 import { isolated } from "../i18n/direction.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { translate } from "../i18n/translate.ts";
@@ -11,7 +12,7 @@ import type { FocusItem } from "./browseFocus.ts";
 import { actionButton, artwork } from "./browseViews.ts";
 import { artworkUrl } from "./browseModel.ts";
 import { el } from "./screen.ts";
-import { checkIcon, plusIcon } from "./watchPartyParts.ts";
+import { checkIcon, eyebrow, plusIcon } from "./watchPartyParts.ts";
 import type { WatchPartyHub } from "./watchPartyHub.ts";
 
 /** The card's label, as Apple's accessibility label: what pressing it does. */
@@ -55,6 +56,11 @@ function candidate(hub: WatchPartyHub, suggestion: Suggestion, leader: boolean, 
     }
     const line = suggestion.note !== "" ? translate("watchParty.ballot.note", { note: suggestion.note }) : suggestion.subtitle;
     item.element.append(poster, el("span", "watch-party-candidate-title", suggestion.title), el("span", "watch-party-candidate-line", line === "" ? " " : line));
+    if (hub.canStartSuggestion(suggestion) || hub.canRemoveSuggestion(suggestion)) {
+        const quickAction = (): void => { hub.show({ kind: "suggestionMenu", suggestion }); };
+        item.element.addEventListener("contextmenu", event => { event.preventDefault(); item.element.focus({ preventScroll: true }); quickAction(); });
+        return { ...item, quickAction };
+    }
     return item;
 }
 
@@ -78,5 +84,49 @@ export function ballotRow(hub: WatchPartyHub, baseUrl: string): { readonly node:
     node.setAttribute("role", "group");
     node.setAttribute("aria-label", "Suggestions");
     node.append(...items.map(item => item.element));
+    return { node, items };
+}
+
+/** Apple's WatchPartyLobbySuggestions on tvOS: 120x180 poster strip on the right side of a host-pick lobby. */
+export function hostPickSuggestions(hub: WatchPartyHub, room: Room, baseUrl: string): { readonly node: HTMLElement; readonly items: readonly FocusItem[] } {
+    const rows = hub.state.votes.rows;
+    const queuesSelection = hub.state.capabilities?.stagedSelection === true;
+    const canHostAct = room.selfCanManageRoom && !hub.state.busy && hub.state.connection === "connected";
+    const head = el("div", "watch-party-strip-head");
+    head.append(
+        eyebrow(translate("watchParty.strip.titleCount", { count: rows.length })),
+        el("span", "watch-party-strip-subtitle", translate(room.selfCanManageRoom ? "watchParty.strip.manager" : "watchParty.strip.guest")),
+    );
+    const strip = el("div", "browse-row watch-party-strip");
+    strip.setAttribute("role", "group");
+    strip.setAttribute("aria-label", translate("watchParty.strip.titleCount", { count: rows.length }));
+    const items: FocusItem[] = [];
+    for (const suggestion of rows) {
+        const queued = suggestion.contentId === room.selectedContentId;
+        const canQueue = canHostAct && !queued;
+        const canRemove = hub.canRemoveSuggestion(suggestion);
+        const safePoster = serverPoster(suggestion.posterUrl, baseUrl);
+        const poster = el("span", "watch-party-strip-poster");
+        poster.appendChild(artwork("watch-party-strip-art", safePoster, baseUrl, ""));
+        const title = el("span", "watch-party-strip-title", suggestion.title);
+        // Every card stays focusable so guests can scroll across overflow suggestions; read-only cards are aria-disabled and ignore presses.
+        const button = actionButton(`host-suggestion:${suggestion.id}`, "", () => { if (canQueue) void hub.queueSuggestion(suggestion, safePoster); });
+        button.element.classList.add("watch-party-strip-card");
+        if (!canQueue && !canRemove) button.element.setAttribute("aria-disabled", "true");
+        button.element.setAttribute("aria-label", canQueue
+            ? translate(queuesSelection ? "watchParty.suggestion.queueTitle" : "watchParty.suggestion.playTitle", { title: isolated(suggestion.title) })
+            : suggestion.title);
+        button.element.append(poster, title);
+        if (canRemove) {
+            const quickAction = (): void => { hub.show({ kind: "suggestionMenu", suggestion }); };
+            button.element.addEventListener("contextmenu", event => { event.preventDefault(); button.element.focus({ preventScroll: true }); quickAction(); });
+            items.push({ ...button, quickAction });
+        } else {
+            items.push(button);
+        }
+        strip.appendChild(button.element);
+    }
+    const node = el("div", "watch-party-lobby-suggestions");
+    node.append(head, strip);
     return { node, items };
 }

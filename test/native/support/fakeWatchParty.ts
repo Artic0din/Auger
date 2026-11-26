@@ -32,7 +32,7 @@ export class FakeWatchParty extends FakeRequests {
     connectionReplaced = true;
     playbackFeatures = WATCH_PARTY_FEATURES;
     /** The optional capability flags the lobby reads; a missing flag is false. */
-    flags: Record<string, boolean> = { staged_selection: true, selection_mode_switch: true, stop_playback: true, picker: true, lobby_ready: true };
+    flags: Record<string, boolean> = { staged_selection: true, selection_mode_switch: true, stop_playback: true, picker: true, lobby_ready: true, vote_host_override: true };
     capabilitiesFailure: Reply | undefined;
     createFailure: Reply | undefined;
     joinFailure: Reply | undefined;
@@ -154,10 +154,19 @@ export class FakeWatchParty extends FakeRequests {
             return { status: 200, body: { items: rows.map(row => this.suggestionRow(row, this.selfProfile)), page: { has_more: next < this.suggestions.length, next_cursor: next < this.suggestions.length ? String(next) : "" } } };
         }
         const vote = /^\/suggestions\/([^/]+)\/vote$/.exec(suffix);
-        const write = (method === "POST" && suffix === "/suggestions") || (vote !== null && (method === "POST" || method === "DELETE")) || (method === "POST" && suffix === "/suggestions/promote");
+        const del = method === "DELETE" ? /^\/suggestions\/([^/]+)$/.exec(suffix) : null;
+        const write = (method === "POST" && suffix === "/suggestions") || (vote !== null && (method === "POST" || method === "DELETE")) || del !== null || (method === "POST" && suffix === "/suggestions/promote");
         if (!write) return undefined;
         this.ballotChanges.push({ call: `${method} ${suffix}`, body, roomToken: token });
         if (this.ballotFailure !== undefined) return this.ballotFailure;
+        if (del !== null) {
+            const id = decodeURIComponent(del[1] ?? "");
+            const index = this.suggestions.findIndex(candidate => candidate.id === id);
+            if (index === -1) return problem(404, "not_found", "The room or suggestion was not found.");
+            this.suggestions.splice(index, 1);
+            this.broadcastBallot();
+            return { status: 204 };
+        }
         if (method === "POST" && suffix === "/suggestions") {
             this.suggestions.push({
                 id: String(body?.suggestion_id), contentId: String(body?.content_id), contentType: String(body?.content_type), title: String(body?.title),

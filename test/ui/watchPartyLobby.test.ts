@@ -868,11 +868,11 @@ test("live votes from others move the tallies and the leader while focus stays o
         await tv.eventually(async () => (await texts(tv, ".watch-party-candidate-leader .watch-party-candidate-title"))[0] === "Heat", "Heat leads");
         assert.equal(await tv.page.locator(".watch-party-hint").textContent(), "Owner starts Heat when voting settles.");
         assert.equal(await tv.focused(), "suggestion:heat", "focus is restored by suggestion id, not position");
-        // The host removes the focused suggestion: focus goes to the lobby's action instead of falling to the page.
+        // The focused suggestion disappears: since it carries a quick action, focus moves to the neighboring ballot card instead of falling to the page.
         fake.suggestions.splice(1, 1);
         fake.voteAs("p-other1", "alien", true);
         await tv.eventually(async () => (await cards(tv)).length === 2, "Heat removed");
-        assert.equal(await focusKept(tv), "ready");
+        assert.equal(await focusKept(tv), "suggestion:alien");
     } finally { await tv.page.context().close(); }
 });
 
@@ -944,3 +944,73 @@ for (const reduced of [false, true]) {
         } finally { await tv.page.context().close(); }
     });
 }
+
+test("host-pick lobby shows guest suggestions on the right; host can queue or long-press remove (#783)", async () => {
+    const { tv, fake } = await inLobby("host", fake => {
+        fake.suggest("m0004", "Movie 0004");
+        fake.suggest("m0005", "Movie 0005");
+    });
+    try {
+        await jumpUntil(tv, 250, async () => await tv.page.locator(".watch-party-lobby-suggestions").count() === 1, "suggestions panel renders");
+        assert.equal(await tv.page.locator(".watch-party-lobby-suggestions .watch-party-eyebrow").textContent(), "Suggestions · 2");
+        assert.equal(await tv.page.locator(".watch-party-strip-subtitle").textContent(), "Queue one to put it up next.");
+        const poster = await tv.page.locator(".watch-party-strip-poster").first().boundingBox();
+        assert.deepEqual([Math.round(poster?.width ?? 0), Math.round(poster?.height ?? 0)], [120, 180]);
+        // Clicking queues (stages) the suggestion as the host's pick.
+        await button(tv, "host-suggestion:m0004").click();
+        await tv.eventually(async () => fake.selectedContentId === "movie:m0004", "host staged the guest suggestion");
+        // Context menu on a suggestion card offers Remove suggestion and deletes it.
+        await button(tv, "host-suggestion:m0005").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        assert.equal(await button(tv, "suggestion-remove").textContent(), "Remove suggestion");
+        await button(tv, "suggestion-remove").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        await tv.eventually(async () => fake.suggestions.length === 1 && await tv.page.locator(".watch-party-lobby-suggestions .watch-party-eyebrow").textContent() === "Suggestions · 1", "suggestion removed");
+    } finally { await tv.page.context().close(); }
+});
+
+test("ballot cards open a long-press menu with Start this one and Remove suggestion (#783)", async () => {
+    const { tv, fake } = await inLobby("host", fake => {
+        fake.selectionMode = "vote";
+        fake.suggest("m0004", "Movie 0004", ["p-owner"]);
+        fake.suggest("m0005", "Movie 0005");
+    });
+    try {
+        await ballotShows(tv, 2);
+        // Right-click / long-press on non-leading candidate opens Start this one + Remove suggestion.
+        await button(tv, "suggestion:m0005").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        assert.equal(await button(tv, "suggestion-start").textContent(), "Start this one");
+        assert.equal(await button(tv, "suggestion-remove").textContent(), "Remove suggestion");
+        await button(tv, "suggestion-remove").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        await tv.eventually(async () => (await cards(tv)).length === 1, "m0005 removed from ballot");
+        // Start this one promotes the suggestion and opens playback.
+        await button(tv, "suggestion:m0004").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        await button(tv, "suggestion-start").click();
+        await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.plays.length)) === 1, "Start this one opens playback");
+    } finally { await tv.page.context().close(); }
+});
+
+test("guests in a host-pick lobby can focus and scroll other members' suggestions without queue or remove permissions (#783)", async () => {
+    const { tv, fake } = await inLobby("guest", fake => {
+        fake.suggest("m0004", "Movie 0004");
+        fake.suggestions.push({
+            id: "owner-pick", contentId: "movie:m0005", contentType: "movie", title: "Movie 0005", subtitle: "", posterUrl: "/art/m0005.svg",
+            suggesterProfileId: "p-owner", createdAt: "2026-11-10T01:02:00.000Z", voters: new Set(),
+        });
+    });
+    try {
+        await jumpUntil(tv, 250, async () => await tv.page.locator(".watch-party-lobby-suggestions").count() === 1, "guest sees suggestions strip");
+        assert.equal(await tv.page.locator(".watch-party-strip-subtitle").textContent(), "The host decides what plays.");
+        const other = button(tv, "host-suggestion:owner-pick");
+        await other.focus();
+        assert.equal(await tv.focused(), "host-suggestion:owner-pick", "another member's card stays focusable for scrolling");
+        assert.equal(await other.getAttribute("aria-disabled"), "true");
+        await other.click({ force: true });
+        await other.click({ button: "right", force: true });
+        assert.equal(await view(tv, "watchParty:suggestionMenu").count(), 0, "cannot open remove menu on another member's suggestion");
+        assert.deepEqual(fake.roomChanges, [], "cannot queue as a guest");
+    } finally { await tv.page.context().close(); }
+});

@@ -1202,7 +1202,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, other {{title}, #표, 1위}}",
  "watchParty.ballot.loadingVote": "내 투표 불러오는 중",
  "watchParty.ballot.note": "“{note}”",
+ "watchParty.ballot.remove": "제안 삭제",
  "watchParty.ballot.removeVote": "{title} 투표 취소",
+ "watchParty.ballot.startThis": "이 작품 시작",
  "watchParty.ballot.vote": "{title}에 투표",
  "watchParty.ballot.votesLabel": "{count, plural, other {표}}",
  "watchParty.banner.hostAway": "{host}님의 연결이 끊어졌어요. 다시 연결될 때까지 Watch Party가 2분 동안 유지돼요.",
@@ -1340,6 +1342,11 @@
  "watchParty.seat.youLower": "나",
  "watchParty.seats.hereNow": "지금 참여 중",
  "watchParty.seats.members": "참여자",
+ "watchParty.strip.guest": "재생할 작품은 호스트가 정해요.",
+ "watchParty.strip.manager": "제안을 대기열에 추가하면 다음에 재생돼요.",
+ "watchParty.strip.titleCount": "제안 · {count}",
+ "watchParty.suggestion.playTitle": "{title} 재생",
+ "watchParty.suggestion.queueTitle": "{title} 대기열에 추가",
  "watchParty.theHost": "호스트",
  "watchParty.title": "Watch Party"
 }

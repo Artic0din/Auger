@@ -1202,7 +1202,9 @@
  "watchParty.ballot.candidateLeading": "{count, plural, other {{title}、#票、最多}}",
  "watchParty.ballot.loadingVote": "投票を読み込み中",
  "watchParty.ballot.note": "「{note}」",
+ "watchParty.ballot.remove": "提案を削除",
  "watchParty.ballot.removeVote": "{title}への投票を取り消す",
+ "watchParty.ballot.startThis": "これを開始",
  "watchParty.ballot.vote": "{title}に投票",
  "watchParty.ballot.votesLabel": "{count, plural, other {票}}",
  "watchParty.banner.hostAway": "{host}さんの接続が切れました。戻るまでWatch Partyは2分間待機します。",
@@ -1340,6 +1342,11 @@
  "watchParty.seat.youLower": "自分",
  "watchParty.seats.hereNow": "参加中",
  "watchParty.seats.members": "メンバー",
+ "watchParty.strip.guest": "再生する作品はホストが決めます。",
+ "watchParty.strip.manager": "キューに追加すると次に再生されます。",
+ "watchParty.strip.titleCount": "提案 · {count}",
+ "watchParty.suggestion.playTitle": "{title}を再生",
+ "watchParty.suggestion.queueTitle": "{title}をキューに追加",
  "watchParty.theHost": "ホスト",
  "watchParty.title": "Watch Party"
 }
