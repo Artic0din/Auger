@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.6] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Add Server Support and Sync Source sections to General ([#935](https://github.com/Artic0din/Auger-Tizen/pull/935), [`00974c30`](https://github.com/Artic0din/Auger-Tizen/commit/00974c30))
+- **Audiobooks**: Port Audiobook detail layout, actions, facts, and description from tvOS ([#945](https://github.com/Artic0din/Auger-Tizen/pull/945), [`8a35d063`](https://github.com/Artic0din/Auger-Tizen/commit/8a35d063))
+- **Settings**: Add subtitle low-legibility warning and Font Family live preview ([#937](https://github.com/Artic0din/Auger-Tizen/pull/937), [`7033ad82`](https://github.com/Artic0din/Auger-Tizen/commit/7033ad82))
+- **Requests**: Port Requests hub preview, carousel merge, poster radius, and card labels ([#928](https://github.com/Artic0din/Auger-Tizen/pull/928), [`4771fab6`](https://github.com/Artic0din/Auger-Tizen/commit/4771fab6))
+
 ## [0.14.5] - 2026-11-26
 
 ### Fixes

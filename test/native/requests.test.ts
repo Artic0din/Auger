@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { requestOperations as operations } from "../../src/api/requestOperations.ts";
-import { decodeDiscover, decodeMediaRequest, decodeMyRequests, decodeRequestsCapability, decodeRequestTitle, decodeRequestPage } from "../../src/contracts/v2/requests.ts";
+import { decodeDiscover, decodeMediaRequest, decodeMyRequests, decodeRequestsCapability, decodeRequestTitle, decodeRequestPage, mergeDiscoverSections } from "../../src/contracts/v2/requests.ts";
 import { FakeRequests } from "./support/fakeRequests.ts";
 import { decodeCatalogSearchCapabilities } from "../../src/contracts/v2/discovery.ts";
 import { fixture } from "./support/fakeSilo.ts";
@@ -81,6 +81,10 @@ test("Request records retain the local-date instant and quality target summary f
     const record = decodeMediaRequest({ ...fake.record, created_at: "2026-01-02T12:00:00Z", targets: [{ quality: "1080p", status: "queued" }, { quality: "4K", status: "completed" }] });
     assert.equal(record.createdAt, 1767355200000);
     assert.deepEqual(record.targets, [{ quality: "1080p", status: "queued" }, { quality: "4K", status: "completed" }]);
+    assert.equal(decodeMediaRequest({ ...fake.record, last_error: "quota_exceeded" }).lastError, "quota_exceeded");
+    assert.equal(decodeMediaRequest({ ...fake.record, last_error: null }).lastError, undefined);
+    assert.equal(decodeMediaRequest(fake.record).lastError, undefined);
+    assert.throws(() => decodeMediaRequest({ ...fake.record, last_error: 42 }));
     assert.throws(() => decodeMediaRequest({ ...fake.record, created_at: "not a date" }));
     assert.throws(() => decodeMediaRequest({ ...fake.record, targets: [{ quality: 42, status: "queued" }] }));
 });
@@ -107,8 +111,20 @@ test("Requests contract consumes capability, ordered discovery, detail and curso
     const section = { key: "custom", title: "Custom", page: 1, total_pages: 9, next_page: 4, results: [fake.title()] };
     assert.equal(decodeRequestPage(section).nextPage, 4);
     assert.deepEqual(decodeDiscover({ items: [section], row_order: [{ key: "future", type: "future" }, { key: "custom", type: "tmdb_list" }] }).map(row => row.key), ["custom"]);
-    assert.deepEqual(decodeDiscover({ items: [] }), [], "Apple's models do not read row_order");
-    assert.deepEqual(decodeDiscover({ items: [section] }).map(row => row.key), ["custom"], "without row_order the server's order stands");
+    assert.deepEqual(decodeDiscover({ items: [] }), [], "empty items yield no carousels");
+
+    const trendingMovies = { key: "trending_movies", title: "Trending Movies", page: 1, total_pages: 2, results: [fake.title(), { ...fake.title(), tmdb_id: 1001, title: "Shared" }] };
+    const trendingSeries = { key: "trending_series", title: "Trending Series", page: 1, total_pages: 2, results: [{ ...fake.title(), media_type: "series", tmdb_id: 2001, title: "Show One" }, { ...fake.title(), tmdb_id: 1001, title: "Shared" }] };
+    const popularMovies = { key: "popular_movies", title: "Popular Movies", page: 1, total_pages: 1, results: [{ ...fake.title(), tmdb_id: 3001, title: "Crowd Movie" }] };
+    for (const rowOrder of [undefined, null, []]) {
+        const body = rowOrder === undefined ? { items: [trendingMovies, trendingSeries, popularMovies, section] } : { items: [trendingMovies, trendingSeries, popularMovies, section], row_order: rowOrder };
+        const merged = decodeDiscover(body);
+        assert.deepEqual(merged.map(row => [row.key, row.titleKey, row.results.map(item => `${item.mediaType}:${item.tmdbId}`)]), [
+            ["trending", "requests.discover.trendingNow", ["movie:949", "series:2001", "movie:1001"]],
+            ["popular", "requests.discover.crowdFavorites", ["movie:3001"]],
+        ]);
+    }
+    assert.deepEqual(mergeDiscoverSections([]), []);
 });
 test("Requests writes have no automatic transport replay; paths and bodies match native API", () => {
     const title = decodeRequestTitle(new FakeRequests().title());

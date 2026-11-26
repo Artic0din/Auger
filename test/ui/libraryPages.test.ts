@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { build } from "esbuild";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
@@ -108,6 +109,20 @@ page("a mixed library with nothing of the tab's type says so on Recommended", as
     await tv.page.locator(".library-empty").waitFor();
     assert.equal(await tv.page.locator(".library-empty-title").innerText(), "No titles for this tab");
     assert.equal(await tv.page.locator(".library-empty-body").innerText(), "Open Browse to see titles matching this tab.");
+}, catalog => {
+    mixed(catalog);
+    const household = catalog.households.get("p-owner");
+    assert.ok(household);
+    household.librarySections = [{ id: "series-only", title: "Series Only", items: ["series:s1", "series:s2"] }];
+});
+
+page("an empty incomplete Recommended tab shows the some-shelves bottom note as well as its empty state", async tv => {
+    await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 500, json: { type: "about:blank", title: "Server error", status: 500 } }));
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator(".library-empty").waitFor();
+    assert.equal(await tv.page.locator(".library-empty-title").innerText(), "Some shelves could not be loaded");
+    assert.equal(await tv.page.locator(".library-empty-body").innerText(), "Open Browse to see titles matching this tab.");
+    assert.equal(await tv.page.locator(".library-incomplete").innerText(), "Some shelves could not be fully loaded. Open Browse to see this media type.");
 }, catalog => {
     mixed(catalog);
     const household = catalog.households.get("p-owner");
@@ -314,6 +329,7 @@ page("Browse's first load shows twelve static poster placeholders", async tv => 
         await openBrowse(tv);
         const cards = tv.page.locator(".browse .catalog-skeleton .poster-skeleton");
         await cards.first().waitFor();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "browse setup answers delivered");
         assert.equal(await cards.count(), 12);
         assert.equal(await tv.page.locator(".discovery-skeleton").count(), 0);
         const style = await cards.first().evaluate(node => ({ background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius, animations: node.getAnimations().length, ratio: node.getBoundingClientRect().height / node.getBoundingClientRect().width }));
@@ -1043,4 +1059,93 @@ test("a late image probe upgrades a mixed tab's refilled cards as well as the in
         assert.deepEqual((await cardIds(tv, "mixed-row")).slice(0, 2), ["movie:m0001", "movie:m0002"]);
         assert.deepEqual(tv.console, [], "the page logs nothing");
     } finally { held.release(); await tv.page.context().close(); }
+});
+
+page("entering a facet focuses the first selected value, else the first value", async tv => {
+    await browseReady(tv);
+    await tv.page.locator('[data-focus="filter"]').click();
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Drama");
+    await tv.page.locator('[data-focus="value:Comedy"]').click();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "facet:genre");
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Comedy");
+});
+
+test("Explore all section page renders blank loading focus owner, empty stack icon and unavailable icon", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCatalog();
+        await start(tv, catalog);
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-focus="expand:library-picks"]').waitFor();
+        let release = (): void => undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        await tv.page.route("**/api/v2/catalog/query**", async route => { await gate; await route.fulfill({ json: emptyPage }); });
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        const loadingOwner = tv.page.locator('.section-catalog-state');
+        await loadingOwner.waitFor();
+        assert.equal(await loadingOwner.innerText(), "");
+        assert.equal(await loadingOwner.getAttribute("aria-label"), "Loading Library Picks");
+        assert.equal(await tv.focused(), "state");
+        release();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="square.stack.3d.up.fill"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Nothing here yet");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row does not have any items right now.");
+        assert.equal(await tv.focused(), "state");
+        await tv.remote(10009);
+        await tv.page.unroute("**/api/v2/catalog/query**");
+        await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 404, contentType: "application/problem+json", json: problem(404, "not_found", "Missing section").body }));
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="rectangle.stack.badge.minus"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Row unavailable");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row is no longer available.");
+        assert.equal(await tv.focused(), "state");
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
+});
+
+test("SectionCatalog shows ErrorView with Retry over a cached unavailable snapshot when a reload fails", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const compiled = await build({
+            stdin: {
+                contents: 'import { SectionCatalog } from "./src/ui/sectionCatalog.ts"; (window as unknown as { SectionCatalog: typeof SectionCatalog }).SectionCatalog = SectionCatalog;',
+                resolveDir: process.cwd(),
+                loader: "ts",
+            },
+            bundle: true,
+            write: false,
+            format: "iife",
+            target: "chrome108",
+        });
+        await tv.page.addScriptTag({ content: compiled.outputFiles[0]!.text });
+        const summary = await tv.page.evaluate(() => {
+            const SectionCatalog = (window as unknown as { SectionCatalog: new () => { snapshot: unknown; view: (...args: unknown[]) => { focus?: { zone: string; key: string }; content: HTMLElement[] } } }).SectionCatalog;
+            const catalog = new SectionCatalog();
+            catalog.snapshot = { page: { items: [], nextCursor: undefined, total: 0, totalExact: true }, cursors: new Set(), unavailable: true };
+            const route = {
+                kind: "homeSection",
+                id: "library-picks",
+                title: "Library Picks",
+                continuing: false,
+                pages: { page: undefined, cursors: [undefined], index: 0 },
+                failure: "Server unreachable",
+                error: undefined,
+            };
+            const view = catalog.view(route, { baseUrl: "https://silo.example.test", open: () => undefined }, false, () => undefined, () => undefined, () => undefined);
+            const host = document.createElement("div");
+            host.append(...view.content);
+            return {
+                focus: view.focus,
+                retryCount: host.querySelectorAll('[data-focus="retry"]').length,
+                unavailableCount: host.querySelectorAll('[data-symbol="rectangle.stack.badge.minus"]').length,
+            };
+        });
+        assert.deepEqual(summary, { focus: { zone: "status", key: "retry" }, retryCount: 1, unavailableCount: 0 });
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
 });
