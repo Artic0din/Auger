@@ -28,7 +28,12 @@ const searchHeads = new WeakMap<RequestPage, { readonly head: readonly HTMLEleme
 
 export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string, open: () => void, preview?: (title: RequestTitle | MediaRequest) => void): FocusItem {
     const key = "id" in title ? title.id : `${title.mediaType}:${title.tmdbId}`;
-    const progress = requestProgress(title), label = `${title.title} · ${progress?.short ?? "Not requested"}`;
+    const progress = requestProgress(title);
+    // Apple RequestMediaCard.accessibilityTitle: "Title, 2024, Status" with no placeholder when unrequested.
+    const parts = [title.title];
+    if (title.year !== undefined && title.year > 0) parts.push(integerText(title.year));
+    if (progress !== undefined) parts.push(progress.short);
+    const label = parts.join(", ");
     const item = actionButton(key, label, open);
     item.element.className = "browse-card requests-card";
     item.element.setAttribute("aria-label", label);
@@ -36,7 +41,7 @@ export function requestCard(title: RequestTitle | MediaRequest, baseUrl: string,
     if ("request" in title && progress !== undefined) { const badge = requestPosterBadge(progress); if (badge !== undefined) art.appendChild(badge); }
     const subtitle = el("span", "browse-card-subtitle");
     if (!("request" in title) && progress !== undefined) subtitle.appendChild(requestStatusLabel(progress));
-    else subtitle.textContent = title.year === undefined ? "" : integerText(title.year);
+    else subtitle.textContent = title.year !== undefined && title.year > 0 ? integerText(title.year) : "";
     item.element.replaceChildren(art, el("span", "browse-card-title", title.title), subtitle);
     if (preview !== undefined) item.element.addEventListener("focus", () => preview(title));
     return item;
@@ -255,7 +260,8 @@ export function requestsView(page: RequestPage, nav: RequestsViewNav): View {
             let eyebrow = true;
             for (const section of data.sections) {
                 if (!section.results.some(browsable)) continue;
-                hubRow(`row:${section.key}`, [...(eyebrow ? [el("p", "requests-discover", translate("requests.hub.discover"))] : []), el("h2", "requests-heading", section.title)], titleItems(section.results));
+                const heading = section.titleKey !== undefined ? translate(section.titleKey) : section.title;
+                hubRow(`row:${section.key}`, [...(eyebrow ? [el("p", "requests-discover", translate("requests.hub.discover"))] : []), el("h2", "requests-heading", heading)], titleItems(section.results));
                 eyebrow = false;
             }
         } else if ("results" in data) {

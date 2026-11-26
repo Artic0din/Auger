@@ -495,7 +495,7 @@ test("Requests artwork spans discover, rows, mine and both details with accessib
         };
         await openRequests(tv);
         await check('[data-focus="movie:949"]');
-        await tv.page.getByRole("button", { name: "Heat · Not requested", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Heat", exact: true }).waitFor();
         assert.equal(await button(tv, "more").count(), 0, "a paginated row has no See all tile, as on Apple TV");
         await button(tv, "movie:949").click(); await view(tv, "media");
         await tv.page.locator('.requests-detail-hero .skyline-backdrop').waitFor();
@@ -876,13 +876,13 @@ test("a settled write refreshes the retained Requests hub", async () => {
         await button(tv, "create").click();
         await tv.eventually(async () => fake.created, "write processed");
         fake.created = false; await tv.remote(10009); await view(tv, "hub");
-        await tv.page.getByRole("button", { name: "Heat · Not requested" }).waitFor();
+        await tv.page.getByRole("button", { name: "Heat" }).waitFor();
         await leaveRequests(tv); await button(tv, "home").click(); await tv.page.locator('.browse[data-view="home"]').waitFor();
         fake.created = true;
         const answered = tv.page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/requests"));
         held.release(); await answered; await tv.jump(1);
         await openRequests(tv); await view(tv, "hub");
-        await tv.page.getByRole("button", { name: "Heat · Pending" }).last().waitFor();
+        await tv.page.getByRole("button", { name: "Heat, Pending" }).last().waitFor();
     } finally { await tv.page.context().close(); }
 });
 
@@ -2508,5 +2508,148 @@ test("request route shows and toggles Notify Me for an active record when media 
         assert.equal(await button(tv, "follow").textContent(), "Notify Me");
         await button(tv, "follow").click();
         await tv.eventually(async () => await button(tv, "follow").textContent() === "Stop Notifying Me", "toggled Notify Me without request_id");
+    } finally { await tv.page.context().close(); }
+});
+
+test("hub preview drops unavailable discover progress, appends reason or targets for own requests, and uses 12px card radius", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        const origTitle = fake.title.bind(fake);
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (method === "GET" && path.startsWith("/requests/mine")) {
+                return {
+                    status: 200,
+                    body: {
+                        items: [
+                            { ...fake.record, id: "failed-reason", title: "Failed Reason", state: "failed", status: "approved", outcome: "failed", last_error: "quota_exceeded" },
+                            { ...fake.record, id: "failed-custom", title: "Failed Custom", state: "declined", status: "approved", outcome: "declined", last_error: "indexer_timeout" },
+                            { ...fake.record, id: "failed-long", title: "Failed Long Title", state: "failed", status: "approved", outcome: "failed", last_error: Array(20).fill("upstream failure detail").join(" ") },
+                            { ...fake.record, id: "multi-target", title: "Multi Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }, { quality: "4K", status: "queued" }] },
+                            { ...fake.record, id: "single-target", title: "Single Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }] },
+                        ],
+                        page: { has_more: false },
+                    },
+                };
+            }
+            if (method === "GET" && path === "/requests/discover") {
+                return {
+                    status: 200,
+                    body: {
+                        items: [{
+                            key: "trending_movies",
+                            title: "Trending Movies",
+                            page: 1,
+                            total_pages: 1,
+                            results: [
+                                { ...origTitle(), tmdb_id: 950, title: "Unrequestable Film", year: 2024, request: { requestable: false, following: false, requested_by_viewer: false, reason: "requests_disabled" } },
+                                { ...origTitle(), tmdb_id: 951, title: "Plain Yearless", year: 0, request: { requestable: true, following: false, requested_by_viewer: false } },
+                                { ...origTitle(), tmdb_id: 952, title: "Requested Film", year: 2021, request: { requestable: false, following: false, requested_by_viewer: false, state: "pending", reason: "already_requested" } },
+                            ],
+                        }],
+                        row_order: [{ key: "trending_movies", title: "Trending Movies", type: "tmdb_chart" }],
+                    },
+                };
+            }
+            return route(method, path, profileId, body);
+        };
+
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "failed-reason").waitFor();
+
+        // Poster radius is 12px on hub rail cards.
+        assert.equal(await tv.page.locator(".requests-rail .browse-art").first().evaluate(node => getComputedStyle(node).borderRadius), "12px");
+
+        // Own-request hub preview statuses append reason or multi-target phases.
+        await button(tv, "failed-reason").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Request failed · Request limit reached", "known last_error token appended");
+        await button(tv, "failed-custom").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Declined · Indexer Timeout", "humanized last_error token appended");
+        await button(tv, "failed-long").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Failed Long Title", "previewed verbose failure title");
+        const longStatusLayout = await tv.page.evaluate(() => {
+            const label = document.querySelector(".requests-preview .requests-status-label")?.getBoundingClientRect();
+            const title = document.querySelector(".requests-preview .requests-hero-title")?.getBoundingClientRect();
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return {
+                labelHeight: label?.height ?? 0,
+                titleTop: title?.top ?? -1,
+                fitsWidth: Boolean(copy && progress && progress.right <= copy.right + 1),
+            };
+        });
+        assert.equal(longStatusLayout.fitsWidth, true, "long failure status stays inside the hero copy width");
+        assert.ok(longStatusLayout.labelHeight <= 55, `expected preview status height <= 55px, got ${longStatusLayout.labelHeight}`);
+        assert.ok(longStatusLayout.titleTop >= 0, `expected hero title to stay in viewport, got top=${longStatusLayout.titleTop}`);
+        await button(tv, "multi-target").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading · 1080p downloading · 4K queued", "multi-target summary appended");
+        const fitsCopy = await tv.page.evaluate(() => {
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return copy !== undefined && progress !== undefined && progress.right <= copy.right + 1;
+        });
+        assert.equal(fitsCopy, true, "preview progress stays inside the hero copy width");
+        await button(tv, "single-target").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading", "single-target summary omitted");
+
+        // Unrequestable discover title hides .requests-progress in hub preview; requested discover title shows it.
+        await button(tv, "movie:950").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Unrequestable Film", "previewed unrequestable title");
+        assert.equal(await tv.page.locator(".requests-preview .requests-progress").count(), 0);
+        await button(tv, "movie:952").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Waiting for approval", "requested discover title shows progress");
+
+        // Card spoken labels match "title, year, short" without "Not requested" or zero years, and zero year stays hidden visually.
+        assert.equal(await button(tv, "movie:950").getAttribute("aria-label"), "Unrequestable Film, 2024, Unavailable");
+        assert.equal(await button(tv, "movie:951").getAttribute("aria-label"), "Plain Yearless");
+        assert.equal(await button(tv, "movie:951").locator(".browse-card-subtitle").textContent(), "");
+        await button(tv, "movie:951").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Plain Yearless", "previewed yearless title");
+        assert.equal(await tv.page.locator(".requests-preview .requests-meta").textContent(), "Movie");
+        assert.equal(await button(tv, "movie:952").getAttribute("aria-label"), "Requested Film, 2021, Pending");
+        assert.equal(await button(tv, "multi-target").getAttribute("aria-label"), "Multi Target, Downloading");
+    } finally { await tv.page.context().close(); }
+});
+
+test("hub merges legacy Trending now and Crowd favorites carousels when row_order is absent or empty", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        const origTitle = fake.title.bind(fake);
+        let rowOrder: unknown[] | undefined;
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (method === "GET" && path === "/requests/discover") {
+                return {
+                    status: 200,
+                    body: {
+                        items: [
+                            { key: "trending_movies", title: "Trending Movies", page: 1, total_pages: 1, results: [{ ...origTitle(), tmdb_id: 1, title: "TM1" }, { ...origTitle(), tmdb_id: 2, title: "Dup" }] },
+                            { key: "trending_series", title: "Trending Shows", page: 1, total_pages: 1, results: [{ ...origTitle(), media_type: "series", tmdb_id: 10, title: "TS1" }, { ...origTitle(), tmdb_id: 2, title: "Dup" }] },
+                            { key: "popular_movies", title: "Popular Movies", page: 1, total_pages: 1, results: [{ ...origTitle(), tmdb_id: 20, title: "PM1" }] },
+                        ],
+                        ...(rowOrder === undefined ? {} : { row_order: rowOrder }),
+                    },
+                };
+            }
+            return route(method, path, profileId, body);
+        };
+
+        await start(tv, fake);
+        await openRequests(tv);
+        await tv.page.locator('[data-section="row:trending"]').waitFor();
+        assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), ["Trending now", "Crowd favorites"]);
+        assert.deepEqual(
+            await tv.page.locator('[data-section="row:trending"] .requests-card').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))),
+            ["movie:1", "series:10", "movie:2"],
+        );
+
+        rowOrder = [];
+        await revisitRequests(tv);
+        await tv.page.locator('[data-section="row:trending"]').waitFor();
+        assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), ["Trending now", "Crowd favorites"]);
     } finally { await tv.page.context().close(); }
 });

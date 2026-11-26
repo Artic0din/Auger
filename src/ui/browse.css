@@ -503,7 +503,7 @@
 .requests-card[data-busy="true"] { opacity: .55; }
 .requests-list-notice { position: fixed; inset-inline-start: 88px; bottom: 40px; z-index: 6; margin: 0; padding: 14px 24px; border-radius: 999px; background: rgba(255,255,255,.16); color: #ededed; font-size: 22px; line-height: 28px; font-weight: 600; pointer-events: none; }
 .requests-scene .requests-rail .requests-card:focus { transform: none; box-shadow: none; }
-.requests-scene .requests-rail .browse-art { width: 176px; height: 264px; border-radius: 16px; transform-origin: center; }
+.requests-scene .requests-rail .browse-art { width: 176px; height: 264px; border-radius: 12px; transform-origin: center; }
 .requests-scene .requests-rail .browse-card-title { display: block; margin: 22px 0 0; padding: 0; font-size: 27px; line-height: 34px; font-weight: 600; color: #ededed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .requests-scene .requests-rail .browse-card-subtitle { display: block; margin: 4px 0 0; padding: 0; font-size: 22px; line-height: 27px; color: var(--silo-secondary); }
 .requests-scene .requests-rail .browse-card-title, .requests-scene .requests-rail .browse-card-subtitle { position: relative; z-index: 1; }
@@ -562,9 +562,11 @@
 .requests-preview .requests-tmdb::before { content: "·"; width: 15px; margin-inline-end: -7px; text-align: center; }
 .requests-preview .requests-tmdb img { width: 107px; height: 14px; }
 .requests-preview .requests-tmdb span { color: inherit; }
-.requests-progress { display: flex; gap: 22px; align-items: center; margin-top: 18px; font-size: 22px; line-height: 27px; }
-.requests-progress .requests-status-label { font-weight: 600; }
-.requests-track { width: 240px; display: flex; gap: 6px; }
+.requests-progress { display: flex; gap: 22px; align-items: center; max-width: 100%; margin-top: 18px; font-size: 22px; line-height: 27px; }
+.requests-progress .requests-status-label { font-weight: 600; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* Cap preview status text to two 27px lines so verbose server failures cannot push the hero title out of view. */
+.requests-preview .requests-progress .requests-status-label { max-height: 54px; overflow: hidden; }
+.requests-track { width: 240px; flex-shrink: 0; display: flex; gap: 6px; }
 .requests-step { flex: 1; border-top: 6px solid rgba(255,255,255,.14); border-radius: 3px 3px 0 0; font-size: 18px; line-height: 22px; }
 .requests-step[data-state="complete"] { border-color: rgba(237,237,237,.82); }
 .requests-step[data-state="current"] { border-color: var(--request-tint); }
