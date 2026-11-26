@@ -1722,7 +1722,7 @@ test("Subtitles stays hidden without tracks or actionable sources like Apple TV"
     try {
         await show(page, playing(NO_TRACKS));
         await openAudio(page);
-        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allInnerTexts(), ["Info", "Stats", "Video", "Audio"]);
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allInnerTexts(), ["Info", "Stats", "Video"]);
     } finally { await page.close(); }
 });
 
