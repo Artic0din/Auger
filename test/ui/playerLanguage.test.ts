@@ -153,8 +153,14 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.getByRole("slider").getAttribute("aria-label"), text("player.controls.scrubber", language));
             await show(page, { phase: "loading", title: "The Movie" });
             assert.equal(await page.locator(".player-spinner").getAttribute("aria-label"), text("common.loading", language));
+            await show(page, { phase: "loading", title: "The Movie", detail: "reconnecting" });
+            assert.equal(await page.locator(".player-status").isVisible(), false);
+            assert.equal(await page.locator(".player-alert-notice .player-alert-title").textContent(), text("player.notice.reconnectingTitle", language));
+            assert.equal(await page.locator(".player-alert-notice .player-alert-detail").textContent(), text("player.notice.reconnectingBody", language));
             await show(page, { phase: "loading", title: "The Movie", detail: "restoring" });
-            assert.equal(await page.locator(".player-status").textContent(), "Restoring", "no Apple key: English");
+            assert.equal(await page.locator(".player-status").isVisible(), false);
+            assert.equal(await page.locator(".player-alert-notice .player-alert-title").textContent(), text("player.notice.reconnectingTitle", language));
+            assert.equal(await page.locator(".player-alert-notice .player-alert-detail").textContent(), text("player.notice.reconnectingBody", language));
         } finally { await page.close(); }
     });
 
@@ -301,6 +307,7 @@ for (const language of ["de", "ar"]) {
         try {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
+            assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.tryAgain", language));
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
             // problem.localized (APIv2Models.swift:357-365): the field code's line, else the problem type's, else the server's own text.

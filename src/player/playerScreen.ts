@@ -90,21 +90,6 @@ export function errorText(error: PlaybackError): string {
     }
 }
 
-function loadingText(detail: "reconnecting" | "restoring" | undefined): string {
-    switch (detail) {
-        case undefined:
-            return translate("common.loading");
-        case "reconnecting":
-            return "Reconnecting";
-        case "restoring":
-            return "Restoring";
-        default: {
-            const never: never = detail;
-            return never;
-        }
-    }
-}
-
 const OFF = "subtitles-off";
 const RETRY = "audio-retry";
 /** Cancel, Dismiss and Discard act on the AI job itself, so a track change never locks them (Apple's job panel is not disabled by one). */
@@ -423,7 +408,11 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const noticeMark = el("span", "player-alert-mark");
     noticeMark.setAttribute("aria-hidden", "true");
     const noticeTitle = el("span", "player-alert-title");
-    noticeCard.append(noticeMark, noticeTitle);
+    const noticeDetail = el("span", "player-alert-detail");
+    noticeDetail.hidden = true;
+    const noticeCopy = el("span", "player-alert-copy");
+    noticeCopy.append(noticeTitle, noticeDetail);
+    noticeCard.append(noticeMark, noticeCopy);
     const bufferingCard = el("div", "player-alert player-buffering");
     bufferingCard.setAttribute("role", "group");
     bufferingCard.hidden = true;
@@ -1026,10 +1015,19 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
     const drawBuffering = (): void => {
         const live = view.phase === "playing" || view.phase === "paused" || view.phase === "loading" ? view : undefined;
         const pill = live?.bufferingPill;
+        const reconnecting = view.phase === "loading" && (view.detail === "reconnecting" || view.detail === "restoring");
         const notice = live?.bufferingNotice;
-        noticeCard.hidden = notice === undefined;
-        if (notice !== undefined) {
+        noticeCard.hidden = !reconnecting && notice === undefined;
+        if (reconnecting) {
+            // PlayerViewModel.presentedNotice (silo-apple 3289bedb, PlayerViewModel.swift:513-527): reconnect notice takes precedence over transient notices.
+            noticeTitle.textContent = translate("player.notice.reconnectingTitle");
+            noticeDetail.textContent = translate("player.notice.reconnectingBody");
+            noticeDetail.hidden = false;
+            noticeMark.innerHTML = infoCircleIcon();
+        } else if (notice !== undefined) {
             noticeTitle.textContent = notice.text;
+            noticeDetail.textContent = "";
+            noticeDetail.hidden = true;
             noticeMark.innerHTML = notice.lowered ? arrowDownCircleIcon() : infoCircleIcon();
         }
         bufferingCard.hidden = pill === undefined;
@@ -1234,6 +1232,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
             if (!pickAnother.hidden) labelWithSymbol(pickAnother, shuffleIcon(), translate("upNext.pickAnother"), { size: 26, gap: 16 });
             shuffleError.hidden = view.shuffleActionError === undefined;
             shuffleError.textContent = view.shuffleActionError === undefined ? "" : translate(view.shuffleActionError);
+            retry.textContent = translate("common.retry");
             retry.hidden = view.state !== "failed" || !view.retryable;
             showAutoPlay(view.state === "ready" && view.next !== undefined ? view.autoNext : undefined, view.shuffle === true);
             // PlayerView: loadingContent shows upNextFinding (upNextPicking in a Shuffle) with no message; finishedContent shows
@@ -1257,6 +1256,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         if (view.phase === "error") {
             stopEndTick();
             failure.classList.remove("player-next-up");
+            // PlayerViewModel.retryButtonTitle (silo-apple 3289bedb, PlayerViewModel.swift:518-520): lost connection uses "Try again", other errors use "Retry".
+            retry.textContent = translate(view.error.kind === "network" && view.error.noResponse !== true ? "common.tryAgain" : "common.retry");
             retry.hidden = view.error.kind !== "settings" && !view.retryable;
             failureTitle.textContent = "";
             failureText.textContent = errorText(view.error);
@@ -1281,9 +1282,8 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         series.hidden = !series.textContent;
         episode.textContent = episodeTag(activeView?.seasonNumber, activeView?.episodeNumber) ?? "";
         episode.hidden = !episode.textContent;
-        const namedStatus = view.phase === "loading" && view.detail !== undefined ? loadingText(view.detail) : "";
-        status.textContent = namedStatus;
-        status.hidden = namedStatus === "";
+        status.textContent = "";
+        status.hidden = true;
         const conceal = view.phase === "loading" || menuOpen;
         footer.hidden = conceal;
         footerSlot.hidden = conceal;

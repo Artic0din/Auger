@@ -1582,7 +1582,7 @@ for (const reduced of [false, true]) {
         const reads = tv.fake.requests.filter(r => r.path === "/playback/capabilities").length;
         await visibility(tv, false);
         await tv.eventually(async () => tv.fake.requests.filter(r => r.path === "/playback/capabilities").length === reads + 1, "foreground validation");
-        await tv.eventually(async () => await tv.page.getByText("Restoring", { exact: true }).count() === 1, "foreground validation has a loading state");
+        await tv.eventually(async () => await tv.page.locator(".player-alert-notice .player-alert-title").isVisible() && await tv.page.locator(".player-alert-notice .player-alert-title").textContent() === "Reconnecting…", "foreground validation has a loading state");
         await visibility(tv, true);
         gate.release();
         for (let i = 0; i < 5; i++) await tv.jump(0);
@@ -1612,7 +1612,7 @@ for (const reduced of [false, true]) {
             window.appHarness.avplay.tick(32000);
             window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
         });
-        await tv.page.getByText("Reconnecting", { exact: true }).waitFor();
+        await tv.page.locator(".player-alert-notice .player-alert-title", { hasText: "Reconnecting…" }).waitFor();
         await tv.jump(1000);
         await tv.eventually(async () => tv.fake.requests.filter(r => r.path === path).length === 1, "first reconnect");
         await tv.jump(2000);
