@@ -744,7 +744,11 @@ for (const [status, id, headline, buttons] of [
 
 calendarTest("Calendar library recovery survives Settings Back onto Home and a later Calendar visit", async (tv, catalog) => {
     const settings = new FakeSettings(tv.fake);
+    settings.remainingRows = true;
     settings.profile().set(HIDDEN_KEY, [15]);
+    tv.fake.extraRoutes.push((method, path) => method === "GET" && path.startsWith("/capabilities/metadata-ai")
+        ? { status: 200, body: { revision: "test", allowed: true, state: "available", on_view: "button" } }
+        : undefined);
     const routes = tv.fake.catalog; assert.ok(routes);
     tv.fake.catalog = { route: (method, path, profile, body, headers) => {
         const household = catalog.households.get(profile ?? "");
@@ -755,10 +759,13 @@ calendarTest("Calendar library recovery survives Settings Back onto Home and a l
     await activate(tv, "calendar"); await ready(tv, 3); await activate(tv, "filter:everything"); await ready(tv, 32);
     assert.equal(await tv.page.locator('.calendar-event[data-content-id="movie:archived"]').count(), 0);
     await activate(tv, "profiles"); await activate(tv, "settings");
-    await tv.page.locator('[data-focus="server"]').click();
-    await tv.page.locator('[data-focus="restore-libraries"]').click();
-    await tv.eventually(async () => JSON.stringify(settings.profile().get(HIDDEN_KEY)) === "[]", "library visibility restored");
+    await tv.page.locator('[data-focus="subtitles"]').click();
+    await tv.page.getByRole("button", { name: /Metadata Language/ }).click();
+    await tv.page.getByRole("radio", { name: "fr", exact: true }).click();
+    await tv.eventually(async () => settings.profile().get("catalog.metadata_language") === "fr", "metadata language changed");
+    await tv.page.locator('[data-focus="metadata-language"]').waitFor();
     await tv.page.getByText("Saving…", { exact: true }).waitFor({ state: "hidden" });
+    settings.profile().set(HIDDEN_KEY, []);
     for (let step = 0; step < 3 && await tv.page.locator(".settings").count() > 0; step++) await tv.remote(10009);
     assert.equal(await tv.page.locator('.browse').getAttribute("data-view"), "home");
     assert.equal(await tv.focused(), "home", "Settings Back selects Home");

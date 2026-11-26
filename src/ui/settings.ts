@@ -1,5 +1,5 @@
 import type { NativeSession } from "../session/session.ts";
-import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, CARD_PRESENTATION_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, CARD_PRESENTATION_KEY, HDR_KEY, isSkipKey, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
 import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import { FocusHost, type FocusItem, type FocusTarget, type Zone } from "./browseFocus.ts";
@@ -254,10 +254,10 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         item.element.replaceChildren(el("span", "settings-row-title", pickerLabel(id)), el("span", "settings-row-value", text), settingsChevron());
         return item;
     };
-    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value)     : isSkipKey(key)
+    const label = (value: SettingValue, key: SettingsKey): string => key === QUALITY_KEY ? value === "2160p" ? "4K" : value === "auto" ? "Auto" : state.definitions.find(def => def.key === key)?.options.find(option => option.value === value)?.label ?? String(value) : key === BITRATE_KEY ? bitrateLabel(typeof value === "number" ? value : null) : isSkipKey(key)
         // SeekIntervalLabel.choiceLabel: Apple's own plural message in the shown language and digits, not the manifest's English label.
         ? typeof value === "number" ? translate("player.seekInterval.choice", { seconds: value }) : String(value)
-        : valueLabel(value, key);
+        : valueLabel(value);
     const note = (key: SettingsKey): HTMLElement => {
         const effective = state.effective.get(key);
         const sources: Readonly<Record<string, string>> = { default: "Inherited default", profile: "Profile default", profile_device: "Device override", profile_library: "Library override", profile_series: "Series override" };
@@ -925,11 +925,6 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
             // Apple's Server pane: an ABOUT section whose Acknowledgements row opens the credits.
             const item = actionButton("acknowledgements", translate("settings.about.acknowledgements"), () => { acknowledging = true; returnRow = "acknowledgements"; render(); });
-            const hidden = state.effective.get(HIDDEN_KEY)?.value;
-            if (Array.isArray(hidden) && hidden.length > 0) {
-                const restore = button("restore-libraries", "Restore All Libraries", () => { void state.save(HIDDEN_KEY, []); });
-                rows.push(restore); body.appendChild(restore.element);
-            }
             body.append(el("h3", "settings-section-header", translate("settings.about.headerTv")), info(translate("settings.about.appVersion"), APP_VERSION), policy.element, item.element);
             rows.push(policy);
             rows.push(item);
@@ -1378,10 +1373,7 @@ function beforeStreaming(body: HTMLElement, nodes: readonly HTMLElement[]): void
     }
 }
 
-function valueLabel(value: SettingValue, key: SettingsKey = AUDIO_KEY): string {
-    if (key === BITRATE_KEY) return bitrateLabel(typeof value === "number" ? value : null);
-    if (value === null) return key === HIDDEN_KEY ? "None hidden" : translate("settingsManifest.playback.audio_language.unsetLabel");
-    if (Array.isArray(value)) return `${value.length} hidden`;
-    if (typeof value === "object") return key === "ui.card_presentation" && "poster_size" in value ? String(value.poster_size) : "Custom appearance";
+function valueLabel(value: SettingValue): string {
+    if (value === null) return translate("settingsManifest.playback.audio_language.unsetLabel");
     return value === "x-silo-original" ? "Original language" : String(value);
 }
