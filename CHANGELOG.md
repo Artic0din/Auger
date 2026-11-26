@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.8] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Remove Restore All Libraries row from Server pane ([#940](https://github.com/Artic0din/Auger-Tizen/pull/940), [`12e83c23`](https://github.com/Artic0din/Auger-Tizen/commit/12e83c23))
+
+### Tests
+
+- **Audiobooks**: Read detail styles atomically during background repaints ([#948](https://github.com/Artic0din/Auger-Tizen/pull/948), [`b79a4c09`](https://github.com/Artic0din/Auger-Tizen/commit/b79a4c09))
+
 ## [0.14.7] - 2026-11-26
 
 ### Fixes
