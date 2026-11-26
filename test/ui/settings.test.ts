@@ -586,6 +586,7 @@ for (const failFirst of [false, true]) test(`Playback profile reset confirms and
         assert.equal(await tv.focused(), 'cancel-playback-reset');
         await tv.remote(38);
         assert.equal(await tv.focused(), 'confirm-playback-reset');
+        assert.equal(await alertDialog.getByRole('button', { name: 'Use Profile Settings', exact: true }).count(), 1);
         await tv.remote(40);
         assert.equal(await tv.focused(), 'cancel-playback-reset');
         const playbackLayout = await tv.page.evaluate(() => {
@@ -696,6 +697,7 @@ test("Subtitle appearance reset uses centred alert dialog for profile and device
         assert.equal(await tv.focused(), "reset");
         await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => await tv.page.locator('[data-focus="cancel"]').getAttribute("aria-disabled") === "true", "Cancel disabled while reset is in flight");
+        assert.equal(await alertDialog.getByRole("status").textContent(), "Saving…");
         await tv.remote(10009);
         assert.equal(await alertDialog.count(), 1, "Back is ignored while appearance reset is in flight");
         held.release();
@@ -711,6 +713,46 @@ test("Subtitle appearance reset uses centred alert dialog for profile and device
         assert.equal(await tv.focused(), "reset-appearance");
         assert.equal(JSON.stringify(settings.device("p-owner", deviceId).get("playback.subtitle_appearance")).includes('"fontSize":"large"'), true);
         assert.deepEqual(settings.profile().get("playback.subtitle_appearance"), { fontSize: "small", position: "bottom" });
+        assert.deepEqual(tv.console, []);
+    } finally { held?.release(); await tv.page.context().close(); }
+});
+
+test("Playback reset alert shows Saving status in flight and clears stale reset queue after Reload settings", async () => {
+    const { tv, settings } = await setup(true);
+    settings.bufferingRows = true;
+    settings.profile().set(QUALITY_KEY, "720p");
+    const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
+    assert.ok(deviceId);
+    const device = settings.device("p-owner", deviceId);
+    device.set(QUALITY_KEY, "1080p");
+    device.set("playback.buffering_quality_mode", "never");
+    let held: { release(): void } | undefined;
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="playback"]').click();
+        await tv.page.getByRole("button", { name: "Use Profile Settings", exact: true }).click();
+        const alertDialog = tv.page.getByRole("alertdialog");
+        await alertDialog.waitFor();
+        tv.fake.script(`/settings/values/${QUALITY_KEY}?scope=profile_device`, problem(403, "forbidden", "Denied"));
+        held = tv.fake.hold(`/settings/values/${QUALITY_KEY}`, true);
+        await tv.remote(38);
+        await tv.page.keyboard.press("Enter");
+        await tv.eventually(async () => await tv.page.locator('[data-focus="cancel-playback-reset"]').getAttribute("aria-disabled") === "true", "Cancel disabled while playback reset is in flight");
+        assert.equal(await alertDialog.getByRole("status").textContent(), "Saving…");
+        held.release();
+        await alertDialog.getByRole("button", { name: "Reload settings", exact: true }).waitFor();
+
+        // Scope changes on the server before Reload settings: QUALITY_KEY becomes profile-only, while buffering remains profile_device.
+        settings.devicePlayback = false;
+        await alertDialog.getByRole("button", { name: "Reload settings", exact: true }).click();
+        await tv.eventually(async () => await alertDialog.getByRole("button", { name: "Reload settings", exact: true }).count() === 0, "reload completed");
+
+        const requestsBefore = tv.fake.requests.length;
+        await alertDialog.getByRole("button", { name: "Use Profile Settings", exact: true }).click();
+        await tv.eventually(async () => !device.has("playback.buffering_quality_mode"), "remaining device override cleared");
+        const newDeletes = tv.fake.requests.slice(requestsBefore).filter(r => r.method === "DELETE").map(r => r.path);
+        assert.equal(newDeletes.some(path => path.includes(QUALITY_KEY)), false, `unexpected delete for ${QUALITY_KEY}: ${newDeletes.join(", ")}`);
+        assert.equal(settings.profile().get(QUALITY_KEY), "720p");
         assert.deepEqual(tv.console, []);
     } finally { held?.release(); await tv.page.context().close(); }
 });

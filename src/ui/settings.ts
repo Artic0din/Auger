@@ -285,7 +285,11 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const wasRetryable = state.canRetry;
             const firstKey = pendingPlaybackReset[0];
             await (firstKey === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.retry()) : state.retry());
-            if (torn || state.error !== undefined || !wasRetryable) return;
+            if (torn || state.error !== undefined) return;
+            if (!wasRetryable) {
+                pendingPlaybackReset = [];
+                return;
+            }
         }
         while (pendingPlaybackReset.length > 0) {
             const key = pendingPlaybackReset[0];
@@ -370,6 +374,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             id: options.id,
             title: options.title,
             message: options.message,
+            ...(state.busy ? { status: state.loaded ? translate("settings.saving") : "Loading settings…" } : {}),
             ...(state.error === undefined ? {} : { problem: state.error }),
             buttons: controls.map(control => control.element),
             destructive: options.confirm.element,
