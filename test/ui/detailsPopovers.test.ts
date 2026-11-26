@@ -451,11 +451,12 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             assert.equal(keys.at(-1), "watch-party");
             assert.equal(await panel.locator('[data-focus="watch-party"]').textContent(), "Watch Party");
             assert.equal(await panel.locator('[data-focus="watch-party"] svg').getAttribute("data-symbol"), "person.3");
-            // The lobby replaces the entry once the room is created, so hold that answer while the entry is read.
+            // Starting from a title holds on its artwork with a focused spinner instead of flashing the entry page (#783).
             const create = tv.fake.hold("/watch-together/rooms");
             await panel.locator('[data-focus="watch-party"]').click();
-            // The automatic create locks the entry at once, so Start a party cannot race it.
-            assert.equal(await tv.page.locator('[data-focus="create"]').getAttribute("aria-disabled"), "true");
+            await tv.page.locator('.browse[data-view="watchParty:starting"]').waitFor();
+            assert.equal(await tv.focused(), "starting");
+            assert.equal(await tv.page.locator('[data-focus="starting"]').getAttribute("aria-label"), "Starting your party");
             create.release();
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             assert.equal(fake.createdRooms[0]?.selection_mode, "host_pick");
@@ -465,6 +466,36 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await tv.remote(10009);
             await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
             assert.equal(fake.sockets[0]?.closed, false, "Back from the lobby keeps the room socket open");
+
+            // While engaged as host in a host-pick room: Details More keeps "Watch Party" and picks into the existing room (#783).
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').textContent(), "Watch Party");
+            await panel.locator('[data-focus="watch-party"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            assert.equal(fake.createdRooms.length, 1, "picks into the current room without creating a second one");
+
+            // Switch room to vote mode and dismiss back to Details: More now says "Suggest to Party" and adds to the ballot (#783).
+            await tv.page.locator('[data-focus="options"]').click();
+            await tv.page.locator('[data-focus="mode"]').click();
+            await tv.page.locator('[data-focus="close"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            await tv.remote(10009);
+            await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').textContent(), "Suggest to Party");
+            await panel.locator('[data-focus="watch-party"]').click();
+            await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
+            assert.equal(fake.createdRooms.length, 1, "suggesting does not create a second room");
+            await tv.eventually(async () => fake.suggestions.some(s => s.contentId === "movie:m0001"), "movie added to the ballot");
+
+            // While the vote room is playing, Details More hides Suggest to Party (ballot edits require lobby phase).
+            fake.phase = "playing";
+            fake.snapshot();
+            await tv.eventually(async () => await tv.page.locator('[data-focus="resume"]').count() === 1, "playing phase arrives");
+            await tv.remote(10009);
+            await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+            await tv.page.locator('[data-focus="more"]').click();
+            assert.equal(await panel.locator('[data-focus="watch-party"]').count(), 0, "Suggest to Party is omitted while playing");
         } finally { await tv.page.context().close(); }
     }
 });

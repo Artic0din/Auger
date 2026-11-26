@@ -436,7 +436,7 @@ test("Leave party as the host is Apple's leaveRoom: no confirmation, this TV lea
         await button(tv, "options").click();
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "room socket closed");
         assert.deepEqual(fake.closedRooms, [], "the server holds the party while its host is away; End party ends it");
     } finally { await tv.page.context().close(); }
@@ -543,7 +543,7 @@ test("a guest sees the host's room with no host controls: waiting copy, no actio
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
         assert.deepEqual(fake.closedRooms, [], "a guest has no HTTP leave");
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
     } finally { await tv.page.context().close(); }
 });
 
@@ -632,22 +632,30 @@ test("a guest sees the host's pick and policy arrive live, without reading anyth
     } finally { await tv.page.context().close(); }
 });
 
-test("the host ending the party reaches a guest live: back to the entry with This party has ended.", async () => {
+test("the host ending the party reaches a guest live: back to the entry with This party has ended and no Rejoin row", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "room_closed", reason: "ended" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This party has ended.");
+        assert.equal(await tv.page.locator('[data-focus="rejoin"]').count(), 0, "an ended room offers no Rejoin row");
+        assert.equal(await tv.focused(), "create");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "socket closed");
     } finally { await tv.page.context().close(); }
 });
 
-test("joining on another device takes over: this TV returns to the entry with Apple's take-over message", async () => {
+test("joining on another device takes over: this TV returns to the entry with Continue here, take-over note, and Rejoin focus (#783)", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "connection_replaced", reason: "replaced" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This profile joined the party on another device. Rejoin here to take over playback.");
+        assert.equal(await tv.focused(), "rejoin");
+        assert.equal(await button(tv, "rejoin").textContent(), "Continue here");
+        assert.equal(await tv.page.locator(".watch-party-rejoin-note").textContent(), "Rejoining here disconnects this profile's other device from the party.");
+        await button(tv, "rejoin").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.deepEqual(fake.joined, ["K7M2QX", "K7M2QX"]);
     } finally { await tv.page.context().close(); }
 });
 

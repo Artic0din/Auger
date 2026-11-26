@@ -67,6 +67,13 @@ const emptySearch = (): PickerSearchState => ({ query: "", completedQuery: "", f
 export type Notice = string | { readonly key: MessageKey; readonly args?: MessageArgs };
 export const noticeText = (notice: Notice): string => typeof notice === "string" ? notice : translate(notice.key, notice.args);
 
+/** The last room entered in this browse session, offered on the entry page until ended or expired. */
+export interface RecentRoom {
+    readonly roomId: string;
+    readonly code: string;
+    readonly selectedTitle: string | undefined;
+}
+
 export interface WatchPartyState {
     supported: boolean;
     /** Apple isCheckingSupport: the hub's own check is running. */
@@ -77,6 +84,12 @@ export interface WatchPartyState {
     error: Notice | undefined;
     /** The open room, as the newest answer or socket snapshot left it. */
     room: Room | undefined;
+    /** The most recent room for this profile, offered as a one-tap Rejoin row on the entry page. */
+    recentRoom: RecentRoom | undefined;
+    /** True when the room ended because another device took over this profile's seat. */
+    wasReplaced: boolean;
+    /** Caller-supplied title preview shown behind a spinner while starting a room from Details. */
+    startingPreview: LobbyItem | undefined;
     /** Apple's connection dot: the room socket while a room is open, idle otherwise. */
     connection: ConnectionStatus | "idle";
     /** What the server said it can do; read with the support check. */
@@ -138,6 +151,8 @@ const LOBBY: LobbyPage = { kind: "lobby" };
 const isConflict = (error: unknown): boolean => error instanceof ApiError && error.failure.kind === "problem" && error.failure.problem.status === 409;
 /** Apple isAccessRefusal: the profile cannot see the title at all. */
 const isRefusal = (error: unknown): boolean => error instanceof ApiError && error.failure.kind === "problem" && (error.failure.problem.status === 403 || error.failure.problem.status === 404);
+/** A rejoin failure that proves the recent room is gone or closed (WatchPartySession.swift:255). */
+const isTerminalRejoinError = (error: unknown): boolean => error instanceof ApiError && error.failure.kind === "problem" && (error.failure.problem.status === 403 || error.failure.problem.status === 404 || error.failure.problem.status === 409 || error.failure.problem.status === 410);
 
 export class WatchPartyHub {
     readonly state: WatchPartyState;
@@ -182,7 +197,7 @@ export class WatchPartyHub {
         this.options = options;
         this.describe = options.describe ?? watchPartyFailureText;
         this.state = {
-            supported: options.supported ?? false, checking: false, busy: false, error: undefined, room: undefined, connection: "idle", capabilities: undefined,
+            supported: options.supported ?? false, checking: false, busy: false, error: undefined, room: undefined, recentRoom: undefined, wasReplaced: false, startingPreview: undefined, connection: "idle", capabilities: undefined,
             page: LOBBY, selected: undefined, selectedUnavailable: false, shelves: [], shelvesLoading: false, shelvesError: undefined,
             seasons: undefined, episodes: undefined, browseLoading: false, browseError: undefined, votes: new RoomVotes(), pickerPurpose: "select", search: emptySearch(),
             memberState: undefined, memberStateLoading: false, memberStateError: undefined,
@@ -204,12 +219,34 @@ export class WatchPartyHub {
         return this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), mode, signal));
     }
 
+    /** WatchPartySession.create(selection:preview:): hold on the title's artwork while creating and staging. */
+    async createWithChoice(choice: MediaChoice): Promise<void> {
+        if (this.state.busy || this.stopped || this.state.room !== undefined) return;
+        this.state.startingPreview = choice.lobby;
+        try {
+            const entered = await this.enter(signal => this.api.createRoom(this.options.uuid?.() ?? uuidV4(), "host_pick", signal), { keepPreview: true });
+            if (entered && !this.stopped) await this.stage(choice);
+        } finally {
+            if (!this.stopped && this.state.startingPreview !== undefined) {
+                this.state.startingPreview = undefined;
+                this.notify();
+            }
+        }
+    }
+
     async join(invitation: string): Promise<void> {
         const value = invitation.trim();
         if (value === "") { this.fail({ key: "watchParty.error.codeRequired" }); return; }
         // The native contract joins by code only; invitation links come with the lobby work.
         if (value.includes("://")) { this.fail({ key: "watchParty.error.invalidInvitation" }); return; }
         await this.enter(signal => this.api.joinByCode(value, signal));
+    }
+
+    /** WatchPartySession.rejoinRecent: rejoin the remembered room by its code; clear it if the server says it is gone. */
+    async rejoinRecent(): Promise<void> {
+        const recent = this.state.recentRoom;
+        if (recent === undefined || this.state.busy || this.stopped) return;
+        await this.enter(signal => this.api.joinByCode(recent.code, signal), { expectedRoomId: recent.roomId });
     }
 
     // --- Lobby state ---
@@ -381,7 +418,10 @@ export class WatchPartyHub {
         const before = this.state.selected;
         const picked = this.mutate(
             signal => staged ? this.api.stageSelection(room.roomId, selection, signal) : this.api.selectItem(room.roomId, selection, signal),
-            () => { this.state.selected = choice.lobby; this.state.selectedUnavailable = false; },
+            () => {
+                this.state.selected = choice.lobby;
+                this.state.selectedUnavailable = false;
+            },
             // A live selection whose answer is lost has taken effect when the room holds the title at a higher selection revision:
             // the same title at the same revision may be the one that was already playing.
             staged ? undefined : now => now.selectedContentId === choice.contentId && now.selectionRevision > room.selectionRevision,
@@ -389,6 +429,7 @@ export class WatchPartyHub {
         const done = await picked;
         if (!done && !this.stopped && this.state.selected?.contentId === choice.contentId) this.state.selected = before;
         if (done) {
+            if (this.state.recentRoom?.roomId === room.roomId) this.state.recentRoom = { ...this.state.recentRoom, selectedTitle: choice.lobby.title() };
             this.show(LOBBY);
             // Choosing for a party that is already playing starts it for everyone, as the button says.
             if (!staged && !this.ending) this.resume();
@@ -595,6 +636,8 @@ export class WatchPartyHub {
     leave(): void {
         this.reset();
         this.state.error = undefined;
+        this.state.wasReplaced = false;
+        this.state.startingPreview = undefined;
         this.options.onLeave?.();
         this.notify();
     }
@@ -604,6 +647,9 @@ export class WatchPartyHub {
         this.stopped = true;
         this.controller.abort();
         this.reset();
+        this.state.recentRoom = undefined;
+        this.state.wasReplaced = false;
+        this.state.startingPreview = undefined;
     }
 
     private requireRoom(): Room {
@@ -647,6 +693,12 @@ export class WatchPartyHub {
         if (!this.rooms.accept(room, requestReceipt)) return false;
         if (room.phase === "ended") { this.terminate("ended"); return false; }
         this.state.room = room;
+        this.state.wasReplaced = false;
+        this.state.recentRoom = {
+            roomId: room.roomId,
+            code: room.code,
+            selectedTitle: this.state.selected !== undefined && this.state.selected.contentId === room.selectedContentId ? this.state.selected.title() : (this.state.recentRoom?.roomId === room.roomId && room.selectedContentId === previous?.selectedContentId ? this.state.recentRoom.selectedTitle : undefined),
+        };
         if (room.selectionMode === "vote" && previous !== undefined && previous.selectionMode !== "vote") this.refreshSuggestions();
         const id = room.selectedContentId;
         if (id === previous?.selectedContentId && (id === undefined || this.state.selected !== undefined)) return true;
@@ -660,6 +712,9 @@ export class WatchPartyHub {
     /** WatchPartySession.terminate: the room is over for this viewer, who returns to the entry with the reason. */
     private terminate(reason: RoomEnd): void {
         this.reset();
+        this.state.startingPreview = undefined;
+        this.state.wasReplaced = reason === "replaced";
+        if (reason !== "replaced") this.state.recentRoom = undefined;
         this.state.error = { key: END_KEY[reason] };
         this.options.onLeave?.();
         this.notify();
@@ -714,6 +769,7 @@ export class WatchPartyHub {
             const item = lobbyItemFromDetail(await this.api.item(contentId, this.controller.signal));
             if (this.stopped || this.state.room?.roomId !== roomId || this.state.room.selectedContentId !== contentId) return;
             this.state.selected = item;
+            if (this.state.recentRoom?.roomId === roomId) this.state.recentRoom = { ...this.state.recentRoom, selectedTitle: item.title() };
         } catch (error) {
             // The title's details are optional, but a refusal means this profile cannot see it and playback will be refused too.
             if (this.stopped || this.state.room?.roomId !== roomId || this.state.room.selectedContentId !== contentId || !isRefusal(error)) return;
@@ -1029,9 +1085,10 @@ export class WatchPartyHub {
     }
 
     /** WatchPartySession.enter: support is read again before every create or join. Returns true only when this call entered a room. */
-    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>): Promise<boolean> {
+    private async enter(operation: (signal: AbortSignal) => Promise<RoomAccess>, options: { readonly expectedRoomId?: string; readonly keepPreview?: boolean } = {}): Promise<boolean> {
         if (this.state.busy || this.stopped) return false;
         this.state.busy = true;
+        if (options.keepPreview !== true) this.state.startingPreview = undefined;
         this.state.error = undefined;
         this.notify();
         try {
@@ -1047,11 +1104,21 @@ export class WatchPartyHub {
                     }
                 }
             } catch (error) {
-                if (!this.stopped) this.state.error = this.describe(error);
+                if (!this.stopped) {
+                    if (options.expectedRoomId !== undefined && isTerminalRejoinError(error)) {
+                        this.state.recentRoom = undefined;
+                        this.state.wasReplaced = false;
+                    }
+                    this.state.error = this.describe(error);
+                }
             }
             return false;
         } finally {
-            if (!this.stopped) { this.state.busy = false; this.notify(); }
+            if (!this.stopped) {
+                this.state.busy = false;
+                if (options.keepPreview !== true || this.state.room === undefined) this.state.startingPreview = undefined;
+                this.notify();
+            }
         }
     }
 }

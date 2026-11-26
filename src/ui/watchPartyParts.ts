@@ -28,6 +28,7 @@ export function icon(path: string): SVGSVGElement {
 }
 
 export const plusIcon = (): SVGSVGElement => icon("M12 3v18M3 12h18");
+export const reloadIcon = (): SVGSVGElement => icon("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5");
 export const playIcon = (): SVGSVGElement => { const svg = icon("M7 4.5v15l12-7.5z"); svg.classList.add("watch-party-icon-solid"); return svg; };
 export const checkIcon = (): SVGSVGElement => icon("M5 12.5 10 17.5 19 7");
 export const closeIcon = (): SVGSVGElement => icon("M6 6 18 18M18 6 6 18");
