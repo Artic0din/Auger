@@ -2559,6 +2559,7 @@ journey("Home hero waits on detail backdrop before falling back to a framed post
         assert.ok(Math.abs(cover.width - 380 * 2 / 3) < 0.5, `cover width ${cover.width}`);
         assert.equal(cover.height, 380);
         assert.equal(cover.radius, "14px");
+        assert.match(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-image").getAttribute("src") ?? "", /\/art\/detail-poster-m5\.svg$/);
         assert.equal(detailReads(tv).slice(before).filter(id => id === "movie:m0005").length, 1, "exactly one detail read after rest/row change");
     } finally { heldDetailRead?.release(); heldDetailRead = undefined; }
 }, catalog => {

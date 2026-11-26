@@ -415,7 +415,7 @@ export class Skyline {
         const shown = this.shown;
         if (shown === undefined || this.previewId !== `${shown.row}:${shown.card.id}`) return;
         this.draw(shown.card, shown.row, shown.continuing, shown.featured);
-        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, false);
+        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, false, false);
     }
 
     /** Fills in what a detail read added for the shown title, in place, when its answer lands. */
@@ -424,7 +424,7 @@ export class Skyline {
         if (shown === undefined || shown.card.id !== id) return;
         const layer = this.marquee.querySelector<HTMLElement>(".skyline-marquee-layer:not(.skyline-outgoing)");
         if (layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
-        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, true);
+        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, true, false);
     }
 
     /** The shown language changed: the marquee's meta, detail line and chips are written again for the title on show. */
@@ -562,7 +562,7 @@ export class Skyline {
      * the same artwork stays put; new artwork fades in over the old with easeInOut(0.24), except the first. The art is
      * AsyncImageView's default `.surface`: the backdrop ThumbHash until the image decodes (TVRootHeroBackdrop.swift:181-186).
      */
-    private showBackdrop(card: Card, continuing: boolean, animate: boolean): void {
+    private showBackdrop(card: Card, continuing: boolean, animate: boolean, retryFailed = true): void {
         const settings = this.spoilers();
         const enrichment = this.heroEnrichment(card, continuing);
         const detailArt = enrichment.artwork;
@@ -614,8 +614,8 @@ export class Skyline {
 
         // The direction is part of what is drawn: the placeholder bitmap fades toward the text side.
         const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, coverAspect ?? null, documentIsRightToLeft()]);
-        // A failed image is not kept: the next preview of the same artwork asks for it again.
-        if (key === this.artKey && this.art?.dataset.failed === undefined) return;
+        // A failed image is not kept across previews, but in-place detail/repaint updates only swap when the resolved artwork changes.
+        if (key === this.artKey && (!retryFailed || this.art?.dataset.failed === undefined)) return;
         const layer = el("div", "skyline-marquee-art");
         layer.setAttribute("aria-hidden", "true");
         const outgoing = this.art;
