@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.2] - 2026-11-26
+
+### Fixes
+
+- **Lists**: Port Watchlist, Favorites and History from the tvOS source ([#938](https://github.com/Artic0din/Auger-Tizen/pull/938), [`0e2126b5`](https://github.com/Artic0din/Auger-Tizen/commit/0e2126b5))
+
 ## [0.14.1] - 2026-11-26
 
 ### Fixes
