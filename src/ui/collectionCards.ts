@@ -60,9 +60,9 @@ export function collectionSpoken(face: CollectionFace): string {
     return face.itemCount > 0 ? translate("library.collectionCard.spokenCount", { count: face.itemCount, count_text: groupedCount(face.itemCount), name: face.title }) : translate("library.collectionCard.spoken", { name: face.title });
 }
 
-/** What the Skyline hero previews while a collection card is focused: the backdrop when the server sent one, else the poster. */
-export function collectionPreview(card: CollectionFace & { readonly backdropUrl?: string | undefined }): Card {
-    return { id: card.id, type: "movie", title: card.title, overview: translate("library.titleCount", { count: card.itemCount, count_text: groupedCount(card.itemCount) }), backdropUrl: card.backdropUrl ?? card.posterUrl, posterUrl: card.posterUrl, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined };
+/** What the Skyline hero previews while a collection card is focused: the backdrop when the server sent one; otherwise the poster becomes a framed cover. */
+export function collectionPreview(card: CollectionFace & { readonly backdropUrl?: string | undefined; readonly backdropThumbhash?: string | undefined; readonly posterThumbhash?: string | undefined }): Card {
+    return { id: card.id, type: "movie", title: card.title, overview: translate("library.titleCount", { count: card.itemCount, count_text: groupedCount(card.itemCount) }), backdropUrl: card.backdropUrl, backdropThumbhash: card.backdropThumbhash, posterUrl: card.posterUrl, posterThumbhash: card.posterThumbhash, year: undefined, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined };
 }
 
 /**

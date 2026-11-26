@@ -446,10 +446,18 @@ test("the For You menu is 460 wide, centred under its tab, with filled icons, sc
         }
         const scale = 0.9685;
         const label = await panel.locator('[data-focus="watchlist"] .skyline-menu-label').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
-        const header = await panel.locator(".skyline-menu-header").evaluate(node => ({ size: parseFloat(getComputedStyle(node).fontSize), tracking: parseFloat(getComputedStyle(node).letterSpacing) }));
+        const header = await panel.locator(".skyline-menu-header").evaluate(node => ({ font: getComputedStyle(node).fontFamily, size: parseFloat(getComputedStyle(node).fontSize), tracking: parseFloat(getComputedStyle(node).letterSpacing) }));
         assert.ok(Math.abs(label - 22 * scale) < 0.01, `row label ${label}`);
+        assert.match(header.font, /Roboto Mono/, "TVTopMenuBar panel header uses --silo-mono instead of generic monospace");
         assert.ok(Math.abs(header.size - 14 * scale) < 0.01, `header ${header.size}`);
         assert.ok(Math.abs(header.tracking - 14 * scale * 0.26) < 0.01, `header tracking ${header.tracking}`);
+        await tv.page.locator('[data-focus="movies"]').focus();
+        await tv.remote(40);
+        await tv.page.locator('.skyline-selector [data-focus="section:browse"]').click();
+        await tv.page.locator(".browse.library-browse").waitFor();
+        await tab.focus();
+        await tv.remote(40);
+        assert.match(await panel.locator(".skyline-menu-header").evaluate(node => getComputedStyle(node).fontFamily), /Roboto Mono/, "panel header keeps --silo-mono over Library Browse");
     } finally { await tv.page.context().close(); }
 });
 

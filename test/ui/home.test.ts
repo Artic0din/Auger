@@ -2528,3 +2528,131 @@ journey("Hero title art scales to fit and centres in Apple's home logo slot", as
         return { ...reply, body: { ...data, sections: data.sections.map((row, rowIndex) => rowIndex > 0 ? row : { ...row, items: row.items.map((item, index) => index === 0 ? { ...item, logo_url: "/art/wide-logo.svg" } : item) }) } };
     };
 });
+
+let heldDetailRead: { release(): void } | undefined;
+journey("Home hero waits on detail backdrop before falling back to a framed poster cover at Apple's geometry", async tv => {
+    try {
+        // movie:m0004 has a section backdrop initially; m0005 has none in section payload so its hero waits until detail answers.
+        await tv.page.locator('[data-section="recent/12"] [data-focus="movie:m0002"]').focus();
+        await tv.eventually(async () => (await tv.page.locator(".skyline-title").first().innerText()) === "Movie 0002", "focused m0002");
+        await tv.jump(200);
+        // No flash of poster cover while the held detail read for movie:m0002 is in flight.
+        assert.equal(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-hero-cover").count(), 0);
+        assert.equal(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-backdrop").count(), 0);
+
+        heldDetailRead?.release();
+        heldDetailRead = undefined;
+        await tv.eventually(async () => /\/art\/detail-m2\.svg$/.test(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-backdrop").getAttribute("src") ?? ""), "detail backdrop shown once loaded");
+
+        // movie:m0005 has neither section backdrop nor detail backdrop -> renders framed cover using poster artwork.
+        const before = detailReads(tv).length;
+        await tv.page.locator('[data-section="because/opaque"] [data-focus="movie:m0005"]').focus();
+        assert.equal(detailReads(tv).length, before, "plain focus move triggers no extra detail read");
+        await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame").count() === 1, "framed cover renders once detail confirms no backdrop");
+        const cover = await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame").evaluate(node => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return { top: rect.top, right: rect.right, width: rect.width, height: rect.height, radius: style.borderRadius };
+        });
+        assert.equal(cover.top, 170);
+        assert.ok(Math.abs(cover.right - (1920 - 150)) < 0.5, `cover trailing edge ${cover.right}`);
+        assert.ok(Math.abs(cover.width - 380 * 2 / 3) < 0.5, `cover width ${cover.width}`);
+        assert.equal(cover.height, 380);
+        assert.equal(cover.radius, "14px");
+        assert.match(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-image").getAttribute("src") ?? "", /\/art\/detail-poster-m5\.svg$/);
+        assert.equal(detailReads(tv).slice(before).filter(id => id === "movie:m0005").length, 1, "exactly one detail read after rest/row change");
+    } finally { heldDetailRead?.release(); heldDetailRead = undefined; }
+}, catalog => {
+    enrichHome(catalog, {
+        "movie:m0004": { backdrop_url: "/art/bd-m4.svg" },
+        "movie:m0002": { backdrop_url: undefined, poster_url: "/art/poster-m2.svg" },
+        "movie:m0005": { backdrop_url: undefined, poster_url: "/art/poster-m5.svg", poster_thumbhash: ART_HASH },
+    });
+    enrichDetails(catalog, {
+        "movie:m0002": { backdrop_url: "/art/detail-m2.svg", backdrop_thumbhash: ART_HASH },
+        "movie:m0005": { backdrop_url: undefined, poster_url: "/art/detail-poster-m5.svg" },
+    });
+}, undefined, { beforeMount: tv => {
+    heldDetailRead = tv.fake.hold("/catalog/items/movie%3Am0002");
+} });
+
+journey("Home collection cards use 16 px caption spacing, centred captions, and frame their poster in the hero", async tv => {
+    const card = tv.page.locator('[data-section="franchises"] [data-focus="collection:library:c1"]');
+    await card.waitFor();
+    const styles = await card.evaluate(node => {
+        const title = node.querySelector(".browse-card-title") as HTMLElement;
+        const subtitle = node.querySelector(".browse-card-subtitle") as HTMLElement;
+        const art = node.querySelector(".browse-art") as HTMLElement;
+        return {
+            gap: getComputedStyle(node).getPropertyValue("--card-caption-gap").trim(),
+            titleMarginTop: parseFloat(getComputedStyle(title).marginTop),
+            titleAlign: getComputedStyle(title).textAlign,
+            subtitleAlign: getComputedStyle(subtitle).textAlign,
+            actualGap: title.getBoundingClientRect().top - art.getBoundingClientRect().bottom,
+        };
+    });
+    assert.equal(styles.gap, "16px");
+    assert.equal(styles.titleMarginTop, 16);
+    assert.equal(styles.titleAlign, "center");
+    assert.equal(styles.subtitleAlign, "center");
+    assert.ok(Math.abs(styles.actualGap - 16) < 0.5, `visual gap ${styles.actualGap}`);
+
+    await card.focus();
+    await tv.eventually(async () => /\/art\/coll-c1\.svg$/.test(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-image").getAttribute("src") ?? ""), "collection without backdrop shows framed cover");
+}, catalog => {
+    catalog.households.get("p-owner")?.sections.push({
+        id: "franchises", sectionType: "collection_posters", title: "Franchises Row", items: [],
+        collections: [{ id: "c1", source: "library", title: "Franchises", poster_url: "/art/coll-c1.svg", item_count: 6, library_id: "12" }],
+    });
+});
+
+journey("failed detail lookup, episode series backfill, audiobook square cover, and RTL cover geometry", async tv => {
+    // 1. Episode with neither series_backdrop_url nor card backdrop waits for detail series_backdrop_url.
+    await tv.page.locator('[data-section="resume/opaque"] [data-focus="episode:s1e12"]').focus();
+    await tv.eventually(async () => /\/art\/ep-series\.svg$/.test(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-backdrop").getAttribute("src") ?? ""), "episode resolves detail series backdrop");
+
+    // 2. Movie whose detail request returns 500 falls back to its poster as a framed cover instead of staying blank.
+    await tv.page.locator('[data-section="because/opaque"] [data-focus="movie:m0005"]').focus();
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame").count() === 1, "failed detail read falls back to framed cover");
+    assert.match(await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-image").getAttribute("src") ?? "", /\/art\/m5-poster\.svg$/);
+
+    // 3. Audiobook without backdrop draws a square (380x380) framed cover, and RTL flips it to the left edge without masking .hero-art-missing.
+    await tv.page.locator('[data-section="audio/row"] [data-focus="audiobook:ab1"]').focus();
+    await tv.eventually(async () => await tv.page.locator('.skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame[data-aspect="square"]').count() === 1, "square audiobook cover");
+    const squareBox = await tv.page.locator('.skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame').evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    });
+    assert.deepEqual(squareBox, { width: 380, height: 380 });
+
+    await tv.page.evaluate(() => { document.documentElement.dir = "rtl"; });
+    await tv.page.locator('[data-focus="collection:library:c-missing"]').focus();
+    await tv.eventually(async () => await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame .hero-art-missing").count() === 1, "missing cover renders film mark");
+    const rtlMissing = await tv.page.locator(".skyline-marquee-art:not(.skyline-outgoing) .skyline-cover-frame").evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        const missing = node.querySelector(".hero-art-missing") as HTMLElement;
+        return { left: rect.left, mask: getComputedStyle(missing).maskImage };
+    });
+    assert.equal(rtlMissing.left, 150, "RTL framed cover anchors 150 px from left edge");
+    assert.equal(rtlMissing.mask, "none", "RTL framed cover missing-art mark stays unmasked");
+}, catalog => {
+    catalog.households.get("p-owner")?.sections.push(
+        { id: "audio/row", sectionType: "recently_added", title: "Audiobooks", items: ["audiobook:ab1"] },
+        { id: "coll/row", sectionType: "collection_posters", title: "Missing Art Collections", items: [], collections: [{ id: "c-missing", source: "library", title: "Missing", poster_url: "/art/404-cover.svg", item_count: 2, library_id: "12" }] },
+    );
+    catalog.titles.set("audiobook:ab1", { id: "audiobook:ab1", type: "audiobook", title: "Book 1", libraryId: "12", year: 2024, poster: "/art/ab1.svg" });
+    enrichHome(catalog, {
+        "episode:s1e12": { series_backdrop_url: undefined, backdrop_url: undefined, poster_url: undefined },
+        "movie:m0005": { backdrop_url: undefined, poster_url: "/art/m5-poster.svg" },
+    });
+    enrichDetails(catalog, {
+        "episode:s1e12": { series_backdrop_url: "/art/ep-series.svg", backdrop_url: undefined },
+    });
+    const route = catalog.route.bind(catalog);
+    catalog.route = (method, path, profile, body) => {
+        if (path.startsWith("/catalog/items/movie%3Am0005")) return problem(500, "internal", "Unavailable");
+        return route(method, path, profile, body);
+    };
+}, undefined, { beforeMount: tv => {
+    void tv.page.route("**/art/404-cover.svg", route => route.abort());
+} });

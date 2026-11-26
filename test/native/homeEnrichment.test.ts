@@ -284,8 +284,82 @@ test("Continue Watching shows the exact last-played file, never a guess", async 
     assert.equal(enrichment.savedFile(titles[3] ?? card("x")), undefined, "no last file keeps the row's summary");
 });
 
-test("the marquee detail decoder takes the pinned item-detail fixture", () => {
-    const detail = decodeMarqueeDetail(fixture("get_catalog_item_ok"));
+test("the marquee detail decoder takes the pinned item-detail fixture and optional hero artwork fields", () => {
+    const raw = fixture("get_catalog_item_ok");
+    const detail = decodeMarqueeDetail({
+        ...raw,
+        backdrop_url: "/art/detail-backdrop.jpg",
+        backdrop_thumbhash: "bd-hash",
+        series_backdrop_url: "/art/series-backdrop.jpg",
+        backdrop_is_episode_still: false,
+        poster_url: "/art/detail-poster.jpg",
+        poster_thumbhash: "poster-hash",
+        poster_is_episode_still: false,
+    });
     assert.equal(typeof detail.id, "string");
     assert.ok(detail.versions.every(file => typeof file.fileId === "string"));
+    assert.equal(detail.backdropUrl, "/art/detail-backdrop.jpg");
+    assert.equal(detail.backdropThumbhash, "bd-hash");
+    assert.equal(detail.seriesBackdropUrl, "/art/series-backdrop.jpg");
+    assert.equal(detail.backdropIsEpisodeStill, false);
+    assert.equal(detail.posterUrl, "/art/detail-poster.jpg");
+    assert.equal(detail.posterThumbhash, "poster-hash");
+    assert.equal(detail.posterIsEpisodeStill, false);
+});
+
+test("hero enrichment state transitions from notStarted through loading to completed or failed without stalling the hero", async () => {
+    const server = new DetailServer();
+    server.details.set("episode:e1", {
+        series_backdrop_url: "/art/series-backdrop.jpg",
+        backdrop_url: "/art/still.jpg",
+        backdrop_is_episode_still: true,
+        poster_url: "/art/episode-still.jpg",
+        poster_thumbhash: "still-hash",
+        poster_is_episode_still: true,
+    });
+    const landed: string[] = [];
+    let failReads = false;
+    const read: typeof server.read = (spec, signal) => failReads
+        ? Promise.reject(new Error("unavailable"))
+        : server.read(spec, signal);
+    const enrichment = new HomeEnrichment(read, id => landed.push(id), () => undefined, (fn, ms) => clock.schedule(fn, ms));
+    const clock = new ManualClock();
+    const episode = card("episode:e1", { type: "episode" });
+    const missing = card("movie:missing");
+
+    assert.equal(enrichment.enrichmentState(episode, false), "notStarted");
+    enrichment.rest(episode, false);
+    assert.equal(enrichment.enrichmentState(episode, false), "loading");
+    await clock.advance(MARQUEE_REST_MILLISECONDS);
+    assert.equal(enrichment.enrichmentState(episode, false), "loading");
+    await server.drain();
+    assert.equal(enrichment.enrichmentState(episode, false), "completed");
+    assert.deepEqual(landed, ["episode:e1"]);
+    assert.deepEqual(enrichment.artwork(episode), {
+        backdropUrl: "/art/series-backdrop.jpg",
+        backdropThumbhash: undefined,
+        backdropIsEpisodeStill: false,
+        posterUrl: undefined,
+        posterThumbhash: undefined,
+    });
+
+    failReads = true;
+    enrichment.rest(missing, false);
+    assert.equal(enrichment.enrichmentState(missing, false), "loading");
+    await clock.advance(MARQUEE_REST_MILLISECONDS);
+    await settle();
+    assert.equal(enrichment.enrichmentState(missing, false), "failed");
+    assert.deepEqual(landed, ["episode:e1", "movie:missing"], "a failed detail read still wakes the focused marquee so its fallback cover can draw");
+
+    // Coalescing check: an unrevisioned job in flight must not shadow a Continue Watching revision read.
+    failReads = false;
+    const cwServer = new DetailServer();
+    cwServer.details.set("movie:cw", { user_data: { played: false, last_file_id: "43" } });
+    const cwEnrichment = new HomeEnrichment(cwServer.read, () => undefined, () => undefined, (fn, ms) => clock.schedule(fn, ms));
+    cwEnrichment.rest(card("movie:cw"), false);
+    await clock.advance(MARQUEE_REST_MILLISECONDS);
+    const cwCard = card("movie:cw", { progressUpdatedAt: "rev-2" });
+    cwEnrichment.present([{ cards: [cwCard], continuing: true }], false);
+    await cwServer.drain();
+    assert.equal(cwEnrichment.enrichmentState(cwCard, true), "completed");
 });
