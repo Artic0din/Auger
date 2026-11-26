@@ -52,9 +52,8 @@ export function deviceTimezone(): string {
         return zone;
     } catch { throw new CalendarTimezoneError("Could not read this TV’s timezone. Check its date and time settings, then try again."); }
 }
-export function calendarDestination(event: CalendarEvent): Destination | undefined {
-    if (event.type !== "movie" && event.type !== "episode" && event.type !== "season_premiere") return undefined;
-    const series = event.type !== "movie" && event.seriesId?.trim() ? event.seriesId : undefined;
+export function calendarDestination(event: CalendarEvent): Destination {
+    const series = (event.type === "episode" || event.type === "season_premiere") && event.seriesId?.trim() ? event.seriesId : undefined;
     return { kind: "item", id: series ?? event.contentId, title: event.title,
         ...(series === undefined ? {} : { seriesContext: { seasonNumber: event.seasonNumber, episodeId: event.type === "episode" ? event.contentId : undefined } }) };
 }
@@ -79,7 +78,7 @@ export function eventTime(event: CalendarEvent, timezone: string): string | unde
     const local = new Date(2000, 0, 1, hour, minute);
     return shortTime(local);
 }
-export function calendarDateLabel(date: string, weekday: "short" | "long"): string {
-    try { return new Intl.DateTimeFormat(shownLocale(), { weekday, month: "short", day: "numeric" }).format(dayDate(date)); }
+export function calendarDateLabel(date: string, weekday: "short" | "long", month: "short" | "long" = "short"): string {
+    try { return new Intl.DateTimeFormat(shownLocale(), { weekday, month, day: "numeric" }).format(dayDate(date)); }
     catch { throw new CalendarTimezoneError("Could not format this TV’s dates. Try again."); }
 }

@@ -1,14 +1,14 @@
-// Apple's card long-press menu: the tvOS `.contextMenu` of MediaCard and EpisodeThumbCard (silo-apple 85679e7,
-// Components/MediaCard.swift:570-620, EpisodeThumbCard.swift:366-416). Rows come from the card's own row data, in
-// MediaStateMenuItems order: Play or Resume, the watched, Favorites and Watchlist rows, then the destructive Remove.
-// Choosing a row closes the menu and the change runs behind it; a failure shows HomeView's "Couldn't Update Item" alert.
-// Only Remove, the alert and a season pill's rows read from the catalog: Apple builds the other labels (Play, Resume, Go to
-// ..., Mark as Watched, Add to Favorites and Watchlist) as plain strings, so they show English in every language.
+// Apple's card long-press menu: the tvOS `.contextMenu` of MediaCard, EpisodeThumbCard, and TVEpisodeRail (silo-apple
+// d74a30aa0a09042160e0d942b9a6b680e304b690, Components/MediaCard.swift:122-151,570-620; EpisodeThumbCard.swift:366-416;
+// tvOS/Screens/Detail/TVEpisodeRail.swift:614-688). Rows follow MediaStateMenuItems order, while episode rails show Watch
+// state (detail.more.markEpisode*) then Favorites and Watchlist. Failures show home.updateFailed on Home and
+// MediaActionFeedback ("Couldn't Update Item" / "Your change wasn't saved. Please try again.") elsewhere.
 
 import { operations } from "../api/operations.ts";
 import { detailOperations, type HomeDismissal } from "../api/detailOperations.ts";
 import type { Card } from "../contracts/v2/catalog.ts";
 import type { NativeSession } from "../session/session.ts";
+import { markEnglishOnly } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { remoteKey } from "./keys.ts";
@@ -27,8 +27,12 @@ export interface CardMenuOptions {
     readonly play?: (() => void) | undefined;
     /** Home's Continue Watching and Next Up rows offer Remove (SectionRow.offersHomeDismissal). */
     readonly dismissal?: HomeDismissal | undefined;
-    /** Home injects its watched handler into every row, so its cards always get the watched row. */
+    /** Home injects its watched handler into every row and localizes its update failure alert (`home.updateFailed`). */
     readonly home?: boolean | undefined;
+    /** Non-Home SectionRow shelf (For You, Library Recommended): opens from row state without reading item, uses generic alert. */
+    readonly sectionRow?: boolean | undefined;
+    /** Series/season TVEpisodeRail card: localized watched, favorite, and watchlist rows only (silo-apple#1253). */
+    readonly episodeRail?: boolean | undefined;
     /** A wide still in a thumbnail row: Apple draws it as EpisodeThumbCard, whose menu has no Not Interested row. */
     readonly wide?: boolean | undefined;
 }
@@ -44,11 +48,6 @@ export interface CardActionsHost {
     readonly opened: () => void;
     /** The menu or alert closed; return focus. */
     readonly closed: () => void;
-    /**
-     * Opens an episode's Details, the only way there from an episode rail. Apple's Home rows have no detail row
-     * (SectionRow passes `onOpenContextDetail: nil`), so Home cards never show it.
-     */
-    readonly information?: (card: MenuCard) => void;
     /** A personal change from Details is still on its way; the menu's changes wait for it, as they did before. */
     readonly pendingElsewhere?: () => boolean;
     /** Whether an alert may take the screen now: not during playback, Settings or another menu. A refused alert waits. */
@@ -61,14 +60,16 @@ type Row = { readonly key: string; readonly label: string; readonly icon: keyof 
 const ICONS = {
     "play.fill": '<path d="M7 4.5v15l12.5-7.5Z" fill="currentColor"/>',
     "checkmark.circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m7.8 12.3 2.9 2.9 5.6-6.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    "checkmark.circle.fill": '<circle cx="12" cy="12" r="9.5" fill="currentColor"/><path d="m7.8 12.3 2.9 2.9 5.6-6.1" fill="none" stroke="var(--icon-ink, #000)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     "circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
     "heart": '<path d="M12 20.3S3.5 15.1 3.5 9.1A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 8.5 2.5c0 6-8.5 11.2-8.5 11.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+    "heart.fill": '<path d="M12 20.3S3.5 15.1 3.5 9.1A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 8.5 2.5c0 6-8.5 11.2-8.5 11.2Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
     "heart.slash": '<path d="M12 20.3S3.5 15.1 3.5 9.1A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 8.5 2.5c0 6-8.5 11.2-8.5 11.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m3.5 3.5 17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
     "bookmark": '<path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+    "bookmark.fill": '<path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9Z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
     "bookmark.slash": '<path d="M6.5 3.5h11v17L12 16.6l-5.5 3.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m3.5 3.5 17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
     "hand.thumbsup": '<path d="M3.5 10.5h4v9.5h-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 10.5 11 4.2c.5-.9 1.6-1.1 2.3-.5.5.4.7 1 .6 1.6l-.6 3.7h5c1.2 0 2.1 1.1 1.8 2.3l-1.3 6c-.2.9-1 1.6-2 1.6H7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>',
     "hand.thumbsdown": '<g transform="rotate(180 12 12)"><path d="M3.5 10.5h4v9.5h-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7.5 10.5 11 4.2c.5-.9 1.6-1.1 2.3-.5.5.4.7 1 .6 1.6l-.6 3.7h5c1.2 0 2.1 1.1 1.8 2.3l-1.3 6c-.2.9-1 1.6-2 1.6H7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></g>',
-    "info.circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.25" fill="currentColor"/>',
     "xmark.circle": '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.6 8.6 6.8 6.8m0-6.8-6.8 6.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 } as const;
 
@@ -93,7 +94,7 @@ export class CardActions {
     /** The card drawn lifted while its menu is open, and its art's rest box measured before the lift. */
     private lifted: { readonly card: HTMLElement; readonly rest: Box } | undefined;
     /** A failure that arrived while the alert could not show; it shows once the screen is free. */
-    private deferredAlert = false;
+    private deferredAlert: { readonly home: boolean } | undefined;
     private reading: AbortController | undefined;
     /** The open menu, so a change landing behind it can redraw its rows. */
     private shown: { readonly card: MenuCard; readonly options: CardMenuOptions; readonly anchor: HTMLElement | undefined; readonly source: MenuCard } | undefined;
@@ -136,7 +137,7 @@ export class CardActions {
         const known = card.played !== undefined && card.favorite !== undefined && card.watchlist !== undefined;
         const source = card;
         card = { ...card, ...this.accepted.get(source) };
-        if (known || options.home === true) { this.show(card, options, anchor, source); return; }
+        if (known || options.home === true || options.sectionRow === true) { this.show(card, options, anchor, source); return; }
         // Seasons, episode rails and the calendar hold no list membership; read it once, then open complete.
         const controller = new AbortController();
         this.reading = controller;
@@ -158,21 +159,30 @@ export class CardActions {
         this.session.call({ ...operations.getCatalogItem(card.id), profileScoped: true, signal: controller.signal }).then(detail => {
             if (this.reading !== controller) return;
             settle();
-            if (detail.id !== card.id || detail.type !== card.type) { this.alert(); return; }
+            if (detail.id !== card.id || detail.type !== card.type) {
+                this.alert(false);
+                if (this.deferredAlert !== undefined) this.host.closed();
+                return;
+            }
             this.show({ ...card, played: detail.played, favorite: detail.favorite, watchlist: detail.watchlist, notInterested: detail.notInterested }, options, anchor, source);
         }, () => {
             if (this.reading !== controller) return;
             settle();
-            this.alert();
+            this.alert(false);
+            if (this.deferredAlert !== undefined) this.host.closed();
         });
     }
 
     private show(card: MenuCard, options: CardMenuOptions, anchor: HTMLElement | undefined, source: MenuCard): void {
         const rows = this.menuRows(card, options, source);
+        // Apple attaches no menu to a card without actions.
+        if (rows.length === 0) {
+            if (this.active || this.listening) this.dismiss();
+            this.host.closed();
+            return;
+        }
         // While the menu is shown, a Not interested write for its card being answered, from here or from the page, draws it again.
         this.stopNotInterested ??= this.notInterested.subscribe(id => { if (id === this.shown?.card.id) this.refresh(); });
-        // Apple attaches no menu to a card without actions.
-        if (rows.length === 0) { this.host.closed(); return; }
         const busy = this.writes.has(card.id) || this.notInterested.pending(card.id) !== undefined || this.host.pendingElsewhere?.() === true;
         const scrim = el("div", "card-actions-scrim card-menu-scrim");
         for (const type of ["click", "contextmenu"]) scrim.addEventListener(type, event => {
@@ -222,9 +232,10 @@ export class CardActions {
 
     /** Shows a failure alert that had to wait, once nothing else owns the screen. */
     showDeferredAlert(): void {
-        if (!this.deferredAlert || this.active || this.host.canAlert?.() === false) return;
-        this.deferredAlert = false;
-        this.alert();
+        if (this.deferredAlert === undefined || this.active || this.host.canAlert?.() === false) return;
+        const { home } = this.deferredAlert;
+        this.deferredAlert = undefined;
+        this.alert(home);
     }
 
     /** A change for the open menu's card landed: show its new state with the rows enabled, keeping the focused row. */
@@ -249,46 +260,60 @@ export class CardActions {
 
     private menuRows(card: MenuCard, options: CardMenuOptions, source: MenuCard): Row[] {
         const rows: Row[] = [];
+        const home = options.home === true;
         // TVSeriesDetailView.swift:632-643: a season pill's menu holds only Mark Season Watched or Unwatched.
         if (card.seasonPill === true) {
             if (card.played === undefined) return rows;
             const watched = card.played;
-            rows.push({ change: true, key: "watched", label: translate(watched ? "detail.more.markSeasonUnwatched" : "detail.more.markSeasonWatched"), icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source) });
+            rows.push({ change: true, key: "watched", label: translate(watched ? "detail.more.markSeasonUnwatched" : "detail.more.markSeasonWatched"), icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source, false) });
+            return rows;
+        }
+        // TVEpisodeRail.swift:614-688 (post-silo-apple#1253): Watch state then Favorites and Watchlist alone.
+        if (options.episodeRail === true) {
+            if (card.played !== undefined) {
+                const watched = card.played;
+                rows.push({ change: true, key: "watched", label: translate(watched ? "detail.more.markEpisodeUnwatched" : "detail.more.markEpisodeWatched"), icon: watched ? "checkmark.circle.fill" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source, false) });
+            }
+            if (card.favorite !== undefined) {
+                const favorite = card.favorite;
+                rows.push({ change: true, key: "favorites", label: translate(favorite ? "detail.more.removeFavorite" : "detail.more.addFavorite"), icon: favorite ? "heart.fill" : "heart", run: () => this.send(card.id, detailOperations.setPersonal("favorites", card.id, !favorite), menu => ({ ...menu, favorite: !favorite }), source, false) });
+            }
+            if (card.watchlist !== undefined) {
+                const watchlist = card.watchlist;
+                rows.push({ change: true, key: "watchlist", label: translate(watchlist ? "detail.watchlistRemove" : "detail.watchlistAdd"), icon: watchlist ? "bookmark.fill" : "bookmark", run: () => this.send(card.id, detailOperations.setPersonal("watchlist", card.id, !watchlist), menu => ({ ...menu, watchlist: !watchlist }), source, false) });
+            }
             return rows;
         }
         const play = options.play;
         if (play !== undefined) rows.push({ key: "card-play", label: (card.positionSeconds ?? 0) > 0 ? "Resume" : "Play", icon: "play.fill", run: play });
-        // MediaCard's contextDetail slot, after Play.
-        const information = this.host.information;
-        if (information !== undefined && card.type === "episode" && options.home !== true) rows.push({ key: "episode-information", label: "Episode information", icon: "info.circle", run: () => information(card) });
-        // MediaCard.canSetWatched: Home's handler, or a card with user state that is not a square audiobook cover.
-        if (options.home === true || (card.played !== undefined && card.type !== "audiobook")) {
+        // MediaCard.canSetWatched: SectionRow's handler, or a card with user state that is not a square audiobook cover.
+        if (home || options.sectionRow === true || (card.played !== undefined && card.type !== "audiobook")) {
             const watched = card.played === true;
-            rows.push({ change: true, key: "watched", label: watched ? "Mark as Unwatched" : "Mark as Watched", icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source) });
+            rows.push({ change: true, key: "watched", label: watched ? "Mark as Unwatched" : "Mark as Watched", icon: watched ? "circle" : "checkmark.circle", run: () => this.send(card.id, detailOperations.setPersonal("watched", card.id, !watched), menu => ({ ...menu, played: !watched }), source, home) });
         }
         if (card.favorite !== undefined) {
             const favorite = card.favorite;
-            rows.push({ change: true, key: "favorites", label: favorite ? "Remove from Favorites" : "Add to Favorites", icon: favorite ? "heart.slash" : "heart", run: () => this.send(card.id, detailOperations.setPersonal("favorites", card.id, !favorite), menu => ({ ...menu, favorite: !favorite }), source) });
+            rows.push({ change: true, key: "favorites", label: favorite ? "Remove from Favorites" : "Add to Favorites", icon: favorite ? "heart.slash" : "heart", run: () => this.send(card.id, detailOperations.setPersonal("favorites", card.id, !favorite), menu => ({ ...menu, favorite: !favorite }), source, home) });
         }
         if (card.watchlist !== undefined) {
             const watchlist = card.watchlist;
-            rows.push({ change: true, key: "watchlist", label: watchlist ? "Remove from Watchlist" : "Add to Watchlist", icon: watchlist ? "bookmark.slash" : "bookmark", run: () => this.send(card.id, detailOperations.setPersonal("watchlist", card.id, !watchlist), menu => ({ ...menu, watchlist: !watchlist }), source) });
+            rows.push({ change: true, key: "watchlist", label: watchlist ? "Remove from Watchlist" : "Add to Watchlist", icon: watchlist ? "bookmark.slash" : "bookmark", run: () => this.send(card.id, detailOperations.setPersonal("watchlist", card.id, !watchlist), menu => ({ ...menu, watchlist: !watchlist }), source, home) });
         }
         // MediaCardPersonalState.offersNotInterested on MediaCard and TVMediaCard: a movie or series from a server that sends the mark. EpisodeThumbCard's menu has none.
         if (options.wide !== true && card.notInterested !== undefined && (card.type === "movie" || card.type === "series")) {
             // A write still out for the title, from this menu or the page, shows the state it will leave.
             const marked = this.notInterested.state(card.id, card.notInterested, this.shownStamp);
-            rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
+            rows.push({ change: true, key: "not-interested", label: translate(marked ? "cardMenu.showInRecommendations" : "cardMenu.notInterested"), icon: marked ? "hand.thumbsup" : "hand.thumbsdown", run: () => this.send(card.id, detailOperations.setNotInterested(card.id, !marked), menu => ({ ...menu, notInterested: !marked }), source, home, marked ? undefined : () => this.host.markedNotInterested?.(card)) });
         }
         const dismissal = options.dismissal;
         if (dismissal !== undefined) {
-            rows.push({ change: true, key: "remove", label: translate(dismissal.surface === "next_up" ? "cardMenu.removeNextUp" : "cardMenu.removeContinueWatching"), icon: "xmark.circle", destructive: true, run: () => this.send(card.id, detailOperations.dismissHomeItem(card.id, dismissal), () => undefined, source, () => this.host.dismissed?.(card)) });
+            rows.push({ change: true, key: "remove", label: translate(dismissal.surface === "next_up" ? "cardMenu.removeNextUp" : "cardMenu.removeContinueWatching"), icon: "xmark.circle", destructive: true, run: () => this.send(card.id, detailOperations.dismissHomeItem(card.id, dismissal), () => undefined, source, home, () => this.host.dismissed?.(card)) });
         }
         return rows;
     }
 
     /** `landed` gives the card's state after the change, or undefined when the card leaves its row. */
-    private send(id: string, spec: ReturnType<typeof detailOperations.setPersonal>, landed: (card: MenuCard) => MenuCard | undefined, source: MenuCard, accepted?: () => void): void {
+    private send(id: string, spec: ReturnType<typeof detailOperations.setPersonal>, landed: (card: MenuCard) => MenuCard | undefined, source: MenuCard, home: boolean, accepted?: () => void): void {
         // HomeViewModel.pendingWatchedUpdates: one change per card at a time, and none beside a pending Details change.
         if (this.writes.has(id) || this.notInterested.pending(id) !== undefined || this.host.pendingElsewhere?.() === true) return;
         const controller = new AbortController();
@@ -311,23 +336,34 @@ export class CardActions {
             if (this.writes.get(id) !== controller) return;
             this.writes.delete(id);
             if (this.shown?.card.id === id) this.redraw(this.shown.card);
-            this.alert();
+            this.alert(home);
             // Even a lost answer may have landed; reread once the alert closes so the rows show what the server holds.
             this.host.applied(id, false);
         });
     }
 
-    /** HomeView's `.alert`: the shared centred alert over the screen, with one OK. */
-    private alert(): void {
+    /** HomeView's `.alert` (home.updateFailed) or MediaActionFeedback (PersonalStateNotice.failed(nil)) elsewhere. */
+    private alert(home: boolean): void {
         // A reopened menu keeps its focus and Resume action until it closes.
-        if (this.shown !== undefined || this.host.canAlert?.() === false) { this.deferredAlert = true; return; }
+        if (this.shown !== undefined || this.host.canAlert?.() === false) { this.deferredAlert = { home }; return; }
         if (this.active) this.dismiss();
-        const ok = el("button", "card-alert-button", translate("home.updateFailed.ok"));
+        const ok = el("button", "card-alert-button", home ? translate("home.updateFailed.ok") : "OK");
         ok.type = "button";
         ok.setAttribute("data-focus", "card-alert-ok");
         ok.addEventListener("click", () => this.close());
+        const title = home ? translate("home.updateFailed.title") : "Couldn't Update Item";
+        const message = home ? translate("home.updateFailed.message") : "Your change wasn't saved. Please try again.";
+        const nodes = centredDialog({ style: "alert", id: "card-update-failed", title, message, buttons: [ok], behind: [] });
+        if (!home) {
+            const dialog = nodes.find(node => node.classList.contains("signin-alert"));
+            const heading = dialog?.querySelector<HTMLElement>(".signin-alert-title");
+            const copy = dialog?.querySelector<HTMLElement>(".signin-alert-text");
+            if (heading !== null && heading !== undefined) markEnglishOnly(heading, title);
+            if (copy !== null && copy !== undefined) markEnglishOnly(copy, message);
+            markEnglishOnly(ok, "OK");
+        }
         const scrim = el("div", "card-actions-scrim card-alert-scrim");
-        scrim.append(...centredDialog({ style: "alert", id: "card-update-failed", title: translate("home.updateFailed.title"), message: translate("home.updateFailed.message"), buttons: [ok], behind: [] }));
+        scrim.append(...nodes);
         this.capture();
         this.panel = scrim;
         this.shown = undefined;
@@ -375,7 +411,7 @@ export class CardActions {
     }
 
     private abortAll(): void {
-        this.deferredAlert = false;
+        this.deferredAlert = undefined;
         for (const controller of this.writes.values()) controller.abort();
         this.writes.clear();
     }

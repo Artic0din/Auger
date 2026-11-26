@@ -263,3 +263,39 @@ test("a catalog that lands while the second account has focus keeps focus on tha
         assert.equal(await tv.focused(), "second", "focus stays on the second account, by its id");
     });
 });
+
+test("every sign-out confirmation confirms with Wyloguj się in Polish", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        const polishConfirm = text("shell.signOut.confirm", "pl");
+        assert.equal(polishConfirm, "Wyloguj się");
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").first().innerText()) !== "Home", "Polish top bar");
+
+        // Top bar sign-out confirmation.
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('.skyline-selector [data-focus="signout"]').click();
+        assert.equal(await tv.page.locator('[data-focus="confirm-signout"]').innerText(), polishConfirm);
+        await tv.remote(10009);
+        await tv.page.locator('.browse-card').first().waitFor();
+
+        // Settings sign-out confirmation.
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('.skyline-selector [data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="settings-signout"]').click();
+        assert.equal(await tv.page.locator('[data-focus="confirm-signout"]').innerText(), polishConfirm);
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('.browse-card').first().waitFor();
+
+        // Settings › Accounts expired-account sign-out confirmation (`confirm([row], false)` -> accept button).
+        await openSettingsAccounts(tv);
+        await tv.page.locator('[data-focus="stale"]').click();
+        await tv.page.locator('[data-view="account-expired"]').waitFor();
+        await tv.page.locator('.confirm-dialog [data-focus="signout"]').click();
+        await tv.page.locator('[data-view="accounts-confirm"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="confirm"]').innerText(), polishConfirm);
+        const heights = await tv.page.locator('.confirm-dialog .skyline-confirm-actions button').evaluateAll(nodes =>
+            nodes.map(node => ({ layout: (node as HTMLElement).offsetHeight, box: Math.round(node.getBoundingClientRect().height) })));
+        assert.deepEqual(heights, [{ layout: 63, box: 64 }, { layout: 63, box: 63 }]);
+    }, "pl");
+});

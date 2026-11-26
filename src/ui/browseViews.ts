@@ -51,7 +51,7 @@ export interface ViewContext {
     readonly savedFileOverlay?: (card: Card) => CardOverlay | undefined;
     readonly resume?: (id: string, title: string, line?: SeriesLine) => void;
     readonly playEpisode?: (id: string, title: string, startOver?: boolean, selection?: EpisodeSelection) => void;
-    readonly quickActions?: (card: MenuCard, options: CardMenuOptions) => void;
+    readonly quickActions?: ((card: MenuCard, options: CardMenuOptions) => void) | undefined;
     /** The server `section_type` of the feed row a card sits in; SectionRow gives every row's cards the watched row. */
     readonly homeRow?: string;
     /** Home's own rows, whose Continue Watching and Next Up cards can be removed. */
@@ -292,8 +292,9 @@ export function cardItem(card: Card, context: ViewContext): FocusItem | undefine
     element.addEventListener("focus", () => context.preview?.(card, "Browse"));
     const line = episodeLine(card);
     const play = card.type === "movie" || card.type === "episode" ? () => context.resume?.(card.id, card.title, line) : undefined;
-    const home = context.homeRow !== undefined;
-    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: context.homeDismissals === true ? homeDismissal(card, context.homeRow) : undefined, home, wide: thumbnail });
+    const sectionRow = context.homeRow !== undefined;
+    const home = context.homeDismissals === true;
+    return mediaItem({ key: card.id, element, ...(play === undefined ? {} : { play }) }, card, context, { play: continuing ? play : undefined, dismissal: home ? homeDismissal(card, context.homeRow) : undefined, home, sectionRow, wide: thumbnail });
 }
 
 export function cardItems(cards: readonly Card[], context: ViewContext): FocusItem[] {

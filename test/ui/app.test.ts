@@ -224,7 +224,8 @@ appTest("cold offline launch without a remembered profile does not invent a prof
     tv.offline = true;
     await tv.page.evaluate(() => window.appHarness.mount());
     await tv.jump(35000);
-    await tv.page.getByText("Profiles didn't load", { exact: true }).waitFor();
+    await tv.page.locator('[data-screen="profiles-error"]').waitFor();
+    await tv.page.getByText("Something went wrong", { exact: true }).waitFor();
     assert.equal(await tv.page.locator('[data-view="home"]').count(), 0);
     assert.equal(await tv.page.locator('[data-focus^="profile:"]').count(), 0);
 });
@@ -1108,8 +1109,8 @@ appTest("a 200-character server name keeps every sign-out dialog's buttons on sc
             const message = node.querySelector<HTMLElement>("p");
             return {
                 card: inside(card, viewport),
-                // Two 46 px lines at most, with the rest elided; the message is never cut.
-                titleClamped: title !== null && title.scrollHeight > title.clientHeight && Math.round(title.getBoundingClientRect().height) <= 92 && getComputedStyle(title).webkitLineClamp === "2",
+                // Titles wrap without a line limit (TVSettingsComponents.swift:507-509), and the message is never cut.
+                titleUnclamped: title !== null && title.scrollHeight <= title.clientHeight && Math.round(title.getBoundingClientRect().height) > 92 && getComputedStyle(title).webkitLineClamp === "none",
                 message: message !== null && inside(message.getBoundingClientRect(), viewport) && inside(message.getBoundingClientRect(), card) && message.scrollHeight <= message.clientHeight,
                 buttons: [...node.querySelectorAll("button")].map(button => {
                     const box = button.getBoundingClientRect();
@@ -1117,7 +1118,7 @@ appTest("a 200-character server name keeps every sign-out dialog's buttons on sc
                 }),
             };
         });
-        assert.deepEqual(placed, { card: true, titleClamped: true, message: true, buttons: [true, true] }, `${where}: the title stops at two lines, and the message, card and both buttons stay inside the screen`);
+        assert.deepEqual(placed, { card: true, titleUnclamped: true, message: true, buttons: [true, true] }, `${where}: the title wraps without clamping, and the message, card and both buttons stay inside the screen`);
         assert.match(await tv.focused() ?? "", /^cancel/, `${where}: Cancel takes focus`);
         await tv.page.keyboard.press("ArrowRight");
         assert.match(await tv.focused() ?? "", /^confirm/, `${where}: the remote reaches the destructive button`);

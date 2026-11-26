@@ -44,9 +44,19 @@ async function mount(options: { stills: boolean; images?: boolean; overviews?: b
 test("unwatched episode stills blur and descriptions drop while series text stays", async () => {
     const { tv } = await mount({ stills: true, images: true, overviews: true });
     try {
-        const still = tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"] .episode-spoiler-blur .browse-art-image');
-        await still.waitFor();
-        assert.equal(await still.evaluate(node => getComputedStyle(node).filter), "blur(24px)");
+        const selector = '[data-section="continue_watching"] [data-focus="episode:s1e12"] .episode-spoiler-blur .browse-art-image';
+        await tv.page.locator(selector).waitFor();
+        const filter = await readLive(
+            tv,
+            sel => {
+                const node = document.querySelector(sel);
+                return node === null || !node.isConnected ? null : getComputedStyle(node).filter;
+            },
+            selector,
+            value => value !== "",
+            "episode spoiler blur",
+        );
+        assert.equal(filter, "blur(24px)");
         assert.equal(await tv.page.locator('[data-section="continue_watching"] [data-focus="movie:m0001"] .episode-spoiler-blur').count(), 0);
         await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').focus();
         await tv.eventually(async () => {
@@ -63,8 +73,7 @@ test("unwatched episode stills blur and descriptions drop while series text stay
         assert.match(await tv.page.locator(".details-editorial .browse-overview").innerText(), /A synthetic series/);
         assert.equal(await tv.page.locator(".details-episodes [data-focus='episode:s1e12'] .episode-spoiler-blur").count(), 1);
         assert.equal(await tv.page.locator(".details-episodes [data-focus='episode:s1e11'] .episode-spoiler-blur").count(), 0);
-        await tv.page.locator(".details-episodes [data-focus='episode:s1e12']").click({ button: "right" });
-        await tv.page.locator('[data-focus="episode-information"]').click();
+        await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12", "Harbor Lights chapter 1.2"));
         await tv.page.locator('[data-view="item:episode:s1e12"]').waitFor();
         await tv.page.getByRole("heading", { name: "Harbor Lights chapter 1.2" }).waitFor();
         assert.equal(await tv.page.locator(".browse-overview").count(), 0);
@@ -195,8 +204,8 @@ for (const art of ["none", "loading"] as const) test(`a hidden episode still wit
         await tv.page.route("**/api/v2/catalog/items/episode%3As1e12?**", route => route.fulfill({ json: { ...body, ...backdrop, user_state: { played: false } } }));
         await tv.page.route("**/art/held-still.svg**", () => undefined);
         await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').click();
-        await tv.page.locator(".details-episodes [data-focus='episode:s1e12']").click({ button: "right" });
-        await tv.page.locator('[data-focus="episode-information"]').click();
+        await tv.page.locator(".details-episodes [data-focus='episode:s1e12']").waitFor();
+        await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12"));
         await tv.page.locator('[data-view="item:episode:s1e12"] .details-hero').waitFor();
         if (art === "none") assert.equal(await tv.page.locator(".details-hero .skyline-art-frame").count(), 0);
         else {

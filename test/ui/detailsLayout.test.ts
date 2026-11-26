@@ -128,8 +128,7 @@ detailTest("stale season return restarts its personal action owner", async tv =>
     assert.ok(catalog instanceof FakeDetails);
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="series:s1-S1"]').click();
-    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12"));
     catalog.mutationFailure = problem(422, "validation_failed", "Unavailable action");
     const panel = tv.page.getByRole("dialog", { name: "More", exact: true });
     await tv.page.locator('[data-focus="more"]').click();
@@ -1880,8 +1879,7 @@ detailTest('Season primary playback refreshes a shared Auto change from another 
     });
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="series:s1-S1"]').click();
-    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: 'right' });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12"));
     await tv.page.locator('[data-focus="subtitles"]').click();
     await tv.page.locator('[data-focus="subtitle:auto"]').click();
     await tv.page.getByText('Saving subtitle preference…', { exact: true }).waitFor({ state: 'hidden' });
@@ -1905,8 +1903,7 @@ for (const [kind, id] of [['Movie', 'movie:m0001'], ['Episode', 'episode:s1e11']
     else {
         await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
         if (kind === 'Episode') {
-            await tv.page.locator('[data-focus="episode:s1e11"]').click({ button: 'right' });
-            await tv.page.locator('[data-focus="episode-information"]').click();
+            await tv.page.evaluate(() => window.browseHarness.openItem('episode:s1e11'));
         } else {
             await tv.page.locator('[data-focus="series:s1-S1"]').click();
         }
@@ -2128,8 +2125,7 @@ detailTest('rating chips fit inside the clipped metadata row on movie, episode a
     await tv.page.locator('[data-view="home"]').waitFor();
     await open('series:s1');
     frames.push(await readLive(tv, ratingChipFrame, null, value => value.media === 'series' && value.text === 'PG-13' && value.font && Math.abs(value.rowHeight - 36) < 0.5, 'series settled rating chip'));
-    await tv.page.locator('[data-focus="episode:s1e11"]').click({ button: 'right' });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem('episode:s1e11'));
     await tv.page.locator('[data-view="item:episode:s1e11"]').waitFor();
     await tv.page.evaluate(() => document.fonts.ready);
     frames.push(await readLive(tv, ratingChipFrame, null, value => value.media === 'episode' && value.text === 'PG-13' && value.font && Math.abs(value.rowHeight - 33) < 0.5, 'episode settled rating chip'));
@@ -2282,8 +2278,7 @@ detailTest('Episode information subtitle changes refresh the retained Series cac
         return route.fulfill(off ? { status: 200, json: { series_id: 'series:s1', subtitle_mode: 'off', subtitle_track_index: -1 } } : { status: 404 });
     });
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-    await tv.page.locator('[data-focus="episode:s1e11"]').click({ button: 'right' });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem('episode:s1e11'));
     await tv.page.locator('[data-focus="subtitles"]').click();
     await tv.page.locator('[data-focus="subtitle:off"]').click();
     await tv.page.getByText('Saving subtitle preference…', { exact: true }).waitFor({ state: 'hidden' });
@@ -2301,8 +2296,7 @@ for (const media of ['movie:m0001', 'episode:s1e11']) detailTest(`ordinary Play 
     await tv.page.route(`**/api/v2/catalog/items/${encodeURIComponent(media)}?**`, route => route.fulfill({ json: { ...body, versions: body.versions.map(version => ({ ...version, audio_tracks: [{ language: 'en', codec: 'aac', default: true }], effective_audio_track_index: 0 })) } }));
     if (media.startsWith('episode:')) {
         await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
-        await tv.page.locator('[data-focus="episode:s1e11"]').click({ button: 'right' });
-        await tv.page.locator('[data-focus="episode-information"]').click();
+        await tv.page.evaluate(() => window.browseHarness.openItem('episode:s1e11'));
     } else await tv.page.locator(`[data-section="recently_added"] [data-focus="${media}"]`).first().click();
     await tv.page.locator('[data-focus="play"]').click();
     await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.plays.length > 0), 'handoff');
@@ -3121,8 +3115,7 @@ detailTest("series Details activates season chips on focus and restores its inli
     await tv.jump(100);
     await tv.page.locator('.details-episodes [data-focus="episode:s1e21"]').waitFor();
     assert.equal(episodeReads(), before, "focus selects the already warmed season without rereading it");
-    await tv.page.locator('[data-focus="episode:s1e21"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e21"));
     await tv.page.locator('[data-view="item:episode:s1e21"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-view="item:series:s1"]').waitFor();

@@ -6,6 +6,41 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.11] - 2026-11-26
+
+### Fixes
+
+- **Profiles**: Port Profiles and PIN from the tvOS source ([#944](https://github.com/Artic0din/Auger-Tizen/pull/944), [`58e179d7`](https://github.com/Artic0din/Auger-Tizen/commit/58e179d7))
+- **Dialogs**: Port dialogs and card menus from the tvOS source ([#946](https://github.com/Artic0din/Auger-Tizen/pull/946), [`d0ae668e`](https://github.com/Artic0din/Auger-Tizen/commit/d0ae668e))
+
+### Tests
+
+- **Interface**: Wait for paint before reading Browse skeleton styles ([#949](https://github.com/Artic0din/Auger-Tizen/pull/949), [`8a5413ec`](https://github.com/Artic0din/Auger-Tizen/commit/8a5413ec))
+
+## [0.14.10] - 2026-11-26
+
+### Fixes
+
+- **Person**: Port Person from the tvOS source ([#934](https://github.com/Artic0din/Auger-Tizen/pull/934), [`e11ca429`](https://github.com/Artic0din/Auger-Tizen/commit/e11ca429))
+- **Calendar**: Port Calendar from the tvOS source ([#936](https://github.com/Artic0din/Auger-Tizen/pull/936), [`30f6d4e8`](https://github.com/Artic0din/Auger-Tizen/commit/30f6d4e8))
+
+## [0.14.9] - 2026-11-26
+
+### Fixes
+
+- **Sign-In**: Allow server discovery when request_origin differs ([#947](https://github.com/Artic0din/Auger-Tizen/pull/947), [`95f863bc`](https://github.com/Artic0din/Auger-Tizen/commit/95f863bc))
+- **Details**: Port Details from the tvOS source ([#931](https://github.com/Artic0din/Auger-Tizen/pull/931), [`15a0cd0f`](https://github.com/Artic0din/Auger-Tizen/commit/15a0cd0f))
+
+## [0.14.8] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Remove Restore All Libraries row from Server pane ([#940](https://github.com/Artic0din/Auger-Tizen/pull/940), [`12e83c23`](https://github.com/Artic0din/Auger-Tizen/commit/12e83c23))
+
+### Tests
+
+- **Audiobooks**: Read detail styles atomically during background repaints ([#948](https://github.com/Artic0din/Auger-Tizen/pull/948), [`b79a4c09`](https://github.com/Artic0din/Auger-Tizen/commit/b79a4c09))
+
 ## [0.14.7] - 2026-11-26
 
 ### Fixes

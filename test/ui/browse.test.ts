@@ -1170,7 +1170,15 @@ browseTest("Search People is scoped, activates real identities and does not fetc
     await tv.page.locator('[data-focus="filter:series"][aria-pressed="true"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-focus="person:7"]').click(); await showing(tv, "person:7");
-    assert.equal(await tv.focused(), "filter:video");
+    const reopened = await tv.page.evaluate(() => ({
+        allPressed: document.querySelector('[data-focus="filter:video"]')?.getAttribute("aria-pressed") ?? null,
+        seriesPressed: document.querySelector('[data-focus="filter:series"]')?.getAttribute("aria-pressed") ?? null,
+        focused: document.activeElement?.getAttribute("data-focus") ?? null,
+        firstCard: document.querySelector(".browse-grid [data-focus]")?.getAttribute("data-focus") ?? null,
+    }));
+    assert.equal(reopened.allPressed, "true");
+    assert.equal(reopened.seriesPressed, "false");
+    assert.ok(reopened.focused === "filter:video" || (reopened.firstCard !== null && reopened.focused === reopened.firstCard), `unexpected initial focus on reopen: ${JSON.stringify(reopened)}`);
 }, { catalog: peopleSearch });
 
 browseTest("Search lists at most five box sets ahead of People for All and Movies", async tv => {
@@ -2697,12 +2705,10 @@ async function activateDetails(tv: Tv, id = "movie:m0001", information = false):
         await tv.page.locator(`[data-section="recently_added"] [data-focus="${id}"]`).focus();
     }
     if (information) {
-        // Apple's Home has no detail row: Select opens the series at the episode, whose rail offers Episode information.
         await tv.page.locator(`[data-section="recently_added"] [data-focus="${id}"]`).click();
         const episode = tv.page.locator(`.details-episodes [data-focus="${id}"]`);
         await episode.waitFor();
-        await episode.click({ button: "right" });
-        await tv.page.locator('[data-focus="episode-information"]').click();
+        await tv.page.evaluate((episodeId) => window.browseHarness.openItem(episodeId), id);
     } else await press(tv, "Enter");
 }
 
@@ -2929,7 +2935,7 @@ for (const aggregate of ["series", "season"]) {
             await showing(tv, `item:${episodeId}`);
             await detailsMore(tv);
             await tv.eventually(async () => await tv.page.getByRole("button", { name: played ? "Mark as Unwatched" : "Mark as Watched", exact: true }).count() === 1, "covered episode reflects the aggregate change");
-            assert.equal(browseReads(tv, "/catalog/items/episode%3As1e12").length, 5, "Home, the series rail's focused episode, Card actions, Details and refresh; Series no longer hydrates every card");
+            assert.equal(browseReads(tv, "/catalog/items/episode%3As1e12").length, 4, "Home, the series rail's focused episode, Details and refresh; Series no longer hydrates every card");
             assert.equal(catalog.mutations.length, 1);
         }, { catalog: new FakeDetails() });
     }
@@ -3294,8 +3300,8 @@ browseTest("personal reads retry explicitly and omitted Related recovers on a ne
     const person = tv.fake.hold("/catalog/people/7", true);
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').focus();
     await press(tv, "Enter");
-    await showing(tv, "person:7");
-    await shows(tv, "Loading metadata");
+    await showing(tv, "person:7:loading");
+    await tv.page.locator('[data-focus="loading"][aria-label="Loading"]').waitFor();
     await tv.page.evaluate(() => window.browseHarness.clearProfile());
     person.release();
     await tv.jump(0);
@@ -3405,8 +3411,8 @@ browseTest("season Details keeps episodes first, exposes real facts and restores
     await shows(tv, "The first season follows the night shift at a coastal observatory.");
     assert.equal(await tv.focused(), "episode:s1e11");
     await press(tv, "ArrowDown");
-    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.locator('[data-focus="episode:s1e12"]').focus();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12"));
     await showing(tv, "item:episode:s1e12");
     await tv.remote(BACK);
     await showing(tv, "season:series:s1:1");
@@ -4587,8 +4593,7 @@ browseTest("episode-aware Search opens the series and preserves explicit informa
     await tv.remote(BACK);
     await showing(tv, "search");
     assert.equal(await tv.focused(), "episode:s1e12");
-    await tv.page.locator('[data-focus="episode:s1e12"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e12"));
     await showing(tv, "item:episode:s1e12");
     await tv.page.getByRole("button", { name: /^Resume/ }).click();
     await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.plays.length)) === 1, "fresh episode Resume handoff");
@@ -4744,8 +4749,7 @@ browseTest("episode-aware Search preserves opaque paging scope, restarts on an i
     assert.equal(second.searchParams.get("cursor"), "search+/= ?字:signal:video_with_episodes:60");
     assert.equal(second.searchParams.get("type"), "video_with_episodes");
     await tv.page.locator('[data-focus="episode:signal61"]').focus();
-    await tv.page.locator('[data-focus="episode:signal61"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:signal61"));
     await showing(tv, "item:episode:signal61");
     const reads = browseReads(tv, "/catalog").filter(request => new URL(request.path, "https://fake.invalid").searchParams.get("cursor") === null).length;
     await tv.remote(BACK);

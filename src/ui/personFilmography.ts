@@ -1,9 +1,10 @@
 import type { CatalogPage } from "../contracts/v2/catalog.ts";
 import type { View, Zone } from "./browseFocus.ts";
 import { actionButton, errorView, FAILURE_ICON, failureError, recoveryActions, searchState, zoneNode, type ViewContext } from "./browseViews.ts";
+import { pageLoadingView } from "./browseRoutes.ts";
 import { feedGrid } from "./catalogFeed.ts";
 import { personHero } from "./browseDetails.ts";
-import { integerText } from "../i18n/numbers.ts";
+import { groupedCount } from "../i18n/format.ts";
 import { translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage } from "./errorState.ts";
 import { el } from "./screen.ts";
@@ -23,10 +24,14 @@ export interface PersonViewNav {
     readonly signIn: (() => void) | undefined;
 }
 
-/** Apple's `library.titleCount` for an exact total. An estimate keeps "About N titles": Apple writes "N+ titles" there, which is not the text shown today. */
-function titleCount(page: CatalogPage): string {
-    const total = page.total ?? page.items.length;
-    return page.totalExact ? translate("library.titleCount", { count: total, count_text: integerText(total) }) : `About ${total} ${total === 1 ? "title" : "titles"}`;
+/** Apple's `personFilmographyCountLabel` (`PersonDetailView.swift:886-894`): exact total uses `library.titleCount`; estimates defer to loaded items and `library.titleCountMore` while more pages remain. */
+export function filmographyCountLabel(page: CatalogPage): string | undefined {
+    if (page.totalExact && page.total !== undefined) {
+        return translate("library.titleCount", { count: page.total, count_text: groupedCount(page.total) });
+    }
+    const loaded = page.items.length;
+    if (loaded <= 0) return undefined;
+    return translate(page.nextCursor !== undefined ? "library.titleCountMore" : "library.titleCount", { count: loaded, count_text: groupedCount(loaded) });
 }
 
 export function personFilmographyView(module: PersonModule, nav: PersonViewNav): View {
@@ -34,6 +39,10 @@ export function personFilmographyView(module: PersonModule, nav: PersonViewNav):
     // Apple rootContent (PersonDetailView.swift:358-359): with no person, the failed read is the whole page's ErrorView.
     if (snapshot.person === undefined && snapshot.metadataFailure !== undefined) {
         return errorView(`person:${snapshot.id}`, failureError(snapshot.metadataFailure, snapshot.metadataError), () => module.retry(), nav.back, nav.signIn);
+    }
+    // Apple rootContent (PersonDetailView.swift:360-361): blank focus-owning loading page until person arrives.
+    if (snapshot.person === undefined) {
+        return pageLoadingView(`person:${snapshot.id}:loading`, translate("common.loading"), nav.back);
     }
     const empty = (snapshot.page?.items.length ?? 0) === 0;
     const filters = snapshot.availableFilters.map(filter => {
@@ -44,9 +53,9 @@ export function personFilmographyView(module: PersonModule, nav: PersonViewNav):
     const title = el("div", "person-filmography-heading");
     title.appendChild(el("h2", "browse-section-title", translate("person.filmography")));
     const page = snapshot.page;
-    if (page !== undefined) title.appendChild(el("span", "person-title-count", titleCount(page)));
-    const person = snapshot.person ?? { id: snapshot.id, name: snapshot.title, bio: undefined, photoUrl: undefined, photoThumbhash: undefined, birthDate: undefined, deathDate: undefined, birthplace: undefined };
-    const content = [personHero(person, nav.context.baseUrl, snapshot.heroLoading), title, zoneNode("skyline-pills person-filmography-filters", filters)];
+    const count = page === undefined ? undefined : filmographyCountLabel(page);
+    if (count !== undefined) title.appendChild(el("span", "person-title-count", count));
+    const content = [personHero(snapshot.person, nav.context.baseUrl, snapshot.heroLoading), title, zoneNode("skyline-pills person-filmography-filters", filters)];
     const zones: Zone[] = [{ id: "filters", layout: "row", spatial: "aligned", items: filters }];
     if (snapshot.failure !== undefined && empty) {
         // Apple ErrorView(state:onRetry:) in the Filmography area, at least 420pt tall (PersonDetailView.swift:414-416).

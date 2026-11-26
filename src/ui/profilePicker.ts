@@ -1,6 +1,7 @@
 import type { ProfileSummary } from "../contracts/v2/wire.ts";
 import { isolated } from "../i18n/direction.ts";
 import { translate, translateTv } from "../i18n/translate.ts";
+import { remoteKey } from "./keys.ts";
 import { navigationAvatar } from "./navigationAvatar.ts";
 import { menuIcon, navigationIcon } from "./navigationIcon.ts";
 import { button, el, type Control, type Screen } from "./screen.ts";
@@ -50,6 +51,48 @@ interface PickerOptions {
     readonly back: (() => void) | undefined;
 }
 
+export interface ProfileFooterOptions {
+    readonly row: number;
+    readonly changeKey?: "change-server" | "change-account";
+    readonly landing?: boolean;
+    readonly changeServer: () => void;
+    readonly signOut: () => void;
+    readonly upTarget?: () => HTMLElement | undefined;
+}
+
+export interface ProfileFooter {
+    readonly element: HTMLElement;
+    readonly controls: readonly Control[];
+}
+
+/** Shared Change account / Sign out footer (ProfileSelectionView.swift footerActions). */
+export function profileFooter(options: ProfileFooterOptions): ProfileFooter {
+    const footer = el("div", "profile-footer");
+    const change = button(options.changeKey ?? "change-server", translate("profiles.changeAccount"), options.changeServer);
+    const out = button("signout", translate("common.signOut"), options.signOut);
+    // ProfileSelectionView labels Change account with SF Symbol person.2, the two-person glyph Switch Profile uses.
+    change.element.prepend(navigationIcon("switch-profile"));
+    // Apple draws Sign Out as rectangle.portrait.and.arrow.forward, a box with a gap for its arrow; the line drawing was an open bracket.
+    out.element.prepend(menuIcon("signout"));
+    footer.append(change.element, out.element);
+    if (options.upTarget !== undefined) {
+        footer.addEventListener("keydown", event => {
+            const target = options.upTarget?.();
+            if (remoteKey(event) !== "up" || target?.isConnected !== true) return;
+            event.preventDefault();
+            event.stopPropagation();
+            target.focus();
+        });
+    }
+    return {
+        element: footer,
+        controls: [
+            { ...change, row: options.row, column: 0, ...(options.landing === true ? { landing: true } : {}) },
+            { ...out, row: options.row, column: 1 },
+        ],
+    };
+}
+
 export function profilePickerScreen(options: PickerOptions): Screen {
     const main = el("div", "profile-picker-main");
     main.append(el("h1", "profile-picker-title", translate("profiles.headline")), el("p", "profile-account", options.accountName === undefined ? " " : translate("profiles.signedInAs", { name: isolated(options.accountName) })));
@@ -90,21 +133,12 @@ export function profilePickerScreen(options: PickerOptions): Screen {
         if (target instanceof HTMLElement) lastTile = target.closest<HTMLButtonElement>(".profile-tile") ?? lastTile;
     });
     main.appendChild(grid);
-    const footer = el("div", "profile-footer");
-    const change = button("change-server", translate("profiles.changeAccount"), options.changeServer);
-    const out = button("signout", translate("common.signOut"), options.signOut);
-    // ProfileSelectionView labels Change account with SF Symbol person.2, the two-person glyph Switch Profile uses.
-    change.element.prepend(navigationIcon("switch-profile"));
-    // Apple draws Sign Out as rectangle.portrait.and.arrow.forward, a box with a gap for its arrow; the line drawing was an open bracket.
-    out.element.prepend(menuIcon("signout"));
-    footer.append(change.element, out.element);
-    const footerRow = Math.ceil((options.profiles.length + 1) / columns);
-    controls.push({ ...change, row: footerRow }, { ...out, row: footerRow });
-    footer.addEventListener("keydown", event => {
-        if (event.key !== "ArrowUp" || lastTile?.isConnected !== true) return;
-        event.preventDefault();
-        event.stopPropagation();
-        lastTile.focus();
+    const footer = profileFooter({
+        row: Math.ceil((options.profiles.length + 1) / columns),
+        changeServer: options.changeServer,
+        signOut: options.signOut,
+        upTarget: () => lastTile,
     });
-    return { name: "profiles", content: [main, footer], controls, focus: options.focus, back: options.back, translated: true };
+    controls.push(...footer.controls);
+    return { name: "profiles", content: [main, footer.element], controls, focus: options.focus, back: options.back, translated: true };
 }
