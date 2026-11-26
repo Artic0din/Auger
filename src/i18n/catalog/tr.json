@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Hesap güncellemesi",
  "account.fallback.itsAccount": "bu sunucudaki hesap",
  "account.fallback.thisAccount": "bu hesap",
  "account.fallback.thisServer": "bu sunucu",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Oturumun süresi doldu",
  "shell.errorView.tryAgain": "Yeniden dene",
  "shell.errorView.updateRequired": "Güncelleme gerekli",
+ "shell.notice.ok": "Tamam",
  "shell.signOut.confirm": "Oturumu kapat",
  "shell.signOut.titleNamed": "{server} sunucusundaki {account} hesabının oturumu kapatılsın mı?",
  "shuffle.failed": "Karıştırma başlatılamadı. Tekrar deneyin.",

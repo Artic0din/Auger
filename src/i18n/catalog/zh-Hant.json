@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "帳號更新",
  "account.fallback.itsAccount": "該伺服器的帳號",
  "account.fallback.thisAccount": "這個帳號",
  "account.fallback.thisServer": "這部伺服器",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "工作階段已過期",
  "shell.errorView.tryAgain": "重試",
  "shell.errorView.updateRequired": "需要更新",
+ "shell.notice.ok": "好",
  "shell.signOut.confirm": "登出",
  "shell.signOut.titleNamed": "要登出 {server} 上的 {account} 嗎？",
  "shuffle.failed": "無法開始隨機播放。請再試一次。",

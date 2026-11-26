@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Mise à jour du compte",
  "account.fallback.itsAccount": "son compte",
  "account.fallback.thisAccount": "ce compte",
  "account.fallback.thisServer": "ce serveur",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Session expirée",
  "shell.errorView.tryAgain": "Réessayer",
  "shell.errorView.updateRequired": "Mise à jour requise",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Se déconnecter",
  "shell.signOut.titleNamed": "Se déconnecter de {account} sur {server} ?",
  "shuffle.failed": "Impossible de lancer la lecture aléatoire. Réessayez.",

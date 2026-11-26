@@ -117,10 +117,33 @@ test("the expired-session dialog reads in German", async () => {
         await openSettingsAccounts(tv);
         await tv.page.locator('[data-focus="stale"]').click();
         await tv.page.locator('[data-view="account-expired"]').waitFor();
-        assert.equal(await tv.page.locator(".accounts-dialog .signin-title").innerText(), text("settings.accounts.expiredTitleAppleTv", "de", { account: "Stale" }));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signin"]').innerText(), text("account.signInAgain", "de"));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="signout"]').innerText(), text("settings.accounts.signOut", "de"));
-        assert.equal(await tv.page.locator('.accounts-dialog [data-focus="cancel"]').innerText(), text("common.cancel", "de"));
+        assert.equal(await tv.page.locator(".confirm-dialog .skyline-confirm-title").innerText(), text("settings.accounts.expiredTitleAppleTv", "de", { account: "Stale" }));
+        assert.equal(await tv.page.locator(".confirm-dialog .skyline-confirm-message").count(), 0);
+        assert.equal(await tv.page.locator('.confirm-dialog [data-focus="signin"]').innerText(), text("account.signInAgain", "de"));
+        const signOut = tv.page.locator('.confirm-dialog [data-focus="signout"]');
+        assert.equal(await signOut.innerText(), text("settings.accounts.signOut", "de"));
+        assert.equal(await signOut.evaluate(node => node.classList.contains("skyline-destructive")), true);
+        assert.equal(await tv.page.locator('.confirm-dialog [data-focus="cancel"]').innerText(), text("common.cancel", "de"));
+    }, "de");
+});
+
+test("a failed account switch shows the German alert over Change Account", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").first().innerText()) !== "Home", "German top bar");
+        await tv.page.evaluate(() => {
+            window.appHarness.mountAccounts(() => Promise.reject(new Error("Switch failed")));
+        });
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator(".signin-alert").waitFor();
+        assert.equal(await tv.page.locator(".signin-alert-title").innerText(), text("account.alertTitle", "de"));
+        assert.equal(await tv.page.locator(".signin-alert-text").innerText(), "Switch failed");
+        assert.equal(await tv.page.locator('.signin-alert [data-focus="ok"]').innerText(), text("shell.notice.ok", "de"));
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second");
     }, "de");
 });
 

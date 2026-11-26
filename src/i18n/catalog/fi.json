@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Tilin päivitys",
  "account.fallback.itsAccount": "palvelimen tili",
  "account.fallback.thisAccount": "tämä tili",
  "account.fallback.thisServer": "tämä palvelin",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Istunto vanhentunut",
  "shell.errorView.tryAgain": "Yritä uudelleen",
  "shell.errorView.updateRequired": "Päivitys vaaditaan",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Kirjaudu ulos",
  "shell.signOut.titleNamed": "Kirjataanko tili {account} ulos palvelimelta {server}?",
  "shuffle.failed": "Sekoitetun toiston aloittaminen epäonnistui. Yritä uudelleen.",

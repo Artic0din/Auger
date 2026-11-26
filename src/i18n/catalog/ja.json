@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "アカウントの更新",
  "account.fallback.itsAccount": "このサーバーのアカウント",
  "account.fallback.thisAccount": "このアカウント",
  "account.fallback.thisServer": "このサーバー",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "セッションの有効期限切れ",
  "shell.errorView.tryAgain": "再試行",
  "shell.errorView.updateRequired": "アップデートが必要です",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "サインアウト",
  "shell.signOut.titleNamed": "{server}の{account}からサインアウトしますか？",
  "shuffle.failed": "シャッフルを開始できませんでした。もう一度お試しください。",

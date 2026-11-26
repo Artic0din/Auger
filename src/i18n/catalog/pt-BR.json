@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Atualização da conta",
  "account.fallback.itsAccount": "a conta do servidor",
  "account.fallback.thisAccount": "esta conta",
  "account.fallback.thisServer": "este servidor",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Sessão expirada",
  "shell.errorView.tryAgain": "Tentar novamente",
  "shell.errorView.updateRequired": "Atualização necessária",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Sair",
  "shell.signOut.titleNamed": "Sair de {account} em {server}?",
  "shuffle.failed": "Não foi possível iniciar a reprodução aleatória. Tente novamente.",

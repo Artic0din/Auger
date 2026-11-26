@@ -17,7 +17,7 @@
 /* confirmationDialog.ts places the shared confirmation card and scrim above any screen, and resets host button styles. */
 .confirm-dialog-scrim { position: fixed; inset: 0; z-index: 20; }
 .confirm-dialog { position: fixed; z-index: 21; top: 50%; left: 50%; box-sizing: border-box; }
-.confirm-dialog .skyline-confirm-actions button { flex: none; min-width: 0; margin: 0; border: 0; outline: none; }
+.confirm-dialog .skyline-confirm-actions button { flex: none; min-width: 0; min-height: 0; margin: 0; border: 0; outline: none; }
 .dialog-behind { pointer-events: none; }
 /* What a dialog covers stays in place: the alert dims it, the confirmation lays the scrim over it. */
 .dialog-behind-dimmed { opacity: .55; }
@@ -25,6 +25,7 @@
 .signin-alert {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     position: fixed;
     top: 50%;
     left: 50%;

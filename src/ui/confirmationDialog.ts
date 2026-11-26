@@ -18,6 +18,8 @@ export interface DialogOptions {
     readonly destructive?: HTMLElement;
     /** The screen underneath; it stays visible but cannot take focus or clicks. */
     readonly behind: readonly HTMLElement[];
+    /** Called when clicking the backdrop scrim outside a confirmation card. */
+    readonly onDismiss?: (() => void) | undefined;
 }
 
 export function centredDialog(options: DialogOptions): HTMLElement[] {
@@ -44,7 +46,7 @@ export function centredDialog(options: DialogOptions): HTMLElement[] {
         problem.setAttribute("role", "alert");
         lines.push(problem);
     }
-    lines.push(el("p", alert ? "signin-alert-text" : "skyline-confirm-message", options.message));
+    if (options.message !== "") lines.push(el("p", alert ? "signin-alert-text" : "skyline-confirm-message", options.message));
     options.destructive?.classList.add("skyline-destructive");
     const row = el("div", alert ? "signin-actions" : "skyline-confirm-actions");
     row.append(...options.buttons);
@@ -55,5 +57,7 @@ export function centredDialog(options: DialogOptions): HTMLElement[] {
     const header = el("div", "skyline-confirm-header");
     header.append(title, ...lines);
     dialog.append(header, row);
-    return [...options.behind, el("div", "confirm-dialog-scrim"), dialog];
+    const scrim = el("div", "confirm-dialog-scrim");
+    if (options.onDismiss !== undefined) scrim.addEventListener("click", options.onDismiss);
+    return [...options.behind, scrim, dialog];
 }

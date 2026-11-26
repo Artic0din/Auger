@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Обновление аккаунта",
  "account.fallback.itsAccount": "аккаунт этого сервера",
  "account.fallback.thisAccount": "этот аккаунт",
  "account.fallback.thisServer": "этот сервер",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Сеанс истёк",
  "shell.errorView.tryAgain": "Повторить",
  "shell.errorView.updateRequired": "Требуется обновление",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Выйти",
  "shell.signOut.titleNamed": "Выйти из аккаунта {account} на сервере {server}?",
  "shuffle.failed": "Не удалось включить перемешивание. Повторите попытку.",

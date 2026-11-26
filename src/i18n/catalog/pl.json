@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Aktualizacja konta",
  "account.fallback.itsAccount": "jego konto",
  "account.fallback.thisAccount": "to konto",
  "account.fallback.thisServer": "ten serwer",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Sesja wygasła",
  "shell.errorView.tryAgain": "Spróbuj ponownie",
  "shell.errorView.updateRequired": "Wymagana aktualizacja",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Wyloguj się",
  "shell.signOut.titleNamed": "Wylogować się z konta {account} na serwerze {server}?",
  "shuffle.failed": "Nie udało się rozpocząć odtwarzania losowego. Spróbuj ponownie.",

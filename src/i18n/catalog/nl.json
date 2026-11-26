@@ -1,4 +1,5 @@
 {
+ "account.alertTitle": "Accountwijziging",
  "account.fallback.itsAccount": "het bijbehorende account",
  "account.fallback.thisAccount": "dit account",
  "account.fallback.thisServer": "deze server",
@@ -1101,6 +1102,7 @@
  "shell.errorView.sessionExpired": "Sessie verlopen",
  "shell.errorView.tryAgain": "Opnieuw proberen",
  "shell.errorView.updateRequired": "Update vereist",
+ "shell.notice.ok": "OK",
  "shell.signOut.confirm": "Uitloggen",
  "shell.signOut.titleNamed": "Uitloggen bij {account} op {server}?",
  "shuffle.failed": "Kan de shuffle niet starten. Probeer het opnieuw.",
