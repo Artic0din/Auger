@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.3] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Use centred alert dialogs for playback and subtitle resets ([#932](https://github.com/Artic0din/Auger-Tizen/pull/932), [`8be4ea7f`](https://github.com/Artic0din/Auger-Tizen/commit/8be4ea7f))
+
 ## [0.14.2] - 2026-11-26
 
 ### Fixes
