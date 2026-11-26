@@ -42,9 +42,9 @@ class ThreeTitles extends FakeRequests {
 
 const button = (tv: Tv, key: string) => tv.page.locator(`[data-focus="${key}"]`).last();
 
-async function inLanguage(language: string, body: (tv: Tv, fake: FakeRequests) => Promise<void>, requested = true): Promise<void> {
+async function inLanguage(language: string, body: (tv: Tv, fake: FakeRequests) => Promise<void>, requested = true, createFake: () => FakeRequests = () => new ThreeTitles()): Promise<void> {
     const tv = await openTv(browser, { app: "browse" });
-    const fake = new ThreeTitles();
+    const fake = createFake();
     fake.created = requested;
     tv.fake.catalog = fake;
     const settings = new FakeSettings(tv.fake);
@@ -75,7 +75,7 @@ test("the Requests hub and a request's detail read in German", async () => {
     await inLanguage("de", async tv => {
         assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), [text("requests.yourRequests", "de"), "Trending Movies"], "the server's row title stays as sent");
         assert.equal(await tv.page.locator(".requests-discover").innerText(), text("requests.hub.discover", "de").toUpperCase());
-        assert.equal(await button(tv, "request-one").getAttribute("aria-label"), `Heat · ${text("requests.short.pending", "de")}`);
+        assert.equal(await button(tv, "request-one").getAttribute("aria-label"), `Heat, 2023, ${text("requests.short.pending", "de")}`);
         assert.equal(await tv.page.locator(".requests-progress .requests-status-label").innerText(), text("requests.long.pending", "de"));
         assert.equal(await tv.page.locator(".requests-progress .requests-track").getAttribute("aria-label"), text("requests.long.pending", "de"));
 
@@ -176,6 +176,7 @@ test("in Arabic a request's detail is mirrored and reads from the catalog", asyn
 test("in Arabic the hero line is one text, laid out as Core Text lays out Apple's: the first strong letter, Movie, sets a left-to-right line", async () => {
     await inLanguage("ar", async tv => {
         await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl", "dir rtl");
+        assert.equal(await button(tv, "request-one").getAttribute("aria-label"), `Heat, ٢٠٢٣, ${text("requests.short.pending", "ar")}`);
         const line = await tv.page.locator(".requests-preview .requests-metadata").evaluate(row => {
             const span = row.querySelector("span");
             const node = span?.firstChild;
@@ -189,5 +190,39 @@ test("in Arabic the hero line is one text, laid out as Core Text lays out Apple'
         assert.ok(line.text.split(" · ")[2]?.startsWith(text("requests.requestedOn", "ar", { date: "\u0001" }).split("\u0001")[0] ?? "?"), line.text);
         assert.equal(line.bidi, "plaintext", "the base direction comes from the text's first strong letter, as Apple's Text does");
         assert.ok(line.year < line.kind && line.kind < line.requested, `Apple reads year, Movie, requested from the left: ${JSON.stringify(line)}`);
+    });
+});
+
+test("merged discover headings and own-request failure reasons read in German on the hub", async () => {
+    await inLanguage("de", async tv => {
+        assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), [
+            text("requests.yourRequests", "de"),
+            text("requests.discover.trendingNow", "de"),
+            text("requests.discover.crowdFavorites", "de"),
+        ]);
+        assert.equal(
+            await tv.page.locator(".requests-preview .requests-status-label").innerText(),
+            `${text("requests.long.failed", "de")} · ${text("requests.reason.quota_exceeded", "de")}`,
+        );
+    }, true, () => {
+        const fake = new ThreeTitles();
+        Object.assign(fake.record, { state: "failed", status: "approved", outcome: "failed", last_error: "quota_exceeded" });
+        const origRoute = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (new URL(path, "https://fake.invalid").pathname === "/requests/discover") {
+                const first = fake.title();
+                return {
+                    status: 200,
+                    body: {
+                        items: [
+                            { key: "trending_movies", title: "Trending Movies", page: 1, total_pages: 1, results: [first] },
+                            { key: "popular_series", title: "Popular Series", page: 1, total_pages: 1, results: [{ ...first, media_type: "series", tmdb_id: 952, title: "Show" }] },
+                        ],
+                    },
+                };
+            }
+            return origRoute(method, path, profileId, body);
+        };
+        return fake;
     });
 });
