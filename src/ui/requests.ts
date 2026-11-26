@@ -113,7 +113,7 @@ function detailActions(data: RequestTitle | MediaRequest, state: RequestPageSnap
         return item;
     };
     if ("request" in data && data.request.requestable) actions.push(requestAction());
-    const followTitle = "request" in data ? data : state.detail;
+    const followTitle = "request" in data ? data : state.detail?.request.id === data.id ? state.detail : undefined;
     if (followTitle !== undefined && canFollowRequest(state.capability, followTitle, requestProgress(followTitle))) {
         const following = followTitle.request.following;
         const label = translate(following ? "requests.action.stopNotify" : "requests.action.notify");

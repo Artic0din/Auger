@@ -815,10 +815,11 @@ export function createRequests(options: RequestsOptions): RequestsModule {
                 const data = internal.data;
                 if (disposed || internal.retired || visiblePage !== internal || writePending || gate.actingId !== undefined || internal.writing || internal.uncertain || foreground.busy() || data === undefined || !capability.enabled) return;
                 const title = "request" in data ? data : internal.detail;
+                const followTarget = "request" in data ? data : "id" in data && internal.detail?.request.id === data.id ? internal.detail : undefined;
                 const spec = action === "cancel" && "id" in data ? requestOperations.cancel(data.id)
-                    : title === undefined || action === "cancel" ? undefined
-                    : action === "create" ? requestOperations.create(title)
-                    : requestOperations.follow(title, action === "follow");
+                    : action === "cancel" ? undefined
+                    : action === "create" ? (title === undefined ? undefined : requestOperations.create(title))
+                    : followTarget === undefined ? undefined : requestOperations.follow(followTarget, action === "follow");
                 if (spec === undefined) return;
                 // Claim the list gate for Cancel so a hub menu cannot start a second POST for the same request.
                 const cancelId = action === "cancel" && "id" in data ? data.id : undefined;

@@ -384,3 +384,31 @@ test("requests capability probe updates admissible() and reports refreshSearch/f
     assert.deepEqual(events.at(-1), { enabled: false, refreshSearch: true, fromProbe: true });
     mod.dispose();
 });
+
+test("request-record write(follow) ignores detail belonging to a different request_id", async () => {
+    const h = await setup();
+    Object.assign(h.catalog.record, { state: "failed", status: "approved", outcome: "failed" });
+    const origTitle = h.catalog.title.bind(h.catalog);
+    h.catalog.title = () => ({
+        ...origTitle(),
+        request: {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            request_id: "different-pending-id",
+            state: "pending",
+            reason: "already_requested",
+        },
+    });
+    const mod = createRequests({ session: h.core.session, clock: h.clock });
+    await mod.probe();
+    const detail = mod.open({ kind: "request", id: h.catalog.record.id });
+    detail.arrive("push");
+    await settle();
+    const followsBefore = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    detail.write("follow");
+    await settle();
+    const followsAfter = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    assert.equal(followsAfter, followsBefore);
+    mod.dispose();
+});

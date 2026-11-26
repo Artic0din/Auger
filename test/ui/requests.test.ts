@@ -2444,3 +2444,34 @@ test("request route shows Notify Me for another profile and Request when ended i
         assert.equal(await button(tv, "create").textContent(), "Request");
     } finally { await tv.page.context().close(); }
 });
+
+test("request route hides Notify Me when closed record id differs from newer pending media request", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        Object.assign(fake.record, { state: "failed", status: "approved", outcome: "failed" });
+        const origTitle = fake.title.bind(fake);
+        fake.title = () => ({
+            ...origTitle(),
+            request: {
+                requestable: false,
+                following: false,
+                requested_by_viewer: false,
+                request_id: "newer-pending-request-id",
+                state: "pending",
+                reason: "already_requested",
+            },
+        });
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => path === "/requests/status"
+            ? { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: true, remove_failed_supported: true } }
+            : route(method, path, profileId, body);
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "status").waitFor();
+        assert.equal(await button(tv, "follow").count(), 0);
+        assert.equal(await tv.page.getByRole("button", { name: "Notify Me", exact: true }).count(), 0);
+    } finally { await tv.page.context().close(); }
+});
