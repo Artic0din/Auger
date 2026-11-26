@@ -80,6 +80,7 @@ import { test } from "node:test";
 import { ApiError } from "../../src/api/errors.ts";
 import type { ProfileSummary } from "../../src/contracts/v2/wire.ts";
 import type { AuthorityChange, AuthorizedSpec } from "../../src/session/session.ts";
+import { openSecretStore, type SecretStore } from "../../src/session/secretStore.ts";
 import { SessionError } from "../../src/session/session.ts";
 import { FakeSilo, problem } from "./support/fakeSilo.ts";
 import { connected, type Harness, latestDeviceCode, record, signIn } from "./support/harness.ts";
@@ -549,4 +550,52 @@ test("a media token is refreshed through the shared refresh when about to expire
     h.core.profiles.clear();
     await h.core.session.mediaToken();
     await assert.rejects(h.core.session.mediaToken(signal), (error: unknown) => error instanceof ApiError && error.aborted);
+});
+
+test("aborting connect during session opening rejects with aborted and writes no storage changes", async () => {
+    const h = await connected();
+    await signIn(h);
+    const keyManager = h.keyManager;
+    assert.ok(keyManager !== undefined);
+    const baseStore = openSecretStore(keyManager);
+    const beforeDirectory = h.storage.getItem("silo.native.accounts.v1");
+    let readStarted!: () => void;
+    const waitForRead = new Promise<void>(resolve => { readStarted = resolve; });
+    let releaseRead!: () => void;
+    const gate = new Promise<void>(resolve => { releaseRead = resolve; });
+    let writes = 0;
+    const pausedSecrets: SecretStore = {
+        persistent: true,
+        async read(alias) {
+            readStarted();
+            await gate;
+            return baseStore.read(alias);
+        },
+        async write(alias, value) { writes++; return baseStore.write(alias, value); },
+        async remove(alias) { writes++; return baseStore.remove(alias); },
+    };
+    const trackedStorage = {
+        getItem: (key: string) => h.storage.getItem(key),
+        setItem: (key: string, value: string) => { writes++; h.storage.setItem(key, value); },
+        removeItem: (key: string) => { writes++; h.storage.removeItem(key); },
+    };
+
+    const controller = new AbortController();
+    const pending = connect(h.fake.origin, {
+        fetch: h.fake.fetch,
+        publicStorage: trackedStorage,
+        keyManager: undefined,
+        transientAccounts: { secrets: pausedSecrets, storage: trackedStorage },
+        randomBytes: bytes => bytes.fill(0xab),
+        deviceName: "TV",
+        devicePlatform: "tizen",
+        clock: h.clock,
+    }, controller.signal);
+
+    await waitForRead;
+    controller.abort();
+    releaseRead();
+    await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.aborted);
+    assert.equal(writes, 0);
+    assert.equal(h.storage.getItem("silo.native.accounts.v1"), beforeDirectory);
 });
