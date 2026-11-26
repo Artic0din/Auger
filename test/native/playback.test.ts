@@ -6530,6 +6530,35 @@ test("a loss within 30 s of an attempt-12 recovery gives up immediately in stage
     r.controller.destroy();
 });
 
+test("terminal unanswered failure_recovery replan records HTTP 503 and timeout diagnostics through noteTransportUnanswered (#923)", async () => {
+    for (const [mode, setup] of [
+        ["http_503", (r: Rig, id: string) => r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 3 }, () => ({ status: 503, body: {} })))],
+        ["timeout", (r: Rig, id: string) => { for (let i = 0; i < 3; i++) r.h.fake.hold(`/playback/${id}/replan`); }],
+    ] as const) {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 11 }, () => ({ status: 503, body: {} })));
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        for (let waited = 0; waited < 200 && r.avplay.urls.length < 2; waited++) {
+            await r.h.clock.advance(1000);
+        }
+        assert.equal(r.avplay.urls.length, 2, `${mode}: 12th reconnect replan succeeded`);
+        setup(r, id);
+        r.avplay.finishPrepare("NotSupportedError");
+        const view = await exhaustReconnect(r, 120);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        const expectedHttp = mode === "http_503" ? 503 : undefined;
+        const expectedFc = mode === "http_503" ? "http_503" : "no_response";
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", expectedHttp, expectedFc, "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), mode === "http_503");
+        r.controller.destroy();
+    }
+});
+
 test("a plan refused before adoption still describes the failed start (#873)", async () => {
     const r = await rig();
     r.h.fake.script("/watch/movie-1?file_id=42", problem(404, "not_found", "Unavailable"));
