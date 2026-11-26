@@ -141,6 +141,16 @@ export function backwardFillIcon(): string {
     return `<svg viewBox="0 0 24 16" focusable="false" aria-hidden="true"><path fill="currentColor" d="M22.5 2.2A1 1 0 0 0 21 1.4l-8.8 5.7a1 1 0 0 0 0 1.8l8.8 5.7a1 1 0 0 0 1.5-.8V2.2zm-11 0A1 1 0 0 0 10 1.4L1.2 7.1a1 1 0 0 0 0 1.8L10 14.6a1 1 0 0 0 1.5-.8V2.2z"/></svg>`;
 }
 
+/** `arrow.left.arrow.right`: hold-seek speed hint glyph. */
+export function arrowsLeftRightIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M7 7 3 11l4 4M3 11h18M17 17l4-4-4-4"/>`);
+}
+
+/** `circle.fill`: hold-seek Select/Play hint glyph. */
+export function circleFillIcon(): string {
+    return svg(`<circle cx="12" cy="12" r="7" fill="currentColor"/>`);
+}
+
 /** `shuffle`: Up Next's Shuffling badge and Pick Another button symbol (#778). */
 export function shuffleIcon(): string {
     return svg(`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h4v4"/><path d="M4 19 20 4"/><path d="M16 20h4v-4"/><path d="M14 14l6 6"/><path d="M4 5l6 6"/></g>`);

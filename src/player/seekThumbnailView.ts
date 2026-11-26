@@ -41,18 +41,19 @@ function placeThumbnail(frame: HTMLElement, parent: HTMLElement, seconds: number
     frame.style.bottom = `${host.bottom - (handleCenter - ABOVE_HANDLE)}px`;
 }
 
-/** One loaded sheet and at most one replacement; image requests carry only signed authorization. */
-export function mountSeekThumbnail(parent: HTMLElement, controls: PlayerControls, clock: Clock): { show(seconds: number, duration: number): void; clear(): void } {
-    const frame = el("div", "player-thumbnail");
-    const crop = el("div", "player-thumbnail-frame");
-    const time = el("p", "player-thumbnail-time");
-    time.style.lineHeight = `${PREVIEW_TEXT_LINE}px`;
-    crop.style.height = `${PREVIEW_FRAME_HEIGHT}px`;
-    frame.append(crop, time);
-    frame.setAttribute("aria-hidden", "true");
-    frame.hidden = true;
-    parent.appendChild(frame);
-    let request: AbortController | undefined;
+/** Shared sprite-sheet thumbnail renderer: one loaded sheet and at most one in-flight request. */
+export function createSeekTileRenderer(
+    crop: HTMLElement,
+    controls: PlayerControls,
+    clock: Clock,
+    frameWidth: number,
+    frameHeight: number,
+    onLoaded: (loaded: boolean) => void,
+    options?: { readonly coalesce?: boolean },
+): { request(seconds: number): void; clear(): void } {
+    const coalesce = options?.coalesce === true;
+    let active: AbortController | undefined;
+    let pendingSeconds: number | undefined;
     let sheet: HTMLImageElement | undefined;
 
     const loadSheet = (tile: SeekThumbnail, signal: AbortSignal): Promise<void> => {
@@ -85,35 +86,91 @@ export function mountSeekThumbnail(parent: HTMLElement, controls: PlayerControls
         });
     };
 
-    return {
-        show(seconds, duration) {
-            request?.abort();
-            const target = new AbortController();
-            request = target;
-            placeThumbnail(frame, parent, seconds, duration);
-            frame.hidden = true;
-            time.textContent = previewClock(seconds);
-            void controls.seekThumbnail(seconds, target.signal, loadSheet).then((tile) => {
-                if (target.signal.aborted || request !== target || tile === undefined || sheet === undefined) return;
-                const frameWidth = 320;
-                const scale = frameWidth / tile.width;
-                crop.style.width = `${frameWidth}px`;
-                crop.style.height = `${PREVIEW_FRAME_HEIGHT}px`;
-                sheet.style.width = `${tile.sheetWidth * scale}px`;
-                sheet.style.height = `${tile.sheetHeight * scale}px`;
-                sheet.style.left = `${-tile.x * scale}px`;
-                sheet.style.top = `${-tile.y * scale}px`;
+    const start = (seconds: number): void => {
+        const target = new AbortController();
+        active = target;
+        const drain = (): void => {
+            if (active !== target) return;
+            active = undefined;
+            if (pendingSeconds !== undefined) {
+                const next = pendingSeconds;
+                pendingSeconds = undefined;
+                start(next);
+            }
+        };
+        void controls.seekThumbnail(seconds, target.signal, loadSheet).then((tile) => {
+            if (target.signal.aborted || active !== target) return;
+            if (tile === undefined || sheet === undefined) {
                 crop.textContent = "";
-                crop.appendChild(sheet);
-                frame.hidden = false;
-            }, () => { if (request === target) frame.hidden = true; });
+                onLoaded(false);
+                drain();
+                return;
+            }
+            const scale = frameWidth / tile.width;
+            crop.style.width = `${frameWidth}px`;
+            crop.style.height = `${frameHeight}px`;
+            sheet.style.width = `${tile.sheetWidth * scale}px`;
+            sheet.style.height = `${tile.sheetHeight * scale}px`;
+            sheet.style.left = `${-tile.x * scale}px`;
+            sheet.style.top = `${-tile.y * scale}px`;
+            crop.textContent = "";
+            crop.appendChild(sheet);
+            onLoaded(true);
+            drain();
+        }, () => {
+            if (active === target) {
+                onLoaded(false);
+                drain();
+            }
+        });
+    };
+
+    return {
+        request(seconds) {
+            if (coalesce && active !== undefined) {
+                pendingSeconds = seconds;
+                return;
+            }
+            pendingSeconds = undefined;
+            active?.abort();
+            start(seconds);
         },
         clear() {
-            request?.abort();
-            request = undefined;
+            pendingSeconds = undefined;
+            active?.abort();
+            active = undefined;
             sheet?.removeAttribute("src");
             sheet = undefined;
             crop.textContent = "";
+            onLoaded(false);
+        },
+    };
+}
+
+/** One loaded sheet and at most one replacement; image requests carry only signed authorization. */
+export function mountSeekThumbnail(parent: HTMLElement, controls: PlayerControls, clock: Clock): { show(seconds: number, duration: number): void; clear(): void } {
+    const frame = el("div", "player-thumbnail");
+    const crop = el("div", "player-thumbnail-frame");
+    const time = el("p", "player-thumbnail-time");
+    time.style.lineHeight = `${PREVIEW_TEXT_LINE}px`;
+    crop.style.height = `${PREVIEW_FRAME_HEIGHT}px`;
+    frame.append(crop, time);
+    frame.setAttribute("aria-hidden", "true");
+    frame.hidden = true;
+    parent.appendChild(frame);
+    const renderer = createSeekTileRenderer(crop, controls, clock, 320, PREVIEW_FRAME_HEIGHT, (loaded) => {
+        frame.hidden = !loaded;
+    });
+
+    return {
+        show(seconds, duration) {
+            placeThumbnail(frame, parent, seconds, duration);
+            frame.hidden = true;
+            time.textContent = previewClock(seconds);
+            renderer.request(seconds);
+        },
+        clear() {
+            renderer.clear();
             time.textContent = "";
             frame.hidden = true;
         },
