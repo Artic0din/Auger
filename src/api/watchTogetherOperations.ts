@@ -11,6 +11,7 @@
 
 import {
     type CreatableSelectionMode,
+    decodeMemberState,
     decodePicker,
     decodeRoomAccess,
     decodeRoomSocketTicket,
@@ -19,6 +20,7 @@ import {
     decodeWatchTogetherCapabilities,
     MAX_JOIN_CODE_LENGTH,
     MAX_ROOM_TOKEN_LENGTH,
+    type MemberState,
     type Picker,
     type RoomAccess,
     type RoomSelection,
@@ -116,6 +118,13 @@ export const watchTogetherOperations = {
     /** What the connected members are mid-way through and what is on their watchlists. Needs the room token. */
     picker: (roomId: string, token: string): RequestSpec<Picker> =>
         ({ method: "GET", path: `${roomPath(roomId)}/picker`, retry: "safe", roomToken: roomToken(token), decode: decodePicker }),
+
+    /** Per-member watch state ("Who's seen it") for 1..200 content ids. Needs the room token. */
+    memberState: (roomId: string, token: string, contentIds: readonly string[]): RequestSpec<MemberState> => {
+        if (contentIds.length < 1 || contentIds.length > 200 || contentIds.some(id => id === "")) throw new RangeError("Member state requires 1 to 200 non-empty content ids");
+        const ids = [...contentIds];
+        return { method: "POST", path: `${roomPath(roomId)}/member-state`, retry: "safe", roomToken: roomToken(token), body: { content_ids: ids }, decode: value => decodeMemberState(value, ids) };
+    },
 
     // The ballot, for any member: every call needs the room token. Votes and suggestions change no room, so only promote answers with it.
 

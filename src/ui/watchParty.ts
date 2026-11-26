@@ -4,6 +4,7 @@
 import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View } from "./browseFocus.ts";
 import { actionButton } from "./browseViews.ts";
+import type { EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { el } from "./screen.ts";
 import { banner, enabled, eyebrow, pill, plusIcon } from "./watchPartyParts.ts";
 import { endView, inviteView, lobbyView, optionsView, suggestionMenuView } from "./watchPartyLobby.ts";
@@ -55,11 +56,11 @@ export function watchPartyScreen(hub: WatchPartyHub): WatchPartyScreen {
 /** The IME Done key on the Tizen keyboard. */
 const IME_DONE = 65376;
 
-export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseUrl: string): View {
+export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseUrl: string, spoilers?: EpisodeSpoilerSettings): View {
     const { hub } = screen;
     const room = hub.state.room;
     if (room === undefined) return entryView(screen, back);
-    const context = { hub, baseUrl };
+    const context = { hub, baseUrl, ...(spoilers === undefined ? {} : { spoilers }) };
     const page = hub.state.page;
     switch (page.kind) {
         case "options": return optionsView(context, room);
@@ -68,8 +69,8 @@ export function watchPartyView(screen: WatchPartyScreen, back: () => void, baseU
         case "suggestionMenu": return suggestionMenuView(context, room, page.suggestion);
         case "picker": return pickerView(context);
         case "search": return searchView(context, screen.search);
-        case "choice": return choiceView(context, page.choice);
-        case "episodes": return episodesView(context, page.series, page.season, page.from);
+        case "choice": return choiceView(context, page.choice, page.from);
+        case "episodes": return episodesView(context, page.series, page.season, page.from, page.initialEpisodeId);
         case "lobby": return lobbyView(context, room, back);
     }
 }

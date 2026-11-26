@@ -621,6 +621,55 @@ test("picker search queries playable catalog titles, paginates, and Back returns
     assert.equal(hub.state.page.kind, "picker");
 });
 
+test("opening a choice reads member-state when supported and surfaces failures without losing the choice (#783)", async () => {
+    const requests: { readonly roomId: string; readonly token: string; readonly ids: readonly string[] }[] = [];
+    const { hub } = lobby({
+        memberState: async (roomId, token, ids) => {
+            requests.push({ roomId, token, ids });
+            return {
+                members: [],
+                items: [{ contentId: "movie:m0004", members: [{ userId: "1", profileId: "p-owner", state: "watched", positionSeconds: undefined, durationSeconds: undefined, onWatchlist: false }] }],
+            };
+        },
+    }, { staged_selection: true, member_state: true, max_member_state_ids: 50 });
+    await hub.create("host_pick");
+    hub.show({ kind: "choice", choice: movie() });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(requests, [{ roomId: "0b6f3f0e-6c1d-4a39-9d52-3a1f7c7f9e10", token: "room-proof", ids: ["movie:m0004"] }]);
+    assert.equal(hub.state.memberStateLoading, false);
+    assert.equal(hub.state.memberState?.items[0]?.members[0]?.state, "watched");
+});
+
+test("Back through nested See all episodes reloads the restored season when a nested browse changed seasons (#783)", async () => {
+    const reads: number[] = [];
+    const season = (n: number) => ({ id: `series:s1-S${n}`, seasonNumber: n, title: `Season ${n}`, episodeCount: 1, posterUrl: undefined, isSpecials: false });
+    const episode = (s: number) => ({ id: `episode:s${s}e1`, seasonNumber: s, episodeNumber: 1, title: `S${s}E1`, runtimeMinutes: 45, stillUrl: undefined, played: false });
+    const series = decodeCard({ content_id: "series:s1", type: "series", title: "Harbor Lights" }, "card");
+    const { hub } = lobby({
+        seasons: async () => [season(1), season(2)],
+        episodes: async (_id, number) => { reads.push(number); return [episode(number)]; },
+    });
+    const readPage = () => hub.state.page;
+    await hub.create("host_pick");
+    await hub.openEpisodes(series);
+    assert.deepEqual(reads, [1]);
+    const ep1 = hub.state.episodes![0]!;
+    const season1 = hub.state.seasons![0]!;
+    hub.show({ kind: "choice", choice: { ...movie(), contentId: ep1.id, seriesLink: series, seasonNumber: 1 }, from: { kind: "episodes", series, season: season1, initialEpisodeId: ep1.id } });
+    // Nested "See all episodes" -> switch to season 2 -> Back twice restores season 1's episodes.
+    await hub.openEpisodes(series, 1, false, readPage(), ep1.id);
+    await hub.openEpisodes(series, hub.state.seasons![1]);
+    assert.equal(hub.state.episodes?.[0]?.id, "episode:s2e1");
+    hub.back();
+    assert.equal(readPage().kind, "choice");
+    hub.back();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const restored = readPage();
+    assert.equal(restored.kind, "episodes");
+    assert.equal(restored.kind === "episodes" && restored.season?.seasonNumber, 1);
+    assert.equal(hub.state.episodes?.[0]?.id, "episode:s1e1", "restored season 1 reloads its own episodes");
+});
+
 test("picker search blocks stale-cursor pagination after edits and drops an in-flight append superseded by a debounced refresh", async () => {
     const calls: [string, string | undefined][] = [];
     const card = (id: string) => decodeCard({ content_id: id, type: "movie", title: id }, "card");
