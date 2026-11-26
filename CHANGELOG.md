@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.13.0] - 2026-11-26
+
+### Features
+
+- **Playback**: Claim 2160p on 4K panels via isUdPanelSupported ([#925](https://github.com/Artic0din/Auger-Tizen/pull/925), [`8e2fb62e`](https://github.com/Artic0din/Auger-Tizen/commit/8e2fb62e))
+
 ## [0.12.0] - 2026-11-26
 
 ### Features
