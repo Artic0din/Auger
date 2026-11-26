@@ -226,7 +226,7 @@ test("the subtitle preview draws sans-serif in the bundled semibold face", async
     try {
         await openSettings(tv);
         await tv.page.locator('[data-focus="subtitles"]').click();
-        const preview = tv.page.locator(".settings-subtitle-preview span");
+        const preview = tv.page.locator(".settings-pane .settings-subtitle-preview span");
         await preview.waitFor();
         const face = (): Promise<{ family: string; weight: string }> => preview.evaluate(node => {
             const style = getComputedStyle(node);
@@ -755,6 +755,66 @@ test("Playback reset alert shows Saving status in flight and clears stale reset 
         assert.equal(settings.profile().get(QUALITY_KEY), "720p");
         assert.deepEqual(tv.console, []);
     } finally { held?.release(); await tv.page.context().close(); }
+});
+
+test("Subtitles warns on low legibility below the preview and previews Font Family on focus", async () => {
+    const { tv, settings } = await setup();
+    settings.remainingRows = true;
+    try {
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="subtitles"]').click();
+        assert.equal(await tv.page.locator(".settings-low-legibility").count(), 0);
+
+        await tv.page.getByRole("button", { name: /Background Style/ }).click();
+        await tv.page.getByRole("radio", { name: "Drop Shadow", exact: true }).click();
+        await tv.page.getByRole("button", { name: /Font Color/ }).click();
+        await tv.page.getByRole("radio", { name: "Black", exact: true }).click();
+        const warning = tv.page.locator(".settings-low-legibility");
+        await warning.waitFor();
+        assert.equal(await warning.textContent(), "Low legibility — very transparent or dark text without a box or outline can be hard to read.");
+        const ordered = await tv.page.evaluate(() => {
+            const preview = document.querySelector(".settings-pane .settings-subtitle-preview");
+            const footer = document.querySelector(".settings-pane .settings-low-legibility");
+            const toggle = document.querySelector('[data-focus="appearance-device"]');
+            const follows = (a: Element | null, b: Element | null): boolean => Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+            return follows(preview, footer) && follows(footer, toggle);
+        });
+        assert.equal(ordered, true);
+
+        await tv.page.getByRole("button", { name: /Background Style/ }).click();
+        await tv.page.getByRole("radio", { name: "Box", exact: true }).click();
+        await warning.waitFor({ state: "detached" });
+
+        await tv.page.getByRole("button", { name: /Text Opacity/ }).click();
+        await tv.page.getByRole("radio", { name: "25%", exact: true }).click();
+        await warning.waitFor();
+        await tv.page.getByRole("button", { name: /Text Opacity/ }).click();
+        await tv.page.getByRole("radio", { name: "100%", exact: true }).click();
+        await warning.waitFor({ state: "detached" });
+
+        const requestsBefore = tv.fake.requests.length;
+        await tv.page.getByRole("button", { name: /Font Family/ }).click();
+        const dialog = tv.page.getByRole("dialog", { name: "Font Family" });
+        await dialog.waitFor();
+        assert.equal(await dialog.locator(".settings-subtitle-preview").count(), 1);
+        assert.deepEqual(await dialog.getByRole("radio").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label"))), ["Sans-serif", "Serif", "Monospace"]);
+        assert.deepEqual(await dialog.locator(".settings-font-sample").allTextContents(), ["Subtitle sample", "Subtitle sample", "Subtitle sample"]);
+        assert.deepEqual(await dialog.locator(".settings-font-sample").evaluateAll(nodes => nodes.map(node => (node as HTMLElement).style.fontFamily)), ["Inter, sans-serif", "serif, sans-serif", "monospace, sans-serif"]);
+        const previewFont = (): Promise<string> => dialog.locator(".settings-subtitle-preview span").evaluate(node => (node as HTMLElement).style.fontFamily);
+        assert.equal(await previewFont(), "Inter, sans-serif");
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "choice:serif");
+        assert.equal(await previewFont(), "serif, sans-serif");
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "choice:monospace");
+        assert.equal(await previewFont(), "monospace, sans-serif");
+        assert.equal(tv.fake.requests.length, requestsBefore, "moving focus in Font Family issues zero network requests");
+        await tv.remote(10009);
+        await dialog.waitFor({ state: "detached" });
+        assert.equal(await tv.focused(), "appearance-fontFamily");
+        assert.equal(await tv.page.locator(".settings-pane .settings-subtitle-preview span").evaluate(node => (node as HTMLElement).style.fontFamily), "Inter, sans-serif");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
 });
 
 test("measured Settings pickers centre the selected choice and privacy handoff", async () => {

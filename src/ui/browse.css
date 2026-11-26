@@ -1995,6 +1995,8 @@ svg.library-empty-icon { width: auto; }
 .settings-modal .browse-title.settings-picker-title { margin-bottom: 6px; }
 .settings-modal-options { overflow-y: auto; min-height: 0; padding: 8px; }
 .settings-option-detail { display: block; margin-top: 6px; font-size: 20px; line-height: 1.35; }
+.settings-option-label { display: block; }
+.settings-font-sample { display: block; margin-top: 4px; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 1.25; opacity: .72; }
 .settings-checkmark { float: right; margin-inline-start: 16px; display: inline-grid; place-items: center; width: 26px; height: 26px; background: currentColor; border-radius: 50%; }
 /* float: inline-end needs Chromium 118; the checkmark moves to the leading side by hand. */
 :root[dir="rtl"] .settings-checkmark { float: left; }
@@ -2006,6 +2008,7 @@ svg.library-empty-icon { width: auto; }
    overflow:hidden would otherwise let this flex child shrink in a constrained pane. */
 .settings-subtitle-preview { display: flex; justify-content: center; align-items: flex-end; box-sizing: border-box; height: 150px; min-height: 150px; flex-shrink: 0; margin: 0 24px 8px; padding: 12px 16px; border-radius: 18px; background: linear-gradient(98.9deg, #525252, #0f0f0f); overflow: hidden; }
 .settings-subtitle-preview span { text-align: center; font-weight: 600; line-height: 1.2; }
+.settings-modal .settings-subtitle-preview { margin: 0 0 18px; }
 /* TVSettingsPaneRowStyle isDestructive (TVSettingsComponents.swift:273-276): #B00020 at rest, #D22F3F on the white platter. */
 .settings-pane .settings-held-action { display: flex; align-items: center; gap: 16px; }
 .settings-pane .settings-held-action .skyline-menu-icon { width: 22px; height: 22px; margin: 0; }
