@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.11] - 2026-11-26
+
+### Fixes
+
+- **Profiles**: Port Profiles and PIN from the tvOS source ([#944](https://github.com/Artic0din/Auger-Tizen/pull/944), [`58e179d7`](https://github.com/Artic0din/Auger-Tizen/commit/58e179d7))
+- **Dialogs**: Port dialogs and card menus from the tvOS source ([#946](https://github.com/Artic0din/Auger-Tizen/pull/946), [`d0ae668e`](https://github.com/Artic0din/Auger-Tizen/commit/d0ae668e))
+
+### Tests
+
+- **Interface**: Wait for paint before reading Browse skeleton styles ([#949](https://github.com/Artic0din/Auger-Tizen/pull/949), [`8a5413ec`](https://github.com/Artic0din/Auger-Tizen/commit/8a5413ec))
+
 ## [0.14.10] - 2026-11-26
 
 ### Fixes
