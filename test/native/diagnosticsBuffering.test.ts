@@ -37,16 +37,17 @@ function evidence(overrides: Partial<BufferingEvidenceTrace> = {}): BufferingEvi
 }
 
 /** A buffering lowering whose answer was lost, then a reconnect that ran out: the failed recovery that ends playback. */
-function failedRecovery(quality: BufferingEvidenceTrace = evidence()): PlaybackAttemptTrace {
+function failedRecovery(quality: BufferingEvidenceTrace = evidence(), overrides: Partial<PlaybackAttemptTrace> = {}): PlaybackAttemptTrace {
     return {
         seq: 1, chain: 0, stage: "reconnect", done: "playing", first: { stage: "quality_change", code: "no_answer", buffering: true },
-        http: undefined, decision: undefined, firstAvplay: undefined, lastAvplay: undefined, resends: 0, fallbacks: 0, reconnects: 1,
+        http: 400, decision: undefined, firstAvplay: undefined, lastAvplay: undefined, resends: 0, fallbacks: 0, reconnects: 1,
         opened: true, shown: true, recovered: false, exhausted: true,
         steps: ["playing:ok", "quality_change:fail:no_answer", "reconnect:end:network"],
         settings: { quality: "auto", capKbps: undefined, hdr: true }, hdrPanel: "unavailable",
         request: { startSeconds: undefined, subtitle: "auto", audio: "default" },
         plan: { delivery: "server_transcode_hls", protocol: "hls", container: "hls", quality: "auto", sourceKbps: 24000, videoCodec: "hevc", width: 3840, height: 2160, dynamicRange: "sdr", startSeconds: 0, atSeconds: 1820 },
         quality,
+        ...overrides,
     };
 }
 
@@ -137,6 +138,24 @@ test("automatic filing stays off until the viewer enables it, and a manual repor
     diagnostics.setAutoReportEnabled(true);
     assert.ok(diagnostics.claimAutoReport(record) !== undefined);
     assert.equal(diagnostics.claimAutoReport(record), undefined, "one incident files once");
+});
+
+test("buffering recovery exhaustion without an HTTP response stays manual while preserving frozen evidence", () => {
+    const diagnostics = collector();
+    diagnostics.setAutoReportEnabled(true);
+    for (const [overrides, expectedCode] of [
+        [{ http: undefined }, "network_unreachable"],
+        [{ http: undefined, timedOut: true }, "no_response"],
+    ] as const) {
+        const dropScope = diagnostics.beginPlaybackSession();
+        const record = diagnostics.recordPlaybackIncident(dropScope, failedRecovery(evidence(), overrides), { kind: "network" });
+        assert.ok(record !== undefined);
+        assert.equal(record.category, "buffering");
+        assert.equal(record.incident.fc, expectedCode);
+        assert.equal(incidentAutoEligible(record.incident), false);
+        assert.equal(diagnostics.claimAutoReport(record), undefined, "pure drop or timeout never auto-files");
+        assert.deepEqual(diagnostics.reportFor("buffering"), record, "manual report still preserves the frozen buffering record");
+    }
 });
 
 test("a successful step-down and repeated stalls are user-observed reports with the attempt's evidence, never incidents", () => {
