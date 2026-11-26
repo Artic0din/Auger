@@ -121,6 +121,8 @@ export interface Browse {
     resumeAfterPlayback(): void;
     /** Updates the top-bar profile chrome without remounting painted content. */
     updateProfile(profile: Pick<ProfileSummary, "name" | "avatarUrl" | "avatar">): void;
+    /** Opens an in-browse destination (for tests). */
+    open(destination: Destination): void;
     /** Removes browse and its container; nothing else in `root` is touched. */
     destroy(): void;
     /** The profile spoiler switches playback uses for Up Next. */
@@ -509,7 +511,6 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 render(origin.focus);
             }
         },
-        information: card => open({ kind: "item", id: card.id, title: card.title }),
         pendingElsewhere: () => detailWork?.pending === true,
         canAlert: () => !torn && !playing && settingsScreen === undefined && !requestMenu.active,
     });
@@ -2514,6 +2515,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             profileAvatarText = avatarText(profile);
             shell.setAvatar(profileName, profileAvatarUrl, context.baseUrl, profileAvatarText);
         },
+        open,
         destroy: teardown,
         spoilers: () => episodeSpoilers?.settings ?? { hidesImages: false, hidesOverviews: false },
         resolutionCap: () => resolutionCap,

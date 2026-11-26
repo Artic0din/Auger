@@ -165,6 +165,8 @@
  "detail.more": "더 보기",
  "detail.more.addFavorite": "즐겨찾기에 추가",
  "detail.more.findTrailers": "예고편 찾기",
+ "detail.more.markEpisodeUnwatched": "에피소드를 시청 안 함으로 표시",
+ "detail.more.markEpisodeWatched": "에피소드를 시청함으로 표시",
  "detail.more.markSeasonUnwatched": "시즌을 시청 안 함으로 표시",
  "detail.more.markSeasonWatched": "시즌을 시청함으로 표시",
  "detail.more.markSeriesUnwatched": "시리즈를 시청 안 함으로 표시",

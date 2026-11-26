@@ -2,9 +2,15 @@ import { selectLibraryMode } from "./support/library.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
+import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
+import { translate } from "../../src/i18n/translate.ts";
+import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
+import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { afterPaint, homeDetailsRead, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+
+registerSourceCatalogs();
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
@@ -830,7 +836,10 @@ for (const surface of ["library-shelf", "library-grid", "collection", "search", 
             assert.ok(read);
             // TVSeriesDetailView.swift:632-643: the season pill's menu is Mark Season Watched or Unwatched alone.
             if (surface === "season") assert.deepEqual(await rowLabels(tv), ["Mark Season Unwatched"]);
-            else if (surface === "episode") assert.deepEqual(await rowLabels(tv), ["Episode information", "Mark as Unwatched", "Add to Favorites", "Add to Watchlist"], "an episode rail keeps its only route to episode Details");
+            else if (surface === "episode") {
+                assert.deepEqual(await rowLabels(tv), ["Mark Episode Unwatched", "Add to Favorites", "Add to watchlist"], "episode rail shows TVEpisodeRail post-#1253 rows only");
+                assert.equal(await menu(tv).locator('[data-focus="episode-information"], [data-focus="card-play"]').count(), 0);
+            }
             else assert.equal(await menu(tv).getByRole("menuitem").count(), 3);
         }
         await tv.remote(10009);
@@ -879,7 +888,10 @@ test("a card whose item cannot be read shows the alert instead of an empty menu"
         tv.fake.script(`/catalog/items/${encodeURIComponent(id)}?image_size=large`, problem(404, "not_found", "Not found"));
         // The alert lands while the opening hold is still down: its release is swallowed, and the next fresh Select is the alert's.
         await card.focus(); await tv.down(13); await tv.jump(650);
-        await tv.page.getByRole("alertdialog", { name: "Couldn’t Update Item" }).waitFor();
+        const alert = tv.page.getByRole("alertdialog", { name: "Couldn't Update Item" });
+        await alert.waitFor();
+        assert.equal(await alert.locator(".signin-alert-text").innerText(), "Your change wasn't saved. Please try again.");
+        assert.deepEqual(await alert.getByRole("button").allInnerTexts(), ["OK"]);
         await tv.up(13);
         assert.equal(await menu(tv).count(), 0);
         await tv.page.keyboard.press("Enter");
@@ -1098,5 +1110,88 @@ test("a series page replaced by a related title keeps its season for the next vi
         await origin(tv, false, "series:s1").click();
         await tv.page.locator('[data-focus="season:2"][aria-pressed="true"]').waitFor();
         assert.equal(await tv.page.locator('[data-focus^="season:"][aria-pressed="true"]').count(), 1);
+    } finally { await tv.page.context().close(); }
+});
+
+test("non-Home card mutation and deferred failures show generic MediaActionFeedback copy, and episode rails localize post-#1253 rows", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeDetails();
+        catalog.cardUserState = true;
+        tv.fake.catalog = catalog;
+        const settings = new FakeSettings(tv.fake);
+        settings.revision = 28;
+        settings.profile().set(APP_LANGUAGE_KEY, "de");
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(async () => await tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-section="recently_added"] .browse-card').first().waitFor();
+        await homeDetailsRead(tv);
+        const de = (key: Parameters<typeof translate>[0]) => translate(key, undefined, "de");
+        await tv.eventually(async () => (await tv.page.locator(".skyline-roots [data-focus]").allInnerTexts()).includes(de("topBar.forYou")), "German top bar");
+        await afterPaint(tv);
+
+        // Episode rail in German uses catalog keys for Watch state, Favorites, and Watchlist without Play or Episode information.
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').click();
+        await tv.eventually(async () => await tv.focused() === "next-episode", "Series Play entry focus settles");
+        await tv.page.locator('[data-focus="season:1"]').click();
+        const episodeCard = tv.page.locator('.details-episodes [data-focus="episode:s1e11"]');
+        await episodeCard.waitFor();
+        await episodeCard.focus();
+        await tv.down(13); await tv.jump(650); await tv.up(13);
+        await menu(tv).locator('[data-focus="watched"]').waitFor();
+        assert.deepEqual(await rowLabels(tv), [
+            de("detail.more.markEpisodeUnwatched"),
+            de("detail.more.addFavorite"),
+            de("detail.watchlistAdd"),
+        ]);
+        assert.equal(await menu(tv).locator('[data-focus="episode-information"], [data-focus="card-play"]').count(), 0);
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await origin(tv).waitFor();
+
+        // Library Recommended shelf opens without item read, offers Mark as Watched, and fails with generic MediaActionFeedback copy even in German.
+        await tv.page.locator('[data-focus="movies"]').click();
+        const shelfCard = tv.page.locator('.browse[data-view="library:12"] .browse-card:not(.discovery-collection)').first();
+        await shelfCard.waitFor();
+        catalog.mutationFailure = problem(400, "validation_failed", "Not applied");
+        await shelfCard.focus(); await tv.down(13); await tv.jump(650); await tv.up(13);
+        await menu(tv).locator('[data-focus="watched"]').click();
+        const shelfAlert = tv.page.getByRole("alertdialog", { name: "Couldn't Update Item" });
+        await shelfAlert.waitFor();
+        assert.equal(await shelfAlert.locator(".signin-alert-text").innerText(), "Your change wasn't saved. Please try again.");
+        assert.deepEqual(await shelfAlert.getByRole("button").allInnerTexts(), ["OK"]);
+        await tv.page.keyboard.press("Enter");
+        assert.equal(await shelfAlert.count(), 0);
+
+        // Library Browse card mutation failure shows plain-English MediaActionFeedback even in German (including deferred over Settings).
+        await tv.page.locator('[data-focus="movies"]').focus();
+        await tv.remote(40);
+        await tv.page.getByRole("menuitem", { name: de("library.browse"), exact: true }).click();
+        const card = tv.page.locator('.browse .browse-grid .browse-card').first();
+        await card.waitFor();
+        const cardId = await card.getAttribute("data-focus") ?? "";
+        const answer = tv.fake.hold(`/favorites/${encodeURIComponent(cardId)}`, true);
+        catalog.mutationFailure = problem(400, "validation_failed", "Not applied");
+        await card.focus(); await tv.down(13); await tv.jump(650); await tv.up(13);
+        await menu(tv).locator('[data-focus="favorites"]').click();
+        await tv.eventually(async () => tv.fake.requests.some(r => r.path.startsWith("/favorites/") && r.method === "PUT"), "non-Home favorite sent");
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="show-audiobooks"]').waitFor();
+        answer.release();
+        await tv.jump(500);
+        assert.equal(await tv.page.getByRole("alertdialog").count(), 0);
+        await tv.remote(10009);
+        const alert = tv.page.getByRole("alertdialog", { name: "Couldn't Update Item" });
+        await alert.waitFor();
+        assert.equal(await alert.locator(".signin-alert-text").innerText(), "Your change wasn't saved. Please try again.");
+        assert.deepEqual(await alert.getByRole("button").allInnerTexts(), ["OK"]);
+        await tv.page.keyboard.press("Enter");
+        assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });

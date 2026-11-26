@@ -165,6 +165,8 @@
  "detail.more": "Altro",
  "detail.more.addFavorite": "Aggiungi ai preferiti",
  "detail.more.findTrailers": "Cerca trailer",
+ "detail.more.markEpisodeUnwatched": "Segna episodio come non visto",
+ "detail.more.markEpisodeWatched": "Segna episodio come visto",
  "detail.more.markSeasonUnwatched": "Segna stagione come non vista",
  "detail.more.markSeasonWatched": "Segna stagione come vista",
  "detail.more.markSeriesUnwatched": "Segna serie come non vista",

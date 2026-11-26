@@ -165,6 +165,8 @@
  "detail.more": "المزيد",
  "detail.more.addFavorite": "إضافة إلى المفضلة",
  "detail.more.findTrailers": "البحث عن إعلانات ترويجية",
+ "detail.more.markEpisodeUnwatched": "تعليم الحلقة كغير مُشاهدة",
+ "detail.more.markEpisodeWatched": "تعليم الحلقة كمُشاهدة",
  "detail.more.markSeasonUnwatched": "تعليم الموسم كغير مُشاهد",
  "detail.more.markSeasonWatched": "تعليم الموسم كمُشاهد",
  "detail.more.markSeriesUnwatched": "تعليم المسلسل كغير مُشاهد",

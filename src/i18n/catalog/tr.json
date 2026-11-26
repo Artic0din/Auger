@@ -165,6 +165,8 @@
  "detail.more": "Diğer",
  "detail.more.addFavorite": "Favorilere ekle",
  "detail.more.findTrailers": "Fragman bul",
+ "detail.more.markEpisodeUnwatched": "Bölümü izlenmedi olarak işaretle",
+ "detail.more.markEpisodeWatched": "Bölümü izlendi olarak işaretle",
  "detail.more.markSeasonUnwatched": "Sezonu izlenmedi olarak işaretle",
  "detail.more.markSeasonWatched": "Sezonu izlendi olarak işaretle",
  "detail.more.markSeriesUnwatched": "Diziyi izlenmedi olarak işaretle",

@@ -165,6 +165,8 @@
  "detail.more": "更多",
  "detail.more.addFavorite": "添加到收藏",
  "detail.more.findTrailers": "查找预告片",
+ "detail.more.markEpisodeUnwatched": "将本集标记为未观看",
+ "detail.more.markEpisodeWatched": "将本集标记为已观看",
  "detail.more.markSeasonUnwatched": "将本季标记为未观看",
  "detail.more.markSeasonWatched": "将本季标记为已观看",
  "detail.more.markSeriesUnwatched": "将剧集标记为未观看",

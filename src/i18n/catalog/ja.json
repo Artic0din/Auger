@@ -165,6 +165,8 @@
  "detail.more": "その他",
  "detail.more.addFavorite": "お気に入りに追加",
  "detail.more.findTrailers": "予告編を検索",
+ "detail.more.markEpisodeUnwatched": "エピソードを未視聴にする",
+ "detail.more.markEpisodeWatched": "エピソードを視聴済みにする",
  "detail.more.markSeasonUnwatched": "シーズンを未視聴にする",
  "detail.more.markSeasonWatched": "シーズンを視聴済みにする",
  "detail.more.markSeriesUnwatched": "シリーズを未視聴にする",

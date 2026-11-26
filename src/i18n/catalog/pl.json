@@ -165,6 +165,8 @@
  "detail.more": "Więcej",
  "detail.more.addFavorite": "Dodaj do ulubionych",
  "detail.more.findTrailers": "Znajdź zwiastuny",
+ "detail.more.markEpisodeUnwatched": "Oznacz odcinek jako nieobejrzany",
+ "detail.more.markEpisodeWatched": "Oznacz odcinek jako obejrzany",
  "detail.more.markSeasonUnwatched": "Oznacz sezon jako nieobejrzany",
  "detail.more.markSeasonWatched": "Oznacz sezon jako obejrzany",
  "detail.more.markSeriesUnwatched": "Oznacz serial jako nieobejrzany",

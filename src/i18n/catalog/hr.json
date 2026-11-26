@@ -165,6 +165,8 @@
  "detail.more": "Više",
  "detail.more.addFavorite": "Dodaj u favorite",
  "detail.more.findTrailers": "Pronađi najave",
+ "detail.more.markEpisodeUnwatched": "Označi epizodu kao nepogledanu",
+ "detail.more.markEpisodeWatched": "Označi epizodu kao pogledanu",
  "detail.more.markSeasonUnwatched": "Označi sezonu kao nepogledanu",
  "detail.more.markSeasonWatched": "Označi sezonu kao pogledanu",
  "detail.more.markSeriesUnwatched": "Označi seriju kao nepogledanu",

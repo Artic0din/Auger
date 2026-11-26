@@ -884,8 +884,8 @@ calendarTest("Calendar-origin series refresh preserves a subsequently selected s
     await tv.page.keyboard.press("Enter");
     await tv.page.locator('.details-episodes [data-focus="episode:s1e21"]').waitFor();
     await activate(tv, "season:1");
-    await tv.page.locator('.details-episodes [data-focus="episode:s1e11"]').click({ button: "right" });
-    await tv.page.locator('[data-focus="episode-information"]').click();
+    await tv.page.locator('.details-episodes [data-focus="episode:s1e11"]').focus();
+    await tv.page.evaluate(() => window.browseHarness.openItem("episode:s1e11"));
     await tv.page.locator('[data-view="item:episode:s1e11"]').waitFor();
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.locator('[data-focus="watched"]').click();

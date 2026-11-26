@@ -165,6 +165,8 @@
  "detail.more": "Mere",
  "detail.more.addFavorite": "Tilføj til favoritter",
  "detail.more.findTrailers": "Find trailere",
+ "detail.more.markEpisodeUnwatched": "Markér afsnit som ikke set",
+ "detail.more.markEpisodeWatched": "Markér afsnit som set",
  "detail.more.markSeasonUnwatched": "Markér sæson som ikke set",
  "detail.more.markSeasonWatched": "Markér sæson som set",
  "detail.more.markSeriesUnwatched": "Markér serie som ikke set",

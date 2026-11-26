@@ -133,7 +133,7 @@ function sections(page: AudiobookPage, context: ViewContext): { content: HTMLEle
         const items = rail.items.flatMap(entry => {
             const card = cardItem(
                 { id: entry.id, type: "audiobook", title: entry.title, year: undefined, posterUrl: entry.posterUrl, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined },
-                { ...context, cardLayout: "square", homeCaptions: false },
+                { ...context, cardLayout: "square", homeCaptions: false, quickActions: undefined },
             );
             if (card === undefined) return [];
             if (entry.caption !== undefined) {

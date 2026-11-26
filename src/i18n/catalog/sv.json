@@ -165,6 +165,8 @@
  "detail.more": "Mer",
  "detail.more.addFavorite": "Lägg till i favoriter",
  "detail.more.findTrailers": "Sök efter trailers",
+ "detail.more.markEpisodeUnwatched": "Markera avsnittet som osett",
+ "detail.more.markEpisodeWatched": "Markera avsnittet som sett",
  "detail.more.markSeasonUnwatched": "Markera säsongen som osedd",
  "detail.more.markSeasonWatched": "Markera säsongen som sedd",
  "detail.more.markSeriesUnwatched": "Markera serien som osedd",

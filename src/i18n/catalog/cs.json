@@ -165,6 +165,8 @@
  "detail.more": "Další",
  "detail.more.addFavorite": "Přidat do oblíbených",
  "detail.more.findTrailers": "Najít trailery",
+ "detail.more.markEpisodeUnwatched": "Označit díl jako nezhlédnutý",
+ "detail.more.markEpisodeWatched": "Označit díl jako zhlédnutý",
  "detail.more.markSeasonUnwatched": "Označit řadu jako nezhlédnutou",
  "detail.more.markSeasonWatched": "Označit řadu jako zhlédnutou",
  "detail.more.markSeriesUnwatched": "Označit seriál jako nezhlédnutý",
