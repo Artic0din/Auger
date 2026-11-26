@@ -18,8 +18,6 @@ export function connectProblem(result: Exclude<ConnectResult, { readonly status:
             return translate("setup.error.unreachable");
         case "not_silo_v2":
             return "This server can't be used with this app. It needs a Silo server with the version 2 API.";
-        case "origin_mismatch":
-            return "The server answered from a different address than the one entered. Check the address.";
         case "server_error":
             return "The server had a problem. Try again in a moment.";
     }
