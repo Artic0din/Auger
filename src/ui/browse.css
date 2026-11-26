@@ -971,7 +971,7 @@
 .navigation-avatar-fallback { font-size: calc(var(--avatar-size) * .34); font-weight: 600; }
 .navigation-avatar-person { width: calc(var(--avatar-size) * .297); height: calc(var(--avatar-size) * .323); fill: currentColor; color: var(--silo-secondary); }
 .navigation-avatar-emoji .navigation-avatar-fallback { font-size: calc(var(--avatar-size) * .45); font-weight: 400; }
-.skyline-menu-header { padding: 8px 16px 10px; color: rgba(255,255,255,.38); font-family: monospace; font-size: 14px; line-height: 18px; letter-spacing: 3.64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.skyline-selector, .skyline-selector-leaving) .skyline-menu-header, .skyline-menu-header { padding: 8px 16px 10px; color: rgba(255,255,255,.38); font-family: var(--silo-mono); font-size: 14px; line-height: 18px; letter-spacing: 3.64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skyline-menu-icon { width: 30px; height: 24px; flex-shrink: 0; }
 /* navigationIcon.ts menuIcon: a filled glyph keeps the line icon's box but may overrun it, as SF Symbols overrun their frame. */
 .skyline-menu-icon-filled { overflow: visible; }
@@ -1125,6 +1125,16 @@ svg.library-empty-icon { width: auto; }
    the layers around it, with their masks, be drawn again each time: three to four draws of the same hero per swap (#310). */
 .skyline-home :is(.skyline-marquee-art, .skyline-wash-bitmap, .hero-art-surface .skyline-backdrop) { will-change: opacity; }
 .skyline-home .skyline-hero-backdrop { will-change: transform; }
+/* TVRootHeroBackdrop framed cover fallback (253.3x380 or 380x380, top 170, trailing 150, radius 14). */
+.skyline-home .skyline-hero-cover { position: fixed; inset: 0; z-index: -2; pointer-events: none; will-change: transform; }
+.skyline-home .skyline-cover-frame { position: fixed; top: 170px; inset-inline-end: 150px; width: calc(380px * 2 / 3); height: 380px; border-radius: 14px; overflow: hidden; background: var(--silo-surface-variant); }
+.skyline-home .skyline-cover-frame[data-aspect="square"] { width: 380px; }
+.skyline-home .skyline-cover-thumbhash, .skyline-home .skyline-cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.skyline-home .skyline-cover-image { opacity: 0; will-change: opacity; }
+.skyline-home .skyline-cover-frame[data-art="loaded"] .skyline-cover-image { opacity: 1; transition: opacity var(--silo-fast) ease-out; }
+.skyline-home .skyline-cover-frame[data-art="cached"] .skyline-cover-image { opacity: 1; }
+:root[dir="rtl"] .skyline-home .skyline-cover-frame .hero-art-missing, .skyline-home .skyline-cover-frame .hero-art-missing { mask-image: none; }
+@media (prefers-reduced-motion: reduce) { .skyline-home .skyline-cover-frame[data-art="loaded"] .skyline-cover-image { transition: none; } }
 .skyline-hero-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 190px; z-index: -1; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-home .skyline-hero-backdrop .skyline-art-frame { inset-inline-start: 0; }
 .skyline-home .skyline-tint-wash { position: absolute; inset: 0; background: #000; }
@@ -1280,6 +1290,10 @@ svg.library-empty-icon { width: auto; }
 .home-section .browse-card-title { width: calc(100% + 2px); margin: 22px -2px 0 0; font-size: calc(24px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 500; color: rgba(237,237,237,.45); }
 .home-section .browse-card-subtitle { margin: 4px 0 0; font-size: calc(20px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 400; color: rgba(237,237,237,.32); }
 .home-section .skyline-continue .browse-card-title { margin-top: 14px; }
+/* TVCollectionPosterCard: Home and library Recommended collection cards use 16px spacing and centred captions. */
+.home-section .browse-card.collection-poster { --card-caption-gap: 16px; }
+.home-section .collection-poster .browse-card-title { width: 100%; margin: 16px 0 0; text-align: center; }
+.home-section .collection-poster .browse-card-subtitle { text-align: center; }
 /* SectionExploreAllCard.swift:72 strokes white .08 at 0.5pt, half of it outside the tile. A 1px CSS border on this
    1920-wide surface is twice that line, so it carries half the opacity for the same ink. */
 .home-section .skyline-explore .skyline-explore-tile, .box-set-row .skyline-explore .skyline-explore-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 8px; border: 1px solid rgba(255,255,255,.04); background: #15171c; color: #ededed; }

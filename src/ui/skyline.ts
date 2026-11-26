@@ -8,14 +8,14 @@ import { actionButton, zoneNode } from "./browseViews.ts";
 import { el, onDecoded } from "./screen.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { SCROLL_START_EVENT, SkylineScroll } from "./skylineScroll.ts";
-import { MARQUEE_REST_MILLISECONDS } from "./homeEnrichment.ts";
+import { MARQUEE_REST_MILLISECONDS, type EnrichedHeroArtwork, type HeroEnrichmentState } from "./homeEnrichment.ts";
 import { profileMenuAvatar } from "./navigationAvatar.ts";
 import { navigationRoots } from "./navigation.ts";
 import type { PrimaryMenu } from "../contracts/v2/navigation.ts";
 import { menuIcon } from "./navigationIcon.ts";
 import { remoteKey } from "./keys.ts";
-import { HeroWash, heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { hidesCardOverview, hidesMarqueeBackdrop, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
+import { HeroWash, heroBackdrop, heroCover, resolveHeroArtwork, type CoverAspect, type HeroArtwork, type Tints, type WashSink } from "./heroBackdrop.ts";
+import { hidesCardOverview, hidesMarqueeBackdrop, hidesMarqueePoster, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
 import type { LibraryMode } from "./libraryDiscovery.ts";
 import { documentIsRightToLeft } from "../i18n/direction.ts";
@@ -197,6 +197,7 @@ export class Skyline {
     rowChangeRead: () => void = () => undefined;
     /** What Home's detail reads added for a title: the aired and cast line, and Continue Watching's saved-file chips. */
     details: (card: Card, continuing: boolean) => { readonly line: string | undefined; readonly badges: readonly string[] | undefined } = () => ({ line: undefined, badges: undefined });
+    heroEnrichment: (card: Card, continuing: boolean) => { readonly canLoad: boolean; readonly state: HeroEnrichmentState; readonly artwork: EnrichedHeroArtwork | undefined } = () => ({ canLoad: false, state: "notStarted", artwork: undefined });
     translations: DescriptionTranslations | undefined;
     private shown: { card: Card; row: string; continuing: boolean; featured: boolean } | undefined;
     /** True while this visit's scene includes the marquee. Calendar and Settings do not. */
@@ -414,14 +415,16 @@ export class Skyline {
         const shown = this.shown;
         if (shown === undefined || this.previewId !== `${shown.row}:${shown.card.id}`) return;
         this.draw(shown.card, shown.row, shown.continuing, shown.featured);
-        if (!this.backdropPending()) this.showBackdrop(shown.card, false);
+        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, false);
     }
 
     /** Fills in what a detail read added for the shown title, in place, when its answer lands. */
     refreshDetails(id: string): void {
         const shown = this.shown;
+        if (shown === undefined || shown.card.id !== id) return;
         const layer = this.marquee.querySelector<HTMLElement>(".skyline-marquee-layer:not(.skyline-outgoing)");
-        if (shown !== undefined && shown.card.id === id && layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
+        if (layer !== null) this.fillDetails(layer, shown.card, shown.continuing);
+        if (!this.backdropPending()) this.showBackdrop(shown.card, shown.continuing, true);
     }
 
     /** The shown language changed: the marquee's meta, detail line and chips are written again for the title on show. */
@@ -459,7 +462,7 @@ export class Skyline {
         if (this.previewId === identity && this.shown?.card === card && this.shown.continuing === continuing && this.shown.featured === featured) {
             // hide() cancels the dwell and the backdrop rest and keeps this card. Coming back has to restore both.
             if (!this.translationArmed) this.armTranslation();
-            if (!this.backdropPending()) this.showBackdrop(card, false);
+            if (!this.backdropPending()) this.showBackdrop(card, continuing, false);
             return;
         }
         // Focus owns the dwell immediately; capability/repaint callbacks must not rearm the outgoing card.
@@ -475,10 +478,10 @@ export class Skyline {
         if (cold) {
             // restImmediately: a newly shown feed paints its first backdrop on the first frame.
             this.artShown = false;
-            this.showBackdrop(card, false);
+            this.showBackdrop(card, continuing, false);
             return;
         }
-        const swap = (): void => this.showBackdrop(card, true);
+        const swap = (): void => this.showBackdrop(card, continuing, true);
         // restForRowChange: a scroll already under way is the gate, so the rest is skipped and the scroll holds the swap.
         if (this.rowScrolling && rowChange) {
             this.restForRowChange(swap);
@@ -559,13 +562,58 @@ export class Skyline {
      * the same artwork stays put; new artwork fades in over the old with easeInOut(0.24), except the first. The art is
      * AsyncImageView's default `.surface`: the backdrop ThumbHash until the image decodes (TVRootHeroBackdrop.swift:181-186).
      */
-    private showBackdrop(card: Card, animate: boolean): void {
+    private showBackdrop(card: Card, continuing: boolean, animate: boolean): void {
         const settings = this.spoilers();
+        const enrichment = this.heroEnrichment(card, continuing);
+        const detailArt = enrichment.artwork;
         const seriesArt = marqueeUsesSeriesArt(card, settings);
-        const background = hidesMarqueeBackdrop(card, settings) ? undefined : artworkUrl(seriesArt ? card.seriesBackdropUrl : card.backdropUrl, this.baseUrl);
-        const thumbhash = seriesArt ? undefined : card.backdropThumbhash;
+        const sectionUrl = hidesMarqueeBackdrop(card, settings) ? undefined : artworkUrl(seriesArt ? card.seriesBackdropUrl : card.backdropUrl, this.baseUrl);
+        const sectionBackdrop: HeroArtwork | undefined = sectionUrl === undefined ? undefined : { url: sectionUrl, thumbhash: seriesArt ? undefined : card.backdropThumbhash };
+
+        const hidesPoster = hidesMarqueePoster(card, settings);
+        const fallbackAspect: CoverAspect | undefined = hidesPoster || card.type === "episode" || card.posterIsEpisodeStill === true
+            ? undefined
+            : card.type === "audiobook"
+                ? "square"
+                : "poster";
+        const fallbackUrl = hidesPoster
+            ? undefined
+            : artworkUrl((fallbackAspect !== undefined ? detailArt?.posterUrl : undefined) ?? card.posterUrl, this.baseUrl);
+        const fallbackThumbhash = hidesPoster
+            ? undefined
+            : (fallbackAspect !== undefined && detailArt?.posterUrl !== undefined ? detailArt.posterThumbhash : card.posterThumbhash);
+        const fallback: HeroArtwork | undefined = fallbackUrl === undefined ? undefined : {
+            url: fallbackUrl,
+            thumbhash: fallbackThumbhash,
+            ...(fallbackAspect === undefined ? {} : { coverAspect: fallbackAspect }),
+        };
+
+        const enrichedUrl = detailArt?.backdropUrl === undefined
+            || hidesMarqueeBackdrop({
+                type: card.type,
+                seriesBackdropUrl: undefined,
+                ...(card.played === undefined ? {} : { played: card.played }),
+                ...(card.positionSeconds === undefined ? {} : { positionSeconds: card.positionSeconds }),
+                ...(detailArt.backdropIsEpisodeStill === undefined ? {} : { backdropIsEpisodeStill: detailArt.backdropIsEpisodeStill }),
+            }, settings)
+            ? undefined
+            : artworkUrl(detailArt.backdropUrl, this.baseUrl);
+        const enrichedBackdrop: HeroArtwork | undefined = enrichedUrl === undefined ? undefined : { url: enrichedUrl, thumbhash: detailArt?.backdropThumbhash };
+
+        const resolved = resolveHeroArtwork({
+            sectionBackdrop,
+            fallback,
+            prefersEnrichedBackdrop: (card.type === "episode" && !seriesArt) || sectionBackdrop === undefined,
+            canLoadEnrichment: enrichment.canLoad,
+            enrichmentState: enrichment.state,
+            enrichedBackdrop,
+        });
+        const background = resolved?.url;
+        const thumbhash = resolved?.thumbhash;
+        const coverAspect = resolved?.coverAspect;
+
         // The direction is part of what is drawn: the placeholder bitmap fades toward the text side.
-        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, documentIsRightToLeft()]);
+        const key = JSON.stringify([this.sharedScene, background ?? null, thumbhash ?? null, coverAspect ?? null, documentIsRightToLeft()]);
         // A failed image is not kept: the next preview of the same artwork asks for it again.
         if (key === this.artKey && this.art?.dataset.failed === undefined) return;
         const layer = el("div", "skyline-marquee-art");
@@ -574,8 +622,14 @@ export class Skyline {
         const fade = animate && this.artShown && outgoing !== undefined;
         this.topScrim.hidden = background === undefined || !this.sharedScene;
         if (background !== undefined && this.sharedScene) {
+            const sink: WashSink = (tints, sampled, options) => {
+                if (!sampled) this.wash.show(tints, fade, options);
+                else if (this.art === layer) this.wash.update(tints, options);
+            };
             // The cached or ThumbHash tint comes with the swap and fades in; the tint sampled from the image replaces it as it lands, if this is still the backdrop shown.
-            layer.appendChild(heroBackdrop(background, thumbhash, this.tints, false, true, (tints, sampled) => { if (!sampled) this.wash.show(tints, fade); else if (this.art === layer) this.wash.update(tints); }));
+            layer.appendChild(coverAspect === undefined
+                ? heroBackdrop(background, thumbhash, this.tints, false, true, sink)
+                : heroCover(background, thumbhash, coverAspect, this.tints, sink));
         } else {
             this.wash.show(undefined, fade);
         }
@@ -587,7 +641,7 @@ export class Skyline {
             image.addEventListener("error", () => image.remove());
             layer.append(image, el("div", "skyline-scrim"));
         }
-        layer.querySelector("img.skyline-backdrop")?.addEventListener("error", () => { layer.dataset.failed = ""; });
+        layer.querySelector("img.skyline-backdrop, img.skyline-cover-image")?.addEventListener("error", () => { layer.dataset.failed = ""; });
         for (const old of Array.from(this.marquee.querySelectorAll(".skyline-marquee-art"))) old.classList.add("skyline-outgoing");
         if (outgoing === undefined) this.marquee.prepend(layer);
         else outgoing.after(layer);
