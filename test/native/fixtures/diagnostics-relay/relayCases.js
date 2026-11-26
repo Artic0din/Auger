@@ -251,19 +251,33 @@ const PLAYBACK_CASES = [
       const interrupted = { ...missingSession404, out: "interrupted", kind: "backgrounded", code: "backgrounded", fc: "backgrounded", http: undefined };
       const network = { ...missingSession404, kind: "network", code: "network_unreachable", fc: "network_unreachable", http: undefined };
       const automatic = fakeGitHub();
-      for (const inc of [recovered, refused, interrupted, network]) {
+      const exhaustedDrop = { ...network, fs: "reconnect", rec: { n: 1, c: 1, r: "exhausted" } };
+      const exhaustedTimeout = { ...exhaustedDrop, fc: "no_response" };
+      for (const inc of [recovered, refused, interrupted, network, exhaustedDrop, exhaustedTimeout]) {
         const rejected = await send(handleRequest, automatic, report(inc, "auto"));
-        equal(rejected.status, 422, `${inc.out}/${inc.kind} automatic rejected`);
+        equal(rejected.status, 422, `${inc.out}/${inc.kind}/${inc.fc} automatic rejected`);
         equal(rejected.json.error, "not_auto_reportable", "error code");
       }
       const legacyFlagOnly = { ...report(recovered, "manual"), auto: true };
       equal((await send(handleRequest, automatic, legacyFlagOnly)).status, 422, "legacy auto flag alone also counts as automatic");
       equal(automatic.outbound.length, 0, "no GitHub writes for rejected automatic sends");
-      const exhausted = { ...network, rec: { n: 1, c: 1, r: "exhausted" } };
-      equal((await send(handleRequest, automatic, report(exhausted, "auto"))).status, 201, "exhausted network recovery files");
+      const exhaustedHttp503 = { ...exhaustedDrop, http: 503, fc: "http_503" };
+      const exhaustedHttp409 = { ...exhaustedDrop, http: 409, fc: "http_409" };
+      for (const [inc, code] of [[exhaustedHttp503, "http_503"], [exhaustedHttp409, "http_409"]]) {
+        const gh = fakeGitHub();
+        equal((await send(handleRequest, gh, report(inc, "auto"))).status, 201, `exhausted network recovery with ${code} files`);
+        const created = gh.created()[0].body;
+        includes(created.body, `| Final code | ${code} |`, `${code} published`);
+        excludes(created.body, "Unlisted code", `${code} not unlisted`);
+      }
 
       const manual = fakeGitHub();
-      for (const inc of [recovered, refused, interrupted, network]) equal((await send(handleRequest, manual, report(inc, "manual"))).status, 201, `${inc.out} manual files`);
+      for (const inc of [recovered, refused, interrupted, network]) {
+        equal((await send(handleRequest, manual, report(inc, "manual"))).status, 201, `${inc.out}/${inc.fc} manual files`);
+      }
+      for (const inc of [exhaustedDrop, exhaustedTimeout]) {
+        equal((await send(handleRequest, fakeGitHub(), report(inc, "manual"))).status, 201, `exhausted ${inc.fc} manual files`);
+      }
       const titles = manual.created().map((call) => call.body.title);
       equal(titles[0], "Player could not prepare the stream: PLAYER_ERROR_CONNECTION_FAILED, then recovered", "recovered title");
       equal(titles[1], "Playback start refused: selected version unavailable", "refusal title");

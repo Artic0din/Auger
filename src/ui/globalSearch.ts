@@ -184,7 +184,7 @@ function boxSetSearchCard(set: CatalogBoxSet, baseUrl: string, open: () => void)
         bar.appendChild(fill);
         art.appendChild(bar);
     }
-    const mark = el("span", "box-set-label", "Box set");
+    const mark = el("span", "box-set-label", translate("boxSets.eyebrow"));
     const count = el("span", "box-set-count", boxSetFilmCount(set.movieCount));
     mark.setAttribute("aria-hidden", "true");
     count.setAttribute("aria-hidden", "true");
