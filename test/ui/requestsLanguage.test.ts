@@ -86,7 +86,28 @@ test("the Requests hub and a request's detail read in German", async () => {
         assert.deepEqual(await tv.page.locator(".requests-track-labels .requests-step").allInnerTexts(),
             [text("requests.stage.requested", "de"), text("requests.stage.approved", "de"), text("requests.stage.downloading", "de"), text("requests.stage.library", "de")]);
         assert.equal(await button(tv, "status").innerText(), text("requests.long.pending", "de"));
+        assert.equal(await button(tv, "cancel").innerText(), text("requests.action.cancel", "de"));
     });
+});
+
+test("Notify Me, Stop Notifying Me, and Request Again read in German", async () => {
+    await inLanguage("de", async (tv, fake) => {
+        const origTitle = fake.title.bind(fake);
+        fake.title = () => ({ ...origTitle(), request: { requestable: true, following: false, requested_by_viewer: false } });
+        Object.assign(fake.record, { state: "failed", status: "approved", outcome: "failed" });
+        await button(tv, "request-one").click();
+        await button(tv, "create").waitFor();
+        assert.equal(await button(tv, "create").innerText(), text("requests.action.requestAgain", "de"));
+    });
+
+    await inLanguage("de", async (tv, fake) => {
+        fake.requestedByOther = true;
+        await button(tv, "movie:949").click();
+        await button(tv, "follow").waitFor();
+        assert.equal(await button(tv, "follow").innerText(), text("requests.action.notify", "de"));
+        await button(tv, "follow").click();
+        await tv.eventually(async () => await button(tv, "follow").innerText() === text("requests.action.stopNotify", "de"), "Stop Notifying Me in German");
+    }, false);
 });
 
 test("a title nobody has requested reads Request, and its detail names it Not in your library, in German", async () => {

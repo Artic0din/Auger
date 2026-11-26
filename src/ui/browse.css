@@ -628,8 +628,11 @@
 .requests-detail-actions .browse-button { min-width: 360px; height: 74px; padding: 18px 40px; border-radius: 50px; font-size: 28px; line-height: 34px; }
 /* TVPillButtonStyle at rest: secondary black .52, interactive primary white .10. */
 .requests-detail-actions .browse-button { background: rgba(0,0,0,.52); }
-.requests-detail-actions .requests-primary-action:not(:focus) { color: #fff; }
-.requests-detail-actions .requests-primary-action { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-width: 0; height: 76px; padding: 0 80px; border: 0; font-weight: 600; }
+.requests-detail-actions :is(.requests-primary-action, .requests-secondary-action) { display: inline-flex; align-items: center; justify-content: center; min-width: 0; height: 76px; border: 0; font-weight: 600; }
+.requests-detail-actions :is(.requests-primary-action, .requests-secondary-action):not(:focus) { color: #fff; }
+.requests-detail-actions .requests-primary-action { gap: 14px; padding: 0 80px; }
+.requests-detail-actions .requests-secondary-action { gap: 16px; padding: 0 40px; border-radius: 38px; font-size: calc(26px * var(--silo-sf-cap-scale)); line-height: 31px; }
+.requests-secondary-icon { flex: 0 0 28px; width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .browse .requests-detail-actions .browse-button:focus { transform: scale(1.025); box-shadow: 0 4px 20px rgba(0,0,0,.24); }
 .requests-action-spinner { flex: 0 0 32px; width: 32px; height: 32px; color: var(--silo-secondary); animation: search-spin 1s steps(8) infinite; }
 .requests-action-spinner svg { display: block; width: 32px; height: 32px; }
