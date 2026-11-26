@@ -846,19 +846,33 @@ test("appearance edits reject an intervening change instead of replacing unrelat
     } finally { await tv.page.context().close(); }
 });
 
-test("poster controls are omitted when the server cannot resolve the TV client family", async () => {
-    for (const missing of ["family", "batch", "shortcuts"] as const) {
-    const { tv, settings } = await setup();
-    settings.remainingRows = true;
-    if (missing === "family") settings.clientFamilies = [];
-    if (missing === "batch") settings.supportsBatchedEffective = false;
-    if (missing === "shortcuts") settings.supportsAtomicShortcuts = false;
-    try {
-        await openSettings(tv);
-        assert.equal(await tv.page.locator('[data-focus="poster-size"]').count(), 0);
-        await tv.page.locator('[data-focus="playback"]').click();
-        await tv.page.locator('[data-focus="quality"]').waitFor();
-    } finally { await tv.page.context().close(); }
+test("poster controls are omitted and Server Support is shown when the server cannot support synced interface settings", async () => {
+    for (const missing of ["revision", "family", "batch", "shortcuts", "scope"] as const) {
+        const { tv, settings } = await setup();
+        settings.remainingRows = true;
+        if (missing === "revision") settings.revision = 4;
+        if (missing === "family") settings.clientFamilies = [];
+        if (missing === "batch") settings.supportsBatchedEffective = false;
+        if (missing === "shortcuts") settings.supportsAtomicShortcuts = false;
+        if (missing === "scope") settings.scopes = ["profile", "profile_device"];
+        try {
+            if (missing === "revision") {
+                await tv.page.locator('[data-focus="profiles"]').focus();
+                await tv.page.keyboard.press("Enter");
+                await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+                await tv.page.getByText("SERVER SUPPORT", { exact: true }).waitFor();
+            } else {
+                await openSettings(tv);
+            }
+            assert.equal(await tv.page.locator('[data-focus="poster-size"]').count(), 0);
+            const headers = await tv.page.locator(".settings-pane .settings-section-header").allTextContents();
+            assert.ok(headers.includes("SERVER SUPPORT"), missing);
+            assert.ok(headers.indexOf("SERVER SUPPORT") < headers.indexOf("CARDS & POSTERS"), JSON.stringify(headers));
+            await tv.page.getByText("Update this Silo server to use synced interface settings.", { exact: true }).waitFor();
+            await tv.page.locator('[data-focus="playback"]').click();
+            await tv.page.locator('[data-focus="quality"]').waitFor();
+            assert.deepEqual(tv.console, []);
+        } finally { await tv.page.context().close(); }
     }
 });
 
@@ -884,7 +898,7 @@ test("Show Advisory Age controls the detail badge when the server supplies an ag
     }
 });
 
-test("Use Synced TV Settings removes only the older poster device override", async () => {
+test("Use Synced TV Settings appears under Sync Source above Cards and removes only the older poster device override", async () => {
     const { tv, settings } = await setup();
     settings.remainingRows = true;
     const deviceId = tv.fake.requests.find(request => request.headers["x-silo-device-id"])?.headers["x-silo-device-id"];
@@ -894,12 +908,38 @@ test("Use Synced TV Settings removes only the older poster device override", asy
     try {
         await openSettings(tv);
         assert.equal(await tv.page.locator('[data-focus="poster-size"]').getAttribute("aria-disabled"), "true");
-        await tv.page.getByRole("button", { name: "Use Synced TV Settings", exact: true }).click();
+        assert.equal(await tv.page.locator('[data-focus="poster-profile-default"]').count(), 0);
+        const layout = await tv.page.evaluate(() => {
+            const headers = [...document.querySelectorAll(".settings-pane .settings-section-header")].map(node => node.textContent);
+            const syncSource = [...document.querySelectorAll(".settings-pane .settings-section-header")].find(node => node.textContent === "SYNC SOURCE");
+            const cards = [...document.querySelectorAll(".settings-pane .settings-section-header")].find(node => node.textContent === "CARDS & POSTERS");
+            const button = document.querySelector('[data-focus="use-synced-tv"]');
+            const footer = button?.nextElementSibling;
+            const poster = document.querySelector('[data-focus="poster-size"]');
+            const follows = (a: Element | null | undefined, b: Element | null | undefined): boolean => Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+            return {
+                headers,
+                footerText: footer?.textContent,
+                syncedBeforeCards: follows(syncSource, button) && follows(button, cards) && follows(cards, poster),
+            };
+        });
+        assert.equal(layout.syncedBeforeCards, true, JSON.stringify(layout));
+        assert.equal(layout.footerText, "This TV has older device-specific settings. Clear them to use the TV-family choices shared by this profile.");
+        assert.equal(await tv.page.getByText("SERVER SUPPORT", { exact: true }).count(), 0);
+        await tv.page.locator('[data-focus="use-synced-tv"]').focus();
+        await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => !settings.device("p-owner", deviceId).has("ui.card_presentation"), "older device override cleared");
+        await tv.page.locator('[data-focus="use-synced-tv"]').waitFor({ state: "detached" });
+        assert.equal(await tv.focused(), "poster-size");
+        assert.equal(await tv.page.locator('[data-focus="poster-size"]').getAttribute("aria-disabled"), null);
+        assert.equal(await tv.page.locator('[data-focus="poster-size"] .settings-row-value').textContent(), "Large");
         assert.equal(settings.device("p-owner", "client:tv").has("ui.card_presentation"), true);
+        assert.equal(await tv.page.locator('[data-focus="use-synced-tv"]').count(), 0);
+        assert.equal(await tv.page.getByText("SYNC SOURCE", { exact: true }).count(), 0);
         assert.equal(await tv.page.getByRole("button", { name: "Use Profile Default", exact: true }).count(), 1);
         await tv.page.getByRole("button", { name: "Use Profile Default", exact: true }).click();
         await tv.eventually(async () => !settings.device("p-owner", "client:tv").has("ui.card_presentation"), "TV-family override cleared");
+        assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
 
