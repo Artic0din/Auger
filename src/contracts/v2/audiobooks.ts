@@ -159,6 +159,8 @@ export interface Audiobook {
     readonly title: string;
     readonly overview: string | undefined;
     readonly year: number | undefined;
+    readonly releaseDate?: string | undefined;
+    readonly audioFormat?: { readonly codec?: string | undefined; readonly container?: string | undefined } | undefined;
     readonly genres: readonly string[];
     readonly posterUrl: string | undefined;
     /** Whole-book resume position (`user_data.position_seconds`). */
@@ -177,6 +179,8 @@ interface DecodedVersion {
     readonly order: number;
     readonly duration: number;
     readonly fileName: string | undefined;
+    readonly codecAudio?: string | undefined;
+    readonly container?: string | undefined;
     readonly chapters: readonly { readonly title: string; readonly start: number; readonly end: number | undefined }[];
 }
 
@@ -196,11 +200,15 @@ function decodeVersion(value: unknown, path: string): DecodedVersion | undefined
     // an earlier end or a start would truncate it, so a part whose final chapter is open stays unknown (0).
     const finalChapter = chapters.reduce<(typeof chapters)[number] | undefined>((last, chapter) => last === undefined || chapter.start >= last.start ? chapter : last, undefined);
     const furthestEnd = finalChapter?.end === undefined ? 0 : chapters.reduce((furthest, chapter) => Math.max(furthest, chapter.end ?? 0), 0);
+    const codecAudioRaw = optionalString(obj, "codec_audio", path)?.trim();
+    const containerRaw = optionalString(obj, "container", path)?.trim();
     return {
         fileId: nonEmptyString(obj, "file_id", path),
         order: obj.presentation_part_index === undefined ? Number.MAX_SAFE_INTEGER : integer(obj, "presentation_part_index", path),
         duration: declared > 0 ? declared : furthestEnd,
         fileName: optionalString(obj, "file_name", path),
+        ...(codecAudioRaw === undefined || codecAudioRaw === "" ? {} : { codecAudio: codecAudioRaw }),
+        ...(containerRaw === undefined || containerRaw === "" ? {} : { container: containerRaw }),
         chapters,
     };
 }
@@ -235,19 +243,29 @@ export function decodeAudiobook(value: unknown): Audiobook {
     const user = obj.user_data === undefined ? undefined : object(obj.user_data, `${path}.user_data`);
     const duration = Math.max(offset, detail?.totalDurationSeconds ?? 0);
     const position = (user === undefined ? undefined : seconds(user, "position_seconds", `${path}.user_data`)) ?? 0;
+    const releaseDateRaw = optionalString(obj, "release_date", path)?.trim();
+    const primaryVersion = versions[0];
+    const audioFormat = primaryVersion !== undefined && (primaryVersion.codecAudio !== undefined || primaryVersion.container !== undefined)
+        ? {
+            ...(primaryVersion.codecAudio === undefined ? {} : { codec: primaryVersion.codecAudio }),
+            ...(primaryVersion.container === undefined ? {} : { container: primaryVersion.container }),
+        }
+        : undefined;
     return {
         id: nonEmptyString(obj, "content_id", path),
         title: string(obj, "title", path),
         overview: optionalString(obj, "overview", path),
         year: obj.year === undefined ? undefined : integer(obj, "year", path),
+        ...(releaseDateRaw === undefined || releaseDateRaw === "" ? {} : { releaseDate: releaseDateRaw }),
+        ...(audioFormat === undefined ? {} : { audioFormat }),
         genres: stringList(obj, "genres", path),
         posterUrl: optionalString(obj, "poster_url", path),
         position: duration > 0 ? Math.min(position, duration) : position,
         played: user === undefined || user.played === undefined ? false : boolean(user, "played", `${path}.user_data`),
         duration,
         parts,
-        // Apple names an untitled chapter by its place in the book.
-        chapters: chapters.map((chapter, index) => ({ ...chapter, title: chapter.title === "" ? `Chapter ${index + 1}` : chapter.title })),
+        // Preserve blank server titles so the UI localizes untitled chapters from the active catalog.
+        chapters,
         detail: detail ?? { authors: [], narrators: [], publisher: undefined, totalDurationSeconds: undefined, series: undefined, otherNarrations: [], alsoByAuthor: [], similar: [] },
     };
 }

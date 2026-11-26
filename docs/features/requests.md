@@ -43,6 +43,7 @@ The primary action is one focusable pill that morphs in place, so focus stays on
 Request shows a small spinner and Requesting… in the secondary pill style, and presses are ignored until the read answers.
 Cancel disappears while it runs, and focus rests on the status pill beside it.
 A failed detail read with nothing to show is Apple's ErrorView, using the hub's error page with Try Again focused.
+While the first detail read is pending, the page shows Apple's item-detail loading view (`detailsLoadingView`) with passive page focus and Back.
 A 403 or 404 offers Go Back first, a 401 offers Sign In Again first, and otherwise Back is the remote's.
 Up and Down do nothing on that page because a pushed detail has no top bar.
 Apple keeps a provisional page built from the tapped card or record when a first read fails; this client has no provisional page, so it shows the error page for every first-read failure.

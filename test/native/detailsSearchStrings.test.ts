@@ -31,7 +31,7 @@ const SCREEN_KEYS: Readonly<Record<string, readonly string[]>> = {
     "src/ui/boxSetRow.ts": ["boxSets.thisFilmTag"],
     "src/contracts/v2/details.ts": ["detail.aired", "detail.country", "detail.firstAired", "detail.lastAired", "detail.network", "detail.released", "detail.studio"],
     "src/ui/globalSearch.ts": [
-        "boxSets.searchHeading", "requests.search.availableSubtitle", "requests.search.availableTitle", "search.filter.all", "search.filter.audiobooks", "search.filter.movies", "search.filter.series", "search.people", "search.resultCount",
+        "boxSets.eyebrow", "boxSets.searchHeading", "requests.search.availableSubtitle", "requests.search.availableTitle", "search.filter.all", "search.filter.audiobooks", "search.filter.movies", "search.filter.series", "search.people", "search.resultCount",
     ],
     "src/ui/browseViews.ts": ["search.empty", "search.emptyBody", "search.initial", "search.initialBodyPeople", "search.searchingAccessibility"],
     "src/ui/browse.ts": ["search.fieldPrompt.audiobooks", "search.fieldPrompt.video", "search.title", "watchParty.entry.suggest", "watchParty.entry.watchParty"],
@@ -51,6 +51,7 @@ test("each Details and Search screen names its Apple keys, and every one is in t
 
 // Real German from silo-translations a0142c1a (catalog/de.arb), for the keys a German TV shows first.
 const GERMAN: Readonly<Record<string, string>> = {
+    "boxSets.eyebrow": "Filmreihe",
     "catalog.seasons": "{count, plural, one {# Staffel} other {# Staffeln}}",
     "common.play": "Abspielen",
     "detail.autoValue": "Auto · {value}",
@@ -93,6 +94,7 @@ test("German keeps the arguments each English message takes", () => {
 });
 
 test("German replaces the Details and Search text, with its own plural forms", () => {
+    assert.equal(german("boxSets.eyebrow"), "Filmreihe");
     assert.equal(german("detail.more.addFavorite"), "Zu Favoriten hinzufügen");
     assert.equal(german("detail.resumeAt", { time: "1:02:03" }), "Ab 1:02:03 fortsetzen");
     assert.equal(german("detail.more.shuffleSeason", { season: "Staffel 2" }), "Staffel 2 zufällig wiedergeben");

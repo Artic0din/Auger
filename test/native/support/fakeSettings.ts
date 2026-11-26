@@ -17,6 +17,7 @@ export class FakeSettings {
     titleDefault = true;
     revision = 24;
     allowed = true;
+    scopes: string[] = ["profile", "profile_client", "profile_device"];
     supportsBatchedEffective = true;
     clientFamilies: string[] = ["tv"];
     supportsAtomicShortcuts = true;
@@ -53,7 +54,7 @@ export class FakeSettings {
     private route(method: string, path: string, profile: string | undefined, body: Record<string, unknown> | undefined, device?: string): Reply | undefined {
         const url = new URL(path, "https://fake.invalid");
         const pathname = url.pathname;
-        if (pathname === "/settings/contract/capabilities") return { status: 200, body: { api_version: 1, revision: "opaque-24", manifest_revision: this.revision, state: "available", allowed: this.allowed, scopes: ["profile", "profile_client", "profile_device"], supports_batched_effective: this.supportsBatchedEffective, supports_atomic_shortcuts: this.supportsAtomicShortcuts, client_families: this.clientFamilies } };
+        if (pathname === "/settings/contract/capabilities") return { status: 200, body: { api_version: 1, revision: "opaque-24", manifest_revision: this.revision, state: "available", allowed: this.allowed, scopes: this.scopes, supports_batched_effective: this.supportsBatchedEffective, supports_atomic_shortcuts: this.supportsAtomicShortcuts, client_families: this.clientFamilies } };
         if (pathname === "/settings/contract") {
             const contract = fixture("settings_contract_ok");
             // A server at revision N serves a contract of at least N, as the client requires.

@@ -24,7 +24,7 @@ Codes the client allows but the relay does not list still group, but render as "
 Track names, labels and subtitle text are never accepted: tracks are described only by the `md` fields above.
 Audio is shown as three separate rows, source file, server plan and AVPlay report, so a plan is never presented as decoded output.
 Automatic submission requires a failed incident.
-For a network failure, recovery must also have reached `exhausted`.
+For a network failure, recovery must also have reached `exhausted` with an observed HTTP status (`http`).
 The relay returns HTTP 422 `not_auto_reportable` for other automatic submissions with an incident.
 
 ## Grouping markers

@@ -20,7 +20,7 @@ function enabled(element: HTMLElement): boolean {
     return !element.matches(':disabled, [aria-disabled="true"]');
 }
 /** Scrolling panels whose position survives a repaint of their screen, keyed by data-scroll-key. */
-const SCROLL_PANELS = ".browse-panel-list[data-scroll-key], .settings-modal-options[data-scroll-key], .settings-pane[data-scroll-key], .accounts-rail[data-scroll-key], .accounts-pane[data-scroll-key]";
+const SCROLL_PANELS = ".browse-panel-list[data-scroll-key], .settings-modal-options[data-scroll-key], .settings-pane[data-scroll-key], .accounts-rail[data-scroll-key], .accounts-pane[data-scroll-key], .audiobook-description-body[data-scroll-key]";
 
 interface VisitSnapshot {
     memory: Map<string, string>;
@@ -273,15 +273,15 @@ export class FocusHost {
                 this.scroll.resume(revealViewport, aim === undefined ? revealing : { ...revealing, fromLeft: revealing.fromLeft + aim.left - revealing.left, fromTop: revealing.fromTop + aim.top - revealing.top, left: aim.left, top: aim.top });
             }
             const element = this.locate(document.activeElement)?.item.element;
-            if ((this.container.dataset.view === "search" || this.container.dataset.view?.startsWith("person:") || this.container.classList.contains("section-catalog") || this.container.classList.contains("library-browse") || this.container.classList.contains("requests-hub") || this.container.classList.contains("details-series-scene") || this.container.classList.contains("accounts-screen") || this.container.dataset.view === "watchParty:lobby" || element?.closest(".settings-modal-options") != null) && element !== undefined) {
-                const viewport = element.closest<HTMLElement>(".browse-panel-list, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings") ?? this.container;
+            if ((this.container.dataset.view === "search" || this.container.dataset.view?.startsWith("person:") || this.container.classList.contains("section-catalog") || this.container.classList.contains("library-browse") || this.container.classList.contains("requests-hub") || this.container.classList.contains("details-series-scene") || this.container.classList.contains("accounts-screen") || this.container.dataset.view === "watchParty:lobby" || element?.closest(".settings-modal-options, .audiobook-description-body") != null) && element !== undefined) {
+                const viewport = element.closest<HTMLElement>(".browse-panel-list, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings, .audiobook-description-body") ?? this.container;
                 const card = element.getBoundingClientRect(), bounds = viewport.getBoundingClientRect();
                 if (card.top < bounds.top + 12 || card.bottom > bounds.bottom - 32 || !this.insideRow(element)) this.scroll.reveal(element, this.container);
             }
         }
         // Details anchors must win over a repaint's saved intermediate animation position.
         const element = this.locate(document.activeElement)?.item.element;
-        if (view.name.startsWith("item:") && element !== undefined) this.scroll.restoreDetailsAnchor(element, this.container, true);
+        if ((view.name.startsWith("item:") || view.name.startsWith("audiobook:")) && element !== undefined) this.scroll.restoreDetailsAnchor(element, this.container, true);
         if (animate) {
             this.incoming = Array.from(this.container.querySelectorAll<HTMLElement>(".skyline-content > :not(.skyline-pills), .skyline-marquee"));
             for (const node of this.incoming) node.classList.add(drift && !node.classList.contains("skyline-marquee") ? "skyline-content-drift" : "skyline-content-enter");

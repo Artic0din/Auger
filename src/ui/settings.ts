@@ -1,8 +1,8 @@
 import type { NativeSession } from "../session/session.ts";
-import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
+import { AUDIO_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, AUTO_NEXT_KEY, CARD_PRESENTATION_KEY, HDR_KEY, isSkipKey, HIDDEN_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SHOW_FORCED_KEY, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, TITLE_ART_KEY, type SettingValue, type SettingsKey } from "../contracts/v2/settings.ts";
 import { HELD_CHANGE_MESSAGE, HELD_DISCARD_NEEDS_SERVER_MESSAGE, type PlayerSettingsFlusher } from "../player/playerSettingsFlusher.ts";
 import { STILL_WATCHING_CHOICES, stillWatchingLabel, type StillWatchingPreference } from "../player/stillWatchingGuard.ts";
-import { FocusHost, type FocusItem, type FocusTarget } from "./browseFocus.ts";
+import { FocusHost, type FocusItem, type FocusTarget, type Zone } from "./browseFocus.ts";
 import { actionButton, zoneNode } from "./browseViews.ts";
 import { el } from "./screen.ts";
 import { remoteKey } from "./keys.ts";
@@ -18,8 +18,9 @@ import { qrCode } from "./qr.ts";
 import { profileMenuAvatar } from "./navigationAvatar.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { navigationIcon } from "./navigationIcon.ts";
-import { decodeAppearance, DEFAULT_APPEARANCE } from "../contracts/v2/subtitles.ts";
-import { applySubtitleAppearance } from "../player/subtitleView.ts";
+import { decodeAppearance, DEFAULT_APPEARANCE, type SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+import { isLowLegibilitySubtitleAppearance } from "../player/subtitleAppearance.ts";
+import { applySubtitleAppearance, subtitleFontFamily } from "../player/subtitleView.ts";
 import { pairedProfileDescription, pairedProfileLabel, profileSelectionCaption } from "./pairedProfile.ts";
 import { bitrateLabel, bufferingQualityModes, bufferingQualityTitle, qualityFooter } from "./qualitySettings.ts";
 import { ConnectionSpeed, learnedLimitText } from "./connectionSpeed.ts";
@@ -184,7 +185,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const rowFocus = (): FocusTarget => ({ zone: "settings-rows", key: returnRow });
     const back = (): void => {
         if (confirmingPlaybackReset) { if (state.busy) return; confirmingPlaybackReset = false; pendingPlaybackReset = []; render({ zone: "settings-rows", key: "reset-playback" }); }
-        else if (confirmingAppearanceReset) { confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
+        else if (confirmingAppearanceReset) { if (state.busy) return; confirmingAppearanceReset = false; render({ zone: "settings-rows", key: "reset-appearance" }); }
         else if (privacy) { privacy = false; render({ zone: "settings-rows", key: "privacy" }); }
         else if (confirmingDiagnosticsSend) { if (diagnosticsSending) return; confirmingDiagnosticsSend = false; render({ zone: "settings-rows", key: "send-diagnostics" }); }
         else if (diagnosticsQr) { diagnosticsQr = false; render({ zone: "settings-rows", key: "share-diagnostics" }); }
@@ -282,9 +283,14 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
     const resetPlayback = async (retry = false): Promise<void> => {
         if (state.busy) return;
         if (retry) {
+            const wasRetryable = state.canRetry;
             const firstKey = pendingPlaybackReset[0];
             await (firstKey === AUTO_NEXT_KEY ? serializePlayerSetting(AUTO_NEXT_KEY, () => state.retry()) : state.retry());
             if (torn || state.error !== undefined) return;
+            if (!wasRetryable) {
+                pendingPlaybackReset = [];
+                return;
+            }
         }
         while (pendingPlaybackReset.length > 0) {
             const key = pendingPlaybackReset[0];
@@ -295,6 +301,43 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             pendingPlaybackReset.shift();
         }
         if (!torn) back();
+    };
+
+    const presentOverlay = (
+        name: string,
+        buildContent: (background: HTMLElement | undefined) => readonly HTMLElement[],
+        zones: readonly Zone[],
+        initialFocus: FocusTarget,
+    ): void => {
+        if (activeModal !== name) modalPaneTop = paneSnapshot?.querySelector<HTMLElement>(".settings-pane")?.scrollTop ?? 0;
+        const opening = activeModal !== name;
+        activeModal = name;
+        const behind = paneSnapshot?.cloneNode(true);
+        const background = behind instanceof HTMLElement ? behind : undefined;
+        host.show({ name, content: buildContent(background), zones, focus: initialFocus, back }, opening ? initialFocus : undefined);
+        const snapshotPane = background?.querySelector<HTMLElement>(".settings-pane");
+        if (snapshotPane !== null && snapshotPane !== undefined) snapshotPane.scrollTop = modalPaneTop;
+    };
+
+    const currentSubtitleAppearance = (): SubtitleAppearance => {
+        const stored = state.stored(APPEARANCE_KEY);
+        return decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
+    };
+    const paintSubtitlePreview = (preview: HTMLElement, text: HTMLElement, appearance: SubtitleAppearance): void => {
+        // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
+        applySubtitleAppearance(preview, text, appearance, false, 0.5);
+        text.style.fontWeight = "600";
+        text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
+        text.style.borderRadius = "4px";
+        preview.style.alignItems = appearance.position === "top" ? "flex-start" : "flex-end";
+        preview.style.paddingBlock = appearance.position === "lower-third" ? "33px" : "12px";
+    };
+    const createSubtitlePreview = (appearance: SubtitleAppearance): { readonly preview: HTMLElement; readonly text: HTMLElement } => {
+        const preview = el("div", "settings-subtitle-preview");
+        const text = el("span", "", translate("player.subtitles.previewSample"));
+        preview.appendChild(text);
+        paintSubtitlePreview(preview, text, appearance);
+        return { preview, text };
     };
 
     const showModal = (name: string, title: string, content: HTMLElement[], controls: FocusItem[], zone = "settings-picker"): void => {
@@ -327,20 +370,38 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         else card.append(list);
         const scrim = el("div", "settings-modal-scrim");
         scrim.appendChild(card);
-        if (activeModal !== name) modalPaneTop = paneSnapshot?.querySelector<HTMLElement>(".settings-pane")?.scrollTop ?? 0;
-        const background = paneSnapshot?.cloneNode(true) as HTMLElement | undefined;
-        if (background !== undefined) {
-            background.inert = true;
-            background.setAttribute("aria-hidden", "true");
-            background.querySelectorAll("[data-focus]").forEach(node => node.removeAttribute("data-focus"));
-        }
         const selected = controls.find(item => item.element.getAttribute("aria-checked") === "true") ?? controls[0];
-        const initialFocus = { zone, key: selected?.key ?? "" };
-        const opening = activeModal !== name;
-        activeModal = name;
-        host.show({ name, content: [...(background === undefined ? [] : [background]), scrim], zones: [{ id: zone, layout: "column", items: controls }], focus: initialFocus, back }, opening ? initialFocus : undefined);
-        const snapshotPane = background?.querySelector<HTMLElement>(".settings-pane");
-        if (snapshotPane !== null && snapshotPane !== undefined) snapshotPane.scrollTop = modalPaneTop;
+        presentOverlay(name, (background) => {
+            if (background !== undefined) {
+                background.inert = true;
+                background.setAttribute("aria-hidden", "true");
+                background.querySelectorAll("[data-focus]").forEach(node => node.removeAttribute("data-focus"));
+            }
+            return [...(background === undefined ? [] : [background]), scrim];
+        }, [{ id: zone, layout: "column", items: controls }], { zone, key: selected?.key ?? "" });
+    };
+
+    const showAlertDialog = (options: {
+        readonly name: string;
+        readonly id: string;
+        readonly title: string;
+        readonly message: string;
+        readonly confirm: FocusItem;
+        readonly cancel: FocusItem;
+        readonly retry?: readonly FocusItem[];
+    }): void => {
+        const controls = [options.confirm, options.cancel, ...(options.retry ?? [])];
+        presentOverlay(options.name, (background) => centredDialog({
+            style: "alert",
+            id: options.id,
+            title: options.title,
+            message: options.message,
+            ...(state.busy ? { status: state.loaded ? translate("settings.saving") : "Loading settings…" } : {}),
+            ...(state.error === undefined ? {} : { problem: state.error }),
+            buttons: controls.map(control => control.element),
+            destructive: options.confirm.element,
+            behind: background === undefined ? [] : [background],
+        }), [{ id: "settings-confirm", layout: "column", skipDisabled: true, items: controls }], { zone: "settings-confirm", key: options.cancel.key });
     };
 
     const renderPicker = (): void => {
@@ -431,18 +492,48 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         if (confirmingPlaybackReset) {
             const playbackKeys = devicePlaybackKeys();
             const keys = playbackKeys.filter(key => state.scope(key) === "profile_device");
-            const controls = [button("cancel-playback-reset", translate("common.cancel"), back), button("confirm-playback-reset", translate("settings.subtitles.resetConfirm"), () => {
+            const confirm = button("confirm-playback-reset", translate("settings.profileSettings.useAll"), () => {
                 if (state.busy) return;
                 if (pendingPlaybackReset.length === 0) pendingPlaybackReset = [...keys];
                 void resetPlayback();
-            }), ...(state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void resetPlayback(true); })])];
-            showModal("settings:reset-playback", translate("settings.profileSettings.confirmTitle"), [el("h1", "browse-title", translate("settings.profileSettings.confirmTitle")), el("p", "settings-value", translateTv("settings.profileSettings.resetFooterAppleTv")), ...feedback()], controls);
+            });
+            const cancel = actionButton("cancel-playback-reset", translate("common.cancel"), back);
+            if (state.busy) cancel.element.setAttribute("aria-disabled", "true");
+            // TVPlaybackSettingsView.swift:48-57: alert over dimmed Settings; destructive Use Profile Settings stacked above Cancel, Cancel focused.
+            showAlertDialog({
+                name: "settings:reset-playback",
+                id: "settings-reset-playback",
+                title: translate("settings.profileSettings.confirmTitle"),
+                message: translateTv("settings.profileSettings.resetFooterAppleTv"),
+                confirm,
+                cancel,
+                retry: state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => { void resetPlayback(true); })],
+            });
             return;
         }
         if (torn) return;
         if (confirmingAppearanceReset) {
-            const controls = [actionButton("cancel", translate("common.cancel"), back), button("reset", translate("settings.subtitles.resetConfirm"), () => { void state.save(APPEARANCE_KEY, { ...DEFAULT_APPEARANCE }).then(() => { if (!torn && confirmingAppearanceReset && state.error === undefined) back(); }); }), ...retryButton()];
-            host.show({ name: "settings:reset-appearance", content: [el("h1", "browse-title", translate("settings.subtitles.resetTitleApple")), el("p", "settings-value", state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile")), ...feedback(), zoneNode("settings-controls", controls)], zones: [{ id: "settings-picker", layout: "column", items: controls }], focus: { zone: "settings-picker", key: "cancel" }, back });
+            const confirm = button("reset", translate("settings.subtitles.resetConfirm"), () => {
+                if (state.busy) return;
+                void state.save(APPEARANCE_KEY, { ...DEFAULT_APPEARANCE }).then(() => { if (!torn && confirmingAppearanceReset && state.error === undefined) back(); });
+            });
+            const cancel = actionButton("cancel", translate("common.cancel"), back);
+            if (state.busy) cancel.element.setAttribute("aria-disabled", "true");
+            // TVSubtitleSettingsView.swift:25-34: alert over dimmed Settings; destructive Reset stacked above Cancel, Cancel focused.
+            showAlertDialog({
+                name: "settings:reset-appearance",
+                id: "settings-reset-appearance",
+                title: translate("settings.subtitles.resetTitleApple"),
+                message: state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.resetMessageAppleTv") : translate("settings.subtitles.resetMessageProfile"),
+                confirm,
+                cancel,
+                retry: state.error === undefined ? [] : [button("retry", state.canRetry ? "Check and retry" : "Reload settings", () => {
+                    const wasRetryable = state.canRetry;
+                    void state.retry().then(() => {
+                        if (!torn && state.error === undefined && wasRetryable && confirmingAppearanceReset) back();
+                    });
+                })],
+            });
             return;
         }
         if (confirmingDiagnosticsSend) {
@@ -542,6 +633,14 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             const row = extraPicker;
             const unsettled = row.member === undefined ? actions?.playerSettings?.unsettledValue(row.key) : undefined;
             const current = unsettled !== undefined ? unsettled : rowValue(row, state);
+            const fontPicker = row.id === "appearance-fontFamily";
+            const previewAppearance = fontPicker ? currentSubtitleAppearance() : undefined;
+            const focusedFont = fontPicker && activeModal === `settings:${row.id}` && host.focused()?.key.startsWith("choice:")
+                ? host.focused()?.key.slice("choice:".length)
+                : undefined;
+            const pickerPreview = previewAppearance === undefined
+                ? undefined
+                : createSubtitlePreview({ ...previewAppearance, fontFamily: focusedFont ?? (typeof current === "string" ? current : previewAppearance.fontFamily) });
             const controls = [...row.choices.map(([value, text]) => {
                 const item = button(`choice:${String(value)}`, text, () => {
                     void serializePlayerSetting(row.key, () => state.save(row.key, rowEdit(row, value, state))).then(() => {
@@ -551,6 +650,16 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                         }
                     });
                 });
+                if (pickerPreview !== undefined && previewAppearance !== undefined) {
+                    item.element.setAttribute("aria-label", text);
+                    const sample = el("span", "settings-font-sample", translate("settings.picker.subtitleSample"));
+                    sample.setAttribute("aria-hidden", "true");
+                    sample.style.fontFamily = subtitleFontFamily(String(value));
+                    item.element.replaceChildren(el("span", "settings-option-label", text), sample);
+                    item.element.addEventListener("focus", () => {
+                        paintSubtitlePreview(pickerPreview.preview, pickerPreview.text, { ...previewAppearance, fontFamily: String(value) });
+                    });
+                }
                 item.element.setAttribute("role", "radio");
                 item.element.setAttribute("aria-checked", String(current === value));
                 return item;
@@ -573,7 +682,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 actions?.playerSettings?.clearKey(row.key);
                 if (extraPicker === row) back();
             }, row.key));
-            showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback()], controls);
+            showModal(`settings:${row.id}`, row.title, [el("h1", "browse-title", row.title), ...feedback(), ...(pickerPreview === undefined ? [] : [pickerPreview.preview])], controls);
             return;
         }
         if (choosingLanguage && appLanguage !== undefined) {
@@ -986,7 +1095,25 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
             }
         }
         if (state.loaded) {
-            if (category === "general") body.appendChild(el("h3", "settings-section-header", translate("settings.general.cardsHeaderTv")));
+            if (category === "general") {
+                // TVGeneralSettingsView.swift:63-79: Server Support and Sync Source sit above Cards.
+                if (state.uiCustomizationMessage !== undefined) {
+                    body.append(
+                        el("h3", "settings-section-header", translate("settings.general.serverSupportHeaderTv")),
+                        el("p", "settings-value", state.uiCustomizationMessage),
+                    );
+                }
+                if (state.effective.get(CARD_PRESENTATION_KEY)?.source === "profile_device") {
+                    const synced = button("use-synced-tv", translate("settings.general.useSyncedTvSettings"), () => { void state.resetPosterDevice(); });
+                    rows.push(synced);
+                    body.append(
+                        el("h3", "settings-section-header", translate("settings.general.syncSourceHeaderTv")),
+                        synced.element,
+                        el("p", "settings-value", translateTv("settings.general.deviceOverrideFooterTv")),
+                    );
+                }
+                body.appendChild(el("h3", "settings-section-header", translate("settings.general.cardsHeaderTv")));
+            }
             if (category === "playback") {
                 if (state.definitions.some(def => def.key === HDR_KEY)) {
                     const hdrOn = state.effective.get(HDR_KEY)?.value === true;
@@ -1014,14 +1141,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 rows.push(item); body.appendChild(item.element);
                 if (row.id === "advisory-age") body.appendChild(el("p", "settings-value", translate("settings.general.showAdvisoryAgeFooter")));
                 if (row.id === "metadata-language") body.appendChild(el("p", "settings-value", translate("settings.metadataLanguageNote")));
-                if (row.id === "poster-size" && state.client.get(row.key)?.isSet) {
+                if (row.id === "poster-size" && state.effective.get(row.key)?.source === "profile_client") {
                     const inherited = button("poster-profile-default", translate("settings.cards.useProfileDefault"), () => { void state.reset(row.key); });
                     rows.push(inherited); body.appendChild(inherited.element);
                 }
                 if (row.id === "poster-size" && state.effective.get(row.key)?.source === "profile_device") {
                     item.element.setAttribute("aria-disabled", "true");
-                    const synced = button("use-synced-tv", translate("settings.general.useSyncedTvSettings"), () => { void state.resetPosterDevice(); });
-                    rows.push(synced); body.appendChild(synced.element);
                 }
                 if (row.id === "poster-size") body.appendChild(el("p", "settings-value", translate("settings.general.posterSizeSyncsTv")));
                 if (category === "playback" && row.id === "auto-next" && actions?.stillWatching !== undefined) {
@@ -1117,7 +1242,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 }
                 const playbackKeys = devicePlaybackKeys();
                 if (playbackKeys.some(key => state.scope(key) === "profile_device")) {
-                    const reset = button("reset-playback", translate("settings.profileSettings.useAll"), () => { confirmingPlaybackReset = true; render(); });
+                    const reset = button("reset-playback", translate("settings.profileSettings.useAll"), () => { if (!state.canRetry) state.error = undefined; confirmingPlaybackReset = true; render(); });
                     reset.element.classList.add("settings-destructive");
                     reset.element.prepend(navigationIcon("reset"));
                     rows.push(reset);
@@ -1125,20 +1250,13 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 }
             }
             if (category === "subtitles" && state.definitions.some(def => def.key === APPEARANCE_KEY)) {
-                const preview = el("div", "settings-subtitle-preview");
-                const text = el("span", "", translate("player.subtitles.previewSample"));
-                preview.appendChild(text);
-                const stored = state.stored(APPEARANCE_KEY);
-                const appearance = decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
-                // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
-                applySubtitleAppearance(preview, text, appearance, false, 0.5);
-                text.style.fontWeight = "600";
-                text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
-                text.style.borderRadius = "4px";
-                preview.style.alignItems = appearance.position === "top" ? "flex-start" : "flex-end";
-                preview.style.paddingBlock = appearance.position === "lower-third" ? "33px" : "12px";
+                const appearance = currentSubtitleAppearance();
+                const { preview } = createSubtitlePreview(appearance);
                 body.appendChild(preview);
-                const reset = button("reset-appearance", translate("settings.subtitles.resetAppearance"), () => { confirmingAppearanceReset = true; render(); });
+                if (isLowLegibilitySubtitleAppearance(appearance)) {
+                    body.appendChild(el("p", "settings-value settings-low-legibility", translate("settings.subtitles.lowLegibility")));
+                }
+                const reset = button("reset-appearance", translate("settings.subtitles.resetAppearance"), () => { if (!state.canRetry) state.error = undefined; confirmingAppearanceReset = true; render(); });
                 rows.push(reset); body.append(reset.element, el("p", "settings-value settings-appearance-footer", `${state.scope(APPEARANCE_KEY) === "profile_device" ? translateTv("settings.subtitles.scopeDeviceOnlyAppleTv") : translate("settings.subtitles.scopeProfile")} ${translate("settings.subtitles.authoredStyle")}`));
                 if (state.definitions.some(def => def.key === APPEARANCE_KEY && def.device)) {
                     const device = state.scope(APPEARANCE_KEY) === "profile_device";
@@ -1188,10 +1306,12 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         body.classList.add("settings-controls");
         const firstAppearance = body.querySelector('[data-focus^="appearance-"]');
         const preview = body.querySelector(".settings-subtitle-preview");
+        const lowLegibility = body.querySelector(".settings-low-legibility");
         const deviceToggle = body.querySelector('[data-focus="appearance-device"]');
         if (firstAppearance !== null && preview !== null) {
             body.insertBefore(el("h3", "settings-section-header", translate("settings.subtitles.tvHeader.appearance")), firstAppearance);
             body.insertBefore(preview, firstAppearance);
+            if (lowLegibility !== null) body.insertBefore(lowLegibility, firstAppearance);
             if (deviceToggle !== null) body.insertBefore(deviceToggle, firstAppearance);
             const group = el("div", "settings-nested-group");
             body.insertBefore(group, firstAppearance);
@@ -1206,13 +1326,19 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
         rail.appendChild(el("p", "settings-version", `Auger ${APP_VERSION}`));
         panes.append(rail, body);
         paneSnapshot = panes;
+        // TVGeneralSettingsView.swift:70-75: once Use Synced TV Settings clears the device override and disappears, focus moves to Poster Size.
+        const previousFocus = host.focused();
+        const nextFocus = focus === undefined && previousFocus?.zone === "settings-rows" && previousFocus.key === "use-synced-tv"
+            && !rows.some(item => item.key === "use-synced-tv") && rows.some(item => item.key === "poster-size")
+            ? { zone: "settings-rows", key: "poster-size" }
+            : focus;
         host.show({ name: "settings", content: [panes], zones: [
             // The rail is a focus section too: Up at the profile card and Down at Sign Out stay in it.
             { id: "settings-categories", layout: "column", up: "settings-categories", down: "settings-categories", right: "settings-rows", items: categories },
             // A save in flight blocks every row's press, so only then do the rows stay reachable (Apple's view models ignore presses while saving).
             // Apple's panes are focus sections: Up at the first row and Down at the last stay in the pane, and only Left leaves it.
             { id: "settings-rows", layout: "column", left: "settings-categories", up: "settings-rows", down: "settings-rows", skipDisabled: !state.busy, items: rows },
-        ], focus: { zone: "settings-categories", key: category }, back }, focus);
+        ], focus: { zone: "settings-categories", key: category }, back }, nextFocus);
     }
     connection.start();
     host.listen();

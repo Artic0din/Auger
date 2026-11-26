@@ -3,7 +3,19 @@
 // independently from those formulas.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { backdropFrame, cssColor, hsv, sampleCorners, samplePalette, sampleThumbhash, washBackground, type RGB } from "../../src/ui/heroBackdrop.ts";
+import {
+    backdropFrame,
+    coverFrame,
+    cssColor,
+    hsv,
+    resolveHeroArtwork,
+    sampleCorners,
+    samplePalette,
+    sampleThumbhash,
+    washBackground,
+    type HeroArtwork,
+    type RGB,
+} from "../../src/ui/heroBackdrop.ts";
 
 const close = (actual: RGB, expected: readonly [number, number, number], what: string): void => {
     for (const [index, channel] of (["r", "g", "b"] as const).entries()) {
@@ -147,4 +159,47 @@ test("corners: a card's ThumbHash, the tint before the image is sampled, splits 
     for (const corner of Object.values(tints.corners)) assert.ok(hsv(corner).value <= 0.4 + 1e-9);
     assert.ok(hsv(tints.corners.topLeading).value <= 0.2 + 1e-9, "the top-leading corner stays darkest");
     assert.equal(sampleThumbhash(undefined), undefined);
+});
+
+test("hero artwork selection waits on detail before falling back to a framed cover (TVHeroArtworkResolverTests)", () => {
+    const poster: HeroArtwork = { url: "https://example.test/poster.jpg", thumbhash: "poster", coverAspect: "poster" };
+    const sectionBackdrop: HeroArtwork = { url: "https://example.test/section-backdrop.jpg", thumbhash: "section" };
+    const detailBackdrop: HeroArtwork = { url: "https://example.test/detail-backdrop.jpg", thumbhash: "detail" };
+
+    assert.equal(resolveHeroArtwork({
+        sectionBackdrop: undefined, fallback: poster, prefersEnrichedBackdrop: true,
+        canLoadEnrichment: true, enrichmentState: "loading", enrichedBackdrop: undefined,
+    }), undefined);
+    assert.deepEqual(resolveHeroArtwork({
+        sectionBackdrop: undefined, fallback: poster, prefersEnrichedBackdrop: true,
+        canLoadEnrichment: true, enrichmentState: "completed", enrichedBackdrop: detailBackdrop,
+    }), detailBackdrop);
+    assert.deepEqual(resolveHeroArtwork({
+        sectionBackdrop: undefined, fallback: poster, prefersEnrichedBackdrop: true,
+        canLoadEnrichment: true, enrichmentState: "completed", enrichedBackdrop: undefined,
+    }), poster);
+    assert.deepEqual(resolveHeroArtwork({
+        sectionBackdrop, fallback: poster, prefersEnrichedBackdrop: false,
+        canLoadEnrichment: true, enrichmentState: "loading", enrichedBackdrop: undefined,
+    }), sectionBackdrop);
+    assert.deepEqual(resolveHeroArtwork({
+        sectionBackdrop: undefined, fallback: poster, prefersEnrichedBackdrop: true,
+        canLoadEnrichment: false, enrichmentState: "notStarted", enrichedBackdrop: undefined,
+    }), poster);
+    assert.deepEqual(resolveHeroArtwork({
+        sectionBackdrop: undefined, fallback: poster, prefersEnrichedBackdrop: true,
+        canLoadEnrichment: true, enrichmentState: "failed", enrichedBackdrop: undefined,
+    }), poster);
+});
+
+test("framed cover geometry matches TVRootHeroBackdrop in both layout directions", () => {
+    const ltrPoster = coverFrame("poster", false);
+    assert.ok(Math.abs(ltrPoster.width - 380 * 2 / 3) < 0.01);
+    assert.equal(ltrPoster.height, 380);
+    assert.equal(ltrPoster.top, 170);
+    assert.ok(Math.abs(ltrPoster.left + ltrPoster.width - (1920 - 150)) < 0.01);
+    assert.equal(ltrPoster.radius, 14);
+    assert.deepEqual(coverFrame("poster", true), { ...ltrPoster, left: 150 });
+    assert.deepEqual(coverFrame("square", false), { left: 1920 - 150 - 380, top: 170, width: 380, height: 380, radius: 14 });
+    assert.deepEqual(coverFrame("square", true), { left: 150, top: 170, width: 380, height: 380, radius: 14 });
 });

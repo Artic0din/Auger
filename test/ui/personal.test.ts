@@ -3,9 +3,9 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { mkdir } from "node:fs/promises";
 import { PersonalCatalog } from "../native/support/personalCatalog.ts";
-import { problem, type Reply } from "../native/support/fakeSilo.ts";
+import { problem } from "../native/support/fakeSilo.ts";
 import { afterPaint, jumpUntil, launchBrowser, openTv, type Tv } from "./support/tv.ts";
-import { personalQuery, readPersonalPage } from "../../src/ui/personalLists.ts";
+import { availablePersonalFilters, personalQuery, readPersonalPage, resolvePersonalFilter } from "../../src/ui/personalLists.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { CARD_PRESENTATION_KEY } from "../../src/contracts/v2/settings.ts";
 
@@ -235,6 +235,15 @@ test("pinned History scope distinguishes aggregated media from episode queries",
 test("History matches Apple's unfiltered 60-item query and continuation", () => {
     assert.deepEqual(personalQuery("history", "movie"), { source: "history", limit: 60 });
     assert.deepEqual(personalQuery("history", "movie", "opaque"), { source: "history", limit: 60, cursor: "opaque" });
+    assert.deepEqual(availablePersonalFilters("favorites", false), ["movie", "series"]);
+    assert.deepEqual(availablePersonalFilters("favorites", true), ["movie", "series", "audiobook"]);
+    assert.equal(resolvePersonalFilter("audiobook", false), "movie");
+    assert.equal(resolvePersonalFilter("audiobook", true), "audiobook");
+    const catalog = new PersonalCatalog();
+    const episodeBody = catalog.route("POST", "/catalog/query", "p-owner", { source: "history", type: "episode", limit: 60 })?.body as { items: Record<string, unknown>[] };
+    const decoded = readPersonalPage("favorites", "series", undefined).decode({ items: episodeBody.items.slice(0, 1), page: { has_more: false } });
+    assert.equal(decoded.items.length, 1);
+    assert.equal(decoded.items[0]?.type, "episode");
 });
 
 test("History is pushed without shell chrome and Back restores the profile anchor", async () => {
@@ -386,7 +395,7 @@ for (const source of ["watchlist", "favorites", "history"]) test(`review: ${sour
     } finally { await tv.page.context().close(); }
 });
 
-for (const source of ["watchlist", "history"]) test(`review: ${source} 404 is an error rather than empty`, async () => {
+for (const source of ["watchlist", "favorites", "history"] as const) test(`review: ${source} 404 is an error rather than empty, with Go Back on History only`, async () => {
     const { tv, catalog } = await setup();
     try {
         catalog.pageReplies.push(problem(404, "not_found", "Synthetic missing catalog"));
@@ -395,6 +404,8 @@ for (const source of ["watchlist", "history"]) test(`review: ${source} 404 is an
         await tv.page.locator(`[data-focus="${source}"]`).click();
         await tv.eventually(async () => await tv.page.locator(".personal-failure, .personal-empty").count() > 0, "settled catalog");
         assert.equal(await tv.page.locator(".personal-failure").count(), 1);
+        assert.equal(await tv.page.locator('.personal-failure [data-focus="retry"]').count(), 1);
+        assert.equal(await tv.page.locator('.personal-failure [data-focus="go-back"]').count(), source === "history" ? 1 : 0);
     } finally { await tv.page.context().close(); }
 });
 
@@ -934,20 +945,22 @@ test("a failed later page keeps the rows, and an invalid cursor restarts from th
     } finally { invalid.release(); await tv.page.context().close(); }
 });
 
-test("capability failures are retryable errors, unsupported is explicit, empty remains navigable", async () => {
+test("Watchlist and Favorites read without /capabilities/personal-lists, recover via ErrorView without Go Back, and keep empty navigable", async () => {
     const { tv, catalog } = await setup();
     try {
-        catalog.capabilityReplies.push({ status: 200, body: { allowed: true } });
+        catalog.unavailable = true;
+        catalog.pageReplies.push(problem(404, "not_found", "Missing"));
         await tv.page.locator('[data-focus="for_you"]').focus(); await tv.remote(40);
         await tv.page.locator('[data-focus="watchlist"]').click();
-        await tv.page.getByRole("heading", { name: "Something went wrong", exact: true }).waitFor();
-        await tv.page.getByText("The server response was in an unexpected format.", { exact: true }).waitFor();
-        assert.equal(listReads(tv).length, 0);
-        catalog.unavailable = true;
+        await tv.page.locator(".personal-failure").waitFor();
+        assert.equal(tv.fake.requests.filter(request => request.path === "/capabilities/personal-lists").length, 0);
+        assert.equal(await tv.page.getByText("Watchlist is unavailable.").count(), 0);
+        assert.equal(await tv.page.locator('[data-focus="go-back"]').count(), 0);
+        assert.equal(await tv.page.locator('[data-focus="retry"]').count(), 1);
         await tv.page.locator('[data-focus="retry"]').click();
-        await tv.page.getByText("Watchlist is unavailable.").waitFor();
+        await tv.page.locator('[data-view="personal:watchlist"] .browse-card').first().waitFor();
         await tv.remote(10009);
-        catalog.unavailable = false;
+        await tv.remote(10009);
         for (const id of catalog.titles.keys()) catalog.excluded.add(id);
         await tv.page.locator('[data-focus="for_you"]').focus(); await tv.remote(40);
         await tv.page.locator('[data-focus="watchlist"]').click();
@@ -956,6 +969,54 @@ test("capability failures are retryable errors, unsupported is explicit, empty r
         assert.equal(await tv.focused(), "status");
         await tv.page.keyboard.press("ArrowUp");
         assert.equal(await tv.focused(), "home");
+    } finally { await tv.page.context().close(); }
+});
+
+test("Favorites adds an Audiobooks filter with book.closed empty state when audiobooks are enabled", async () => {
+    const { tv, catalog } = await setup(false, false, active => {
+        const fakeCatalog = active.fake.catalog as PersonalCatalog;
+        fakeCatalog.add({ id: "audiobook:ab1", type: "audiobook", title: "Northern Drift", libraryId: "14", year: 2024 });
+        fakeCatalog.excluded.add("audiobook:ab1");
+    });
+    try {
+        // With Show Audiobooks off, only Movies and TV Shows appear in Favorites.
+        await openList(tv, "favorites");
+        assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series"]);
+        await tv.remote(10009);
+        await tv.remote(10009);
+
+        // Turn Show Audiobooks on via Settings, then open Favorites.
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="show-audiobooks"]').click();
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor();
+
+        await openList(tv, "favorites");
+        assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series", "filter:audiobook"]);
+        assert.equal(await tv.page.locator('[data-focus="filter:audiobook"]').innerText(), "Audiobooks");
+        await tv.page.locator('[data-focus="filter:audiobook"]').click();
+        await tv.page.locator(".personal-section-empty").waitFor();
+        assert.equal(await tv.page.locator(".personal-section-icon").evaluate(node => node.tagName.toLowerCase()), "svg");
+        assert.equal(await tv.page.locator(".personal-section-title").innerText(), "No favorite audiobooks");
+        assert.equal(await tv.page.locator(".personal-section-subtitle").innerText(), "Add favorites from any detail page and they will appear here.");
+
+        // Favorites containing only an audiobook keeps the filter pills (elsewhere) and renders square covers.
+        await tv.remote(10009);
+        await tv.remote(10009);
+        for (const id of catalog.titles.keys()) catalog.excluded.add(id);
+        catalog.excluded.delete("audiobook:ab1");
+        await tv.page.locator('[data-focus="for_you"]').focus(); await tv.remote(40);
+        await tv.page.locator('[data-focus="favorites"]').click();
+        await tv.page.locator('[data-focus="filter:movie"]').waitFor();
+        await tv.page.locator('[data-focus="filter:audiobook"]').click();
+        await tv.page.locator('.browse-card-square[data-focus="audiobook:ab1"]').waitFor();
+        const box = await tv.page.locator('.browse-card-square[data-focus="audiobook:ab1"] .browse-art').evaluate(node => {
+            const rect = node.getBoundingClientRect();
+            return { width: Math.round(rect.width), height: Math.round(rect.height) };
+        });
+        assert.deepEqual(box, { width: 176, height: 176 });
     } finally { await tv.page.context().close(); }
 });
 
@@ -1043,5 +1104,49 @@ test("History includes episodes and cached Details return remains visible during
         assert.ok(await tv.page.locator('.browse .browse-card[data-focus^="series:"]').count() > 0);
         assert.equal(await tv.page.getByRole("button", { name: "Episodes", exact: true }).count(), 0);
         assert.equal(listReads(tv).every(request => request.body?.type !== "episode"), true);
+    } finally { await tv.page.context().close(); }
+});
+
+test("delayed library load adds Audiobooks filter without dropping Favorites grid or focus", async () => {
+    let removedAudiobookLibrary: { id: string; name: string; type: string; sort_order: number }[] = [];
+    const { tv, catalog } = await setup(false, false, active => {
+        const fakeCatalog = active.fake.catalog as PersonalCatalog;
+        fakeCatalog.add({ id: "audiobook:ab1", type: "audiobook", title: "Northern Drift", libraryId: "14", year: 2024 });
+        const ownerLibraries = fakeCatalog.households.get("p-owner")?.libraries;
+        assert.ok(ownerLibraries !== undefined);
+        const index = ownerLibraries.findIndex(library => library.type === "audiobooks");
+        assert.ok(index >= 0);
+        removedAudiobookLibrary = ownerLibraries.splice(index, 1);
+    });
+    try {
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="show-audiobooks"]').click();
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor();
+
+        const ownerLibraries = catalog.households.get("p-owner")?.libraries;
+        assert.ok(ownerLibraries !== undefined);
+        ownerLibraries.push(...removedAudiobookLibrary);
+        const heldLibraries = tv.fake.hold("/user/libraries", true);
+        try {
+            await tv.page.evaluate(() => { window.browseHarness.destroy(); window.browseHarness.mount(); });
+            await tv.page.locator('[data-view="home"]').waitFor();
+            await openList(tv, "favorites");
+            await tv.page.locator('[data-view="personal:favorites"] [data-focus="movie:m0002"]').focus();
+            assert.equal(await tv.focused(), "movie:m0002");
+            assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series"]);
+            const readsBeforeRelease = listReads(tv).length;
+
+            heldLibraries.release();
+            await tv.page.locator('[data-focus="filter:audiobook"]').waitFor();
+            assert.deepEqual(await tv.page.locator(".personal-filters .browse-button").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["filter:movie", "filter:series", "filter:audiobook"]);
+            assert.equal(await tv.focused(), "movie:m0002");
+            assert.equal(listReads(tv).length, readsBeforeRelease);
+
+            await tv.page.locator('[data-focus="filter:audiobook"]').click();
+            await tv.page.locator('.browse-card-square[data-focus="audiobook:ab1"]').waitFor();
+        } finally { heldLibraries.release(); }
     } finally { await tv.page.context().close(); }
 });

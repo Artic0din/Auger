@@ -58,15 +58,21 @@ test("a movie's Details and its More menu read in German", async () => {
     });
 });
 
-test("Search reads in German: field, filters, result count and the empty state", async () => {
-    await inGerman(async tv => {
-        assert.deepEqual([german("search.filter.movies"), german("search.initial"), german("search.emptyBody")], ["Filme", "Auger durchsuchen", "Versuche es mit einem anderen Suchbegriff"], "the catalog holds German for these keys");
+test("Search reads in German: field, filters, result count, box-set eyebrow and the empty state", async () => {
+    await inGerman(async (tv, details) => {
+        assert.deepEqual([german("search.filter.movies"), german("search.initial"), german("search.emptyBody"), german("boxSets.eyebrow")], ["Filme", "Auger durchsuchen", "Versuche es mit einem anderen Suchbegriff", "Filmreihe"], "the catalog holds German for these keys");
+        details.searchCapabilities = { ...details.searchCapabilities, box_sets: true };
+        await tv.page.route("**/api/v2/catalog/box-sets?**", route => route.fulfill({ json: {
+            items: [{ id: "1241", library_id: "12", title: "Harry Potter Collection", overview: "Wizards.", poster_url: "/art/potter.svg", movie_count: 8, played_count: 3, first_year: 2001, last_year: 2011 }],
+        } }));
         await tv.page.locator('[data-focus="search"]').click();
         // German lands with the profile's language answer, which can come after Search has drawn its field.
         await tv.eventually(async () => await tv.page.locator("#browse-search").getAttribute("placeholder") === german("search.fieldPrompt.video"), "the German field prompt");
         await tv.page.getByText(german("search.initial"), { exact: true }).waitFor();
         await tv.page.fill("#browse-search", "Movie 0001"); await tv.remote(IME_DONE);
         await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor();
+        await tv.page.locator('[data-focus="box-set:12:1241"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="box-set:12:1241"] .box-set-label').textContent(), german("boxSets.eyebrow"));
         assert.deepEqual(await tv.page.locator(".search-filters button").allInnerTexts(), [german("search.filter.all"), german("search.filter.movies"), german("search.filter.series")]);
         assert.equal(await tv.page.locator(".search-count").innerText(), german("search.resultCount", { count: 1, count_text: "1" }));
         await tv.page.locator('[data-focus="search-filter:series"]').focus();

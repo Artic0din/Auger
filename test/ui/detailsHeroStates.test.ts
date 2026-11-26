@@ -194,8 +194,11 @@ detailTest("a Details page without a backdrop keeps the page tint and never crop
 });
 
 detailTest("the backdrop sits on Apple's surface and ThumbHash, fades in, and shows a film mark when it fails", async tv => {
-    await patchDetail(tv, "movie:m0001", { backdrop_thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI" });
-    await tv.page.route("**/art/last-signal-backdrop.svg**", route => route.abort("failed"));
+    await patchDetail(tv, "movie:m0001", {
+        backdrop_url: "/art/last-signal-backdrop.svg?details-fail=1",
+        backdrop_thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI",
+    });
+    await tv.page.route("**/art/last-signal-backdrop.svg?details-fail=1", route => route.abort("failed"));
     await tv.page.locator(MOVIE).first().click();
     const failed = await readLive(tv, () => {
         const frame = document.querySelector<HTMLElement>(".details-hero .skyline-art-frame");
@@ -205,7 +208,7 @@ detailTest("the backdrop sits on Apple's surface and ThumbHash, fades in, and sh
     }, null, () => true, "failed backdrop");
     assert.deepEqual(failed, { thumbhash: true, surface: "rgb(14, 15, 18)", glyph: { color: "rgba(237, 237, 237, 0.3)", width: 34.796875 }, image: false });
     await tv.remote(10009);
-    await tv.page.unroute("**/art/last-signal-backdrop.svg**");
+    await tv.page.unroute("**/art/last-signal-backdrop.svg?details-fail=1");
     await tv.page.locator(MOVIE).first().click();
     const loaded = await readLive(tv, () => {
         const image = document.querySelector<HTMLElement>(".details-hero .skyline-art-frame img");

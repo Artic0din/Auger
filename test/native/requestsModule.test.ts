@@ -384,3 +384,69 @@ test("requests capability probe updates admissible() and reports refreshSearch/f
     assert.deepEqual(events.at(-1), { enabled: false, refreshSearch: true, fromProbe: true });
     mod.dispose();
 });
+
+test("request-record write(follow) ignores detail belonging to a different request_id", async () => {
+    const h = await setup();
+    Object.assign(h.catalog.record, { state: "failed", status: "approved", outcome: "failed" });
+    const origTitle = h.catalog.title.bind(h.catalog);
+    h.catalog.title = () => ({
+        ...origTitle(),
+        request: {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            request_id: "different-pending-id",
+            state: "pending",
+            reason: "already_requested",
+        },
+    });
+    const mod = createRequests({ session: h.core.session, clock: h.clock });
+    await mod.probe();
+    const detail = mod.open({ kind: "request", id: h.catalog.record.id });
+    detail.arrive("push");
+    await settle();
+    const followsBefore = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    detail.write("follow");
+    await settle();
+    const followsAfter = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    assert.equal(followsAfter, followsBefore);
+    mod.dispose();
+});
+
+test("request-record write(follow) allows active records and blocks failed records when detail omits request_id", async () => {
+    const h = await setup();
+    Object.assign(h.catalog.record, { requested_by_profile_id: "profile-a", state: "pending", status: "pending", outcome: "active" });
+    const origTitle = h.catalog.title.bind(h.catalog);
+    h.catalog.title = () => ({
+        ...origTitle(),
+        request: {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            state: "pending",
+            reason: "already_requested",
+        },
+    });
+    const mod = createRequests({ session: h.core.session, clock: h.clock });
+    await mod.probe();
+
+    const activeDetail = mod.open({ kind: "request", id: h.catalog.record.id });
+    activeDetail.arrive("push");
+    await settle();
+    const beforeActive = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    activeDetail.write("follow");
+    await settle();
+    const afterActive = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    assert.equal(afterActive, beforeActive + 1);
+
+    Object.assign(h.catalog.record, { state: "failed", status: "approved", outcome: "failed" });
+    const failedDetail = mod.open({ kind: "request", id: h.catalog.record.id });
+    failedDetail.arrive("push");
+    await settle();
+    const beforeFailed = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    failedDetail.write("follow");
+    await settle();
+    const afterFailed = h.fake.requests.filter(req => req.path.startsWith("/requests/follows/")).length;
+    assert.equal(afterFailed, beforeFailed);
+    mod.dispose();
+});
