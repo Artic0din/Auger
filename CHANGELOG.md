@@ -6,6 +6,38 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.7.2] - 2026-11-25
+
+### Fixes
+
+- **Playback**: Localize scrubber rate chip, end time, and episode captions ([#896](https://github.com/Artic0din/Auger-Tizen/pull/896), [`754aa2c7`](https://github.com/Artic0din/Auger-Tizen/commit/754aa2c7))
+
+### Refactors & Maintenance
+
+- **Github**: Simplify issue forms ([`f29c91a7`](https://github.com/Artic0din/Auger-Tizen/commit/f29c91a7))
+- **Dependencies**: Bump actions/checkout from 6.1.0 to 7.0.1 ([#856](https://github.com/Artic0din/Auger-Tizen/pull/856), [`335ef556`](https://github.com/Artic0din/Auger-Tizen/commit/335ef556))
+- **Dependencies**: Bump actions/setup-node from 6.5.0 to 7.1.0 ([#857](https://github.com/Artic0din/Auger-Tizen/pull/857), [`f9c8eb58`](https://github.com/Artic0din/Auger-Tizen/commit/f9c8eb58))
+
+### Documentation
+
+- **Github**: Clarify bug report device setup ([`a67ada0f`](https://github.com/Artic0din/Auger-Tizen/commit/a67ada0f))
+
+## [0.7.1] - 2026-11-25
+
+### Fixes
+
+- **Diagnostics**: Retain Home navigation when opening Settings ([#920](https://github.com/Artic0din/Auger-Tizen/pull/920), [`4487de9d`](https://github.com/Artic0din/Auger-Tizen/commit/4487de9d))
+
+### Refactors & Maintenance
+
+- **Browse**: Extract DOM-free Person, Search, Requests, and BrowseStack modules ([#895](https://github.com/Artic0din/Auger-Tizen/pull/895), [`79bd0aaf`](https://github.com/Artic0din/Auger-Tizen/commit/79bd0aaf))
+
+### CI
+
+- **Releases**: Remove Install or update block from GitHub Release notes ([`22705129`](https://github.com/Artic0din/Auger-Tizen/commit/22705129))
+- **Releases**: Require category subheadings in PR Release Notes ([`8c36c5b8`](https://github.com/Artic0din/Auger-Tizen/commit/8c36c5b8))
+- Post published releases to Discord as embeds ([#904](https://github.com/Artic0din/Auger-Tizen/pull/904), [`41d1eed3`](https://github.com/Artic0din/Auger-Tizen/commit/41d1eed3))
+
 ## [0.7.0] - 2026-11-25
 
 ### Features

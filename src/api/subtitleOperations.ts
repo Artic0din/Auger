@@ -1,6 +1,5 @@
 import type { RequestSpec } from "./http.ts";
 import { decodeAppearance, type SubtitleAppearance } from "../contracts/v2/subtitles.ts";
-import type { SubtitleTrack } from "../contracts/v2/playback.ts";
 import { decodeSubtitlePreferences, type SubtitlePreferences } from "../contracts/v2/preplaySubtitles.ts";
 import { decodeSyncEnvelope, decodeSyncList, decodeSyncStatus, IDENTITY_TIMING, type SubtitleSyncState, type SubtitleSyncStatus } from "../contracts/v2/subtitleSync.ts";
 
@@ -26,5 +25,4 @@ export const subtitleOperations = {
     subtitleSyncStart: (fileId: string, key: string): RequestSpec<SubtitleSyncState> => ({ method: "POST", path: syncPath(fileId, key), retry: "never", decode: decodeSyncEnvelope }),
     /** setSubtitleTiming with the identity: Reset Timing. A change made since the read wins (412). */
     subtitleTimingReset: (fileId: string, key: string, etag: string): RequestSpec<SubtitleSyncState> => ({ method: "PUT", path: `${syncPath(fileId, key)}/timing`, retry: "never", headers: { "If-Match": etag }, body: { offset_ms: IDENTITY_TIMING.offsetMs, scale: IDENTITY_TIMING.scale }, decode: decodeSyncEnvelope }),
-    saveSeriesSubtitle: (series: string, track: SubtitleTrack | undefined): RequestSpec<undefined> => ({ method: "PUT", path: `/subtitle-prefs/${encodeURIComponent(series)}`, retry: "never", body: { subtitle_track_index: track?.combinedIndex ?? -1, subtitle_language: track?.language ?? "", subtitle_mode: track === undefined ? "off" : "always", ...(track === undefined ? { show_forced_subtitles: false } : { track_signature: { source: track.source, codec: track.codec, language: track.language, label: track.label, forced: track.forced, hearing_impaired: track.hearingImpaired } }) }, decode: () => undefined }),
 };

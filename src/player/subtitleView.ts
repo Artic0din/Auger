@@ -61,7 +61,34 @@ export function subtitleFontSize(style: SubtitleAppearance, scale = 1): string {
     return style.fontFamily === "sans-serif" ? `calc(${points}px * var(--silo-sf-cap-scale))` : `${points}px`;
 }
 
-export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false): void {
+/**
+ * `AetherSubtitleOverlay.decoratedText` (AetherSubtitleOverlay.swift:294-321, silo-apple 3289bedb):
+ * four-corner outline thickness scales with the 1080p point size (`max(0.5, min(2, points * 0.03) * scale)`),
+ * and drop shadow layers independently (`1.5px 2px 3px rgba(0, 0, 0, 0.85)` scaled by `scale`).
+ */
+export function subtitleTextShadow(style: SubtitleAppearance, scale = 1): string {
+    const shadows: string[] = [];
+    if (style.textOutline || style.backgroundStyle === "outline") {
+        const edge = Math.max(0.5, Math.min(2, SUBTITLE_POINTS[style.fontSize] * 0.03) * scale);
+        const px = `${Number(edge.toFixed(2))}px`;
+        const color = style.textOutlineColor;
+        shadows.push(
+            `${px} ${px} 0 ${color}`,
+            `-${px} ${px} 0 ${color}`,
+            `${px} -${px} 0 ${color}`,
+            `-${px} -${px} 0 ${color}`,
+        );
+    }
+    if (style.backgroundStyle === "shadow") {
+        const x = `${Number(Math.max(0.5, 1.5 * scale).toFixed(2))}px`;
+        const y = `${Number(Math.max(0.5, 2 * scale).toFixed(2))}px`;
+        const blur = `${Number(Math.max(1, 3 * scale).toFixed(2))}px`;
+        shadows.push(`${x} ${y} ${blur} rgba(0, 0, 0, 0.85)`);
+    }
+    return shadows.length === 0 ? "none" : shadows.join(", ");
+}
+
+export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, style: SubtitleAppearance, secondary = false, scale = 1): void {
         // AetherSubtitleOverlay.defaultPlacement (:376-434): the primary's inset is 8% at the top and bottom and 27% in the lower
         // third; the second line's is 17% and 36%. Apple places the two independently, so a tall primary can reach the second line.
         layer.style.top = style.position === "top" ? (secondary ? "17%" : "8%") : "auto";
@@ -72,10 +99,9 @@ export function applySubtitleAppearance(layer: HTMLElement, text: HTMLElement, s
         const generic = bundledSans || style.fontFamily === "serif" || style.fontFamily === "monospace";
         text.style.fontFamily = `${bundledSans ? "Inter" : style.fontFamily}, sans-serif`;
         text.style.fontWeight = generic ? "600" : "";
-        text.style.fontSize = subtitleFontSize(style);
+        text.style.fontSize = subtitleFontSize(style, scale);
         const rgba = (color: string, opacity: number): string => `rgba(${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)},${opacity / 100})`;
         text.style.color = rgba(style.fontColor, style.textOpacity);
         text.style.backgroundColor = style.backgroundStyle === "box" ? rgba(style.backgroundColor, style.backgroundOpacity) : "transparent";
-        const outline = style.textOutline || style.backgroundStyle === "outline";
-        text.style.textShadow = outline ? `-2px -2px 0 ${style.textOutlineColor},2px -2px 0 ${style.textOutlineColor},-2px 2px 0 ${style.textOutlineColor},2px 2px 0 ${style.textOutlineColor}` : style.backgroundStyle === "shadow" ? `2px 2px 4px ${rgba(style.backgroundColor, style.backgroundOpacity)}` : "none";
+        text.style.textShadow = subtitleTextShadow(style, scale);
 }

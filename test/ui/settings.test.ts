@@ -239,6 +239,16 @@ test("the subtitle preview draws sans-serif in the bundled semibold face", async
             await tv.eventually(async () => (await face()).family === family, `${label} preview face`);
             assert.deepEqual(await face(), { family, weight: "600" });
         }
+        // Selecting Drop Shadow scales the drop-shadow and outline offsets by the preview's 0.5 factor (#780).
+        await tv.page.getByRole("button", { name: /Background Style/ }).click();
+        await tv.page.getByRole("radio", { name: "Drop Shadow", exact: true }).click();
+        await tv.eventually(async () => (await preview.evaluate(node => getComputedStyle(node).textShadow)).includes("0.75px 1px 1.5px"), "scaled preview drop shadow");
+        const shadowOnly = await preview.evaluate(node => getComputedStyle(node).textShadow);
+        assert.equal(shadowOnly, "rgba(0, 0, 0, 0.85) 0.75px 1px 1.5px");
+        await tv.page.getByRole("switch", { name: /Text Outline/ }).click();
+        await tv.eventually(async () => (await preview.evaluate(node => getComputedStyle(node).textShadow)).includes("0.87px"), "scaled preview outline + drop shadow");
+        const outlineAndShadow = await preview.evaluate(node => getComputedStyle(node).textShadow);
+        assert.ok(outlineAndShadow.includes("0.87px 0.87px 0px") && outlineAndShadow.includes("0.75px 1px 1.5px"), outlineAndShadow);
     } finally { await tv.page.context().close(); }
 });
 
@@ -1808,11 +1818,23 @@ test("Diagnostics sends a redacted report to the relay and offers the QR helper 
             const githubUrl = new URL(githubHref);
             assert.equal(githubUrl.searchParams.get("template"), "bug-report.yml");
             assert.equal(githubUrl.searchParams.get("app-version"), "0.0.1");
-            assert.ok(githubUrl.searchParams.get("device-details")?.includes("Samsung TV"));
+            assert.equal(githubUrl.searchParams.get("device-details"), "Samsung TV");
+            assert.equal(githubUrl.searchParams.get("firmware-version"), null);
+            assert.equal(githubUrl.searchParams.get("tizen-version"), null);
             const githubPlayback = githubUrl.searchParams.get("playback-details") ?? "";
             assert.ok(githubPlayback.includes("HDR setting: On"), githubPlayback);
             assert.ok(githubPlayback.includes("Route fallbacks: 2"), githubPlayback);
             assert.ok(githubPlayback.includes("AVPlay error: PLAYER_ERROR_NOT_SUPPORTED_FORMAT"), githubPlayback);
+
+            const devicePayload = { ...decoded, tv: "UE50CU7095", fw: "1650", os: "Tizen 8.0", ua: "Chromium 108", scr: "1920x1080" };
+            const deviceHash = Buffer.from(JSON.stringify(devicePayload)).toString("base64url");
+            await helperPage.goto(`${DIAGNOSTICS_REPORT_URL}#d=${deviceHash}`);
+            await helperPage.reload();
+            const deviceUrl = new URL(await helperPage.locator("#open-github").getAttribute("href") ?? "");
+            assert.equal(deviceUrl.searchParams.get("device-details"), "UE50CU7095");
+            assert.equal(deviceUrl.searchParams.get("firmware-version"), "1650");
+            assert.equal(deviceUrl.searchParams.get("tizen-version"), "Tizen 8.0");
+            assert.match(deviceUrl.searchParams.get("technical-notes") ?? "", /Web engine: Chromium 108\nScreen: 1920x1080/);
         } finally { await helperPage.close(); }
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }

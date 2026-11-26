@@ -170,7 +170,6 @@ export interface TrackView {
     readonly ai?: SubtitleAIView | undefined;
     /** The AI Subtitles… menu, present only when the server and this file offer something to run. */
     readonly aiMenu?: { readonly menu: AIMenu; /** Shown while a language relies on transcription. */ readonly quota: string | undefined; readonly quotaExhausted: boolean } | undefined;
-    readonly seriesSubtitle?: { readonly busy: boolean; readonly message: string } | undefined;
     readonly quality?: { readonly choices: readonly TrackChoice[]; readonly selectedId: string | undefined };
     readonly audio: AudioTracks;
     readonly selectedAudioId: string | undefined;
@@ -266,7 +265,6 @@ export interface PlayerControls {
     /** PlayerViewModel.pickAnotherShufflePick: replaces the announced shuffle pick via POST /shuffles/{id}/skip (#778). */
     pickAnother(): void;
     keepWatching(): void;
-    saveSeriesSubtitle(): void;
     /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
     startSubtitleAI(language: string): void;
     /** Open: the viewer opened AI Subtitles…. Cancel stops the running job, Dismiss clears a failure or a finished job, Discard lets a request go out after one whose outcome is unknown. */
@@ -1278,10 +1276,6 @@ export class PlaybackController implements PlayerControls {
     selectSubtitle(trackId: string | undefined): void {
         this.stillWatching.recordViewerAction();
         this.active()?.subtitles.selectSubtitle(trackId);
-    }
-
-    saveSeriesSubtitle(): void {
-        this.active()?.subtitles.saveSeriesSubtitle();
     }
 
     retryTrackInfo(): void {
