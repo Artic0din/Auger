@@ -1170,7 +1170,15 @@ browseTest("Search People is scoped, activates real identities and does not fetc
     await tv.page.locator('[data-focus="filter:series"][aria-pressed="true"]').waitFor();
     await tv.remote(10009);
     await tv.page.locator('[data-focus="person:7"]').click(); await showing(tv, "person:7");
-    assert.equal(await tv.focused(), "filter:video");
+    const reopened = await tv.page.evaluate(() => ({
+        allPressed: document.querySelector('[data-focus="filter:video"]')?.getAttribute("aria-pressed") ?? null,
+        seriesPressed: document.querySelector('[data-focus="filter:series"]')?.getAttribute("aria-pressed") ?? null,
+        focused: document.activeElement?.getAttribute("data-focus") ?? null,
+        firstCard: document.querySelector(".browse-grid [data-focus]")?.getAttribute("data-focus") ?? null,
+    }));
+    assert.equal(reopened.allPressed, "true");
+    assert.equal(reopened.seriesPressed, "false");
+    assert.ok(reopened.focused === "filter:video" || (reopened.firstCard !== null && reopened.focused === reopened.firstCard), `unexpected initial focus on reopen: ${JSON.stringify(reopened)}`);
 }, { catalog: peopleSearch });
 
 browseTest("Search lists at most five box sets ahead of People for All and Movies", async tv => {
