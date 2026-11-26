@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.8.0] - 2026-11-26
+
+### Features
+
+- **Subtitles**: Port 720px floating subtitle Appearance dialog ([#903](https://github.com/Artic0din/Auger-Tizen/pull/903), [`a5cc98f4`](https://github.com/Artic0din/Auger-Tizen/commit/a5cc98f4))
+
 ## [0.7.4] - 2026-11-26
 
 ### Fixes
